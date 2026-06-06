@@ -243,7 +243,7 @@ def upgrade() -> None:
         "ck_bayesian_artifacts_pruned_requires_expiry",
     ):
         op.execute(
-            f"ALTER TABLE public.bayesian_artifacts DROP CONSTRAINT IF EXISTS {constraint_name}"
+            f"ALTER TABLE public.bayesian_artifacts DROP CONSTRAINT IF EXISTS {constraint_name}"  # CI:DESTRUCTIVE_OK - B2.4-P8 replaces legacy artifact policy constraints with governed Postgres-only lifecycle constraints.
         )
 
     op.execute(
@@ -457,7 +457,9 @@ def downgrade() -> None:
             role,
             f"REVOKE ALL ON TABLE public.bayesian_artifact_storage_quotas FROM {role}",
         )
-    op.execute("DROP TABLE IF EXISTS public.bayesian_artifact_storage_quotas")
+    op.execute(
+        "DROP TABLE IF EXISTS public.bayesian_artifact_storage_quotas"  # CI:DESTRUCTIVE_OK - reversible downgrade for additive B2.4-P8 quota governance table.
+    )
     for constraint_name in (
         "ck_bayesian_artifacts_pruned_reason",
         "ck_bayesian_artifacts_policy_version_not_blank",
@@ -475,7 +477,7 @@ def downgrade() -> None:
         "ck_bayesian_artifacts_pruned_requires_expiry",
     ):
         op.execute(
-            f"ALTER TABLE public.bayesian_artifacts DROP CONSTRAINT IF EXISTS {constraint_name}"
+            f"ALTER TABLE public.bayesian_artifacts DROP CONSTRAINT IF EXISTS {constraint_name}"  # CI:DESTRUCTIVE_OK - reversible downgrade restores pre-B2.4-P8 artifact constraints.
         )
     op.execute(
         """
@@ -530,5 +532,5 @@ def downgrade() -> None:
         "payload_json",
     ):
         op.execute(
-            f"ALTER TABLE public.bayesian_artifacts DROP COLUMN IF EXISTS {column}"
+            f"ALTER TABLE public.bayesian_artifacts DROP COLUMN IF EXISTS {column}"  # CI:DESTRUCTIVE_OK - reversible downgrade for additive B2.4-P8 lifecycle columns.
         )

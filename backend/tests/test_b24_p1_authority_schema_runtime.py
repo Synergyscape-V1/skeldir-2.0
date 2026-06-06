@@ -287,7 +287,7 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(
                 VALUES (
                     :tenant_id,
                     :fit_id,
-                    'b24://fit/diagnostics-valid',
+                    :artifact_ref,
                     :artifact_hash,
                     'diagnostics',
                     'postgres',
@@ -326,13 +326,13 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(
                         payload_byte_count,
                         retention_class
                     )
-                    VALUES (
-                        :tenant_id,
-                        :fit_id,
-                        'b24://fit/bad-size',
-                        :artifact_hash,
-                        'diagnostics',
-                        'postgres',
+                VALUES (
+                    :tenant_id,
+                    :fit_id,
+                    :artifact_ref,
+                    :artifact_hash,
+                    'diagnostics',
+                    'postgres',
                         :artifact_ref,
                         -1,
                         ''::bytea,

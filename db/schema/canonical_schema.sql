@@ -1324,6 +1324,26 @@ CREATE TABLE public.b24_source_window_feature_authority (
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.bayesian_artifact_storage_quotas (
+    tenant_id uuid NOT NULL,
+    policy_version character varying(64) NOT NULL,
+    quota_bytes bigint DEFAULT 1048576 NOT NULL,
+    active_bytes bigint DEFAULT 0 NOT NULL,
+    pruned_bytes bigint DEFAULT 0 NOT NULL,
+    active_artifact_count integer DEFAULT 0 NOT NULL,
+    pruned_artifact_count integer DEFAULT 0 NOT NULL,
+    rejected_count integer DEFAULT 0 NOT NULL,
+    last_rejection_reason character varying(64),
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_active_within_quota CHECK ((active_bytes <= quota_bytes)),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_bytes_non_negative CHECK (((quota_bytes >= 0) AND (active_bytes >= 0) AND (pruned_bytes >= 0))),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_counts_non_negative CHECK (((active_artifact_count >= 0) AND (pruned_artifact_count >= 0) AND (rejected_count >= 0))),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_rejection_reason CHECK (((last_rejection_reason IS NULL) OR ((last_rejection_reason)::text = ANY ((ARRAY['tenant_quota_exceeded'::character varying, 'fit_wal_budget_exceeded'::character varying, 'policy_rejected'::character varying])::text[]))))
+);
+
+ALTER TABLE ONLY public.bayesian_artifact_storage_quotas FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.bayesian_artifacts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1339,15 +1359,31 @@ CREATE TABLE public.bayesian_artifacts (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 )
 PARTITION BY HASH (tenant_id);
 
@@ -1368,15 +1404,31 @@ CREATE TABLE public.bayesian_artifacts_p00 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p00 FORCE ROW LEVEL SECURITY;
@@ -1396,15 +1448,31 @@ CREATE TABLE public.bayesian_artifacts_p01 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p01 FORCE ROW LEVEL SECURITY;
@@ -1424,15 +1492,31 @@ CREATE TABLE public.bayesian_artifacts_p02 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p02 FORCE ROW LEVEL SECURITY;
@@ -1452,15 +1536,31 @@ CREATE TABLE public.bayesian_artifacts_p03 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p03 FORCE ROW LEVEL SECURITY;
@@ -1480,15 +1580,31 @@ CREATE TABLE public.bayesian_artifacts_p04 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p04 FORCE ROW LEVEL SECURITY;
@@ -1508,15 +1624,31 @@ CREATE TABLE public.bayesian_artifacts_p05 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p05 FORCE ROW LEVEL SECURITY;
@@ -1536,15 +1668,31 @@ CREATE TABLE public.bayesian_artifacts_p06 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p06 FORCE ROW LEVEL SECURITY;
@@ -1564,15 +1712,31 @@ CREATE TABLE public.bayesian_artifacts_p07 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p07 FORCE ROW LEVEL SECURITY;
@@ -1592,15 +1756,31 @@ CREATE TABLE public.bayesian_artifacts_p08 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p08 FORCE ROW LEVEL SECURITY;
@@ -1620,15 +1800,31 @@ CREATE TABLE public.bayesian_artifacts_p09 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p09 FORCE ROW LEVEL SECURITY;
@@ -1648,15 +1844,31 @@ CREATE TABLE public.bayesian_artifacts_p10 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p10 FORCE ROW LEVEL SECURITY;
@@ -1676,15 +1888,31 @@ CREATE TABLE public.bayesian_artifacts_p11 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p11 FORCE ROW LEVEL SECURITY;
@@ -1704,15 +1932,31 @@ CREATE TABLE public.bayesian_artifacts_p12 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p12 FORCE ROW LEVEL SECURITY;
@@ -1732,15 +1976,31 @@ CREATE TABLE public.bayesian_artifacts_p13 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p13 FORCE ROW LEVEL SECURITY;
@@ -1760,15 +2020,31 @@ CREATE TABLE public.bayesian_artifacts_p14 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p14 FORCE ROW LEVEL SECURITY;
@@ -1788,15 +2064,31 @@ CREATE TABLE public.bayesian_artifacts_p15 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p15 FORCE ROW LEVEL SECURITY;
@@ -4295,6 +4587,9 @@ ALTER TABLE ONLY public.b24_fit_dispatch_outbox
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
+ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
+    ADD CONSTRAINT bayesian_artifact_storage_quotas_pkey PRIMARY KEY (tenant_id);
+
 ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_pkey PRIMARY KEY (tenant_id, id);
 
@@ -6118,6 +6413,9 @@ ALTER TABLE ONLY public.b24_fit_dispatch_outbox
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
+    ADD CONSTRAINT bayesian_artifact_storage_quotas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -6338,6 +6636,8 @@ ALTER TABLE public.b24_feature_authority_build_requests ENABLE ROW LEVEL SECURIT
 ALTER TABLE public.b24_fit_dispatch_outbox ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifact_storage_quotas ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.bayesian_artifacts ENABLE ROW LEVEL SECURITY;
 
@@ -6570,6 +6870,8 @@ CREATE POLICY tenant_isolation_policy_b24_feature_authority_build_requests ON pu
 CREATE POLICY tenant_isolation_policy_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_b24_source_window_feature_authority ON public.b24_source_window_feature_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifact_storage_quotas ON public.bayesian_artifact_storage_quotas USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts ON public.bayesian_artifacts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
