@@ -6,7 +6,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
+from app.bayesian.artifact_repository import ArtifactMetadata, artifact_metadata_select
 from app.bayesian.artifacts import (
     DEFAULT_P8_ARTIFACT_POLICY,
     artifact_sha256,
@@ -15,6 +17,7 @@ from app.bayesian.artifacts import (
     encode_payload_bytes,
 )
 from app.bayesian.exceptions import BayesianArtifactPolicyError
+from app.bayesian.models import BayesianArtifact
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +29,10 @@ MODELS = ROOT / "backend/app/bayesian/models.py"
 MIGRATION = (
     ROOT
     / "alembic/versions/007_skeldir_foundation/202606061200_b24_p8_artifact_lifecycle.py"
+)
+FOLLOW_UP_MIGRATION = (
+    ROOT
+    / "alembic/versions/007_skeldir_foundation/202606071200_b24_p8_follow_up_airgap_quota.py"
 )
 
 
@@ -79,6 +86,28 @@ def test_b24_p8_hash_binds_to_exact_encoded_bytes() -> None:
     assert decompress_payload_bytes(compressed, compression="gzip") == stored
 
 
+def test_b24_p8_metadata_projection_airgaps_payload_bytes() -> None:
+    payload_property = BayesianArtifact.__mapper__.attrs.payload_bytes
+    assert payload_property.deferred is True
+    assert payload_property.strategy_key == (
+        ("deferred", True),
+        ("instrument", True),
+        ("raiseload", True),
+    )
+
+    compiled = str(
+        artifact_metadata_select().compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    assert "payload_bytes" not in compiled
+
+    metadata_fields = set(ArtifactMetadata.__dataclass_fields__)
+    assert "payload_bytes" not in metadata_fields
+    assert "payload_byte_count" in metadata_fields
+
+
 def test_b24_p8_validator_negative_controls() -> None:
     validator = _load_validator()
 
@@ -103,12 +132,28 @@ def test_b24_p8_validator_negative_controls() -> None:
             fit_execution_text=_read(ROOT / "backend/app/bayesian/fit_execution.py")
             + "\nartifact_ref='b24://p6-summary/x'\n"
         )
+    with pytest.raises(validator.ValidationError, match="deferred_raiseload"):
+        validator.validate_models_and_migration(
+            models_text=_read(MODELS).replace("deferred_raiseload=True,", "")
+        )
+    with pytest.raises(validator.ValidationError, match="active_artifact_count"):
+        validator.validate_repository(
+            repository_text=_read(ARTIFACT_REPOSITORY).replace(
+                "active_artifact_count + 1 <= max_artifact_count",
+                "active_artifact_count <= max_artifact_count",
+            )
+        )
 
 
 def test_b24_p8_repository_contains_no_forbidden_storage_or_decompression() -> None:
     repository = _read(ARTIFACT_REPOSITORY)
     artifacts = _read(ARTIFACTS)
-    migration_upgrade = _load_validator()._upgrade_text(_read(MIGRATION))
+    migration_upgrade = "\n".join(
+        (
+            _load_validator()._upgrade_text(_read(MIGRATION)),
+            _load_validator()._upgrade_text(_read(FOLLOW_UP_MIGRATION)),
+        )
+    )
     combined = "\n".join((repository, artifacts, migration_upgrade, _read(MODELS)))
 
     for token in (

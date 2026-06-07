@@ -22,6 +22,7 @@ MAX_P8_ARTIFACT_BYTES = 64 * 1024
 MAX_P8_JSON_BYTES = 32 * 1024
 MAX_P8_WAL_BUDGET_BYTES_PER_FIT = 128 * 1024
 DEFAULT_P8_TENANT_QUOTA_BYTES = 1024 * 1024
+MAX_P8_TENANT_ARTIFACT_COUNT = 1000
 MAX_P8_PRUNE_BATCH_SIZE = 100
 
 P8_ALLOWED_ARTIFACT_TYPES = frozenset(
@@ -66,6 +67,7 @@ class ArtifactPolicy:
     max_json_bytes: int = MAX_P8_JSON_BYTES
     max_artifact_wal_budget_bytes_per_fit: int = MAX_P8_WAL_BUDGET_BYTES_PER_FIT
     default_tenant_quota_bytes: int = DEFAULT_P8_TENANT_QUOTA_BYTES
+    max_tenant_artifact_count: int = MAX_P8_TENANT_ARTIFACT_COUNT
     max_prune_batch_size: int = MAX_P8_PRUNE_BATCH_SIZE
 
 

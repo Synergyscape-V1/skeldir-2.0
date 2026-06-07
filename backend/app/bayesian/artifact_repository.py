@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -29,6 +30,92 @@ from app.bayesian.exceptions import (
 from app.bayesian.models import BayesianArtifact
 
 
+@dataclass(frozen=True)
+class ArtifactMetadata:
+    """Payload-free artifact authority projection."""
+
+    id: UUID
+    tenant_id: UUID
+    fit_id: UUID
+    artifact_ref: str
+    artifact_hash: str
+    artifact_type: str
+    storage_backend: str
+    artifact_uri_internal: str
+    artifact_size_bytes: int
+    payload_byte_count: int
+    compression: str | None
+    retention_class: str
+    lifecycle_status: str
+    policy_version: str
+    expires_at: datetime | None
+    pruned_at: datetime | None
+    pruned_reason: str | None
+    pruned_metadata: dict[str, object]
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class ArtifactPayload:
+    """Explicit payload accessor result for verification/download-only paths."""
+
+    metadata: ArtifactMetadata
+    payload_bytes: bytes | None
+
+
+def artifact_metadata_select():
+    """Return the canonical payload-free metadata projection."""
+
+    return select(
+        BayesianArtifact.id,
+        BayesianArtifact.tenant_id,
+        BayesianArtifact.fit_id,
+        BayesianArtifact.artifact_ref,
+        BayesianArtifact.artifact_hash,
+        BayesianArtifact.artifact_type,
+        BayesianArtifact.storage_backend,
+        BayesianArtifact.artifact_uri_internal,
+        BayesianArtifact.artifact_size_bytes,
+        BayesianArtifact.payload_byte_count,
+        BayesianArtifact.compression,
+        BayesianArtifact.retention_class,
+        BayesianArtifact.lifecycle_status,
+        BayesianArtifact.policy_version,
+        BayesianArtifact.expires_at,
+        BayesianArtifact.pruned_at,
+        BayesianArtifact.pruned_reason,
+        BayesianArtifact.pruned_metadata,
+        BayesianArtifact.created_at,
+        BayesianArtifact.updated_at,
+    )
+
+
+def _metadata_from_mapping(row) -> ArtifactMetadata:
+    return ArtifactMetadata(
+        id=row["id"],
+        tenant_id=row["tenant_id"],
+        fit_id=row["fit_id"],
+        artifact_ref=row["artifact_ref"],
+        artifact_hash=row["artifact_hash"],
+        artifact_type=row["artifact_type"],
+        storage_backend=row["storage_backend"],
+        artifact_uri_internal=row["artifact_uri_internal"],
+        artifact_size_bytes=int(row["artifact_size_bytes"]),
+        payload_byte_count=int(row["payload_byte_count"]),
+        compression=row["compression"],
+        retention_class=row["retention_class"],
+        lifecycle_status=row["lifecycle_status"],
+        policy_version=row["policy_version"],
+        expires_at=row["expires_at"],
+        pruned_at=row["pruned_at"],
+        pruned_reason=row["pruned_reason"],
+        pruned_metadata=dict(row["pruned_metadata"] or {}),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 class BayesianArtifactRepository:
     """Tenant-scoped read/write wrapper for P8 artifact authority rows.
 
@@ -38,20 +125,46 @@ class BayesianArtifactRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get_by_ref(
+    async def get_metadata_by_ref(
         self, *, tenant_id: UUID, artifact_ref: str
-    ) -> BayesianArtifact:
-        stmt = select(BayesianArtifact).where(
+    ) -> ArtifactMetadata:
+        stmt = artifact_metadata_select().where(
             BayesianArtifact.tenant_id == tenant_id,
             BayesianArtifact.artifact_ref == artifact_ref,
         )
         result = await self._session.execute(stmt)
-        artifact = result.scalar_one_or_none()
-        if artifact is None:
+        row = result.mappings().one_or_none()
+        if row is None:
             raise BayesianArtifactNotFoundError(
                 f"bayesian artifact not found: {artifact_ref}"
             )
-        return artifact
+        return _metadata_from_mapping(row)
+
+    async def get_by_ref(
+        self, *, tenant_id: UUID, artifact_ref: str
+    ) -> ArtifactMetadata:
+        return await self.get_metadata_by_ref(
+            tenant_id=tenant_id,
+            artifact_ref=artifact_ref,
+        )
+
+    async def get_payload_by_ref(
+        self, *, tenant_id: UUID, artifact_ref: str
+    ) -> ArtifactPayload:
+        metadata = await self.get_metadata_by_ref(
+            tenant_id=tenant_id,
+            artifact_ref=artifact_ref,
+        )
+        result = await self._session.execute(
+            select(BayesianArtifact.payload_bytes).where(
+                BayesianArtifact.tenant_id == tenant_id,
+                BayesianArtifact.artifact_ref == artifact_ref,
+            )
+        )
+        return ArtifactPayload(
+            metadata=metadata,
+            payload_bytes=result.scalar_one_or_none(),
+        )
 
 
 def _json_param(payload: dict[str, object] | None) -> str | None:
@@ -82,6 +195,7 @@ def _ensure_quota_row(
                 tenant_id,
                 policy_version,
                 quota_bytes,
+                max_artifact_count,
                 active_bytes,
                 pruned_bytes,
                 active_artifact_count,
@@ -92,6 +206,7 @@ def _ensure_quota_row(
                 :tenant_id,
                 :policy_version,
                 :quota_bytes,
+                :max_artifact_count,
                 0,
                 0,
                 0,
@@ -101,6 +216,14 @@ def _ensure_quota_row(
             ON CONFLICT (tenant_id)
             DO UPDATE SET
                 policy_version = EXCLUDED.policy_version,
+                quota_bytes = LEAST(
+                    bayesian_artifact_storage_quotas.quota_bytes,
+                    EXCLUDED.quota_bytes
+                ),
+                max_artifact_count = LEAST(
+                    bayesian_artifact_storage_quotas.max_artifact_count,
+                    EXCLUDED.max_artifact_count
+                ),
                 updated_at = now()
             """
         ),
@@ -108,17 +231,18 @@ def _ensure_quota_row(
             "tenant_id": str(tenant_id),
             "policy_version": policy.policy_version,
             "quota_bytes": policy.default_tenant_quota_bytes,
+            "max_artifact_count": policy.max_tenant_artifact_count,
         },
     )
 
 
-def _charge_quota(
+def _reserve_quota(
     conn: Connection,
     *,
     tenant_id: UUID,
     size_bytes: int,
     policy: ArtifactPolicy,
-) -> None:
+) -> bool:
     _ensure_quota_row(conn, tenant_id=tenant_id, policy=policy)
     result = conn.execute(
         text(
@@ -130,30 +254,61 @@ def _charge_quota(
             WHERE tenant_id = :tenant_id
               AND active_bytes + :size_bytes <= quota_bytes
               AND active_bytes + :size_bytes <= :policy_quota_bytes
-            RETURNING tenant_id
+              AND active_artifact_count + 1 <= max_artifact_count
+              AND active_artifact_count + 1 <= :policy_max_artifact_count
+            RETURNING active_bytes, active_artifact_count
             """
         ),
         {
             "tenant_id": str(tenant_id),
             "size_bytes": size_bytes,
             "policy_quota_bytes": policy.default_tenant_quota_bytes,
+            "policy_max_artifact_count": policy.max_tenant_artifact_count,
         },
     ).scalar_one_or_none()
-    if result is not None:
-        return
+    return result is not None
+
+
+def _release_quota_reservation(
+    conn: Connection,
+    *,
+    tenant_id: UUID,
+    size_bytes: int,
+) -> None:
+    conn.execute(
+        text(
+            """
+            UPDATE public.bayesian_artifact_storage_quotas
+            SET active_bytes = GREATEST(active_bytes - :size_bytes, 0),
+                active_artifact_count = GREATEST(active_artifact_count - 1, 0),
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+            """
+        ),
+        {"tenant_id": str(tenant_id), "size_bytes": size_bytes},
+    )
+
+
+def _register_quota_rejection(
+    conn: Connection,
+    *,
+    tenant_id: UUID,
+    reason: str,
+    policy: ArtifactPolicy,
+) -> None:
+    _ensure_quota_row(conn, tenant_id=tenant_id, policy=policy)
     conn.execute(
         text(
             """
             UPDATE public.bayesian_artifact_storage_quotas
             SET rejected_count = rejected_count + 1,
-                last_rejection_reason = 'tenant_quota_exceeded',
+                last_rejection_reason = :reason,
                 updated_at = now()
             WHERE tenant_id = :tenant_id
             """
         ),
-        {"tenant_id": str(tenant_id)},
+        {"tenant_id": str(tenant_id), "reason": reason},
     )
-    raise BayesianArtifactQuotaExceededError("tenant artifact quota exceeded")
 
 
 def _validate_fit_wal_budget(
@@ -171,7 +326,6 @@ def _validate_fit_wal_budget(
             FROM public.bayesian_model_fits
             WHERE tenant_id = :tenant_id
               AND id = :fit_id
-            FOR UPDATE
             """
         ),
         {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
@@ -194,6 +348,91 @@ def _validate_fit_wal_budget(
     )
     if existing_bytes + size_bytes > policy.max_artifact_wal_budget_bytes_per_fit:
         raise BayesianArtifactQuotaExceededError("fit artifact WAL budget exceeded")
+
+
+def _persist_rejected_artifact_metadata(
+    conn: Connection,
+    *,
+    tenant_id: UUID,
+    fit_id: UUID,
+    artifact_ref: str,
+    artifact_hash: str,
+    artifact_type: str,
+    size_bytes: int,
+    retention_class: str,
+    compression: str,
+    rejection_reason: str,
+    policy: ArtifactPolicy,
+) -> dict[str, object]:
+    metadata = {
+        "rejection_reason": rejection_reason,
+        "attempted_payload_byte_count": size_bytes,
+        "policy_version": policy.policy_version,
+    }
+    row = conn.execute(
+        text(
+            """
+                INSERT INTO public.bayesian_artifacts (
+                    tenant_id,
+                    fit_id,
+                    artifact_ref,
+                    artifact_hash,
+                    artifact_type,
+                    storage_backend,
+                    artifact_uri_internal,
+                    artifact_size_bytes,
+                    payload_json,
+                    payload_bytes,
+                    payload_byte_count,
+                    compression,
+                    retention_class,
+                    lifecycle_status,
+                    policy_version,
+                    pruned_metadata
+                )
+                VALUES (
+                    :tenant_id,
+                    :fit_id,
+                    :artifact_ref,
+                    :artifact_hash,
+                    :artifact_type,
+                    'postgres',
+                    :artifact_ref,
+                    :artifact_size_bytes,
+                    NULL,
+                    NULL,
+                    0,
+                    :compression,
+                    :retention_class,
+                    'rejected',
+                    :policy_version,
+                    CAST(:pruned_metadata AS jsonb)
+                )
+                RETURNING id
+                """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "fit_id": str(fit_id),
+            "artifact_ref": artifact_ref,
+            "artifact_hash": artifact_hash,
+            "artifact_type": artifact_type,
+            "artifact_size_bytes": size_bytes,
+            "compression": compression,
+            "retention_class": retention_class,
+            "policy_version": policy.policy_version,
+            "pruned_metadata": _json_param(metadata),
+        },
+    ).scalar_one()
+    return {
+        "artifact_id": str(row),
+        "artifact_ref": artifact_ref,
+        "artifact_hash": artifact_hash,
+        "artifact_size_bytes": size_bytes,
+        "idempotent_replay": False,
+        "rejected": True,
+        "rejection_reason": rejection_reason,
+    }
 
 
 def persist_artifact_sync(
@@ -237,7 +476,6 @@ def persist_artifact_sync(
             FROM public.bayesian_artifacts
             WHERE tenant_id = :tenant_id
               AND artifact_ref = :artifact_ref
-            FOR UPDATE
             """
             ),
             {"tenant_id": str(tenant_id), "artifact_ref": artifact_ref},
@@ -248,6 +486,16 @@ def persist_artifact_sync(
     if existing is not None:
         if existing["artifact_hash"] != stored_hash:
             raise BayesianArtifactPolicyError("artifact ref hash mismatch")
+        if existing["lifecycle_status"] == ArtifactLifecycleStatus.REJECTED.value:
+            return {
+                "artifact_id": str(existing["id"]),
+                "artifact_ref": artifact_ref,
+                "artifact_hash": stored_hash,
+                "artifact_size_bytes": int(existing["artifact_size_bytes"]),
+                "idempotent_replay": True,
+                "rejected": True,
+                "rejection_reason": "tenant_quota_exceeded",
+            }
         if existing["lifecycle_status"] != ArtifactLifecycleStatus.ACTIVE.value:
             raise BayesianArtifactPolicyError("pruned artifact ref cannot be rewritten")
         return {
@@ -256,6 +504,7 @@ def persist_artifact_sync(
             "artifact_hash": stored_hash,
             "artifact_size_bytes": int(existing["artifact_size_bytes"]),
             "idempotent_replay": True,
+            "rejected": False,
         }
     _validate_fit_wal_budget(
         conn,
@@ -264,7 +513,29 @@ def persist_artifact_sync(
         size_bytes=size_bytes,
         policy=policy,
     )
-    _charge_quota(conn, tenant_id=tenant_id, size_bytes=size_bytes, policy=policy)
+    if not _reserve_quota(
+        conn, tenant_id=tenant_id, size_bytes=size_bytes, policy=policy
+    ):
+        rejection_reason = "tenant_quota_exceeded"
+        _register_quota_rejection(
+            conn,
+            tenant_id=tenant_id,
+            reason=rejection_reason,
+            policy=policy,
+        )
+        return _persist_rejected_artifact_metadata(
+            conn,
+            tenant_id=tenant_id,
+            fit_id=fit_id,
+            artifact_ref=artifact_ref,
+            artifact_hash=stored_hash,
+            artifact_type=artifact_type,
+            size_bytes=size_bytes,
+            retention_class=retention_class,
+            compression=compression,
+            rejection_reason=rejection_reason,
+            policy=policy,
+        )
     now = datetime.now(timezone.utc)
     payload_json = payload if compression == Compression.NONE.value else None
     row = conn.execute(
@@ -331,6 +602,7 @@ def persist_artifact_sync(
         "artifact_hash": stored_hash,
         "artifact_size_bytes": size_bytes,
         "idempotent_replay": False,
+        "rejected": False,
     }
 
 

@@ -209,6 +209,7 @@ ALLOWED_M0_PATHS = [
     "alembic/versions/007_skeldir_foundation/202606041200_b24_p7_diagnostic_semantics.py",
     "alembic/versions/007_skeldir_foundation/202606031200_b24_p6_fit_id_resolution_policy.py",
     "alembic/versions/007_skeldir_foundation/202606061200_b24_p8_artifact_lifecycle.py",
+    "alembic/versions/007_skeldir_foundation/202606071200_b24_p8_follow_up_airgap_quota.py",
     "backend/app/bayesian/",
     "backend/Dockerfile.bayesian",
     "backend/requirements-bayesian.txt",

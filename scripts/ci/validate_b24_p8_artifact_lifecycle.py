@@ -20,6 +20,9 @@ P8_DB_TESTS = Path("backend/tests/test_b24_p8_postgres_runtime.py")
 P8_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202606061200_b24_p8_artifact_lifecycle.py"
 )
+P8_FOLLOW_UP_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202606071200_b24_p8_follow_up_airgap_quota.py"
+)
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
 MAKEFILE = Path("Makefile")
 ENFORCER_REGISTRY = Path("docs/ci/enforcer_registry.yaml")
@@ -38,6 +41,7 @@ REQUIRED_FILES = {
     P8_TESTS,
     P8_DB_TESTS,
     P8_MIGRATION,
+    P8_FOLLOW_UP_MIGRATION,
     WORKFLOW,
     MAKEFILE,
     ENFORCER_REGISTRY,
@@ -78,6 +82,7 @@ def validate_policy_module(artifacts_text: str | None = None) -> None:
         "MAX_P8_JSON_BYTES = 32 * 1024",
         "MAX_P8_WAL_BUDGET_BYTES_PER_FIT = 128 * 1024",
         "DEFAULT_P8_TENANT_QUOTA_BYTES",
+        "MAX_P8_TENANT_ARTIFACT_COUNT",
         "P8_ALLOWED_ARTIFACT_TYPES",
         "P8_ALLOWED_COMPRESSIONS",
         "canonical_json_bytes",
@@ -99,11 +104,20 @@ def validate_repository(repository_text: str | None = None) -> None:
     )
     for token in (
         "persist_artifact_sync",
+        "ArtifactMetadata",
+        "artifact_metadata_select",
+        "get_metadata_by_ref",
+        "get_payload_by_ref",
         "verify_artifact_bytes_sync",
         "prune_expired_artifacts_sync",
         "bayesian_artifact_storage_quotas",
         "ON CONFLICT (tenant_id)",
         "active_bytes + :size_bytes <= quota_bytes",
+        "active_artifact_count + 1 <= max_artifact_count",
+        "RETURNING active_bytes, active_artifact_count",
+        "'rejected'",
+        "rejection_reason",
+        "tenant_quota_exceeded",
         "max_artifact_wal_budget_bytes_per_fit",
         "FOR UPDATE SKIP LOCKED",
         "payload_bytes = NULL",
@@ -130,6 +144,22 @@ def validate_repository(repository_text: str | None = None) -> None:
             forbidden not in repository,
             f"P8 repository has forbidden storage token: {forbidden}",
         )
+    normal_write_path = repository.replace("FOR UPDATE SKIP LOCKED", "")
+    _require(
+        "FOR UPDATE" not in normal_write_path,
+        "P8 normal artifact insert/quota path must not use SELECT FOR UPDATE",
+    )
+    metadata_select_start = repository.find("def artifact_metadata_select")
+    metadata_select_end = repository.find("def _metadata_from_mapping")
+    _require(
+        metadata_select_start != -1 and metadata_select_end != -1,
+        "P8 repository missing metadata projection boundary",
+    )
+    metadata_projection = repository[metadata_select_start:metadata_select_end]
+    _require(
+        "payload_bytes" not in metadata_projection,
+        "P8 metadata projection must not select payload_bytes",
+    )
 
 
 def validate_models_and_migration(
@@ -140,15 +170,20 @@ def validate_models_and_migration(
     models = models_text if models_text is not None else _read(MODELS)
     enums = enums_text if enums_text is not None else _read(ENUMS)
     migration = migration_text if migration_text is not None else _read(P8_MIGRATION)
-    upgrade = _upgrade_text(migration)
+    follow_up = _read(P8_FOLLOW_UP_MIGRATION)
+    upgrade = "\n".join((_upgrade_text(migration), _upgrade_text(follow_up)))
     for token in (
         "payload_json",
         "payload_bytes",
+        "deferred_raiseload=True",
         "payload_byte_count",
         "lifecycle_status",
+        "'rejected'",
         "policy_version",
         "pruned_metadata",
         "BayesianArtifactStorageQuota",
+        "max_artifact_count",
+        "ck_bayesian_artifact_storage_quotas_active_count_within_quota",
         "ck_bayesian_artifacts_storage_backend",
         "storage_backend = 'postgres'",
         "ck_bayesian_artifacts_size_p8_cap",
@@ -199,6 +234,7 @@ def validate_no_public_or_cloud_scope() -> None:
         MODELS,
         FIT_EXECUTION,
         P8_MIGRATION,
+        P8_FOLLOW_UP_MIGRATION,
     )
     combined = "\n".join(_read(path) for path in relevant_paths)
     for forbidden in (
@@ -255,12 +291,19 @@ def validate_tests_and_ci(
     for token in (
         "test_b24_p8_policy_rejects_trace_type_and_oversized_payloads",
         "test_b24_p8_hash_binds_to_exact_encoded_bytes",
+        "test_b24_p8_metadata_projection_airgaps_payload_bytes",
         "test_b24_p8_validator_negative_controls",
     ):
         _require(token in tests, f"P8 unit proof missing: {token}")
     for token in (
         "test_b24_p8_repository_persists_verifies_quota_and_prunes",
+        "test_b24_p8_atomic_quota_allows_exactly_two_concurrent_artifacts",
         "SKELDIR_B24_P8_REQUIRE_DB_PROOFS",
+        "ThreadPoolExecutor",
+        "threading.Barrier",
+        "pg_backend_pid",
+        "active_artifact_count",
+        "tenant_quota_exceeded",
         "verify_artifact_bytes_sync",
         "prune_expired_artifacts_sync",
     ):
@@ -330,6 +373,31 @@ def run_negative_controls() -> None:
                 + "\nartifact_ref='b24://p6-summary/x'\n"
             ),
             "ungoverned",
+        ),
+        (
+            "payload_raiseload_removed",
+            lambda: validate_models_and_migration(
+                models_text=_read(MODELS).replace("deferred_raiseload=True,", "")
+            ),
+            "deferred_raiseload",
+        ),
+        (
+            "atomic_count_guard_removed",
+            lambda: validate_repository(
+                repository_text=_read(ARTIFACT_REPOSITORY).replace(
+                    "active_artifact_count + 1 <= max_artifact_count",
+                    "active_artifact_count <= max_artifact_count",
+                )
+            ),
+            "active_artifact_count",
+        ),
+        (
+            "normal_for_update_added",
+            lambda: validate_repository(
+                repository_text=_read(ARTIFACT_REPOSITORY)
+                + "\nSELECT id FROM public.bayesian_artifacts FOR UPDATE\n"
+            ),
+            "FOR UPDATE",
         ),
         (
             "missing_required_status",
