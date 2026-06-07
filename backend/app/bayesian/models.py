@@ -386,7 +386,12 @@ class BayesianArtifact(Base):
     artifact_uri_internal: Mapped[str] = mapped_column(String(1024), nullable=False)
     artifact_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     payload_json: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    payload_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    payload_bytes: Mapped[bytes | None] = mapped_column(
+        LargeBinary,
+        nullable=True,
+        deferred=True,
+        deferred_raiseload=True,
+    )
     payload_byte_count: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0, server_default="0"
     )
@@ -459,7 +464,7 @@ class BayesianArtifact(Base):
             name="ck_bayesian_artifacts_storage_backend",
         ),
         CheckConstraint(
-            "lifecycle_status = 'pruned' OR (artifact_uri_internal = artifact_ref AND artifact_uri_internal ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$')",
+            "lifecycle_status IN ('pruned', 'rejected') OR (artifact_uri_internal = artifact_ref AND artifact_uri_internal ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$')",
             name="ck_bayesian_artifacts_internal_uri",
         ),
         CheckConstraint(
@@ -494,12 +499,13 @@ class BayesianArtifact(Base):
             name="ck_bayesian_artifacts_pruned_requires_expiry",
         ),
         CheckConstraint(
-            "lifecycle_status IN ('active', 'pruned')",
+            "lifecycle_status IN ('active', 'pruned', 'rejected')",
             name="ck_bayesian_artifacts_lifecycle_status",
         ),
         CheckConstraint(
             "(lifecycle_status = 'active' AND payload_bytes IS NOT NULL AND payload_byte_count = artifact_size_bytes AND pruned_at IS NULL) "
-            "OR (lifecycle_status = 'pruned' AND payload_bytes IS NULL AND payload_byte_count = 0 AND pruned_at IS NOT NULL)",
+            "OR (lifecycle_status = 'pruned' AND payload_bytes IS NULL AND payload_byte_count = 0 AND pruned_at IS NOT NULL) "
+            "OR (lifecycle_status = 'rejected' AND payload_bytes IS NULL AND payload_byte_count = 0 AND pruned_at IS NULL)",
             name="ck_bayesian_artifacts_lifecycle_payload_state",
         ),
         CheckConstraint(
@@ -544,6 +550,9 @@ class BayesianArtifactStorageQuota(Base):
     quota_bytes: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=1048576, server_default="1048576"
     )
+    max_artifact_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1000, server_default="1000"
+    )
     active_bytes: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0, server_default="0"
     )
@@ -578,8 +587,16 @@ class BayesianArtifactStorageQuota(Base):
             name="ck_bayesian_artifact_storage_quotas_counts_non_negative",
         ),
         CheckConstraint(
+            "max_artifact_count > 0",
+            name="ck_bayesian_artifact_storage_quotas_max_count_positive",
+        ),
+        CheckConstraint(
             "active_bytes <= quota_bytes",
             name="ck_bayesian_artifact_storage_quotas_active_within_quota",
+        ),
+        CheckConstraint(
+            "active_artifact_count <= max_artifact_count",
+            name="ck_bayesian_artifact_storage_quotas_active_count_within_quota",
         ),
         CheckConstraint(
             "char_length(trim(policy_version)) > 0",

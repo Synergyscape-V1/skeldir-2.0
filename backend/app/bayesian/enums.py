@@ -143,3 +143,4 @@ class RetentionClass(StrEnum):
 class ArtifactLifecycleStatus(StrEnum):
     ACTIVE = "active"
     PRUNED = "pruned"
+    REJECTED = "rejected"

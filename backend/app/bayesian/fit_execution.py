@@ -339,6 +339,34 @@ def _persist_result_summary(
         payload=result_summary,
         retention_class="standard",
     )
+    if artifact.get("rejected") is True:
+        conn.execute(
+            text(
+                """
+                UPDATE public.bayesian_model_fits
+                SET status = 'failed',
+                    fallback_applied = true,
+                    fallback_reason = 'storage_quota_exceeded',
+                    credible_interval_status = 'not_available',
+                    diagnostic_status = 'unavailable',
+                    runtime_seconds = :runtime_seconds,
+                    last_fit_at = now(),
+                    completed_at = now(),
+                    updated_at = now()
+                WHERE tenant_id = :tenant_id
+                  AND id = :fit_id
+                  AND source_snapshot_hash = :source_snapshot_hash
+                  AND status IN ('pending', 'queued', 'running', 'persist_pending')
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "fit_id": str(fit_id),
+                "source_snapshot_hash": source_snapshot_hash,
+                "runtime_seconds": runtime_seconds,
+            },
+        )
+        return
     artifact_ref = str(artifact["artifact_ref"])
     artifact_hash = str(artifact["artifact_hash"])
     diagnostic_status = result_summary.get("diagnostic_status")
