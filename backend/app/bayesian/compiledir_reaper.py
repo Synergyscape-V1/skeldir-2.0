@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 from uuid import uuid4
 
 
 OWNER_MARKER = "skeldir-b24-p5"
 METADATA_FILE = "skeldir_compiledir_owner.json"
 LOCK_FILE = ".skeldir_reaper.lock"
+_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_SHA256 = re.compile(r"^[a-f0-9]{64}$")
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,9 @@ class CompiledirLease:
     worker_id: str
     execution_id: str
     parent_pid: int
+    tenant_id: UUID | None = None
+    fit_id: UUID | None = None
+    source_snapshot_hash: str | None = None
     child_pid: int | None = None
 
     def with_child_pid(self, child_pid: int) -> "CompiledirLease":
@@ -33,6 +40,9 @@ class CompiledirLease:
             worker_id=self.worker_id,
             execution_id=self.execution_id,
             parent_pid=self.parent_pid,
+            tenant_id=self.tenant_id,
+            fit_id=self.fit_id,
+            source_snapshot_hash=self.source_snapshot_hash,
             child_pid=child_pid,
         )
 
@@ -43,8 +53,24 @@ def runtime_root() -> Path:
     ).resolve()
 
 
+def _safe_segment(value: object, *, label: str) -> str:
+    segment = str(value)
+    if label == "source_snapshot_hash":
+        valid = _SHA256.fullmatch(segment) is not None
+    else:
+        valid = _SAFE_SEGMENT.fullmatch(segment) is not None
+    if not valid or segment in {".", ".."}:
+        raise ValueError(f"unsafe B2.4 compiledir segment: {label}")
+    return segment
+
+
 def create_compiledir_lease(
-    *, execution_id: str | None = None, worker_id: str | None = None
+    *,
+    execution_id: str | None = None,
+    worker_id: str | None = None,
+    tenant_id: UUID | None = None,
+    fit_id: UUID | None = None,
+    source_snapshot_hash: str | None = None,
 ) -> CompiledirLease:
     """Create a worker/PID/execution-scoped compiledir with ownership metadata."""
 
@@ -56,7 +82,26 @@ def create_compiledir_lease(
         execution_id or os.getenv("B24_PYTENSOR_EXECUTION_ID") or f"probe-{uuid4().hex}"
     )
     parent_pid = os.getpid()
-    path = root / worker / f"parent-{parent_pid}" / identity
+    if any(value is not None for value in (tenant_id, fit_id, source_snapshot_hash)):
+        if tenant_id is None or fit_id is None or source_snapshot_hash is None:
+            raise ValueError("compiledir tenant, fit, and source hash must travel together")
+        path = (
+            root
+            / worker
+            / _safe_segment(tenant_id, label="tenant_id")
+            / _safe_segment(fit_id, label="fit_id")
+            / _safe_segment(source_snapshot_hash, label="source_snapshot_hash")
+            / f"parent-{parent_pid}"
+            / _safe_segment(identity, label="execution_id")
+        )
+    else:
+        path = root / worker / f"parent-{parent_pid}" / _safe_segment(
+            identity, label="execution_id"
+        )
+    resolved_root = root.resolve()
+    resolved_path = path.resolve()
+    if resolved_root != resolved_path and resolved_root not in resolved_path.parents:
+        raise ValueError("compiledir path escapes B2.4 root")
     path.mkdir(parents=True, exist_ok=False)
     metadata = {
         "owner": OWNER_MARKER,
@@ -65,6 +110,14 @@ def create_compiledir_lease(
         "parent_pid": parent_pid,
         "created_at": time.time(),
     }
+    if tenant_id is not None:
+        metadata.update(
+            {
+                "tenant_id": str(tenant_id),
+                "fit_id": str(fit_id),
+                "source_snapshot_hash": source_snapshot_hash,
+            }
+        )
     (path / METADATA_FILE).write_text(
         json.dumps(metadata, sort_keys=True), encoding="utf-8"
     )
@@ -74,6 +127,9 @@ def create_compiledir_lease(
         worker_id=worker,
         execution_id=identity,
         parent_pid=parent_pid,
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        source_snapshot_hash=source_snapshot_hash,
     )
 
 
@@ -144,7 +200,7 @@ def reap_expired_compiledirs(
             "preserved_invalid": 0,
         }
     with _reaper_lock(root):
-        for metadata_path in root.glob("*/*/*/" + METADATA_FILE):
+        for metadata_path in list(root.rglob(METADATA_FILE)):
             if scanned >= max_scan_entries or deleted >= max_deletions:
                 break
             scanned += 1

@@ -63,6 +63,9 @@ jobs:
       - name: Validate B2.4-P8 artifact lifecycle
         run: make validate-b24-p8-artifact-lifecycle
 
+      - name: Validate B2.4-P9 worker tenant hygiene
+        run: make validate-b24-p9-worker-tenant-hygiene
+
   b2-4-p5-runtime:
     name: B2.4-P5 Bayesian Runtime Harness
     runs-on: ubuntu-latest
@@ -384,6 +387,64 @@ jobs:
       - name: Run artifact lifecycle proof
         run: |
           pytest backend/tests/test_b24_p8_artifact_lifecycle.py backend/tests/test_b24_p8_postgres_runtime.py -q -rA
+
+  b2-4-p9-worker-tenant-hygiene-proof:
+    name: B2.4-P9 Worker Tenant Hygiene Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p9_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p9_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P9_REQUIRE_DB_PROOFS: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P9 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p9_ci"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      - name: Run B2.4-P9 static negative controls
+        run: |
+          python scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control
+
+      - name: Run worker tenant hygiene proof
+        run: |
+          pytest backend/tests/test_b24_p9_worker_tenant_hygiene.py backend/tests/test_b24_p9_postgres_runtime.py -q -rA
 
   b2-4-p1-db-proof:
     name: B2.4-P1 DB Proof

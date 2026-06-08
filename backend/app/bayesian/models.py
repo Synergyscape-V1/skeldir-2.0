@@ -464,7 +464,7 @@ class BayesianArtifact(Base):
             name="ck_bayesian_artifacts_storage_backend",
         ),
         CheckConstraint(
-            "lifecycle_status IN ('pruned', 'rejected') OR (artifact_uri_internal = artifact_ref AND artifact_uri_internal ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$')",
+            "lifecycle_status IN ('pruned', 'rejected') OR (artifact_uri_internal = artifact_ref AND artifact_uri_internal ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$')",
             name="ck_bayesian_artifacts_internal_uri",
         ),
         CheckConstraint(
