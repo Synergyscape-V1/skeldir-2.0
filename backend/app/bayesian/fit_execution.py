@@ -37,6 +37,7 @@ from app.bayesian.source_snapshot import (
 )
 from app.bayesian.temp_workspace import create_workspace_lease
 from app.bayesian.tenant_context import (
+    assert_bound_tenant,
     assert_fresh_checkout_is_clean,
     bind_transaction_local_tenant,
 )
@@ -56,6 +57,7 @@ TERMINAL_OR_POST_SAMPLE_STATUSES = {
 
 def _set_tenant_context(conn, tenant_id: UUID) -> None:
     bind_transaction_local_tenant(conn, tenant_id=tenant_id)
+    assert_bound_tenant(conn, tenant_id=tenant_id)
 
 
 def _fit_identity(conn, *, fit_id: UUID) -> UUID | None:
@@ -322,6 +324,19 @@ def _diagnostic_stage_failure_reason(
     if "intervals_started" in stages and "intervals_completed" not in stages:
         return "diagnostics_timeout" if timed_out else "diagnostics_failed"
     return None
+
+
+def _sampler_failure_stream_metadata(result) -> dict[str, object]:
+    """Return child-stream metadata without retaining stdout/stderr text."""
+
+    return {
+        "stdout_total_bytes": result.stdout.total_bytes,
+        "stdout_retained_bytes": len(result.stdout.retained_bytes),
+        "stdout_truncated": result.stdout.truncated,
+        "stderr_total_bytes": result.stderr.total_bytes,
+        "stderr_retained_bytes": len(result.stderr.retained_bytes),
+        "stderr_truncated": result.stderr.truncated,
+    }
 
 
 def _persist_result_summary(
@@ -722,9 +737,7 @@ def execute_fit_intent_sync(
                 "fit_id": str(fit_id),
                 "tenant_id": str(tenant_id),
                 "returncode": result.returncode,
-                "stderr_retained_bytes": len(result.stderr.retained_bytes),
-                "stderr_truncated": result.stderr.truncated,
-                "stderr_total_bytes": result.stderr.total_bytes,
+                **_sampler_failure_stream_metadata(result),
             }
 
         result_summary = json.loads(output_path.read_text(encoding="utf-8"))
