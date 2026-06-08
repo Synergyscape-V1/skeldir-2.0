@@ -178,8 +178,10 @@ def _expires_at(retention_class: str, now: datetime) -> datetime | None:
     return None if ttl is None else now + ttl
 
 
-def _artifact_ref(*, fit_id: UUID, artifact_type: str, artifact_hash: str) -> str:
-    return f"b24://artifact/{fit_id}/{artifact_type}/{artifact_hash[:12]}"
+def _artifact_ref(
+    *, tenant_id: UUID, fit_id: UUID, artifact_type: str, artifact_hash: str
+) -> str:
+    return f"b24://artifact/{tenant_id}/{fit_id}/{artifact_type}/{artifact_hash[:12]}"
 
 
 def _ensure_quota_row(
@@ -463,6 +465,7 @@ def persist_artifact_sync(
     )
     size_bytes = len(stored_bytes)
     artifact_ref = _artifact_ref(
+        tenant_id=tenant_id,
         fit_id=fit_id,
         artifact_type=artifact_type,
         artifact_hash=stored_hash,

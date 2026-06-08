@@ -19,7 +19,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.bayesian.artifact_repository import persist_artifact_sync
-from app.bayesian.compiledir_reaper import cleanup_compiledir, create_compiledir_lease
+from app.bayesian.cleanup import cleanup_fit_attempt, run_preflight_janitor
+from app.bayesian.compiledir_reaper import create_compiledir_lease
 from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.result_contract import validate_result_summary
 from app.bayesian.rng_policy import RngSeedMaterial, derive_rng_seed
@@ -33,6 +34,11 @@ from app.bayesian.source_snapshot import (
     P6SourceAuthorityError,
     P6SourceObservedInput,
     load_p6_observed_input_from_source_snapshot_sync,
+)
+from app.bayesian.temp_workspace import create_workspace_lease
+from app.bayesian.tenant_context import (
+    assert_fresh_checkout_is_clean,
+    bind_transaction_local_tenant,
 )
 
 
@@ -49,10 +55,7 @@ TERMINAL_OR_POST_SAMPLE_STATUSES = {
 
 
 def _set_tenant_context(conn, tenant_id: UUID) -> None:
-    conn.execute(
-        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-        {"tenant_id": str(tenant_id)},
-    )
+    bind_transaction_local_tenant(conn, tenant_id=tenant_id)
 
 
 def _fit_identity(conn, *, fit_id: UUID) -> UUID | None:
@@ -487,6 +490,8 @@ def execute_fit_intent_sync(
     task_id: str,
 ) -> dict[str, object]:
     started = time.monotonic()
+    run_preflight_janitor(ttl_seconds=3600, max_deletions=10, max_scan_entries=100)
+    assert_fresh_checkout_is_clean(engine)
     try:
         with engine.begin() as conn:
             tenant_id = _fit_identity(conn, fit_id=fit_id)
@@ -508,15 +513,8 @@ def execute_fit_intent_sync(
             "compute_started": False,
         }
 
-    lease = create_compiledir_lease(
-        execution_id=f"{fit_id}-{task_id}-{uuid4().hex}",
-        worker_id=os.getenv("B24_BAYESIAN_WORKER_RUNTIME_ID", "bayesian-worker"),
-    )
-    ipc_dir = lease.path / "ipc"
-    ipc_dir.mkdir(parents=True, exist_ok=False)
-    input_path = ipc_dir / "b24_p6_child_input.json"
-    output_path = ipc_dir / "b24_p6_child_result.json"
-    marker_path = ipc_dir / "b24_p6_stage_markers.jsonl"
+    lease = None
+    workspace = None
 
     try:
         with engine.begin() as conn:
@@ -538,6 +536,26 @@ def execute_fit_intent_sync(
                     "idempotent_replay": True,
                     "compute_started": False,
                 }
+        execution_attempt_id = f"{fit_id}-{task_id}-{uuid4().hex}"
+        source_snapshot_hash = str(row["source_snapshot_hash"])
+        workspace = create_workspace_lease(
+            tenant_id=tenant_id,
+            fit_id=fit_id,
+            source_snapshot_hash=source_snapshot_hash,
+            execution_attempt_id=execution_attempt_id,
+        )
+        lease = create_compiledir_lease(
+            execution_id=execution_attempt_id,
+            worker_id=os.getenv("B24_BAYESIAN_WORKER_RUNTIME_ID", "bayesian-worker"),
+            tenant_id=tenant_id,
+            fit_id=fit_id,
+            source_snapshot_hash=source_snapshot_hash,
+        )
+        ipc_dir = workspace.path / "ipc"
+        ipc_dir.mkdir(parents=True, exist_ok=False)
+        input_path = ipc_dir / "b24_p6_child_input.json"
+        output_path = ipc_dir / "b24_p6_child_result.json"
+        marker_path = ipc_dir / "b24_p6_stage_markers.jsonl"
         try:
             with engine.connect() as replay_conn:
                 replay_conn = replay_conn.execution_options(
@@ -704,7 +722,8 @@ def execute_fit_intent_sync(
                 "fit_id": str(fit_id),
                 "tenant_id": str(tenant_id),
                 "returncode": result.returncode,
-                "stderr_retained": result.stderr.retained_text,
+                "stderr_retained_bytes": len(result.stderr.retained_bytes),
+                "stderr_truncated": result.stderr.truncated,
                 "stderr_total_bytes": result.stderr.total_bytes,
             }
 
@@ -745,5 +764,5 @@ def execute_fit_intent_sync(
             "stderr_total_bytes": result.stderr.total_bytes,
         }
     finally:
-        if lease.path.exists():
-            cleanup_compiledir(lease)
+        cleanup_fit_attempt(workspace=workspace, compiledir=lease)
+        assert_fresh_checkout_is_clean(engine)

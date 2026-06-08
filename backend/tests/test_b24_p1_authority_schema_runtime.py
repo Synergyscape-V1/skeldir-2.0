@@ -264,7 +264,9 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(
     await _assert_table_exists("bayesian_artifacts")
     tenant_a, _ = test_tenant_pair
     fit_id = await _insert_fit(tenant_a, snapshot_hash=OTHER_HASH)
-    valid_artifact_ref = f"b24://artifact/{fit_id}/diagnostics/{VALID_HASH[:12]}"
+    valid_artifact_ref = (
+        f"b24://artifact/{tenant_a}/{fit_id}/diagnostics/{VALID_HASH[:12]}"
+    )
 
     async with get_session(tenant_a) as session:
         await session.execute(
@@ -344,28 +346,28 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(
                 {
                     "tenant_id": str(tenant_a),
                     "fit_id": str(fit_id),
-                    "artifact_ref": f"b24://artifact/{fit_id}/diagnostics/{VALID_HASH[:12]}",
+                    "artifact_ref": f"b24://artifact/{tenant_a}/{fit_id}/diagnostics/{VALID_HASH[:12]}",
                     "artifact_hash": VALID_HASH,
                 },
             )
 
     bad_artifacts = [
         {
-            "artifact_ref": f"b24://artifact/{fit_id}/invalid/{VALID_HASH[:12]}",
+            "artifact_ref": f"b24://artifact/{tenant_a}/{fit_id}/invalid/{VALID_HASH[:12]}",
             "artifact_hash": VALID_HASH,
             "artifact_type": "invalid",
             "storage_backend": "postgres",
             "artifact_size_bytes": 0,
         },
         {
-            "artifact_ref": f"b24://artifact/{fit_id}/diagnostics/{'a' * 12}",
+            "artifact_ref": f"b24://artifact/{tenant_a}/{fit_id}/diagnostics/{'a' * 12}",
             "artifact_hash": VALID_HASH,
             "artifact_type": "diagnostics",
             "storage_backend": "s3_public",
             "artifact_size_bytes": 0,
         },
         {
-            "artifact_ref": f"b24://artifact/{fit_id}/diagnostics/{'b' * 12}",
+            "artifact_ref": f"b24://artifact/{tenant_a}/{fit_id}/diagnostics/{'b' * 12}",
             "artifact_hash": "c" * 63,
             "artifact_type": "diagnostics",
             "storage_backend": "postgres",
@@ -420,7 +422,7 @@ async def test_b24_p1_artifact_fk_is_tenant_bound(test_tenant_pair) -> None:
         source_window_start=_dt("2026-02-01T00:00:00+00:00"),
         source_window_end=_dt("2026-03-01T00:00:00+00:00"),
     )
-    artifact_ref = f"b24://artifact/{fit_id}/diagnostics/{'d' * 12}"
+    artifact_ref = f"b24://artifact/{tenant_a}/{fit_id}/diagnostics/{'d' * 12}"
 
     async with get_session(tenant_b) as session:
         with pytest.raises((IntegrityError, DBAPIError)):

@@ -244,7 +244,7 @@ def test_b24_p6_parent_recomputes_after_db_failure_without_staging() -> None:
     child_pos = text.find("result = run_supervised_sampler")
     persist_tx_pos = text.find("with engine.begin() as conn:", child_pos)
     persist_call_pos = text.find("_persist_result_summary(", persist_tx_pos)
-    cleanup_pos = text.rfind("cleanup_compiledir(lease)")
+    cleanup_pos = text.rfind("cleanup_fit_attempt(workspace=workspace, compiledir=lease)")
     assert -1 not in {child_pos, persist_tx_pos, persist_call_pos, cleanup_pos}
     assert "cleanup_compiledir_on_exit=False" in text
     assert "except" not in text[persist_tx_pos:persist_call_pos]
