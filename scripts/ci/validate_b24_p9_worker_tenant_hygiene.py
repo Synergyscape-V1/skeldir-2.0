@@ -99,9 +99,17 @@ def validate_workspace(text: str | None = None) -> None:
         "max_deletions",
         "max_scan_entries",
         "_workspace_reaper_lock",
+        "lock_contended",
+        "except FileExistsError",
+        "except FileNotFoundError",
+        "_is_owned_child_path",
     ):
         _require(token in workspace, f"P9 workspace missing: {token}")
-    for forbidden in ("while True", "ignore_errors=True", "tempfile.TemporaryDirectory"):
+    for forbidden in (
+        "while True",
+        "ignore_errors=True",
+        "tempfile.TemporaryDirectory",
+    ):
         _require(forbidden not in workspace, f"P9 workspace forbidden: {forbidden}")
 
 
@@ -114,6 +122,10 @@ def validate_compiledir(text: str | None = None) -> None:
         "compiledir tenant, fit, and source hash must travel together",
         "_safe_segment(source_snapshot_hash",
         "root.rglob(METADATA_FILE)",
+        "lock_contended",
+        "except FileExistsError",
+        "except FileNotFoundError",
+        "_is_owned_child_path",
     ):
         _require(token in compiledir, f"P9 compiledir missing: {token}")
 
@@ -123,7 +135,7 @@ def validate_child_env(text: str | None = None) -> None:
     for token in (
         "source = source_env if source_env is not None else os.environ",
         "env = {name: source[name] for name in ALLOWLISTED_CHILD_ENV if name in source}",
-        "env[\"B24_PYTENSOR_COMPILEDIR\"]",
+        'env["B24_PYTENSOR_COMPILEDIR"]',
         "base_compiledir=",
         "PYTENSORRC",
     ):
@@ -137,24 +149,28 @@ def validate_fit_execution(text: str | None = None) -> None:
     for token in (
         "run_preflight_janitor(",
         "assert_fresh_checkout_is_clean(engine)",
+        "assert_bound_tenant(conn, tenant_id=tenant_id)",
         "create_workspace_lease(",
         "create_compiledir_lease(",
         "tenant_id=tenant_id",
         "fit_id=fit_id",
         "source_snapshot_hash=source_snapshot_hash",
-        "ipc_dir = workspace.path / \"ipc\"",
+        'ipc_dir = workspace.path / "ipc"',
         "cleanup_fit_attempt(workspace=workspace, compiledir=lease)",
+        "_sampler_failure_stream_metadata(result)",
         "stderr_retained_bytes",
         "stderr_truncated",
     ):
         _require(token in fit_execution, f"P9 fit execution missing: {token}")
     for forbidden in (
-        "stderr_retained\": result.stderr.retained_text",
-        "ipc_dir = lease.path / \"ipc\"",
+        'stderr_retained": result.stderr.retained_text',
+        'ipc_dir = lease.path / "ipc"',
         "cleanup_compiledir(lease)",
         "os.environ[",
     ):
-        _require(forbidden not in fit_execution, f"P9 fit execution forbidden: {forbidden}")
+        _require(
+            forbidden not in fit_execution, f"P9 fit execution forbidden: {forbidden}"
+        )
 
 
 def validate_artifact_authority(
@@ -162,18 +178,23 @@ def validate_artifact_authority(
     models_text: str | None = None,
     migration_text: str | None = None,
 ) -> None:
-    repository = repository_text if repository_text is not None else _read(ARTIFACT_REPOSITORY)
+    repository = (
+        repository_text if repository_text is not None else _read(ARTIFACT_REPOSITORY)
+    )
     models = models_text if models_text is not None else _read(MODELS)
     migration = migration_text if migration_text is not None else _read(P9_MIGRATION)
     for token in (
         "tenant_id: UUID",
         "b24://artifact/{tenant_id}/{fit_id}/{artifact_type}/{artifact_hash[:12]}",
+        "assert_bound_tenant(conn, tenant_id=tenant_id)",
     ):
         _require(token in repository, f"P9 artifact repository missing: {token}")
     tenant_bound_regex = (
         "^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$"
     )
-    _require(tenant_bound_regex in models, "P9 models missing tenant-bound artifact regex")
+    _require(
+        tenant_bound_regex in models, "P9 models missing tenant-bound artifact regex"
+    )
     _require(
         tenant_bound_regex in migration,
         "P9 migration missing tenant-bound artifact regex",
@@ -200,13 +221,23 @@ def validate_tests_and_ci(
         "test_b24_p9_child_env_is_allowlisted_without_parent_mutation",
         "test_b24_p9_artifact_ref_contains_tenant_authority",
         "test_b24_p9_fit_execution_wires_cleanup_and_payload_airgap",
+        "test_b24_p9_same_process_sequential_reused_worker_runtime_lane",
+        "test_b24_p9_concurrent_tenant_isolation_runtime_surfaces",
+        "test_b24_p9_concurrent_janitor_toctou_safe",
+        "test_b24_p9_logs_and_failure_payloads_do_not_emit_sentinels",
+        "test_b24_p9_native_memory_lifecycle_child_per_fit_parent_airgap",
         "test_b24_p9_validator_negative_controls",
     ):
         _require(token in tests, f"P9 unit proof missing: {token}")
     for token in (
         "test_b24_p9_transaction_local_guc_clean_return_and_sequential_isolation",
+        "test_b24_p9_db_proof_requires_explicit_flag_in_ci",
+        "test_b24_p9_session_level_guc_poison_is_detected",
+        "test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction",
+        "test_b24_p9_concurrent_tenant_isolation_db_and_runtime_surfaces",
         "bind_transaction_local_tenant",
         "assert_fresh_checkout_is_clean",
+        "B2.4-P9 protected CI requires SKELDIR_B24_P9_REQUIRE_DB_PROOFS=1",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
     ):
         _require(token in db_tests, f"P9 DB proof missing: {token}")
@@ -261,6 +292,15 @@ def run_negative_controls() -> None:
             "cleanup_workspace",
         ),
         (
+            "workspace_lock_contention_removed",
+            lambda: validate_workspace(
+                _read(TEMP_WORKSPACE).replace(
+                    "except FileExistsError", "except RuntimeError"
+                )
+            ),
+            "FileExistsError",
+        ),
+        (
             "compiledir_hash_removed",
             lambda: validate_compiledir(
                 _read(COMPILEDIR_REAPER).replace(
@@ -271,14 +311,26 @@ def run_negative_controls() -> None:
             "source_snapshot_hash",
         ),
         (
+            "compiledir_lock_contention_removed",
+            lambda: validate_compiledir(
+                _read(COMPILEDIR_REAPER).replace(
+                    "except FileExistsError", "except RuntimeError"
+                )
+            ),
+            "FileExistsError",
+        ),
+        (
             "parent_env_mutation",
-            lambda: validate_child_env(_read(CHILD_ENVIRONMENT) + "\nos.environ['X']='Y'\n"),
+            lambda: validate_child_env(
+                _read(CHILD_ENVIRONMENT) + "\nos.environ['X']='Y'\n"
+            ),
             "os.environ",
         ),
         (
             "stderr_payload_returned",
             lambda: validate_fit_execution(
-                _read(FIT_EXECUTION) + "\nstderr_retained\": result.stderr.retained_text\n"
+                _read(FIT_EXECUTION)
+                + '\nstderr_retained": result.stderr.retained_text\n'
             ),
             "stderr",
         ),
@@ -291,6 +343,16 @@ def run_negative_controls() -> None:
                 )
             ),
             "artifact",
+        ),
+        (
+            "artifact_bound_tenant_assert_removed",
+            lambda: validate_artifact_authority(
+                repository_text=_read(ARTIFACT_REPOSITORY).replace(
+                    "assert_bound_tenant(conn, tenant_id=tenant_id)",
+                    "pass",
+                )
+            ),
+            "assert_bound_tenant",
         ),
         (
             "required_status_removed",

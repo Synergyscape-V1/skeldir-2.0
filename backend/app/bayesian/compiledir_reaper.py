@@ -84,7 +84,9 @@ def create_compiledir_lease(
     parent_pid = os.getpid()
     if any(value is not None for value in (tenant_id, fit_id, source_snapshot_hash)):
         if tenant_id is None or fit_id is None or source_snapshot_hash is None:
-            raise ValueError("compiledir tenant, fit, and source hash must travel together")
+            raise ValueError(
+                "compiledir tenant, fit, and source hash must travel together"
+            )
         path = (
             root
             / worker
@@ -95,8 +97,11 @@ def create_compiledir_lease(
             / _safe_segment(identity, label="execution_id")
         )
     else:
-        path = root / worker / f"parent-{parent_pid}" / _safe_segment(
-            identity, label="execution_id"
+        path = (
+            root
+            / worker
+            / f"parent-{parent_pid}"
+            / _safe_segment(identity, label="execution_id")
         )
     resolved_root = root.resolve()
     resolved_path = path.resolve()
@@ -170,16 +175,39 @@ def _pid_alive(pid: int | None) -> bool:
 def _reaper_lock(root: Path):
     root.mkdir(parents=True, exist_ok=True)
     lock = root / LOCK_FILE
-    fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    try:
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        yield False
+        return
     try:
         os.write(fd, str(os.getpid()).encode("ascii"))
-        yield
+        yield True
     finally:
         os.close(fd)
         try:
             lock.unlink()
         except FileNotFoundError:
             pass
+
+
+def _is_owned_child_path(root: Path, path: Path) -> bool:
+    try:
+        resolved_root = root.resolve(strict=True)
+    except FileNotFoundError:
+        return False
+    try:
+        resolved_path = path.resolve(strict=True)
+    except FileNotFoundError:
+        return False
+    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
+        return False
+    current = path
+    while current != root:
+        if current.is_symlink():
+            return False
+        current = current.parent
+    return True
 
 
 def reap_expired_compiledirs(
@@ -198,14 +226,33 @@ def reap_expired_compiledirs(
             "preserved_active": 0,
             "preserved_foreign": 0,
             "preserved_invalid": 0,
+            "lock_contended": False,
         }
-    with _reaper_lock(root):
+    lock_contended = False
+    with _reaper_lock(root) as lock_acquired:
+        if not lock_acquired:
+            lock_contended = True
+            return {
+                "root": str(root),
+                "scanned": 0,
+                "deleted": 0,
+                "preserved_active": 0,
+                "preserved_foreign": 0,
+                "preserved_invalid": 0,
+                "lock_contended": lock_contended,
+            }
         for metadata_path in list(root.rglob(METADATA_FILE)):
             if scanned >= max_scan_entries or deleted >= max_deletions:
                 break
             scanned += 1
+            if not _is_owned_child_path(root, metadata_path.parent):
+                preserved_invalid += 1
+                continue
             try:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                deleted += 1
+                continue
             except Exception:
                 preserved_invalid += 1
                 continue
@@ -221,7 +268,10 @@ def reap_expired_compiledirs(
             if now - created_at < ttl_seconds:
                 preserved_active += 1
                 continue
-            shutil.rmtree(metadata_path.parent, ignore_errors=False)
+            try:
+                shutil.rmtree(metadata_path.parent, ignore_errors=False)
+            except FileNotFoundError:
+                pass
             deleted += 1
     return {
         "root": str(root),
@@ -230,4 +280,5 @@ def reap_expired_compiledirs(
         "preserved_active": preserved_active,
         "preserved_foreign": preserved_foreign,
         "preserved_invalid": preserved_invalid,
+        "lock_contended": lock_contended,
     }

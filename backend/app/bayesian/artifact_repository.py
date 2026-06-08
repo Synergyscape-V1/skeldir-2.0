@@ -28,6 +28,7 @@ from app.bayesian.exceptions import (
     BayesianArtifactQuotaExceededError,
 )
 from app.bayesian.models import BayesianArtifact
+from app.bayesian.tenant_context import assert_bound_tenant
 
 
 @dataclass(frozen=True)
@@ -454,6 +455,7 @@ def persist_artifact_sync(
     for identical `(tenant_id, artifact_ref, artifact_hash)` writes.
     """
 
+    assert_bound_tenant(conn, tenant_id=tenant_id)
     if artifact_type not in P8_ALLOWED_ARTIFACT_TYPES:
         raise BayesianArtifactPolicyError("artifact type is not P8-governed")
     if retention_class not in P8_ALLOWED_RETENTION_CLASSES:
@@ -615,6 +617,7 @@ def verify_artifact_bytes_sync(
     tenant_id: UUID,
     artifact_ref: str,
 ) -> bool:
+    assert_bound_tenant(conn, tenant_id=tenant_id)
     row = (
         conn.execute(
             text(
@@ -648,6 +651,7 @@ def prune_expired_artifacts_sync(
 ) -> dict[str, int]:
     """Prune expired non-audit artifacts with audit-preserving tombstones."""
 
+    assert_bound_tenant(conn, tenant_id=tenant_id)
     bounded_limit = min(
         max(batch_limit, 1), DEFAULT_P8_ARTIFACT_POLICY.max_prune_batch_size
     )
