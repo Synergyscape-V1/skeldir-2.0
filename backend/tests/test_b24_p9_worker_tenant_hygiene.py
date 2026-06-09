@@ -10,10 +10,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.pool import NullPool
 
 from app.bayesian.artifact_repository import _artifact_ref
 from app.bayesian.cleanup import cleanup_fit_attempt, run_preflight_janitor
 from app.bayesian.compiledir_reaper import create_compiledir_lease
+from app.bayesian.db_engine import create_bayesian_worker_engine
 from app.bayesian.fit_execution import _sampler_failure_stream_metadata
 from app.bayesian.sampler_supervisor import (
     CapturedChildStream,
@@ -33,6 +35,8 @@ from app.bayesian.temp_workspace import (
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "scripts/ci/validate_b24_p9_worker_tenant_hygiene.py"
 FIT_EXECUTION = ROOT / "backend/app/bayesian/fit_execution.py"
+DB_ENGINE = ROOT / "backend/app/bayesian/db_engine.py"
+TASKS_BAYESIAN = ROOT / "backend/app/tasks/bayesian.py"
 TENANT_CONTEXT = ROOT / "backend/app/bayesian/tenant_context.py"
 TEMP_WORKSPACE = ROOT / "backend/app/bayesian/temp_workspace.py"
 CHILD_ENVIRONMENT = ROOT / "backend/app/bayesian/child_environment.py"
@@ -118,6 +122,32 @@ def test_b24_p9_transaction_context_uses_set_local_only() -> None:
     assert "assert_fresh_checkout_is_clean" in text
     assert "set_config('app.current_tenant_id', :tenant_id, false)" not in text
     assert "lru_cache" not in text
+
+
+def test_b24_p9_bayesian_worker_engine_factory_is_nonpooled() -> None:
+    text = _read(DB_ENGINE)
+    for token in (
+        "create_bayesian_worker_engine",
+        "poolclass=NullPool",
+        "assert_bayesian_worker_engine_nonpooled",
+        "bayesian_worker_engine_must_use_nullpool",
+        "runtime_sync_database_url",
+    ):
+        assert token in text
+    engine = create_bayesian_worker_engine("sqlite://")
+    try:
+        assert isinstance(engine.pool, NullPool)
+    finally:
+        engine.dispose()
+
+
+def test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine() -> None:
+    text = _read(TASKS_BAYESIAN)
+    assert "create_bayesian_worker_engine(" in text
+    assert "runtime_sync_database_url()" in text
+    assert "from sqlalchemy import create_engine" not in text
+    assert "pool_size=1" not in text
+    assert "max_overflow=0" not in text
 
 
 def test_b24_p9_workspace_scopes_and_cleans_tenant_fit_hash_attempt(

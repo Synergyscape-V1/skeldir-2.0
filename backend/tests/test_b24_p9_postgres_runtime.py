@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import json
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.pool import NullPool
 
-from app.bayesian.artifact_repository import _artifact_ref
+from app.bayesian.artifact_repository import _artifact_ref, persist_artifact_sync
 from app.bayesian.cleanup import cleanup_fit_attempt
 from app.bayesian.compiledir_reaper import create_compiledir_lease
+from app.bayesian.db_engine import create_bayesian_worker_engine
 from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.fit_execution import (
     _load_fit_for_execution,
@@ -21,6 +26,11 @@ from app.bayesian.fit_execution import (
     _set_tenant_context,
 )
 from app.bayesian.model_spec import B24_P6_MODEL_TYPE, B24_P6_MODEL_VERSION
+from app.bayesian.sampler_supervisor import (
+    build_child_env_for_lease,
+    run_supervised_sampler,
+    synthetic_blocking_child_command,
+)
 from app.bayesian.temp_workspace import create_workspace_lease
 from app.bayesian.tenant_context import (
     assert_bound_tenant,
@@ -35,6 +45,7 @@ from app.db.session import engine, get_session
 
 START = datetime(2026, 5, 1, tzinfo=timezone.utc)
 END = datetime(2026, 6, 1, tzinfo=timezone.utc)
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _require_db_proofs() -> bool:
@@ -133,6 +144,384 @@ async def _insert_fit(tenant_id: UUID, *, fit_id: UUID, source_hash: str) -> Non
                 "source_snapshot_hash": source_hash,
             },
         )
+
+
+def _sync_database_url() -> str:
+    return to_sync_postgres_dsn(get_database_url())
+
+
+def _observer_engine():
+    return create_engine(_sync_database_url(), isolation_level="AUTOCOMMIT")
+
+
+def _backend_state(observer, pid: int) -> dict[str, object] | None:
+    row = (
+        observer.execute(
+            text(
+                """
+                SELECT state, xact_start, backend_xid, backend_xmin
+                FROM pg_stat_activity
+                WHERE pid = :pid
+                """
+            ),
+            {"pid": int(pid)},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return dict(row) if row is not None else None
+
+
+def _assert_backend_absent_or_not_idle_in_transaction(observer, pid: int) -> None:
+    state = _backend_state(observer, pid)
+    if state is None:
+        return
+    assert state["state"] != "idle in transaction"
+    assert state["xact_start"] is None
+    assert state["backend_xid"] is None
+    assert state["backend_xmin"] is None
+
+
+def _poison_one_worker_backend(worker_engine, *, tenant_id: UUID) -> int:
+    lock_key = int(tenant_id.int % 2_147_483_647)
+    with worker_engine.connect() as conn:
+        pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+        conn.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        conn.execute(text("SET search_path TO pg_catalog"))
+        conn.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": lock_key})
+        conn.execute(text("CREATE TEMP TABLE p9_temp_poison(value integer)"))
+        conn.execute(text("INSERT INTO p9_temp_poison(value) VALUES (1)"))
+        conn.commit()
+        assert current_tenant_guc(conn) == str(tenant_id)
+    return pid
+
+
+def _assert_fresh_worker_backend_is_clean(
+    worker_engine, *, old_pid: int, lock_key: int
+) -> int:
+    with worker_engine.connect() as conn:
+        new_pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+        assert new_pid != old_pid
+        assert current_tenant_guc(conn) is None
+        search_path = str(conn.execute(text("SHOW search_path")).scalar_one())
+        assert search_path != "pg_catalog"
+        temp_table = conn.execute(
+            text("SELECT to_regclass('pg_temp.p9_temp_poison')")
+        ).scalar_one_or_none()
+        assert temp_table is None
+        lock_acquired = bool(
+            conn.execute(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": int(lock_key)},
+            ).scalar_one()
+        )
+        assert lock_acquired is True
+        conn.execute(
+            text("SELECT pg_advisory_unlock(:lock_key)"),
+            {"lock_key": int(lock_key)},
+        )
+    return new_pid
+
+
+def _representative_worker_db_lifecycle_attempt(
+    worker_engine,
+    *,
+    tenant_id: UUID,
+    fit_id: UUID,
+    source_hash: str,
+    attempt_id: str,
+    sentinel: str,
+) -> dict[str, object]:
+    parent_pid = os.getpid()
+    workspace = None
+    compiledir = None
+    artifact_ref = None
+    try:
+        with worker_engine.begin() as conn:
+            bind_transaction_local_tenant(conn, tenant_id=tenant_id)
+            assert_bound_tenant(conn, tenant_id=tenant_id)
+            updated = conn.execute(
+                text(
+                    """
+                    UPDATE public.bayesian_model_fits
+                    SET status = 'running',
+                        sampling_started_at = COALESCE(sampling_started_at, now()),
+                        updated_at = now()
+                    WHERE tenant_id = :tenant_id
+                      AND id = :fit_id
+                      AND status = 'queued'
+                    """
+                ),
+                {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+            )
+            assert int(updated.rowcount or 0) == 1
+
+        workspace = create_workspace_lease(
+            tenant_id=tenant_id,
+            fit_id=fit_id,
+            source_snapshot_hash=source_hash,
+            execution_attempt_id=attempt_id,
+        )
+        compiledir = create_compiledir_lease(
+            execution_id=attempt_id,
+            worker_id="p9-db-representative-worker",
+            tenant_id=tenant_id,
+            fit_id=fit_id,
+            source_snapshot_hash=source_hash,
+        )
+        ipc_dir = workspace.path / "ipc"
+        ipc_dir.mkdir(parents=True, exist_ok=False)
+        (ipc_dir / "private_sentinel.txt").write_text(sentinel, encoding="utf-8")
+        result = run_supervised_sampler(
+            synthetic_blocking_child_command(seconds=5),
+            deadline_seconds=0.2,
+            env=build_child_env_for_lease(
+                compiledir,
+                source_env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "PYTHONPATH": str(ROOT / "backend"),
+                    "DATABASE_URL": f"postgresql://{sentinel}@must-not-leak/db",
+                    "PYTENSOR_FLAGS": "mode=FAST_RUN,base_compiledir=/tmp/global",
+                },
+            ),
+            compiledir_lease=compiledir,
+            cleanup_compiledir_on_exit=False,
+        )
+        assert result.child_pid != parent_pid
+        assert result.killed_by_supervisor is True
+        assert result.orphan_reaped is True
+
+        diagnostic_payload = {
+            "diagnostic_status": "unavailable",
+            "credible_interval_status": "not_available",
+            "stderr_total_bytes": result.stderr.total_bytes,
+            "stdout_total_bytes": result.stdout.total_bytes,
+            "child_pid_recorded": result.child_pid,
+        }
+        with worker_engine.begin() as conn:
+            bind_transaction_local_tenant(conn, tenant_id=tenant_id)
+            artifact = persist_artifact_sync(
+                conn,
+                tenant_id=tenant_id,
+                fit_id=fit_id,
+                artifact_type="diagnostics",
+                payload=diagnostic_payload,
+                retention_class="standard",
+            )
+            artifact_ref = str(artifact["artifact_ref"])
+            assert_bound_tenant(conn, tenant_id=tenant_id)
+
+        with worker_engine.begin() as conn:
+            _mark_fit_failure(
+                conn,
+                tenant_id=tenant_id,
+                fit_id=fit_id,
+                status=FitStatus.FAILED,
+                fallback_reason=FallbackReason.WORKER_FAILURE,
+                runtime_seconds=1,
+            )
+            assert_bound_tenant(conn, tenant_id=tenant_id)
+    finally:
+        cleanup = cleanup_fit_attempt(workspace=workspace, compiledir=compiledir)
+
+    with worker_engine.begin() as conn:
+        bind_transaction_local_tenant(conn, tenant_id=tenant_id)
+        fit_row = (
+            conn.execute(
+                text(
+                    """
+                    SELECT status, fallback_applied, fallback_reason
+                    FROM public.bayesian_model_fits
+                    WHERE tenant_id = :tenant_id AND id = :fit_id
+                    """
+                ),
+                {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+            )
+            .mappings()
+            .one()
+        )
+        artifact_count = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM public.bayesian_artifacts
+                    WHERE tenant_id = :tenant_id
+                      AND fit_id = :fit_id
+                      AND artifact_ref = :artifact_ref
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "fit_id": str(fit_id),
+                    "artifact_ref": artifact_ref,
+                },
+            ).scalar_one()
+        )
+    return {
+        "parent_pid": parent_pid,
+        "tenant_id": str(tenant_id),
+        "fit_id": str(fit_id),
+        "artifact_ref": artifact_ref,
+        "fit": dict(fit_row),
+        "artifact_count": artifact_count,
+        "workspace": str(workspace.path) if workspace is not None else None,
+        "compiledir": str(compiledir.path) if compiledir is not None else None,
+        "workspace_removed": cleanup.workspace_removed,
+        "compiledir_removed": cleanup.compiledir_removed,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_bayesian_worker_engine_uses_nullpool_structural_sanitation() -> (
+    None
+):
+    await _assert_table_exists("bayesian_model_fits")
+    worker_engine = create_bayesian_worker_engine(_sync_database_url())
+    try:
+        assert isinstance(worker_engine.pool, NullPool)
+        assert assert_fresh_checkout_is_clean(worker_engine).is_clean
+    finally:
+        worker_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_pool_poison_is_closed_and_replaced_without_manual_reset(
+    test_tenant_pair,
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    tenant_a, _tenant_b = test_tenant_pair
+    lock_key = int(tenant_a.int % 2_147_483_647)
+    worker_engine = create_bayesian_worker_engine(_sync_database_url())
+    observer_engine = _observer_engine()
+    try:
+        old_pid = _poison_one_worker_backend(worker_engine, tenant_id=tenant_a)
+        with observer_engine.connect() as observer:
+            _assert_backend_absent_or_not_idle_in_transaction(observer, old_pid)
+        new_pid = _assert_fresh_worker_backend_is_clean(
+            worker_engine, old_pid=old_pid, lock_key=lock_key
+        )
+        with observer_engine.connect() as observer:
+            _assert_backend_absent_or_not_idle_in_transaction(observer, new_pid)
+        assert assert_fresh_checkout_is_clean(worker_engine).is_clean
+    finally:
+        worker_engine.dispose()
+        observer_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_pg_stat_activity_backend_not_idle_in_transaction(
+    test_tenant_pair,
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    tenant_a, _tenant_b = test_tenant_pair
+    worker_engine = create_bayesian_worker_engine(_sync_database_url())
+    observer_engine = _observer_engine()
+    try:
+        with pytest.raises(RuntimeError, match="injected_after_tenant_bind"):
+            with worker_engine.begin() as conn:
+                pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+                bind_transaction_local_tenant(conn, tenant_id=tenant_a)
+                raise RuntimeError("injected_after_tenant_bind")
+        with observer_engine.connect() as observer:
+            _assert_backend_absent_or_not_idle_in_transaction(observer, pid)
+    finally:
+        worker_engine.dispose()
+        observer_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_reset_failure_surface_replaced_by_invalidation_or_close(
+    test_tenant_pair,
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    tenant_a, _tenant_b = test_tenant_pair
+    worker_engine = create_bayesian_worker_engine(_sync_database_url())
+    observer_engine = _observer_engine()
+    try:
+        with worker_engine.connect() as conn:
+            dirty_pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+            conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            conn.commit()
+            conn.invalidate()
+        with observer_engine.connect() as observer:
+            _assert_backend_absent_or_not_idle_in_transaction(observer, dirty_pid)
+        with worker_engine.connect() as conn:
+            replacement_pid = int(
+                conn.execute(text("SELECT pg_backend_pid()")).scalar_one()
+            )
+            assert replacement_pid != dirty_pid
+            assert current_tenant_guc(conn) is None
+        assert assert_fresh_checkout_is_clean(worker_engine).is_clean
+    finally:
+        worker_engine.dispose()
+        observer_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_representative_same_process_worker_path_exercises_db_lifecycle(
+    test_tenant_pair, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    await _assert_table_exists("bayesian_artifacts")
+    monkeypatch.setenv("B24_BAYESIAN_WORKSPACE_ROOT", str(tmp_path / "workspaces"))
+    monkeypatch.setenv("B24_PYTENSOR_ROOT", str(tmp_path / "compiledirs"))
+    tenant_a, tenant_b = test_tenant_pair
+    fit_a = uuid4()
+    fit_b = uuid4()
+    await _insert_fit(tenant_a, fit_id=fit_a, source_hash="e" * 64)
+    await _insert_fit(tenant_b, fit_id=fit_b, source_hash="f" * 64)
+
+    worker_engine = create_bayesian_worker_engine(_sync_database_url())
+    try:
+        state_a = _representative_worker_db_lifecycle_attempt(
+            worker_engine,
+            tenant_id=tenant_a,
+            fit_id=fit_a,
+            source_hash="e" * 64,
+            attempt_id="attempt-db-a",
+            sentinel="P9_DB_TENANT_A_SENTINEL_SHOULD_NOT_REACH_B",
+        )
+        state_b = _representative_worker_db_lifecycle_attempt(
+            worker_engine,
+            tenant_id=tenant_b,
+            fit_id=fit_b,
+            source_hash="f" * 64,
+            attempt_id="attempt-db-b",
+            sentinel="P9_DB_TENANT_B_SENTINEL",
+        )
+        assert state_a["parent_pid"] == state_b["parent_pid"] == os.getpid()
+        for state in (state_a, state_b):
+            assert state["fit"]["status"] == "failed"
+            assert state["fit"]["fallback_applied"] is True
+            assert (
+                state["fit"]["fallback_reason"] == FallbackReason.WORKER_FAILURE.value
+            )
+            assert state["artifact_count"] == 1
+            assert state["workspace_removed"] is True
+            assert state["compiledir_removed"] is True
+        assert state_a["tenant_id"] != state_b["tenant_id"]
+        assert state_a["artifact_ref"] != state_b["artifact_ref"]
+        assert state_a["workspace"] != state_b["workspace"]
+        assert state_a["compiledir"] != state_b["compiledir"]
+        assert "P9_DB_TENANT_A_SENTINEL_SHOULD_NOT_REACH_B" not in json.dumps(
+            state_b, sort_keys=True
+        )
+        assert "P9_DB_TENANT_A_SENTINEL_SHOULD_NOT_REACH_B" not in sys.modules
+        assert assert_fresh_checkout_is_clean(worker_engine).is_clean
+    finally:
+        worker_engine.dispose()
 
 
 @pytest.mark.asyncio

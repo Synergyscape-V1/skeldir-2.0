@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BAYESIAN_PACKAGE = Path("backend/app/bayesian")
 TENANT_CONTEXT = BAYESIAN_PACKAGE / "tenant_context.py"
+DB_ENGINE = BAYESIAN_PACKAGE / "db_engine.py"
 TEMP_WORKSPACE = BAYESIAN_PACKAGE / "temp_workspace.py"
 CLEANUP = BAYESIAN_PACKAGE / "cleanup.py"
 COMPILEDIR_REAPER = BAYESIAN_PACKAGE / "compiledir_reaper.py"
@@ -17,6 +18,7 @@ CHILD_ENVIRONMENT = BAYESIAN_PACKAGE / "child_environment.py"
 FIT_EXECUTION = BAYESIAN_PACKAGE / "fit_execution.py"
 ARTIFACT_REPOSITORY = BAYESIAN_PACKAGE / "artifact_repository.py"
 MODELS = BAYESIAN_PACKAGE / "models.py"
+TASKS_BAYESIAN = Path("backend/app/tasks/bayesian.py")
 P9_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202606081200_b24_p9_worker_tenant_hygiene.py"
 )
@@ -30,6 +32,7 @@ REQUIRED_STATUS_CONTRACT = Path(
 
 REQUIRED_FILES = {
     TENANT_CONTEXT,
+    DB_ENGINE,
     TEMP_WORKSPACE,
     CLEANUP,
     COMPILEDIR_REAPER,
@@ -37,6 +40,7 @@ REQUIRED_FILES = {
     FIT_EXECUTION,
     ARTIFACT_REPOSITORY,
     MODELS,
+    TASKS_BAYESIAN,
     P9_MIGRATION,
     P9_TESTS,
     P9_DB_TESTS,
@@ -82,6 +86,48 @@ def validate_tenant_context(text: str | None = None) -> None:
         _require(
             forbidden not in tenant_context,
             f"P9 tenant context has forbidden token: {forbidden}",
+        )
+
+
+def validate_bayesian_worker_engine(text: str | None = None) -> None:
+    db_engine = text if text is not None else _read(DB_ENGINE)
+    for token in (
+        "create_bayesian_worker_engine",
+        "runtime_sync_database_url",
+        "poolclass=NullPool",
+        "assert_bayesian_worker_engine_nonpooled",
+        "bayesian_worker_engine_must_use_nullpool",
+    ):
+        _require(token in db_engine, f"P9 worker engine missing: {token}")
+    for forbidden in (
+        "pool_size=1",
+        "max_overflow=0",
+        "QueuePool",
+        "SingletonThreadPool",
+    ):
+        _require(
+            forbidden not in db_engine,
+            f"P9 worker engine has forbidden pooled token: {forbidden}",
+        )
+
+
+def validate_bayesian_tasks(text: str | None = None) -> None:
+    tasks = text if text is not None else _read(TASKS_BAYESIAN)
+    for token in (
+        "create_bayesian_worker_engine(",
+        "runtime_sync_database_url()",
+        "engine.dispose()",
+    ):
+        _require(token in tasks, f"P9 Bayesian task wiring missing: {token}")
+    for forbidden in (
+        "from sqlalchemy import create_engine",
+        "create_engine(",
+        "pool_size=1",
+        "max_overflow=0",
+    ):
+        _require(
+            forbidden not in tasks,
+            f"P9 Bayesian task wiring has forbidden pooled token: {forbidden}",
         )
 
 
@@ -216,6 +262,8 @@ def validate_tests_and_ci(
     makefile = _read(MAKEFILE)
     for token in (
         "test_b24_p9_transaction_context_uses_set_local_only",
+        "test_b24_p9_bayesian_worker_engine_factory_is_nonpooled",
+        "test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine",
         "test_b24_p9_workspace_scopes_and_cleans_tenant_fit_hash_attempt",
         "test_b24_p9_compiledir_scopes_tenant_fit_hash_attempt",
         "test_b24_p9_child_env_is_allowlisted_without_parent_mutation",
@@ -230,6 +278,11 @@ def validate_tests_and_ci(
     ):
         _require(token in tests, f"P9 unit proof missing: {token}")
     for token in (
+        "test_b24_p9_bayesian_worker_engine_uses_nullpool_structural_sanitation",
+        "test_b24_p9_pool_poison_is_closed_and_replaced_without_manual_reset",
+        "test_b24_p9_pg_stat_activity_backend_not_idle_in_transaction",
+        "test_b24_p9_reset_failure_surface_replaced_by_invalidation_or_close",
+        "test_b24_p9_representative_same_process_worker_path_exercises_db_lifecycle",
         "test_b24_p9_transaction_local_guc_clean_return_and_sequential_isolation",
         "test_b24_p9_db_proof_requires_explicit_flag_in_ci",
         "test_b24_p9_session_level_guc_poison_is_detected",
@@ -237,6 +290,9 @@ def validate_tests_and_ci(
         "test_b24_p9_concurrent_tenant_isolation_db_and_runtime_surfaces",
         "bind_transaction_local_tenant",
         "assert_fresh_checkout_is_clean",
+        "pg_stat_activity",
+        "pg_advisory_lock",
+        "CREATE TEMP TABLE p9_temp_poison",
         "B2.4-P9 protected CI requires SKELDIR_B24_P9_REQUIRE_DB_PROOFS=1",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
     ):
@@ -264,6 +320,8 @@ def validate_all() -> None:
     for path in REQUIRED_FILES:
         _read(path)
     validate_tenant_context()
+    validate_bayesian_worker_engine()
+    validate_bayesian_tasks()
     validate_workspace()
     validate_compiledir()
     validate_child_env()
@@ -283,6 +341,22 @@ def run_negative_controls() -> None:
                 )
             ),
             "tenant context",
+        ),
+        (
+            "nullpool_removed",
+            lambda: validate_bayesian_worker_engine(
+                _read(DB_ENGINE).replace("poolclass=NullPool", "pool_size=1")
+            ),
+            "worker engine",
+        ),
+        (
+            "task_factory_removed",
+            lambda: validate_bayesian_tasks(
+                _read(TASKS_BAYESIAN).replace(
+                    "create_bayesian_worker_engine", "create_engine"
+                )
+            ),
+            "Bayesian task",
         ),
         (
             "workspace_cleanup_removed",
