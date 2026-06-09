@@ -17,14 +17,16 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from celery.exceptions import SoftTimeLimitExceeded
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine.url import make_url
+from sqlalchemy import text
 
-from app.celery_app import celery_app
+from app.bayesian.db_engine import (
+    create_bayesian_worker_engine,
+    runtime_sync_database_url,
+)
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
+from app.celery_app import celery_app
 from app.core.config import settings
-from app.core.secrets import get_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -68,31 +70,6 @@ def _as_uuid(raw: str | UUID) -> UUID:
     return UUID(str(raw))
 
 
-def _runtime_sync_database_url() -> str:
-    raw_url = get_database_url()
-    parsed = make_url(raw_url)
-    query = dict(parsed.query)
-    query.pop("channel_binding", None)
-    parsed = parsed.set(query=query)
-    driver = parsed.drivername
-    if driver.startswith("postgresql+"):
-        driver = "postgresql"
-    parsed = parsed.set(drivername=driver)
-    dsn_parts = [f"{driver}://"]
-    if parsed.username:
-        dsn_parts.append(parsed.username)
-        if parsed.password:
-            dsn_parts.append(":")
-            dsn_parts.append(parsed.password)
-        dsn_parts.append("@")
-    dsn_parts.append(parsed.host or "localhost")
-    if parsed.port:
-        dsn_parts.append(f":{parsed.port}")
-    if parsed.database:
-        dsn_parts.append(f"/{parsed.database}")
-    return "".join(dsn_parts)
-
-
 def _set_tenant_context(conn, tenant_id: UUID) -> None:
     conn.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
@@ -128,12 +105,7 @@ def _persist_fit_timeout_if_requested(
 ) -> bool:
     if fit_id is None:
         return False
-    engine = create_engine(
-        _runtime_sync_database_url(),
-        pool_pre_ping=True,
-        pool_size=1,
-        max_overflow=0,
-    )
+    engine = create_bayesian_worker_engine()
     try:
         with engine.begin() as conn:
             return mark_fit_timeout_sync(
@@ -295,12 +267,7 @@ def execute_fit_intent(self, *, fit_id: str) -> dict:
 
     fit_uuid = _as_uuid(fit_id)
     task_id = str(self.request.id)
-    engine = create_engine(
-        _runtime_sync_database_url(),
-        pool_pre_ping=True,
-        pool_size=1,
-        max_overflow=0,
-    )
+    engine = create_bayesian_worker_engine()
     try:
         payload = execute_fit_intent_sync(
             engine=engine,
@@ -332,12 +299,7 @@ def dispatch_feature_authority_build(
 
     tenant = _as_uuid(tenant_id)
     task_id = str(self.request.id)
-    engine = create_engine(
-        _runtime_sync_database_url(),
-        pool_pre_ping=True,
-        pool_size=1,
-        max_overflow=0,
-    )
+    engine = create_bayesian_worker_engine()
     row = None
     try:
         with engine.begin() as conn:
@@ -493,12 +455,7 @@ def build_feature_authority(
 
     tenant = _as_uuid(tenant_id)
     task_id = str(self.request.id)
-    engine = create_engine(
-        _runtime_sync_database_url(),
-        pool_pre_ping=True,
-        pool_size=1,
-        max_overflow=0,
-    )
+    engine = create_bayesian_worker_engine()
     try:
         with engine.begin() as conn:
             _set_tenant_context(conn, tenant)
@@ -716,13 +673,8 @@ def run_resource_contention(
     iterations = 0
     db_queries = 0
     cpu_accumulator = 0
-    runtime_sync_url = _runtime_sync_database_url()
-    db_engine = create_engine(
-        runtime_sync_url,
-        pool_pre_ping=True,
-        pool_size=1,
-        max_overflow=0,
-    )
+    runtime_sync_url = runtime_sync_database_url()
+    db_engine = create_bayesian_worker_engine(runtime_sync_url)
     try:
         with db_engine.begin() as conn:
             while (time.monotonic() - started_at) < duration_s:
