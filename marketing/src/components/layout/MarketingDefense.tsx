@@ -11,6 +11,22 @@ import { PlatformLogoStrip } from "./PlatformLogoStrip";
 
 // --- UI Card Components ---
 
+const INVESTIGATE_THINKING_TRACE = [
+    "Fetched Meta attribution: ROAS 1.8 [1.2-2.4], 12% allocation",
+    "Verified revenue: $1.35K vs Platform claimed $6.6K (-80% discrepancy)",
+    "UTM parameters: Meta uses 7-day attribution window (your config: 30-day)",
+    "Meta includes unconfigured view-through conversions",
+] as const;
+
+function TraceCheckIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="8" fill="#F8FAFC" />
+            <path d="M5 8L7 10L11 6" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
 function InvestigateCard() {
     return (
         <div style={{ position: "relative", maxWidth: "600px", width: "100%", margin: "0 auto" }}>
@@ -97,59 +113,36 @@ function InvestigateCard() {
                     </span>
                 </div>
 
-                {/* Checklist Items */}
-                <div className="investigate-card-checklist" style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "24px" }}>
-                    {/* Item 1 */}
-                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-                        <div style={{ marginTop: "2px", flexShrink: 0 }}>
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="8" cy="8" r="8" fill="#F1F5F9" />
-                                <path d="M5 8L7 10L11 6" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
+                {/* Reasoning trace — de-emphasized progressive disclosure beneath the answer */}
+                <div
+                    className="investigate-card-checklist investigate-card-trace"
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                        marginBottom: "24px",
+                        paddingLeft: "12px",
+                        borderLeft: "2px solid #E2E8F0",
+                    }}
+                >
+                    {INVESTIGATE_THINKING_TRACE.map((trace) => (
+                        <div key={trace} style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+                            <div style={{ marginTop: "1px", flexShrink: 0 }}>
+                                <TraceCheckIcon />
+                            </div>
+                            <span
+                                className="investigate-card-item-text investigate-card-trace-text"
+                                style={{
+                                    fontSize: "12px",
+                                    lineHeight: "1.5",
+                                    color: "#94A3B8",
+                                    letterSpacing: "0.01em",
+                                }}
+                            >
+                                {trace}
+                            </span>
                         </div>
-                        <span className="investigate-card-item-text" style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
-                            Querying attribution database: Fetched Meta attribution: ROAS 1.8 [1.2-2.4], 12% allocation
-                        </span>
-                    </div>
-
-                    {/* Item 2 */}
-                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-                        <div style={{ marginTop: "2px", flexShrink: 0 }}>
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="8" cy="8" r="8" fill="#F1F5F9" />
-                                <path d="M5 8L7 10L11 6" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                        </div>
-                        <span className="investigate-card-item-text" style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
-                            Checking commerce webhooks: Verified revenue: $1.35K vs Platform claimed $6.6K (-80% discrepancy)
-                        </span>
-                    </div>
-
-                    {/* Item 3 */}
-                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-                        <div style={{ marginTop: "2px", flexShrink: 0 }}>
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="8" cy="8" r="8" fill="#F1F5F9" />
-                                <path d="M5 8L7 10L11 6" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                        </div>
-                        <span className="investigate-card-item-text" style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
-                            Cross-referencing UTM parameters: Meta uses 7-day attribution window (your config: 30-day)
-                        </span>
-                    </div>
-
-                    {/* Item 4 */}
-                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-                        <div style={{ marginTop: "2px", flexShrink: 0 }}>
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="8" cy="8" r="8" fill="#F1F5F9" />
-                                <path d="M5 8L7 10L11 6" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                        </div>
-                        <span className="investigate-card-item-text" style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
-                            Platform documentation lookup: Meta includes unconfigured view-through conversions
-                        </span>
-                    </div>
+                    ))}
                 </div>
 
                 {/* Divider */}
@@ -467,7 +460,8 @@ export function MarketingDefense() {
             .investigate-card-show-thinking {
               font-size: 11px !important;
             }
-            .investigate-card-item-text {
+            .investigate-card-item-text,
+            .investigate-card-trace-text {
               font-size: 11px !important;
               line-height: 1.45 !important;
             }

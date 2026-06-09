@@ -6,6 +6,7 @@ import { SECTION_DISPLAY_TITLE_CLASS } from "@/components/layout/sectionDisplayF
 import { PricingCardFeatureRow } from "@/components/pricing/PricingCardFeatureRow";
 import {
   PRICING_CARD_AUDIENCE_CLASS,
+  PRICING_CARD_BODY_CLASS,
   PRICING_CARD_PLUS_FEATURE_LIST_CLASS,
   PRICING_CARD_PLUS_HEADING_CLASS,
   PRICING_CARD_REPLACES_BLOCK_CLASS,
@@ -15,15 +16,17 @@ import {
   PRICING_CARD_TIER_NAME_CLASS,
 } from "@/components/pricing/pricingCardTypography";
 import {
-  PRICING_TIER_3_AUDIENCE,
   PRICING_TIER_3_CTA_LABEL,
   PRICING_TIER_3_FEATURES,
+  PRICING_TIER_3_HOOK,
   PRICING_TIER_3_NAME,
   PRICING_TIER_3_PLUS_HEADING,
   PRICING_TIER_3_PRICE,
   PRICING_TIER_3_PRICE_SUFFIX,
   PRICING_TIER_3_REPLACES_HEADING,
   PRICING_TIER_3_REPLACES_ITEMS,
+  PRICING_TIER_3_RIGHT_FOR_YOU,
+  PRICING_TIER_3_RIGHT_FOR_YOU_HEADING,
 } from "@/components/pricing/pricingTier3Copy";
 
 type PricingTier3CardProps = {
@@ -90,20 +93,31 @@ export function PricingTier3Card({
         >
           {PRICING_TIER_3_PRICE}
         </span>
-        <span
-          style={{
-            fontSize: "18px",
-            fontWeight: 400,
-            lineHeight: 1.2,
-            color: "#6B7280",
-            marginLeft: "4px",
-          }}
-        >
-          {PRICING_TIER_3_PRICE_SUFFIX}
-        </span>
+        {PRICING_TIER_3_PRICE_SUFFIX ? (
+          <span
+            style={{
+              fontSize: "18px",
+              fontWeight: 400,
+              lineHeight: 1.2,
+              color: "#6B7280",
+              marginLeft: "4px",
+            }}
+          >
+            {PRICING_TIER_3_PRICE_SUFFIX}
+          </span>
+        ) : null}
       </div>
 
-      <p className={PRICING_CARD_AUDIENCE_CLASS}>{PRICING_TIER_3_AUDIENCE}</p>
+      <p className={PRICING_CARD_BODY_CLASS} style={{ marginTop: "20px" }}>
+        {PRICING_TIER_3_HOOK}
+      </p>
+
+      <h4 className={PRICING_CARD_SUBHEADING_CLASS} style={{ marginTop: "20px" }}>
+        {PRICING_TIER_3_RIGHT_FOR_YOU_HEADING}
+      </h4>
+      <p className={PRICING_CARD_AUDIENCE_CLASS} style={{ marginTop: "8px" }}>
+        {PRICING_TIER_3_RIGHT_FOR_YOU}
+      </p>
 
       <h4 className={PRICING_CARD_PLUS_HEADING_CLASS}>{PRICING_TIER_3_PLUS_HEADING}</h4>
 

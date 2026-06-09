@@ -2,7 +2,6 @@ import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { SignUpForm } from './SignUpForm';
-import { StaticPartnerLogos } from './StaticPartnerLogos';
 
 export function SignUpPage() {
     return (
@@ -13,8 +12,8 @@ export function SignUpPage() {
                 aria-label="Skeldir by Synergyscape"
                 className="auth-page-logo absolute z-50 flex items-center"
                 style={{
-                    top: '24px',
-                    left: '24px',
+                    top: 'max(10px, env(safe-area-inset-top, 0px))',
+                    left: 'max(10px, env(safe-area-inset-left, 0px))',
                     padding: '0',
                     margin: '0',
                 }}
@@ -27,7 +26,7 @@ export function SignUpPage() {
                     height={273}
                     sizes="(max-width: 767px) 116px, 146px"
                     priority
-                    className="h-[91.2px] w-auto shrink-0 origin-left scale-[1.03] md:h-[96px] drop-shadow-2xl"
+                    className="h-[76px] w-auto shrink-0 origin-left md:h-[80px] drop-shadow-2xl"
                 />
             </Link>
 
@@ -47,9 +46,6 @@ export function SignUpPage() {
             <div className="auth-page-content relative z-10 w-full max-w-md px-6 py-12 md:py-16 flex flex-col items-center">
                 {/* Form */}
                 <SignUpForm />
-
-                {/* Partner Logos - Static */}
-                <StaticPartnerLogos />
             </div>
 
             <style dangerouslySetInnerHTML={{__html: `
@@ -60,9 +56,9 @@ export function SignUpPage() {
                     }
 
                     .auth-page-logo {
-                        top: 16px !important;
-                        left: 16px !important;
-                        max-width: calc(100vw - 32px) !important;
+                        top: max(8px, env(safe-area-inset-top, 0px)) !important;
+                        left: max(8px, env(safe-area-inset-left, 0px)) !important;
+                        max-width: calc(100vw - 16px) !important;
                     }
 
                     .auth-page-content {

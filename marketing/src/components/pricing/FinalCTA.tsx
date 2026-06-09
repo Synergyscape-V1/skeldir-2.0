@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PRICING_TIER_1_PRICE_MO } from "@/components/pricing/pricingTier1Copy";
 
 // ============================================================================
 // FINAL CTA SECTION
@@ -54,7 +55,7 @@ export function FinalCTA() {
                         }}
                     >
                         Get started
-                        <span style={{ fontSize: "14px", fontWeight: 500 }}>$199/mo</span>
+                        <span style={{ fontSize: "14px", fontWeight: 500 }}>{PRICING_TIER_1_PRICE_MO}</span>
                     </Link>
 
                     {/* Secondary Button */}

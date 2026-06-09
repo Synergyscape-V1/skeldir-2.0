@@ -1,3 +1,5 @@
+import { PRICING_TIER_1_SCHEMA_PRICE } from "@/components/pricing/pricingTier1Copy";
+import { CATEGORY_ANCHOR_BODY } from "@/lib/categoryAnchorCopy";
 import { canonicalUrl, SITE_ORIGIN } from "@/lib/crawlUrls";
 import type { ArticleMetadata } from "@/data/articlesData";
 import { getArticleSeoDescription } from "@/data/articleSeo";
@@ -29,7 +31,7 @@ export function softwareApplicationJsonLd(): Record<string, unknown> {
     description: PRODUCT_PAGE_LEAD_DESCRIPTION,
     offers: {
       "@type": "Offer",
-      price: "199",
+      price: PRICING_TIER_1_SCHEMA_PRICE,
       priceCurrency: "USD",
       priceValidUntil: "2027-12-31",
       category: "subscription",
@@ -38,10 +40,12 @@ export function softwareApplicationJsonLd(): Record<string, unknown> {
   };
 }
 
-/** Must match `PricingHero` H1 and lead paragraph. */
-export const PRICING_PAGE_H1 = "One platform for marketing, finance, and leadership." as const;
-export const PRICING_PAGE_DESCRIPTION =
-  "Whether you're a growing e-commerce brand, established retailer, or multi-client agency, Skeldir is designed to eliminate budget waste and deliver attribution clarity." as const;
+/** Must match `PricingHero` H1 and body paragraph. */
+export const PRICING_PAGE_H1 =
+  "Your ad platforms have an incentive to claim revenue. Skeldir verifies it." as const;
+/** Meta + JSON-LD + visible hero body (not the H1). */
+export const PRICING_PAGE_LEAD = CATEGORY_ANCHOR_BODY;
+export const PRICING_PAGE_DESCRIPTION = CATEGORY_ANCHOR_BODY;
 
 /** Resources hub — must match `ResourcesPageClient` H1 and intro paragraph. */
 

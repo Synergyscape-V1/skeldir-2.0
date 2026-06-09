@@ -2,6 +2,15 @@
 
 import React, { useState } from "react";
 import { Check, X, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  PRICING_TIER_1_NAME,
+  PRICING_TIER_1_PRICE_MO,
+} from "@/components/pricing/pricingTier1Copy";
+import {
+  PRICING_TIER_2_NAME,
+  PRICING_TIER_2_PRICE_MO,
+} from "@/components/pricing/pricingTier2Copy";
+import { PRICING_TIER_3_NAME, PRICING_TIER_3_PRICE } from "@/components/pricing/pricingTier3Copy";
 
 // ============================================================================
 // PRICING COMPARISON TABLE
@@ -77,9 +86,9 @@ export function PricingComparisonTable() {
                         <thead>
                             <tr className="bg-gray-50/80 border-b border-gray-200">
                                 <th scope="col" className="p-6 font-semibold text-slate-900 w-1/4">Feature</th>
-                                <th scope="col" className="p-6 text-center w-1/4 font-bold text-slate-900">Starter</th>
-                                <th scope="col" className="p-6 text-center w-1/4 font-bold text-blue-600 bg-blue-50/30">Pro</th>
-                                <th scope="col" className="p-6 text-center w-1/4 font-bold text-slate-900">Enterprise</th>
+                                <th scope="col" className="p-6 text-center w-1/4 font-bold text-slate-900">{PRICING_TIER_1_NAME}</th>
+                                <th scope="col" className="p-6 text-center w-1/4 font-bold text-blue-600 bg-blue-50/30">{PRICING_TIER_2_NAME}</th>
+                                <th scope="col" className="p-6 text-center w-1/4 font-bold text-slate-900">{PRICING_TIER_3_NAME}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -107,23 +116,21 @@ export function PricingComparisonTable() {
                 <div className="lg:hidden space-y-6">
                     {/* Starter Tier */}
                     <MobileTierCard
-                        name="Starter"
-                        price="$199/mo"
+                        name={PRICING_TIER_1_NAME}
+                        price={PRICING_TIER_1_PRICE_MO}
                         data={keyDifferences}
                         tierKey="starter"
                     />
-                    {/* Pro Tier */}
                     <MobileTierCard
-                        name="Pro"
-                        price="$499/mo"
+                        name={PRICING_TIER_2_NAME}
+                        price={PRICING_TIER_2_PRICE_MO}
                         data={keyDifferences}
                         tierKey="pro"
                         isPopular
                     />
-                    {/* Enterprise Tier */}
                     <MobileTierCard
-                        name="Enterprise"
-                        price="$999/mo"
+                        name={PRICING_TIER_3_NAME}
+                        price={PRICING_TIER_3_PRICE}
                         data={keyDifferences}
                         tierKey="enterprise"
                     />

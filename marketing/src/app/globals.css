@@ -277,6 +277,45 @@
   gap: 10px;
 }
 
+/* Category anchor — closer row stays one horizontal line on mobile */
+.category-anchor-section {
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+
+.category-anchor-closer {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.22em;
+  margin: 20px 0 0;
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.category-anchor-closer__sep {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: #9ca3af;
+}
+
+.category-anchor-closer__part {
+  flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+  .category-anchor-closer {
+    font-size: clamp(13px, 3.9vw, 17px);
+    letter-spacing: -0.025em;
+    gap: 0.18em;
+  }
+}
+
 /* Image fade-in animation - safer approach with opacity starting at 0.7 */
 @keyframes imageLoadFadeIn {
   from {

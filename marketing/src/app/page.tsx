@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JsonLd } from "@/components/schema/JsonLd";
 import { HeroSection } from "@/components/layout/HeroSection";
 import { PartnerLogos } from "@/components/layout/PartnerLogos";
+import { CategoryAnchor } from "@/components/layout/CategoryAnchor";
 import { ProblemStatement } from "@/components/layout/ProblemStatement";
 import { SolutionOverview } from "@/components/layout/SolutionOverview";
 import { HowItWorks } from "@/components/layout/HowItWorks";
@@ -139,6 +140,9 @@ export default function Home() {
 
       {/* Problem Statement */}
       <ProblemStatement />
+
+      {/* Category anchor — attribution tools vs revenue verification */}
+      <CategoryAnchor variant="home" />
 
       {/* Interactive Product Demo Section */}
       <InteractiveDemo />

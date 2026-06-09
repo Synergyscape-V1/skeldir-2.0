@@ -8,6 +8,7 @@ import { IntegrationsShowcase } from "@/components/layout/IntegrationsShowcase";
 import { DashboardStage } from "@/components/layout/DashboardStage";
 import { ProductDemoAiLogos } from "@/components/layout/ProductDemoAiLogos";
 import { PRODUCT_HERO_ANALYZE_ASSET } from "@/components/layout/dashboardStagePhysics";
+import { PRICING_TIER_1_PRICE_MO } from "@/components/pricing/pricingTier1Copy";
 import { PRODUCT_PAGE_HEADLINE, PRODUCT_PAGE_LEAD_DESCRIPTION } from "@/lib/schema/pageSchemas";
 
 export default function ProductPage() {
@@ -545,7 +546,7 @@ export default function ProductPage() {
               }}
             >
               Get started
-              <span style={{ fontSize: "14px", fontWeight: 500 }}>$199/mo</span>
+              <span style={{ fontSize: "14px", fontWeight: 500 }}>{PRICING_TIER_1_PRICE_MO}</span>
             </button>
 
               {/* Secondary CTA */}

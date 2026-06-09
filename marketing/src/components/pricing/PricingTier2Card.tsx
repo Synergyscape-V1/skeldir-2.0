@@ -6,6 +6,7 @@ import { SECTION_DISPLAY_TITLE_CLASS } from "@/components/layout/sectionDisplayF
 import { PricingCardFeatureRow } from "@/components/pricing/PricingCardFeatureRow";
 import {
   PRICING_CARD_AUDIENCE_CLASS,
+  PRICING_CARD_BODY_CLASS,
   PRICING_CARD_PLUS_FEATURE_LIST_CLASS,
   PRICING_CARD_PLUS_HEADING_CLASS,
   PRICING_CARD_REPLACES_BLOCK_CLASS,
@@ -15,16 +16,19 @@ import {
   PRICING_CARD_TIER_NAME_CLASS,
 } from "@/components/pricing/pricingCardTypography";
 import {
-  PRICING_TIER_2_AUDIENCE,
   PRICING_TIER_2_BADGE_LABEL,
   PRICING_TIER_2_CTA_LABEL,
   PRICING_TIER_2_FEATURES,
+  PRICING_TIER_2_HOOK,
   PRICING_TIER_2_NAME,
+  PRICING_TIER_2_OVERAGE,
   PRICING_TIER_2_PLUS_HEADING,
   PRICING_TIER_2_PRICE,
   PRICING_TIER_2_PRICE_SUFFIX,
   PRICING_TIER_2_REPLACES_HEADING,
   PRICING_TIER_2_REPLACES_ITEMS,
+  PRICING_TIER_2_RIGHT_FOR_YOU,
+  PRICING_TIER_2_RIGHT_FOR_YOU_HEADING,
 } from "@/components/pricing/pricingTier2Copy";
 
 type PricingTier2CardProps = {
@@ -134,7 +138,16 @@ export function PricingTier2Card({
           </span>
         </div>
 
-        <p className={PRICING_CARD_AUDIENCE_CLASS}>{PRICING_TIER_2_AUDIENCE}</p>
+        <p className={PRICING_CARD_BODY_CLASS} style={{ marginTop: "20px" }}>
+          {PRICING_TIER_2_HOOK}
+        </p>
+
+        <h4 className={PRICING_CARD_SUBHEADING_CLASS} style={{ marginTop: "20px" }}>
+          {PRICING_TIER_2_RIGHT_FOR_YOU_HEADING}
+        </h4>
+        <p className={PRICING_CARD_AUDIENCE_CLASS} style={{ marginTop: "8px" }}>
+          {PRICING_TIER_2_RIGHT_FOR_YOU}
+        </p>
 
         <h4 className={PRICING_CARD_PLUS_HEADING_CLASS}>{PRICING_TIER_2_PLUS_HEADING}</h4>
 
@@ -143,6 +156,13 @@ export function PricingTier2Card({
             <PricingCardFeatureRow key={feature} text={feature} />
           ))}
         </div>
+
+        <p
+          className={PRICING_CARD_BODY_CLASS}
+          style={{ marginTop: "16px", fontSize: "14px", color: "#6B7280" }}
+        >
+          {PRICING_TIER_2_OVERAGE}
+        </p>
 
         <div className={PRICING_CARD_REPLACES_BLOCK_CLASS}>
           <h4 className={PRICING_CARD_SUBHEADING_CLASS}>{PRICING_TIER_2_REPLACES_HEADING}</h4>

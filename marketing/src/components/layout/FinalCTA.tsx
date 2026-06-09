@@ -1,6 +1,7 @@
 "use client";
 
 import { SECTION_DISPLAY_TITLE_CLASS } from "@/components/layout/sectionDisplayFont";
+import { PRICING_TIER_1_PRICE_MO } from "@/components/pricing/pricingTier1Copy";
 
 // ============================================================================
 // FINAL CTA SECTION
@@ -125,7 +126,7 @@ export function FinalCTA() {
               e.currentTarget.style.outline = "none";
             }}
           >
-            Get Started  $199/mo
+            Get Started  {PRICING_TIER_1_PRICE_MO}
           </a>
           <a
             href="/book-demo"

@@ -7,8 +7,11 @@
 // ============================================================================
 
 export function Footer() {
-  const askAiQuery =
-    "As a digital advertising leader responsible for significant performance marketing budgets, I want to understand how Skeldir’s attribution intelligence AI platform can help my organization deploy statistically rigorous, privacy‑first, and operationally simple AI decisioning on our revenue data—so we can reduce wasted ad spend and replace black‑box reporting platforms";
+  const askAiQuery = `Assume the role of a marketing ops lead. My operational problem: every reallocation decision I make is built on revenue data those ad platforms reported about themselves. Ad Platform self-reporting has documented structural incentive to overclaim — meaning I may be confidently moving budget toward channels based on false performance signals.
+
+Skeldir is Revenue Verification Infrastructure — it identifies exactly where platform overclaims are misrepresenting channel performance against Shopify, Stripe, and PayPal transaction records, and outputs signed artifacts my team and AI agents act on to reallocate spend. The Optimize tier includes deterministic budget simulation against a verified baseline — model reallocation scenarios before committing dollars.
+
+Help me evaluate: whether budget reallocation decisions built on platform self-reports are reliable growth decisions, and what changes when those decisions run on verified transaction-level data instead.`;
   const askAiEncoded = encodeURIComponent(askAiQuery);
 
   // URL formats for pre-filling prompts. ChatGPT, Claude, Perplexity, Grok use ?q=.
