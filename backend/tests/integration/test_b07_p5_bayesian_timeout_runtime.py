@@ -77,7 +77,9 @@ def _wait_for_output(lines: list[str], substring: str, timeout_s: float) -> None
     raise RuntimeError(f"Timed out waiting for worker output containing {substring!r}")
 
 
-def _start_worker(env: dict[str, str], log_path: Path) -> tuple[subprocess.Popen[str], list[str]]:
+def _start_worker(
+    env: dict[str, str], log_path: Path
+) -> tuple[subprocess.Popen[str], list[str]]:
     backend_dir = _repo_root() / "backend"
     prom_dir = Path(tempfile.mkdtemp(prefix="b07_p5_prom_"))
     worker_env = dict(env)
@@ -158,7 +160,9 @@ def _read_probe_events(path: Path) -> list[dict]:
 
 def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
     cfg = _cfg()
-    assert celery_app.conf.task_always_eager is False, "Runtime proof requires eager mode disabled"
+    assert (
+        celery_app.conf.task_always_eager is False
+    ), "Runtime proof requires eager mode disabled"
     assert PRODUCTION_BAYESIAN_SOFT_TIME_LIMIT_S == 270
     assert PRODUCTION_BAYESIAN_TIME_LIMIT_S == 300
 
@@ -179,6 +183,9 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
     env["BAYESIAN_TASK_SOFT_TIME_LIMIT_S"] = "4"
     env["BAYESIAN_TASK_TIME_LIMIT_S"] = "5"
     env["BAYESIAN_PROBE_LOG_PATH"] = str(probe_log.resolve())
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY"] = "direct_postgres"
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"] = "direct_postgres_ci_postgres15"
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"] = "b07_p5_bayesian_timeout_runtime"
     env.setdefault("ENVIRONMENT", "test")
 
     worker_proc = None
@@ -231,10 +238,14 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
             if fallback_event is not None:
                 break
             time.sleep(0.2)
-        assert fallback_event is not None, "Expected deterministic fallback event before hard kill"
+        assert (
+            fallback_event is not None
+        ), "Expected deterministic fallback event before hard kill"
 
         if worker_proc.poll() is not None:
-            raise AssertionError("Worker process exited unexpectedly before post-timeout health proof")
+            raise AssertionError(
+                "Worker process exited unexpectedly before post-timeout health proof"
+            )
 
         health_task_id = f"b07-p5-health-{uuid4().hex[:10]}"
         celery_app.send_task(
@@ -249,7 +260,11 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
             timeout_s=30,
         )
 
-        health_result = {"status": "ok", "task_id": health_task_id, "delivery_proof": "worker_received_task"}
+        health_result = {
+            "status": "ok",
+            "task_id": health_task_id,
+            "delivery_proof": "worker_received_task",
+        }
 
         proof_path.write_text(
             json.dumps(

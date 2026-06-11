@@ -13,6 +13,8 @@ BAYESIAN_PACKAGE = Path("backend/app/bayesian")
 TENANT_CONTEXT = BAYESIAN_PACKAGE / "tenant_context.py"
 DB_ENGINE = BAYESIAN_PACKAGE / "db_engine.py"
 DB_TOPOLOGY = BAYESIAN_PACKAGE / "db_topology.py"
+DB_BOOT_PROBE = BAYESIAN_PACKAGE / "db_boot_probe.py"
+WORKER_BOOT_PROBE = BAYESIAN_PACKAGE / "worker_boot_probe.py"
 TEMP_WORKSPACE = BAYESIAN_PACKAGE / "temp_workspace.py"
 CLEANUP = BAYESIAN_PACKAGE / "cleanup.py"
 COMPILEDIR_REAPER = BAYESIAN_PACKAGE / "compiledir_reaper.py"
@@ -28,6 +30,9 @@ P9_TESTS = Path("backend/tests/test_b24_p9_worker_tenant_hygiene.py")
 P9_DB_TESTS = Path("backend/tests/test_b24_p9_postgres_runtime.py")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
 CI_WORKFLOW = Path(".github/workflows/ci.yml")
+B07_P5_TIMEOUT_RUNTIME_TEST = Path(
+    "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py"
+)
 MAKEFILE = Path("Makefile")
 REQUIRED_STATUS_CONTRACT = Path(
     "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
@@ -37,6 +42,8 @@ REQUIRED_FILES = {
     TENANT_CONTEXT,
     DB_ENGINE,
     DB_TOPOLOGY,
+    DB_BOOT_PROBE,
+    WORKER_BOOT_PROBE,
     TEMP_WORKSPACE,
     CLEANUP,
     COMPILEDIR_REAPER,
@@ -50,6 +57,7 @@ REQUIRED_FILES = {
     P9_DB_TESTS,
     WORKFLOW,
     CI_WORKFLOW,
+    B07_P5_TIMEOUT_RUNTIME_TEST,
     MAKEFILE,
     REQUIRED_STATUS_CONTRACT,
 }
@@ -151,6 +159,79 @@ def validate_bayesian_worker_db_topology(text: str | None = None) -> None:
         _require(
             forbidden not in topology,
             f"P9 topology policy has string-proof shortcut: {forbidden}",
+        )
+
+
+def validate_bayesian_worker_boot_probe(
+    probe_text: str | None = None,
+    worker_boot_text: str | None = None,
+    tasks_text: str | None = None,
+) -> None:
+    boot_probe = probe_text if probe_text is not None else _read(DB_BOOT_PROBE)
+    worker_boot = (
+        worker_boot_text if worker_boot_text is not None else _read(WORKER_BOOT_PROBE)
+    )
+    tasks = tasks_text if tasks_text is not None else _read(TASKS_BAYESIAN)
+    for token in (
+        "run_bayesian_worker_boot_topology_probe",
+        "BayesianWorkerBootTopologyProbeError",
+        "create_bayesian_worker_engine",
+        "set_config('app.current_tenant_id', :tenant_id, false)",
+        "SET search_path TO pg_catalog",
+        "pg_advisory_lock",
+        "CREATE TEMP TABLE",
+        "pg_stat_activity",
+        "old_pid",
+        "new_pid",
+        "_wait_for_backend_absence",
+        "bayesian_worker_boot_topology_backend_not_replaced",
+        "bayesian_worker_boot_topology_guc_poison_survived",
+        "bayesian_worker_boot_topology_advisory_lock_survived",
+        "bayesian_worker_boot_topology_temp_object_survived",
+    ):
+        _require(token in boot_probe, f"P9 worker boot probe missing: {token}")
+    for forbidden in ("pymc", "pytensor", "arviz", "INSERT INTO public."):
+        _require(
+            forbidden not in boot_probe,
+            f"P9 worker boot probe has forbidden token: {forbidden}",
+        )
+    for token in (
+        "signals.worker_init.connect(",
+        "_run_bayesian_worker_boot_topology_probe_if_needed()",
+        "run_bayesian_worker_boot_topology_probe()",
+        'SystemExit("bayesian_worker_boot_topology_probe_failed")',
+        "QUEUE_BAYESIAN in explicit_queues",
+        "SKELDIR_BAYESIAN_BOOT_PROBE_REQUIRED",
+        "_BAYESIAN_TOPOLOGY_AUTHORITY_ENV",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+        "return any(",
+        "for name in _BAYESIAN_TOPOLOGY_AUTHORITY_ENV",
+    ):
+        _require(
+            token in worker_boot,
+            f"P9 Celery boot probe wiring missing: {token}",
+        )
+    _require(
+        "ensure_bayesian_worker_boot_probe_signal_registered()" in tasks,
+        "P9 Bayesian task module must register boot probe signal on import",
+    )
+    try:
+        worker_init_idx = worker_boot.index("signals.worker_init.connect(")
+        probe_call_idx = worker_boot.index(
+            "_run_bayesian_worker_boot_topology_probe_if_needed()"
+        )
+    except ValueError as exc:
+        raise ValidationError(
+            f"P9 Celery boot probe order token missing: {exc}"
+        ) from exc
+    _require(
+        probe_call_idx < worker_init_idx,
+        "P9 Celery boot probe receiver must be defined before worker_init registration",
+    )
+    for forbidden in ("worker_ready", "task_prerun"):
+        _require(
+            forbidden not in worker_boot,
+            f"P9 boot probe must not defer to {forbidden}",
         )
 
 
@@ -293,6 +374,7 @@ def validate_artifact_authority(
 def validate_tests_and_ci(
     workflow_text: str | None = None,
     ci_workflow_text: str | None = None,
+    b07_p5_timeout_test_text: str | None = None,
     required_status_text: str | None = None,
 ) -> None:
     tests = _read(P9_TESTS)
@@ -300,6 +382,11 @@ def validate_tests_and_ci(
     workflow = workflow_text if workflow_text is not None else _read(WORKFLOW)
     ci_workflow = (
         ci_workflow_text if ci_workflow_text is not None else _read(CI_WORKFLOW)
+    )
+    b07_p5_timeout_test = (
+        b07_p5_timeout_test_text
+        if b07_p5_timeout_test_text is not None
+        else _read(B07_P5_TIMEOUT_RUNTIME_TEST)
     )
     required_status = (
         required_status_text
@@ -314,6 +401,9 @@ def validate_tests_and_ci(
         "test_b24_p9_unknown_topology_fails_closed_in_protected_mode",
         "test_b24_p9_opaque_hostname_requires_attestation_not_string_inference",
         "test_b24_p9_pooler_and_proxy_topologies_fail_closed",
+        "test_b24_p9_boot_probe_is_physical_not_connectivity_only",
+        "test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun",
+        "test_b24_p9_boot_probe_worker_scope_policy",
         "test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine",
         "test_b24_p9_workspace_scopes_and_cleans_tenant_fit_hash_attempt",
         "test_b24_p9_compiledir_scopes_tenant_fit_hash_attempt",
@@ -331,6 +421,9 @@ def validate_tests_and_ci(
     for token in (
         "test_b24_p9_bayesian_worker_engine_uses_nullpool_structural_sanitation",
         "test_b24_p9_direct_topology_attestation_precedes_backend_pid_proof",
+        "test_b24_p9_boot_probe_physically_proves_session_boundary",
+        "test_b24_p9_boot_probe_failure_is_fatal_before_task_consumption",
+        "test_b24_p9_non_bayesian_worker_queue_does_not_run_boot_probe",
         "test_b24_p9_pool_poison_is_closed_and_replaced_without_manual_reset",
         "test_b24_p9_pg_stat_activity_backend_not_idle_in_transaction",
         "test_b24_p9_reset_failure_surface_replaced_by_invalidation_or_close",
@@ -375,6 +468,8 @@ def validate_tests_and_ci(
     for job_id in (
         "b21-p4-queue-isolation-performance-lock",
         "b21-p6-full-chain-closure-readiness",
+        "b07-p2-runtime-proof",
+        "celery-foundation",
     ):
         block = _ci_job_block(ci_workflow, job_id)
         for token in (
@@ -382,12 +477,36 @@ def validate_tests_and_ci(
             "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
             "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
             "direct_postgres_ci_postgres15",
-            "github_actions_postgres_15_alpine",
         ):
             _require(
                 token in block,
                 f"P9 CI workflow topology wiring missing in {job_id}: {token}",
             )
+    for job_id in (
+        "b21-p4-queue-isolation-performance-lock",
+        "b21-p6-full-chain-closure-readiness",
+        "celery-foundation",
+    ):
+        _require(
+            "github_actions_postgres_15_alpine" in _ci_job_block(ci_workflow, job_id),
+            f"P9 CI workflow topology source missing in {job_id}",
+        )
+    _require(
+        "github_actions_postgres_16"
+        in _ci_job_block(ci_workflow, "b07-p2-runtime-proof"),
+        "P9 CI workflow topology source missing in b07-p2-runtime-proof",
+    )
+    for token in (
+        '"SKELDIR_BAYESIAN_DB_TOPOLOGY"',
+        '"SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"',
+        '"SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"',
+        '"direct_postgres_ci_postgres15"',
+        '"b07_p5_bayesian_timeout_runtime"',
+    ):
+        _require(
+            token in b07_p5_timeout_test,
+            f"P9 B0.7 P5 runtime worker topology wiring missing: {token}",
+        )
     _require(
         "validate-b24-p9-worker-tenant-hygiene" in makefile,
         "Makefile missing P9 validator target",
@@ -404,6 +523,7 @@ def validate_all() -> None:
     validate_tenant_context()
     validate_bayesian_worker_engine()
     validate_bayesian_worker_db_topology()
+    validate_bayesian_worker_boot_probe()
     validate_bayesian_tasks()
     validate_workspace()
     validate_compiledir()
@@ -451,6 +571,36 @@ def run_negative_controls() -> None:
                 )
             ),
             "proxy",
+        ),
+        (
+            "boot_probe_poison_removed",
+            lambda: validate_bayesian_worker_boot_probe(
+                probe_text=_read(DB_BOOT_PROBE).replace(
+                    "pg_advisory_lock",
+                    "advisory_lock_removed",
+                )
+            ),
+            "pg_advisory_lock",
+        ),
+        (
+            "boot_probe_worker_init_removed",
+            lambda: validate_bayesian_worker_boot_probe(
+                worker_boot_text=_read(WORKER_BOOT_PROBE).replace(
+                    "_run_bayesian_worker_boot_topology_probe_if_needed()",
+                    "_run_bayesian_worker_boot_topology_probe_removed()",
+                )
+            ),
+            "boot probe",
+        ),
+        (
+            "boot_probe_default_worker_topology_authority_removed",
+            lambda: validate_bayesian_worker_boot_probe(
+                worker_boot_text=_read(WORKER_BOOT_PROBE).replace(
+                    "_BAYESIAN_TOPOLOGY_AUTHORITY_ENV",
+                    "_BAYESIAN_TOPOLOGY_AUTHORITY_REMOVED",
+                )
+            ),
+            "topology",
         ),
         (
             "task_factory_removed",
@@ -550,6 +700,16 @@ def run_negative_controls() -> None:
                 )
             ),
             "topology",
+        ),
+        (
+            "b07_p5_runtime_topology_attestation_removed",
+            lambda: validate_tests_and_ci(
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST).replace(
+                    '"b07_p5_bayesian_timeout_runtime"',
+                    '"b07_p5_bayesian_timeout_removed"',
+                )
+            ),
+            "B0.7 P5 runtime worker topology",
         ),
     )
     for name, runner, expected in controls:

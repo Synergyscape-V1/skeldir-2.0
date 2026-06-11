@@ -4244,6 +4244,9 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b07_p2
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b07_p2
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b07_p2
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_16
       B07_P2_ARTIFACT_DIR: artifacts/b07-p2
       B07_P2_LOG_CANARY: skeldir_test_secret_123
       SKELDIR_TEST_TASKS: "1"
@@ -4783,6 +4786,9 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
       # B0.5.6.1: CELERY_METRICS_PORT/ADDR removed - worker HTTP server eradicated
       B055_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/b055_evidence_bundle
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
