@@ -16,6 +16,7 @@ from app.bayesian.artifact_repository import _artifact_ref
 from app.bayesian.cleanup import cleanup_fit_attempt, run_preflight_janitor
 from app.bayesian.compiledir_reaper import create_compiledir_lease
 from app.bayesian.db_engine import create_bayesian_worker_engine
+from app.bayesian.db_topology import resolve_bayesian_worker_db_topology_policy
 from app.bayesian.fit_execution import _sampler_failure_stream_metadata
 from app.bayesian.sampler_supervisor import (
     CapturedChildStream,
@@ -36,6 +37,7 @@ ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "scripts/ci/validate_b24_p9_worker_tenant_hygiene.py"
 FIT_EXECUTION = ROOT / "backend/app/bayesian/fit_execution.py"
 DB_ENGINE = ROOT / "backend/app/bayesian/db_engine.py"
+DB_TOPOLOGY = ROOT / "backend/app/bayesian/db_topology.py"
 TASKS_BAYESIAN = ROOT / "backend/app/tasks/bayesian.py"
 TENANT_CONTEXT = ROOT / "backend/app/bayesian/tenant_context.py"
 TEMP_WORKSPACE = ROOT / "backend/app/bayesian/temp_workspace.py"
@@ -55,6 +57,18 @@ def _load_validator():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _clear_topology_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "CI",
+        "ENVIRONMENT",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_REQUIRE_ATTESTATION",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _representative_parent_worker_attempt(
@@ -124,7 +138,10 @@ def test_b24_p9_transaction_context_uses_set_local_only() -> None:
     assert "lru_cache" not in text
 
 
-def test_b24_p9_bayesian_worker_engine_factory_is_nonpooled() -> None:
+def test_b24_p9_bayesian_worker_engine_factory_is_nonpooled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TESTING", "1")
     text = _read(DB_ENGINE)
     for token in (
         "create_bayesian_worker_engine",
@@ -132,6 +149,7 @@ def test_b24_p9_bayesian_worker_engine_factory_is_nonpooled() -> None:
         "assert_bayesian_worker_engine_nonpooled",
         "bayesian_worker_engine_must_use_nullpool",
         "runtime_sync_database_url",
+        "resolve_bayesian_worker_db_topology_policy",
     ):
         assert token in text
     engine = create_bayesian_worker_engine("sqlite://")
@@ -139,6 +157,94 @@ def test_b24_p9_bayesian_worker_engine_factory_is_nonpooled() -> None:
         assert isinstance(engine.pool, NullPool)
     finally:
         engine.dispose()
+
+
+def test_b24_p9_db_topology_policy_is_code_authority_not_dsn_proof() -> None:
+    text = _read(DB_TOPOLOGY)
+    for token in (
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "DIRECT_POSTGRES_ATTESTATIONS",
+        "POOLER_NEGATIVE_CONTROL_TOKENS",
+        "UNSUPPORTED_POOLER_TOPOLOGIES",
+        "DSN contents are intentionally insufficient proof",
+        "bayesian_worker_db_topology_missing",
+        "bayesian_worker_db_topology_proxy_dsn_rejected",
+        "bayesian_worker_db_topology_pooler_unsupported",
+    ):
+        assert token in text
+
+
+def test_b24_p9_unknown_topology_fails_closed_in_protected_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_topology_env(monkeypatch)
+    monkeypatch.setenv("CI", "true")
+    with pytest.raises(RuntimeError, match="bayesian_worker_db_topology_missing"):
+        resolve_bayesian_worker_db_topology_policy(
+            "postgresql://app_user:app_user@db-main.skeldir.internal:5432/skeldir"
+        )
+
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY", "mystery_mesh")
+    with pytest.raises(RuntimeError, match="bayesian_worker_db_topology_unknown"):
+        resolve_bayesian_worker_db_topology_policy(
+            "postgresql://app_user:app_user@db-main.skeldir.internal:5432/skeldir"
+        )
+
+
+def test_b24_p9_opaque_hostname_requires_attestation_not_string_inference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_topology_env(monkeypatch)
+    opaque_dsn = "postgresql://app_user:app_user@db-main.skeldir.internal:5432/skeldir"
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY", "direct_postgres")
+
+    with pytest.raises(
+        RuntimeError, match="bayesian_worker_db_topology_attestation_missing"
+    ):
+        resolve_bayesian_worker_db_topology_policy(opaque_dsn)
+
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "direct_postgres_deployment_attested",
+    )
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "deployment_control_plane",
+    )
+    policy = resolve_bayesian_worker_db_topology_policy(opaque_dsn)
+    assert policy.topology.value == "direct_postgres"
+    assert policy.protected_runtime is True
+    assert policy.source == "deployment_control_plane"
+
+
+def test_b24_p9_pooler_and_proxy_topologies_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_topology_env(monkeypatch)
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY", "pgbouncer_transaction")
+    with pytest.raises(
+        RuntimeError, match="bayesian_worker_db_topology_pooler_unsupported"
+    ):
+        resolve_bayesian_worker_db_topology_policy(
+            "postgresql://app_user:app_user@db-main.skeldir.internal:5432/skeldir"
+        )
+
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY", "direct_postgres")
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "direct_postgres_ci_postgres15",
+    )
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE", "github_actions")
+    with pytest.raises(
+        RuntimeError, match="bayesian_worker_db_topology_proxy_dsn_rejected"
+    ):
+        resolve_bayesian_worker_db_topology_policy(
+            "postgresql://app_user:app_user@pgbouncer.internal:6432/skeldir"
+        )
 
 
 def test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine() -> None:

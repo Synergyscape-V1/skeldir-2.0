@@ -18,6 +18,7 @@ from app.bayesian.artifact_repository import _artifact_ref, persist_artifact_syn
 from app.bayesian.cleanup import cleanup_fit_attempt
 from app.bayesian.compiledir_reaper import create_compiledir_lease
 from app.bayesian.db_engine import create_bayesian_worker_engine
+from app.bayesian.db_topology import resolve_bayesian_worker_db_topology_policy
 from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.fit_execution import (
     _load_fit_for_execution,
@@ -384,6 +385,39 @@ async def test_b24_p9_bayesian_worker_engine_uses_nullpool_structural_sanitation
     worker_engine = create_bayesian_worker_engine(_sync_database_url())
     try:
         assert isinstance(worker_engine.pool, NullPool)
+        assert assert_fresh_checkout_is_clean(worker_engine).is_clean
+    finally:
+        worker_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_direct_topology_attestation_precedes_backend_pid_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY", "direct_postgres")
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "direct_postgres_ci_postgres15",
+    )
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "github_actions_postgres_15_alpine",
+    )
+    worker_url = _sync_database_url()
+    policy = resolve_bayesian_worker_db_topology_policy(
+        worker_url, require_attestation=True
+    )
+    assert policy.topology.value == "direct_postgres"
+    assert policy.attestation == "direct_postgres_ci_postgres15"
+    worker_engine = create_bayesian_worker_engine(worker_url)
+    try:
+        with worker_engine.connect() as conn:
+            first_pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+        with worker_engine.connect() as conn:
+            second_pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+        assert second_pid != first_pid
         assert assert_fresh_checkout_is_clean(worker_engine).is_clean
     finally:
         worker_engine.dispose()

@@ -1786,7 +1786,7 @@
   job: B2.4-P9 Worker Tenant Hygiene Proof
   script: scripts/ci/validate_b24_p9_worker_tenant_hygiene.py
   owning_phase: B2.4-P9
-  protected_invariant: B2.4-P9 worker tenant hygiene, transaction-local GUC, clean pool return, scoped workspace/compiledir, tenant-bound artifacts, parent env immutability, cleanup, and log payload airgap remain falsifiable.
+  protected_invariant: B2.4-P9 worker tenant hygiene, topology-attested direct PostgreSQL or fail-closed unknown/proxy/pooler topology, transaction-local GUC, clean pool return, scoped workspace/compiledir, tenant-bound artifacts, parent env immutability, cleanup, and log payload airgap remain falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
