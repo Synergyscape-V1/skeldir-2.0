@@ -17,6 +17,10 @@ from sqlalchemy.pool import NullPool
 from app.bayesian.artifact_repository import _artifact_ref, persist_artifact_sync
 from app.bayesian.cleanup import cleanup_fit_attempt
 from app.bayesian.compiledir_reaper import create_compiledir_lease
+from app.bayesian.db_boot_probe import (
+    BayesianWorkerBootTopologyProbeError,
+    run_bayesian_worker_boot_topology_probe,
+)
 from app.bayesian.db_engine import create_bayesian_worker_engine
 from app.bayesian.db_topology import resolve_bayesian_worker_db_topology_policy
 from app.bayesian.enums import FallbackReason, FitStatus
@@ -421,6 +425,92 @@ async def test_b24_p9_direct_topology_attestation_precedes_backend_pid_proof(
         assert assert_fresh_checkout_is_clean(worker_engine).is_clean
     finally:
         worker_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_boot_probe_physically_proves_session_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY", "direct_postgres")
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "direct_postgres_ci_postgres15",
+    )
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "github_actions_postgres_15_alpine",
+    )
+
+    result = run_bayesian_worker_boot_topology_probe(
+        _sync_database_url(),
+        timeout_seconds=5.0,
+    )
+
+    assert result.old_pid != result.new_pid
+    assert result.lock_key > 0
+    assert result.temp_table_name.startswith("p9_boot_probe_poison_")
+    assert result.elapsed_seconds >= 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_boot_probe_failure_is_fatal_before_task_consumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    from app.bayesian import worker_boot_probe
+
+    events: list[str] = []
+
+    def _failing_probe() -> None:
+        events.append("boot_probe")
+        raise BayesianWorkerBootTopologyProbeError("injected_boot_probe_failure")
+
+    monkeypatch.setattr(
+        worker_boot_probe, "_bayesian_boot_topology_probe_passed", False
+    )
+    monkeypatch.setattr(
+        worker_boot_probe,
+        "run_bayesian_worker_boot_topology_probe",
+        _failing_probe,
+    )
+
+    with pytest.raises(SystemExit, match="bayesian_worker_boot_topology_probe_failed"):
+        worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed(
+            argv=["celery", "worker", "--queues", "bayesian"]
+        )
+
+    assert events == ["boot_probe"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_non_bayesian_worker_queue_does_not_run_boot_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    from app.bayesian import worker_boot_probe
+
+    events: list[str] = []
+
+    def _unexpected_probe() -> None:
+        events.append("boot_probe")
+
+    monkeypatch.setattr(
+        worker_boot_probe, "_bayesian_boot_topology_probe_passed", False
+    )
+    monkeypatch.setattr(
+        worker_boot_probe,
+        "run_bayesian_worker_boot_topology_probe",
+        _unexpected_probe,
+    )
+    worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed(
+        argv=["celery", "worker", "--queues", "housekeeping,maintenance,llm"]
+    )
+
+    assert events == []
 
 
 @pytest.mark.asyncio

@@ -25,10 +25,15 @@ from app.bayesian.db_engine import (
 )
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
+from app.bayesian.worker_boot_probe import (
+    ensure_bayesian_worker_boot_probe_signal_registered,
+)
 from app.celery_app import celery_app
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+ensure_bayesian_worker_boot_probe_signal_registered()
 
 # Static production contract. Runtime env may lower limits for non-vacuous CI probes.
 PRODUCTION_BAYESIAN_SOFT_TIME_LIMIT_S = 270

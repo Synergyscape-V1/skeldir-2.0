@@ -38,6 +38,8 @@ VALIDATOR = ROOT / "scripts/ci/validate_b24_p9_worker_tenant_hygiene.py"
 FIT_EXECUTION = ROOT / "backend/app/bayesian/fit_execution.py"
 DB_ENGINE = ROOT / "backend/app/bayesian/db_engine.py"
 DB_TOPOLOGY = ROOT / "backend/app/bayesian/db_topology.py"
+DB_BOOT_PROBE = ROOT / "backend/app/bayesian/db_boot_probe.py"
+WORKER_BOOT_PROBE = ROOT / "backend/app/bayesian/worker_boot_probe.py"
 TASKS_BAYESIAN = ROOT / "backend/app/tasks/bayesian.py"
 TENANT_CONTEXT = ROOT / "backend/app/bayesian/tenant_context.py"
 TEMP_WORKSPACE = ROOT / "backend/app/bayesian/temp_workspace.py"
@@ -245,6 +247,71 @@ def test_b24_p9_pooler_and_proxy_topologies_fail_closed(
         resolve_bayesian_worker_db_topology_policy(
             "postgresql://app_user:app_user@pgbouncer.internal:6432/skeldir"
         )
+
+
+def test_b24_p9_boot_probe_is_physical_not_connectivity_only() -> None:
+    text = _read(DB_BOOT_PROBE)
+    for token in (
+        "run_bayesian_worker_boot_topology_probe",
+        "create_bayesian_worker_engine",
+        "set_config('app.current_tenant_id', :tenant_id, false)",
+        "SET search_path TO pg_catalog",
+        "pg_advisory_lock",
+        "CREATE TEMP TABLE",
+        "pg_stat_activity",
+        "old_pid",
+        "new_pid",
+        "bayesian_worker_boot_topology_backend_not_replaced",
+        "bayesian_worker_boot_topology_guc_poison_survived",
+        "bayesian_worker_boot_topology_advisory_lock_survived",
+        "bayesian_worker_boot_topology_temp_object_survived",
+        "_wait_for_backend_absence",
+    ):
+        assert token in text
+    assert "pymc" not in text
+    assert "pytensor" not in text
+    assert "arviz" not in text
+
+
+def test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun() -> None:
+    boot_probe = _read(WORKER_BOOT_PROBE)
+    tasks = _read(TASKS_BAYESIAN)
+    worker_init_idx = boot_probe.index("signals.worker_init.connect(")
+    probe_call_idx = boot_probe.index(
+        "_run_bayesian_worker_boot_topology_probe_if_needed()"
+    )
+    assert worker_init_idx > probe_call_idx
+    assert 'SystemExit("bayesian_worker_boot_topology_probe_failed")' in boot_probe
+    assert "run_bayesian_worker_boot_topology_probe()" in boot_probe
+    assert "QUEUE_BAYESIAN in explicit_queues" in boot_probe
+    assert "worker_ready" not in boot_probe
+    assert "task_prerun" not in boot_probe
+    assert "ensure_bayesian_worker_boot_probe_signal_registered()" in tasks
+
+
+def test_b24_p9_boot_probe_worker_scope_policy(monkeypatch) -> None:
+    from app.bayesian.worker_boot_probe import _worker_may_consume_bayesian_tasks
+
+    for name in (
+        "SKELDIR_BAYESIAN_BOOT_PROBE_REQUIRED",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    assert not _worker_may_consume_bayesian_tasks(["celery", "worker"])
+    assert not _worker_may_consume_bayesian_tasks(
+        ["celery", "worker", "-Q", "maintenance"]
+    )
+    assert _worker_may_consume_bayesian_tasks(["celery", "worker", "-Q", "bayesian"])
+
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY", "direct_postgres")
+    assert _worker_may_consume_bayesian_tasks(["celery", "worker"])
+
+    monkeypatch.delenv("SKELDIR_BAYESIAN_DB_TOPOLOGY")
+    monkeypatch.setenv("SKELDIR_BAYESIAN_BOOT_PROBE_REQUIRED", "true")
+    assert _worker_may_consume_bayesian_tasks(["celery", "worker", "-Q", "maintenance"])
 
 
 def test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine() -> None:
