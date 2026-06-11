@@ -7,6 +7,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.pool import NullPool
 
+from app.bayesian.db_topology import resolve_bayesian_worker_db_topology_policy
 from app.core.secrets import get_database_url
 
 
@@ -47,8 +48,10 @@ def assert_bayesian_worker_engine_nonpooled(engine: Engine) -> None:
 def create_bayesian_worker_engine(database_url: str | None = None) -> Engine:
     """Create a disposable-connection sync engine for Bayesian worker tasks."""
 
+    resolved_database_url = database_url or runtime_sync_database_url()
+    resolve_bayesian_worker_db_topology_policy(resolved_database_url)
     engine = create_engine(
-        database_url or runtime_sync_database_url(),
+        resolved_database_url,
         pool_pre_ping=True,
         poolclass=NullPool,
     )

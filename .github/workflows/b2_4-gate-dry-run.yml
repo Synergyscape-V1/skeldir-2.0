@@ -179,6 +179,9 @@ jobs:
       SKELDIR_B24_P5_REQUIRE_DB_PROOFS: "1"
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
       EXPECTED_RUNTIME_DB_USER: app_user
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       PLATFORM_TOKEN_KEY_ID: test-key
     steps:
@@ -412,6 +415,9 @@ jobs:
       TESTING: "1"
       CI: "true"
       SKELDIR_B24_P9_REQUIRE_DB_PROOFS: "1"
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       PLATFORM_TOKEN_KEY_ID: test-key
     steps:

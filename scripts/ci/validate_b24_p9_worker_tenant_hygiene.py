@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BAYESIAN_PACKAGE = Path("backend/app/bayesian")
 TENANT_CONTEXT = BAYESIAN_PACKAGE / "tenant_context.py"
 DB_ENGINE = BAYESIAN_PACKAGE / "db_engine.py"
+DB_TOPOLOGY = BAYESIAN_PACKAGE / "db_topology.py"
 TEMP_WORKSPACE = BAYESIAN_PACKAGE / "temp_workspace.py"
 CLEANUP = BAYESIAN_PACKAGE / "cleanup.py"
 COMPILEDIR_REAPER = BAYESIAN_PACKAGE / "compiledir_reaper.py"
@@ -25,6 +27,7 @@ P9_MIGRATION = Path(
 P9_TESTS = Path("backend/tests/test_b24_p9_worker_tenant_hygiene.py")
 P9_DB_TESTS = Path("backend/tests/test_b24_p9_postgres_runtime.py")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
+CI_WORKFLOW = Path(".github/workflows/ci.yml")
 MAKEFILE = Path("Makefile")
 REQUIRED_STATUS_CONTRACT = Path(
     "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
@@ -33,6 +36,7 @@ REQUIRED_STATUS_CONTRACT = Path(
 REQUIRED_FILES = {
     TENANT_CONTEXT,
     DB_ENGINE,
+    DB_TOPOLOGY,
     TEMP_WORKSPACE,
     CLEANUP,
     COMPILEDIR_REAPER,
@@ -45,6 +49,7 @@ REQUIRED_FILES = {
     P9_TESTS,
     P9_DB_TESTS,
     WORKFLOW,
+    CI_WORKFLOW,
     MAKEFILE,
     REQUIRED_STATUS_CONTRACT,
 }
@@ -59,6 +64,13 @@ def _read(path: Path) -> str:
     if not full.exists():
         raise ValidationError(f"missing required file: {path.as_posix()}")
     return full.read_text(encoding="utf-8", errors="replace")
+
+
+def _ci_job_block(workflow_text: str, job_id: str) -> str:
+    pattern = rf"^  {re.escape(job_id)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)"
+    match = re.search(pattern, workflow_text, re.MULTILINE | re.DOTALL)
+    _require(match is not None, f"CI workflow job missing: {job_id}")
+    return match.group("body")
 
 
 def _require(condition: bool, message: str) -> None:
@@ -94,6 +106,7 @@ def validate_bayesian_worker_engine(text: str | None = None) -> None:
     for token in (
         "create_bayesian_worker_engine",
         "runtime_sync_database_url",
+        "resolve_bayesian_worker_db_topology_policy",
         "poolclass=NullPool",
         "assert_bayesian_worker_engine_nonpooled",
         "bayesian_worker_engine_must_use_nullpool",
@@ -108,6 +121,36 @@ def validate_bayesian_worker_engine(text: str | None = None) -> None:
         _require(
             forbidden not in db_engine,
             f"P9 worker engine has forbidden pooled token: {forbidden}",
+        )
+
+
+def validate_bayesian_worker_db_topology(text: str | None = None) -> None:
+    topology = text if text is not None else _read(DB_TOPOLOGY)
+    for token in (
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "DIRECT_POSTGRES_ATTESTATIONS",
+        "UNSUPPORTED_POOLER_TOPOLOGIES",
+        "POOLER_NEGATIVE_CONTROL_TOKENS",
+        "protected_topology_runtime",
+        "DSN contents are intentionally insufficient proof",
+        "bayesian_worker_db_topology_missing",
+        "bayesian_worker_db_topology_unknown",
+        "bayesian_worker_db_topology_pooler_unsupported",
+        "bayesian_worker_db_topology_proxy_dsn_rejected",
+        "bayesian_worker_db_topology_attestation_missing",
+        "bayesian_worker_db_topology_source_missing",
+    ):
+        _require(token in topology, f"P9 topology policy missing: {token}")
+    for forbidden in (
+        "if 'internal' in",
+        "if 'localhost' in",
+        "if '127.0.0.1' in",
+    ):
+        _require(
+            forbidden not in topology,
+            f"P9 topology policy has string-proof shortcut: {forbidden}",
         )
 
 
@@ -249,11 +292,15 @@ def validate_artifact_authority(
 
 def validate_tests_and_ci(
     workflow_text: str | None = None,
+    ci_workflow_text: str | None = None,
     required_status_text: str | None = None,
 ) -> None:
     tests = _read(P9_TESTS)
     db_tests = _read(P9_DB_TESTS)
     workflow = workflow_text if workflow_text is not None else _read(WORKFLOW)
+    ci_workflow = (
+        ci_workflow_text if ci_workflow_text is not None else _read(CI_WORKFLOW)
+    )
     required_status = (
         required_status_text
         if required_status_text is not None
@@ -263,6 +310,10 @@ def validate_tests_and_ci(
     for token in (
         "test_b24_p9_transaction_context_uses_set_local_only",
         "test_b24_p9_bayesian_worker_engine_factory_is_nonpooled",
+        "test_b24_p9_db_topology_policy_is_code_authority_not_dsn_proof",
+        "test_b24_p9_unknown_topology_fails_closed_in_protected_mode",
+        "test_b24_p9_opaque_hostname_requires_attestation_not_string_inference",
+        "test_b24_p9_pooler_and_proxy_topologies_fail_closed",
         "test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine",
         "test_b24_p9_workspace_scopes_and_cleans_tenant_fit_hash_attempt",
         "test_b24_p9_compiledir_scopes_tenant_fit_hash_attempt",
@@ -279,6 +330,7 @@ def validate_tests_and_ci(
         _require(token in tests, f"P9 unit proof missing: {token}")
     for token in (
         "test_b24_p9_bayesian_worker_engine_uses_nullpool_structural_sanitation",
+        "test_b24_p9_direct_topology_attestation_precedes_backend_pid_proof",
         "test_b24_p9_pool_poison_is_closed_and_replaced_without_manual_reset",
         "test_b24_p9_pg_stat_activity_backend_not_idle_in_transaction",
         "test_b24_p9_reset_failure_surface_replaced_by_invalidation_or_close",
@@ -295,17 +347,47 @@ def validate_tests_and_ci(
         "CREATE TEMP TABLE p9_temp_poison",
         "B2.4-P9 protected CI requires SKELDIR_B24_P9_REQUIRE_DB_PROOFS=1",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+        "direct_postgres_ci_postgres15",
     ):
         _require(token in db_tests, f"P9 DB proof missing: {token}")
     for token in (
         "validate-b24-p9-worker-tenant-hygiene",
         "B2.4-P9 Worker Tenant Hygiene Proof",
+        "B2.4-P5 PostgreSQL Runtime Proof",
         "test_b24_p9_worker_tenant_hygiene.py",
         "test_b24_p9_postgres_runtime.py",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "direct_postgres_ci_postgres15",
         "scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control",
     ):
         _require(token in workflow, f"P9 workflow wiring missing: {token}")
+    for token in (
+        "B2.1-P4 Queue Isolation + Performance Semantics Lock",
+        "B2.1-P6 Full End-to-End Closure + Downstream Readiness",
+    ):
+        _require(
+            token in ci_workflow, f"P9 CI workflow topology wiring missing: {token}"
+        )
+    for job_id in (
+        "b21-p4-queue-isolation-performance-lock",
+        "b21-p6-full-chain-closure-readiness",
+    ):
+        block = _ci_job_block(ci_workflow, job_id)
+        for token in (
+            "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+            "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+            "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+            "direct_postgres_ci_postgres15",
+            "github_actions_postgres_15_alpine",
+        ):
+            _require(
+                token in block,
+                f"P9 CI workflow topology wiring missing in {job_id}: {token}",
+            )
     _require(
         "validate-b24-p9-worker-tenant-hygiene" in makefile,
         "Makefile missing P9 validator target",
@@ -321,6 +403,7 @@ def validate_all() -> None:
         _read(path)
     validate_tenant_context()
     validate_bayesian_worker_engine()
+    validate_bayesian_worker_db_topology()
     validate_bayesian_tasks()
     validate_workspace()
     validate_compiledir()
@@ -348,6 +431,26 @@ def run_negative_controls() -> None:
                 _read(DB_ENGINE).replace("poolclass=NullPool", "pool_size=1")
             ),
             "worker engine",
+        ),
+        (
+            "topology_attestation_removed",
+            lambda: validate_bayesian_worker_db_topology(
+                _read(DB_TOPOLOGY).replace(
+                    "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+                    "SKELDIR_BAYESIAN_DB_ATTESTATION_REMOVED",
+                )
+            ),
+            "topology",
+        ),
+        (
+            "topology_proxy_negative_control_removed",
+            lambda: validate_bayesian_worker_db_topology(
+                _read(DB_TOPOLOGY).replace(
+                    "bayesian_worker_db_topology_proxy_dsn_rejected",
+                    "bayesian_worker_db_topology_proxy_allowed",
+                )
+            ),
+            "proxy",
         ),
         (
             "task_factory_removed",
@@ -437,6 +540,16 @@ def run_negative_controls() -> None:
                 )
             ),
             "required-status",
+        ),
+        (
+            "ci_topology_attestation_removed",
+            lambda: validate_tests_and_ci(
+                ci_workflow_text=_read(CI_WORKFLOW).replace(
+                    "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+                    "SKELDIR_BAYESIAN_DB_ATTESTATION_REMOVED",
+                )
+            ),
+            "topology",
         ),
     )
     for name, runner, expected in controls:

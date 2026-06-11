@@ -798,6 +798,9 @@ jobs:
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p4
       EXPECTED_RUNTIME_DB_USER: app_user
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
       CONTRACT_TESTING: "0"
@@ -1122,6 +1125,9 @@ jobs:
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
       EXPECTED_RUNTIME_DB_USER: app_user
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
       ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS: "30"
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
