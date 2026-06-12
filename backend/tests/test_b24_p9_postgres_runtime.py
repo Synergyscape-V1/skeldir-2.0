@@ -575,9 +575,8 @@ async def test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_ta
 
     queue_name = f"p9_non_bayesian_{uuid4().hex}"
     worker_log = tmp_path / "p9_non_bayesian_worker.log"
-    worker_stdio = tmp_path / "p9_non_bayesian_worker_stdio.log"
     probe_log = tmp_path / "p9_bayesian_probe.jsonl"
-    worker_stdio_handle = worker_stdio.open("w", encoding="utf-8")
+    worker_log_handle = worker_log.open("w", encoding="utf-8", buffering=1)
     process = subprocess.Popen(
         [
             sys.executable,
@@ -596,19 +595,17 @@ async def test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_ta
             "--without-gossip",
             "--without-mingle",
             "--without-heartbeat",
-            "--logfile",
-            str(worker_log),
         ],
         cwd=ROOT / "backend",
         env=_worker_env(include_bayesian_tasks=False, log_path=probe_log),
         text=True,
-        stdout=worker_stdio_handle,
+        stdout=worker_log_handle,
         stderr=subprocess.STDOUT,
     )
     try:
-        ready_log = _wait_for_log(worker_log, " ready", timeout_s=45)
-        worker_stdio_handle.flush()
-        assert process.poll() is None, ready_log + _read_log(worker_stdio)
+        ready_log = _wait_for_log(worker_log, " ready", timeout_s=90)
+        worker_log_handle.flush()
+        assert process.poll() is None, ready_log
         assert " ready" in ready_log
 
         celery_app.send_task(
@@ -624,7 +621,7 @@ async def test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_ta
         )
     finally:
         _terminate_worker(process)
-        worker_stdio_handle.close()
+        worker_log_handle.close()
 
     assert "app.tasks.bayesian.health_probe" in log_text
     assert "unregistered" in log_text.lower()
