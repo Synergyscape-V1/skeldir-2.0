@@ -163,7 +163,11 @@ def _observer_engine():
 
 def _worker_env(*, include_bayesian_tasks: bool, log_path: Path) -> dict[str, str]:
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(ROOT / "backend")
+    env["PYTHONPATH"] = str(ROOT)
+    env["C_FORCE_ROOT"] = "true"
+    multiproc_dir = log_path.parent / "prometheus_multiproc"
+    multiproc_dir.mkdir(parents=True, exist_ok=True)
+    env["PROMETHEUS_MULTIPROC_DIR"] = str(multiproc_dir)
     env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = (
         "1" if include_bayesian_tasks else "0"
     )
@@ -571,7 +575,9 @@ async def test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_ta
 
     queue_name = f"p9_non_bayesian_{uuid4().hex}"
     worker_log = tmp_path / "p9_non_bayesian_worker.log"
+    worker_stdio = tmp_path / "p9_non_bayesian_worker_stdio.log"
     probe_log = tmp_path / "p9_bayesian_probe.jsonl"
+    worker_stdio_handle = worker_stdio.open("w", encoding="utf-8")
     process = subprocess.Popen(
         [
             sys.executable,
@@ -593,15 +599,16 @@ async def test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_ta
             "--logfile",
             str(worker_log),
         ],
-        cwd=ROOT,
+        cwd=ROOT / "backend",
         env=_worker_env(include_bayesian_tasks=False, log_path=probe_log),
         text=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=worker_stdio_handle,
+        stderr=subprocess.STDOUT,
     )
     try:
         ready_log = _wait_for_log(worker_log, " ready", timeout_s=45)
-        assert process.poll() is None, ready_log
+        worker_stdio_handle.flush()
+        assert process.poll() is None, ready_log + _read_log(worker_stdio)
         assert " ready" in ready_log
 
         celery_app.send_task(
@@ -617,6 +624,7 @@ async def test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_ta
         )
     finally:
         _terminate_worker(process)
+        worker_stdio_handle.close()
 
     assert "app.tasks.bayesian.health_probe" in log_text
     assert "unregistered" in log_text.lower()
