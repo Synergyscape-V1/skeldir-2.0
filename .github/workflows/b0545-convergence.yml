@@ -34,7 +34,6 @@ jobs:
       CELERY_METRICS_PORT: "9546"
       CELERY_METRICS_ADDR: "127.0.0.1"
       ZG_BEAT_TEST_INTERVAL_SECONDS: "5"
-      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
       PYTHONPATH: backend
       CI: "true"
     steps:

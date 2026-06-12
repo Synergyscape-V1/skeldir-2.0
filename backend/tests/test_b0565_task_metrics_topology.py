@@ -65,7 +65,6 @@ def test_eg53_exporter_serves_metrics_with_invalid_database_url(tmp_path: Path):
 
     port = _pick_free_port()
     env = dict(os.environ)
-    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env.update(
         {
             "PROMETHEUS_MULTIPROC_DIR": str(multiproc_dir),

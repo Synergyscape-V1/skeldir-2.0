@@ -358,7 +358,6 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "MIGRATION_DATABASE_URL": cfg.migration_dsn,
             "CELERY_BROKER_URL": f"sqla+{cfg.runtime_sync_dsn}",
             "CELERY_RESULT_BACKEND": f"db+{cfg.runtime_sync_dsn}",
-            "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS": "0",
             "EXPECTED_RUNTIME_DB_USER": os.getenv("PHASE8_RUNTIME_DB_USER", "app_user"),
             "RUNTIME_USER": os.getenv("PHASE8_RUNTIME_DB_USER", "app_user"),
             "B07_P2_RUNTIME_DATABASE_URL": cfg.runtime_sync_dsn,

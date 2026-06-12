@@ -102,7 +102,6 @@ services:
       STRIPE_BASE_URL: http://mock_platform:8080
       INGESTION_FOLLOWUP_TASKS_ENABLED: ${INGESTION_FOLLOWUP_TASKS_ENABLED:-false}
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
-      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO
@@ -140,9 +139,6 @@ services:
       STRIPE_BASE_URL: http://mock_platform:8080
       INGESTION_FOLLOWUP_TASKS_ENABLED: ${INGESTION_FOLLOWUP_TASKS_ENABLED:-false}
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
-      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
-      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_e2e_compose_postgres15
-      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: docker_compose_e2e_postgres_service
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO
@@ -185,7 +181,6 @@ services:
       PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
       PLATFORM_TOKEN_KEY_ID: e2e-key
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
-      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO

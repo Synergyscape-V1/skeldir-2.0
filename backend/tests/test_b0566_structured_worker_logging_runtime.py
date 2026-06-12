@@ -36,7 +36,6 @@ def _start_worker(*, tmp_path: Path) -> tuple[subprocess.Popen[str], list[str]]:
     multiproc_dir.mkdir(parents=True, exist_ok=True)
 
     env = dict(os.environ)
-    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env.update(
         {
             "PYTHONPATH": str(backend_dir.parent),

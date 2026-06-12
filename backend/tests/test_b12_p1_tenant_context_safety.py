@@ -116,7 +116,6 @@ def test_worker_real_process_pool_reuse_no_bleed_and_tenant_envelope_required():
 
     backend_dir = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
-    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env["PYTHONPATH"] = str(backend_dir.parent)
     env["TESTING"] = "1"
     env["SKELDIR_TEST_TASKS"] = "1"

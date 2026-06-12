@@ -137,7 +137,6 @@ def api_base_url(b057_p3_fixture: _WebhookFixture) -> str:
     base_url = f"http://127.0.0.1:{port}"
 
     env = os.environ.copy()
-    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env.setdefault("ENVIRONMENT", "test")
 
     backend_dir = _repo_root() / "backend"

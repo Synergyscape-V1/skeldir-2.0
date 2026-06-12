@@ -81,7 +81,6 @@ def _start_worker(
     env["PYTHONPATH"] = str(REPO_ROOT)
     env["TESTING"] = "1"
     env["SKELDIR_TEST_TASKS"] = "1"
-    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env["DATABASE_FORCE_POOLING"] = "1"
     env["DATABASE_POOL_SIZE"] = "4"
     env["DATABASE_MAX_OVERFLOW"] = "0"

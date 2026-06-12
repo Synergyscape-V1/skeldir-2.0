@@ -120,8 +120,6 @@ jobs:
 
       - name: Start Celery worker
         shell: bash
-        env:
-          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
         run: |
           set -euo pipefail
           nohup celery -A app.celery_app.celery_app worker \

@@ -600,13 +600,9 @@ async def test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_ta
         stderr=subprocess.DEVNULL,
     )
     try:
-        ping = celery_app.send_task(
-            "app.tasks.housekeeping.ping",
-            kwargs={"fail": False},
-            queue=queue_name,
-            routing_key=f"{queue_name}.task",
-        )
-        assert ping.get(timeout=45)["status"] == "ok"
+        ready_log = _wait_for_log(worker_log, " ready", timeout_s=45)
+        assert process.poll() is None, ready_log
+        assert " ready" in ready_log
 
         celery_app.send_task(
             "app.tasks.bayesian.health_probe",

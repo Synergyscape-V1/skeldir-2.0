@@ -190,13 +190,11 @@ class WorkerSupervisor:
             "--concurrency",
             str(self.concurrency),
         ]
-        env = os.environ.copy()
-        env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
         self.proc = subprocess.Popen(
             cmd,
             stdout=log_f,
             stderr=subprocess.STDOUT,
-            env=env,
+            env=os.environ.copy(),
             start_new_session=True,
         )
         log_f.close()

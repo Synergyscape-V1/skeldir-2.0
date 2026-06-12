@@ -20,9 +20,7 @@ CONTAINER_STACK_FILE = "".join(("dock", "er", "-compose.e2e.yml"))
 BENCHMARK_FILE = "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py"
 BENCHMARK_ADJUDICATOR_FILE = "scripts/ci/enforce_b21_p4_benchmark_adjudication.py"
 CI_WORKFLOW_FILE = ".github/workflows/ci.yml"
-REQUIRED_CHECKS_FILE = (
-    "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
-)
+REQUIRED_CHECKS_FILE = "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
 REQUIRED_CONTEXT = "B2.1-P4 Queue Isolation + Performance Semantics Lock"
 CONTRACT_GATE_JOB = "contract-semantic-drift-gate"
 REQUIRED_CONTRACT_GATE_NEEDS = (
@@ -115,9 +113,8 @@ def run_enforcement(
             violations.append(f"celery_file_missing_token:{token}")
 
     procfile_tokens = (
-        "worker: cd backend && SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=0 celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution",
+        "worker: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution",
         "worker_bayesian: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian",
-        "worker_b23: cd backend && SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=0 celery -A app.celery_app.celery_app worker",
     )
     for token in procfile_tokens:
         if token not in procfile_text:
@@ -125,8 +122,6 @@ def run_enforcement(
 
     container_stack_tokens = (
         "worker_bayesian:",
-        'SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"',
-        "SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres",
         "--queues=housekeeping,maintenance,llm,attribution",
         "--queues=bayesian",
     )

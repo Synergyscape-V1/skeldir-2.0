@@ -58,7 +58,6 @@ def _start_worker(*, pool: str = "prefork", concurrency: int = PREFORK_CHILD_COU
     env["PYTHONPATH"] = str(backend_dir.parent)
     env["TESTING"] = "1"
     env["SKELDIR_TEST_TASKS"] = "1"
-    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env["PROMETHEUS_MULTIPROC_DIR"] = tempfile.mkdtemp(prefix="b12_p7_prom_")
     # Keep subprocess worker aligned with this test process runtime/broker identity.
     env["DATABASE_URL"] = get_database_url()

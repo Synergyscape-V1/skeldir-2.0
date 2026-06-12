@@ -827,7 +827,6 @@ jobs:
           MIGRATION_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r6
           CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/r6
           CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/r6
-          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
           R6_SHA: ${{ github.sha }}
           R6_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
