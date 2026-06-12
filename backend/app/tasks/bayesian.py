@@ -26,14 +26,13 @@ from app.bayesian.db_engine import (
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.bayesian.worker_boot_probe import (
+    assert_bayesian_worker_boot_topology_proven,
     ensure_bayesian_worker_boot_probe_signal_registered,
 )
 from app.celery_app import celery_app
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-ensure_bayesian_worker_boot_probe_signal_registered()
 
 # Static production contract. Runtime env may lower limits for non-vacuous CI probes.
 PRODUCTION_BAYESIAN_SOFT_TIME_LIMIT_S = 270
@@ -52,6 +51,47 @@ if _TASK_HARD_LIMIT_S <= _TASK_SOFT_LIMIT_S:
     raise RuntimeError(
         "BAYESIAN_TASK_TIME_LIMIT_S must be greater than BAYESIAN_TASK_SOFT_TIME_LIMIT_S"
     )
+
+
+_BAYESIAN_TASK_REGISTRATION_FALSE_VALUES = {"0", "false", "no", "off"}
+_BAYESIAN_TASK_REGISTRATION_TOPOLOGY_ENV = (
+    "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+    "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
+    "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+)
+
+
+def _bayesian_tasks_registered_for_process() -> bool:
+    """
+    Return whether this process registers executable Bayesian task entries.
+
+    Queue names and worker labels are intentionally not inputs. A process is
+    Bayesian-capable only when explicitly enabled or carrying the deployment
+    topology contract required for the boot probe that follows registration.
+    """
+
+    explicit = os.getenv("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS")
+    if explicit is not None:
+        return explicit.strip().lower() not in _BAYESIAN_TASK_REGISTRATION_FALSE_VALUES
+    return any(
+        os.getenv(name, "").strip() for name in _BAYESIAN_TASK_REGISTRATION_TOPOLOGY_ENV
+    )
+
+
+_BAYESIAN_TASKS_REGISTERED = _bayesian_tasks_registered_for_process()
+
+if _BAYESIAN_TASKS_REGISTERED:
+    ensure_bayesian_worker_boot_probe_signal_registered()
+
+
+def _bayesian_task(*task_args, **task_kwargs):
+    if _BAYESIAN_TASKS_REGISTERED:
+        return celery_app.task(*task_args, **task_kwargs)
+
+    def _return_plain_function(func):
+        return func
+
+    return _return_plain_function
 
 
 def _utc_now() -> str:
@@ -162,7 +202,7 @@ def _emit_fallback_event(
     return fallback_payload
 
 
-@celery_app.task(
+@_bayesian_task(
     bind=True,
     name="app.tasks.bayesian.run_mcmc_inference",
     routing_key="bayesian.task",
@@ -183,6 +223,7 @@ def run_mcmc_inference(
     """
     Simulate a long Bayesian/MCMC workload with deterministic timeout fallback behavior.
     """
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     correlation = _as_uuid(correlation_id)
     fit_uuid = _as_uuid(fit_id) if fit_id else None
@@ -258,7 +299,7 @@ def run_mcmc_inference(
         return fallback_payload
 
 
-@celery_app.task(
+@_bayesian_task(
     bind=True,
     name="app.tasks.bayesian.execute_fit_intent",
     routing_key="bayesian.task",
@@ -270,6 +311,7 @@ def run_mcmc_inference(
 def execute_fit_intent(self, *, fit_id: str) -> dict:
     """Execute one P6 Bayesian fit intent from a fit_id-only outbox dispatch."""
 
+    assert_bayesian_worker_boot_topology_proven()
     fit_uuid = _as_uuid(fit_id)
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
@@ -288,7 +330,7 @@ def execute_fit_intent(self, *, fit_id: str) -> dict:
     return payload
 
 
-@celery_app.task(
+@_bayesian_task(
     bind=True,
     name=FEATURE_AUTHORITY_DISPATCH_TASK_NAME,
     routing_key="bayesian.task",
@@ -302,6 +344,7 @@ def dispatch_feature_authority_build(
 ) -> dict:
     """Causally dispatch one committed feature-authority build outbox row."""
 
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
@@ -437,7 +480,7 @@ def dispatch_feature_authority_build(
         engine.dispose()
 
 
-@celery_app.task(
+@_bayesian_task(
     bind=True,
     name=FEATURE_AUTHORITY_BUILD_TASK_NAME,
     routing_key="bayesian.task",
@@ -458,6 +501,7 @@ def build_feature_authority(
 ) -> dict:
     """Reactivate the frozen candidate once snapshot-fresh authority exists."""
 
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
@@ -621,7 +665,7 @@ def build_feature_authority(
         engine.dispose()
 
 
-@celery_app.task(
+@_bayesian_task(
     bind=True,
     name="app.tasks.bayesian.run_resource_contention",
     routing_key="bayesian.task",
@@ -642,6 +686,7 @@ def run_resource_contention(
     """
     Consume CPU and Postgres throughput to emulate Bayesian contention physics.
     """
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     correlation = _as_uuid(correlation_id)
     task_id = str(self.request.id)
@@ -721,7 +766,7 @@ def run_resource_contention(
     return payload
 
 
-@celery_app.task(
+@_bayesian_task(
     bind=True,
     name="app.tasks.bayesian.health_probe",
     routing_key="bayesian.task",
@@ -731,6 +776,7 @@ def run_resource_contention(
     max_retries=0,
 )
 def health_probe(self, *, tenant_id: str, correlation_id: str) -> dict:
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     correlation = _as_uuid(correlation_id)
     payload = {
