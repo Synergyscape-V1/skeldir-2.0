@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -41,6 +42,7 @@ DB_TOPOLOGY = ROOT / "backend/app/bayesian/db_topology.py"
 DB_BOOT_PROBE = ROOT / "backend/app/bayesian/db_boot_probe.py"
 WORKER_BOOT_PROBE = ROOT / "backend/app/bayesian/worker_boot_probe.py"
 TASKS_BAYESIAN = ROOT / "backend/app/tasks/bayesian.py"
+CELERY_APP = ROOT / "backend/app/celery_app.py"
 TENANT_CONTEXT = ROOT / "backend/app/bayesian/tenant_context.py"
 TEMP_WORKSPACE = ROOT / "backend/app/bayesian/temp_workspace.py"
 CHILD_ENVIRONMENT = ROOT / "backend/app/bayesian/child_environment.py"
@@ -277,41 +279,102 @@ def test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun() -> 
     boot_probe = _read(WORKER_BOOT_PROBE)
     tasks = _read(TASKS_BAYESIAN)
     worker_init_idx = boot_probe.index("signals.worker_init.connect(")
+    worker_process_init_idx = boot_probe.index("signals.worker_process_init.connect(")
     probe_call_idx = boot_probe.index(
         "_run_bayesian_worker_boot_topology_probe_if_needed()"
     )
     assert worker_init_idx > probe_call_idx
+    assert worker_process_init_idx > probe_call_idx
     assert 'SystemExit("bayesian_worker_boot_topology_probe_failed")' in boot_probe
     assert "run_bayesian_worker_boot_topology_probe()" in boot_probe
-    assert "QUEUE_BAYESIAN in explicit_queues" in boot_probe
+    assert "bayesian_worker_boot_topology_probe_has_passed" in boot_probe
+    assert "assert_bayesian_worker_boot_topology_proven" in boot_probe
+    assert "_bayesian_boot_topology_probe_pid == os.getpid()" in boot_probe
+    assert "QUEUE_BAYESIAN in explicit_queues" not in boot_probe
+    assert "_parse_celery_queue_arguments" not in boot_probe
+    assert "_worker_may_consume_bayesian_tasks" not in boot_probe
+    assert "SKELDIR_BAYESIAN_BOOT_PROBE_REQUIRED" not in boot_probe
+    assert "_BAYESIAN_TOPOLOGY_AUTHORITY_ENV" not in boot_probe
     assert "worker_ready" not in boot_probe
     assert "task_prerun" not in boot_probe
     assert "ensure_bayesian_worker_boot_probe_signal_registered()" in tasks
+    assert tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 6
 
 
-def test_b24_p9_boot_probe_worker_scope_policy(monkeypatch) -> None:
-    from app.bayesian.worker_boot_probe import _worker_may_consume_bayesian_tasks
-
-    for name in (
-        "SKELDIR_BAYESIAN_BOOT_PROBE_REQUIRED",
-        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
-        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
-        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
-    ):
-        monkeypatch.delenv(name, raising=False)
-
-    assert not _worker_may_consume_bayesian_tasks(["celery", "worker"])
-    assert not _worker_may_consume_bayesian_tasks(
-        ["celery", "worker", "-Q", "maintenance"]
+def test_b24_p9_non_bayesian_worker_registry_excludes_bayesian_tasks() -> None:
+    script = r"""
+import json
+from celery import signals
+from app.celery_app import celery_app
+celery_app.loader.import_default_modules()
+tasks = sorted(celery_app.tasks.keys())
+print(json.dumps({
+    "include": list(celery_app.conf.include),
+    "has_bayesian_module": "app.tasks.bayesian" in celery_app.conf.include,
+    "bayesian_tasks": [task for task in tasks if task.startswith("app.tasks.bayesian.")],
+    "worker_init_receivers": len(signals.worker_init.receivers),
+    "worker_process_init_receivers": len(signals.worker_process_init.receivers),
+}, sort_keys=True))
+"""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT / "backend")
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=20,
     )
-    assert _worker_may_consume_bayesian_tasks(["celery", "worker", "-Q", "bayesian"])
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert payload["has_bayesian_module"] is False
+    assert payload["bayesian_tasks"] == []
 
-    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY", "direct_postgres")
-    assert _worker_may_consume_bayesian_tasks(["celery", "worker"])
 
-    monkeypatch.delenv("SKELDIR_BAYESIAN_DB_TOPOLOGY")
-    monkeypatch.setenv("SKELDIR_BAYESIAN_BOOT_PROBE_REQUIRED", "true")
-    assert _worker_may_consume_bayesian_tasks(["celery", "worker", "-Q", "maintenance"])
+def test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bayesian import worker_boot_probe
+    from app.tasks import bayesian
+
+    monkeypatch.setattr(
+        worker_boot_probe, "_bayesian_boot_topology_probe_passed", False
+    )
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_boot_topology_probe_pid", None)
+    with pytest.raises(
+        worker_boot_probe.BayesianWorkerBootTopologyProofMissing,
+        match="bayesian_worker_boot_topology_probe_required",
+    ):
+        bayesian.health_probe.run(
+            tenant_id="not-a-uuid",
+            correlation_id="not-a-uuid",
+        )
+
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_boot_topology_probe_passed", True)
+    monkeypatch.setattr(
+        worker_boot_probe, "_bayesian_boot_topology_probe_pid", os.getpid() + 1
+    )
+    with pytest.raises(
+        worker_boot_probe.BayesianWorkerBootTopologyProofMissing,
+        match="bayesian_worker_boot_topology_probe_required",
+    ):
+        bayesian.health_probe.run(
+            tenant_id="not-a-uuid",
+            correlation_id="not-a-uuid",
+        )
+
+
+def test_b24_p9_celery_app_registry_gate_is_structural() -> None:
+    celery_app_text = _read(CELERY_APP)
+    assert "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS" in celery_app_text
+    assert "_include_bayesian_tasks_for_process" in celery_app_text
+    assert 'include_modules.append("app.tasks.bayesian")' in celery_app_text
+    assert (
+        '"bayesian_tasks_registered": "app.tasks.bayesian" in include_modules'
+        in celery_app_text
+    )
 
 
 def test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine() -> None:

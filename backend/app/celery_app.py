@@ -9,7 +9,6 @@ import multiprocessing
 import os
 import threading
 import time
-from typing import Optional
 
 from celery import Celery, signals
 from sqlalchemy import create_engine, text
@@ -192,6 +191,21 @@ _live_child_pids_lock = threading.Lock()
 _child_pid_events = multiprocessing.Queue()
 
 
+def _include_bayesian_tasks_for_process() -> bool:
+    """
+    Return whether this process should register Bayesian task implementations.
+
+    Directive V safety invariant: a process that registers Bayesian task entries
+    must complete the boot topology proof. Non-Bayesian worker profiles may set
+    this to false, making misrouted Bayesian messages unregistered.
+    """
+
+    raw = os.getenv("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS")
+    if raw is None:
+        return True
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def _ensure_celery_configured():
     """
     B0.5.3.3 Gate C: Lazy Celery configuration to prevent premature DB connections.
@@ -225,12 +239,13 @@ def _ensure_celery_configured():
         "app.tasks.matviews",
         "app.tasks.llm",
         "app.tasks.attribution",
-        "app.tasks.bayesian",
         "app.tasks.revenue_verification",
         "app.tasks.r4_failure_semantics",
         "app.tasks.r6_resource_governance",
         "app.tasks.privacy",
     ]
+    if _include_bayesian_tasks_for_process():
+        include_modules.append("app.tasks.bayesian")
     # B0.5.6.6: Test-only tasks for runtime log proof (never enabled in production).
     if os.getenv("SKELDIR_TEST_TASKS") == "1":
         include_modules.append("app.tasks.observability_test")
@@ -318,6 +333,7 @@ def _ensure_celery_configured():
             "beat_schedule_loaded": bool(celery_app.conf.beat_schedule),
             "scheduled_tasks": list(celery_app.conf.beat_schedule.keys()) if celery_app.conf.beat_schedule else [],
             "app_name": celery_app.main,
+            "bayesian_tasks_registered": "app.tasks.bayesian" in include_modules,
         },
     )
     _celery_configured = True
@@ -601,11 +617,14 @@ def _start_multiproc_sweeper_thread(*, worker) -> None:
 def _log_registered_tasks() -> None:
     tasks = sorted(celery_app.tasks.keys())
     matview_tasks = [task for task in tasks if task.startswith("app.tasks.matviews.")]
+    bayesian_tasks = [task for task in tasks if task.startswith("app.tasks.bayesian.")]
     logger.info(
         "celery_worker_registered_tasks",
         extra={
             "task_count": len(tasks),
             "matview_tasks": matview_tasks,
+            "bayesian_tasks": bayesian_tasks,
+            "has_bayesian_tasks": bool(bayesian_tasks),
             "has_pulse_matviews_global": "app.tasks.matviews.pulse_matviews_global" in tasks,
             "has_refresh_all_for_tenant": "app.tasks.matviews.refresh_all_for_tenant" in tasks,
         },
@@ -742,9 +761,6 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
         import psycopg2.extras
         from uuid import UUID, uuid5, NAMESPACE_URL
         from sqlalchemy.engine.url import make_url
-
-        # B0.5.3.3 Gate C: Lazy settings access in DLQ handler
-        settings = _get_settings()
 
         # G4-AUTH: Build sync DSN with 127.0.0.1 normalization for CI determinism
         # Step 1: Get raw DATABASE_URL from settings

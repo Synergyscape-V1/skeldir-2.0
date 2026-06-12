@@ -295,6 +295,7 @@ def test_b07_p2_runtime_llm_chain_with_redaction():
     config = _runtime_config()
 
     env = os.environ.copy()
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env["DATABASE_URL"] = config.runtime_async_url
     env["CELERY_BROKER_URL"] = f"sqla+{config.runtime_sync_url}"
     env["CELERY_RESULT_BACKEND"] = f"db+{config.runtime_sync_url}"

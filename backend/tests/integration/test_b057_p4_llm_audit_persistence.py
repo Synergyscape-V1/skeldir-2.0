@@ -200,6 +200,7 @@ def test_b057_p4_llm_stub_persists_under_runtime_identity():
 
     runtime_async_db_url = runtime_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     env = os.environ.copy()
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env["DATABASE_URL"] = runtime_async_db_url
     env["CELERY_BROKER_URL"] = f"sqla+{runtime_db_url}"
     env["CELERY_RESULT_BACKEND"] = f"db+{runtime_db_url}"
@@ -239,6 +240,7 @@ def test_b057_p4_audit_failure_persists_to_worker_failed_jobs():
     user_id = uuid4()
     runtime_async_db_url = runtime_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     env = os.environ.copy()
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env["DATABASE_URL"] = runtime_async_db_url
     env["CELERY_BROKER_URL"] = f"sqla+{runtime_db_url}"
     env["CELERY_RESULT_BACKEND"] = f"db+{runtime_db_url}"

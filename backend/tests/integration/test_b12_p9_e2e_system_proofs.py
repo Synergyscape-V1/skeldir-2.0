@@ -267,6 +267,7 @@ def _build_runtime_env() -> dict[str, str]:
     runtime_env["PLATFORM_TOKEN_ENCRYPTION_KEY"] = "b12-p9-platform-key"
     runtime_env["PLATFORM_TOKEN_KEY_ID"] = "b12-p9-key-id"
     runtime_env["SKELDIR_TEST_TASKS"] = "1"
+    runtime_env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     runtime_env["PYTHONPATH"] = str(_repo_root()) + os.pathsep + str(_backend_root())
     runtime_env["PROMETHEUS_MULTIPROC_DIR"] = str(multiproc_dir)
     runtime_env["DATABASE_URL"] = _runtime_sync_database_url()

@@ -26,6 +26,7 @@ from app.bayesian.db_engine import (
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.bayesian.worker_boot_probe import (
+    assert_bayesian_worker_boot_topology_proven,
     ensure_bayesian_worker_boot_probe_signal_registered,
 )
 from app.celery_app import celery_app
@@ -183,6 +184,7 @@ def run_mcmc_inference(
     """
     Simulate a long Bayesian/MCMC workload with deterministic timeout fallback behavior.
     """
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     correlation = _as_uuid(correlation_id)
     fit_uuid = _as_uuid(fit_id) if fit_id else None
@@ -270,6 +272,7 @@ def run_mcmc_inference(
 def execute_fit_intent(self, *, fit_id: str) -> dict:
     """Execute one P6 Bayesian fit intent from a fit_id-only outbox dispatch."""
 
+    assert_bayesian_worker_boot_topology_proven()
     fit_uuid = _as_uuid(fit_id)
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
@@ -302,6 +305,7 @@ def dispatch_feature_authority_build(
 ) -> dict:
     """Causally dispatch one committed feature-authority build outbox row."""
 
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
@@ -458,6 +462,7 @@ def build_feature_authority(
 ) -> dict:
     """Reactivate the frozen candidate once snapshot-fresh authority exists."""
 
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
@@ -642,6 +647,7 @@ def run_resource_contention(
     """
     Consume CPU and Postgres throughput to emulate Bayesian contention physics.
     """
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     correlation = _as_uuid(correlation_id)
     task_id = str(self.request.id)
@@ -731,6 +737,7 @@ def run_resource_contention(
     max_retries=0,
 )
 def health_probe(self, *, tenant_id: str, correlation_id: str) -> dict:
+    assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     correlation = _as_uuid(correlation_id)
     payload = {

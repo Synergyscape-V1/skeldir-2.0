@@ -695,6 +695,7 @@ def test_b057_p5_full_chain_webhook_to_matview():
 
     runtime_async = _runtime_async_db_url(runtime_db_url)
     env = os.environ.copy()
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env["DATABASE_URL"] = runtime_async
     env["CELERY_BROKER_URL"] = f"sqla+{runtime_db_url}"
     env["CELERY_RESULT_BACKEND"] = f"db+{runtime_db_url}"

@@ -19,6 +19,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+os.environ.setdefault("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS", "0")
+
 from app.celery_app import celery_app
 from app.core.queues import QUEUE_B23_MATCH_ENGINE
 from app.db.session import b23_engine, engine, get_b23_session, get_session

@@ -179,6 +179,7 @@ def celery_worker_proc():
     backend_dir = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
     env["PYTHONPATH"] = str(backend_dir.parent)
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
     env["PROMETHEUS_MULTIPROC_DIR"] = tempfile.mkdtemp(prefix="b051_prom_")
     # B0.5.6.1: CELERY_METRICS_PORT/ADDR removed - worker HTTP server eradicated
     queue_list = ",".join(["housekeeping", "maintenance", QUEUE_LLM, "attribution"])

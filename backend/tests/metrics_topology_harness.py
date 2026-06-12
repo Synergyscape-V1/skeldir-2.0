@@ -138,6 +138,7 @@ def start_metrics_topology(
     base_env = dict(os.environ)
     base_env.setdefault("PYTHONUNBUFFERED", "1")
     base_env.setdefault("TESTING", "1")
+    base_env.setdefault("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS", "0")
 
     worker_env = dict(base_env)
     worker_env.update(
@@ -232,6 +233,7 @@ def ensure_worker_running(topology: MetricsTopology) -> None:
     base_env = dict(os.environ)
     base_env.setdefault("PYTHONUNBUFFERED", "1")
     base_env.setdefault("TESTING", "1")
+    base_env.setdefault("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS", "0")
 
     worker_env = dict(base_env)
     worker_env.update(

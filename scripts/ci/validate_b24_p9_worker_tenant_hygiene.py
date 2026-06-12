@@ -23,6 +23,7 @@ FIT_EXECUTION = BAYESIAN_PACKAGE / "fit_execution.py"
 ARTIFACT_REPOSITORY = BAYESIAN_PACKAGE / "artifact_repository.py"
 MODELS = BAYESIAN_PACKAGE / "models.py"
 TASKS_BAYESIAN = Path("backend/app/tasks/bayesian.py")
+CELERY_APP = Path("backend/app/celery_app.py")
 P9_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202606081200_b24_p9_worker_tenant_hygiene.py"
 )
@@ -30,6 +31,12 @@ P9_TESTS = Path("backend/tests/test_b24_p9_worker_tenant_hygiene.py")
 P9_DB_TESTS = Path("backend/tests/test_b24_p9_postgres_runtime.py")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
 CI_WORKFLOW = Path(".github/workflows/ci.yml")
+B0545_WORKFLOW = Path(".github/workflows/b0545-convergence.yml")
+R6_WORKFLOW = Path(".github/workflows/r6-worker-resource-governance.yml")
+R7_WORKFLOW = Path(".github/workflows/r7-final-winning-state.yml")
+PROCFILE = Path("Procfile")
+E2E_COMPOSE = Path("docker-compose.e2e.yml")
+R4_HARNESS = Path("scripts/r4/worker_failure_semantics.py")
 B07_P5_TIMEOUT_RUNTIME_TEST = Path(
     "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py"
 )
@@ -52,11 +59,18 @@ REQUIRED_FILES = {
     ARTIFACT_REPOSITORY,
     MODELS,
     TASKS_BAYESIAN,
+    CELERY_APP,
     P9_MIGRATION,
     P9_TESTS,
     P9_DB_TESTS,
     WORKFLOW,
     CI_WORKFLOW,
+    B0545_WORKFLOW,
+    R6_WORKFLOW,
+    R7_WORKFLOW,
+    PROCFILE,
+    E2E_COMPOSE,
+    R4_HARNESS,
     B07_P5_TIMEOUT_RUNTIME_TEST,
     MAKEFILE,
     REQUIRED_STATUS_CONTRACT,
@@ -166,12 +180,14 @@ def validate_bayesian_worker_boot_probe(
     probe_text: str | None = None,
     worker_boot_text: str | None = None,
     tasks_text: str | None = None,
+    celery_app_text: str | None = None,
 ) -> None:
     boot_probe = probe_text if probe_text is not None else _read(DB_BOOT_PROBE)
     worker_boot = (
         worker_boot_text if worker_boot_text is not None else _read(WORKER_BOOT_PROBE)
     )
     tasks = tasks_text if tasks_text is not None else _read(TASKS_BAYESIAN)
+    celery_app = celery_app_text if celery_app_text is not None else _read(CELERY_APP)
     for token in (
         "run_bayesian_worker_boot_topology_probe",
         "BayesianWorkerBootTopologyProbeError",
@@ -197,26 +213,51 @@ def validate_bayesian_worker_boot_probe(
         )
     for token in (
         "signals.worker_init.connect(",
+        "signals.worker_process_init.connect(",
         "_run_bayesian_worker_boot_topology_probe_if_needed()",
         "run_bayesian_worker_boot_topology_probe()",
         'SystemExit("bayesian_worker_boot_topology_probe_failed")',
-        "QUEUE_BAYESIAN in explicit_queues",
-        "SKELDIR_BAYESIAN_BOOT_PROBE_REQUIRED",
-        "_BAYESIAN_TOPOLOGY_AUTHORITY_ENV",
-        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
-        "return any(",
-        "for name in _BAYESIAN_TOPOLOGY_AUTHORITY_ENV",
+        "bayesian_worker_boot_topology_probe_has_passed",
+        "assert_bayesian_worker_boot_topology_proven",
+        "_bayesian_boot_topology_probe_pid == os.getpid()",
     ):
         _require(
             token in worker_boot,
             f"P9 Celery boot probe wiring missing: {token}",
         )
+    for forbidden in (
+        "_parse_celery_queue_arguments",
+        "_worker_may_consume_bayesian_tasks",
+        "QUEUE_BAYESIAN in explicit_queues",
+        "SKELDIR_BAYESIAN_BOOT_PROBE_REQUIRED",
+        "_BAYESIAN_TOPOLOGY_AUTHORITY_ENV",
+    ):
+        _require(
+            forbidden not in worker_boot,
+            f"P9 boot probe still has forbidden queue/env skip authority: {forbidden}",
+        )
     _require(
         "ensure_bayesian_worker_boot_probe_signal_registered()" in tasks,
         "P9 Bayesian task module must register boot probe signal on import",
     )
+    _require(
+        tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 6,
+        "P9 Bayesian task entries must fail closed on missing boot proof",
+    )
+    for token in (
+        "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",
+        "_include_bayesian_tasks_for_process",
+        'include_modules.append("app.tasks.bayesian")',
+        '"bayesian_tasks_registered": "app.tasks.bayesian" in include_modules',
+        '"bayesian_tasks": bayesian_tasks',
+        '"has_bayesian_tasks": bool(bayesian_tasks)',
+    ):
+        _require(token in celery_app, f"P9 Celery registry gate missing: {token}")
     try:
         worker_init_idx = worker_boot.index("signals.worker_init.connect(")
+        worker_process_init_idx = worker_boot.index(
+            "signals.worker_process_init.connect("
+        )
         probe_call_idx = worker_boot.index(
             "_run_bayesian_worker_boot_topology_probe_if_needed()"
         )
@@ -227,6 +268,10 @@ def validate_bayesian_worker_boot_probe(
     _require(
         probe_call_idx < worker_init_idx,
         "P9 Celery boot probe receiver must be defined before worker_init registration",
+    )
+    _require(
+        probe_call_idx < worker_process_init_idx,
+        "P9 Celery boot probe receiver must be defined before worker_process_init registration",
     )
     for forbidden in ("worker_ready", "task_prerun"):
         _require(
@@ -376,6 +421,8 @@ def validate_tests_and_ci(
     ci_workflow_text: str | None = None,
     b07_p5_timeout_test_text: str | None = None,
     required_status_text: str | None = None,
+    procfile_text: str | None = None,
+    e2e_compose_text: str | None = None,
 ) -> None:
     tests = _read(P9_TESTS)
     db_tests = _read(P9_DB_TESTS)
@@ -394,6 +441,14 @@ def validate_tests_and_ci(
         else _read(REQUIRED_STATUS_CONTRACT)
     )
     makefile = _read(MAKEFILE)
+    procfile = procfile_text if procfile_text is not None else _read(PROCFILE)
+    e2e_compose = (
+        e2e_compose_text if e2e_compose_text is not None else _read(E2E_COMPOSE)
+    )
+    b0545_workflow = _read(B0545_WORKFLOW)
+    r6_workflow = _read(R6_WORKFLOW)
+    r7_workflow = _read(R7_WORKFLOW)
+    r4_harness = _read(R4_HARNESS)
     for token in (
         "test_b24_p9_transaction_context_uses_set_local_only",
         "test_b24_p9_bayesian_worker_engine_factory_is_nonpooled",
@@ -403,7 +458,9 @@ def validate_tests_and_ci(
         "test_b24_p9_pooler_and_proxy_topologies_fail_closed",
         "test_b24_p9_boot_probe_is_physical_not_connectivity_only",
         "test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun",
-        "test_b24_p9_boot_probe_worker_scope_policy",
+        "test_b24_p9_non_bayesian_worker_registry_excludes_bayesian_tasks",
+        "test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof",
+        "test_b24_p9_celery_app_registry_gate_is_structural",
         "test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine",
         "test_b24_p9_workspace_scopes_and_cleans_tenant_fit_hash_attempt",
         "test_b24_p9_compiledir_scopes_tenant_fit_hash_attempt",
@@ -423,7 +480,8 @@ def validate_tests_and_ci(
         "test_b24_p9_direct_topology_attestation_precedes_backend_pid_proof",
         "test_b24_p9_boot_probe_physically_proves_session_boundary",
         "test_b24_p9_boot_probe_failure_is_fatal_before_task_consumption",
-        "test_b24_p9_non_bayesian_worker_queue_does_not_run_boot_probe",
+        "test_b24_p9_registered_bayesian_process_always_runs_boot_probe",
+        "test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_task",
         "test_b24_p9_pool_poison_is_closed_and_replaced_without_manual_reset",
         "test_b24_p9_pg_stat_activity_backend_not_idle_in_transaction",
         "test_b24_p9_reset_failure_surface_replaced_by_invalidation_or_close",
@@ -458,6 +516,31 @@ def validate_tests_and_ci(
         "scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control",
     ):
         _require(token in workflow, f"P9 workflow wiring missing: {token}")
+    for token in (
+        "worker: cd backend && SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=0",
+        "worker_bayesian: cd backend && celery -A app.celery_app.celery_app worker",
+        "worker_b23: cd backend && SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=0",
+    ):
+        _require(token in procfile, f"P9 Procfile launch profile missing: {token}")
+    for token in (
+        'SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"',
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_e2e_compose_postgres15",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: docker_compose_e2e_postgres_service",
+    ):
+        _require(
+            token in e2e_compose, f"P9 E2E compose launch profile missing: {token}"
+        )
+    for label, text in (
+        ("b0545", b0545_workflow),
+        ("r6", r6_workflow),
+        ("r7", r7_workflow),
+        ("r4", r4_harness),
+    ):
+        _require(
+            "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS" in text,
+            f"P9 non-Bayesian worker launch profile missing registry exclusion: {label}",
+        )
     for token in (
         "B2.1-P4 Queue Isolation + Performance Semantics Lock",
         "B2.1-P6 Full End-to-End Closure + Downstream Readiness",
@@ -593,14 +676,35 @@ def run_negative_controls() -> None:
             "boot probe",
         ),
         (
-            "boot_probe_default_worker_topology_authority_removed",
+            "boot_probe_child_process_hook_removed",
             lambda: validate_bayesian_worker_boot_probe(
                 worker_boot_text=_read(WORKER_BOOT_PROBE).replace(
-                    "_BAYESIAN_TOPOLOGY_AUTHORITY_ENV",
-                    "_BAYESIAN_TOPOLOGY_AUTHORITY_REMOVED",
+                    "signals.worker_process_init.connect(",
+                    "signals.worker_process_init_removed(",
                 )
             ),
-            "topology",
+            "worker_process_init",
+        ),
+        (
+            "bayesian_task_entry_guard_removed",
+            lambda: validate_bayesian_worker_boot_probe(
+                tasks_text=_read(TASKS_BAYESIAN).replace(
+                    "assert_bayesian_worker_boot_topology_proven()",
+                    "bayesian_task_entry_guard_removed()",
+                    1,
+                )
+            ),
+            "task entries",
+        ),
+        (
+            "celery_registry_gate_removed",
+            lambda: validate_bayesian_worker_boot_probe(
+                celery_app_text=_read(CELERY_APP).replace(
+                    "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",
+                    "SKELDIR_CELERY_INCLUDE_BAYESIAN_REMOVED",
+                )
+            ),
+            "registry",
         ),
         (
             "task_factory_removed",
@@ -690,6 +794,17 @@ def run_negative_controls() -> None:
                 )
             ),
             "required-status",
+        ),
+        (
+            "non_bayesian_launch_registry_exclusion_removed",
+            lambda: validate_tests_and_ci(
+                procfile_text=_read(PROCFILE).replace(
+                    "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=0",
+                    "SKELDIR_CELERY_INCLUDE_BAYESIAN_REMOVED=0",
+                    1,
+                )
+            ),
+            "Procfile",
         ),
         (
             "ci_topology_attestation_removed",

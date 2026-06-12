@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -157,6 +159,47 @@ def _sync_database_url() -> str:
 
 def _observer_engine():
     return create_engine(_sync_database_url(), isolation_level="AUTOCOMMIT")
+
+
+def _worker_env(*, include_bayesian_tasks: bool, log_path: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT / "backend")
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = (
+        "1" if include_bayesian_tasks else "0"
+    )
+    env["SKELDIR_B24_P9_REQUIRE_DB_PROOFS"] = "1"
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY"] = "direct_postgres"
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"] = "direct_postgres_ci_postgres15"
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"] = "github_actions_postgres_15_alpine"
+    env["BAYESIAN_PROBE_LOG_PATH"] = str(log_path)
+    return env
+
+
+def _terminate_worker(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+
+
+def _read_log(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _wait_for_log(path: Path, token: str, *, timeout_s: float = 20.0) -> str:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        text = _read_log(path)
+        if token in text:
+            return text
+        time.sleep(0.25)
+    return _read_log(path)
 
 
 def _backend_state(observer, pid: int) -> dict[str, object] | None:
@@ -478,16 +521,14 @@ async def test_b24_p9_boot_probe_failure_is_fatal_before_task_consumption(
     )
 
     with pytest.raises(SystemExit, match="bayesian_worker_boot_topology_probe_failed"):
-        worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed(
-            argv=["celery", "worker", "--queues", "bayesian"]
-        )
+        worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed()
 
     assert events == ["boot_probe"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_b24_p9_non_bayesian_worker_queue_does_not_run_boot_probe(
+async def test_b24_p9_registered_bayesian_process_always_runs_boot_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await _assert_table_exists("bayesian_model_fits")
@@ -495,22 +536,97 @@ async def test_b24_p9_non_bayesian_worker_queue_does_not_run_boot_probe(
 
     events: list[str] = []
 
-    def _unexpected_probe() -> None:
+    class _ProbeResult:
+        old_pid = 100
+        new_pid = 101
+        elapsed_seconds = 0.01
+
+    def _proof_probe() -> _ProbeResult:
         events.append("boot_probe")
+        return _ProbeResult()
 
     monkeypatch.setattr(
         worker_boot_probe, "_bayesian_boot_topology_probe_passed", False
     )
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_boot_topology_probe_pid", None)
     monkeypatch.setattr(
         worker_boot_probe,
         "run_bayesian_worker_boot_topology_probe",
-        _unexpected_probe,
+        _proof_probe,
     )
-    worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed(
-        argv=["celery", "worker", "--queues", "housekeeping,maintenance,llm"]
-    )
+    monkeypatch.setattr(sys, "argv", ["celery", "worker", "-Q", "housekeeping"])
+    worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed()
 
-    assert events == []
+    assert events == ["boot_probe"]
+    assert worker_boot_probe.bayesian_worker_boot_topology_probe_has_passed()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_task(
+    tmp_path: Path,
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    from app.celery_app import celery_app
+
+    queue_name = f"p9_non_bayesian_{uuid4().hex}"
+    worker_log = tmp_path / "p9_non_bayesian_worker.log"
+    probe_log = tmp_path / "p9_bayesian_probe.jsonl"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "celery",
+            "-A",
+            "app.celery_app.celery_app",
+            "worker",
+            "-P",
+            "solo",
+            "-c",
+            "1",
+            "-Q",
+            queue_name,
+            "--loglevel=INFO",
+            "--without-gossip",
+            "--without-mingle",
+            "--without-heartbeat",
+            "--logfile",
+            str(worker_log),
+        ],
+        cwd=ROOT,
+        env=_worker_env(include_bayesian_tasks=False, log_path=probe_log),
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        ping = celery_app.send_task(
+            "app.tasks.housekeeping.ping",
+            kwargs={"fail": False},
+            queue=queue_name,
+            routing_key=f"{queue_name}.task",
+        )
+        assert ping.get(timeout=45)["status"] == "ok"
+
+        celery_app.send_task(
+            "app.tasks.bayesian.health_probe",
+            kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
+            queue=queue_name,
+            routing_key=f"{queue_name}.task",
+        )
+        log_text = _wait_for_log(
+            worker_log,
+            "app.tasks.bayesian.health_probe",
+            timeout_s=25,
+        )
+    finally:
+        _terminate_worker(process)
+
+    assert "app.tasks.bayesian.health_probe" in log_text
+    assert "unregistered" in log_text.lower()
+    assert "bayesian_health_probe_ok" not in log_text
+    assert "bayesian_worker_boot_topology_probe_started" not in log_text
+    assert "bayesian_health_probe_ok" not in _read_log(probe_log)
 
 
 @pytest.mark.asyncio
