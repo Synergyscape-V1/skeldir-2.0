@@ -35,6 +35,7 @@ _TOPOLOGY_FINGERPRINT_ENV_NAMES = (
     "SKELDIR_BAYESIAN_DB_TOPOLOGY",
     "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
     "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+    "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
 )
 
 
@@ -44,7 +45,7 @@ class BayesianWorkerBootTopologyProofMissing(RuntimeError):
 
 @dataclass(frozen=True)
 class BayesianWorkerGenerationProof:
-    """Parent-process physical proof and local authority material."""
+    """Parent-process physical proof and parent-memory authority material."""
 
     generation_id: str
     parent_pid: int
@@ -67,6 +68,19 @@ class BayesianWorkerExecutionAuthority:
     token: str
     issued_monotonic: float
     derivation_elapsed_seconds: float
+
+
+@dataclass(frozen=True)
+class BayesianWorkerGenerationClaims:
+    """Child-readable generation claims without minting authority."""
+
+    generation_id: str
+    parent_pid: int
+    topology_fingerprint: str
+    proof_elapsed_seconds: float
+    worker_connection_count: int
+    observer_connection_count: int
+    created_monotonic: float
 
 
 _bayesian_worker_generation_proof: BayesianWorkerGenerationProof | None = None
@@ -99,12 +113,13 @@ def _topology_authority_fingerprint() -> str:
 def _generation_proof_to_json(
     proof: BayesianWorkerGenerationProof,
 ) -> dict[str, object]:
+    """Serialize non-minting generation claims for observability/spawn blocking."""
+
     return {
         "authority_version": BAYESIAN_WORKER_AUTHORITY_VERSION,
         "generation_id": proof.generation_id,
         "parent_pid": proof.parent_pid,
         "topology_fingerprint": proof.topology_fingerprint,
-        "authority_secret": proof.authority_secret,
         "proof_elapsed_seconds": proof.proof_elapsed_seconds,
         "worker_connection_count": proof.worker_connection_count,
         "observer_connection_count": proof.observer_connection_count,
@@ -114,22 +129,25 @@ def _generation_proof_to_json(
 
 def _generation_proof_from_json(
     payload: dict[str, object],
-) -> BayesianWorkerGenerationProof:
+) -> BayesianWorkerGenerationClaims:
     if payload.get("authority_version") != BAYESIAN_WORKER_AUTHORITY_VERSION:
         raise BayesianWorkerBootTopologyProofMissing(
             "bayesian_worker_generation_authority_version_mismatch"
         )
-    proof = BayesianWorkerGenerationProof(
+    if "authority_secret" in payload:
+        raise BayesianWorkerBootTopologyProofMissing(
+            "bayesian_worker_generation_authority_payload_contains_secret"
+        )
+    proof = BayesianWorkerGenerationClaims(
         generation_id=str(payload["generation_id"]),
         parent_pid=int(payload["parent_pid"]),
         topology_fingerprint=str(payload["topology_fingerprint"]),
-        authority_secret=str(payload["authority_secret"]),
         proof_elapsed_seconds=float(payload["proof_elapsed_seconds"]),
         worker_connection_count=int(payload["worker_connection_count"]),
         observer_connection_count=int(payload["observer_connection_count"]),
         created_monotonic=float(payload["created_monotonic"]),
     )
-    if not proof.generation_id or not proof.authority_secret:
+    if not proof.generation_id:
         raise BayesianWorkerBootTopologyProofMissing(
             "bayesian_worker_generation_authority_incomplete"
         )
@@ -170,7 +188,7 @@ def _persist_generation_authority_file(proof: BayesianWorkerGenerationProof) -> 
     atexit.register(_cleanup_generation_authority_file, path)
 
 
-def _load_generation_authority_file() -> BayesianWorkerGenerationProof:
+def _load_generation_authority_file() -> BayesianWorkerGenerationClaims:
     path = os.getenv(_AUTHORITY_FILE_ENV, "").strip()
     if not path:
         raise BayesianWorkerBootTopologyProofMissing(
@@ -215,8 +233,10 @@ def _derive_process_authority_from_generation() -> BayesianWorkerExecutionAuthor
     global _bayesian_worker_generation_proof
     proof = _bayesian_worker_generation_proof
     if proof is None:
-        proof = _load_generation_authority_file()
-        _bayesian_worker_generation_proof = proof
+        _load_generation_authority_file()
+        raise BayesianWorkerBootTopologyProofMissing(
+            "bayesian_worker_generation_anchor_unavailable"
+        )
     started = time.monotonic()
     pid = os.getpid()
     topology_fingerprint = _topology_authority_fingerprint()
@@ -252,14 +272,17 @@ def bayesian_worker_boot_topology_probe_has_passed() -> bool:
     authority = _bayesian_execution_authority
     if proof is None or authority is None:
         return False
+    current_pid = os.getpid()
+    if current_pid != proof.parent_pid and os.getppid() != proof.parent_pid:
+        return False
     topology_fingerprint = _topology_authority_fingerprint()
     expected_token = _authority_token(
         proof,
-        pid=os.getpid(),
+        pid=current_pid,
         topology_fingerprint=topology_fingerprint,
     )
     return (
-        authority.pid == os.getpid()
+        authority.pid == current_pid
         and authority.generation_id == proof.generation_id
         and authority.parent_pid == proof.parent_pid
         and authority.topology_fingerprint == proof.topology_fingerprint

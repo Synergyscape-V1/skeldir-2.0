@@ -25,6 +25,7 @@ from app.bayesian.db_engine import (
 )
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
+from app.bayesian.tenant_context import bind_transaction_local_tenant
 from app.bayesian.worker_boot_probe import (
     assert_bayesian_worker_boot_topology_proven,
     ensure_bayesian_worker_boot_probe_signal_registered,
@@ -145,10 +146,7 @@ def _as_uuid(raw: str | UUID) -> UUID:
 
 
 def _set_tenant_context(conn, tenant_id: UUID) -> None:
-    conn.execute(
-        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-        {"tenant_id": str(tenant_id)},
-    )
+    bind_transaction_local_tenant(conn, tenant_id=tenant_id)
 
 
 def _exercise_cpu(*, seed: int, cycles: int) -> int:

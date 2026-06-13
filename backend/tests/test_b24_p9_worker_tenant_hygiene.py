@@ -69,6 +69,7 @@ def _clear_topology_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SKELDIR_BAYESIAN_DB_TOPOLOGY",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_REQUIRE_ATTESTATION",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -135,6 +136,10 @@ def test_b24_p9_transaction_context_uses_set_local_only() -> None:
     text = _read(TENANT_CONTEXT)
     assert "bind_transaction_local_tenant" in text
     assert "set_config('app.current_tenant_id', :tenant_id, true)" in text
+    assert "SELECT pg_backend_pid()" in text
+    assert "bayesian_tenant_transaction_required" in text
+    assert "bayesian_tenant_transaction_preexisting_tenant_guc" in text
+    assert "bayesian_tenant_transaction_backend_continuity_lost" in text
     assert "tenant_transaction" in text
     assert "assert_fresh_checkout_is_clean" in text
     assert "set_config('app.current_tenant_id', :tenant_id, false)" not in text
@@ -162,17 +167,45 @@ def test_b24_p9_bayesian_worker_engine_factory_is_nonpooled(
         engine.dispose()
 
 
+def test_b24_p9_runtime_sync_dsn_preserves_security_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bayesian import db_engine
+
+    monkeypatch.setattr(
+        db_engine,
+        "get_database_url",
+        lambda: (
+            "postgresql+asyncpg://app_user:app_user@db-main.skeldir.internal:5432"
+            "/skeldir?sslmode=verify-full&sslrootcert=/etc/skeldir/ca.pem"
+            "&channel_binding=require&application_name=bayesian-worker"
+        ),
+    )
+
+    sync_url = db_engine.runtime_sync_database_url()
+
+    assert sync_url.startswith("postgresql://")
+    assert "sslmode=verify-full" in sync_url
+    assert "sslrootcert=/etc/skeldir/ca.pem" in sync_url
+    assert "channel_binding=require" in sync_url
+    assert "application_name=bayesian-worker" in sync_url
+
+
 def test_b24_p9_db_topology_policy_is_code_authority_not_dsn_proof() -> None:
     text = _read(DB_TOPOLOGY)
     for token in (
         "SKELDIR_BAYESIAN_DB_TOPOLOGY",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
         "DIRECT_POSTGRES_ATTESTATIONS",
+        "BayesianWorkerDBBackendAffinity",
+        "CONNECTION_LIFETIME",
         "POOLER_NEGATIVE_CONTROL_TOKENS",
         "UNSUPPORTED_POOLER_TOPOLOGIES",
         "DSN contents are intentionally insufficient proof",
         "bayesian_worker_db_topology_missing",
+        "bayesian_worker_db_topology_affinity_missing",
         "bayesian_worker_db_topology_proxy_dsn_rejected",
         "bayesian_worker_db_topology_pooler_unsupported",
     ):
@@ -217,8 +250,14 @@ def test_b24_p9_opaque_hostname_requires_attestation_not_string_inference(
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
         "deployment_control_plane",
     )
+    with pytest.raises(
+        RuntimeError, match="bayesian_worker_db_topology_affinity_missing"
+    ):
+        resolve_bayesian_worker_db_topology_policy(opaque_dsn)
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY", "connection_lifetime")
     policy = resolve_bayesian_worker_db_topology_policy(opaque_dsn)
     assert policy.topology.value == "direct_postgres"
+    assert policy.backend_affinity.value == "connection_lifetime"
     assert policy.protected_runtime is True
     assert policy.source == "deployment_control_plane"
 
@@ -242,12 +281,29 @@ def test_b24_p9_pooler_and_proxy_topologies_fail_closed(
         "direct_postgres_ci_postgres15",
     )
     monkeypatch.setenv("SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE", "github_actions")
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY", "connection_lifetime")
     with pytest.raises(
         RuntimeError, match="bayesian_worker_db_topology_proxy_dsn_rejected"
     ):
         resolve_bayesian_worker_db_topology_policy(
             "postgresql://app_user:app_user@pgbouncer.internal:6432/skeldir"
         )
+
+    for affinity, error in (
+        (
+            "transaction_lifetime",
+            "bayesian_worker_db_topology_transaction_pooling_unsupported",
+        ),
+        (
+            "statement_lifetime",
+            "bayesian_worker_db_topology_statement_pooling_unsupported",
+        ),
+    ):
+        monkeypatch.setenv("SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY", affinity)
+        with pytest.raises(RuntimeError, match=error):
+            resolve_bayesian_worker_db_topology_policy(
+                "postgresql://app_user:app_user@db-main.skeldir.internal:5432/skeldir"
+            )
 
 
 def test_b24_p9_boot_probe_is_physical_not_connectivity_only() -> None:
@@ -297,11 +353,15 @@ def test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun() -> 
     assert "assert_bayesian_worker_boot_topology_proven" in boot_probe
     assert "BayesianWorkerGenerationProof" in boot_probe
     assert "BayesianWorkerExecutionAuthority" in boot_probe
+    assert "BayesianWorkerGenerationClaims" in boot_probe
     assert "hmac.compare_digest" in boot_probe
     assert "BAYESIAN_CHILD_AUTHORITY_BUDGET_S" in boot_probe
     assert "SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_FILE" in boot_probe
     assert "_persist_generation_authority_file" in boot_probe
     assert "_load_generation_authority_file" in boot_probe
+    assert "bayesian_worker_generation_authority_payload_contains_secret" in boot_probe
+    assert "bayesian_worker_generation_anchor_unavailable" in boot_probe
+    assert "os.getppid() != proof.parent_pid" in boot_probe
     assert "QUEUE_BAYESIAN in explicit_queues" not in boot_probe
     assert "_parse_celery_queue_arguments" not in boot_probe
     assert "_worker_may_consume_bayesian_tasks" not in boot_probe
@@ -513,6 +573,86 @@ def test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof(
         match="bayesian_worker_boot_topology_probe_required",
     ):
         _run_health_probe_entry()
+
+
+def test_b24_p9_child_authority_payload_cannot_mint_execution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.bayesian import worker_boot_probe
+
+    topology_fingerprint = worker_boot_probe._topology_authority_fingerprint()
+    proof = worker_boot_probe.BayesianWorkerGenerationProof(
+        generation_id="unit-generation-file",
+        parent_pid=os.getpid(),
+        topology_fingerprint=topology_fingerprint,
+        authority_secret="unit-root-secret",
+        proof_elapsed_seconds=0.01,
+        worker_connection_count=2,
+        observer_connection_count=2,
+        created_monotonic=0.0,
+    )
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_DIR",
+        str(tmp_path / "authority"),
+    )
+    worker_boot_probe._persist_generation_authority_file(proof)
+    authority_path = Path(
+        os.environ["SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_FILE"]
+    )
+    payload = json.loads(authority_path.read_text(encoding="utf-8"))
+    assert "authority_secret" not in payload
+
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
+    with pytest.raises(
+        worker_boot_probe.BayesianWorkerBootTopologyProofMissing,
+        match="bayesian_worker_generation_anchor_unavailable",
+    ):
+        worker_boot_probe._derive_process_authority_from_generation()
+
+    payload["authority_secret"] = "attacker-controlled-secret"
+    authority_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    with pytest.raises(
+        worker_boot_probe.BayesianWorkerBootTopologyProofMissing,
+        match="bayesian_worker_generation_authority_payload_contains_secret",
+    ):
+        worker_boot_probe._load_generation_authority_file()
+
+
+def test_b24_p9_parent_death_invalidates_child_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bayesian import worker_boot_probe
+
+    topology_fingerprint = worker_boot_probe._topology_authority_fingerprint()
+    proof = worker_boot_probe.BayesianWorkerGenerationProof(
+        generation_id="unit-generation-parent-death",
+        parent_pid=os.getpid() + 1000,
+        topology_fingerprint=topology_fingerprint,
+        authority_secret="unit-root-secret",
+        proof_elapsed_seconds=0.01,
+        worker_connection_count=2,
+        observer_connection_count=2,
+        created_monotonic=0.0,
+    )
+    authority = worker_boot_probe.BayesianWorkerExecutionAuthority(
+        generation_id=proof.generation_id,
+        pid=os.getpid(),
+        parent_pid=proof.parent_pid,
+        topology_fingerprint=topology_fingerprint,
+        token=worker_boot_probe._authority_token(
+            proof,
+            pid=os.getpid(),
+            topology_fingerprint=topology_fingerprint,
+        ),
+        issued_monotonic=0.0,
+        derivation_elapsed_seconds=0.0,
+    )
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", proof)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", authority)
+    monkeypatch.setattr(worker_boot_probe.os, "getppid", lambda: 1)
+
+    assert worker_boot_probe.bayesian_worker_boot_topology_probe_has_passed() is False
 
 
 def test_b24_p9_bayesian_task_module_registry_gate_is_structural() -> None:

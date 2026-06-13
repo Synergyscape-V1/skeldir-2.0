@@ -91,6 +91,10 @@ def validate_tenant_context(text: str | None = None) -> None:
     for token in (
         "bind_transaction_local_tenant",
         "set_config('app.current_tenant_id', :tenant_id, true)",
+        "SELECT pg_backend_pid()",
+        "bayesian_tenant_transaction_required",
+        "bayesian_tenant_transaction_preexisting_tenant_guc",
+        "bayesian_tenant_transaction_backend_continuity_lost",
         "tenant_transaction",
         "assert_fresh_checkout_is_clean",
         "checked_out_connection_state",
@@ -114,6 +118,7 @@ def validate_bayesian_worker_engine(text: str | None = None) -> None:
     for token in (
         "create_bayesian_worker_engine",
         "runtime_sync_database_url",
+        "to_sync_postgres_dsn(get_database_url())",
         "resolve_bayesian_worker_db_topology_policy",
         "poolclass=NullPool",
         "assert_bayesian_worker_engine_nonpooled",
@@ -138,6 +143,11 @@ def validate_bayesian_worker_db_topology(text: str | None = None) -> None:
         "SKELDIR_BAYESIAN_DB_TOPOLOGY",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
+        "BayesianWorkerDBBackendAffinity",
+        "CONNECTION_LIFETIME",
+        "TRANSACTION_LIFETIME",
+        "STATEMENT_LIFETIME",
         "DIRECT_POSTGRES_ATTESTATIONS",
         "UNSUPPORTED_POOLER_TOPOLOGIES",
         "POOLER_NEGATIVE_CONTROL_TOKENS",
@@ -149,6 +159,9 @@ def validate_bayesian_worker_db_topology(text: str | None = None) -> None:
         "bayesian_worker_db_topology_proxy_dsn_rejected",
         "bayesian_worker_db_topology_attestation_missing",
         "bayesian_worker_db_topology_source_missing",
+        "bayesian_worker_db_topology_affinity_missing",
+        "bayesian_worker_db_topology_transaction_pooling_unsupported",
+        "bayesian_worker_db_topology_statement_pooling_unsupported",
     ):
         _require(token in topology, f"P9 topology policy missing: {token}")
     for forbidden in (
@@ -206,16 +219,30 @@ def validate_bayesian_worker_boot_probe(
         "assert_bayesian_worker_boot_topology_proven",
         "BayesianWorkerGenerationProof",
         "BayesianWorkerExecutionAuthority",
+        "BayesianWorkerGenerationClaims",
+        "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
         "hmac.compare_digest",
         "BAYESIAN_CHILD_AUTHORITY_BUDGET_S",
         "SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_FILE",
         "_persist_generation_authority_file",
         "_load_generation_authority_file",
+        "bayesian_worker_generation_authority_payload_contains_secret",
+        "bayesian_worker_generation_anchor_unavailable",
+        "os.getppid() != proof.parent_pid",
     ):
         _require(
             token in worker_boot,
             f"P9 Celery boot probe wiring missing: {token}",
         )
+    public_payload = worker_boot[
+        worker_boot.index("def _generation_proof_to_json") : worker_boot.index(
+            "def _generation_proof_from_json"
+        )
+    ]
+    _require(
+        "authority_secret" not in public_payload,
+        "P9 child-readable generation payload must not contain root secret",
+    )
     for forbidden in (
         "_parse_celery_queue_arguments",
         "_worker_may_consume_bayesian_tasks",
@@ -464,6 +491,7 @@ def validate_tests_and_ci(
     for token in (
         "test_b24_p9_transaction_context_uses_set_local_only",
         "test_b24_p9_bayesian_worker_engine_factory_is_nonpooled",
+        "test_b24_p9_runtime_sync_dsn_preserves_security_query",
         "test_b24_p9_db_topology_policy_is_code_authority_not_dsn_proof",
         "test_b24_p9_unknown_topology_fails_closed_in_protected_mode",
         "test_b24_p9_opaque_hostname_requires_attestation_not_string_inference",
@@ -475,6 +503,8 @@ def validate_tests_and_ci(
         "test_b24_p9_topology_env_alone_does_not_register_bayesian_tasks",
         "test_b24_p9_worker_role_registration_contradiction_fails_closed",
         "test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof",
+        "test_b24_p9_child_authority_payload_cannot_mint_execution",
+        "test_b24_p9_parent_death_invalidates_child_authority",
         "test_b24_p9_bayesian_task_module_registry_gate_is_structural",
         "test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine",
         "test_b24_p9_workspace_scopes_and_cleans_tenant_fit_hash_attempt",
@@ -515,6 +545,8 @@ def validate_tests_and_ci(
         "B2.4-P9 protected CI requires SKELDIR_B24_P9_REQUIRE_DB_PROOFS=1",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+        "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
+        "connection_lifetime",
         "direct_postgres_ci_postgres15",
     ):
         _require(token in db_tests, f"P9 DB proof missing: {token}")
@@ -530,6 +562,8 @@ def validate_tests_and_ci(
         "SKELDIR_BAYESIAN_DB_TOPOLOGY",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+        "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
+        "connection_lifetime",
         "direct_postgres_ci_postgres15",
         "scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control",
     ):
@@ -554,6 +588,8 @@ def validate_tests_and_ci(
             "SKELDIR_BAYESIAN_DB_TOPOLOGY",
             "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
             "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+            "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
+            "connection_lifetime",
             "direct_postgres_ci_postgres15",
         ):
             _require(
@@ -578,8 +614,10 @@ def validate_tests_and_ci(
         '"SKELDIR_BAYESIAN_DB_TOPOLOGY"',
         '"SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"',
         '"SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"',
+        '"SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY"',
         '"SKELDIR_CELERY_WORKER_ROLE"',
         '"SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"',
+        '"connection_lifetime"',
         '"direct_postgres_ci_postgres15"',
         '"b07_p5_bayesian_timeout_runtime"',
     ):
@@ -653,6 +691,16 @@ def run_negative_controls() -> None:
             "proxy",
         ),
         (
+            "topology_affinity_removed",
+            lambda: validate_bayesian_worker_db_topology(
+                _read(DB_TOPOLOGY).replace(
+                    "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
+                    "SKELDIR_BAYESIAN_DB_AFFINITY_REMOVED",
+                )
+            ),
+            "affinity",
+        ),
+        (
             "boot_probe_poison_removed",
             lambda: validate_bayesian_worker_boot_probe(
                 probe_text=_read(DB_BOOT_PROBE).replace(
@@ -671,6 +719,17 @@ def run_negative_controls() -> None:
                 )
             ),
             "boot probe",
+        ),
+        (
+            "authority_payload_root_secret_reintroduced",
+            lambda: validate_bayesian_worker_boot_probe(
+                worker_boot_text=_read(WORKER_BOOT_PROBE).replace(
+                    '"proof_elapsed_seconds": proof.proof_elapsed_seconds,',
+                    '"authority_secret": proof.authority_secret,\n'
+                    '        "proof_elapsed_seconds": proof.proof_elapsed_seconds,',
+                )
+            ),
+            "root secret",
         ),
         (
             "boot_probe_child_process_hook_removed",
@@ -811,6 +870,16 @@ def run_negative_controls() -> None:
                 )
             ),
             "topology",
+        ),
+        (
+            "ci_backend_affinity_removed",
+            lambda: validate_tests_and_ci(
+                ci_workflow_text=_read(CI_WORKFLOW).replace(
+                    "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY",
+                    "SKELDIR_BAYESIAN_DB_AFFINITY_REMOVED",
+                )
+            ),
+            "affinity",
         ),
         (
             "b07_p5_runtime_topology_attestation_removed",

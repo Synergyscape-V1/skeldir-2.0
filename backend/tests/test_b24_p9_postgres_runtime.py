@@ -178,6 +178,7 @@ def _worker_env(*, include_bayesian_tasks: bool, log_path: Path) -> dict[str, st
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY"] = "direct_postgres"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"] = "direct_postgres_ci_postgres15"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"] = "github_actions_postgres_15_alpine"
+    env["SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY"] = "connection_lifetime"
     env["BAYESIAN_PROBE_LOG_PATH"] = str(log_path)
     return env
 
@@ -459,6 +460,7 @@ async def test_b24_p9_direct_topology_attestation_precedes_backend_pid_proof(
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
         "github_actions_postgres_15_alpine",
     )
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY", "connection_lifetime")
     worker_url = _sync_database_url()
     policy = resolve_bayesian_worker_db_topology_policy(
         worker_url, require_attestation=True
@@ -492,6 +494,7 @@ async def test_b24_p9_boot_probe_physically_proves_session_boundary(
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
         "github_actions_postgres_15_alpine",
     )
+    monkeypatch.setenv("SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY", "connection_lifetime")
 
     result = run_bayesian_worker_boot_topology_probe(
         _sync_database_url(),
@@ -605,17 +608,23 @@ async def test_b24_p9_child_process_init_derives_authority_without_db_probe(
     )
     worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed()
 
-    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", None)
-    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
     monkeypatch.setattr(
         worker_boot_probe,
         "run_bayesian_worker_boot_topology_probe",
         _forbidden_probe,
     )
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
     worker_boot_probe._derive_bayesian_child_authority_if_needed()
 
     assert events == ["boot_probe"]
     assert worker_boot_probe.bayesian_worker_boot_topology_probe_has_passed()
+
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
+    with pytest.raises(SystemExit, match="bayesian_worker_child_authority_failed"):
+        worker_boot_probe._derive_bayesian_child_authority_if_needed()
+
+    assert events == ["boot_probe"]
 
 
 @pytest.mark.asyncio
