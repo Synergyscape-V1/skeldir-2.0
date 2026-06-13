@@ -28,10 +28,18 @@ class TenantConnectionCleanState:
 def bind_transaction_local_tenant(conn: Connection, *, tenant_id: UUID) -> None:
     """Bind tenant authority to the current transaction using SET LOCAL semantics."""
 
+    if not conn.in_transaction():
+        raise RuntimeError("bayesian_tenant_transaction_required")
+    backend_pid_before = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+    if current_tenant_guc(conn) is not None:
+        raise RuntimeError("bayesian_tenant_transaction_preexisting_tenant_guc")
     conn.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)},
     )
+    backend_pid_after = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+    if backend_pid_after != backend_pid_before:
+        raise RuntimeError("bayesian_tenant_transaction_backend_continuity_lost")
 
 
 def current_tenant_guc(conn: Connection) -> str | None:
@@ -58,7 +66,13 @@ def tenant_transaction(engine: Engine, *, tenant_id: UUID):
     with engine.begin() as conn:
         bind_transaction_local_tenant(conn, tenant_id=tenant_id)
         assert_bound_tenant(conn, tenant_id=tenant_id)
+        backend_pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
         yield conn
+        if (
+            int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
+            != backend_pid
+        ):
+            raise RuntimeError("bayesian_tenant_transaction_backend_continuity_lost")
 
 
 def checked_out_connection_state(conn: Connection) -> TenantConnectionCleanState:

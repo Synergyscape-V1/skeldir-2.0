@@ -193,6 +193,7 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY"] = "direct_postgres"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"] = "direct_postgres_ci_postgres15"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"] = "b07_p5_bayesian_timeout_runtime"
+    env["SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY"] = "connection_lifetime"
     env.setdefault("ENVIRONMENT", "test")
 
     worker_proc = None

@@ -803,6 +803,7 @@ jobs:
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
       CONTRACT_TESTING: "0"
@@ -1132,6 +1133,7 @@ jobs:
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
       ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS: "30"
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
@@ -4253,6 +4255,7 @@ jobs:
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_16
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
       B07_P2_ARTIFACT_DIR: artifacts/b07-p2
       B07_P2_LOG_CANARY: skeldir_test_secret_123
       SKELDIR_TEST_TASKS: "1"
@@ -4797,6 +4800,7 @@ jobs:
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
       # B0.5.6.1: CELERY_METRICS_PORT/ADDR removed - worker HTTP server eradicated
       B055_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/b055_evidence_bundle
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

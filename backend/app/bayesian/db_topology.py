@@ -15,6 +15,15 @@ class BayesianWorkerDBTopology(StrEnum):
     DIRECT_POSTGRES = "direct_postgres"
 
 
+class BayesianWorkerDBBackendAffinity(StrEnum):
+    """The real boundary over which one PostgreSQL backend remains assigned."""
+
+    CONNECTION_LIFETIME = "connection_lifetime"
+    TRANSACTION_LIFETIME = "transaction_lifetime"
+    STATEMENT_LIFETIME = "statement_lifetime"
+    UNKNOWN = "unknown"
+
+
 DIRECT_POSTGRES_ATTESTATIONS = frozenset(
     {
         "direct_postgres_runtime_verified",
@@ -27,6 +36,11 @@ UNSUPPORTED_POOLER_TOPOLOGIES = frozenset(
         "pgbouncer",
         "pgbouncer_session",
         "pgbouncer_transaction",
+        "pgbouncer_statement",
+        "transaction_pooling",
+        "statement_pooling",
+        "transaction_multiplexing_proxy",
+        "statement_multiplexing_proxy",
         "rds_proxy",
         "neon_pooler",
         "supabase_pooler",
@@ -44,7 +58,13 @@ POOLER_NEGATIVE_CONTROL_TOKENS = frozenset(
         "neon",
         "supabase",
         "transaction_pool",
+        "transaction-pool",
+        "transactionpool",
         "session_pool",
+        "statement_pool",
+        "statement-pool",
+        "statementpool",
+        "multiplex",
     }
 )
 PROTECTED_ENVIRONMENTS = frozenset(
@@ -64,6 +84,7 @@ class BayesianWorkerDBTopologyPolicy:
     """Resolved topology policy used before creating a worker DB engine."""
 
     topology: BayesianWorkerDBTopology
+    backend_affinity: BayesianWorkerDBBackendAffinity
     attestation: str | None
     protected_runtime: bool
     source: str
@@ -134,6 +155,7 @@ def resolve_bayesian_worker_db_topology_policy(
             raise RuntimeError("bayesian_worker_db_topology_requires_postgres")
         return BayesianWorkerDBTopologyPolicy(
             topology=BayesianWorkerDBTopology.DIRECT_POSTGRES,
+            backend_affinity=BayesianWorkerDBBackendAffinity.CONNECTION_LIFETIME,
             attestation=None,
             protected_runtime=False,
             source="non_postgres_test_url",
@@ -156,6 +178,7 @@ def resolve_bayesian_worker_db_topology_policy(
             raise RuntimeError("bayesian_worker_db_topology_missing")
         return BayesianWorkerDBTopologyPolicy(
             topology=BayesianWorkerDBTopology.DIRECT_POSTGRES,
+            backend_affinity=BayesianWorkerDBBackendAffinity.CONNECTION_LIFETIME,
             attestation=None,
             protected_runtime=False,
             source="local_unattested_default",
@@ -166,14 +189,31 @@ def resolve_bayesian_worker_db_topology_policy(
     if raw_topology != BayesianWorkerDBTopology.DIRECT_POSTGRES.value:
         raise RuntimeError("bayesian_worker_db_topology_unknown")
 
+    raw_affinity = os.getenv("SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY", "").strip().lower()
+    if raw_affinity and raw_affinity != (
+        BayesianWorkerDBBackendAffinity.CONNECTION_LIFETIME.value
+    ):
+        if raw_affinity == BayesianWorkerDBBackendAffinity.TRANSACTION_LIFETIME.value:
+            raise RuntimeError(
+                "bayesian_worker_db_topology_transaction_pooling_unsupported"
+            )
+        if raw_affinity == BayesianWorkerDBBackendAffinity.STATEMENT_LIFETIME.value:
+            raise RuntimeError(
+                "bayesian_worker_db_topology_statement_pooling_unsupported"
+            )
+        raise RuntimeError("bayesian_worker_db_topology_affinity_unknown")
+
     if protected:
         if raw_attestation not in DIRECT_POSTGRES_ATTESTATIONS:
             raise RuntimeError("bayesian_worker_db_topology_attestation_missing")
         if not source:
             raise RuntimeError("bayesian_worker_db_topology_source_missing")
+        if not raw_affinity:
+            raise RuntimeError("bayesian_worker_db_topology_affinity_missing")
 
     return BayesianWorkerDBTopologyPolicy(
         topology=BayesianWorkerDBTopology.DIRECT_POSTGRES,
+        backend_affinity=BayesianWorkerDBBackendAffinity.CONNECTION_LIFETIME,
         attestation=raw_attestation or None,
         protected_runtime=protected,
         source=source or "local_declared",
