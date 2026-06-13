@@ -29,6 +29,8 @@ class BayesianWorkerBootTopologyProbeResult:
     lock_key: int
     temp_table_name: str
     elapsed_seconds: float
+    worker_connection_count: int
+    observer_connection_count: int
 
 
 def _backend_state(observer, pid: int) -> dict[str, object] | None:
@@ -51,14 +53,16 @@ def _backend_state(observer, pid: int) -> dict[str, object] | None:
 
 def _wait_for_backend_absence(
     observer_engine, *, pid: int, timeout_seconds: float, backend_label: str
-) -> None:
+) -> int:
     deadline = time.monotonic() + max(0.1, float(timeout_seconds))
     last_state: dict[str, object] | None = None
+    poll_count = 0
     while time.monotonic() < deadline:
         with observer_engine.connect() as observer:
+            poll_count += 1
             last_state = _backend_state(observer, pid)
         if last_state is None:
-            return
+            return poll_count
         time.sleep(0.05)
     raise BayesianWorkerBootTopologyProbeError(
         f"bayesian_worker_boot_topology_{backend_label}_backend_still_visible"
@@ -110,7 +114,7 @@ def run_bayesian_worker_boot_topology_probe(
                     "bayesian_worker_boot_topology_guc_poison_not_applied"
                 )
 
-        _wait_for_backend_absence(
+        old_backend_observer_polls = _wait_for_backend_absence(
             observer_engine,
             pid=old_pid,
             timeout_seconds=timeout_seconds,
@@ -154,7 +158,7 @@ def run_bayesian_worker_boot_topology_probe(
                 {"lock_key": lock_key},
             )
 
-        _wait_for_backend_absence(
+        new_backend_observer_polls = _wait_for_backend_absence(
             observer_engine,
             pid=new_pid,
             timeout_seconds=timeout_seconds,
@@ -167,6 +171,10 @@ def run_bayesian_worker_boot_topology_probe(
             lock_key=lock_key,
             temp_table_name=temp_table_name,
             elapsed_seconds=time.monotonic() - started,
+            worker_connection_count=2,
+            observer_connection_count=(
+                old_backend_observer_polls + new_backend_observer_polls
+            ),
         )
     finally:
         worker_engine.dispose()

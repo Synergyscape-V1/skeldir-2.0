@@ -415,6 +415,8 @@ jobs:
       TESTING: "1"
       CI: "true"
       SKELDIR_B24_P9_REQUIRE_DB_PROOFS: "1"
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine

@@ -286,9 +286,22 @@ def test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun() -> 
     assert worker_process_init_idx > probe_call_idx
     assert 'SystemExit("bayesian_worker_boot_topology_probe_failed")' in boot_probe
     assert "run_bayesian_worker_boot_topology_probe()" in boot_probe
+    child_handler = boot_probe[
+        boot_probe.index("def _on_bayesian_worker_process_init") : boot_probe.index(
+            "def ensure_bayesian_worker_boot_probe_signal_registered"
+        )
+    ]
+    assert "_derive_bayesian_child_authority_if_needed()" in child_handler
+    assert "run_bayesian_worker_boot_topology_probe()" not in child_handler
     assert "bayesian_worker_boot_topology_probe_has_passed" in boot_probe
     assert "assert_bayesian_worker_boot_topology_proven" in boot_probe
-    assert "_bayesian_boot_topology_probe_pid == os.getpid()" in boot_probe
+    assert "BayesianWorkerGenerationProof" in boot_probe
+    assert "BayesianWorkerExecutionAuthority" in boot_probe
+    assert "hmac.compare_digest" in boot_probe
+    assert "BAYESIAN_CHILD_AUTHORITY_BUDGET_S" in boot_probe
+    assert "SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_FILE" in boot_probe
+    assert "_persist_generation_authority_file" in boot_probe
+    assert "_load_generation_authority_file" in boot_probe
     assert "QUEUE_BAYESIAN in explicit_queues" not in boot_probe
     assert "_parse_celery_queue_arguments" not in boot_probe
     assert "_worker_may_consume_bayesian_tasks" not in boot_probe
@@ -321,6 +334,7 @@ print(json.dumps({
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT / "backend")
     env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
+    env["SKELDIR_CELERY_WORKER_ROLE"] = "non_bayesian"
     result = subprocess.run(
         [sys.executable, "-c", script],
         cwd=ROOT,
@@ -354,6 +368,7 @@ print(json.dumps({
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT / "backend")
     env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "1"
+    env["SKELDIR_CELERY_WORKER_ROLE"] = "bayesian"
     result = subprocess.run(
         [sys.executable, "-c", script],
         cwd=ROOT,
@@ -368,6 +383,61 @@ print(json.dumps({
     assert "app.tasks.bayesian.health_probe" in payload["bayesian_tasks"]
     assert payload["worker_init_receiver_count"] > 0
     assert payload["worker_process_init_receiver_count"] > 0
+
+
+def test_b24_p9_topology_env_alone_does_not_register_bayesian_tasks() -> None:
+    script = r"""
+import json
+from app.celery_app import celery_app
+from app.tasks import bayesian
+celery_app.loader.import_default_modules()
+tasks = sorted(celery_app.tasks.keys())
+print(json.dumps({
+    "bayesian_tasks_registered_for_process": bayesian._BAYESIAN_TASKS_REGISTERED,
+    "bayesian_tasks": [task for task in tasks if task.startswith("app.tasks.bayesian.")],
+}, sort_keys=True))
+"""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT / "backend")
+    env.pop("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS", None)
+    env.pop("SKELDIR_CELERY_WORKER_ROLE", None)
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY"] = "direct_postgres"
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"] = "direct_postgres_ci_postgres15"
+    env["SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"] = "github_actions"
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=20,
+    )
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert payload["bayesian_tasks_registered_for_process"] is False
+    assert payload["bayesian_tasks"] == []
+
+
+def test_b24_p9_worker_role_registration_contradiction_fails_closed() -> None:
+    script = (
+        "from app.tasks import bayesian\nprint(bayesian._BAYESIAN_TASKS_REGISTERED)\n"
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT / "backend")
+    env["SKELDIR_CELERY_WORKER_ROLE"] = "bayesian"
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert result.returncode != 0
+    assert "bayesian_worker_role_registration_contradiction" in (
+        result.stderr + result.stdout
+    )
 
 
 def test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof(
@@ -395,19 +465,48 @@ def test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof(
             correlation_id="not-a-uuid",
         )
 
-    monkeypatch.setattr(
-        worker_boot_probe, "_bayesian_boot_topology_probe_passed", False
-    )
-    monkeypatch.setattr(worker_boot_probe, "_bayesian_boot_topology_probe_pid", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
     with pytest.raises(
         worker_boot_probe.BayesianWorkerBootTopologyProofMissing,
         match="bayesian_worker_boot_topology_probe_required",
     ):
         _run_health_probe_entry()
 
-    monkeypatch.setattr(worker_boot_probe, "_bayesian_boot_topology_probe_passed", True)
+    topology_fingerprint = worker_boot_probe._topology_authority_fingerprint()
+    proof = worker_boot_probe.BayesianWorkerGenerationProof(
+        generation_id="unit-generation",
+        parent_pid=os.getpid(),
+        topology_fingerprint=topology_fingerprint,
+        authority_secret="unit-secret",
+        proof_elapsed_seconds=0.01,
+        worker_connection_count=2,
+        observer_connection_count=2,
+        created_monotonic=0.0,
+    )
+    stale_pid = os.getpid() + 1
+    stale_authority = worker_boot_probe.BayesianWorkerExecutionAuthority(
+        generation_id=proof.generation_id,
+        pid=stale_pid,
+        parent_pid=proof.parent_pid,
+        topology_fingerprint=topology_fingerprint,
+        token=worker_boot_probe._authority_token(
+            proof,
+            pid=stale_pid,
+            topology_fingerprint=topology_fingerprint,
+        ),
+        issued_monotonic=0.0,
+        derivation_elapsed_seconds=0.0,
+    )
     monkeypatch.setattr(
-        worker_boot_probe, "_bayesian_boot_topology_probe_pid", os.getpid() + 1
+        worker_boot_probe,
+        "_bayesian_worker_generation_proof",
+        proof,
+    )
+    monkeypatch.setattr(
+        worker_boot_probe,
+        "_bayesian_execution_authority",
+        stale_authority,
     )
     with pytest.raises(
         worker_boot_probe.BayesianWorkerBootTopologyProofMissing,
@@ -419,8 +518,11 @@ def test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof(
 def test_b24_p9_bayesian_task_module_registry_gate_is_structural() -> None:
     tasks = _read(TASKS_BAYESIAN)
     assert "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS" in tasks
+    assert "SKELDIR_CELERY_WORKER_ROLE" in tasks
+    assert "REQUIRED_BAYESIAN_TASK_NAMES" in tasks
     assert "_bayesian_tasks_registered_for_process" in tasks
-    assert "_BAYESIAN_TASK_REGISTRATION_TOPOLOGY_ENV" in tasks
+    assert "_BAYESIAN_TASK_REGISTRATION_TOPOLOGY_ENV" not in tasks
+    assert "SKELDIR_BAYESIAN_DB_TOPOLOGY" not in tasks
     assert "if _BAYESIAN_TASKS_REGISTERED:" in tasks
     assert "return celery_app.task(*task_args, **task_kwargs)" in tasks
     assert "@_bayesian_task(" in tasks

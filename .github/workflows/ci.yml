@@ -798,6 +798,8 @@ jobs:
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p4
       EXPECTED_RUNTIME_DB_USER: app_user
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
@@ -1125,6 +1127,8 @@ jobs:
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
       EXPECTED_RUNTIME_DB_USER: app_user
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
@@ -4244,6 +4248,8 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b07_p2
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b07_p2
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b07_p2
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_16
@@ -4786,6 +4792,8 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine

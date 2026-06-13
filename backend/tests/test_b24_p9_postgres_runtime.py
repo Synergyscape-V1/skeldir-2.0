@@ -171,6 +171,9 @@ def _worker_env(*, include_bayesian_tasks: bool, log_path: Path) -> dict[str, st
     env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = (
         "1" if include_bayesian_tasks else "0"
     )
+    env["SKELDIR_CELERY_WORKER_ROLE"] = (
+        "bayesian" if include_bayesian_tasks else "non_bayesian"
+    )
     env["SKELDIR_B24_P9_REQUIRE_DB_PROOFS"] = "1"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY"] = "direct_postgres"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"] = "direct_postgres_ci_postgres15"
@@ -515,9 +518,8 @@ async def test_b24_p9_boot_probe_failure_is_fatal_before_task_consumption(
         events.append("boot_probe")
         raise BayesianWorkerBootTopologyProbeError("injected_boot_probe_failure")
 
-    monkeypatch.setattr(
-        worker_boot_probe, "_bayesian_boot_topology_probe_passed", False
-    )
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
     monkeypatch.setattr(
         worker_boot_probe,
         "run_bayesian_worker_boot_topology_probe",
@@ -544,15 +546,15 @@ async def test_b24_p9_registered_bayesian_process_always_runs_boot_probe(
         old_pid = 100
         new_pid = 101
         elapsed_seconds = 0.01
+        worker_connection_count = 2
+        observer_connection_count = 2
 
     def _proof_probe() -> _ProbeResult:
         events.append("boot_probe")
         return _ProbeResult()
 
-    monkeypatch.setattr(
-        worker_boot_probe, "_bayesian_boot_topology_probe_passed", False
-    )
-    monkeypatch.setattr(worker_boot_probe, "_bayesian_boot_topology_probe_pid", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
     monkeypatch.setattr(
         worker_boot_probe,
         "run_bayesian_worker_boot_topology_probe",
@@ -560,6 +562,57 @@ async def test_b24_p9_registered_bayesian_process_always_runs_boot_probe(
     )
     monkeypatch.setattr(sys, "argv", ["celery", "worker", "-Q", "housekeeping"])
     worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed()
+
+    assert events == ["boot_probe"]
+    assert worker_boot_probe.bayesian_worker_boot_topology_probe_has_passed()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_child_process_init_derives_authority_without_db_probe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    from app.bayesian import worker_boot_probe
+
+    events: list[str] = []
+
+    class _ProbeResult:
+        old_pid = 100
+        new_pid = 101
+        elapsed_seconds = 0.01
+        worker_connection_count = 2
+        observer_connection_count = 2
+
+    def _proof_probe() -> _ProbeResult:
+        events.append("boot_probe")
+        return _ProbeResult()
+
+    def _forbidden_probe() -> _ProbeResult:
+        events.append("forbidden_child_db_probe")
+        raise AssertionError("child init must not run the physical DB probe")
+
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
+    monkeypatch.setenv(
+        "SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_DIR",
+        str(tmp_path / "authority"),
+    )
+    monkeypatch.setattr(
+        worker_boot_probe,
+        "run_bayesian_worker_boot_topology_probe",
+        _proof_probe,
+    )
+    worker_boot_probe._run_bayesian_worker_boot_topology_probe_if_needed()
+
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_worker_generation_proof", None)
+    monkeypatch.setattr(worker_boot_probe, "_bayesian_execution_authority", None)
+    monkeypatch.setattr(
+        worker_boot_probe,
+        "run_bayesian_worker_boot_topology_probe",
+        _forbidden_probe,
+    )
+    worker_boot_probe._derive_bayesian_child_authority_if_needed()
 
     assert events == ["boot_probe"]
     assert worker_boot_probe.bayesian_worker_boot_topology_probe_has_passed()
