@@ -199,11 +199,18 @@ def validate_bayesian_worker_boot_probe(
         "signals.worker_init.connect(",
         "signals.worker_process_init.connect(",
         "_run_bayesian_worker_boot_topology_probe_if_needed()",
+        "_derive_bayesian_child_authority_if_needed()",
         "run_bayesian_worker_boot_topology_probe()",
         'SystemExit("bayesian_worker_boot_topology_probe_failed")',
         "bayesian_worker_boot_topology_probe_has_passed",
         "assert_bayesian_worker_boot_topology_proven",
-        "_bayesian_boot_topology_probe_pid == os.getpid()",
+        "BayesianWorkerGenerationProof",
+        "BayesianWorkerExecutionAuthority",
+        "hmac.compare_digest",
+        "BAYESIAN_CHILD_AUTHORITY_BUDGET_S",
+        "SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_FILE",
+        "_persist_generation_authority_file",
+        "_load_generation_authority_file",
     ):
         _require(
             token in worker_boot,
@@ -231,13 +238,22 @@ def validate_bayesian_worker_boot_probe(
     )
     for token in (
         "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",
+        "SKELDIR_CELERY_WORKER_ROLE",
+        "REQUIRED_BAYESIAN_TASK_NAMES",
         "_bayesian_tasks_registered_for_process",
-        "_BAYESIAN_TASK_REGISTRATION_TOPOLOGY_ENV",
         "_BAYESIAN_TASKS_REGISTERED",
         "return celery_app.task(*task_args, **task_kwargs)",
         "return _return_plain_function",
     ):
         _require(token in tasks, f"P9 Bayesian task registry gate missing: {token}")
+    for forbidden in (
+        "_BAYESIAN_TASK_REGISTRATION_TOPOLOGY_ENV",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY",
+    ):
+        _require(
+            forbidden not in tasks,
+            f"P9 Bayesian task registration still depends on topology env: {forbidden}",
+        )
     _require(
         tasks.count("@_bayesian_task(") >= 6,
         "P9 Bayesian task entries must use the structural task-registration gate",
@@ -265,6 +281,19 @@ def validate_bayesian_worker_boot_probe(
     _require(
         probe_call_idx < worker_process_init_idx,
         "P9 Celery boot probe receiver must be defined before worker_process_init registration",
+    )
+    child_handler = worker_boot[
+        worker_boot.index("def _on_bayesian_worker_process_init") : worker_boot.index(
+            "def ensure_bayesian_worker_boot_probe_signal_registered"
+        )
+    ]
+    _require(
+        "_derive_bayesian_child_authority_if_needed()" in child_handler,
+        "P9 worker_process_init must derive local child authority",
+    )
+    _require(
+        "run_bayesian_worker_boot_topology_probe()" not in child_handler,
+        "P9 worker_process_init must not run the physical DB probe",
     )
     for forbidden in ("worker_ready", "task_prerun"):
         _require(
@@ -443,6 +472,8 @@ def validate_tests_and_ci(
         "test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun",
         "test_b24_p9_non_bayesian_worker_registry_excludes_bayesian_tasks",
         "test_b24_p9_bayesian_registration_wires_tasks_and_boot_probe",
+        "test_b24_p9_topology_env_alone_does_not_register_bayesian_tasks",
+        "test_b24_p9_worker_role_registration_contradiction_fails_closed",
         "test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof",
         "test_b24_p9_bayesian_task_module_registry_gate_is_structural",
         "test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine",
@@ -465,6 +496,7 @@ def validate_tests_and_ci(
         "test_b24_p9_boot_probe_physically_proves_session_boundary",
         "test_b24_p9_boot_probe_failure_is_fatal_before_task_consumption",
         "test_b24_p9_registered_bayesian_process_always_runs_boot_probe",
+        "test_b24_p9_child_process_init_derives_authority_without_db_probe",
         "test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_task",
         "test_b24_p9_pool_poison_is_closed_and_replaced_without_manual_reset",
         "test_b24_p9_pg_stat_activity_backend_not_idle_in_transaction",
@@ -493,6 +525,8 @@ def validate_tests_and_ci(
         "test_b24_p9_worker_tenant_hygiene.py",
         "test_b24_p9_postgres_runtime.py",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
+        "SKELDIR_CELERY_WORKER_ROLE",
+        "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
@@ -515,6 +549,8 @@ def validate_tests_and_ci(
     ):
         block = _ci_job_block(ci_workflow, job_id)
         for token in (
+            "SKELDIR_CELERY_WORKER_ROLE",
+            "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",
             "SKELDIR_BAYESIAN_DB_TOPOLOGY",
             "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
             "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
@@ -542,6 +578,8 @@ def validate_tests_and_ci(
         '"SKELDIR_BAYESIAN_DB_TOPOLOGY"',
         '"SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"',
         '"SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"',
+        '"SKELDIR_CELERY_WORKER_ROLE"',
+        '"SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"',
         '"direct_postgres_ci_postgres15"',
         '"b07_p5_bayesian_timeout_runtime"',
     ):
@@ -664,6 +702,16 @@ def run_negative_controls() -> None:
                 )
             ),
             "registry",
+        ),
+        (
+            "topology_env_task_registration_reintroduced",
+            lambda: validate_bayesian_worker_boot_probe(
+                tasks_text=_read(TASKS_BAYESIAN).replace(
+                    "return bool(explicit)",
+                    "return bool(explicit) or bool(os.getenv('SKELDIR_BAYESIAN_DB_TOPOLOGY'))",
+                )
+            ),
+            "topology",
         ),
         (
             "task_factory_removed",

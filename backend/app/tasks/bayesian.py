@@ -54,28 +54,57 @@ if _TASK_HARD_LIMIT_S <= _TASK_SOFT_LIMIT_S:
 
 
 _BAYESIAN_TASK_REGISTRATION_FALSE_VALUES = {"0", "false", "no", "off"}
-_BAYESIAN_TASK_REGISTRATION_TOPOLOGY_ENV = (
-    "SKELDIR_BAYESIAN_DB_TOPOLOGY",
-    "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION",
-    "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE",
+_BAYESIAN_TASK_REGISTRATION_TRUE_VALUES = {"1", "true", "yes", "on"}
+_BAYESIAN_WORKER_ROLE_ENV = "SKELDIR_CELERY_WORKER_ROLE"
+_BAYESIAN_WORKER_ROLE_BAYESIAN = "bayesian"
+_BAYESIAN_WORKER_ROLE_NON_BAYESIAN = "non_bayesian"
+REQUIRED_BAYESIAN_TASK_NAMES = frozenset(
+    {
+        "app.tasks.bayesian.run_mcmc_inference",
+        "app.tasks.bayesian.execute_fit_intent",
+        FEATURE_AUTHORITY_DISPATCH_TASK_NAME,
+        FEATURE_AUTHORITY_BUILD_TASK_NAME,
+        "app.tasks.bayesian.run_resource_contention",
+        "app.tasks.bayesian.health_probe",
+    }
 )
+
+
+def _explicit_bayesian_task_registration_value() -> bool | None:
+    explicit = os.getenv("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS")
+    if explicit is None:
+        return None
+    normalized = explicit.strip().lower()
+    if normalized in _BAYESIAN_TASK_REGISTRATION_FALSE_VALUES:
+        return False
+    if normalized in _BAYESIAN_TASK_REGISTRATION_TRUE_VALUES:
+        return True
+    raise RuntimeError("bayesian_task_registration_flag_invalid")
 
 
 def _bayesian_tasks_registered_for_process() -> bool:
     """
     Return whether this process registers executable Bayesian task entries.
 
-    Queue names and worker labels are intentionally not inputs. A process is
-    Bayesian-capable only when explicitly enabled or carrying the deployment
-    topology contract required for the boot probe that follows registration.
+    Database topology declarations are intentionally not inputs. A process is
+    Bayesian-capable only when the worker role or task-registration flag says it
+    is allowed to execute Bayesian tasks; the physical DB proof happens later at
+    worker-generation boot and cannot be asserted by environment alone.
     """
 
-    explicit = os.getenv("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS")
-    if explicit is not None:
-        return explicit.strip().lower() not in _BAYESIAN_TASK_REGISTRATION_FALSE_VALUES
-    return any(
-        os.getenv(name, "").strip() for name in _BAYESIAN_TASK_REGISTRATION_TOPOLOGY_ENV
-    )
+    explicit = _explicit_bayesian_task_registration_value()
+    role = os.getenv(_BAYESIAN_WORKER_ROLE_ENV, "").strip().lower()
+    if role == _BAYESIAN_WORKER_ROLE_BAYESIAN:
+        if explicit is False:
+            raise RuntimeError("bayesian_worker_role_registration_contradiction")
+        return True
+    if role == _BAYESIAN_WORKER_ROLE_NON_BAYESIAN:
+        if explicit is True:
+            raise RuntimeError("non_bayesian_worker_role_registration_contradiction")
+        return False
+    if role:
+        raise RuntimeError("bayesian_worker_role_unknown")
+    return bool(explicit)
 
 
 _BAYESIAN_TASKS_REGISTERED = _bayesian_tasks_registered_for_process()
@@ -788,3 +817,11 @@ def health_probe(self, *, tenant_id: str, correlation_id: str) -> dict:
     }
     _append_probe_event({"event": "bayesian_health_probe_ok", **payload})
     return payload
+
+
+if _BAYESIAN_TASKS_REGISTERED:
+    missing_required_tasks = sorted(
+        name for name in REQUIRED_BAYESIAN_TASK_NAMES if name not in celery_app.tasks
+    )
+    if missing_required_tasks:
+        raise RuntimeError("bayesian_worker_required_task_registration_incomplete")

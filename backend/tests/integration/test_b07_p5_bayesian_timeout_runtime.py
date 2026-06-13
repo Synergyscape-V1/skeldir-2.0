@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import create_engine, text
 
 from app.celery_app import celery_app
@@ -159,6 +160,8 @@ def _read_probe_events(path: Path) -> list[dict]:
 
 
 def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
+    if os.name == "nt":
+        pytest.skip("Celery prefork soft/hard timeout proof requires POSIX signals")
     cfg = _cfg()
     assert (
         celery_app.conf.task_always_eager is False
@@ -175,6 +178,8 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
     worker_log = artifact_dir / "p5_bayesian_worker.log"
     probe_log = artifact_dir / "p5_bayesian_probe.jsonl"
     proof_path = artifact_dir / "p5_bayesian_runtime_proof.json"
+    for artifact in (worker_log, probe_log, proof_path):
+        artifact.unlink(missing_ok=True)
 
     env = os.environ.copy()
     env["DATABASE_URL"] = cfg.runtime_async_url
@@ -183,6 +188,8 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
     env["BAYESIAN_TASK_SOFT_TIME_LIMIT_S"] = "4"
     env["BAYESIAN_TASK_TIME_LIMIT_S"] = "5"
     env["BAYESIAN_PROBE_LOG_PATH"] = str(probe_log.resolve())
+    env["SKELDIR_CELERY_WORKER_ROLE"] = "bayesian"
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "1"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY"] = "direct_postgres"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"] = "direct_postgres_ci_postgres15"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"] = "b07_p5_bayesian_timeout_runtime"
