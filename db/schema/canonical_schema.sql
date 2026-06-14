@@ -1573,8 +1573,8 @@ CREATE TABLE public.b23_match_verdicts (
     last_transition_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    canonical_expected_gross_amount_minor integer CONSTRAINT b23_match_verdicts_canonical_expected_gross_amount_min_not_null NOT NULL,
-    canonical_captured_gross_amount_minor integer CONSTRAINT b23_match_verdicts_canonical_captured_gross_amount_min_not_null NOT NULL,
+    canonical_expected_gross_amount_minor integer NOT NULL,
+    canonical_captured_gross_amount_minor integer NOT NULL,
     canonical_net_verified_amount_minor integer NOT NULL,
     discrepancy_amount_minor integer NOT NULL,
     discrepancy_ratio_bps integer NOT NULL,
@@ -8905,7 +8905,7 @@ CREATE INDEX idx_b23_p4_attribution_order_ref_expr ON public.attribution_events 
 
 
 --
--- Name: idx_b23_p4_match_rate_tenant_transition_status; Type: INDEX; Schema: public; Owner: -
+-- Name: b23 p4 match rate tenant transition status index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_b23_p4_match_rate_tenant_transition_status ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at DESC, status) WHERE ((status)::text = ANY ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]));
@@ -8940,7 +8940,7 @@ CREATE INDEX idx_b23_p4_worker_dlq_open_status_failed_at ON public.worker_failed
 
 
 --
--- Name: idx_b23_revenue_events_tenant_event_effect_sign; Type: INDEX; Schema: public; Owner: -
+-- Name: b23 revenue events tenant event effect sign index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_b23_revenue_events_tenant_event_effect_sign ON public.b23_revenue_events USING btree (tenant_id, event_type, net_effect_sign, event_occurred_at DESC);
@@ -13369,7 +13369,7 @@ CREATE POLICY tenant_isolation_policy_b23_match_verdicts ON public.b23_match_ver
 
 
 --
--- Name: b23_revenue_events tenant_isolation_policy_b23_revenue_events; Type: POLICY; Schema: public; Owner: -
+-- Name: b23_revenue_events tenant isolation policy; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
