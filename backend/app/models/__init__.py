@@ -76,6 +76,7 @@ _BAYESIAN_EXPORTS = {
     "B24DirtyEvent",
     "B24ActiveExecutionLease",
     "B24FitDispatchOutbox",
+    "B24FitRecoveryOutbox",
 }
 
 
@@ -129,4 +130,5 @@ __all__ = [
     "B24DirtyEvent",
     "B24ActiveExecutionLease",
     "B24FitDispatchOutbox",
+    "B24FitRecoveryOutbox",
 ]

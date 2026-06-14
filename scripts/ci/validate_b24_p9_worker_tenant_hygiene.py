@@ -20,11 +20,16 @@ CLEANUP = BAYESIAN_PACKAGE / "cleanup.py"
 COMPILEDIR_REAPER = BAYESIAN_PACKAGE / "compiledir_reaper.py"
 CHILD_ENVIRONMENT = BAYESIAN_PACKAGE / "child_environment.py"
 FIT_EXECUTION = BAYESIAN_PACKAGE / "fit_execution.py"
+DISPATCH_AUTHORITY = BAYESIAN_PACKAGE / "dispatch_authority.py"
+DISPATCH_OUTBOX = BAYESIAN_PACKAGE / "dispatch_outbox.py"
 ARTIFACT_REPOSITORY = BAYESIAN_PACKAGE / "artifact_repository.py"
 MODELS = BAYESIAN_PACKAGE / "models.py"
 TASKS_BAYESIAN = Path("backend/app/tasks/bayesian.py")
 P9_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202606081200_b24_p9_worker_tenant_hygiene.py"
+)
+P9_DIRECTIVE_IX_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202606141200_b24_p9_directive_ix_dispatch_authority.py"
 )
 P9_TESTS = Path("backend/tests/test_b24_p9_worker_tenant_hygiene.py")
 P9_DB_TESTS = Path("backend/tests/test_b24_p9_postgres_runtime.py")
@@ -49,10 +54,13 @@ REQUIRED_FILES = {
     COMPILEDIR_REAPER,
     CHILD_ENVIRONMENT,
     FIT_EXECUTION,
+    DISPATCH_AUTHORITY,
+    DISPATCH_OUTBOX,
     ARTIFACT_REPOSITORY,
     MODELS,
     TASKS_BAYESIAN,
     P9_MIGRATION,
+    P9_DIRECTIVE_IX_MIGRATION,
     P9_TESTS,
     P9_DB_TESTS,
     WORKFLOW,
@@ -421,6 +429,12 @@ def validate_fit_execution(text: str | None = None) -> None:
         "source_snapshot_hash=source_snapshot_hash",
         'ipc_dir = workspace.path / "ipc"',
         "cleanup_fit_attempt(workspace=workspace, compiledir=lease)",
+        "dispatch_claim: BayesianDispatchClaim | None = None",
+        "claim_fit_dispatch_sync",
+        "bind_dispatch_write_context_sync",
+        "mark_dispatch_running_sync",
+        "complete_dispatch_sync",
+        "fail_dispatch_terminal_sync",
         "_sampler_failure_stream_metadata(result)",
         "stderr_retained_bytes",
         "stderr_truncated",
@@ -434,6 +448,99 @@ def validate_fit_execution(text: str | None = None) -> None:
     ):
         _require(
             forbidden not in fit_execution, f"P9 fit execution forbidden: {forbidden}"
+        )
+
+
+def validate_directive_ix_dispatch_authority(
+    authority_text: str | None = None,
+    outbox_text: str | None = None,
+    tasks_text: str | None = None,
+    migration_text: str | None = None,
+    models_text: str | None = None,
+) -> None:
+    authority = (
+        authority_text if authority_text is not None else _read(DISPATCH_AUTHORITY)
+    )
+    outbox = outbox_text if outbox_text is not None else _read(DISPATCH_OUTBOX)
+    tasks = tasks_text if tasks_text is not None else _read(TASKS_BAYESIAN)
+    migration = (
+        migration_text
+        if migration_text is not None
+        else _read(P9_DIRECTIVE_IX_MIGRATION)
+    )
+    models = models_text if models_text is not None else _read(MODELS)
+    for token in (
+        "DispatchClaimOutcome",
+        "ACQUIRED",
+        "RECLAIMED",
+        "ACTIVE_LEASE",
+        "ALREADY_COMPLETED",
+        "CANCELLED",
+        "EXPIRED",
+        "SUPERSEDED",
+        "TERMINAL_FAILURE",
+        "UNAUTHORIZED",
+        "RETRYABLE_INFRASTRUCTURE_FAILURE",
+        "BayesianDispatchClaim",
+        "BayesianDispatchLease",
+        "dispatch_payload_hash",
+        "claim_fit_dispatch_sync",
+        "bind_dispatch_write_context_sync",
+        "create_recovery_wakeups_sync",
+    ):
+        _require(token in authority, f"Directive IX authority missing: {token}")
+    for token in (
+        "publish_capability_bound_dispatch",
+        '"dispatch_id": str(self.id)',
+        '"attempt_id": str(self.attempt_id)',
+        '"payload_hash": self.payload_hash',
+        '"claim_capability": self.claim_capability',
+        "b24_create_fit_recovery_wakeups",
+    ):
+        _require(token in outbox, f"Directive IX outbox missing: {token}")
+    for token in (
+        "dispatch_id: str",
+        "attempt_id: str",
+        "payload_hash: str",
+        "claim_capability: str",
+        "BayesianDispatchClaim",
+        "dispatch_claim=claim",
+        "fit_id: str",
+    ):
+        _require(token in tasks, f"Directive IX Celery task missing: {token}")
+    for token in (
+        "b24_claim_fit_dispatch",
+        "p_fit_id uuid",
+        "b24_current_dispatch_fence_valid",
+        "b24_enforce_dispatch_fence",
+        "trg_b24_dispatch_fence_fits",
+        "trg_b24_dispatch_fence_artifacts",
+        "b24_mark_fit_dispatch_running",
+        "b24_complete_fit_dispatch",
+        "b24_fail_fit_dispatch_terminal",
+        "b24_create_fit_recovery_wakeups",
+        "b24_fit_recovery_outbox",
+        "ENABLE ROW LEVEL SECURITY",
+        "FORCE ROW LEVEL SECURITY",
+        "set_config('app.b24_dispatch_fence_required', 'on', true)",
+        "b24_dispatch_fence_rejected",
+    ):
+        _require(token in migration, f"Directive IX migration missing: {token}")
+    for token in (
+        "claim_capability",
+        "claim_capability_digest",
+        "lease_capability_digest",
+        "claim_epoch",
+        "B24FitRecoveryOutbox",
+    ):
+        _require(token in models, f"Directive IX models missing: {token}")
+    for forbidden in (
+        "def publish_fit_id_only",
+        "def execute_fit_intent(self, *, fit_id: str)",
+    ):
+        _require(
+            forbidden not in outbox + tasks,
+            f"Directive IX stale authority remained: {forbidden}",
         )
 
 
@@ -512,6 +619,8 @@ def validate_tests_and_ci(
         "test_b24_p9_child_env_is_allowlisted_without_parent_mutation",
         "test_b24_p9_artifact_ref_contains_tenant_authority",
         "test_b24_p9_fit_execution_wires_cleanup_and_payload_airgap",
+        "test_b24_p9_directive_ix_dispatch_authority_is_capability_bound",
+        "test_b24_p9_directive_ix_celery_task_rejects_fit_id_only_authority",
         "test_b24_p9_same_process_sequential_reused_worker_runtime_lane",
         "test_b24_p9_concurrent_tenant_isolation_runtime_surfaces",
         "test_b24_p9_concurrent_janitor_toctou_safe",
@@ -536,6 +645,8 @@ def validate_tests_and_ci(
         "test_b24_p9_db_proof_requires_explicit_flag_in_ci",
         "test_b24_p9_session_level_guc_poison_is_detected",
         "test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction",
+        "test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime",
+        "test_b24_p9_directive_ix_stale_lease_and_recovery_runtime",
         "test_b24_p9_concurrent_tenant_isolation_db_and_runtime_surfaces",
         "bind_transaction_local_tenant",
         "assert_fresh_checkout_is_clean",
@@ -647,6 +758,7 @@ def validate_all() -> None:
     validate_compiledir()
     validate_child_env()
     validate_fit_execution()
+    validate_directive_ix_dispatch_authority()
     validate_artifact_authority()
     validate_tests_and_ci()
 
@@ -830,6 +942,35 @@ def run_negative_controls() -> None:
                 + '\nstderr_retained": result.stderr.retained_text\n'
             ),
             "stderr",
+        ),
+        (
+            "directive_ix_claim_outcome_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                authority_text=_read(DISPATCH_AUTHORITY).replace(
+                    "ACTIVE_LEASE", "LEASE_ACTIVE_REMOVED"
+                )
+            ),
+            "ACTIVE_LEASE",
+        ),
+        (
+            "directive_ix_broker_capability_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                outbox_text=_read(DISPATCH_OUTBOX).replace(
+                    '"claim_capability": self.claim_capability',
+                    '"claim_removed": self.claim_capability',
+                )
+            ),
+            "claim_capability",
+        ),
+        (
+            "directive_ix_db_fence_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                migration_text=_read(P9_DIRECTIVE_IX_MIGRATION).replace(
+                    "b24_dispatch_fence_rejected",
+                    "b24_dispatch_fence_allowed",
+                )
+            ),
+            "fence",
         ),
         (
             "artifact_tenant_omitted",

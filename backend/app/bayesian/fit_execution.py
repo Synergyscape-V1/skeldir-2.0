@@ -21,6 +21,16 @@ from sqlalchemy.engine import Engine
 from app.bayesian.artifact_repository import persist_artifact_sync
 from app.bayesian.cleanup import cleanup_fit_attempt, run_preflight_janitor
 from app.bayesian.compiledir_reaper import create_compiledir_lease
+from app.bayesian.dispatch_authority import (
+    BayesianDispatchClaim,
+    BayesianDispatchLease,
+    DispatchClaimOutcome,
+    bind_dispatch_write_context_sync,
+    claim_fit_dispatch_sync,
+    complete_dispatch_sync,
+    fail_dispatch_terminal_sync,
+    mark_dispatch_running_sync,
+)
 from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.result_contract import validate_result_summary
 from app.bayesian.rng_policy import RngSeedMaterial, derive_rng_seed
@@ -60,6 +70,19 @@ def _set_tenant_context(conn, tenant_id: UUID) -> None:
     assert_bound_tenant(conn, tenant_id=tenant_id)
 
 
+def _set_execution_context(
+    conn,
+    *,
+    tenant_id: UUID,
+    dispatch_lease: BayesianDispatchLease | None = None,
+) -> None:
+    _set_tenant_context(conn, tenant_id)
+    if dispatch_lease is not None:
+        if dispatch_lease.tenant_id != tenant_id:
+            raise RuntimeError("bayesian_dispatch_lease_tenant_mismatch")
+        bind_dispatch_write_context_sync(conn, lease=dispatch_lease)
+
+
 def _fit_identity(conn, *, fit_id: UUID) -> UUID | None:
     conn.execute(
         text("SELECT set_config('app.b24_fit_resolution_id', :fit_id, true)"),
@@ -91,9 +114,13 @@ _LoadFitRow = dict[str, object]
 
 
 def _load_fit_for_execution(
-    conn, *, tenant_id: UUID, fit_id: UUID
+    conn,
+    *,
+    tenant_id: UUID,
+    fit_id: UUID,
+    dispatch_lease: BayesianDispatchLease | None = None,
 ) -> _LoadFitRow | None:
-    _set_tenant_context(conn, tenant_id)
+    _set_execution_context(conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease)
     row = (
         conn.execute(
             text(
@@ -132,8 +159,9 @@ def _mark_fit_failure(
     status: FitStatus,
     fallback_reason: FallbackReason,
     runtime_seconds: int | None = None,
+    dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
-    _set_tenant_context(conn, tenant_id)
+    _set_execution_context(conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease)
     conn.execute(
         text(
             """
@@ -178,8 +206,9 @@ def _mark_fit_diagnostic_error(
     fit_id: UUID,
     diagnostic_failure_reason: str,
     runtime_seconds: int | None = None,
+    dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
-    _set_tenant_context(conn, tenant_id)
+    _set_execution_context(conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease)
     conn.execute(
         text(
             """
@@ -348,7 +377,9 @@ def _persist_result_summary(
     runtime_seconds: int,
     result_summary: dict[str, object],
     result_hash: str,
+    dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
+    _set_execution_context(conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease)
     artifact = persist_artifact_sync(
         conn,
         tenant_id=tenant_id,
@@ -503,37 +534,66 @@ def execute_fit_intent_sync(
     engine: Engine,
     fit_id: UUID,
     task_id: str,
+    dispatch_claim: BayesianDispatchClaim | None = None,
 ) -> dict[str, object]:
     started = time.monotonic()
     run_preflight_janitor(ttl_seconds=3600, max_deletions=10, max_scan_entries=100)
     assert_fresh_checkout_is_clean(engine)
-    try:
+    dispatch_lease: BayesianDispatchLease | None = None
+    if dispatch_claim is not None:
         with engine.begin() as conn:
-            tenant_id = _fit_identity(conn, fit_id=fit_id)
-    except RuntimeError as exc:
-        if str(exc) == "duplicate_fit_suppressed":
+            claim_result = claim_fit_dispatch_sync(
+                conn,
+                claim=dispatch_claim,
+                worker_generation_id=os.getenv(
+                    "B24_BAYESIAN_WORKER_GENERATION_ID", "unknown-generation"
+                ),
+            )
+        if isinstance(claim_result, DispatchClaimOutcome):
             return {
-                "status": "failed",
-                "fallback_reason": FallbackReason.DUPLICATE_FIT_SUPPRESSED.value,
+                "status": claim_result.value.lower(),
+                "claim_outcome": claim_result.value,
+                "task_id": task_id,
+                "fit_id": str(dispatch_claim.fit_id),
+                "dispatch_id": str(dispatch_claim.dispatch_id),
+                "compute_started": False,
+            }
+        dispatch_lease = claim_result
+        tenant_id = dispatch_lease.tenant_id
+        fit_id = dispatch_lease.fit_id
+    else:
+        try:
+            with engine.begin() as conn:
+                tenant_id = _fit_identity(conn, fit_id=fit_id)
+        except RuntimeError as exc:
+            if str(exc) == "duplicate_fit_suppressed":
+                return {
+                    "status": "failed",
+                    "fallback_reason": FallbackReason.DUPLICATE_FIT_SUPPRESSED.value,
+                    "task_id": task_id,
+                    "fit_id": str(fit_id),
+                    "compute_started": False,
+                }
+            raise
+        if tenant_id is None:
+            return {
+                "status": "not_found",
                 "task_id": task_id,
                 "fit_id": str(fit_id),
                 "compute_started": False,
             }
-        raise
-    if tenant_id is None:
-        return {
-            "status": "not_found",
-            "task_id": task_id,
-            "fit_id": str(fit_id),
-            "compute_started": False,
-        }
 
     lease = None
     workspace = None
 
     try:
         with engine.begin() as conn:
-            row = _load_fit_for_execution(conn, tenant_id=tenant_id, fit_id=fit_id)
+            row = _load_fit_for_execution(
+                conn,
+                tenant_id=tenant_id,
+                fit_id=fit_id,
+                dispatch_lease=dispatch_lease,
+            )
             if row is None:
                 return {
                     "status": "not_found",
@@ -543,6 +603,8 @@ def execute_fit_intent_sync(
                 }
             current_status = str(row["status"])
             if current_status in TERMINAL_OR_POST_SAMPLE_STATUSES:
+                if dispatch_lease is not None:
+                    complete_dispatch_sync(conn, lease=dispatch_lease)
                 return {
                     "status": current_status,
                     "task_id": task_id,
@@ -601,7 +663,12 @@ def execute_fit_intent_sync(
                     fit_id=fit_id,
                     status=FitStatus.FAILED,
                     fallback_reason=exc.reason,
+                    dispatch_lease=dispatch_lease,
                 )
+                if dispatch_lease is not None:
+                    fail_dispatch_terminal_sync(
+                        conn, lease=dispatch_lease, reason=exc.reason.value
+                    )
             return {
                 "status": "failed",
                 "fallback_reason": exc.reason.value,
@@ -621,7 +688,12 @@ def execute_fit_intent_sync(
                     fit_id=fit_id,
                     status=FitStatus.FAILED,
                     fallback_reason=reason,
+                    dispatch_lease=dispatch_lease,
                 )
+                if dispatch_lease is not None:
+                    fail_dispatch_terminal_sync(
+                        conn, lease=dispatch_lease, reason=reason.value
+                    )
             return {
                 "status": "failed",
                 "fallback_reason": reason.value,
@@ -632,7 +704,9 @@ def execute_fit_intent_sync(
             }
 
         with engine.begin() as conn:
-            _set_tenant_context(conn, tenant_id)
+            _set_execution_context(
+                conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease
+            )
             conn.execute(
                 text(
                     """
@@ -652,6 +726,8 @@ def execute_fit_intent_sync(
                     "source_snapshot_hash": str(sampler_input["source_snapshot_hash"]),
                 },
             )
+            if dispatch_lease is not None:
+                mark_dispatch_running_sync(conn, lease=dispatch_lease)
 
         _write_input_file(input_path, sampler_input)
         source_env = {
@@ -684,7 +760,12 @@ def execute_fit_intent_sync(
                         fit_id=fit_id,
                         diagnostic_failure_reason=diagnostic_reason,
                         runtime_seconds=runtime_seconds,
+                        dispatch_lease=dispatch_lease,
                     )
+                    if dispatch_lease is not None:
+                        fail_dispatch_terminal_sync(
+                            conn, lease=dispatch_lease, reason=diagnostic_reason
+                        )
                 else:
                     _mark_fit_failure(
                         conn,
@@ -693,7 +774,14 @@ def execute_fit_intent_sync(
                         status=FitStatus.TIMEOUT,
                         fallback_reason=FallbackReason.TIMEOUT,
                         runtime_seconds=runtime_seconds,
+                        dispatch_lease=dispatch_lease,
                     )
+                    if dispatch_lease is not None:
+                        fail_dispatch_terminal_sync(
+                            conn,
+                            lease=dispatch_lease,
+                            reason=FallbackReason.TIMEOUT.value,
+                        )
             return {
                 "status": "failed" if diagnostic_reason is not None else "timeout",
                 "diagnostic_failure_reason": diagnostic_reason,
@@ -715,7 +803,12 @@ def execute_fit_intent_sync(
                         fit_id=fit_id,
                         diagnostic_failure_reason=diagnostic_reason,
                         runtime_seconds=runtime_seconds,
+                        dispatch_lease=dispatch_lease,
                     )
+                    if dispatch_lease is not None:
+                        fail_dispatch_terminal_sync(
+                            conn, lease=dispatch_lease, reason=diagnostic_reason
+                        )
                 else:
                     _mark_fit_failure(
                         conn,
@@ -724,7 +817,14 @@ def execute_fit_intent_sync(
                         status=FitStatus.FAILED,
                         fallback_reason=FallbackReason.WORKER_FAILURE,
                         runtime_seconds=runtime_seconds,
+                        dispatch_lease=dispatch_lease,
                     )
+                    if dispatch_lease is not None:
+                        fail_dispatch_terminal_sync(
+                            conn,
+                            lease=dispatch_lease,
+                            reason=FallbackReason.WORKER_FAILURE.value,
+                        )
             return {
                 "status": "failed",
                 "fallback_reason": (
@@ -745,7 +845,6 @@ def execute_fit_intent_sync(
         result_hash = _summary_hash(result_summary)
 
         with engine.begin() as conn:
-            _set_tenant_context(conn, tenant_id)
             _persist_result_summary(
                 conn,
                 tenant_id=tenant_id,
@@ -754,7 +853,10 @@ def execute_fit_intent_sync(
                 runtime_seconds=runtime_seconds,
                 result_summary=result_summary,
                 result_hash=result_hash,
+                dispatch_lease=dispatch_lease,
             )
+            if dispatch_lease is not None:
+                complete_dispatch_sync(conn, lease=dispatch_lease)
 
         return {
             "status": (
