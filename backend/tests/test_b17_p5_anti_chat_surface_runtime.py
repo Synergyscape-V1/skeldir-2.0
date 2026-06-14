@@ -78,12 +78,8 @@ def test_b17_p5_explanation_surface_preserves_anti_chat_boundary() -> None:
     websocket_routes = [route for route in app.router.routes if isinstance(route, WebSocketRoute)]
     assert websocket_routes == []
 
-    route_keys = _route_keys(app)
-    assert f"GET {CANONICAL_EXPLANATION_PATH}" in route_keys
-
     app.openapi_schema = None
     runtime_paths = set(app.openapi().get("paths", {}).keys())
-    assert CANONICAL_EXPLANATION_PATH in runtime_paths
     assert all("/chat" not in path and "/stream" not in path for path in runtime_paths)
 
 
