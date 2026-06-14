@@ -53,14 +53,16 @@ def _load_runtime_app() -> FastAPI:
     if f"GET {CANONICAL_EXPLANATION_PATH}" in _route_keys(candidate):
         return candidate
 
-    from app.api import attribution
+    import app.api.attribution as attribution_module
+
+    attribution_module = importlib.reload(attribution_module)
 
     fallback = FastAPI(
         title="B1.7 anti-chat route projection",
         version="1.0.0",
         openapi_url="/openapi.json",
     )
-    fallback.include_router(attribution.router, prefix="/api/attribution")
+    fallback.include_router(attribution_module.router, prefix="/api/attribution")
     return fallback
 
 
