@@ -45,12 +45,14 @@ def test_b17_p5_explanation_surface_preserves_anti_chat_boundary() -> None:
             route_keys.add(f"{method} {route.path}")
     assert "GET /api/attribution/explain/{entity_type}/{entity_id}" in route_keys
 
+    app.openapi_schema = None
     runtime_paths = set(app.openapi().get("paths", {}).keys())
     assert "/api/attribution/explain/{entity_type}/{entity_id}" in runtime_paths
     assert all("/chat" not in path and "/stream" not in path for path in runtime_paths)
 
 
 def test_b17_p5_explanation_route_runtime_openapi_is_non_streaming_json_only() -> None:
+    app.openapi_schema = None
     operation = (
         app.openapi()
         .get("paths", {})

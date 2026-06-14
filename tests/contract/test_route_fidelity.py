@@ -370,6 +370,7 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
 
     from app.main import app
 
+    app.openapi_schema = None
     runtime_openapi = app.openapi()
     runtime_paths = runtime_openapi.get("paths", {})
     assert canonical_path in runtime_paths
@@ -568,6 +569,7 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
 
     from app.main import app
 
+    app.openapi_schema = None
     runtime_openapi = app.openapi()
     runtime_paths = runtime_openapi.get("paths", {})
     assert canonical_path in runtime_paths
