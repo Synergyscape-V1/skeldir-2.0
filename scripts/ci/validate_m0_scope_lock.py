@@ -214,6 +214,7 @@ ALLOWED_M0_PATHS = [
     "alembic/versions/007_skeldir_foundation/202606141200_b24_p9_directive_ix_dispatch_authority.py",
     "backend/app/bayesian/",
     "backend/Dockerfile.bayesian",
+    "backend/requirements.txt",
     "backend/requirements-bayesian.txt",
     "backend/app/ingestion/event_service.py",
     "backend/app/models/__init__.py",
