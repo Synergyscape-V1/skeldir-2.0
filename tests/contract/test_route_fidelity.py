@@ -10,6 +10,7 @@ Exit criteria:
 
 import os
 import sys
+import importlib
 from pathlib import Path
 import yaml
 import pytest
@@ -79,7 +80,7 @@ def extract_openapi_operations(contract_path):
 def extract_fastapi_routes():
     """Extract all routes from FastAPI app."""
     try:
-        from app.main import app
+        app = _load_runtime_app()
 
         routes = []
         for route in app.routes:
@@ -103,6 +104,13 @@ def extract_fastapi_routes():
     except ImportError as e:
         pytest.skip(f"FastAPI app not importable: {e}")
         return []
+
+
+def _load_runtime_app():
+    """Load app.main after this test module's route-contract env is bound."""
+    import app.main as main_module
+
+    return importlib.reload(main_module).app
 
 
 def test_contract_scope_configuration_exists():
@@ -368,7 +376,7 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
     route_keys = {f"{item['method']} {item['path']}" for item in routes}
     assert "GET /api/attribution/explain/{entity_type}/{entity_id}" in route_keys
 
-    from app.main import app
+    app = _load_runtime_app()
 
     app.openapi_schema = None
     runtime_openapi = app.openapi()
@@ -567,7 +575,7 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
     route_keys = {f"{item['method']} {item['path']}" for item in routes}
     assert "GET /api/attribution/channels" in route_keys
 
-    from app.main import app
+    app = _load_runtime_app()
 
     app.openapi_schema = None
     runtime_openapi = app.openapi()

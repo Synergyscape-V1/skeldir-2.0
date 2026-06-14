@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import importlib
 from pathlib import Path
 
 from starlette.routing import WebSocketRoute
@@ -29,7 +30,9 @@ os.environ.setdefault(
 os.environ.setdefault("TESTING", "1")
 os.environ.setdefault("CONTRACT_TESTING", "1")
 
-from app.main import app
+import app.main as main_module
+
+app = importlib.reload(main_module).app
 
 
 def test_b17_p5_explanation_surface_preserves_anti_chat_boundary() -> None:
