@@ -190,6 +190,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "alembic/versions/007_skeldir_foundation/202606061200_b24_p8_artifact_lifecycle.py",
     "alembic/versions/007_skeldir_foundation/202606071200_b24_p8_follow_up_airgap_quota.py",
     "alembic/versions/007_skeldir_foundation/202606081200_b24_p9_worker_tenant_hygiene.py",
+    "alembic/versions/007_skeldir_foundation/202606141200_b24_p9_directive_ix_dispatch_authority.py",
     "backend/Dockerfile.bayesian",
     "backend/requirements-bayesian.txt",
     "backend/app/bayesian/",
