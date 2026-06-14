@@ -230,7 +230,7 @@ jobs:
               reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
           def replace_matview_block(schema_text: str, view_name: str, replacement: str) -> str:
               pattern = re.compile(
-                  rf"CREATE MATERIALIZED VIEW {re.escape(view_name)} AS\n.*?\n\s*WITH NO DATA;",
+                  rf"CREATE MATERIALIZED VIEW (?:public\.)?{re.escape(view_name)} AS\n.*?\n\s*WITH NO DATA;",
                   re.DOTALL,
               )
               updated, count = pattern.subn(replacement.strip(), schema_text, count=1)
