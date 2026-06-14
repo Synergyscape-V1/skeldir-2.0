@@ -166,6 +166,58 @@ def upgrade() -> None:
             WHERE status IN ('dispatched', 'leased', 'running', 'failed_retryable', 'stale_recovered')
         """
     )
+    op.execute(
+        """
+        DROP POLICY IF EXISTS dispatch_capability_claim_select_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        DROP POLICY IF EXISTS dispatch_capability_claim_update_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        DROP POLICY IF EXISTS dispatch_recovery_reconciler_select_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        DROP POLICY IF EXISTS dispatch_recovery_reconciler_update_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+
+        CREATE POLICY dispatch_capability_claim_select_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox
+            FOR SELECT
+            USING (
+                claim_capability_digest = NULLIF(
+                    current_setting('app.b24_claim_capability_digest', true),
+                    ''
+                )
+                AND claim_capability_expires_at > now()
+            );
+
+        CREATE POLICY dispatch_capability_claim_update_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox
+            FOR UPDATE
+            USING (
+                claim_capability_digest = NULLIF(
+                    current_setting('app.b24_claim_capability_digest', true),
+                    ''
+                )
+                AND claim_capability_expires_at > now()
+            )
+            WITH CHECK (
+                claim_capability_digest = NULLIF(
+                    current_setting('app.b24_claim_capability_digest', true),
+                    ''
+                )
+                AND claim_capability_expires_at > now()
+            );
+
+        CREATE POLICY dispatch_recovery_reconciler_select_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox
+            FOR SELECT
+            USING (current_setting('app.b24_recovery_reconciler', true) = 'on');
+
+        CREATE POLICY dispatch_recovery_reconciler_update_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox
+            FOR UPDATE
+            USING (current_setting('app.b24_recovery_reconciler', true) = 'on')
+            WITH CHECK (current_setting('app.b24_recovery_reconciler', true) = 'on');
+        """
+    )
 
     op.execute(
         """
@@ -211,6 +263,12 @@ def upgrade() -> None:
             ON public.b24_fit_recovery_outbox
             USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
             WITH CHECK (tenant_id = current_setting('app.current_tenant_id')::uuid);
+        DROP POLICY IF EXISTS recovery_reconciler_policy_b24_fit_recovery_outbox
+            ON public.b24_fit_recovery_outbox;
+        CREATE POLICY recovery_reconciler_policy_b24_fit_recovery_outbox
+            ON public.b24_fit_recovery_outbox
+            USING (current_setting('app.b24_recovery_reconciler', true) = 'on')
+            WITH CHECK (current_setting('app.b24_recovery_reconciler', true) = 'on');
         """
     )
     op.execute(
@@ -267,6 +325,8 @@ def upgrade() -> None:
             v_lease_seconds integer := LEAST(GREATEST(COALESCE(p_lease_seconds, 330), 30), 900);
             v_outcome text;
         BEGIN
+            PERFORM set_config('app.b24_claim_capability_digest', v_digest, true);
+
             SELECT *
             INTO v_row
             FROM public.b24_fit_dispatch_outbox outbox
@@ -397,16 +457,18 @@ def upgrade() -> None:
             v_fit_id uuid;
         BEGIN
             IF TG_OP = 'UPDATE' THEN
-                IF TG_TABLE_NAME = 'bayesian_model_fits' THEN
+                IF TG_ARGV[0] = 'fit' THEN
                     IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.id IS DISTINCT FROM OLD.id THEN
                         RAISE EXCEPTION 'b24_dispatch_immutable_fit_authority';
                     END IF;
-                ELSIF TG_TABLE_NAME = 'bayesian_artifacts' THEN
+                ELSIF TG_ARGV[0] = 'artifact' THEN
                     IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
                        OR NEW.fit_id IS DISTINCT FROM OLD.fit_id
                        OR NEW.artifact_ref IS DISTINCT FROM OLD.artifact_ref THEN
                         RAISE EXCEPTION 'b24_dispatch_immutable_artifact_authority';
                     END IF;
+                ELSE
+                    RAISE EXCEPTION 'b24_dispatch_unknown_fence_subject';
                 END IF;
             END IF;
 
@@ -414,12 +476,14 @@ def upgrade() -> None:
                 RETURN NEW;
             END IF;
 
-            IF TG_TABLE_NAME = 'bayesian_model_fits' THEN
+            IF TG_ARGV[0] = 'fit' THEN
                 v_tenant_id := NEW.tenant_id;
                 v_fit_id := NEW.id;
-            ELSE
+            ELSIF TG_ARGV[0] = 'artifact' THEN
                 v_tenant_id := NEW.tenant_id;
                 v_fit_id := NEW.fit_id;
+            ELSE
+                RAISE EXCEPTION 'b24_dispatch_unknown_fence_subject';
             END IF;
 
             IF NOT public.b24_current_dispatch_fence_valid(v_tenant_id, v_fit_id) THEN
@@ -435,11 +499,11 @@ def upgrade() -> None:
         DROP TRIGGER IF EXISTS trg_b24_dispatch_fence_fits ON public.bayesian_model_fits;
         CREATE TRIGGER trg_b24_dispatch_fence_fits
             BEFORE INSERT OR UPDATE ON public.bayesian_model_fits
-            FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence();
+            FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('fit');
         DROP TRIGGER IF EXISTS trg_b24_dispatch_fence_artifacts ON public.bayesian_artifacts;
         CREATE TRIGGER trg_b24_dispatch_fence_artifacts
             BEFORE INSERT OR UPDATE ON public.bayesian_artifacts
-            FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence();
+            FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('artifact');
         """
     )
     op.execute(
@@ -526,6 +590,8 @@ def upgrade() -> None:
             v_claim text;
             v_generation integer;
         BEGIN
+            PERFORM set_config('app.b24_recovery_reconciler', 'on', true);
+
             FOR v_row IN
                 SELECT *
                 FROM public.b24_fit_dispatch_outbox outbox
@@ -644,6 +710,20 @@ def downgrade() -> None:
     op.execute(
         "DROP FUNCTION IF EXISTS public.b24_sha256_text(text)"
     )  # CI:DESTRUCTIVE_OK - reversible rollback for Directive IX helper.
+    op.execute(
+        """
+        DROP POLICY IF EXISTS recovery_reconciler_policy_b24_fit_recovery_outbox
+            ON public.b24_fit_recovery_outbox;
+        DROP POLICY IF EXISTS dispatch_recovery_reconciler_update_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        DROP POLICY IF EXISTS dispatch_recovery_reconciler_select_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        DROP POLICY IF EXISTS dispatch_capability_claim_update_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        DROP POLICY IF EXISTS dispatch_capability_claim_select_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        """
+    )  # CI:DESTRUCTIVE_OK - reversible rollback for Directive IX RLS apertures.
     op.execute(
         "DROP TABLE IF EXISTS public.b24_fit_recovery_outbox"
     )  # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive IX recovery outbox.
