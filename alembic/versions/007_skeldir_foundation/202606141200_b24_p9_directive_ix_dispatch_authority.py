@@ -735,7 +735,7 @@ def downgrade() -> None:
         """
     )  # CI:DESTRUCTIVE_OK - reversible rollback for Directive IX RLS apertures.
     op.execute(
-        "DROP TABLE IF EXISTS public.b24_fit_recovery_outbox"
+        "DROP TABLE IF EXISTS public.b24_fit_recovery_outbox"  # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive IX recovery outbox.
     )  # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive IX recovery outbox.
     op.execute(
         "DROP INDEX IF EXISTS public.idx_b24_fit_dispatch_outbox_recoverable"
@@ -793,5 +793,5 @@ def downgrade() -> None:
         "next_recovery_at",
     ):
         op.execute(
-            f"ALTER TABLE public.b24_fit_dispatch_outbox DROP COLUMN IF EXISTS {column}"
+            f"ALTER TABLE public.b24_fit_dispatch_outbox DROP COLUMN IF EXISTS {column}"  # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive IX columns.
         )  # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive IX columns.
