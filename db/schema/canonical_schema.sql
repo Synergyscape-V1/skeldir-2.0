@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict UrY70m78ncSOxdnnU1uVGNLj64V8SSjYTHhwQqgt9411yPp2I1ZQgKcs7JnQFMb
+\restrict JjCd4j6jzIa6bDKa5icTyXK8apFRtov9QsZcdgalVIwnQULSYoPhfuhftTqc2fd
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -13421,7 +13421,7 @@ CREATE POLICY tenant_isolation_policy_b24_fit_dispatch_outbox ON public.b24_fit_
 -- Name: b24_fit_recovery_outbox tenant_isolation_policy_b24_fit_recovery_outbox; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation_policy_b24_fit_recovery_outbox ON public.b24_fit_recovery_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
+CREATE POLICY tenant_isolation_policy_b24_fit_recovery_outbox ON public.b24_fit_recovery_outbox USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
 
 --
@@ -13786,4 +13786,4 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict UrY70m78ncSOxdnnU1uVGNLj64V8SSjYTHhwQqgt9411yPp2I1ZQgKcs7JnQFMb
+\unrestrict JjCd4j6jzIa6bDKa5icTyXK8apFRtov9QsZcdgalVIwnQULSYoPhfuhftTqc2fd

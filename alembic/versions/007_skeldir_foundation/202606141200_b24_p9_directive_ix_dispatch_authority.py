@@ -261,8 +261,18 @@ def upgrade() -> None:
             ON public.b24_fit_recovery_outbox;
         CREATE POLICY tenant_isolation_policy_b24_fit_recovery_outbox
             ON public.b24_fit_recovery_outbox
-            USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
-            WITH CHECK (tenant_id = current_setting('app.current_tenant_id')::uuid);
+            USING (
+                tenant_id = NULLIF(
+                    current_setting('app.current_tenant_id', true),
+                    ''
+                )::uuid
+            )
+            WITH CHECK (
+                tenant_id = NULLIF(
+                    current_setting('app.current_tenant_id', true),
+                    ''
+                )::uuid
+            );
         DROP POLICY IF EXISTS recovery_reconciler_policy_b24_fit_recovery_outbox
             ON public.b24_fit_recovery_outbox;
         CREATE POLICY recovery_reconciler_policy_b24_fit_recovery_outbox
