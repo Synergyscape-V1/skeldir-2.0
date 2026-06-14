@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     PrimaryKeyConstraint,
     String,
     Text,
@@ -22,6 +23,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -97,11 +99,39 @@ class BayesianModelFit(Base, TenantMixin):
     r_hat_max: Mapped[float | None] = mapped_column(Float, nullable=True)
     ess_min: Mapped[float | None] = mapped_column(Float, nullable=True)
     divergence_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hdi_lower: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hdi_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interval_shape: Mapped[list[int]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    interval_element_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    interval_summary_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     credible_interval_status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
         default="not_available",
         server_default="not_available",
+    )
+    diagnostic_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="not_computed",
+        server_default="not_computed",
+    )
+    diagnostic_failure_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    diagnostic_policy_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    diagnostic_target_filter_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    interval_policy_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    diagnostics_computed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     confidence_bucket: Mapped[str | None] = mapped_column(String(32), nullable=True)
     confidence_bucket_reason: Mapped[str | None] = mapped_column(
@@ -145,7 +175,7 @@ class BayesianModelFit(Base, TenantMixin):
             name="ck_bayesian_model_fits_source_snapshot_hash_sha256",
         ),
         CheckConstraint(
-            "status IN ('pending', 'queued', 'running', 'succeeded', 'failed', 'fallback_only', 'cancelled')",
+            "status IN ('pending', 'queued', 'running', 'persist_pending', 'sampled_unvalidated', 'diagnostics_pending', 'succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled')",
             name="ck_bayesian_model_fits_status",
         ),
         CheckConstraint(
@@ -168,6 +198,10 @@ class BayesianModelFit(Base, TenantMixin):
             "'cardinality_authority_timeout', "
             "'cardinality_authority_build_failed', "
             "'source_profile_unavailable', "
+            "'source_snapshot_mismatch', 'transport_rejected', "
+            "'result_too_large', 'sampler_health_failed', "
+            "'model_memory_exceeded', 'graph_compile_memory_exceeded', "
+            "'policy_rejected', "
             "'timeout', 'worker_failure', 'no_convergence', "
             "'resource_bound_exceeded', 'source_unavailable', 'duplicate_fit_suppressed', "
             "'artifact_unavailable', 'storage_quota_exceeded')",
@@ -213,8 +247,52 @@ class BayesianModelFit(Base, TenantMixin):
             name="ck_bayesian_model_fits_divergence_count_non_negative",
         ),
         CheckConstraint(
+            "(hdi_lower IS NULL AND hdi_upper IS NULL) OR (hdi_lower IS NOT NULL AND hdi_upper IS NOT NULL AND hdi_lower <= hdi_upper)",
+            name="ck_bayesian_model_fits_hdi_bounds_pair_order",
+        ),
+        CheckConstraint(
+            "interval_element_count IS NULL OR interval_element_count >= 0",
+            name="ck_bayesian_model_fits_interval_element_count_non_negative",
+        ),
+        CheckConstraint(
+            "interval_summary_bytes IS NULL OR interval_summary_bytes >= 0",
+            name="ck_bayesian_model_fits_interval_summary_bytes_non_negative",
+        ),
+        CheckConstraint(
             "credible_interval_status IN ('not_available', 'available', 'suppressed', 'invalid', 'pending')",
             name="ck_bayesian_model_fits_credible_interval_status",
+        ),
+        CheckConstraint(
+            "diagnostic_status IN ('not_computed', 'passed', 'failed', 'error', 'unavailable')",
+            name="ck_bayesian_model_fits_diagnostic_status",
+        ),
+        CheckConstraint(
+            "diagnostic_failure_reason IS NULL OR diagnostic_failure_reason IN ("
+            "'bad_rhat', 'low_ess', 'divergence', 'nonfinite_diagnostic', "
+            "'invalid_diagnostic_summary', 'diagnostic_scope_too_large', "
+            "'interval_dimension_exceeded', 'interval_payload_too_large', "
+            "'diagnostics_failed', 'diagnostics_memory_exceeded', "
+            "'diagnostics_timeout', 'skipped_non_sampled')",
+            name="ck_bayesian_model_fits_diagnostic_failure_reason",
+        ),
+        CheckConstraint(
+            "(diagnostic_status = 'passed' AND diagnostic_failure_reason IS NULL) "
+            "OR (diagnostic_status <> 'passed')",
+            name="ck_bayesian_model_fits_passed_has_no_diagnostic_failure",
+        ),
+        CheckConstraint(
+            "credible_interval_status <> 'available' OR ("
+            "diagnostic_status = 'passed' "
+            "AND fallback_applied = false "
+            "AND r_hat_max IS NOT NULL AND r_hat_max <= 1.01 "
+            "AND ess_min IS NOT NULL AND ess_min >= 400 "
+            "AND divergence_count = 0 "
+            "AND hdi_lower IS NOT NULL AND hdi_upper IS NOT NULL "
+            "AND interval_element_count IS NOT NULL AND interval_element_count > 0 "
+            "AND diagnostic_policy_version IS NOT NULL "
+            "AND diagnostic_target_filter_version IS NOT NULL "
+            "AND interval_policy_version IS NOT NULL)",
+            name="ck_bayesian_model_fits_available_interval_requires_passed_diagnostics",
         ),
         CheckConstraint(
             "confidence_bucket IS NULL OR confidence_bucket IN ('unavailable', 'low', 'medium', 'high', 'fallback', 'needs_review')",
@@ -307,19 +385,49 @@ class BayesianArtifact(Base):
     storage_backend: Mapped[str] = mapped_column(String(32), nullable=False)
     artifact_uri_internal: Mapped[str] = mapped_column(String(1024), nullable=False)
     artifact_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    payload_json: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    payload_bytes: Mapped[bytes | None] = mapped_column(
+        LargeBinary,
+        nullable=True,
+        deferred=True,
+        deferred_raiseload=True,
+    )
+    payload_byte_count: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
     compression: Mapped[str | None] = mapped_column(String(32), nullable=True)
     retention_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active", server_default="active"
+    )
+    policy_version: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="b24-p8-artifact-policy-v1",
+        server_default="b24-p8-artifact-policy-v1",
+    )
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     pruned_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    pruned_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pruned_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=func.now(),
         server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -348,22 +456,38 @@ class BayesianArtifact(Base):
             name="ck_bayesian_artifacts_artifact_hash_sha256",
         ),
         CheckConstraint(
-            "artifact_type IN ('posterior_trace', 'diagnostics', 'summary', 'source_manifest', 'fit_metadata')",
+            "artifact_type IN ('diagnostics', 'summary', 'source_manifest', 'fit_metadata', 'input_manifest', 'model_spec', 'posterior_summary')",
             name="ck_bayesian_artifacts_artifact_type",
         ),
         CheckConstraint(
-            "storage_backend IN ('postgres', 'object_storage', 'local_fs')",
+            "storage_backend = 'postgres'",
             name="ck_bayesian_artifacts_storage_backend",
         ),
         CheckConstraint(
-            "char_length(trim(artifact_uri_internal)) > 0",
-            name="ck_bayesian_artifacts_uri_not_blank",
+            "lifecycle_status IN ('pruned', 'rejected') OR (artifact_uri_internal = artifact_ref AND artifact_uri_internal ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$')",
+            name="ck_bayesian_artifacts_internal_uri",
         ),
         CheckConstraint(
             "artifact_size_bytes >= 0", name="ck_bayesian_artifacts_size_non_negative"
         ),
         CheckConstraint(
-            "compression IS NULL OR compression IN ('none', 'gzip', 'zstd')",
+            "lifecycle_status = 'pruned' OR artifact_size_bytes <= 65536",
+            name="ck_bayesian_artifacts_size_p8_cap",
+        ),
+        CheckConstraint(
+            "payload_byte_count >= 0 AND payload_byte_count <= 65536",
+            name="ck_bayesian_artifacts_payload_byte_count_p8_cap",
+        ),
+        CheckConstraint(
+            "payload_bytes IS NULL OR octet_length(payload_bytes) <= 65536",
+            name="ck_bayesian_artifacts_payload_bytes_p8_cap",
+        ),
+        CheckConstraint(
+            "payload_bytes IS NULL OR octet_length(payload_bytes) = payload_byte_count",
+            name="ck_bayesian_artifacts_payload_byte_count_matches",
+        ),
+        CheckConstraint(
+            "compression IS NULL OR compression IN ('none', 'gzip')",
             name="ck_bayesian_artifacts_compression",
         ),
         CheckConstraint(
@@ -373,6 +497,24 @@ class BayesianArtifact(Base):
         CheckConstraint(
             "pruned_at IS NULL OR expires_at IS NOT NULL",
             name="ck_bayesian_artifacts_pruned_requires_expiry",
+        ),
+        CheckConstraint(
+            "lifecycle_status IN ('active', 'pruned', 'rejected')",
+            name="ck_bayesian_artifacts_lifecycle_status",
+        ),
+        CheckConstraint(
+            "(lifecycle_status = 'active' AND payload_bytes IS NOT NULL AND payload_byte_count = artifact_size_bytes AND pruned_at IS NULL) "
+            "OR (lifecycle_status = 'pruned' AND payload_bytes IS NULL AND payload_byte_count = 0 AND pruned_at IS NOT NULL) "
+            "OR (lifecycle_status = 'rejected' AND payload_bytes IS NULL AND payload_byte_count = 0 AND pruned_at IS NULL)",
+            name="ck_bayesian_artifacts_lifecycle_payload_state",
+        ),
+        CheckConstraint(
+            "char_length(trim(policy_version)) > 0",
+            name="ck_bayesian_artifacts_policy_version_not_blank",
+        ),
+        CheckConstraint(
+            "pruned_reason IS NULL OR pruned_reason IN ('retention_expired', 'manual_governance')",
+            name="ck_bayesian_artifacts_pruned_reason",
         ),
         Index("idx_bayesian_artifacts_tenant_id", "tenant_id"),
         Index("idx_bayesian_artifacts_tenant_fit", "tenant_id", "fit_id"),
@@ -391,6 +533,79 @@ class BayesianArtifact(Base):
                 }
             }
         },
+    )
+
+
+class BayesianArtifactStorageQuota(Base):
+    """Tenant-scoped P8 artifact storage telemetry and quota row."""
+
+    __tablename__ = "bayesian_artifact_storage_quotas"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    quota_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=1048576, server_default="1048576"
+    )
+    max_artifact_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1000, server_default="1000"
+    )
+    active_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
+    pruned_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
+    active_artifact_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    pruned_artifact_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    rejected_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_rejection_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "quota_bytes >= 0 AND active_bytes >= 0 AND pruned_bytes >= 0",
+            name="ck_bayesian_artifact_storage_quotas_bytes_non_negative",
+        ),
+        CheckConstraint(
+            "active_artifact_count >= 0 AND pruned_artifact_count >= 0 AND rejected_count >= 0",
+            name="ck_bayesian_artifact_storage_quotas_counts_non_negative",
+        ),
+        CheckConstraint(
+            "max_artifact_count > 0",
+            name="ck_bayesian_artifact_storage_quotas_max_count_positive",
+        ),
+        CheckConstraint(
+            "active_bytes <= quota_bytes",
+            name="ck_bayesian_artifact_storage_quotas_active_within_quota",
+        ),
+        CheckConstraint(
+            "active_artifact_count <= max_artifact_count",
+            name="ck_bayesian_artifact_storage_quotas_active_count_within_quota",
+        ),
+        CheckConstraint(
+            "char_length(trim(policy_version)) > 0",
+            name="ck_bayesian_artifact_storage_quotas_policy_version_not_blank",
+        ),
+        CheckConstraint(
+            "last_rejection_reason IS NULL OR last_rejection_reason IN ('tenant_quota_exceeded', 'fit_wal_budget_exceeded', 'policy_rejected')",
+            name="ck_bayesian_artifact_storage_quotas_rejection_reason",
+        ),
     )
 
 
@@ -591,11 +806,30 @@ class B24ActiveExecutionLease(Base, TenantMixin):
             "latest_desired_source_snapshot_hash IS NULL OR latest_desired_source_snapshot_hash ~ '^[a-f0-9]{64}$'",
             name="ck_b24_active_execution_desired_hash_sha256",
         ),
+        CheckConstraint(
+            "status IN ('profiling', 'profile_passed', 'profile_rejected', 'profile_superseded', 'profile_timeout', 'profile_failed', 'claiming', 'dispatch_pending', 'dispatched', 'running', 'cancel_requested', 'succeeded', 'failed', 'fallback_only', 'cancelled', 'stale_recovered')",
+            name="ck_b24_active_execution_status",
+        ),
+        CheckConstraint(
+            "status IN ('claiming', 'profiling', 'profile_passed', 'profile_rejected', 'profile_superseded', 'profile_timeout', 'profile_failed') OR fit_id IS NOT NULL",
+            name="ck_b24_active_execution_active_fit_required",
+        ),
         Index(
             "idx_b24_active_execution_tenant_status_lease",
             "tenant_id",
             "status",
             "leased_until",
+        ),
+        Index(
+            "idx_b24_active_execution_canonical_profiling",
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "status",
+            "leased_until",
+            postgresql_where=text("status = 'profiling'"),
         ),
         Index(
             "idx_b24_active_execution_tenant_fit",
@@ -941,97 +1175,6 @@ class B24FeatureAuthorityBuildOutbox(Base, TenantMixin):
             postgresql_where=text(
                 "status IN ('pending', 'failed_retryable', 'stale_recovered')"
             ),
-        ),
-    )
-
-
-class B24P4ProfilingLease(Base, TenantMixin):
-    """Hash-scoped lease that prevents duplicate P4 profiling work."""
-
-    __tablename__ = "b24_p4_profiling_leases"
-
-    model_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_window_start: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    source_window_end: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    source_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    profiling_lease_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="profiling", server_default="profiling"
-    )
-    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    attempt_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
-    terminal_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    terminal_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    stale_recovered_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
-
-    __table_args__ = (
-        PrimaryKeyConstraint(
-            "tenant_id",
-            "model_type",
-            "model_version",
-            "source_window_start",
-            "source_window_end",
-            "source_snapshot_hash",
-            name="b24_p4_profiling_leases_pkey",
-        ),
-        UniqueConstraint(
-            "tenant_id",
-            "profiling_lease_id",
-            name="uq_b24_p4_profiling_leases_id",
-        ),
-        CheckConstraint(
-            "model_type ~ '^[a-z][a-z0-9_]{1,63}$'",
-            name="ck_b24_p4_profiling_leases_model_type_format",
-        ),
-        CheckConstraint(
-            "char_length(trim(model_version)) > 0",
-            name="ck_b24_p4_profiling_leases_model_version_not_blank",
-        ),
-        CheckConstraint(
-            "source_window_end > source_window_start",
-            name="ck_b24_p4_profiling_leases_window_order",
-        ),
-        CheckConstraint(
-            "source_snapshot_hash ~ '^[a-f0-9]{64}$'",
-            name="ck_b24_p4_profiling_leases_hash_sha256",
-        ),
-        CheckConstraint(
-            "profiling_lease_id ~ '^[a-f0-9]{64}$'",
-            name="ck_b24_p4_profiling_leases_id_sha256",
-        ),
-        CheckConstraint(
-            "status IN ('profiling', 'profile_rejected', 'profile_passed', 'profile_superseded', 'profile_timeout', 'profile_failed')",
-            name="ck_b24_p4_profiling_leases_status",
-        ),
-        CheckConstraint(
-            "attempt_count >= 0",
-            name="ck_b24_p4_profiling_leases_attempt_count",
-        ),
-        CheckConstraint(
-            "char_length(trim(policy_version)) > 0",
-            name="ck_b24_p4_profiling_leases_policy_version_not_blank",
-        ),
-        Index(
-            "idx_b24_p4_profiling_leases_active",
-            "tenant_id",
-            "status",
-            "leased_until",
-            postgresql_where=text("status = 'profiling'"),
         ),
     )
 

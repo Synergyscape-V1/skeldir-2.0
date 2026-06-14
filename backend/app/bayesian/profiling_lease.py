@@ -1,4 +1,4 @@
-"""Hash-scoped B2.4-P4 profiling lease before authority/P4 envelope work."""
+"""Window-scoped B2.4-P4 profiling lease before authority/P4 envelope work."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def profiling_lease_id(
     source_window_end: datetime,
     source_snapshot_hash: str,
 ) -> str:
-    """Return the hash-scoped profiling identity used for duplicate P4 suppression."""
+    """Return an audit identity for the frozen hash currently owning profiling."""
 
     material = (
         f"{tenant_id}|{model_type}|{model_version}|"
@@ -71,7 +71,13 @@ async def acquire_profiling_lease(
     lease_owner: str,
     lease_seconds: int = DEFAULT_PROFILING_LEASE_SECONDS,
 ) -> ProfilingLeaseResult:
-    """Acquire one profiler slot for tenant/model/window/source_snapshot_hash."""
+    """Acquire one profiler slot for tenant/model/window.
+
+    The active owner is the canonical P3 active-execution substrate:
+    ``public.b24_active_execution_leases`` keyed without ``source_snapshot_hash``.
+    The hash remains candidate metadata, so Hash A retries stay frozen while
+    Hash A/Hash B/Hash C bursts cannot fan out into multiple profilers.
+    """
 
     leased_until = datetime.now(timezone.utc) + timedelta(
         seconds=max(1, int(lease_seconds))
@@ -101,19 +107,19 @@ async def acquire_profiling_lease(
             await session.execute(
                 text(
                     """
-                    INSERT INTO public.b24_p4_profiling_leases (
+                    INSERT INTO public.b24_active_execution_leases (
                         tenant_id,
                         model_type,
                         model_version,
                         source_window_start,
                         source_window_end,
-                        source_snapshot_hash,
-                        profiling_lease_id,
+                        active_source_snapshot_hash,
+                        latest_desired_source_snapshot_hash,
                         status,
+                        needs_refit_after_current,
                         lease_owner,
                         leased_until,
-                        attempt_count,
-                        policy_version,
+                        heartbeat_at,
                         created_at,
                         updated_at
                     )
@@ -124,12 +130,12 @@ async def acquire_profiling_lease(
                         :source_window_start,
                         :source_window_end,
                         :source_snapshot_hash,
-                        :profiling_lease_id,
+                        :source_snapshot_hash,
                         'profiling',
+                        false,
                         :lease_owner,
                         :leased_until,
-                        1,
-                        :policy_version,
+                        now(),
                         now(),
                         now()
                     )
@@ -138,33 +144,52 @@ async def acquire_profiling_lease(
                         model_type,
                         model_version,
                         source_window_start,
-                        source_window_end,
-                        source_snapshot_hash
+                        source_window_end
                     )
                     DO UPDATE SET
                         status = 'profiling',
+                        fit_id = NULL,
+                        active_source_snapshot_hash = :source_snapshot_hash,
+                        latest_desired_source_snapshot_hash = :source_snapshot_hash,
+                        needs_refit_after_current = false,
                         lease_owner = :lease_owner,
+                        lease_acquired_at = now(),
                         leased_until = :leased_until,
-                        attempt_count = b24_p4_profiling_leases.attempt_count + 1,
+                        heartbeat_at = now(),
                         stale_recovered_at = CASE
-                            WHEN b24_p4_profiling_leases.status = 'profiling'
-                             AND b24_p4_profiling_leases.leased_until < now()
+                            WHEN b24_active_execution_leases.status = 'profiling'
+                             AND b24_active_execution_leases.leased_until < now()
                                 THEN now()
-                            ELSE b24_p4_profiling_leases.stale_recovered_at
+                            ELSE b24_active_execution_leases.stale_recovered_at
                         END,
                         terminal_at = NULL,
-                        terminal_reason = NULL,
                         updated_at = now()
-                    WHERE b24_p4_profiling_leases.status = 'profiling'
-                      AND b24_p4_profiling_leases.leased_until < now()
+                    WHERE (
+                            b24_active_execution_leases.status IN (
+                                'claiming',
+                                'profile_rejected',
+                                'profile_passed',
+                                'profile_superseded',
+                                'profile_timeout',
+                                'profile_failed',
+                                'fallback_only',
+                                'failed',
+                                'cancelled',
+                                'stale_recovered'
+                            )
+                            OR (
+                                b24_active_execution_leases.status = 'profiling'
+                                AND b24_active_execution_leases.leased_until < now()
+                            )
+                        )
+                      AND b24_active_execution_leases.fit_id IS NULL
                     RETURNING
-                        profiling_lease_id,
                         tenant_id,
                         model_type,
                         model_version,
                         source_window_start,
                         source_window_end,
-                        source_snapshot_hash,
+                        active_source_snapshot_hash AS source_snapshot_hash,
                         status,
                         lease_owner,
                         leased_until
@@ -183,23 +208,21 @@ async def acquire_profiling_lease(
                     text(
                         """
                         SELECT
-                            profiling_lease_id,
                             tenant_id,
                             model_type,
                             model_version,
                             source_window_start,
                             source_window_end,
-                            source_snapshot_hash,
+                            active_source_snapshot_hash AS source_snapshot_hash,
                             status,
                             lease_owner,
                             leased_until
-                        FROM public.b24_p4_profiling_leases
+                        FROM public.b24_active_execution_leases
                         WHERE tenant_id = :tenant_id
                           AND model_type = :model_type
                           AND model_version = :model_version
                           AND source_window_start = :source_window_start
                           AND source_window_end = :source_window_end
-                          AND source_snapshot_hash = :source_snapshot_hash
                         """
                     ),
                     params,
@@ -225,23 +248,23 @@ async def terminalize_profiling_lease(
     terminal_status: ProfilingLeaseStatus,
     terminal_reason: str | None = None,
 ) -> None:
-    """Release the profiler slot on every terminal P4 path."""
+    """Release the window-level profiler slot on every terminal P4 path."""
 
     await session.execute(
         text(
             """
-            UPDATE public.b24_p4_profiling_leases
+            UPDATE public.b24_active_execution_leases
             SET status = :terminal_status,
                 leased_until = now(),
-                terminal_reason = :terminal_reason,
                 terminal_at = now(),
+                heartbeat_at = now(),
                 updated_at = now()
             WHERE tenant_id = :tenant_id
               AND model_type = :model_type
               AND model_version = :model_version
               AND source_window_start = :source_window_start
               AND source_window_end = :source_window_end
-              AND source_snapshot_hash = :source_snapshot_hash
+              AND active_source_snapshot_hash = :source_snapshot_hash
               AND lease_owner = :lease_owner
               AND status = 'profiling'
             """
@@ -263,16 +286,31 @@ async def terminalize_profiling_lease(
 def _lease_result_from_row(
     row: dict[str, object], *, acquired: bool
 ) -> ProfilingLeaseResult:
+    source_snapshot_hash = row.get("source_snapshot_hash")
+    if source_snapshot_hash is None:
+        source_snapshot_hash = ""
+    status_value = str(row["status"])
+    try:
+        status = ProfilingLeaseStatus(status_value)
+    except ValueError:
+        status = ProfilingLeaseStatus.PROFILING
     return ProfilingLeaseResult(
-        profiling_lease_id=str(row["profiling_lease_id"]),
+        profiling_lease_id=profiling_lease_id(
+            tenant_id=row["tenant_id"],
+            model_type=str(row["model_type"]),
+            model_version=str(row["model_version"]),
+            source_window_start=row["source_window_start"],
+            source_window_end=row["source_window_end"],
+            source_snapshot_hash=str(source_snapshot_hash),
+        ),
         tenant_id=row["tenant_id"],
         model_type=str(row["model_type"]),
         model_version=str(row["model_version"]),
         source_window_start=row["source_window_start"],
         source_window_end=row["source_window_end"],
-        source_snapshot_hash=str(row["source_snapshot_hash"]),
+        source_snapshot_hash=str(source_snapshot_hash),
         acquired=acquired,
-        status=ProfilingLeaseStatus(str(row["status"])),
+        status=status,
         lease_owner=str(row["lease_owner"]) if row["lease_owner"] else None,
         leased_until=row["leased_until"],
     )

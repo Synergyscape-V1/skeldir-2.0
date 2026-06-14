@@ -205,7 +205,15 @@ async def terminalize_preflight_lease(
                   AND model_version = :model_version
                   AND source_window_start = :source_window_start
                   AND source_window_end = :source_window_end
-                  AND status = 'claiming'
+                  AND status IN (
+                      'claiming',
+                      'profiling',
+                      'profile_rejected',
+                      'profile_passed',
+                      'profile_superseded',
+                      'profile_timeout',
+                      'profile_failed'
+                  )
                   AND fit_id IS NULL
                 """
             ),

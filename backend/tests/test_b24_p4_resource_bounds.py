@@ -12,6 +12,13 @@ from app.bayesian.design_matrix_envelope import estimate_design_matrix_envelope
 from app.bayesian.enums import FallbackReason
 from app.bayesian.authority_liveness import (
     AuthorityBuildStatus,
+    DISPATCH_RETRY_BACKOFF_MS,
+    FEATURE_AUTHORITY_BUILD_TASK,
+    FEATURE_AUTHORITY_DISPATCH_TASK,
+    MAX_DISPATCH_ATTEMPTS,
+    NORMAL_DISPATCH_DEADLINE_MS,
+    POST_COMMIT_DISPATCH_SESSION_KEY,
+    RECOVERY_ORPHAN_THRESHOLD_MS,
     request_feature_authority_build,
 )
 from app.bayesian.cardinality_db_work import (
@@ -72,6 +79,14 @@ SUPERSESSION_PROFILING_MIGRATION = (
     REPO_ROOT
     / "alembic/versions/007_skeldir_foundation/202605251800_b24_p4_supersession_profiling_lease.py"
 )
+STRICT_PURGE_MIGRATION = (
+    REPO_ROOT
+    / "alembic/versions/007_skeldir_foundation/202605271200_b24_p4_strict_profiling_purge.py"
+)
+CANONICAL_SCHEMA = REPO_ROOT / "db/schema/canonical_schema.sql"
+CANONICAL_SCHEMA_YAML = REPO_ROOT / "db/schema/canonical_schema.yaml"
+TASKS_BAYESIAN = REPO_ROOT / "backend/app/tasks/bayesian.py"
+B24_GATE_WORKFLOW = REPO_ROOT / ".github/workflows/b2_4-gate-dry-run.yml"
 
 
 TENANT_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -642,11 +657,12 @@ def test_b24_p4_validator_rejects_authority_retry_bypassing_p3_locks() -> None:
 
 
 def test_b24_p4_hash_a_retry_superseded_if_hash_b_already_dispatched() -> None:
-    text = _read(SNAPSHOT_SUPERSESSION) + _read(FIT_PLANNER)
+    text = _read(SNAPSHOT_SUPERSESSION) + _read(FIT_PLANNER) + _read(FIT_CLAIM)
     assert "check_snapshot_supersession" in text
     assert "newer_dispatch_outbox_visible" in text
     assert "outbox.status IN ('pending', 'dispatching', 'dispatched')" in text
     assert 'terminal_status="authority_retry_superseded"' in text
+    assert "newer_dominant_snapshot" in text
 
 
 def test_b24_p4_hash_a_retry_superseded_if_hash_b_already_completed() -> None:
@@ -661,13 +677,65 @@ def test_b24_p4_hash_a_cannot_overwrite_hash_b_artifacts() -> None:
     assert "assert_snapshot_artifact_not_regressing_current_output" in text
     assert "older Hash A cannot overwrite newer Hash B artifact" in text
     assert "TrustEnvelope current output" in text
+    assert "B24_P5_OUTPUT_NON_REGRESSION_ENTRY_GATE" in text
+
+
+def test_b24_p4_output_non_regression_is_production_wired_or_p5_entry_gated() -> None:
+    text = _read(SNAPSHOT_SUPERSESSION)
+    assert "B24_P5_OUTPUT_NON_REGRESSION_ENTRY_GATE" in text
+    assert "assert_snapshot_artifact_not_regressing_current_output" in text
+    assert "Before B2.4-P5 introduces artifact" in text
 
 
 def test_b24_p4_newer_snapshot_dominates_older_authority_retry() -> None:
-    text = _read(SNAPSHOT_SUPERSESSION)
+    text = _read(SNAPSHOT_SUPERSESSION) + _read(FIT_CLAIM)
     assert "SNAPSHOT_SUPERSESSION_POLICY_VERSION" in text
     assert "active_source_snapshot_hash <> :source_snapshot_hash" in text
     assert "newer_active_execution_owner" in text
+    assert "newer_dominant_snapshot" in text
+
+
+def test_b24_p4_supersession_claim_is_atomic_under_concurrent_hash_a_hash_b() -> None:
+    text = _read(FIT_CLAIM)
+    assert "locked_execution_lane AS" in text
+    assert "FOR UPDATE" in text
+    assert "newer_dominant_snapshot AS" in text
+    assert "claimed_fit AS" in text
+    assert "dispatchable_outbox AS" in text
+
+
+def test_b24_p4_python_precheck_pause_cannot_allow_stale_hash_a_claim() -> None:
+    text = _read(FIT_CLAIM)
+    assert text.find("newer_dominant_snapshot AS") < text.find("claimed_fit AS")
+    assert "WHERE EXISTS (SELECT 1 FROM claimable_execution_lane)" in text
+    assert "AND NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)" in text
+
+
+def test_b24_p4_db_rejects_hash_a_claim_if_hash_b_wins_between_check_and_commit() -> None:
+    text = _read(FIT_CLAIM)
+    assert "source_snapshot_superseded" in text
+    assert "WHERE EXISTS (SELECT 1 FROM newer_dominant_snapshot)" in text
+    assert "INSERT INTO public.b24_fit_dispatch_outbox" in text
+
+
+def test_b24_p4_serializable_only_supersession_solution_rejected() -> None:
+    text = _read(FIT_CLAIM)
+    assert "SERIALIZABLE" not in text
+    assert "locked_execution_lane" in text
+
+
+def test_b24_p4_on_conflict_active_execution_is_not_chronological_dominance() -> None:
+    text = _read(FIT_CLAIM)
+    assert "ON CONFLICT DO NOTHING" in text
+    assert "newer_dominant_snapshot" in text
+    assert text.find("newer_dominant_snapshot") < text.find("claimed_fit AS")
+
+
+def test_b24_p4_newer_hash_b_wins_even_if_older_hash_a_reaches_insert_first() -> None:
+    text = _read(FIT_CLAIM)
+    assert "ON CONFLICT DO NOTHING" in text
+    assert "newer_dominant_snapshot AS" in text
+    assert "WHERE EXISTS (SELECT 1 FROM newer_dominant_snapshot)" in text
 
 
 def test_b24_p4_superseded_hash_a_creates_no_dispatchable_outbox() -> None:
@@ -726,12 +794,200 @@ def test_b24_p4_build_dispatch_has_latency_budget() -> None:
     assert "idx_b24_feature_authority_build_outbox_due" in text
 
 
+def test_b24_p4_deprecated_profiling_table_absent_from_runtime_head_schema() -> None:
+    text = _read(CANONICAL_SCHEMA)
+    assert "b24_p4_profiling_leases" not in text
+
+
+def test_b24_p4_deprecated_profiling_table_absent_from_canonical_schema() -> None:
+    assert "b24_p4_profiling_leases" not in _read(CANONICAL_SCHEMA)
+    assert "b24_p4_profiling_leases" not in _read(CANONICAL_SCHEMA_YAML)
+
+
+def test_b24_p4_deprecated_profiling_orm_model_removed() -> None:
+    text = _read(MODELS)
+    assert "B24P4ProfilingLease" not in text
+    assert "b24_p4_profiling_leases" not in text
+
+
+def test_b24_p4_strict_purge_migration_rejects_unexpected_missing_table() -> None:
+    text = _read(STRICT_PURGE_MIGRATION)
+    upgrade = text[text.find("def upgrade") : text.find("def downgrade")]
+    assert "to_regclass('public.b24_p4_profiling_leases')" in upgrade
+    assert "RAISE EXCEPTION 'Expected public.b24_p4_profiling_leases" in upgrade
+    assert "DROP TABLE public.b24_p4_profiling_leases" in upgrade
+    assert "DROP TABLE IF EXISTS public.b24_p4_profiling_leases" not in upgrade
+
+
+def test_b24_p4_validator_rejects_b24_p4_profiling_leases_in_canonical_schema() -> None:
+    validator = _load_validator()
+    with pytest.raises(validator.ValidationError, match="deprecated profiling"):
+        validator.validate_schema_surface_with_texts(
+            REPO_ROOT,
+            canonical_text=_read(CANONICAL_SCHEMA)
+            + "\nCREATE TABLE public.b24_p4_profiling_leases (tenant_id uuid);\n",
+        )
+
+
+def test_b24_p4_validator_rejects_production_reference_to_deprecated_profiling_table() -> None:
+    validator = _load_validator()
+    with pytest.raises(validator.ValidationError, match="deprecated profiling"):
+        validator.validate_schema_surface_with_texts(
+            REPO_ROOT,
+            models_text=_read(MODELS) + "\nclass B24P4ProfilingLease: pass\n",
+        )
+
+
+def test_b24_p4_validator_rejects_b24_p4_profiling_leases_runtime_presence() -> None:
+    validator = _load_validator()
+    with pytest.raises(validator.ValidationError, match="deprecated profiling"):
+        validator.validate_schema_surface_with_texts(
+            REPO_ROOT,
+            canonical_yaml_text=_read(CANONICAL_SCHEMA_YAML)
+            + "\n  b24_p4_profiling_leases: {}\n",
+        )
+
+
+def test_b24_p4_authority_build_dispatch_has_post_commit_causal_trigger() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "after_commit" in text
+    assert POST_COMMIT_DISPATCH_SESSION_KEY in text
+    assert FEATURE_AUTHORITY_DISPATCH_TASK in text
+    assert "publish_feature_authority_dispatch" in text
+
+
+def test_b24_p4_build_feature_authority_task_exists_and_is_registered() -> None:
+    text = _read(TASKS_BAYESIAN)
+    assert FEATURE_AUTHORITY_BUILD_TASK in text
+    assert "def build_feature_authority" in text
+    assert "b24_source_window_feature_authority" in text
+    assert "b24_dirty_events" in text
+
+
+def test_b24_p4_build_request_dispatch_is_causally_triggered_after_commit() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "_register_post_commit_authority_dispatch" in text
+    assert "_publish_authority_dispatch_after_commit" in text
+    assert "session.info.pop(POST_COMMIT_DISPATCH_SESSION_KEY" in text
+
+
+def test_b24_p4_outbox_dispatcher_publishes_task_without_waiting_for_sweeper() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(TASKS_BAYESIAN)
+    assert "dispatch_feature_authority_build_by_key" in text
+    assert "lease_feature_authority_build_dispatch_by_key" in text
+    assert FEATURE_AUTHORITY_DISPATCH_TASK in text
+
+
+def test_b24_p4_normal_dispatch_happens_with_sweeper_disabled() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    normal_path = text[text.find("def _publish_authority_dispatch_after_commit") :]
+    assert "dispatch_due_feature_authority_builds" not in normal_path[
+        : normal_path.find("async def dispatch_due_feature_authority_builds")
+    ]
+    assert "publish_feature_authority_dispatch" in normal_path
+
+
+def test_b24_p4_passive_polling_is_not_primary_authority_build_trigger() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "Recovery-only sweeper" in text
+    assert "after_commit" in text
+    assert "Celery Beat" not in text
+    assert "cron" not in text
+
+
+def test_b24_p4_recovery_threshold_constants_are_defined() -> None:
+    assert NORMAL_DISPATCH_DEADLINE_MS > 0
+    assert RECOVERY_ORPHAN_THRESHOLD_MS > NORMAL_DISPATCH_DEADLINE_MS
+    assert MAX_DISPATCH_ATTEMPTS >= 1
+    assert DISPATCH_RETRY_BACKOFF_MS > 0
+
+
+def test_b24_p4_sweeper_ignores_fresh_queued_outbox_rows() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "created_at <= now() - (:recovery_orphan_threshold_ms * interval '1 millisecond')" in text
+    assert "status IN ('failed_retryable', 'stale_recovered')" in text
+
+
+def test_b24_p4_sweeper_claims_only_orphaned_rows_after_threshold() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    lease_sql = text[text.find("LEASE_AUTHORITY_BUILD_OUTBOX_SQL") : text.find("MARK_AUTHORITY_BUILD_DISPATCHED_SQL")]
+    assert "FOR UPDATE SKIP LOCKED" in lease_sql
+    assert "RECOVERY_ORPHAN_THRESHOLD_MS" in text
+    assert "recovery_orphan_threshold_ms" in lease_sql
+
+
+def test_b24_p4_post_commit_dispatch_failure_marks_retryable_row() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(TASKS_BAYESIAN)
+    assert "failed_retryable" in text
+    assert "dead_lettered" in text
+    assert "mark_feature_authority_build_dispatch_failed" in text
+
+
+def test_b24_p4_authority_waiting_progresses_to_retry_ready_after_build_completion() -> None:
+    text = _read(TASKS_BAYESIAN) + _read(FEATURE_AUTHORITY)
+    assert "authority_completed" in text
+    assert "authority_retry_ready" in text
+    assert "feature_authority_fresh" in text
+
+
 def test_b24_p4_only_one_planner_profiles_same_frozen_hash() -> None:
     text = _read(PROFILING_LEASE) + _read(FIT_PLANNER)
     assert "acquire_profiling_lease" in text
     assert "source_snapshot_hash" in text
     assert "ON CONFLICT" in text
     assert "if not profiling_lease.acquired" in text
+    assert "public.b24_active_execution_leases" in text
+
+
+def test_b24_p4_window_level_profiling_ownership_blocks_multi_hash_fanout() -> None:
+    text = _read(PROFILING_LEASE)
+    key = text[text.find("ON CONFLICT (") : text.find("DO UPDATE SET")]
+    assert "source_snapshot_hash" not in key
+    assert "Hash A/Hash B/Hash C bursts cannot fan out" in text
+    assert "public.b24_active_execution_leases" in text
+
+
+def test_b24_p4_hash_scoped_profiling_lease_alone_is_rejected() -> None:
+    text = _read(PROFILING_LEASE)
+    assert "public.b24_active_execution_leases" in text
+    assert "public.b24_p4_profiling_leases" not in text
+
+
+def test_b24_p4_duplicate_hashes_do_not_profile_same_window_concurrently() -> None:
+    text = _read(PROFILING_LEASE)
+    assert "source_window_start" in text and "source_window_end" in text
+    assert "source_snapshot_hash" not in text[
+        text.find("ON CONFLICT (") : text.find("DO UPDATE SET")
+    ]
+
+
+def test_b24_p4_profiling_ownership_uses_or_coordinates_with_canonical_active_execution_lane() -> None:
+    text = _read(PROFILING_LEASE) + _read(MODELS)
+    assert "canonical P3 active-execution substrate" in text
+    assert "b24_active_execution_leases_pkey" in text
+    assert "idx_b24_active_execution_canonical_profiling" in text
+
+
+def test_b24_p4_rejects_split_brain_between_profiling_and_active_execution() -> None:
+    text = _read(PROFILING_LEASE)
+    assert "INSERT INTO public.b24_active_execution_leases" in text
+    assert "UPDATE public.b24_active_execution_leases" in text
+    assert "INSERT INTO public.b24_p4_profiling_leases" not in text
+
+
+def test_b24_p4_profiling_ownership_acquired_before_authority_validation() -> None:
+    planner = _read(FIT_PLANNER)
+    plan_text = planner[planner.find("async def plan_candidate") :]
+    assert plan_text.find("acquire_profiling_lease") < plan_text.find(
+        "load_source_window_feature_authority"
+    )
+
+
+def test_b24_p4_profiling_ownership_acquired_before_envelope_math() -> None:
+    planner = _read(FIT_PLANNER)
+    assert planner.find("acquire_profiling_lease") < planner.find(
+        "evaluate_source_snapshot_resource_bounds"
+    )
 
 
 def test_b24_p4_duplicate_feature_authority_fresh_events_do_not_duplicate_p4_profiling() -> (
@@ -812,7 +1068,6 @@ def test_b24_p4_validator_rejects_hash_a_overwriting_hash_b() -> None:
     mutated = _read(SNAPSHOT_SUPERSESSION).replace(
         "assert_snapshot_artifact_not_regressing_current_output",
         "allow_snapshot_artifact_regression",
-        1,
     )
     with pytest.raises(validator.ValidationError, match="artifact"):
         validator.validate_snapshot_supersession_texts(
@@ -850,11 +1105,69 @@ def test_b24_p4_validator_rejects_p4_profiling_without_lease() -> None:
 
 def test_b24_p4_validator_rejects_duplicate_p4_profiling() -> None:
     validator = _load_validator()
-    mutated = _read(PROFILING_LEASE).replace("ON CONFLICT", "-- no conflict guard", 1)
+    mutated = _read(PROFILING_LEASE).replace(
+        "source_window_end\n                    )",
+        "source_window_end,\n                        source_snapshot_hash\n                    )",
+        1,
+    )
     with pytest.raises(validator.ValidationError, match="one profiler"):
         validator.validate_snapshot_supersession_texts(
             REPO_ROOT,
             profiling_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_python_only_supersession() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_CLAIM).replace("locked_execution_lane", "python_precheck_only")
+    with pytest.raises(validator.ValidationError, match="atomic dominance"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            fit_claim_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_serializable_only_supersession() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_CLAIM).replace("locked_execution_lane", "SERIALIZABLE")
+    with pytest.raises(validator.ValidationError, match="SERIALIZABLE"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            fit_claim_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_on_conflict_as_dominance() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_CLAIM).replace("newer_dominant_snapshot", "ON CONFLICT")
+    with pytest.raises(validator.ValidationError, match="ON CONFLICT"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            fit_claim_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_unbounded_hash_scoped_profiling_fanout() -> None:
+    validator = _load_validator()
+    mutated = _read(PROFILING_LEASE).replace(
+        "source_window_end\n                    )",
+        "source_window_end,\n                        source_snapshot_hash\n                    )",
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="one profiler"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            profiling_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_passive_polling_as_primary_build_trigger() -> None:
+    validator = _load_validator()
+    mutated = _read(AUTHORITY_LIVENESS).replace("queued_dispatch AS", "sweeper_only AS", 1)
+    with pytest.raises(validator.ValidationError, match="build dispatch"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            liveness_text=mutated,
         )
 
 

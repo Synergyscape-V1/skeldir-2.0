@@ -15,6 +15,14 @@ class BayesianArtifactNotFoundError(BayesianAuthorityError):
     """Raised when a tenant-scoped artifact authority row is not found."""
 
 
+class BayesianArtifactPolicyError(BayesianAuthorityError):
+    """Raised when an artifact violates bounded P8 storage policy."""
+
+
+class BayesianArtifactQuotaExceededError(BayesianArtifactPolicyError):
+    """Raised when a tenant or fit artifact write exceeds quota."""
+
+
 class BayesianSourceSnapshotError(BayesianAuthorityError):
     """Raised when a deterministic source snapshot cannot be constructed."""
 

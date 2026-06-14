@@ -206,6 +206,55 @@ async def load_source_window_feature_authority(
     return authority
 
 
+def load_source_window_feature_authority_sync(
+    conn,
+    *,
+    tenant_id: UUID,
+    model_type: str,
+    model_version: str,
+    source_window_start: datetime,
+    source_window_end: datetime,
+    source_snapshot_hash: str,
+) -> SourceWindowFeatureAuthority:
+    """Synchronous snapshot-fresh feature authority lookup for P6 workers."""
+
+    params = {
+        "tenant_id": str(tenant_id),
+        "model_type": model_type,
+        "model_version": model_version,
+        "source_window_start": source_window_start,
+        "source_window_end": source_window_end,
+        "source_snapshot_hash": source_snapshot_hash,
+    }
+    exact = conn.execute(text(SOURCE_WINDOW_FEATURE_AUTHORITY_LOOKUP_SQL), params)
+    row = exact.mappings().one_or_none()
+    if row is None:
+        related = conn.execute(text(_RELATED_AUTHORITY_SQL), params)
+        related_row = related.mappings().one_or_none()
+        if related_row is not None:
+            raise FeatureAuthorityUnavailable(
+                FallbackReason.CARDINALITY_AUTHORITY_MISMATCH,
+                "feature authority snapshot hash does not match P2 source snapshot",
+            )
+        raise FeatureAuthorityUnavailable(
+            FallbackReason.CARDINALITY_AUTHORITY_MISSING,
+            "feature authority is missing for P2 source snapshot",
+        )
+
+    authority = _authority_from_row(dict(row))
+    if authority.freshness_status != FeatureAuthorityStatus.FRESH:
+        raise FeatureAuthorityUnavailable(
+            FallbackReason.CARDINALITY_AUTHORITY_STALE,
+            "feature authority is not marked fresh for P2 source snapshot",
+        )
+    if authority.policy_version != B24_FEATURE_AUTHORITY_POLICY_VERSION:
+        raise FeatureAuthorityUnavailable(
+            FallbackReason.CARDINALITY_AUTHORITY_STALE,
+            "feature authority policy version is stale",
+        )
+    return authority
+
+
 async def upsert_source_window_feature_authority(
     session: AsyncSession,
     *,

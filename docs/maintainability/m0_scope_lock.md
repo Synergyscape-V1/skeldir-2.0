@@ -89,6 +89,15 @@ Any change outside this surface must be explicitly justified in
 `docs/maintainability/m0_completion_record.md` and will fail validation unless
 it remains inside the validator's allowed path set.
 
+## Post-M7 B2.4 Phase Allowance
+
+The original M0 prohibition remains historically authoritative for the M0-M7
+stabilization sequence. After M7 readiness was completed and B2.4 phases began,
+the validator allowlist was extended with exact B2.4 P1-P5 implementation,
+evidence, and graph-output paths so the required M0 status check continues to
+guard against broad, unrelated drift without blocking explicitly authorized
+B2.4 remediation work.
+
 ## M0 Artifacts Are CI-Consumed Governance Inputs
 
 The M0 artifacts are not advisory documentation. They are inputs to

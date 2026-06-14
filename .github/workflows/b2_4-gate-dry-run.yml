@@ -51,6 +51,411 @@ jobs:
       - name: Validate B2.4-P4 resource bounds
         run: make validate-b24-p4-resource-bounds
 
+      - name: Validate B2.4-P5 runtime harness
+        run: make validate-b24-p5-runtime-harness
+
+      - name: Validate B2.4-P6 real fit worker
+        run: make validate-b24-p6-real-fit-worker
+
+      - name: Validate B2.4-P7 diagnostic semantics
+        run: make validate-b24-p7-diagnostics
+
+      - name: Validate B2.4-P8 artifact lifecycle
+        run: make validate-b24-p8-artifact-lifecycle
+
+      - name: Validate B2.4-P9 worker tenant hygiene
+        run: make validate-b24-p9-worker-tenant-hygiene
+
+  b2-4-p5-runtime:
+    name: B2.4-P5 Bayesian Runtime Harness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Build Bayesian worker image
+        run: |
+          docker build -f backend/Dockerfile.bayesian -t skeldir-b24-bayesian-worker:${{ github.sha }} .
+
+      - name: Runtime report and import smoke
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe runtime-report --output /tmp/b24-p5-runtime-report.json
+
+      - name: PyTensor backend and compilation proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe pytensor-compile
+
+      - name: Native thread budget proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe thread-budget
+
+      - name: PyTensor compiledir concurrency proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe compiledir-concurrency
+
+      - name: Child environment allowlist proof
+        run: |
+          docker run --rm \
+            -e DATABASE_URL=postgresql://should:not@127.0.0.1:5432/leak \
+            -e SKELDIR_FAKE_PARENT_SECRET=must_not_reach_child \
+            -e AWS_SECRET_ACCESS_KEY=must_not_reach_child \
+            skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe child-env-airgap
+
+      - name: Child transitive DB/control-plane import airgap proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe child-import-airgap
+
+      - name: Child interpreter boot airgap proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe child-boot-airgap
+
+      - name: Fork and default multiprocessing negative controls
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe fork-multiprocessing-negative-controls
+
+      - name: Parent-owned compiledir lifecycle proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe compiledir-lifecycle
+
+      - name: Bounded compiledir reaper proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe reaper-probe
+
+      - name: Tiny PyMC benchmark proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe tiny-benchmark
+
+      - name: OS process-group kill proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe supervisor-kill
+
+      - name: Real kernel parent-death proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe parent-death
+
+      - name: Behavioral negative controls
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe behavioral-negative-controls
+
+  b2-4-p5-postgres-runtime-proof:
+    name: B2.4-P5 PostgreSQL Runtime Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p5_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p5_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P5_REQUIRE_DB_PROOFS: "1"
+      ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      EXPECTED_RUNTIME_DB_USER: app_user
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P5 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p5_ci"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      - name: Run durable timeout fallback PostgreSQL proof
+        run: |
+          pytest backend/tests/test_b24_p5_postgres_runtime.py -q -rA
+
+  b2-4-p6-real-fit-worker-proof:
+    name: B2.4-P6 Real Fit Worker Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p6_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p6_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P6_REQUIRE_REAL_FIT_PROOF: "1"
+      ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      EXPECTED_RUNTIME_DB_USER: app_user
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend and Bayesian dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-bayesian.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P6 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p6_ci"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      - name: Run B2.4-P6 static negative controls
+        run: |
+          python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
+
+      - name: Run source-authorized real-fit worker proof
+        run: |
+          pytest backend/tests/test_b24_p6_real_fit_worker.py -q -rA
+
+  b2-4-p7-diagnostic-semantics-proof:
+    name: B2.4-P7 Diagnostic Semantics Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p7_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p7_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P7_REQUIRE_DB_PROOFS: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-bayesian.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P7 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p7_ci"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      - name: Run B2.4-P7 static negative controls
+        run: |
+          python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
+
+      - name: Run diagnostic semantics proof
+        run: |
+          pytest backend/tests/test_b24_p7_diagnostic_semantics.py backend/tests/test_b24_p7_postgres_runtime.py -q -rA
+
+  b2-4-p8-artifact-lifecycle-proof:
+    name: B2.4-P8 Artifact Lifecycle Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p8_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p8_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P8_REQUIRE_DB_PROOFS: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-bayesian.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P8 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p8_ci"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      - name: Run B2.4-P8 static negative controls
+        run: |
+          python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
+
+      - name: Run artifact lifecycle proof
+        run: |
+          pytest backend/tests/test_b24_p8_artifact_lifecycle.py backend/tests/test_b24_p8_postgres_runtime.py -q -rA
+
+  b2-4-p9-worker-tenant-hygiene-proof:
+    name: B2.4-P9 Worker Tenant Hygiene Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p9_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p9_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P9_REQUIRE_DB_PROOFS: "1"
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P9 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p9_ci"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      - name: Run B2.4-P9 static negative controls
+        run: |
+          python scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control
+
+      - name: Run worker tenant hygiene proof
+        run: |
+          pytest backend/tests/test_b24_p9_worker_tenant_hygiene.py backend/tests/test_b24_p9_postgres_runtime.py -q -rA
+
   b2-4-p1-db-proof:
     name: B2.4-P1 DB Proof
     runs-on: ubuntu-latest
@@ -103,3 +508,64 @@ jobs:
       - name: Run B2.4-P1 DB-backed proofs
         run: |
           pytest backend/tests/test_b24_p1_authority_schema_runtime.py -q -rA
+
+  b2-4-p4-postgres-runtime-proof:
+    name: B2.4-P4 PostgreSQL Runtime Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p4_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p4_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P4_REQUIRE_DB_PROOFS: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P4 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p4_ci"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      - name: Prove deprecated profiling table is absent at head
+        env:
+          PGPASSWORD: migration_owner
+        run: |
+          psql -h 127.0.0.1 -U migration_owner -d skeldir_b24_p4_ci \
+            -c "SELECT to_regclass('public.b24_p4_profiling_leases') AS deprecated_p4_profiling_leases;"
+
+      - name: Run fresh PostgreSQL P4 runtime proofs
+        run: |
+          pytest backend/tests/test_b24_p4_postgres_runtime.py -q -rA

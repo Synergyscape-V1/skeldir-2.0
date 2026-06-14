@@ -420,3 +420,38 @@ async def run_eligibility_preflight(
         source_window_end=source_window_end,
         row=row,
     )
+
+
+def run_eligibility_preflight_sync(
+    conn,
+    *,
+    tenant_id: UUID,
+    model_type: str,
+    model_version: str,
+    source_window_start: datetime,
+    source_window_end: datetime,
+) -> EligibilityPreflightResult:
+    """Synchronous P2 aggregate preflight for DB-authoritative workers."""
+
+    result = conn.execute(
+        _PREFLIGHT_SQL,
+        {
+            "tenant_id": str(tenant_id),
+            "window_start": source_window_start,
+            "window_end": source_window_end,
+            "processed_event_statuses": tuple(_PROCESSED_EVENT_STATUSES),
+            "conversion_event_types": tuple(_CONVERSION_EVENT_TYPES),
+            "match_verdict_statuses": tuple(_MATCH_VERDICT_STATUSES),
+            "revenue_event_types": tuple(_REVENUE_EVENT_TYPES),
+            "channel_cap_plus_one": _CHANNEL_CAP_PLUS_ONE,
+        },
+    )
+    row = dict(result.mappings().one())
+    return classify_preflight(
+        tenant_id=tenant_id,
+        model_type=model_type,
+        model_version=model_version,
+        source_window_start=source_window_start,
+        source_window_end=source_window_end,
+        row=row,
+    )

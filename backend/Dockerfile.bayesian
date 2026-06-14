@@ -1,0 +1,39 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    B24_BAYESIAN_WORKER_RUNTIME_ID=skeldir-b24-bayesian-worker \
+    B24_BAYESIAN_WORKER_CONCURRENCY=1 \
+    B24_PYMC_CORES=1 \
+    B24_PYMC_CHAINS=1 \
+    B24_BLAS_TOTAL_THREADS=1 \
+    B24_PYTENSOR_ROOT=/tmp/skeldir-b24-pytensor \
+    SKELDIR_CELERY_WORKER_ROLE=bayesian \
+    SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1 \
+    SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY=connection_lifetime \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1 \
+    PYTENSOR_FLAGS=mode=FAST_RUN,linker=cvm
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential gfortran libopenblas-dev procps \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt /app/backend/requirements.txt
+COPY backend/requirements-bayesian.txt /app/backend/requirements-bayesian.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
+    && pip install --no-cache-dir -r /app/backend/requirements-bayesian.txt
+
+COPY backend /app/backend
+COPY alembic.ini /app/alembic.ini
+COPY alembic /app/alembic
+COPY contracts-internal/governance /app/contracts-internal/governance
+COPY db/channel_mapping.yaml /app/db/channel_mapping.yaml
+ENV PYTHONPATH=/app/backend
+WORKDIR /app/backend
+
+CMD ["celery", "-A", "app.celery_app", "worker", "-Q", "bayesian", "--loglevel=INFO", "--concurrency=1"]

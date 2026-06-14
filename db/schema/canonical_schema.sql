@@ -1148,13 +1148,13 @@ CREATE TABLE public.b24_active_execution_leases (
     terminal_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_b24_active_execution_active_fit_required CHECK ((((status)::text = 'claiming'::text) OR (fit_id IS NOT NULL))),
+    CONSTRAINT ck_b24_active_execution_active_fit_required CHECK ((((status)::text = ANY ((ARRAY['claiming'::character varying, 'profiling'::character varying, 'profile_passed'::character varying, 'profile_rejected'::character varying, 'profile_superseded'::character varying, 'profile_timeout'::character varying, 'profile_failed'::character varying])::text[])) OR (fit_id IS NOT NULL))),
     CONSTRAINT ck_b24_active_execution_active_hash_sha256 CHECK (((active_source_snapshot_hash IS NULL) OR ((active_source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_b24_active_execution_desired_hash_sha256 CHECK (((latest_desired_source_snapshot_hash IS NULL) OR ((latest_desired_source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_b24_active_execution_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
     CONSTRAINT ck_b24_active_execution_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_b24_active_execution_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_b24_active_execution_status CHECK (((status)::text = ANY ((ARRAY['claiming'::character varying, 'dispatch_pending'::character varying, 'dispatched'::character varying, 'running'::character varying, 'cancel_requested'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying, 'stale_recovered'::character varying])::text[])))
+    CONSTRAINT ck_b24_active_execution_status CHECK (((status)::text = ANY ((ARRAY['profiling'::character varying, 'profile_passed'::character varying, 'profile_rejected'::character varying, 'profile_superseded'::character varying, 'profile_timeout'::character varying, 'profile_failed'::character varying, 'claiming'::character varying, 'dispatch_pending'::character varying, 'dispatched'::character varying, 'running'::character varying, 'cancel_requested'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying, 'stale_recovered'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.b24_active_execution_leases FORCE ROW LEVEL SECURITY;
@@ -1294,36 +1294,6 @@ CREATE TABLE public.b24_fit_dispatch_outbox (
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox FORCE ROW LEVEL SECURITY;
 
-CREATE TABLE public.b24_p4_profiling_leases (
-    tenant_id uuid NOT NULL,
-    model_type character varying(64) NOT NULL,
-    model_version character varying(64) NOT NULL,
-    source_window_start timestamp with time zone NOT NULL,
-    source_window_end timestamp with time zone NOT NULL,
-    source_snapshot_hash character varying(64) NOT NULL,
-    profiling_lease_id character varying(64) NOT NULL,
-    status character varying(32) DEFAULT 'profiling'::character varying NOT NULL,
-    lease_owner character varying(128),
-    leased_until timestamp with time zone NOT NULL,
-    attempt_count integer DEFAULT 0 NOT NULL,
-    terminal_reason character varying(128),
-    terminal_at timestamp with time zone,
-    stale_recovered_at timestamp with time zone,
-    policy_version character varying(64) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_b24_p4_profiling_leases_attempt_count CHECK ((attempt_count >= 0)),
-    CONSTRAINT ck_b24_p4_profiling_leases_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
-    CONSTRAINT ck_b24_p4_profiling_leases_id_sha256 CHECK (((profiling_lease_id)::text ~ '^[a-f0-9]{64}$'::text)),
-    CONSTRAINT ck_b24_p4_profiling_leases_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
-    CONSTRAINT ck_b24_p4_profiling_leases_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
-    CONSTRAINT ck_b24_p4_profiling_leases_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
-    CONSTRAINT ck_b24_p4_profiling_leases_status CHECK (((status)::text = ANY ((ARRAY['profiling'::character varying, 'profile_rejected'::character varying, 'profile_passed'::character varying, 'profile_superseded'::character varying, 'profile_timeout'::character varying, 'profile_failed'::character varying])::text[]))),
-    CONSTRAINT ck_b24_p4_profiling_leases_window_order CHECK ((source_window_end > source_window_start))
-);
-
-ALTER TABLE ONLY public.b24_p4_profiling_leases FORCE ROW LEVEL SECURITY;
-
 CREATE TABLE public.b24_source_window_feature_authority (
     tenant_id uuid NOT NULL,
     model_type character varying(64) NOT NULL,
@@ -1354,6 +1324,29 @@ CREATE TABLE public.b24_source_window_feature_authority (
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.bayesian_artifact_storage_quotas (
+    tenant_id uuid NOT NULL,
+    policy_version character varying(64) NOT NULL,
+    quota_bytes bigint DEFAULT 1048576 NOT NULL,
+    active_bytes bigint DEFAULT 0 NOT NULL,
+    pruned_bytes bigint DEFAULT 0 NOT NULL,
+    active_artifact_count integer DEFAULT 0 NOT NULL,
+    pruned_artifact_count integer DEFAULT 0 NOT NULL,
+    rejected_count integer DEFAULT 0 NOT NULL,
+    last_rejection_reason character varying(64),
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    max_artifact_count integer DEFAULT 1000 NOT NULL,
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_active_count_within_quota CHECK ((active_artifact_count <= max_artifact_count)),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_active_within_quota CHECK ((active_bytes <= quota_bytes)),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_bytes_non_negative CHECK (((quota_bytes >= 0) AND (active_bytes >= 0) AND (pruned_bytes >= 0))),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_counts_non_negative CHECK (((active_artifact_count >= 0) AND (pruned_artifact_count >= 0) AND (rejected_count >= 0))),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_max_count_positive CHECK ((max_artifact_count > 0)),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifact_storage_quotas_rejection_reason CHECK (((last_rejection_reason IS NULL) OR ((last_rejection_reason)::text = ANY ((ARRAY['tenant_quota_exceeded'::character varying, 'fit_wal_budget_exceeded'::character varying, 'policy_rejected'::character varying])::text[]))))
+);
+
+ALTER TABLE ONLY public.bayesian_artifact_storage_quotas FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.bayesian_artifacts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1369,15 +1362,31 @@ CREATE TABLE public.bayesian_artifacts (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 )
 PARTITION BY HASH (tenant_id);
 
@@ -1398,15 +1407,31 @@ CREATE TABLE public.bayesian_artifacts_p00 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p00 FORCE ROW LEVEL SECURITY;
@@ -1426,15 +1451,31 @@ CREATE TABLE public.bayesian_artifacts_p01 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p01 FORCE ROW LEVEL SECURITY;
@@ -1454,15 +1495,31 @@ CREATE TABLE public.bayesian_artifacts_p02 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p02 FORCE ROW LEVEL SECURITY;
@@ -1482,15 +1539,31 @@ CREATE TABLE public.bayesian_artifacts_p03 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p03 FORCE ROW LEVEL SECURITY;
@@ -1510,15 +1583,31 @@ CREATE TABLE public.bayesian_artifacts_p04 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p04 FORCE ROW LEVEL SECURITY;
@@ -1538,15 +1627,31 @@ CREATE TABLE public.bayesian_artifacts_p05 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p05 FORCE ROW LEVEL SECURITY;
@@ -1566,15 +1671,31 @@ CREATE TABLE public.bayesian_artifacts_p06 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p06 FORCE ROW LEVEL SECURITY;
@@ -1594,15 +1715,31 @@ CREATE TABLE public.bayesian_artifacts_p07 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p07 FORCE ROW LEVEL SECURITY;
@@ -1622,15 +1759,31 @@ CREATE TABLE public.bayesian_artifacts_p08 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p08 FORCE ROW LEVEL SECURITY;
@@ -1650,15 +1803,31 @@ CREATE TABLE public.bayesian_artifacts_p09 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p09 FORCE ROW LEVEL SECURITY;
@@ -1678,15 +1847,31 @@ CREATE TABLE public.bayesian_artifacts_p10 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p10 FORCE ROW LEVEL SECURITY;
@@ -1706,15 +1891,31 @@ CREATE TABLE public.bayesian_artifacts_p11 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p11 FORCE ROW LEVEL SECURITY;
@@ -1734,15 +1935,31 @@ CREATE TABLE public.bayesian_artifacts_p12 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p12 FORCE ROW LEVEL SECURITY;
@@ -1762,15 +1979,31 @@ CREATE TABLE public.bayesian_artifacts_p13 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p13 FORCE ROW LEVEL SECURITY;
@@ -1790,15 +2023,31 @@ CREATE TABLE public.bayesian_artifacts_p14 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p14 FORCE ROW LEVEL SECURITY;
@@ -1818,15 +2067,31 @@ CREATE TABLE public.bayesian_artifacts_p15 (
     expires_at timestamp with time zone,
     pruned_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload_json jsonb,
+    payload_bytes bytea,
+    payload_byte_count bigint DEFAULT 0 NOT NULL,
+    lifecycle_status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    policy_version character varying(64) DEFAULT 'b24-p8-artifact-policy-v1'::character varying NOT NULL,
+    pruned_reason character varying(64),
+    pruned_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
-    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying, 'input_manifest'::character varying, 'model_spec'::character varying, 'posterior_summary'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_internal_uri CHECK ((((lifecycle_status)::text = ANY ((ARRAY['pruned'::character varying, 'rejected'::character varying])::text[])) OR (((artifact_uri_internal)::text = (artifact_ref)::text) AND ((artifact_uri_internal)::text ~ '^b24://artifact/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$'::text)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_payload_state CHECK (((((lifecycle_status)::text = 'active'::text) AND (payload_bytes IS NOT NULL) AND (payload_byte_count = artifact_size_bytes) AND (pruned_at IS NULL)) OR (((lifecycle_status)::text = 'pruned'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NOT NULL)) OR (((lifecycle_status)::text = 'rejected'::text) AND (payload_bytes IS NULL) AND (payload_byte_count = 0) AND (pruned_at IS NULL)))),
+    CONSTRAINT ck_bayesian_artifacts_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'pruned'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_matches CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) = payload_byte_count))),
+    CONSTRAINT ck_bayesian_artifacts_payload_byte_count_p8_cap CHECK (((payload_byte_count >= 0) AND (payload_byte_count <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_payload_bytes_p8_cap CHECK (((payload_bytes IS NULL) OR (octet_length(payload_bytes) <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
+    CONSTRAINT ck_bayesian_artifacts_pruned_reason CHECK (((pruned_reason IS NULL) OR ((pruned_reason)::text = ANY ((ARRAY['retention_expired'::character varying, 'manual_governance'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
     CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
-    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
-    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+    CONSTRAINT ck_bayesian_artifacts_size_p8_cap CHECK ((((lifecycle_status)::text = 'pruned'::text) OR (artifact_size_bytes <= 65536))),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = 'postgres'::text))
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p15 FORCE ROW LEVEL SECURITY;
@@ -1865,17 +2130,35 @@ CREATE TABLE public.bayesian_model_fits (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -1883,11 +2166,12 @@ CREATE TABLE public.bayesian_model_fits (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 PARTITION BY HASH (tenant_id);
 
@@ -1927,17 +2211,35 @@ CREATE TABLE public.bayesian_model_fits_p00 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -1945,11 +2247,12 @@ CREATE TABLE public.bayesian_model_fits_p00 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -1989,17 +2292,35 @@ CREATE TABLE public.bayesian_model_fits_p01 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2007,11 +2328,12 @@ CREATE TABLE public.bayesian_model_fits_p01 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2051,17 +2373,35 @@ CREATE TABLE public.bayesian_model_fits_p02 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2069,11 +2409,12 @@ CREATE TABLE public.bayesian_model_fits_p02 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2113,17 +2454,35 @@ CREATE TABLE public.bayesian_model_fits_p03 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2131,11 +2490,12 @@ CREATE TABLE public.bayesian_model_fits_p03 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2175,17 +2535,35 @@ CREATE TABLE public.bayesian_model_fits_p04 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2193,11 +2571,12 @@ CREATE TABLE public.bayesian_model_fits_p04 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2237,17 +2616,35 @@ CREATE TABLE public.bayesian_model_fits_p05 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2255,11 +2652,12 @@ CREATE TABLE public.bayesian_model_fits_p05 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2299,17 +2697,35 @@ CREATE TABLE public.bayesian_model_fits_p06 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2317,11 +2733,12 @@ CREATE TABLE public.bayesian_model_fits_p06 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2361,17 +2778,35 @@ CREATE TABLE public.bayesian_model_fits_p07 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2379,11 +2814,12 @@ CREATE TABLE public.bayesian_model_fits_p07 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2423,17 +2859,35 @@ CREATE TABLE public.bayesian_model_fits_p08 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2441,11 +2895,12 @@ CREATE TABLE public.bayesian_model_fits_p08 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2485,17 +2940,35 @@ CREATE TABLE public.bayesian_model_fits_p09 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2503,11 +2976,12 @@ CREATE TABLE public.bayesian_model_fits_p09 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2547,17 +3021,35 @@ CREATE TABLE public.bayesian_model_fits_p10 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2565,11 +3057,12 @@ CREATE TABLE public.bayesian_model_fits_p10 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2609,17 +3102,35 @@ CREATE TABLE public.bayesian_model_fits_p11 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2627,11 +3138,12 @@ CREATE TABLE public.bayesian_model_fits_p11 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2671,17 +3183,35 @@ CREATE TABLE public.bayesian_model_fits_p12 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2689,11 +3219,12 @@ CREATE TABLE public.bayesian_model_fits_p12 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2733,17 +3264,35 @@ CREATE TABLE public.bayesian_model_fits_p13 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2751,11 +3300,12 @@ CREATE TABLE public.bayesian_model_fits_p13 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2795,17 +3345,35 @@ CREATE TABLE public.bayesian_model_fits_p14 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2813,11 +3381,12 @@ CREATE TABLE public.bayesian_model_fits_p14 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2857,17 +3426,35 @@ CREATE TABLE public.bayesian_model_fits_p15 (
     artifact_hash character varying(64),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    hdi_lower double precision,
+    hdi_upper double precision,
+    interval_shape jsonb DEFAULT '[]'::jsonb NOT NULL,
+    interval_element_count integer,
+    interval_summary_bytes integer,
+    diagnostic_status character varying(32) DEFAULT 'not_computed'::character varying NOT NULL,
+    diagnostic_failure_reason character varying(64),
+    diagnostic_policy_version character varying(64),
+    diagnostic_target_filter_version character varying(64),
+    interval_policy_version character varying(64),
+    diagnostics_computed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_failure_reason CHECK (((diagnostic_failure_reason IS NULL) OR ((diagnostic_failure_reason)::text = ANY ((ARRAY['bad_rhat'::character varying, 'low_ess'::character varying, 'divergence'::character varying, 'nonfinite_diagnostic'::character varying, 'invalid_diagnostic_summary'::character varying, 'diagnostic_scope_too_large'::character varying, 'interval_dimension_exceeded'::character varying, 'interval_payload_too_large'::character varying, 'diagnostics_failed'::character varying, 'diagnostics_memory_exceeded'::character varying, 'diagnostics_timeout'::character varying, 'skipped_non_sampled'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_diagnostic_status CHECK (((diagnostic_status)::text = ANY ((ARRAY['not_computed'::character varying, 'passed'::character varying, 'failed'::character varying, 'error'::character varying, 'unavailable'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
-    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['source_window_empty'::character varying, 'insufficient_data'::character varying, 'insufficient_privacy_cohort'::character varying, 'input_too_large'::character varying, 'feature_width_exceeded'::character varying, 'source_window_too_large'::character varying, 'memory_bound_exceeded'::character varying, 'graph_complexity_exceeded'::character varying, 'parameter_count_exceeded'::character varying, 'hierarchy_width_exceeded'::character varying, 'compilation_memory_bound_exceeded'::character varying, 'cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying, 'cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_profile_unavailable'::character varying, 'source_snapshot_mismatch'::character varying, 'transport_rejected'::character varying, 'result_too_large'::character varying, 'sampler_health_failed'::character varying, 'model_memory_exceeded'::character varying, 'graph_compile_memory_exceeded'::character varying, 'policy_rejected'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_hdi_bounds_pair_order CHECK ((((hdi_lower IS NULL) AND (hdi_upper IS NULL)) OR ((hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (hdi_lower <= hdi_upper)))),
+    CONSTRAINT ck_bayesian_model_fits_interval_element_count_non_negative CHECK (((interval_element_count IS NULL) OR (interval_element_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_interval_shape_array CHECK ((jsonb_typeof(interval_shape) = 'array'::text)),
+    CONSTRAINT ck_bayesian_model_fits_interval_summary_bytes_non_negative CHECK (((interval_summary_bytes IS NULL) OR (interval_summary_bytes >= 0))),
     CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
     CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
@@ -2875,11 +3462,12 @@ CREATE TABLE public.bayesian_model_fits_p15 (
     CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'persist_pending'::character varying, 'sampled_unvalidated'::character varying, 'diagnostics_pending'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -3999,11 +4587,11 @@ ALTER TABLE ONLY public.b24_feature_authority_build_requests
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_pkey PRIMARY KEY (tenant_id, id);
 
-ALTER TABLE ONLY public.b24_p4_profiling_leases
-    ADD CONSTRAINT b24_p4_profiling_leases_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
+    ADD CONSTRAINT bayesian_artifact_storage_quotas_pkey PRIMARY KEY (tenant_id);
 
 ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_pkey PRIMARY KEY (tenant_id, id);
@@ -4415,9 +5003,6 @@ ALTER TABLE ONLY public.b24_fit_dispatch_outbox
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT uq_b24_fit_dispatch_outbox_fit UNIQUE (tenant_id, fit_id);
-
-ALTER TABLE ONLY public.b24_p4_profiling_leases
-    ADD CONSTRAINT uq_b24_p4_profiling_leases_id UNIQUE (tenant_id, profiling_lease_id);
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
@@ -4957,6 +5542,8 @@ CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
 
+CREATE INDEX idx_b24_active_execution_canonical_profiling ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, status, leased_until) WHERE ((status)::text = 'profiling'::text);
+
 CREATE INDEX idx_b24_active_execution_superseded ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end) WHERE (needs_refit_after_current = true);
 
 CREATE INDEX idx_b24_active_execution_tenant_fit ON public.b24_active_execution_leases USING btree (tenant_id, fit_id) WHERE (fit_id IS NOT NULL);
@@ -5006,8 +5593,6 @@ CREATE INDEX idx_b24_p4_attribution_events_channel_early_stop ON public.attribut
 CREATE INDEX idx_b24_p4_match_verdicts_provider_cardinality ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL));
 
 CREATE INDEX idx_b24_p4_match_verdicts_provider_early_stop ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
-
-CREATE INDEX idx_b24_p4_profiling_leases_active ON public.b24_p4_profiling_leases USING btree (tenant_id, status, leased_until) WHERE ((status)::text = 'profiling'::text);
 
 CREATE INDEX idx_b24_p4_revenue_events_provider_cardinality ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL));
 
@@ -5828,11 +6413,11 @@ ALTER TABLE ONLY public.b24_feature_authority_build_requests
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.b24_p4_profiling_leases
-    ADD CONSTRAINT b24_p4_profiling_leases_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
+    ADD CONSTRAINT bayesian_artifact_storage_quotas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
@@ -6053,9 +6638,9 @@ ALTER TABLE public.b24_feature_authority_build_requests ENABLE ROW LEVEL SECURIT
 
 ALTER TABLE public.b24_fit_dispatch_outbox ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.b24_p4_profiling_leases ENABLE ROW LEVEL SECURITY;
-
 ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifact_storage_quotas ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.bayesian_artifacts ENABLE ROW LEVEL SECURITY;
 
@@ -6287,9 +6872,9 @@ CREATE POLICY tenant_isolation_policy_b24_feature_authority_build_requests ON pu
 
 CREATE POLICY tenant_isolation_policy_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy_b24_p4_profiling_leases ON public.b24_p4_profiling_leases USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
 CREATE POLICY tenant_isolation_policy_b24_source_window_feature_authority ON public.b24_source_window_feature_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifact_storage_quotas ON public.bayesian_artifact_storage_quotas USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts ON public.bayesian_artifacts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
@@ -6325,39 +6910,39 @@ CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p14 ON public.bayesian_
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p15 ON public.bayesian_artifacts_p15 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits ON public.bayesian_model_fits USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits ON public.bayesian_model_fits USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p00 ON public.bayesian_model_fits_p00 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p00 ON public.bayesian_model_fits_p00 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p01 ON public.bayesian_model_fits_p01 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p01 ON public.bayesian_model_fits_p01 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p02 ON public.bayesian_model_fits_p02 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p02 ON public.bayesian_model_fits_p02 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p03 ON public.bayesian_model_fits_p03 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p03 ON public.bayesian_model_fits_p03 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p04 ON public.bayesian_model_fits_p04 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p04 ON public.bayesian_model_fits_p04 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p05 ON public.bayesian_model_fits_p05 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p05 ON public.bayesian_model_fits_p05 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p06 ON public.bayesian_model_fits_p06 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p06 ON public.bayesian_model_fits_p06 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p07 ON public.bayesian_model_fits_p07 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p07 ON public.bayesian_model_fits_p07 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p08 ON public.bayesian_model_fits_p08 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p08 ON public.bayesian_model_fits_p08 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p09 ON public.bayesian_model_fits_p09 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p09 ON public.bayesian_model_fits_p09 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p10 ON public.bayesian_model_fits_p10 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p10 ON public.bayesian_model_fits_p10 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p11 ON public.bayesian_model_fits_p11 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p11 ON public.bayesian_model_fits_p11 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p12 ON public.bayesian_model_fits_p12 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p12 ON public.bayesian_model_fits_p12 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p13 ON public.bayesian_model_fits_p13 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p13 ON public.bayesian_model_fits_p13 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p14 ON public.bayesian_model_fits_p14 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p14 ON public.bayesian_model_fits_p14 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p15 ON public.bayesian_model_fits_p15 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p15 ON public.bayesian_model_fits_p15 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
 CREATE POLICY tenant_isolation_policy_compliance_audit_ledger ON public.compliance_audit_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 

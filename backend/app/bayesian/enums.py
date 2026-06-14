@@ -14,8 +14,13 @@ class FitStatus(StrEnum):
     PENDING = "pending"
     QUEUED = "queued"
     RUNNING = "running"
+    PERSIST_PENDING = "persist_pending"
+    SAMPLED_UNVALIDATED = "sampled_unvalidated"
+    DIAGNOSTICS_PENDING = "diagnostics_pending"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    TIMEOUT = "timeout"
+    WORKER_LOST = "worker_lost"
     FALLBACK_ONLY = "fallback_only"
     CANCELLED = "cancelled"
 
@@ -53,6 +58,13 @@ class FallbackReason(StrEnum):
     CARDINALITY_AUTHORITY_TIMEOUT = "cardinality_authority_timeout"
     CARDINALITY_AUTHORITY_BUILD_FAILED = "cardinality_authority_build_failed"
     SOURCE_PROFILE_UNAVAILABLE = "source_profile_unavailable"
+    SOURCE_SNAPSHOT_MISMATCH = "source_snapshot_mismatch"
+    TRANSPORT_REJECTED = "transport_rejected"
+    RESULT_TOO_LARGE = "result_too_large"
+    SAMPLER_HEALTH_FAILED = "sampler_health_failed"
+    MODEL_MEMORY_EXCEEDED = "model_memory_exceeded"
+    GRAPH_COMPILE_MEMORY_EXCEEDED = "graph_compile_memory_exceeded"
+    POLICY_REJECTED = "policy_rejected"
     TIMEOUT = "timeout"
     WORKER_FAILURE = "worker_failure"
     NO_CONVERGENCE = "no_convergence"
@@ -61,6 +73,29 @@ class FallbackReason(StrEnum):
     DUPLICATE_FIT_SUPPRESSED = "duplicate_fit_suppressed"
     ARTIFACT_UNAVAILABLE = "artifact_unavailable"
     STORAGE_QUOTA_EXCEEDED = "storage_quota_exceeded"
+
+
+class DiagnosticStatus(StrEnum):
+    NOT_COMPUTED = "not_computed"
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+    UNAVAILABLE = "unavailable"
+
+
+class DiagnosticFailureReason(StrEnum):
+    BAD_RHAT = "bad_rhat"
+    LOW_ESS = "low_ess"
+    DIVERGENCE = "divergence"
+    NONFINITE_DIAGNOSTIC = "nonfinite_diagnostic"
+    INVALID_DIAGNOSTIC_SUMMARY = "invalid_diagnostic_summary"
+    DIAGNOSTIC_SCOPE_TOO_LARGE = "diagnostic_scope_too_large"
+    INTERVAL_DIMENSION_EXCEEDED = "interval_dimension_exceeded"
+    INTERVAL_PAYLOAD_TOO_LARGE = "interval_payload_too_large"
+    DIAGNOSTICS_FAILED = "diagnostics_failed"
+    DIAGNOSTICS_MEMORY_EXCEEDED = "diagnostics_memory_exceeded"
+    DIAGNOSTICS_TIMEOUT = "diagnostics_timeout"
+    SKIPPED_NON_SAMPLED = "skipped_non_sampled"
 
 
 class CredibleIntervalStatus(StrEnum):
@@ -81,26 +116,31 @@ class ConfidenceBucket(StrEnum):
 
 
 class ArtifactType(StrEnum):
-    POSTERIOR_TRACE = "posterior_trace"
     DIAGNOSTICS = "diagnostics"
     SUMMARY = "summary"
     SOURCE_MANIFEST = "source_manifest"
     FIT_METADATA = "fit_metadata"
+    INPUT_MANIFEST = "input_manifest"
+    MODEL_SPEC = "model_spec"
+    POSTERIOR_SUMMARY = "posterior_summary"
 
 
 class StorageBackend(StrEnum):
     POSTGRES = "postgres"
-    OBJECT_STORAGE = "object_storage"
-    LOCAL_FS = "local_fs"
 
 
 class Compression(StrEnum):
     NONE = "none"
     GZIP = "gzip"
-    ZSTD = "zstd"
 
 
 class RetentionClass(StrEnum):
     EPHEMERAL = "ephemeral"
     STANDARD = "standard"
     AUDIT = "audit"
+
+
+class ArtifactLifecycleStatus(StrEnum):
+    ACTIVE = "active"
+    PRUNED = "pruned"
+    REJECTED = "rejected"

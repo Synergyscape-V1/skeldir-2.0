@@ -71,6 +71,83 @@
   local_reproduction_command: make validate-b24-p4-resource-bounds
   risk_if_removed: B2.4 could regress to duplicate planner DB work, unbounded cardinality profiling, allocation-backed memory proofs, PyMC/PyTensor dry-runs, oversized dispatch, or non-durable resource fallback without a merge-blocking signal.
   decision: keep_required
+- gate_id: validate-b24-p5-runtime-harness
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_b24_p5_runtime_harness.py
+  owning_phase: B2.4-P5
+  protected_invariant: B2.4-P5 Bayesian worker dependency lane, runtime parity image, PyTensor compile proof, tiny PyMC benchmark, native thread caps, compiledir isolation, process-group kill semantics, durable timeout fallback, stale-running recovery, and boundary non-regression remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P5 introduces native-runtime physics that P1-P4 intentionally exclude:
+    PyMC/PyTensor/ArViZ dependency authority, compiler/backend viability,
+    numerical thread budgets, PyTensor compiledir isolation, process-group
+    kill behavior, durable timeout persistence, stale-running repair, and
+    runtime-image parity.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p5_runtime_harness.py --negative-control
+  local_reproduction_command: make validate-b24-p5-runtime-harness
+  risk_if_removed: B2.4 could pass schema/source/planning/resource gates while the Bayesian worker runtime cannot import, compile, sample, bound threads, kill native compute, repair stale fits, or preserve internal-only boundaries.
+  decision: keep_required
+- gate_id: validate-b24-p6-real-fit-worker
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run / B2.4-P6 Real Fit Worker Proof
+  script: scripts/ci/validate_b24_p6_real_fit_worker.py
+  owning_phase: B2.4-P6
+  protected_invariant: B2.4-P6 fit-id-only parent execution, explicit RLS tenant-resolution capability, frozen P2/P4 source replay, source-derived observed input, and child-only PyMC execution remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P6 is not subsumed by P1-P5: it is the first gate that proves the parent
+    worker consumes a committed fit row and source snapshot, replays the frozen
+    source authority under Postgres RLS, and physically launches the DB-airgapped
+    PyMC child with source-derived observations instead of synthetic hash bytes.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
+  local_reproduction_command: make validate-b24-p6-real-fit-worker
+  risk_if_removed: B2.4 could retain native runtime safety while silently feeding PyMC synthetic snapshot-hash observations, bypassing P2/P4 authority, or losing protected-main evidence that real fit execution works under runtime DB identity.
+  decision: keep_required
+- gate_id: validate-b24-p7-diagnostics
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run / B2.4-P7 Diagnostic Semantics Proof
+  script: scripts/ci/validate_b24_p7_diagnostics.py
+  owning_phase: B2.4-P7
+  protected_invariant: B2.4-P7 diagnostic validity, governed target scope, finite-value gates, strict zero-divergence conditionality, bounded interval payloads, child-contained ArviZ execution, and diagnostic/execution lifecycle separation remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P7 is not subsumed by P5 or P6: P5 proves native runtime containment and
+    kill semantics, while P6 proves source-authorized sampling. P7 is the first
+    gate that adjudicates whether sampled output is statistically interval-
+    admissible and proves failed diagnostics cannot expose confidence.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
+  local_reproduction_command: make validate-b24-p7-diagnostics
+  risk_if_removed: B2.4 could successfully sample while returning credible intervals for bad R-hat, low ESS, divergences, nonfinite diagnostics, ungoverned variables, or oversized interval payloads without a merge-blocking signal.
+  decision: keep_required
+- gate_id: validate-b24-p8-artifact-lifecycle
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run / B2.4-P8 Artifact Lifecycle Proof
+  script: scripts/ci/validate_b24_p8_artifact_lifecycle.py
+  owning_phase: B2.4-P8
+  protected_invariant: B2.4-P8 Postgres-native small-artifact persistence, lifecycle, retention, tenant quota, hash integrity, pruning auditability, and public/cloud/LLM non-exposure remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P8 is not subsumed by P1 or P7: P1 created artifact authority rows and P7
+    blocked ungoverned trace persistence, but P8 is the first gate that proves
+    governed artifact writes, stored-byte hash semantics, tenant quota
+    accounting, retention pruning, and storage-physics prohibitions.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
+  local_reproduction_command: make validate-b24-p8-artifact-lifecycle
+  risk_if_removed: B2.4 could retain diagnostics while persisting unbounded traces, cloud/local artifacts, hash-ambiguous payloads, quota-racy rows, or destructive pruning without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
@@ -1704,3 +1781,18 @@
   local_reproduction_command: python scripts/ci/verify_b23_p5_branch_protection.py
   risk_if_removed: No CI adjudication loss while unreferenced.
   decision: utility_only
+- gate_id: validate-b24-p9-worker-tenant-hygiene
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4-P9 Worker Tenant Hygiene Proof
+  script: scripts/ci/validate_b24_p9_worker_tenant_hygiene.py
+  owning_phase: B2.4-P9
+  protected_invariant: B2.4-P9 worker tenant hygiene, topology-attested direct PostgreSQL or fail-closed unknown/proxy/pooler topology, transaction-local GUC, clean pool return, scoped workspace/compiledir, tenant-bound artifacts, parent env immutability, cleanup, and log payload airgap remain falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: Required P9 gate preserves a unique worker process-boundary invariant not covered by P5 runtime containment or P8 artifact lifecycle.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control
+  local_reproduction_command: make validate-b24-p9-worker-tenant-hygiene
+  risk_if_removed: Loss of merge-blocking proof for cross-tenant worker hygiene and failure-path residue controls.
+  decision: keep_required

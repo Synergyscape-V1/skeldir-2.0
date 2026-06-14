@@ -82,6 +82,115 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b24-p5-runtime-harness
+  path: scripts/ci/validate_b24_p5_runtime_harness.py
+  status: required
+  owning_phase: B2.4-P5
+  protected_invariant: B2.4-P5 Bayesian worker dependency lane, PyTensor backend/compiler probes, tiny PyMC benchmark, native thread caps, compiledir isolation, process-group kill semantics, durable timeout fallback, stale-running recovery, CI/runtime parity, and no-P6/P7/P10 scope remain machine-falsifiable.
+  command: python scripts/ci/validate_b24_p5_runtime_harness.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make validate-b24-p5-runtime-harness
+  expected_failure_meaning: B2.4-P5 runtime safety is missing, dependency proof is not in the Bayesian worker runtime, native compute can oversubscribe or orphan, PyTensor cache is global, timeout fallback is non-durable, or public/LLM/frontend/deterministic mutation scope leaked.
+  first_diagnostic_command: python scripts/ci/validate_b24_p5_runtime_harness.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-b24-p6-real-fit-worker
+  path: scripts/ci/validate_b24_p6_real_fit_worker.py
+  status: required
+  owning_phase: B2.4-P6
+  protected_invariant: B2.4-P6 fit-id-only worker execution must resolve tenant authority through explicit RLS policy, replay frozen P2/P4 source authority, derive observed input from source rows rather than snapshot hash bytes, and launch only the P5 DB-airgapped PyMC child.
+  command: python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P6 Real Fit Worker Proof
+  local_reproduction_command: make validate-b24-p6-real-fit-worker
+  expected_failure_meaning: B2.4-P6 real-fit execution is missing source-derived observed input, has regressed to hash-byte observations, bypasses P2/P4 source authority, leaks PyMC into the parent, lacks fit-id RLS resolution, or is no longer protected by a DB-backed required proof job.
+  first_diagnostic_command: python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-b24-p7-diagnostics
+  path: scripts/ci/validate_b24_p7_diagnostics.py
+  status: required
+  owning_phase: B2.4-P7
+  protected_invariant: B2.4-P7 diagnostics must be child-contained, governed by versioned target and interval policy, finite-validated before threshold comparison, byte-bounded before parent transport, DB-backed for interval conditionality, and unable to expose intervals unless R-hat, ESS, divergence, and interval payload gates all pass.
+  command: python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P7 Diagnostic Semantics Proof
+  local_reproduction_command: make validate-b24-p7-diagnostics
+  expected_failure_meaning: B2.4-P7 diagnostic semantics are missing, unversioned, parent-computed, unbounded, computed over ungoverned targets, allow nonfinite diagnostics, lack DB-backed conditionality proof, or expose intervals despite failed convergence/diagnostics.
+  first_diagnostic_command: python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-b24-p8-artifact-lifecycle
+  path: scripts/ci/validate_b24_p8_artifact_lifecycle.py
+  status: required
+  owning_phase: B2.4-P8
+  protected_invariant: B2.4-P8 artifacts must persist only through a governed Postgres-native bounded repository, with exact stored-byte hashes, small bytea caps, no cloud/local/large-object storage, atomic tenant quota, audit-preserving pruning, and no public/LLM/TrustEnvelope exposure.
+  command: python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P8 Artifact Lifecycle Proof
+  local_reproduction_command: make validate-b24-p8-artifact-lifecycle
+  expected_failure_meaning: B2.4-P8 artifact lifecycle is missing, unbounded, cloud/local-storage contaminated, hash-ambiguous, quota-racy, non-auditable after pruning, or no longer protected by a DB-backed required proof job.
+  first_diagnostic_command: python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-b24-p9-worker-tenant-hygiene
+  path: scripts/ci/validate_b24_p9_worker_tenant_hygiene.py
+  status: required
+  owning_phase: B2.4-P9
+  protected_invariant: B2.4-P9 Bayesian workers must bind tenant DB context transaction-locally, use runtime/deployment-attested direct PostgreSQL topology or fail closed for unknown/proxy/pooler topology, return pooled connections clean, use tenant/fit/hash/attempt-scoped workspaces and compiledirs, keep child env mutation out of the parent, tenant-scope artifact refs, clean success/failure/timeout residue, and avoid payload-bearing logs.
+  command: python scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P9 Worker Tenant Hygiene Proof
+  local_reproduction_command: make validate-b24-p9-worker-tenant-hygiene
+  expected_failure_meaning: B2.4-P9 worker tenant hygiene is missing, uses session-level GUC, trusts unknown DB topology, supports proxy/pooler topology without live poison proof, returns dirty connections, shares workspaces or compiledirs across tenants/attempts, mutates parent env, leaks child payloads, omits tenant artifact authority, or is no longer protected by a DB-backed required proof job.
+  first_diagnostic_command: python scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m7-b24-readiness
   path: scripts/ci/validate_m7_b24_readiness.py
   status: required

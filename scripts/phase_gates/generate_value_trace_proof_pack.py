@@ -79,8 +79,8 @@ def _collect_paginated_items(
     endpoint: str,
     token: str,
     payload_key: str,
-) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
+) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
     page = 1
     while True:
         url = f"{api_url}/repos/{repo}/{endpoint}?per_page=100&page={page}"

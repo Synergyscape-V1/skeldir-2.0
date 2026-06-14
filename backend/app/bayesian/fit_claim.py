@@ -14,10 +14,28 @@ from app.bayesian.source_snapshot import SourceSnapshotResult
 
 
 ACTIVE_EXECUTION_STATUSES = frozenset(
-    {"claiming", "dispatch_pending", "dispatched", "running", "cancel_requested"}
+    {
+        "profiling",
+        "profile_passed",
+        "claiming",
+        "dispatch_pending",
+        "dispatched",
+        "running",
+        "cancel_requested",
+    }
 )
 TERMINAL_EXECUTION_STATUSES = frozenset(
-    {"succeeded", "failed", "fallback_only", "cancelled", "stale_recovered"}
+    {
+        "profile_rejected",
+        "profile_superseded",
+        "profile_timeout",
+        "profile_failed",
+        "succeeded",
+        "failed",
+        "fallback_only",
+        "cancelled",
+        "stale_recovered",
+    }
 )
 DEFAULT_ACTIVE_LEASE_SECONDS = 3600
 
@@ -26,6 +44,7 @@ class FitClaimOutcome(StrEnum):
     CLAIMED = "claimed"
     REUSED = "reused"
     SUPPRESSED_ACTIVE = "suppressed_active"
+    SOURCE_SNAPSHOT_SUPERSEDED = "source_snapshot_superseded"
 
 
 @dataclass(frozen=True)
@@ -61,7 +80,7 @@ async def claim_fit_for_snapshot(
     claim_owner: str,
     lease_seconds: int = DEFAULT_ACTIVE_LEASE_SECONDS,
 ) -> FitClaimResult:
-    """Claim one active execution and one outbox row in the same transaction.
+    """Claim one active execution and one outbox row in one locked SQL boundary.
 
     Historical fit identity includes ``source_snapshot_hash``. The active
     execution lease key intentionally excludes it, so a newer hash cannot create
@@ -80,61 +99,52 @@ async def claim_fit_for_snapshot(
         "claim_owner": claim_owner,
         "leased_until": leased_until,
     }
-
-    inserted = (
+    await session.execute(
+        text(
+            """
+            INSERT INTO public.b24_active_execution_leases (
+                tenant_id,
+                model_type,
+                model_version,
+                source_window_start,
+                source_window_end,
+                active_source_snapshot_hash,
+                latest_desired_source_snapshot_hash,
+                status,
+                needs_refit_after_current,
+                lease_owner,
+                leased_until,
+                heartbeat_at,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                :tenant_id,
+                :model_type,
+                :model_version,
+                :source_window_start,
+                :source_window_end,
+                :source_snapshot_hash,
+                :source_snapshot_hash,
+                'claiming',
+                false,
+                :claim_owner,
+                :leased_until,
+                now(),
+                now(),
+                now()
+            )
+            ON CONFLICT DO NOTHING
+            """
+        ),
+        params,
+    )
+    row = (
         (
             await session.execute(
                 text(
                     """
-                    INSERT INTO public.b24_active_execution_leases (
-                        tenant_id,
-                        model_type,
-                        model_version,
-                        source_window_start,
-                        source_window_end,
-                        active_source_snapshot_hash,
-                        latest_desired_source_snapshot_hash,
-                        status,
-                        needs_refit_after_current,
-                        lease_owner,
-                        leased_until,
-                        heartbeat_at,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (
-                        :tenant_id,
-                        :model_type,
-                        :model_version,
-                        :source_window_start,
-                        :source_window_end,
-                        :source_snapshot_hash,
-                        :source_snapshot_hash,
-                        'claiming',
-                        false,
-                        :claim_owner,
-                        :leased_until,
-                        now(),
-                        now(),
-                        now()
-                    )
-                    ON CONFLICT DO NOTHING
-                    RETURNING tenant_id
-                    """
-                ),
-                params,
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
-
-    if inserted is None:
-        existing = (
-            (
-                await session.execute(
-                    text(
-                        """
+                    WITH locked_execution_lane AS (
                         SELECT
                             fit_id,
                             status,
@@ -150,221 +160,325 @@ async def claim_fit_for_snapshot(
                           AND source_window_start = :source_window_start
                           AND source_window_end = :source_window_end
                         FOR UPDATE
-                        """
                     ),
-                    params,
-                )
-            )
-            .mappings()
-            .one()
-        )
-        status = str(existing["status"])
-        stale = existing["leased_until"] is not None and existing["leased_until"] < now
-        owned_preflight = (
-            status == "claiming"
-            and existing["fit_id"] is None
-            and existing["lease_owner"] == claim_owner
-        )
-        if status in ACTIVE_EXECUTION_STATUSES and not stale and not owned_preflight:
-            await session.execute(
-                text(
-                    """
-                    UPDATE public.b24_active_execution_leases
-                    SET latest_desired_source_snapshot_hash = :source_snapshot_hash,
-                        needs_refit_after_current =
-                            needs_refit_after_current
-                            OR active_source_snapshot_hash IS DISTINCT FROM :source_snapshot_hash,
-                        updated_at = now()
-                    WHERE tenant_id = :tenant_id
-                      AND model_type = :model_type
-                      AND model_version = :model_version
-                      AND source_window_start = :source_window_start
-                      AND source_window_end = :source_window_end
+                    frozen_lineage AS (
+                        SELECT COALESCE(
+                            (
+                                SELECT min(dirty.observed_at)
+                                FROM public.b24_dirty_events dirty
+                                WHERE dirty.tenant_id = :tenant_id
+                                  AND dirty.model_type = :model_type
+                                  AND dirty.model_version = :model_version
+                                  AND dirty.source_window_start = :source_window_start
+                                  AND dirty.source_window_end = :source_window_end
+                                  AND dirty.source_snapshot_hash = :source_snapshot_hash
+                            ),
+                            (
+                                SELECT min(req.requested_at)
+                                FROM public.b24_feature_authority_build_requests req
+                                WHERE req.tenant_id = :tenant_id
+                                  AND req.model_type = :model_type
+                                  AND req.model_version = :model_version
+                                  AND req.source_window_start = :source_window_start
+                                  AND req.source_window_end = :source_window_end
+                                  AND req.source_snapshot_hash = :source_snapshot_hash
+                            ),
+                            now()
+                        ) AS lineage_at
+                    ),
+                    newer_dominant_snapshot AS (
+                        SELECT
+                            lane.active_source_snapshot_hash AS source_snapshot_hash,
+                            'newer_active_execution_owner' AS reason
+                        FROM locked_execution_lane lane
+                        WHERE lane.active_source_snapshot_hash IS NOT NULL
+                          AND lane.active_source_snapshot_hash <> :source_snapshot_hash
+                          AND lane.status IN (
+                              'profiling',
+                              'profile_passed',
+                              'claiming',
+                              'dispatch_pending',
+                              'dispatched',
+                              'running',
+                              'succeeded'
+                          )
+                          AND lane.leased_until >= now()
+                        UNION ALL
+                        SELECT
+                            fit.source_snapshot_hash,
+                            'newer_fit_claimed_dispatched_or_completed' AS reason
+                        FROM public.bayesian_model_fits fit
+                        CROSS JOIN frozen_lineage frozen
+                        WHERE fit.tenant_id = :tenant_id
+                          AND fit.model_type = :model_type
+                          AND fit.model_version = :model_version
+                          AND fit.source_window_start = :source_window_start
+                          AND fit.source_window_end = :source_window_end
+                          AND fit.source_snapshot_hash <> :source_snapshot_hash
+                          AND fit.created_at > frozen.lineage_at
+                          AND fit.status IN ('queued', 'running', 'succeeded')
+                        UNION ALL
+                        SELECT
+                            fit.source_snapshot_hash,
+                            'newer_dispatch_outbox_visible' AS reason
+                        FROM public.b24_fit_dispatch_outbox outbox
+                        JOIN public.bayesian_model_fits fit
+                          ON fit.tenant_id = outbox.tenant_id
+                         AND fit.id = outbox.fit_id
+                        CROSS JOIN frozen_lineage frozen
+                        WHERE fit.tenant_id = :tenant_id
+                          AND fit.model_type = :model_type
+                          AND fit.model_version = :model_version
+                          AND fit.source_window_start = :source_window_start
+                          AND fit.source_window_end = :source_window_end
+                          AND fit.source_snapshot_hash <> :source_snapshot_hash
+                          AND outbox.created_at > frozen.lineage_at
+                          AND outbox.status IN ('pending', 'dispatching', 'dispatched')
+                        LIMIT 1
+                    ),
+                    lane_state AS (
+                        SELECT
+                            lane.*,
+                            COALESCE(lane.leased_until < now(), true) AS lane_is_stale,
+                            (
+                                lane.status IN ('claiming', 'profiling', 'profile_passed')
+                                AND lane.fit_id IS NULL
+                                AND lane.lease_owner = :claim_owner
+                            ) AS owned_planner_lane
+                        FROM locked_execution_lane lane
+                    ),
+                    suppressed_active AS (
+                        UPDATE public.b24_active_execution_leases lease
+                        SET latest_desired_source_snapshot_hash = :source_snapshot_hash,
+                            needs_refit_after_current =
+                                lease.needs_refit_after_current
+                                OR lease.active_source_snapshot_hash IS DISTINCT FROM :source_snapshot_hash,
+                            updated_at = now()
+                        FROM lane_state lane
+                        WHERE lease.tenant_id = :tenant_id
+                          AND lease.model_type = :model_type
+                          AND lease.model_version = :model_version
+                          AND lease.source_window_start = :source_window_start
+                          AND lease.source_window_end = :source_window_end
+                          AND NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
+                          AND lane.status IN (
+                              'profiling',
+                              'profile_passed',
+                              'claiming',
+                              'dispatch_pending',
+                              'dispatched',
+                              'running',
+                              'cancel_requested'
+                          )
+                          AND NOT lane.lane_is_stale
+                          AND NOT lane.owned_planner_lane
+                        RETURNING
+                            lease.fit_id,
+                            lease.status,
+                            lease.active_source_snapshot_hash,
+                            lease.latest_desired_source_snapshot_hash,
+                            lease.needs_refit_after_current
+                    ),
+                    claimable_execution_lane AS (
+                        SELECT 1
+                        FROM lane_state lane
+                        WHERE NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
+                          AND NOT EXISTS (SELECT 1 FROM suppressed_active)
+                          AND (
+                              lane.owned_planner_lane
+                              OR lane.lane_is_stale
+                              OR lane.status IN (
+                                  'profile_rejected',
+                                  'profile_passed',
+                                  'profile_superseded',
+                                  'profile_timeout',
+                                  'profile_failed',
+                                  'fallback_only',
+                                  'failed',
+                                  'cancelled',
+                                  'stale_recovered'
+                              )
+                          )
+                    ),
+                    claimed_fit AS (
+                        INSERT INTO public.bayesian_model_fits (
+                            tenant_id,
+                            model_type,
+                            model_version,
+                            source_window_start,
+                            source_window_end,
+                            source_snapshot_hash,
+                            status,
+                            eligibility_status,
+                            data_completeness_status,
+                            fallback_applied,
+                            fallback_reason,
+                            last_eligibility_check_at,
+                            max_runtime_seconds,
+                            max_samples,
+                            max_cores
+                        )
+                        SELECT
+                            :tenant_id,
+                            :model_type,
+                            :model_version,
+                            :source_window_start,
+                            :source_window_end,
+                            :source_snapshot_hash,
+                            'queued',
+                            'eligible',
+                            'complete',
+                            false,
+                            NULL,
+                            now(),
+                            60,
+                            0,
+                            1
+                        WHERE EXISTS (SELECT 1 FROM claimable_execution_lane)
+                          AND NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
+                        ON CONFLICT (
+                            tenant_id,
+                            model_type,
+                            model_version,
+                            source_window_start,
+                            source_window_end,
+                            source_snapshot_hash
+                        )
+                        DO UPDATE SET
+                            status = CASE
+                                WHEN bayesian_model_fits.status IN ('succeeded', 'failed', 'cancelled')
+                                    THEN bayesian_model_fits.status
+                                ELSE 'queued'
+                            END,
+                            eligibility_status = 'eligible',
+                            data_completeness_status = 'complete',
+                            fallback_applied = false,
+                            fallback_reason = NULL,
+                            last_eligibility_check_at = now(),
+                            updated_at = now()
+                        RETURNING id
+                    ),
+                    dispatchable_outbox AS (
+                        INSERT INTO public.b24_fit_dispatch_outbox (
+                            tenant_id,
+                            fit_id,
+                            dispatch_key,
+                            status,
+                            attempt_count,
+                            next_attempt_at,
+                            created_at,
+                            updated_at
+                        )
+                        SELECT
+                            :tenant_id,
+                            id,
+                            'b24-fit:' || :tenant_id || ':' || id::text,
+                            'pending',
+                            0,
+                            now(),
+                            now(),
+                            now()
+                        FROM claimed_fit
+                        WHERE NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
+                        ON CONFLICT (tenant_id, fit_id)
+                        DO UPDATE SET
+                            status = CASE
+                                WHEN b24_fit_dispatch_outbox.status = 'dispatched'
+                                    THEN 'dispatched'
+                                ELSE 'pending'
+                            END,
+                            next_attempt_at = CASE
+                                WHEN b24_fit_dispatch_outbox.status = 'dispatched'
+                                    THEN b24_fit_dispatch_outbox.next_attempt_at
+                                ELSE now()
+                            END,
+                            updated_at = now()
+                        RETURNING id, fit_id
+                    ),
+                    activated_execution_lane AS (
+                        UPDATE public.b24_active_execution_leases lease
+                        SET fit_id = outbox.fit_id,
+                            status = 'dispatch_pending',
+                            active_source_snapshot_hash = :source_snapshot_hash,
+                            latest_desired_source_snapshot_hash = :source_snapshot_hash,
+                            needs_refit_after_current = false,
+                            lease_owner = :claim_owner,
+                            lease_acquired_at = now(),
+                            leased_until = :leased_until,
+                            heartbeat_at = now(),
+                            terminal_at = NULL,
+                            updated_at = now()
+                        FROM dispatchable_outbox outbox
+                        WHERE lease.tenant_id = :tenant_id
+                          AND lease.model_type = :model_type
+                          AND lease.model_version = :model_version
+                          AND lease.source_window_start = :source_window_start
+                          AND lease.source_window_end = :source_window_end
+                        RETURNING
+                            lease.fit_id,
+                            lease.status,
+                            lease.active_source_snapshot_hash,
+                            lease.latest_desired_source_snapshot_hash,
+                            lease.needs_refit_after_current
+                    )
+                    SELECT
+                        'source_snapshot_superseded' AS outcome,
+                        NULL::uuid AS fit_id,
+                        NULL::uuid AS dispatch_outbox_id,
+                        'profile_superseded' AS active_execution_status,
+                        false AS needs_refit_after_current,
+                        (SELECT source_snapshot_hash FROM newer_dominant_snapshot LIMIT 1)
+                            AS active_source_snapshot_hash,
+                        :source_snapshot_hash AS latest_desired_source_snapshot_hash
+                    WHERE EXISTS (SELECT 1 FROM newer_dominant_snapshot)
+                    UNION ALL
+                    SELECT
+                        'suppressed_active' AS outcome,
+                        fit_id,
+                        NULL::uuid AS dispatch_outbox_id,
+                        status AS active_execution_status,
+                        true AS needs_refit_after_current,
+                        active_source_snapshot_hash,
+                        :source_snapshot_hash AS latest_desired_source_snapshot_hash
+                    FROM suppressed_active
+                    UNION ALL
+                    SELECT
+                        'claimed' AS outcome,
+                        lane.fit_id,
+                        outbox.id AS dispatch_outbox_id,
+                        lane.status AS active_execution_status,
+                        lane.needs_refit_after_current,
+                        lane.active_source_snapshot_hash,
+                        lane.latest_desired_source_snapshot_hash
+                    FROM activated_execution_lane lane
+                    JOIN dispatchable_outbox outbox
+                      ON outbox.fit_id = lane.fit_id
+                    LIMIT 1
                     """
                 ),
                 params,
             )
-            return FitClaimResult(
-                outcome=FitClaimOutcome.SUPPRESSED_ACTIVE,
-                tenant_id=snapshot.tenant_id,
-                fit_id=existing["fit_id"],
-                dispatch_outbox_id=None,
-                active_execution_status=status,
-                needs_refit_after_current=True,
-                active_source_snapshot_hash=existing["active_source_snapshot_hash"],
-                latest_desired_source_snapshot_hash=snapshot.source_snapshot_hash,
-            )
-
-        await session.execute(
-            text(
-                """
-                UPDATE public.b24_active_execution_leases
-                SET fit_id = NULL,
-                    active_source_snapshot_hash = :source_snapshot_hash,
-                    latest_desired_source_snapshot_hash = :source_snapshot_hash,
-                    status = 'claiming',
-                    needs_refit_after_current = false,
-                    lease_owner = :claim_owner,
-                    lease_acquired_at = now(),
-                    leased_until = :leased_until,
-                    heartbeat_at = now(),
-                    stale_recovered_at = CASE
-                        WHEN :was_stale THEN now()
-                        ELSE stale_recovered_at
-                    END,
-                    terminal_at = NULL,
-                    updated_at = now()
-                WHERE tenant_id = :tenant_id
-                  AND model_type = :model_type
-                  AND model_version = :model_version
-                  AND source_window_start = :source_window_start
-                  AND source_window_end = :source_window_end
-                """
-            ),
-            {**params, "was_stale": bool(stale)},
         )
-
-    fit_id = (
-        await session.execute(
-            text(
-                """
-                INSERT INTO public.bayesian_model_fits (
-                    tenant_id,
-                    model_type,
-                    model_version,
-                    source_window_start,
-                    source_window_end,
-                    source_snapshot_hash,
-                    status,
-                    eligibility_status,
-                    data_completeness_status,
-                    fallback_applied,
-                    fallback_reason,
-                    last_eligibility_check_at,
-                    max_runtime_seconds,
-                    max_samples,
-                    max_cores
-                )
-                VALUES (
-                    :tenant_id,
-                    :model_type,
-                    :model_version,
-                    :source_window_start,
-                    :source_window_end,
-                    :source_snapshot_hash,
-                    'queued',
-                    'eligible',
-                    'complete',
-                    false,
-                    NULL,
-                    now(),
-                    60,
-                    0,
-                    1
-                )
-                ON CONFLICT (
-                    tenant_id,
-                    model_type,
-                    model_version,
-                    source_window_start,
-                    source_window_end,
-                    source_snapshot_hash
-                )
-                DO UPDATE SET
-                    status = CASE
-                        WHEN bayesian_model_fits.status IN ('succeeded', 'failed', 'cancelled')
-                            THEN bayesian_model_fits.status
-                        ELSE 'queued'
-                    END,
-                    eligibility_status = 'eligible',
-                    data_completeness_status = 'complete',
-                    fallback_applied = false,
-                    fallback_reason = NULL,
-                    last_eligibility_check_at = now(),
-                    updated_at = now()
-                RETURNING id
-                """
-            ),
-            params,
-        )
-    ).scalar_one()
-
-    dispatch_key = _dispatch_key(tenant_id=snapshot.tenant_id, fit_id=fit_id)
-    outbox_id = (
-        await session.execute(
-            text(
-                """
-                INSERT INTO public.b24_fit_dispatch_outbox (
-                    tenant_id,
-                    fit_id,
-                    dispatch_key,
-                    status,
-                    attempt_count,
-                    next_attempt_at,
-                    created_at,
-                    updated_at
-                )
-                VALUES (
-                    :tenant_id,
-                    :fit_id,
-                    :dispatch_key,
-                    'pending',
-                    0,
-                    now(),
-                    now(),
-                    now()
-                )
-                ON CONFLICT (tenant_id, fit_id)
-                DO UPDATE SET
-                    status = CASE
-                        WHEN b24_fit_dispatch_outbox.status = 'dispatched'
-                            THEN 'dispatched'
-                        ELSE 'pending'
-                    END,
-                    next_attempt_at = CASE
-                        WHEN b24_fit_dispatch_outbox.status = 'dispatched'
-                            THEN b24_fit_dispatch_outbox.next_attempt_at
-                        ELSE now()
-                    END,
-                    updated_at = now()
-                RETURNING id
-                """
-            ),
-            {
-                **params,
-                "fit_id": str(fit_id),
-                "dispatch_key": dispatch_key,
-            },
-        )
-    ).scalar_one()
-
-    await session.execute(
-        text(
-            """
-            UPDATE public.b24_active_execution_leases
-            SET fit_id = :fit_id,
-                status = 'dispatch_pending',
-                lease_owner = :claim_owner,
-                leased_until = :leased_until,
-                heartbeat_at = now(),
-                updated_at = now()
-            WHERE tenant_id = :tenant_id
-              AND model_type = :model_type
-              AND model_version = :model_version
-              AND source_window_start = :source_window_start
-              AND source_window_end = :source_window_end
-            """
-        ),
-        {**params, "fit_id": str(fit_id)},
+        .mappings()
+        .one()
     )
 
+    outcome = FitClaimOutcome(str(row["outcome"]))
     return FitClaimResult(
-        outcome=FitClaimOutcome.CLAIMED,
+        outcome=outcome,
         tenant_id=snapshot.tenant_id,
-        fit_id=fit_id,
-        dispatch_outbox_id=outbox_id,
-        active_execution_status="dispatch_pending",
-        needs_refit_after_current=False,
-        active_source_snapshot_hash=snapshot.source_snapshot_hash,
-        latest_desired_source_snapshot_hash=snapshot.source_snapshot_hash,
+        fit_id=row["fit_id"],
+        dispatch_outbox_id=row["dispatch_outbox_id"],
+        active_execution_status=str(row["active_execution_status"]),
+        needs_refit_after_current=bool(row["needs_refit_after_current"]),
+        active_source_snapshot_hash=(
+            str(row["active_source_snapshot_hash"])
+            if row["active_source_snapshot_hash"]
+            else None
+        ),
+        latest_desired_source_snapshot_hash=(
+            str(row["latest_desired_source_snapshot_hash"])
+            if row["latest_desired_source_snapshot_hash"]
+            else None
+        ),
     )

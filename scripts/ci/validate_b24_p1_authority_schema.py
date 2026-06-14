@@ -136,6 +136,13 @@ FORBIDDEN_IMPORT_ROOTS = {
     "pymc_marketing",
 }
 
+P5_RUNTIME_IMPORT_ALLOWLIST = {
+    "backend/app/bayesian/runtime_probe.py": {"pymc", "pytensor", "pytensor.tensor", "arviz"},
+    "backend/app/bayesian/runtime_identity.py": {"pymc", "pytensor", "arviz"},
+    "backend/app/bayesian/sampler_child.py": {"pymc"},
+    "backend/app/bayesian/diagnostics.py": {"arviz"},
+}
+
 FORBIDDEN_BAYESIAN_FIELD_FRAGMENTS = {
     "email",
     "name",
@@ -334,7 +341,11 @@ def validate_module_surface(root: Path) -> None:
             else:
                 continue
             for module in modules:
-                _require(not _contains_forbidden_import(module), f"forbidden import in {rel}: {module}")
+                allowed_p5_runtime_import = module in P5_RUNTIME_IMPORT_ALLOWLIST.get(rel, set())
+                _require(
+                    allowed_p5_runtime_import or not _contains_forbidden_import(module),
+                    f"forbidden import in {rel}: {module}",
+                )
                 _require(
                     not _contains_identity_bearing_import(module),
                     f"identity-bearing import forbidden in {rel}: {module}",
