@@ -47,6 +47,13 @@ def _route_keys(candidate: FastAPI) -> set[str]:
 
 def _load_runtime_app() -> FastAPI:
     """Load a fresh app surface after this module's runtime env is bound."""
+    candidate = _load_runtime_app_once()
+    if f"GET {CANONICAL_EXPLANATION_PATH}" in _route_keys(candidate):
+        return candidate
+    return _load_runtime_app_once()
+
+
+def _load_runtime_app_once() -> FastAPI:
     import app.main as main_module
 
     candidate = importlib.reload(main_module).app
