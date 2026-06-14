@@ -23,6 +23,10 @@ from app.bayesian.db_engine import (
     create_bayesian_worker_engine,
     runtime_sync_database_url,
 )
+from app.bayesian.dispatch_authority import (
+    BAYESIAN_FIT_EXECUTION_TASK,
+    BayesianDispatchClaim,
+)
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.bayesian.tenant_context import bind_transaction_local_tenant
@@ -335,18 +339,37 @@ def run_mcmc_inference(
     acks_late=True,
     max_retries=0,
 )
-def execute_fit_intent(self, *, fit_id: str) -> dict:
-    """Execute one P6 Bayesian fit intent from a fit_id-only outbox dispatch."""
+def execute_fit_intent(
+    self,
+    *,
+    dispatch_id: str,
+    fit_id: str,
+    task_name: str,
+    attempt_id: str,
+    payload_hash: str,
+    claim_capability: str,
+) -> dict:
+    """Execute one Bayesian fit only after DB validates dispatch authority."""
 
     assert_bayesian_worker_boot_topology_proven()
-    fit_uuid = _as_uuid(fit_id)
+    if task_name != BAYESIAN_FIT_EXECUTION_TASK:
+        raise RuntimeError("bayesian_dispatch_task_name_mismatch")
+    claim = BayesianDispatchClaim(
+        dispatch_id=_as_uuid(dispatch_id),
+        fit_id=_as_uuid(fit_id),
+        task_name=task_name,
+        attempt_id=_as_uuid(attempt_id),
+        payload_hash=payload_hash,
+        claim_capability=claim_capability,
+    )
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
     try:
         payload = execute_fit_intent_sync(
             engine=engine,
-            fit_id=fit_uuid,
+            fit_id=claim.fit_id,
             task_id=task_id,
+            dispatch_claim=claim,
         )
     finally:
         engine.dispose()

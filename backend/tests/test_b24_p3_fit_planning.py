@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -16,7 +17,10 @@ DIRTY_MARKER = REPO_ROOT / "backend/app/bayesian/dirty_marker.py"
 FIT_PLANNER = REPO_ROOT / "backend/app/bayesian/fit_planner.py"
 FIT_CLAIM = REPO_ROOT / "backend/app/bayesian/fit_claim.py"
 DISPATCH_OUTBOX = REPO_ROOT / "backend/app/bayesian/dispatch_outbox.py"
-MIGRATION = REPO_ROOT / "alembic/versions/007_skeldir_foundation/202605221430_b24_p3_fit_planning_outbox.py"
+MIGRATION = (
+    REPO_ROOT
+    / "alembic/versions/007_skeldir_foundation/202605221430_b24_p3_fit_planning_outbox.py"
+)
 INGESTION = REPO_ROOT / "backend/app/ingestion/event_service.py"
 ATTRIBUTION_TASKS = REPO_ROOT / "backend/app/tasks/attribution.py"
 B23_BATCH = REPO_ROOT / "backend/app/revenue_verification/batch_engine.py"
@@ -24,7 +28,9 @@ BAYESIAN_TASKS = REPO_ROOT / "backend/app/tasks/bayesian.py"
 
 
 def _load_validator():
-    spec = importlib.util.spec_from_file_location("validate_b24_p3_fit_planning", VALIDATOR)
+    spec = importlib.util.spec_from_file_location(
+        "validate_b24_p3_fit_planning", VALIDATOR
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -104,19 +110,30 @@ def test_b24_p3_debounce_blocks_pre_quiet_period_planning() -> None:
 def test_b24_p3_burst_source_changes_produce_one_planning_attempt() -> None:
     text = _read(FIT_PLANNER)
     assert "GROUP BY" in text
-    for column in ("model_type", "model_version", "source_window_start", "source_window_end"):
+    for column in (
+        "model_type",
+        "model_version",
+        "source_window_start",
+        "source_window_end",
+    ):
         assert column in text
 
 
 def test_b24_p3_planner_invokes_source_snapshot_once_after_debounce() -> None:
     text = _read(FIT_PLANNER)
-    assert text.find("lease_debounced_dirty_candidates") < text.find("compute_source_snapshot_hash")
+    assert text.find("lease_debounced_dirty_candidates") < text.find(
+        "compute_source_snapshot_hash"
+    )
 
 
 def test_b24_p3_one_active_execution_per_tenant_model_window() -> None:
     migration = _read(MIGRATION)
     assert "b24_active_execution_leases_pkey" in migration
-    key = migration[migration.find("b24_active_execution_leases_pkey") : migration.find(")", migration.find("b24_active_execution_leases_pkey"))]
+    key = migration[
+        migration.find("b24_active_execution_leases_pkey") : migration.find(
+            ")", migration.find("b24_active_execution_leases_pkey")
+        )
+    ]
     assert "source_snapshot_hash" not in key
 
 
@@ -147,7 +164,9 @@ def test_b24_p3_duplicate_active_execution_insert_rejected() -> None:
 
 def test_b24_p3_claim_and_dispatch_intent_same_transaction() -> None:
     text = _read(FIT_CLAIM)
-    assert text.find("INSERT INTO public.bayesian_model_fits") < text.find("INSERT INTO public.b24_fit_dispatch_outbox")
+    assert text.find("INSERT INTO public.bayesian_model_fits") < text.find(
+        "INSERT INTO public.b24_fit_dispatch_outbox"
+    )
 
 
 def test_b24_p3_claim_commit_publish_crash_leaves_outbox_pending() -> None:
@@ -183,24 +202,35 @@ def test_b24_p3_duplicate_outbox_publish_is_worker_idempotent() -> None:
     assert "uq_b24_fit_dispatch_outbox_dispatch_key" in text
 
 
-def test_b24_p3_queue_payload_is_fit_id_only() -> None:
+def test_b24_p3_queue_payload_is_minimal_capability_wakeup() -> None:
     row = DispatchOutboxRow(
-        id="11111111-1111-4111-8111-111111111111",
-        tenant_id="22222222-2222-4222-8222-222222222222",
-        fit_id="33333333-3333-4333-8333-333333333333",
+        id=UUID("11111111-1111-4111-8111-111111111111"),
+        tenant_id=UUID("22222222-2222-4222-8222-222222222222"),
+        fit_id=UUID("33333333-3333-4333-8333-333333333333"),
+        task_name="app.tasks.bayesian.execute_fit_intent",
+        attempt_id=UUID("44444444-4444-4444-8444-444444444444"),
+        payload_hash="a" * 64,
+        claim_capability="b" * 64,
         attempt_count=0,
         max_attempts=5,
     )
-    assert set(row.queue_payload) == {"fit_id"}
+    assert set(row.queue_payload) == {
+        "dispatch_id",
+        "fit_id",
+        "task_name",
+        "attempt_id",
+        "payload_hash",
+        "claim_capability",
+    }
 
 
 def test_b24_p3_queue_payload_rejects_source_rows_or_manifest() -> None:
     validator = _load_validator()
     mutated = _read(DISPATCH_OUTBOX).replace(
-        'return {"fit_id": str(self.fit_id)}',
-        'return {"fit_id": str(self.fit_id), "source_rows": []}',
+        '"claim_capability": self.claim_capability,',
+        '"claim_capability": self.claim_capability, "source_rows": [],',
     )
-    with pytest.raises(validator.ValidationError, match="fit_id-only|forbidden"):
+    with pytest.raises(validator.ValidationError, match="forbidden"):
         validator.validate_dispatch_outbox(REPO_ROOT, mutated)
 
 

@@ -1220,6 +1220,61 @@ class B24FitDispatchOutbox(Base, TenantMixin):
         DateTime(timezone=True), nullable=True
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_name: Mapped[str] = mapped_column(
+        String(256),
+        nullable=False,
+        default="app.tasks.bayesian.execute_fit_intent",
+        server_default="app.tasks.bayesian.execute_fit_intent",
+    )
+    attempt_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, default=uuid4
+    )
+    payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claim_capability: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    claim_capability_digest: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    claim_capability_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_capability_digest: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    lease_acquired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    claim_epoch: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    claim_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    redelivery_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    recovery_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    superseded_by: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    terminal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_recovery_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         PrimaryKeyConstraint("tenant_id", "id", name="b24_fit_dispatch_outbox_pkey"),
@@ -1239,6 +1294,9 @@ class B24FitDispatchOutbox(Base, TenantMixin):
         CheckConstraint(
             "max_attempts > 0", name="ck_b24_fit_dispatch_outbox_max_attempts"
         ),
+        UniqueConstraint(
+            "tenant_id", "attempt_id", name="uq_b24_fit_dispatch_outbox_attempt"
+        ),
         Index(
             "idx_b24_fit_dispatch_outbox_due",
             "tenant_id",
@@ -1254,5 +1312,56 @@ class B24FitDispatchOutbox(Base, TenantMixin):
             "tenant_id",
             "dispatching_started_at",
             postgresql_where=text("status = 'dispatching'"),
+        ),
+    )
+
+
+class B24FitRecoveryOutbox(Base, TenantMixin):
+    """Durable wake-up repair intent for broker loss or stale execution leases."""
+
+    __tablename__ = "b24_fit_recovery_outbox"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), default=uuid4, server_default=func.gen_random_uuid()
+    )
+    dispatch_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    fit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    attempt_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    task_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    claim_capability: Mapped[str] = mapped_column(String(128), nullable=False)
+    recovery_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    publish_attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("tenant_id", "id", name="b24_fit_recovery_outbox_pkey"),
+        ForeignKeyConstraint(
+            ["tenant_id", "dispatch_id"],
+            ["b24_fit_dispatch_outbox.tenant_id", "b24_fit_dispatch_outbox.id"],
+            name="fk_b24_fit_recovery_outbox_dispatch",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "dispatch_id",
+            "recovery_generation",
+            name="uq_b24_fit_recovery_outbox_generation",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'publishing', 'published', 'failed_retryable', 'quarantined')",
+            name="ck_b24_fit_recovery_outbox_status",
+        ),
+        CheckConstraint(
+            "publish_attempt_count >= 0",
+            name="ck_b24_fit_recovery_outbox_publish_attempt_count",
         ),
     )

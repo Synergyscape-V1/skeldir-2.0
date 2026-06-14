@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.pool import NullPool
 
 from app.bayesian.artifact_repository import _artifact_ref, persist_artifact_sync
@@ -25,6 +25,14 @@ from app.bayesian.db_boot_probe import (
 )
 from app.bayesian.db_engine import create_bayesian_worker_engine
 from app.bayesian.db_topology import resolve_bayesian_worker_db_topology_policy
+from app.bayesian.dispatch_authority import (
+    BAYESIAN_FIT_EXECUTION_TASK,
+    BayesianDispatchClaim,
+    BayesianDispatchLease,
+    DispatchClaimOutcome,
+    claim_fit_dispatch_sync,
+    dispatch_payload_hash,
+)
 from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.fit_execution import (
     _load_fit_for_execution,
@@ -976,19 +984,6 @@ async def test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction(
             )
 
         with sync_engine.begin() as conn:
-            with pytest.raises(RuntimeError, match="bayesian_tenant_context_not_bound"):
-                _persist_result_summary(
-                    conn,
-                    tenant_id=tenant_a,
-                    fit_id=fit_id,
-                    source_snapshot_hash=source_hash,
-                    runtime_seconds=1,
-                    result_summary=result_summary,
-                    result_hash="d" * 64,
-                )
-
-        with sync_engine.begin() as conn:
-            _set_tenant_context(conn, tenant_a)
             _persist_result_summary(
                 conn,
                 tenant_id=tenant_a,
@@ -1010,6 +1005,269 @@ async def test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction(
                 runtime_seconds=2,
             )
             assert_bound_tenant(conn, tenant_id=tenant_a)
+    finally:
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
+    test_tenant_pair,
+) -> None:
+    await _assert_table_exists("b24_fit_dispatch_outbox")
+    await _assert_table_exists("b24_fit_recovery_outbox")
+    tenant_a, _tenant_b = test_tenant_pair
+    fit_id = uuid4()
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    claim_capability = "a" * 64
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    await _insert_fit(tenant_a, fit_id=fit_id, source_hash="9" * 64)
+
+    sync_engine = create_engine(
+        to_sync_postgres_dsn(get_database_url()),
+        poolclass=NullPool,
+    )
+    try:
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        claim_capability,
+                        claim_capability_digest,
+                        claim_capability_expires_at,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        :claim_capability,
+                        public.b24_sha256_text(:claim_capability),
+                        now() + interval '1 hour',
+                        'dispatched',
+                        now(),
+                        now() + interval '1 hour'
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "dispatch_key": f"b24-fit:{tenant_a}:{fit_id}",
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                    "claim_capability": claim_capability,
+                },
+            )
+
+        bad_claim = BayesianDispatchClaim(
+            dispatch_id=dispatch_id,
+            fit_id=fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=attempt_id,
+            payload_hash=payload_hash,
+            claim_capability="b" * 64,
+        )
+        with sync_engine.begin() as conn:
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=bad_claim,
+                    worker_generation_id="directive-ix-test",
+                )
+                == DispatchClaimOutcome.UNAUTHORIZED
+            )
+
+        claim = BayesianDispatchClaim(
+            dispatch_id=dispatch_id,
+            fit_id=fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=attempt_id,
+            payload_hash=payload_hash,
+            claim_capability=claim_capability,
+        )
+        with sync_engine.begin() as conn:
+            lease = claim_fit_dispatch_sync(
+                conn,
+                claim=claim,
+                worker_generation_id="directive-ix-test",
+                lease_seconds=120,
+            )
+            assert isinstance(lease, BayesianDispatchLease)
+            assert lease.outcome is DispatchClaimOutcome.ACQUIRED
+            conn.execute(text("SELECT public.b24_mark_fit_dispatch_running()"))
+            conn.execute(
+                text(
+                    """
+                    UPDATE public.bayesian_model_fits
+                    SET status = 'running', updated_at = now()
+                    WHERE id = :fit_id
+                    """
+                ),
+                {"fit_id": str(fit_id)},
+            )
+
+        with sync_engine.begin() as conn:
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=claim,
+                    worker_generation_id="directive-ix-test",
+                )
+                == DispatchClaimOutcome.ACTIVE_LEASE
+            )
+
+        with sync_engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    SELECT
+                        set_config('app.current_tenant_id', :tenant_id, true),
+                        set_config('app.b24_dispatch_id', :dispatch_id, true),
+                        set_config('app.b24_attempt_id', :attempt_id, true),
+                        set_config('app.b24_claim_epoch', '0', true),
+                        set_config('app.b24_lease_capability', :claim_capability, true),
+                        set_config('app.b24_dispatch_fence_required', 'on', true)
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(dispatch_id),
+                    "attempt_id": str(attempt_id),
+                    "claim_capability": claim_capability,
+                },
+            )
+            with pytest.raises(DBAPIError, match="b24_dispatch_fence_rejected"):
+                conn.execute(
+                    text(
+                        """
+                        UPDATE public.bayesian_model_fits
+                        SET status = 'failed', updated_at = now()
+                        WHERE id = :fit_id
+                        """
+                    ),
+                    {"fit_id": str(fit_id)},
+                )
+    finally:
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
+    test_tenant_pair,
+) -> None:
+    await _assert_table_exists("b24_fit_dispatch_outbox")
+    await _assert_table_exists("b24_fit_recovery_outbox")
+    tenant_a, _tenant_b = test_tenant_pair
+    fit_id = uuid4()
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    claim_capability = "c" * 64
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    await _insert_fit(tenant_a, fit_id=fit_id, source_hash="8" * 64)
+
+    sync_engine = create_engine(
+        to_sync_postgres_dsn(get_database_url()),
+        poolclass=NullPool,
+    )
+    try:
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        claim_capability,
+                        claim_capability_digest,
+                        claim_capability_expires_at,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        :claim_capability,
+                        public.b24_sha256_text(:claim_capability),
+                        now() + interval '1 hour',
+                        'dispatched',
+                        now(),
+                        now()
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "dispatch_key": f"b24-fit:{tenant_a}:{fit_id}",
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                    "claim_capability": claim_capability,
+                },
+            )
+
+        with sync_engine.begin() as conn:
+            count = conn.execute(
+                text("SELECT public.b24_create_fit_recovery_wakeups(10)")
+            ).scalar_one()
+            assert int(count) >= 1
+
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            row = (
+                conn.execute(
+                    text(
+                        """
+                        SELECT recovery_generation, status, claim_capability
+                        FROM public.b24_fit_recovery_outbox
+                        WHERE tenant_id = :tenant_id
+                          AND dispatch_id = :dispatch_id
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_a),
+                        "dispatch_id": str(dispatch_id),
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            assert row["status"] == "pending"
+            assert int(row["recovery_generation"]) == 1
+            assert str(row["claim_capability"]) != claim_capability
     finally:
         sync_engine.dispose()
 

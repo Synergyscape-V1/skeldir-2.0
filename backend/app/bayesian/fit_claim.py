@@ -363,6 +363,12 @@ async def claim_fit_for_snapshot(
                             tenant_id,
                             fit_id,
                             dispatch_key,
+                            task_name,
+                            attempt_id,
+                            payload_hash,
+                            claim_capability,
+                            claim_capability_digest,
+                            claim_capability_expires_at,
                             status,
                             attempt_count,
                             next_attempt_at,
@@ -373,24 +379,116 @@ async def claim_fit_for_snapshot(
                             :tenant_id,
                             id,
                             'b24-fit:' || :tenant_id || ':' || id::text,
+                            'app.tasks.bayesian.execute_fit_intent',
+                            gen_random_uuid(),
+                            public.b24_sha256_text('app.tasks.bayesian.execute_fit_intent:' || id::text),
+                            claim.claim_capability,
+                            public.b24_sha256_text(claim.claim_capability),
+                            now() + interval '24 hours',
                             'pending',
                             0,
                             now(),
                             now(),
                             now()
                         FROM claimed_fit
+                        CROSS JOIN LATERAL (
+                            SELECT encode(gen_random_bytes(32), 'hex') AS claim_capability
+                        ) claim
                         WHERE NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
                         ON CONFLICT (tenant_id, fit_id)
                         DO UPDATE SET
                             status = CASE
-                                WHEN b24_fit_dispatch_outbox.status = 'dispatched'
-                                    THEN 'dispatched'
+                                WHEN b24_fit_dispatch_outbox.status IN (
+                                    'dispatched',
+                                    'leased',
+                                    'running',
+                                    'completed',
+                                    'failed_terminal',
+                                    'cancelled',
+                                    'expired',
+                                    'superseded',
+                                    'quarantined'
+                                )
+                                    THEN b24_fit_dispatch_outbox.status
                                 ELSE 'pending'
                             END,
                             next_attempt_at = CASE
-                                WHEN b24_fit_dispatch_outbox.status = 'dispatched'
+                                WHEN b24_fit_dispatch_outbox.status IN (
+                                    'dispatched',
+                                    'leased',
+                                    'running',
+                                    'completed',
+                                    'failed_terminal',
+                                    'cancelled',
+                                    'expired',
+                                    'superseded',
+                                    'quarantined'
+                                )
                                     THEN b24_fit_dispatch_outbox.next_attempt_at
                                 ELSE now()
+                            END,
+                            attempt_id = CASE
+                                WHEN b24_fit_dispatch_outbox.status IN (
+                                    'dispatched',
+                                    'leased',
+                                    'running',
+                                    'completed',
+                                    'failed_terminal',
+                                    'cancelled',
+                                    'expired',
+                                    'superseded',
+                                    'quarantined'
+                                )
+                                    THEN b24_fit_dispatch_outbox.attempt_id
+                                ELSE gen_random_uuid()
+                            END,
+                            payload_hash = public.b24_sha256_text(
+                                'app.tasks.bayesian.execute_fit_intent:' || EXCLUDED.fit_id::text
+                            ),
+                            claim_capability = CASE
+                                WHEN b24_fit_dispatch_outbox.status IN (
+                                    'dispatched',
+                                    'leased',
+                                    'running',
+                                    'completed',
+                                    'failed_terminal',
+                                    'cancelled',
+                                    'expired',
+                                    'superseded',
+                                    'quarantined'
+                                )
+                                    THEN b24_fit_dispatch_outbox.claim_capability
+                                ELSE EXCLUDED.claim_capability
+                            END,
+                            claim_capability_digest = CASE
+                                WHEN b24_fit_dispatch_outbox.status IN (
+                                    'dispatched',
+                                    'leased',
+                                    'running',
+                                    'completed',
+                                    'failed_terminal',
+                                    'cancelled',
+                                    'expired',
+                                    'superseded',
+                                    'quarantined'
+                                )
+                                    THEN b24_fit_dispatch_outbox.claim_capability_digest
+                                ELSE EXCLUDED.claim_capability_digest
+                            END,
+                            claim_capability_expires_at = CASE
+                                WHEN b24_fit_dispatch_outbox.status IN (
+                                    'dispatched',
+                                    'leased',
+                                    'running',
+                                    'completed',
+                                    'failed_terminal',
+                                    'cancelled',
+                                    'expired',
+                                    'superseded',
+                                    'quarantined'
+                                )
+                                    THEN b24_fit_dispatch_outbox.claim_capability_expires_at
+                                ELSE now() + interval '24 hours'
                             END,
                             updated_at = now()
                         RETURNING id, fit_id

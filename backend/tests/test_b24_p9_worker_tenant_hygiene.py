@@ -43,9 +43,15 @@ DB_BOOT_PROBE = ROOT / "backend/app/bayesian/db_boot_probe.py"
 WORKER_BOOT_PROBE = ROOT / "backend/app/bayesian/worker_boot_probe.py"
 TASKS_BAYESIAN = ROOT / "backend/app/tasks/bayesian.py"
 TENANT_CONTEXT = ROOT / "backend/app/bayesian/tenant_context.py"
+DISPATCH_AUTHORITY = ROOT / "backend/app/bayesian/dispatch_authority.py"
+DISPATCH_OUTBOX = ROOT / "backend/app/bayesian/dispatch_outbox.py"
 TEMP_WORKSPACE = ROOT / "backend/app/bayesian/temp_workspace.py"
 CHILD_ENVIRONMENT = ROOT / "backend/app/bayesian/child_environment.py"
 COMPILEDIR_REAPER = ROOT / "backend/app/bayesian/compiledir_reaper.py"
+DIRECTIVE_IX_MIGRATION = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202606141200_b24_p9_directive_ix_dispatch_authority.py"
+)
 
 
 def _read(path: Path) -> str:
@@ -821,6 +827,61 @@ def test_b24_p9_fit_execution_wires_cleanup_and_payload_airgap() -> None:
         assert token in text
     assert 'stderr_retained": result.stderr.retained_text' not in text
     assert "payload_json" not in _read(CHILD_ENVIRONMENT)
+
+
+def test_b24_p9_directive_ix_dispatch_authority_is_capability_bound() -> None:
+    authority = _read(DISPATCH_AUTHORITY)
+    outbox = _read(DISPATCH_OUTBOX)
+    migration = _read(DIRECTIVE_IX_MIGRATION)
+    for token in (
+        "DispatchClaimOutcome",
+        "ACQUIRED",
+        "RECLAIMED",
+        "ACTIVE_LEASE",
+        "ALREADY_COMPLETED",
+        "CANCELLED",
+        "EXPIRED",
+        "SUPERSEDED",
+        "TERMINAL_FAILURE",
+        "UNAUTHORIZED",
+        "RETRYABLE_INFRASTRUCTURE_FAILURE",
+        "BayesianDispatchClaim",
+        "BayesianDispatchLease",
+        "claim_fit_dispatch_sync",
+        "bind_dispatch_write_context_sync",
+    ):
+        assert token in authority
+    for token in (
+        "publish_capability_bound_dispatch",
+        '"dispatch_id": str(self.id)',
+        '"attempt_id": str(self.attempt_id)',
+        '"payload_hash": self.payload_hash',
+        '"claim_capability": self.claim_capability',
+        "b24_create_fit_recovery_wakeups",
+    ):
+        assert token in outbox
+    for token in (
+        "b24_claim_fit_dispatch",
+        "p_fit_id uuid",
+        "b24_current_dispatch_fence_valid",
+        "b24_enforce_dispatch_fence",
+        "b24_dispatch_fence_rejected",
+        "b24_fit_recovery_outbox",
+        "ENABLE ROW LEVEL SECURITY",
+        "FORCE ROW LEVEL SECURITY",
+    ):
+        assert token in migration
+
+
+def test_b24_p9_directive_ix_celery_task_rejects_fit_id_only_authority() -> None:
+    tasks = _read(TASKS_BAYESIAN)
+    assert "BayesianDispatchClaim" in tasks
+    assert "dispatch_claim=claim" in tasks
+    assert "claim_capability: str" in tasks
+    assert "payload_hash: str" in tasks
+    assert "attempt_id: str" in tasks
+    assert "dispatch_id: str" in tasks
+    assert "def execute_fit_intent(self, *, fit_id: str)" not in tasks
 
 
 def test_b24_p9_same_process_sequential_reused_worker_runtime_lane(
