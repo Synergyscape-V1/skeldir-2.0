@@ -8,6 +8,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from app.bayesian.dispatch_authority import (
+    BAYESIAN_FIT_EXECUTION_TASK,
+    dispatch_payload_hash,
+)
 from app.db.session import engine, get_session
 
 
@@ -104,6 +108,118 @@ async def _insert_fit(
             },
         )
     return fit_id
+
+
+async def _bind_test_dispatch_context(
+    session, *, tenant_id: UUID, fit_id: UUID
+) -> None:
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    generation_id = f"p1-artifact-proof-{uuid4().hex[:16]}"
+    process_token = f"p1-artifact-token-{uuid4().hex}"
+    await session.execute(
+        text(
+            """
+            SELECT public.b24_register_worker_process_authority(
+                :generation_id,
+                4242,
+                1,
+                :topology_fingerprint,
+                :process_token,
+                3600
+            )
+            """
+        ),
+        {
+            "generation_id": generation_id,
+            "topology_fingerprint": VALID_HASH,
+            "process_token": process_token,
+        },
+    )
+    await session.execute(
+        text(
+            """
+            INSERT INTO public.b24_fit_dispatch_outbox (
+                tenant_id,
+                id,
+                fit_id,
+                dispatch_key,
+                task_name,
+                attempt_id,
+                payload_hash,
+                assigned_worker_generation,
+                assignment_generation,
+                assignment_expires_at,
+                assignment_reason,
+                status,
+                next_attempt_at,
+                next_recovery_at
+            )
+            VALUES (
+                :tenant_id,
+                :dispatch_id,
+                :fit_id,
+                :dispatch_key,
+                :task_name,
+                :attempt_id,
+                :payload_hash,
+                :assigned_worker_generation,
+                1,
+                now() + interval '10 minutes',
+                'p1_artifact_constraint_test',
+                'dispatched',
+                now(),
+                now() + interval '1 hour'
+            )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "dispatch_id": str(dispatch_id),
+            "fit_id": str(fit_id),
+            "dispatch_key": f"b24-p1-test:{tenant_id}:{fit_id}:{uuid4()}",
+            "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+            "attempt_id": str(attempt_id),
+            "payload_hash": payload_hash,
+            "assigned_worker_generation": generation_id,
+        },
+    )
+    claim_row = (
+        (
+            await session.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM public.b24_claim_fit_dispatch(
+                        :dispatch_id,
+                        :fit_id,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        :worker_generation,
+                        4242,
+                        :process_token,
+                        0,
+                        300
+                    )
+                    """
+                ),
+                {
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                    "worker_generation": generation_id,
+                    "process_token": process_token,
+                },
+            )
+        )
+        .mappings()
+        .one()
+    )
+    assert claim_row["outcome"] == "ACQUIRED"
 
 
 @pytest.mark.asyncio
@@ -269,6 +385,11 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(
     )
 
     async with get_session(tenant_a) as session:
+        await _bind_test_dispatch_context(
+            session,
+            tenant_id=tenant_a,
+            fit_id=fit_id,
+        )
         await session.execute(
             text(
                 """
