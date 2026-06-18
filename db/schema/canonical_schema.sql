@@ -94,6 +94,7 @@ CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid,
             v_outcome text;
         BEGIN
             PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+            PERFORM set_config('app.b24_dispatch_claim_access', 'on', true);
 
             IF NOT EXISTS (
                 SELECT 1
@@ -13062,6 +13063,13 @@ CREATE POLICY dispatch_capability_claim_select_b24_fit_dispatch_outbox ON public
 --
 
 CREATE POLICY dispatch_capability_claim_update_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox FOR UPDATE USING ((((claim_capability_digest)::text = NULLIF(current_setting('app.b24_claim_capability_digest'::text, true), ''::text)) AND (claim_capability_expires_at > now()))) WITH CHECK ((((claim_capability_digest)::text = NULLIF(current_setting('app.b24_claim_capability_digest'::text, true), ''::text)) AND (claim_capability_expires_at > now())));
+
+
+--
+-- Name: b24_fit_dispatch_outbox dispatch_claim_function_access_b24_fit_dispatch_outbox; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dispatch_claim_function_access_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((current_setting('app.b24_dispatch_claim_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_dispatch_claim_access'::text, true) = 'on'::text));
 
 
 --

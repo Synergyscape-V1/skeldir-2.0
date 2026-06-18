@@ -102,6 +102,12 @@ def upgrade() -> None:
         WHERE claim_capability IS NOT NULL
            OR claim_capability_digest IS NOT NULL
            OR claim_capability_expires_at IS NOT NULL;
+        DROP POLICY IF EXISTS dispatch_claim_function_access_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        CREATE POLICY dispatch_claim_function_access_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox
+            USING (current_setting('app.b24_dispatch_claim_access', true) = 'on')
+            WITH CHECK (current_setting('app.b24_dispatch_claim_access', true) = 'on');
         """
     )
     op.execute(
@@ -243,6 +249,7 @@ def upgrade() -> None:
             v_outcome text;
         BEGIN
             PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+            PERFORM set_config('app.b24_dispatch_claim_access', 'on', true);
 
             IF NOT EXISTS (
                 SELECT 1
