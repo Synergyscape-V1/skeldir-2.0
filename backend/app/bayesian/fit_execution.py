@@ -51,6 +51,7 @@ from app.bayesian.tenant_context import (
     assert_bound_tenant,
     assert_fresh_checkout_is_clean,
     bind_transaction_local_tenant,
+    current_tenant_guc,
 )
 
 
@@ -67,7 +68,11 @@ TERMINAL_OR_POST_SAMPLE_STATUSES = {
 
 
 def _set_tenant_context(conn, tenant_id: UUID) -> None:
-    bind_transaction_local_tenant(conn, tenant_id=tenant_id)
+    bound_tenant = current_tenant_guc(conn)
+    if bound_tenant is None:
+        bind_transaction_local_tenant(conn, tenant_id=tenant_id)
+    elif bound_tenant != str(tenant_id):
+        raise RuntimeError("bayesian_tenant_transaction_preexisting_tenant_guc")
     assert_bound_tenant(conn, tenant_id=tenant_id)
 
 
