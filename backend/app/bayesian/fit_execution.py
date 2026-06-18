@@ -71,16 +71,29 @@ def _set_tenant_context(conn, tenant_id: UUID) -> None:
     assert_bound_tenant(conn, tenant_id=tenant_id)
 
 
+def _bind_fit_resolution_context(conn, *, fit_id: UUID) -> None:
+    if not conn.in_transaction():
+        raise RuntimeError("bayesian_fit_resolution_transaction_required")
+    conn.execute(
+        text("SELECT set_config('app.b24_fit_resolution_id', :fit_id, true)"),
+        {"fit_id": str(fit_id)},
+    )
+
+
 def _set_execution_context(
     conn,
     *,
     tenant_id: UUID,
+    fit_id: UUID,
     dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
+    _bind_fit_resolution_context(conn, fit_id=fit_id)
     _set_tenant_context(conn, tenant_id)
     if dispatch_lease is not None:
         if dispatch_lease.tenant_id != tenant_id:
             raise RuntimeError("bayesian_dispatch_lease_tenant_mismatch")
+        if dispatch_lease.fit_id != fit_id:
+            raise RuntimeError("bayesian_dispatch_lease_fit_mismatch")
         bind_dispatch_write_context_sync(conn, lease=dispatch_lease)
 
 
@@ -94,7 +107,12 @@ def _load_fit_for_execution(
     fit_id: UUID,
     dispatch_lease: BayesianDispatchLease | None = None,
 ) -> _LoadFitRow | None:
-    _set_execution_context(conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease)
+    _set_execution_context(
+        conn,
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        dispatch_lease=dispatch_lease,
+    )
     row = (
         conn.execute(
             text(
@@ -135,7 +153,12 @@ def _mark_fit_failure(
     runtime_seconds: int | None = None,
     dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
-    _set_execution_context(conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease)
+    _set_execution_context(
+        conn,
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        dispatch_lease=dispatch_lease,
+    )
     conn.execute(
         text(
             """
@@ -182,7 +205,12 @@ def _mark_fit_diagnostic_error(
     runtime_seconds: int | None = None,
     dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
-    _set_execution_context(conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease)
+    _set_execution_context(
+        conn,
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        dispatch_lease=dispatch_lease,
+    )
     conn.execute(
         text(
             """
@@ -353,7 +381,12 @@ def _persist_result_summary(
     result_hash: str,
     dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
-    _set_execution_context(conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease)
+    _set_execution_context(
+        conn,
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        dispatch_lease=dispatch_lease,
+    )
     artifact = persist_artifact_sync(
         conn,
         tenant_id=tenant_id,
@@ -658,7 +691,10 @@ def execute_fit_intent_sync(
 
         with engine.begin() as conn:
             _set_execution_context(
-                conn, tenant_id=tenant_id, dispatch_lease=dispatch_lease
+                conn,
+                tenant_id=tenant_id,
+                fit_id=fit_id,
+                dispatch_lease=dispatch_lease,
             )
             conn.execute(
                 text(
