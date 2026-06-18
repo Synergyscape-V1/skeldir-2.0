@@ -13051,13 +13051,6 @@ CREATE POLICY deny_all_b24_worker_process_authority ON public.b24_worker_process
 
 
 --
--- Name: b24_worker_process_authority function_access_b24_worker_process_authority; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY function_access_b24_worker_process_authority ON public.b24_worker_process_authority USING ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text));
-
-
---
 -- Name: b24_fit_dispatch_outbox dispatch_capability_claim_select_b24_fit_dispatch_outbox; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -13102,6 +13095,12 @@ ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: b24_worker_process_authority function_access_b24_worker_process_authority; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY function_access_b24_worker_process_authority ON public.b24_worker_process_authority USING ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text));
 
 --
 -- Name: investigation_jobs; Type: ROW SECURITY; Schema: public; Owner: -
