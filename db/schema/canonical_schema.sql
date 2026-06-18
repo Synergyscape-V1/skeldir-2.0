@@ -364,7 +364,7 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
             IF TG_ARGV[0] = 'fit' THEN
                 v_tenant_id := NEW.tenant_id;
                 v_fit_id := NEW.id;
-                IF TG_OP = 'INSERT' AND NEW.status = 'queued' THEN
+                IF TG_OP = 'INSERT' AND NEW.status IN ('queued', 'pending') THEN
                     RETURN NEW;
                 END IF;
             ELSIF TG_ARGV[0] = 'artifact' THEN
