@@ -16,6 +16,16 @@ from app.bayesian.artifact_repository import (
     prune_expired_artifacts_sync,
     verify_artifact_bytes_sync,
 )
+from app.bayesian.dispatch_authority import (
+    BAYESIAN_FIT_EXECUTION_TASK,
+    BayesianDispatchClaim,
+    BayesianDispatchLease,
+    BayesianWorkerClaimAuthority,
+    claim_fit_dispatch_sync,
+    dispatch_payload_hash,
+    mark_dispatch_running_sync,
+    register_worker_process_authority_sync,
+)
 from app.bayesian.models import BayesianArtifact
 from app.core.secrets import get_database_url
 from app.db.dsn import to_sync_postgres_dsn
@@ -92,7 +102,7 @@ async def _insert_test_fit(tenant_id: UUID, *, fit_id: UUID | None = None) -> UU
                     :source_window_start,
                     :source_window_end,
                     :source_snapshot_hash,
-                    'running',
+                    'queued',
                     'eligible',
                     'complete',
                     false,
@@ -113,6 +123,103 @@ async def _insert_test_fit(tenant_id: UUID, *, fit_id: UUID | None = None) -> UU
             },
         )
     return resolved_fit_id
+
+
+def _bind_test_dispatch_context(conn, *, tenant_id: UUID, fit_id: UUID) -> None:
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    generation_id = f"p8-artifact-proof-{uuid4().hex[:16]}"
+    process_token = f"p8-artifact-token-{uuid4().hex}"
+    worker_authority = BayesianWorkerClaimAuthority(
+        generation_id=generation_id,
+        pid=4242,
+        process_token=process_token,
+    )
+    register_worker_process_authority_sync(
+        conn,
+        generation_id=worker_authority.generation_id,
+        pid=worker_authority.pid,
+        parent_pid=1,
+        topology_fingerprint="8" * 64,
+        process_token=worker_authority.process_token,
+        ttl_seconds=3600,
+    )
+    conn.execute(
+        text(
+            """
+            INSERT INTO public.b24_fit_dispatch_outbox (
+                tenant_id,
+                id,
+                fit_id,
+                dispatch_key,
+                task_name,
+                attempt_id,
+                payload_hash,
+                assigned_worker_generation,
+                assignment_generation,
+                assignment_expires_at,
+                assignment_reason,
+                status,
+                next_attempt_at,
+                next_recovery_at
+            )
+            VALUES (
+                :tenant_id,
+                :dispatch_id,
+                :fit_id,
+                :dispatch_key,
+                :task_name,
+                :attempt_id,
+                :payload_hash,
+                :assigned_worker_generation,
+                1,
+                now() + interval '10 minutes',
+                'p8_artifact_lifecycle_test',
+                'dispatched',
+                now(),
+                now() + interval '1 hour'
+            )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "dispatch_id": str(dispatch_id),
+            "fit_id": str(fit_id),
+            "dispatch_key": f"b24-p8-test:{tenant_id}:{fit_id}",
+            "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+            "attempt_id": str(attempt_id),
+            "payload_hash": payload_hash,
+            "assigned_worker_generation": generation_id,
+        },
+    )
+    lease = claim_fit_dispatch_sync(
+        conn,
+        claim=BayesianDispatchClaim(
+            dispatch_id=dispatch_id,
+            fit_id=fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=attempt_id,
+            payload_hash=payload_hash,
+            recovery_generation=0,
+        ),
+        worker_authority=worker_authority,
+        lease_seconds=300,
+    )
+    assert isinstance(lease, BayesianDispatchLease)
+    mark_dispatch_running_sync(conn, lease=lease)
+    conn.execute(
+        text(
+            """
+            UPDATE public.bayesian_model_fits
+            SET status = 'running',
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND id = :fit_id
+            """
+        ),
+        {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+    )
 
 
 @pytest.mark.asyncio
@@ -136,6 +243,7 @@ async def test_b24_p8_repository_persists_verifies_quota_and_prunes(
                 text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                 {"tenant_id": str(tenant_id)},
             )
+            _bind_test_dispatch_context(conn, tenant_id=tenant_id, fit_id=fit_id)
             artifact = persist_artifact_sync(
                 conn,
                 tenant_id=tenant_id,
@@ -413,6 +521,7 @@ async def test_b24_p8_atomic_quota_allows_exactly_two_concurrent_artifacts(
                     ),
                     {"tenant_id": str(tenant_id)},
                 )
+                _bind_test_dispatch_context(conn, tenant_id=tenant_id, fit_id=fit_id)
                 conn.execute(text("SET LOCAL lock_timeout = '5s'"))
                 conn.execute(text("SET LOCAL statement_timeout = '15s'"))
                 backend_pid = int(
