@@ -9,6 +9,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.bayesian.compiledir_reaper import create_compiledir_lease
+from app.bayesian.dispatch_authority import (
+    BAYESIAN_FIT_EXECUTION_TASK,
+    BayesianDispatchClaim,
+    BayesianWorkerClaimAuthority,
+    dispatch_payload_hash,
+)
 from app.bayesian.sampler_supervisor import (
     build_child_env_for_lease,
     run_supervised_sampler,
@@ -21,6 +27,7 @@ from app.tasks.bayesian import _emit_fallback_event
 
 START = datetime(2026, 5, 1, tzinfo=timezone.utc)
 END = datetime(2026, 6, 1, tzinfo=timezone.utc)
+VALID_HASH = "5" * 64
 
 
 def _require_db_proofs() -> bool:
@@ -96,12 +103,151 @@ async def _insert_fit(tenant_id: UUID, *, fit_id: UUID, status: str) -> None:
                 "model_version": f"v1-p5-runtime-{str(tenant_id)[:8]}",
                 "source_window_start": START,
                 "source_window_end": END,
-                "source_snapshot_hash": ("5" + str(tenant_id).replace("-", ""))[
-                    :64
-                ].ljust(64, "5"),
+                "source_snapshot_hash": VALID_HASH,
                 "status": status,
             },
         )
+
+
+async def _prepare_dispatch_context(
+    tenant_id: UUID, *, fit_id: UUID, mark_running: bool = False
+) -> tuple[BayesianDispatchClaim, BayesianWorkerClaimAuthority]:
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    generation_id = f"p5-runtime-proof-{uuid4().hex[:16]}"
+    process_token = f"p5-runtime-token-{uuid4().hex}"
+    worker_authority = BayesianWorkerClaimAuthority(
+        generation_id=generation_id,
+        pid=4242,
+        process_token=process_token,
+    )
+    claim = BayesianDispatchClaim(
+        dispatch_id=dispatch_id,
+        fit_id=fit_id,
+        task_name=BAYESIAN_FIT_EXECUTION_TASK,
+        attempt_id=attempt_id,
+        payload_hash=payload_hash,
+        recovery_generation=0,
+    )
+    async with get_session(tenant_id) as session:
+        await session.execute(
+            text(
+                """
+                SELECT public.b24_register_worker_process_authority(
+                    :generation_id,
+                    4242,
+                    1,
+                    :topology_fingerprint,
+                    :process_token,
+                    3600
+                )
+                """
+            ),
+            {
+                "generation_id": generation_id,
+                "topology_fingerprint": VALID_HASH,
+                "process_token": process_token,
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO public.b24_fit_dispatch_outbox (
+                    tenant_id,
+                    id,
+                    fit_id,
+                    dispatch_key,
+                    task_name,
+                    attempt_id,
+                    payload_hash,
+                    assigned_worker_generation,
+                    assignment_generation,
+                    assignment_expires_at,
+                    assignment_reason,
+                    status,
+                    next_attempt_at,
+                    next_recovery_at
+                )
+                VALUES (
+                    :tenant_id,
+                    :dispatch_id,
+                    :fit_id,
+                    :dispatch_key,
+                    :task_name,
+                    :attempt_id,
+                    :payload_hash,
+                    :assigned_worker_generation,
+                    1,
+                    now() + interval '10 minutes',
+                    'p5_timeout_fallback_test',
+                    'dispatched',
+                    now(),
+                    now() + interval '1 hour'
+                )
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "dispatch_id": str(dispatch_id),
+                "fit_id": str(fit_id),
+                "dispatch_key": f"b24-p5-test:{tenant_id}:{fit_id}",
+                "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                "attempt_id": str(attempt_id),
+                "payload_hash": payload_hash,
+                "assigned_worker_generation": generation_id,
+            },
+        )
+        if mark_running:
+            claim_row = (
+                (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT *
+                            FROM public.b24_claim_fit_dispatch(
+                                :dispatch_id,
+                                :fit_id,
+                                :task_name,
+                                :attempt_id,
+                                :payload_hash,
+                                :worker_generation,
+                                4242,
+                                :process_token,
+                                0,
+                                300
+                            )
+                            """
+                        ),
+                        {
+                            "dispatch_id": str(dispatch_id),
+                            "fit_id": str(fit_id),
+                            "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                            "attempt_id": str(attempt_id),
+                            "payload_hash": payload_hash,
+                            "worker_generation": generation_id,
+                            "process_token": process_token,
+                        },
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert claim_row["outcome"] == "ACQUIRED"
+            await session.execute(text("SELECT public.b24_mark_fit_dispatch_running()"))
+            await session.execute(
+                text(
+                    """
+                    UPDATE public.bayesian_model_fits
+                    SET status = 'running',
+                        updated_at = now()
+                    WHERE tenant_id = :tenant_id
+                      AND id = :fit_id
+                    """
+                ),
+                {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+            )
+    return claim, worker_authority
 
 
 async def _count_airgap_probe_connections() -> int:
@@ -129,8 +275,12 @@ async def test_b24_p5_worker_timeout_fallback_persists_tenant_scoped_fit_state(
     shared_fit_id = uuid4()
     correlation_id = uuid4()
 
-    await _insert_fit(tenant_a, fit_id=shared_fit_id, status="running")
-    await _insert_fit(tenant_b, fit_id=shared_fit_id, status="running")
+    await _insert_fit(tenant_a, fit_id=shared_fit_id, status="queued")
+    await _insert_fit(tenant_b, fit_id=shared_fit_id, status="queued")
+    tenant_a_claim, tenant_a_authority = await _prepare_dispatch_context(
+        tenant_a, fit_id=shared_fit_id
+    )
+    await _prepare_dispatch_context(tenant_b, fit_id=shared_fit_id, mark_running=True)
 
     payload = _emit_fallback_event(
         task_id="p5-durable-timeout-proof",
@@ -138,6 +288,8 @@ async def test_b24_p5_worker_timeout_fallback_persists_tenant_scoped_fit_state(
         correlation_id=correlation_id,
         elapsed_ms=7250,
         fit_id=shared_fit_id,
+        dispatch_claim=tenant_a_claim,
+        worker_authority=tenant_a_authority,
     )
 
     assert payload["durable_timeout_written"] is True
