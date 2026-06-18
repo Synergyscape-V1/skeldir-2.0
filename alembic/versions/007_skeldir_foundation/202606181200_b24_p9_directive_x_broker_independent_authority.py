@@ -534,15 +534,15 @@ def downgrade() -> None:
         "DROP FUNCTION IF EXISTS public.b24_claim_fit_dispatch(uuid, uuid, text, uuid, text, text, integer, text, integer, integer)"
     )  # CI:DESTRUCTIVE_OK - reversible rollback for Directive X claim function.
     op.execute(
-        "DROP TABLE IF EXISTS public.b24_worker_process_authority"
+        "DROP TABLE IF EXISTS public.b24_worker_process_authority"  # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive X worker registry.
     )  # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive X worker registry.
     op.execute(
         """
         ALTER TABLE public.b24_fit_dispatch_outbox
             DROP CONSTRAINT IF EXISTS ck_b24_fit_dispatch_outbox_assignment_generation_non_negative,
-            DROP COLUMN IF EXISTS assignment_reason,
-            DROP COLUMN IF EXISTS assignment_expires_at,
-            DROP COLUMN IF EXISTS assignment_generation,
-            DROP COLUMN IF EXISTS assigned_worker_generation;
+            DROP COLUMN IF EXISTS assignment_reason, -- # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive X assignment columns.
+            DROP COLUMN IF EXISTS assignment_expires_at, -- # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive X assignment columns.
+            DROP COLUMN IF EXISTS assignment_generation, -- # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive X assignment columns.
+            DROP COLUMN IF EXISTS assigned_worker_generation; -- # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive X assignment columns.
         """
     )  # CI:DESTRUCTIVE_OK - reversible rollback for additive Directive X assignment columns.
