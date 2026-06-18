@@ -29,9 +29,11 @@ from app.bayesian.dispatch_authority import (
     BAYESIAN_FIT_EXECUTION_TASK,
     BayesianDispatchClaim,
     BayesianDispatchLease,
+    BayesianWorkerClaimAuthority,
     DispatchClaimOutcome,
     claim_fit_dispatch_sync,
     dispatch_payload_hash,
+    register_worker_process_authority_sync,
 )
 from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.fit_execution import (
@@ -159,6 +161,29 @@ async def _insert_fit(tenant_id: UUID, *, fit_id: UUID, source_hash: str) -> Non
                 "source_snapshot_hash": source_hash,
             },
         )
+
+
+def _register_test_worker_authority(
+    conn,
+    *,
+    generation_id: str = "directive-x-runtime-generation",
+    pid: int = 4242,
+    process_token: str = "directive-x-runtime-process-token-0001",
+) -> BayesianWorkerClaimAuthority:
+    register_worker_process_authority_sync(
+        conn,
+        generation_id=generation_id,
+        pid=pid,
+        parent_pid=1,
+        topology_fingerprint="b" * 64,
+        process_token=process_token,
+        ttl_seconds=3600,
+    )
+    return BayesianWorkerClaimAuthority(
+        generation_id=generation_id,
+        pid=pid,
+        process_token=process_token,
+    )
 
 
 def _sync_database_url() -> str:
@@ -1020,8 +1045,8 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
     fit_id = uuid4()
     dispatch_id = uuid4()
     attempt_id = uuid4()
-    claim_capability = "a" * 64
     payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    generation_id = "directive-x-runtime-generation"
     await _insert_fit(tenant_a, fit_id=fit_id, source_hash="9" * 64)
 
     sync_engine = create_engine(
@@ -1030,6 +1055,11 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
     )
     try:
         with sync_engine.begin() as conn:
+            worker_authority = _register_test_worker_authority(
+                conn,
+                generation_id=generation_id,
+                process_token="directive-x-runtime-process-token-0001",
+            )
             _set_tenant_context(conn, tenant_a)
             conn.execute(
                 text(
@@ -1042,9 +1072,10 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
                         task_name,
                         attempt_id,
                         payload_hash,
-                        claim_capability,
-                        claim_capability_digest,
-                        claim_capability_expires_at,
+                        assigned_worker_generation,
+                        assignment_generation,
+                        assignment_expires_at,
+                        assignment_reason,
                         status,
                         next_attempt_at,
                         next_recovery_at
@@ -1057,9 +1088,10 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
                         :task_name,
                         :attempt_id,
                         :payload_hash,
-                        :claim_capability,
-                        public.b24_sha256_text(:claim_capability),
-                        now() + interval '1 hour',
+                        :assigned_worker_generation,
+                        1,
+                        now() + interval '10 minutes',
+                        'runtime_test_dispatch',
                         'dispatched',
                         now(),
                         now() + interval '1 hour'
@@ -1074,7 +1106,7 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
                     "task_name": BAYESIAN_FIT_EXECUTION_TASK,
                     "attempt_id": str(attempt_id),
                     "payload_hash": payload_hash,
-                    "claim_capability": claim_capability,
+                    "assigned_worker_generation": generation_id,
                 },
             )
 
@@ -1084,14 +1116,18 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
             task_name=BAYESIAN_FIT_EXECUTION_TASK,
             attempt_id=attempt_id,
             payload_hash=payload_hash,
-            claim_capability="b" * 64,
+            recovery_generation=0,
         )
         with sync_engine.begin() as conn:
             assert (
                 claim_fit_dispatch_sync(
                     conn,
                     claim=bad_claim,
-                    worker_generation_id="directive-ix-test",
+                    worker_authority=BayesianWorkerClaimAuthority(
+                        generation_id=generation_id,
+                        pid=worker_authority.pid,
+                        process_token="wrong-process-token",
+                    ),
                 )
                 == DispatchClaimOutcome.UNAUTHORIZED
             )
@@ -1102,13 +1138,13 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
             task_name=BAYESIAN_FIT_EXECUTION_TASK,
             attempt_id=attempt_id,
             payload_hash=payload_hash,
-            claim_capability=claim_capability,
+            recovery_generation=0,
         )
         with sync_engine.begin() as conn:
             lease = claim_fit_dispatch_sync(
                 conn,
                 claim=claim,
-                worker_generation_id="directive-ix-test",
+                worker_authority=worker_authority,
                 lease_seconds=120,
             )
             assert isinstance(lease, BayesianDispatchLease)
@@ -1130,7 +1166,7 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
                 claim_fit_dispatch_sync(
                     conn,
                     claim=claim,
-                    worker_generation_id="directive-ix-test",
+                    worker_authority=worker_authority,
                 )
                 == DispatchClaimOutcome.ACTIVE_LEASE
             )
@@ -1144,15 +1180,14 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
                         set_config('app.b24_dispatch_id', :dispatch_id, true),
                         set_config('app.b24_attempt_id', :attempt_id, true),
                         set_config('app.b24_claim_epoch', '0', true),
-                        set_config('app.b24_lease_capability', :claim_capability, true),
-                        set_config('app.b24_dispatch_fence_required', 'on', true)
+                        set_config('app.b24_lease_capability', :lease_capability, true)
                     """
                 ),
                 {
                     "tenant_id": str(tenant_a),
                     "dispatch_id": str(dispatch_id),
                     "attempt_id": str(attempt_id),
-                    "claim_capability": claim_capability,
+                    "lease_capability": "not-the-db-minted-lease",
                 },
             )
             with pytest.raises(DBAPIError, match="b24_dispatch_fence_rejected"):
@@ -1181,7 +1216,6 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
     fit_id = uuid4()
     dispatch_id = uuid4()
     attempt_id = uuid4()
-    claim_capability = "c" * 64
     payload_hash = dispatch_payload_hash(fit_id=fit_id)
     await _insert_fit(tenant_a, fit_id=fit_id, source_hash="8" * 64)
 
@@ -1191,6 +1225,11 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
     )
     try:
         with sync_engine.begin() as conn:
+            worker_authority = _register_test_worker_authority(
+                conn,
+                generation_id="directive-x-recovery-generation",
+                process_token="directive-x-runtime-process-token-0002",
+            )
             _set_tenant_context(conn, tenant_a)
             conn.execute(
                 text(
@@ -1203,9 +1242,10 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
                         task_name,
                         attempt_id,
                         payload_hash,
-                        claim_capability,
-                        claim_capability_digest,
-                        claim_capability_expires_at,
+                        assigned_worker_generation,
+                        assignment_generation,
+                        assignment_expires_at,
+                        assignment_reason,
                         status,
                         next_attempt_at,
                         next_recovery_at
@@ -1218,9 +1258,10 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
                         :task_name,
                         :attempt_id,
                         :payload_hash,
-                        :claim_capability,
-                        public.b24_sha256_text(:claim_capability),
-                        now() + interval '1 hour',
+                        :assigned_worker_generation,
+                        1,
+                        now() + interval '10 minutes',
+                        'runtime_recovery_test',
                         'dispatched',
                         now(),
                         now()
@@ -1235,7 +1276,7 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
                     "task_name": BAYESIAN_FIT_EXECUTION_TASK,
                     "attempt_id": str(attempt_id),
                     "payload_hash": payload_hash,
-                    "claim_capability": claim_capability,
+                    "assigned_worker_generation": worker_authority.generation_id,
                 },
             )
 
@@ -1251,7 +1292,7 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
                 conn.execute(
                     text(
                         """
-                        SELECT recovery_generation, status, claim_capability
+                        SELECT recovery_generation, status, claim_capability, attempt_id
                         FROM public.b24_fit_recovery_outbox
                         WHERE tenant_id = :tenant_id
                           AND dispatch_id = :dispatch_id
@@ -1267,7 +1308,26 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
             )
             assert row["status"] == "pending"
             assert int(row["recovery_generation"]) == 1
-            assert str(row["claim_capability"]) != claim_capability
+            assert row["claim_capability"] is None
+            assert row["attempt_id"] != attempt_id
+
+        stale_claim = BayesianDispatchClaim(
+            dispatch_id=dispatch_id,
+            fit_id=fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=attempt_id,
+            payload_hash=payload_hash,
+            recovery_generation=0,
+        )
+        with sync_engine.begin() as conn:
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=stale_claim,
+                    worker_authority=worker_authority,
+                )
+                == DispatchClaimOutcome.UNAUTHORIZED
+            )
     finally:
         sync_engine.dispose()
 

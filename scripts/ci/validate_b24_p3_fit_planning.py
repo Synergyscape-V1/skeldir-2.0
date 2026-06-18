@@ -207,9 +207,10 @@ def validate_dispatch_outbox(root: Path, text: str | None = None) -> None:
         "dead_lettered",
         "failed_retryable",
         "publish_capability_bound_dispatch",
-        "claim_capability",
+        "publish_secret_free_dispatch",
         "payload_hash",
         "attempt_id",
+        "recovery_generation",
     ):
         _require(token in text, f"dispatch outbox missing semantic: {token}")
     for token in (
@@ -218,9 +219,13 @@ def validate_dispatch_outbox(root: Path, text: str | None = None) -> None:
         '"task_name": self.task_name',
         '"attempt_id": str(self.attempt_id)',
         '"payload_hash": self.payload_hash',
-        '"claim_capability": self.claim_capability',
+        '"recovery_generation": str(self.recovery_generation)',
     ):
-        _require(token in text, f"queue payload missing capability field: {token}")
+        _require(token in text, f"queue payload missing wake-up field: {token}")
+    _require(
+        '"claim_capability": self.claim_capability' not in text,
+        "queue payload must not carry broker execution authority",
+    )
     for forbidden in ("source_rows", "manifest", "raw_payload", "tenant source data"):
         _require(
             forbidden not in text.lower(),
@@ -234,12 +239,18 @@ def validate_migration(root: Path, text: str | None = None) -> None:
         _require(
             f"CREATE TABLE public.{table}" in text, f"migration missing table: {table}"
         )
+        uses_rls_helper = (
+            f'("{table}", "tenant_isolation_policy_{table}")' in text
+            and "_enable_tenant_rls(table, policy)" in text
+        )
         _require(
-            f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY" in text,
+            f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY" in text
+            or uses_rls_helper,
             f"RLS missing: {table}",
         )
         _require(
-            f"ALTER TABLE public.{table} FORCE ROW LEVEL SECURITY" in text,
+            f"ALTER TABLE public.{table} FORCE ROW LEVEL SECURITY" in text
+            or uses_rls_helper,
             f"FORCE RLS missing: {table}",
         )
     _require("uq_b24_fit_dispatch_outbox_fit" in text, "outbox fit uniqueness missing")
@@ -306,10 +317,14 @@ def validate_scope(root: Path) -> None:
         "fit_id: str",
         "attempt_id: str",
         "payload_hash: str",
-        "claim_capability: str",
+        "recovery_generation: str",
         "BayesianDispatchClaim",
     ):
-        _require(token in tasks, f"worker stub missing capability-bound field: {token}")
+        _require(token in tasks, f"worker stub missing dispatch wake-up field: {token}")
+    _require(
+        "claim_capability: str" not in tasks,
+        "worker stub must not accept broker-carried execution authority",
+    )
     _require(
         "compute_started" in tasks and "False" in tasks,
         "worker stub must report idempotent no-compute paths",
@@ -366,8 +381,8 @@ def run_negative_control(root: Path) -> None:
             "payload_regression",
             validate_dispatch_outbox,
             outbox.replace(
-                '"claim_capability": self.claim_capability,',
-                '"claim_capability": self.claim_capability, "source_rows": [],',
+                '"recovery_generation": str(self.recovery_generation),',
+                '"recovery_generation": str(self.recovery_generation), "source_rows": [],',
             ),
         )
     )

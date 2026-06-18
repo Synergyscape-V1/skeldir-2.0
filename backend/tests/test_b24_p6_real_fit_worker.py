@@ -17,6 +17,13 @@ from app.bayesian.feature_authority import (
     SourceWindowFeatureAuthority,
     upsert_source_window_feature_authority,
 )
+from app.bayesian.dispatch_authority import (
+    BAYESIAN_FIT_EXECUTION_TASK,
+    BayesianDispatchClaim,
+    BayesianWorkerClaimAuthority,
+    dispatch_payload_hash,
+    register_worker_process_authority_sync,
+)
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.model_spec import B24_P6_MODEL_TYPE, B24_P6_MODEL_VERSION
 from app.bayesian.resource_bounds import B24_RESOURCE_POLICY_VERSION
@@ -472,6 +479,101 @@ async def _insert_authority_and_fit(
         )
 
 
+def _insert_dispatch_claim_for_fit(
+    *,
+    tenant_id: UUID,
+    fit_id: UUID,
+    generation_id: str,
+    process_token: str,
+) -> tuple[BayesianDispatchClaim, BayesianWorkerClaimAuthority]:
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    worker_authority = BayesianWorkerClaimAuthority(
+        generation_id=generation_id,
+        pid=4242,
+        process_token=process_token,
+    )
+    sync_engine = create_engine(
+        to_sync_postgres_dsn(get_database_url()),
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+    )
+    try:
+        with sync_engine.begin() as conn:
+            register_worker_process_authority_sync(
+                conn,
+                generation_id=worker_authority.generation_id,
+                pid=worker_authority.pid,
+                parent_pid=1,
+                topology_fingerprint="a" * 64,
+                process_token=worker_authority.process_token,
+                ttl_seconds=3600,
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        assigned_worker_generation,
+                        assignment_generation,
+                        assignment_expires_at,
+                        assignment_reason,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        :assigned_worker_generation,
+                        1,
+                        now() + interval '10 minutes',
+                        'p6_test_dispatch',
+                        'dispatched',
+                        now(),
+                        now() + interval '1 hour'
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "dispatch_key": f"b24-p6-test:{tenant_id}:{fit_id}",
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                    "assigned_worker_generation": generation_id,
+                },
+            )
+    finally:
+        sync_engine.dispose()
+    return (
+        BayesianDispatchClaim(
+            dispatch_id=dispatch_id,
+            fit_id=fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=attempt_id,
+            payload_hash=payload_hash,
+            recovery_generation=0,
+        ),
+        worker_authority,
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
@@ -494,6 +596,12 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
         fit_id=fit_id,
         source_snapshot_hash=snapshot.source_snapshot_hash,
     )
+    dispatch_claim, worker_authority = _insert_dispatch_claim_for_fit(
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        generation_id="directive-x-p6-generation",
+        process_token="directive-x-p6-process-token-0001",
+    )
 
     sync_engine = create_engine(
         to_sync_postgres_dsn(get_database_url()),
@@ -507,6 +615,8 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
             engine=sync_engine,
             fit_id=fit_id,
             task_id=f"p6-real-fit-{suffix}",
+            dispatch_claim=dispatch_claim,
+            worker_authority=worker_authority,
         )
     finally:
         sync_engine.dispose()
@@ -567,6 +677,12 @@ async def test_b24_p6_source_snapshot_mismatch_fails_before_sampler(
         fit_id=fit_id,
         source_snapshot_hash=bad_hash,
     )
+    dispatch_claim, worker_authority = _insert_dispatch_claim_for_fit(
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        generation_id="directive-x-p6-mismatch-generation",
+        process_token="directive-x-p6-process-token-0002",
+    )
 
     def _unexpected_sampler(*_args, **_kwargs):
         raise AssertionError("P6 sampler launched before source authority matched")
@@ -586,6 +702,8 @@ async def test_b24_p6_source_snapshot_mismatch_fails_before_sampler(
             engine=sync_engine,
             fit_id=fit_id,
             task_id=f"p6-mismatch-{suffix}",
+            dispatch_claim=dispatch_claim,
+            worker_authority=worker_authority,
         )
     finally:
         sync_engine.dispose()

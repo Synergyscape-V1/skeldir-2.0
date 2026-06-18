@@ -31,6 +31,9 @@ P9_MIGRATION = Path(
 P9_DIRECTIVE_IX_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202606141200_b24_p9_directive_ix_dispatch_authority.py"
 )
+P9_DIRECTIVE_X_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202606181200_b24_p9_directive_x_broker_independent_authority.py"
+)
 P9_TESTS = Path("backend/tests/test_b24_p9_worker_tenant_hygiene.py")
 P9_DB_TESTS = Path("backend/tests/test_b24_p9_postgres_runtime.py")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
@@ -61,6 +64,7 @@ REQUIRED_FILES = {
     TASKS_BAYESIAN,
     P9_MIGRATION,
     P9_DIRECTIVE_IX_MIGRATION,
+    P9_DIRECTIVE_X_MIGRATION,
     P9_TESTS,
     P9_DB_TESTS,
     WORKFLOW,
@@ -429,7 +433,9 @@ def validate_fit_execution(text: str | None = None) -> None:
         "source_snapshot_hash=source_snapshot_hash",
         'ipc_dir = workspace.path / "ipc"',
         "cleanup_fit_attempt(workspace=workspace, compiledir=lease)",
-        "dispatch_claim: BayesianDispatchClaim | None = None",
+        "dispatch_claim: BayesianDispatchClaim",
+        "worker_authority: BayesianWorkerClaimAuthority",
+        "bayesian_dispatch_claim_required",
         "claim_fit_dispatch_sync",
         "bind_dispatch_write_context_sync",
         "mark_dispatch_running_sync",
@@ -466,7 +472,12 @@ def validate_directive_ix_dispatch_authority(
     migration = (
         migration_text
         if migration_text is not None
-        else _read(P9_DIRECTIVE_IX_MIGRATION)
+        else _read(P9_DIRECTIVE_IX_MIGRATION) + "\n" + _read(P9_DIRECTIVE_X_MIGRATION)
+    )
+    current_migration = (
+        migration_text
+        if migration_text is not None
+        else _read(P9_DIRECTIVE_X_MIGRATION)
     )
     models = models_text if models_text is not None else _read(MODELS)
     for token in (
@@ -483,34 +494,51 @@ def validate_directive_ix_dispatch_authority(
         "RETRYABLE_INFRASTRUCTURE_FAILURE",
         "BayesianDispatchClaim",
         "BayesianDispatchLease",
+        "BayesianWorkerClaimAuthority",
         "dispatch_payload_hash",
         "claim_fit_dispatch_sync",
         "bind_dispatch_write_context_sync",
         "create_recovery_wakeups_sync",
+        "register_worker_process_authority_sync",
     ):
         _require(token in authority, f"Directive IX authority missing: {token}")
     for token in (
         "publish_capability_bound_dispatch",
+        "publish_secret_free_dispatch",
+        "publish_due_recovery_rows",
         '"dispatch_id": str(self.id)',
         '"attempt_id": str(self.attempt_id)',
         '"payload_hash": self.payload_hash',
-        '"claim_capability": self.claim_capability',
+        '"recovery_generation": str(self.recovery_generation)',
         "b24_create_fit_recovery_wakeups",
     ):
         _require(token in outbox, f"Directive IX outbox missing: {token}")
+    _require(
+        '"claim_capability": self.claim_capability' not in outbox,
+        "Directive X broker payload must not carry claim capability",
+    )
     for token in (
         "dispatch_id: str",
         "attempt_id: str",
         "payload_hash: str",
-        "claim_capability: str",
+        "recovery_generation: str",
         "BayesianDispatchClaim",
         "dispatch_claim=claim",
+        "worker_authority=worker_authority",
         "fit_id: str",
     ):
         _require(token in tasks, f"Directive IX Celery task missing: {token}")
+    _require(
+        "claim_capability: str" not in tasks,
+        "Directive X Celery task must not accept broker capability",
+    )
     for token in (
+        "b24_worker_process_authority",
+        "b24_register_worker_process_authority",
+        "b24_next_active_worker_generation",
         "b24_claim_fit_dispatch",
         "p_fit_id uuid",
+        "p_worker_process_token text",
         "b24_current_dispatch_fence_valid",
         "b24_enforce_dispatch_fence",
         "trg_b24_dispatch_fence_fits",
@@ -522,16 +550,20 @@ def validate_directive_ix_dispatch_authority(
         "b24_fit_recovery_outbox",
         "ENABLE ROW LEVEL SECURITY",
         "FORCE ROW LEVEL SECURITY",
-        "set_config('app.b24_dispatch_fence_required', 'on', true)",
         "b24_dispatch_fence_rejected",
     ):
         _require(token in migration, f"Directive IX migration missing: {token}")
+    _require(
+        "app.b24_dispatch_fence_required" not in current_migration,
+        "Directive X fence enforcement must not depend on a caller-controlled GUC",
+    )
     for token in (
         "claim_capability",
         "claim_capability_digest",
         "lease_capability_digest",
         "claim_epoch",
         "B24FitRecoveryOutbox",
+        "B24WorkerProcessAuthority",
     ):
         _require(token in models, f"Directive IX models missing: {token}")
     for forbidden in (
@@ -619,8 +651,8 @@ def validate_tests_and_ci(
         "test_b24_p9_child_env_is_allowlisted_without_parent_mutation",
         "test_b24_p9_artifact_ref_contains_tenant_authority",
         "test_b24_p9_fit_execution_wires_cleanup_and_payload_airgap",
-        "test_b24_p9_directive_ix_dispatch_authority_is_capability_bound",
-        "test_b24_p9_directive_ix_celery_task_rejects_fit_id_only_authority",
+        "test_b24_p9_directive_x_dispatch_authority_is_broker_independent",
+        "test_b24_p9_directive_x_celery_task_rejects_broker_authority",
         "test_b24_p9_same_process_sequential_reused_worker_runtime_lane",
         "test_b24_p9_concurrent_tenant_isolation_runtime_surfaces",
         "test_b24_p9_concurrent_janitor_toctou_safe",
@@ -956,16 +988,45 @@ def run_negative_controls() -> None:
             "directive_ix_broker_capability_removed",
             lambda: validate_directive_ix_dispatch_authority(
                 outbox_text=_read(DISPATCH_OUTBOX).replace(
-                    '"claim_capability": self.claim_capability',
-                    '"claim_removed": self.claim_capability',
+                    '"recovery_generation": str(self.recovery_generation)',
+                    '"recovery_generation": str(self.recovery_generation),\n'
+                    '            "claim_capability": self.claim_capability',
                 )
             ),
-            "claim_capability",
+            "broker payload",
         ),
         (
             "directive_ix_db_fence_removed",
             lambda: validate_directive_ix_dispatch_authority(
-                migration_text=_read(P9_DIRECTIVE_IX_MIGRATION).replace(
+                migration_text=_read(P9_DIRECTIVE_IX_MIGRATION)
+                + "\n"
+                + _read(P9_DIRECTIVE_X_MIGRATION)
+                + "\nPERFORM set_config('app.b24_dispatch_fence_required', 'on', true);\n"
+            ),
+            "caller-controlled GUC",
+        ),
+        (
+            "directive_x_worker_token_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                migration_text=(
+                    _read(P9_DIRECTIVE_IX_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_X_MIGRATION).replace(
+                        "p_worker_process_token text",
+                        "p_worker_process_token_removed text",
+                    )
+                )
+            ),
+            "p_worker_process_token",
+        ),
+        (
+            "directive_ix_db_fence_rejection_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                migration_text=(
+                    _read(P9_DIRECTIVE_IX_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_X_MIGRATION)
+                ).replace(
                     "b24_dispatch_fence_rejected",
                     "b24_dispatch_fence_allowed",
                 )

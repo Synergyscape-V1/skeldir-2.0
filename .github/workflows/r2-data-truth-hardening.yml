@@ -197,6 +197,12 @@ jobs:
           source = Path("db/schema/canonical_schema.sql")
           target = Path("/tmp/canonical_schema_r2_bootstrap.sql")
           text = source.read_text(encoding="utf-8")
+          text = re.sub(
+              r"^SET transaction_timeout = 0;\n",
+              "",
+              text,
+              flags=re.MULTILINE,
+          )
           function_patterns = [
               (
                   "lookup_user_auth_by_login_hash",

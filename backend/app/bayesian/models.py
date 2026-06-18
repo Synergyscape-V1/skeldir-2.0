@@ -1237,6 +1237,16 @@ class B24FitDispatchOutbox(Base, TenantMixin):
     claim_capability_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    assigned_worker_generation: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    assignment_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    assignment_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    assignment_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     lease_capability_digest: Mapped[str | None] = mapped_column(
         String(64), nullable=True
@@ -1329,11 +1339,12 @@ class B24FitRecoveryOutbox(Base, TenantMixin):
     attempt_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     task_name: Mapped[str] = mapped_column(String(256), nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    claim_capability: Mapped[str] = mapped_column(String(128), nullable=False)
+    claim_capability: Mapped[str | None] = mapped_column(String(128), nullable=True)
     recovery_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pending", server_default="pending"
     )
+
     published_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -1363,5 +1374,51 @@ class B24FitRecoveryOutbox(Base, TenantMixin):
         CheckConstraint(
             "publish_attempt_count >= 0",
             name="ck_b24_fit_recovery_outbox_publish_attempt_count",
+        ),
+    )
+
+
+class B24WorkerProcessAuthority(Base):
+    """Digest-only registry of boot-proven Bayesian worker process authority."""
+
+    __tablename__ = "b24_worker_process_authority"
+
+    generation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    pid: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_pid: Mapped[int] = mapped_column(Integer, nullable=False)
+    topology_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active", server_default="active"
+    )
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "generation_id", "pid", name="b24_worker_process_authority_pkey"
+        ),
+        CheckConstraint(
+            "length(generation_id) >= 16",
+            name="ck_b24_worker_process_authority_generation",
+        ),
+        CheckConstraint(
+            "process_token_digest ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_worker_process_authority_digest",
+        ),
+        CheckConstraint(
+            "topology_fingerprint ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_worker_process_authority_topology_fingerprint",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'revoked', 'expired')",
+            name="ck_b24_worker_process_authority_status",
         ),
     )

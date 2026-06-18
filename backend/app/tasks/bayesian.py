@@ -32,6 +32,7 @@ from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.bayesian.tenant_context import bind_transaction_local_tenant
 from app.bayesian.worker_boot_probe import (
     assert_bayesian_worker_boot_topology_proven,
+    current_bayesian_worker_claim_authority,
     ensure_bayesian_worker_boot_probe_signal_registered,
 )
 from app.celery_app import celery_app
@@ -347,7 +348,7 @@ def execute_fit_intent(
     task_name: str,
     attempt_id: str,
     payload_hash: str,
-    claim_capability: str,
+    recovery_generation: str = "0",
 ) -> dict:
     """Execute one Bayesian fit only after DB validates dispatch authority."""
 
@@ -360,8 +361,9 @@ def execute_fit_intent(
         task_name=task_name,
         attempt_id=_as_uuid(attempt_id),
         payload_hash=payload_hash,
-        claim_capability=claim_capability,
+        recovery_generation=int(recovery_generation),
     )
+    worker_authority = current_bayesian_worker_claim_authority()
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
     try:
@@ -370,6 +372,7 @@ def execute_fit_intent(
             fit_id=claim.fit_id,
             task_id=task_id,
             dispatch_claim=claim,
+            worker_authority=worker_authority,
         )
     finally:
         engine.dispose()

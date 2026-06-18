@@ -24,6 +24,7 @@ from app.bayesian.compiledir_reaper import create_compiledir_lease
 from app.bayesian.dispatch_authority import (
     BayesianDispatchClaim,
     BayesianDispatchLease,
+    BayesianWorkerClaimAuthority,
     DispatchClaimOutcome,
     bind_dispatch_write_context_sync,
     claim_fit_dispatch_sync,
@@ -81,33 +82,6 @@ def _set_execution_context(
         if dispatch_lease.tenant_id != tenant_id:
             raise RuntimeError("bayesian_dispatch_lease_tenant_mismatch")
         bind_dispatch_write_context_sync(conn, lease=dispatch_lease)
-
-
-def _fit_identity(conn, *, fit_id: UUID) -> UUID | None:
-    conn.execute(
-        text("SELECT set_config('app.b24_fit_resolution_id', :fit_id, true)"),
-        {"fit_id": str(fit_id)},
-    )
-    rows = (
-        conn.execute(
-            text(
-                """
-                SELECT tenant_id
-                FROM public.bayesian_model_fits
-                WHERE id = :fit_id
-                LIMIT 2
-                """
-            ),
-            {"fit_id": str(fit_id)},
-        )
-        .mappings()
-        .all()
-    )
-    if not rows:
-        return None
-    if len(rows) > 1:
-        raise RuntimeError("duplicate_fit_suppressed")
-    return UUID(str(rows[0]["tenant_id"]))
 
 
 _LoadFitRow = dict[str, object]
@@ -534,54 +508,33 @@ def execute_fit_intent_sync(
     engine: Engine,
     fit_id: UUID,
     task_id: str,
-    dispatch_claim: BayesianDispatchClaim | None = None,
+    dispatch_claim: BayesianDispatchClaim,
+    worker_authority: BayesianWorkerClaimAuthority,
 ) -> dict[str, object]:
     started = time.monotonic()
     run_preflight_janitor(ttl_seconds=3600, max_deletions=10, max_scan_entries=100)
     assert_fresh_checkout_is_clean(engine)
     dispatch_lease: BayesianDispatchLease | None = None
-    if dispatch_claim is not None:
-        with engine.begin() as conn:
-            claim_result = claim_fit_dispatch_sync(
-                conn,
-                claim=dispatch_claim,
-                worker_generation_id=os.getenv(
-                    "B24_BAYESIAN_WORKER_GENERATION_ID", "unknown-generation"
-                ),
-            )
-        if isinstance(claim_result, DispatchClaimOutcome):
-            return {
-                "status": claim_result.value.lower(),
-                "claim_outcome": claim_result.value,
-                "task_id": task_id,
-                "fit_id": str(dispatch_claim.fit_id),
-                "dispatch_id": str(dispatch_claim.dispatch_id),
-                "compute_started": False,
-            }
-        dispatch_lease = claim_result
-        tenant_id = dispatch_lease.tenant_id
-        fit_id = dispatch_lease.fit_id
-    else:
-        try:
-            with engine.begin() as conn:
-                tenant_id = _fit_identity(conn, fit_id=fit_id)
-        except RuntimeError as exc:
-            if str(exc) == "duplicate_fit_suppressed":
-                return {
-                    "status": "failed",
-                    "fallback_reason": FallbackReason.DUPLICATE_FIT_SUPPRESSED.value,
-                    "task_id": task_id,
-                    "fit_id": str(fit_id),
-                    "compute_started": False,
-                }
-            raise
-        if tenant_id is None:
-            return {
-                "status": "not_found",
-                "task_id": task_id,
-                "fit_id": str(fit_id),
-                "compute_started": False,
-            }
+    if dispatch_claim is None:
+        raise RuntimeError("bayesian_dispatch_claim_required")
+    with engine.begin() as conn:
+        claim_result = claim_fit_dispatch_sync(
+            conn,
+            claim=dispatch_claim,
+            worker_authority=worker_authority,
+        )
+    if isinstance(claim_result, DispatchClaimOutcome):
+        return {
+            "status": claim_result.value.lower(),
+            "claim_outcome": claim_result.value,
+            "task_id": task_id,
+            "fit_id": str(dispatch_claim.fit_id),
+            "dispatch_id": str(dispatch_claim.dispatch_id),
+            "compute_started": False,
+        }
+    dispatch_lease = claim_result
+    tenant_id = dispatch_lease.tenant_id
+    fit_id = dispatch_lease.fit_id
 
     lease = None
     workspace = None

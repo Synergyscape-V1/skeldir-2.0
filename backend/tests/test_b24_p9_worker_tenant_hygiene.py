@@ -50,7 +50,7 @@ CHILD_ENVIRONMENT = ROOT / "backend/app/bayesian/child_environment.py"
 COMPILEDIR_REAPER = ROOT / "backend/app/bayesian/compiledir_reaper.py"
 DIRECTIVE_IX_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
-    "202606141200_b24_p9_directive_ix_dispatch_authority.py"
+    "202606181200_b24_p9_directive_x_broker_independent_authority.py"
 )
 
 
@@ -829,7 +829,7 @@ def test_b24_p9_fit_execution_wires_cleanup_and_payload_airgap() -> None:
     assert "payload_json" not in _read(CHILD_ENVIRONMENT)
 
 
-def test_b24_p9_directive_ix_dispatch_authority_is_capability_bound() -> None:
+def test_b24_p9_directive_x_dispatch_authority_is_broker_independent() -> None:
     authority = _read(DISPATCH_AUTHORITY)
     outbox = _read(DISPATCH_OUTBOX)
     migration = _read(DIRECTIVE_IX_MIGRATION)
@@ -847,22 +847,31 @@ def test_b24_p9_directive_ix_dispatch_authority_is_capability_bound() -> None:
         "RETRYABLE_INFRASTRUCTURE_FAILURE",
         "BayesianDispatchClaim",
         "BayesianDispatchLease",
+        "BayesianWorkerClaimAuthority",
         "claim_fit_dispatch_sync",
         "bind_dispatch_write_context_sync",
+        "register_worker_process_authority_sync",
     ):
         assert token in authority
     for token in (
         "publish_capability_bound_dispatch",
+        "publish_secret_free_dispatch",
+        "publish_due_recovery_rows",
         '"dispatch_id": str(self.id)',
         '"attempt_id": str(self.attempt_id)',
         '"payload_hash": self.payload_hash',
-        '"claim_capability": self.claim_capability',
+        '"recovery_generation": str(self.recovery_generation)',
         "b24_create_fit_recovery_wakeups",
     ):
         assert token in outbox
+    assert '"claim_capability": self.claim_capability' not in outbox
     for token in (
+        "b24_worker_process_authority",
+        "b24_register_worker_process_authority",
+        "b24_next_active_worker_generation",
         "b24_claim_fit_dispatch",
         "p_fit_id uuid",
+        "p_worker_process_token text",
         "b24_current_dispatch_fence_valid",
         "b24_enforce_dispatch_fence",
         "b24_dispatch_fence_rejected",
@@ -871,13 +880,16 @@ def test_b24_p9_directive_ix_dispatch_authority_is_capability_bound() -> None:
         "FORCE ROW LEVEL SECURITY",
     ):
         assert token in migration
+    assert "app.b24_dispatch_fence_required" not in migration
 
 
-def test_b24_p9_directive_ix_celery_task_rejects_fit_id_only_authority() -> None:
+def test_b24_p9_directive_x_celery_task_rejects_broker_authority() -> None:
     tasks = _read(TASKS_BAYESIAN)
     assert "BayesianDispatchClaim" in tasks
     assert "dispatch_claim=claim" in tasks
-    assert "claim_capability: str" in tasks
+    assert "worker_authority=worker_authority" in tasks
+    assert "recovery_generation: str" in tasks
+    assert "claim_capability: str" not in tasks
     assert "payload_hash: str" in tasks
     assert "attempt_id: str" in tasks
     assert "dispatch_id: str" in tasks
