@@ -512,6 +512,10 @@ def _insert_dispatch_claim_for_fit(
                 ttl_seconds=3600,
             )
             conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            conn.execute(
                 text(
                     """
                     INSERT INTO public.b24_fit_dispatch_outbox (
