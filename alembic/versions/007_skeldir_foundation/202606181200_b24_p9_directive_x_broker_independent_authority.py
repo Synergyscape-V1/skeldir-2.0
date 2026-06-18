@@ -91,6 +91,10 @@ def upgrade() -> None:
         ALTER TABLE public.b24_fit_dispatch_outbox
             ADD CONSTRAINT ck_b24_fit_dispatch_outbox_assignment_generation_non_negative
             CHECK (assignment_generation >= 0);
+        ALTER TABLE public.b24_fit_dispatch_outbox
+            ALTER COLUMN claim_capability DROP NOT NULL,
+            ALTER COLUMN claim_capability_digest DROP NOT NULL,
+            ALTER COLUMN claim_capability_expires_at DROP NOT NULL;
         UPDATE public.b24_fit_dispatch_outbox
         SET claim_capability = NULL,
             claim_capability_digest = NULL,
