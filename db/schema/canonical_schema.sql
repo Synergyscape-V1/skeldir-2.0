@@ -93,6 +93,8 @@ CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid,
             v_lease_seconds integer := LEAST(GREATEST(COALESCE(p_lease_seconds, 330), 30), 900);
             v_outcome text;
         BEGIN
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+
             IF NOT EXISTS (
                 SELECT 1
                 FROM public.b24_worker_process_authority auth
@@ -435,6 +437,8 @@ CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
         DECLARE
             v_generation text;
         BEGIN
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+
             SELECT auth.generation_id
             INTO v_generation
             FROM public.b24_worker_process_authority auth
@@ -467,6 +471,8 @@ CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id tex
                OR p_topology_fingerprint !~ '^[a-f0-9]{64}$' THEN
                 RAISE EXCEPTION 'b24_worker_process_authority_invalid';
             END IF;
+
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
 
             INSERT INTO public.b24_worker_process_authority (
                 generation_id,
@@ -13042,6 +13048,13 @@ ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY deny_all_b24_worker_process_authority ON public.b24_worker_process_authority USING (false) WITH CHECK (false);
+
+
+--
+-- Name: b24_worker_process_authority function_access_b24_worker_process_authority; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY function_access_b24_worker_process_authority ON public.b24_worker_process_authority USING ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text));
 
 
 --

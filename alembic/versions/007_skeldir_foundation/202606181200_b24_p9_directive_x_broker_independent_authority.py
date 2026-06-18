@@ -71,6 +71,12 @@ def upgrade() -> None:
             ON public.b24_worker_process_authority
             USING (false)
             WITH CHECK (false);
+        DROP POLICY IF EXISTS function_access_b24_worker_process_authority
+            ON public.b24_worker_process_authority;
+        CREATE POLICY function_access_b24_worker_process_authority
+            ON public.b24_worker_process_authority
+            USING (current_setting('app.b24_worker_authority_access', true) = 'on')
+            WITH CHECK (current_setting('app.b24_worker_authority_access', true) = 'on');
         """
     )
     op.execute(
@@ -130,6 +136,8 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'b24_worker_process_authority_invalid';
             END IF;
 
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+
             INSERT INTO public.b24_worker_process_authority (
                 generation_id,
                 pid,
@@ -176,6 +184,8 @@ def upgrade() -> None:
         DECLARE
             v_generation text;
         BEGIN
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+
             SELECT auth.generation_id
             INTO v_generation
             FROM public.b24_worker_process_authority auth
@@ -228,6 +238,8 @@ def upgrade() -> None:
             v_lease_seconds integer := LEAST(GREATEST(COALESCE(p_lease_seconds, 330), 30), 900);
             v_outcome text;
         BEGIN
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+
             IF NOT EXISTS (
                 SELECT 1
                 FROM public.b24_worker_process_authority auth
