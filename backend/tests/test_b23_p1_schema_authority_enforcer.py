@@ -52,6 +52,13 @@ def _replace_once(pattern: str, replacement: str, text: str) -> str:
     return mutated
 
 
+def _replace_all_exact(token: str, replacement: str, text: str) -> str:
+    mutated = text.replace(token, replacement)
+    assert mutated != text
+    assert token not in mutated
+    return mutated
+
+
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(ENFORCER), *args],
@@ -395,9 +402,9 @@ def test_negative_control_remove_named_index(tmp_path: Path) -> None:
 def test_negative_control_remove_named_policy(tmp_path: Path) -> None:
     mutated = tmp_path / "canonical.remove_named_policy.sql"
     mutated.write_text(
-        _replace_once(
-            r"^CREATE POLICY tenant_isolation_policy_b23_revenue_events\b",
-            "CREATE POLICY tenant_isolation_policy_b23_revenue_events_removed",
+        _replace_all_exact(
+            "tenant_isolation_policy_b23_revenue_events",
+            "removed_tenant_policy_b23_revenue_events",
             CANONICAL_SCHEMA.read_text(encoding="utf-8"),
         ),
         encoding="utf-8",

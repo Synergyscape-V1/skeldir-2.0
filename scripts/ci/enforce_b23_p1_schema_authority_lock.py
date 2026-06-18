@@ -55,9 +55,7 @@ def _load_module(path: Path) -> Any:
     return module
 
 
-def _extract_constraint_window(
-    text: str, constraint_name: str, size: int = 1800
-) -> str:
+def _extract_constraint_window(text: str, constraint_name: str, size: int = 1800) -> str:
     match = re.search(rf"\b{re.escape(constraint_name)}\b", text)
     if match is None:
         return ""
@@ -94,36 +92,6 @@ def _extract_table_definition_window(text: str, table_name: str) -> str:
     )
 
 
-def _has_table_column_definition(table_definition: str, column_name: str) -> bool:
-    return (
-        re.search(
-            rf"(?m)^\s*{re.escape(column_name)}\s+(?:integer|character varying)\b",
-            table_definition,
-        )
-        is not None
-    )
-
-
-def _has_create_index_statement(text: str, index_name: str) -> bool:
-    return (
-        re.search(
-            rf"(?m)^CREATE\s+(?:UNIQUE\s+)?INDEX\s+{re.escape(index_name)}\s+ON\s+",
-            text,
-        )
-        is not None
-    )
-
-
-def _has_create_policy_statement(text: str, policy_name: str) -> bool:
-    return (
-        re.search(
-            rf"(?m)^CREATE\s+POLICY\s+{re.escape(policy_name)}\s+ON\s+",
-            text,
-        )
-        is not None
-    )
-
-
 def _validate_exact_tokens(
     *,
     observed: list[str],
@@ -143,9 +111,7 @@ def _validate_exact_tokens(
         violations.append(f"{violation_prefix}_duplicates_present")
 
 
-def _validate_required_contract_sections(
-    contract: dict[str, Any], violations: list[str]
-) -> None:
+def _validate_required_contract_sections(contract: dict[str, Any], violations: list[str]) -> None:
     required = (
         "lifecycle_requirements",
         "financial_operand_requirements",
@@ -223,22 +189,16 @@ def _validate_lifecycle_contract_and_migration(
         for key in required_keys:
             value = spec.get(key)
             if value in (None, "", []):
-                violations.append(
-                    f"lifecycle_table_spec_missing_field:{table_name}:{key}"
-                )
+                violations.append(f"lifecycle_table_spec_missing_field:{table_name}:{key}")
 
         retention_days = spec.get("retention_days")
         if not isinstance(retention_days, int) or retention_days <= 0:
             violations.append(f"lifecycle_retention_days_invalid:{table_name}")
             continue
         timestamp_column = str(spec.get("prune_timestamp_column") or "")
-        interval_token = (
-            f"{timestamp_column} < (now() - interval '{retention_days} days')"
-        )
+        interval_token = f"{timestamp_column} < (now() - interval '{retention_days} days')"
         if interval_token not in followup_migration_text:
-            violations.append(
-                f"lifecycle_interval_missing:{table_name}:{interval_token}"
-            )
+            violations.append(f"lifecycle_interval_missing:{table_name}:{interval_token}")
 
         if table_name not in canonical_schema_text:
             violations.append(f"canonical_missing_lifecycle_table:{table_name}")
@@ -263,12 +223,8 @@ def _validate_financial_operands(
     if not isinstance(financial, dict):
         return
 
-    revenue_window = _extract_table_definition_window(
-        canonical_schema_text, "b23_revenue_events"
-    )
-    match_window = _extract_table_definition_window(
-        canonical_schema_text, "b23_match_verdicts"
-    )
+    revenue_window = _extract_table_definition_window(canonical_schema_text, "b23_revenue_events")
+    match_window = _extract_table_definition_window(canonical_schema_text, "b23_match_verdicts")
 
     if "currency_code character(3) NOT NULL" not in revenue_window:
         violations.append("revenue_event_currency_binding_missing")
@@ -280,14 +236,10 @@ def _validate_financial_operands(
         for column in forbidden_generic:
             generic_pattern = rf"(?m)^\s*{re.escape(column)}\s+integer\b"
             if re.search(generic_pattern, revenue_window) is not None:
-                violations.append(
-                    f"revenue_event_forbidden_generic_money_column_present:{column}"
-                )
+                violations.append(f"revenue_event_forbidden_generic_money_column_present:{column}")
             drop_token = f"DROP COLUMN IF EXISTS {column}"
             if drop_token not in followup_migration_text:
-                violations.append(
-                    f"migration_missing_generic_money_column_drop:{column}"
-                )
+                violations.append(f"migration_missing_generic_money_column_drop:{column}")
 
     required_event_columns = (
         "captured_amount_minor integer",
@@ -321,9 +273,7 @@ def _validate_match_verdict_operands(
     if not isinstance(requirements, dict):
         return
 
-    window = _extract_table_definition_window(
-        canonical_schema_text, "b23_match_verdicts"
-    )
+    window = _extract_table_definition_window(canonical_schema_text, "b23_match_verdicts")
     required_columns = (
         requirements.get("expected_gross_column"),
         requirements.get("captured_gross_column"),
@@ -336,7 +286,7 @@ def _validate_match_verdict_operands(
         if not isinstance(column, str) or not column:
             violations.append("match_verdict_operand_column_name_missing")
             continue
-        if not _has_table_column_definition(window, column):
+        if f"{column} integer" not in window and f"{column} character varying" not in window:
             violations.append(f"match_verdict_operand_column_missing:{column}")
 
     band_values = requirements.get("discrepancy_band_values", [])
@@ -374,15 +324,13 @@ def _validate_discrepancy_persistence(
     if not isinstance(requirements, dict):
         return
 
-    window = _extract_table_definition_window(
-        canonical_schema_text, "b23_match_verdicts"
-    )
+    window = _extract_table_definition_window(canonical_schema_text, "b23_match_verdicts")
     for column in requirements.get("required_columns", []):
-        if not _has_table_column_definition(window, str(column)):
+        if f"{column} integer" not in window and f"{column} character varying" not in window:
             violations.append(f"discrepancy_column_missing:{column}")
 
     for index_name in requirements.get("required_indexes", []):
-        if not _has_create_index_statement(canonical_schema_text, str(index_name)):
+        if f"CREATE INDEX {index_name} " not in canonical_schema_text:
             violations.append(f"discrepancy_index_missing:{index_name}")
 
 
@@ -404,9 +352,7 @@ def _validate_p2_write_surface(
         classification = spec.get("classification")
         destination = spec.get("destination")
         if classification not in _ALLOWED_P2_CLASSIFICATIONS:
-            violations.append(
-                f"p2_write_surface_classification_invalid:{name}:{classification}"
-            )
+            violations.append(f"p2_write_surface_classification_invalid:{name}:{classification}")
         if not isinstance(destination, str) or "." not in destination:
             violations.append(f"p2_write_surface_destination_invalid:{name}")
             continue
@@ -414,14 +360,10 @@ def _validate_p2_write_surface(
         # Verify primary table token appears and at least one destination column token is present.
         table_token = destination.split(".", 1)[0].strip()
         if f"CREATE TABLE public.{table_token} (" not in canonical_schema_text:
-            violations.append(
-                f"p2_write_surface_destination_table_missing:{name}:{table_token}"
-            )
+            violations.append(f"p2_write_surface_destination_table_missing:{name}:{table_token}")
 
         column_candidates = re.findall(r"[a-z_]+", destination.split(".", 1)[1])
-        if not any(
-            f"{candidate} " in canonical_schema_text for candidate in column_candidates
-        ):
+        if not any(f"{candidate} " in canonical_schema_text for candidate in column_candidates):
             violations.append(f"p2_write_surface_destination_column_missing:{name}")
 
 
@@ -444,11 +386,11 @@ def _validate_deterministic_naming(
             violations.append(f"named_constraint_missing:{constraint}")
 
     for index_name in naming.get("required_named_indexes", []):
-        if not _has_create_index_statement(canonical_schema_text, str(index_name)):
+        if f"CREATE INDEX {index_name} " not in canonical_schema_text:
             violations.append(f"named_index_missing:{index_name}")
 
     for policy_name in naming.get("required_named_policies", []):
-        if not _has_create_policy_statement(canonical_schema_text, str(policy_name)):
+        if not _has_exact_named_token(canonical_schema_text, policy_name):
             violations.append(f"named_policy_missing:{policy_name}")
 
     for function_name in naming.get("required_named_functions", []):
@@ -517,9 +459,7 @@ def run_enforcement(
         if token not in canonical_schema_text:
             violations.append(f"canonical_schema_missing_table_token:{token}")
 
-    status_window = _extract_constraint_window(
-        base_migration_text, "ck_b23_match_verdicts_status"
-    )
+    status_window = _extract_constraint_window(base_migration_text, "ck_b23_match_verdicts_status")
     if not status_window:
         violations.append("base_migration_missing_match_status_constraint")
     else:
@@ -530,9 +470,7 @@ def run_enforcement(
             violations=violations,
         )
 
-    quality_window = _extract_constraint_window(
-        base_migration_text, "ck_b23_match_verdicts_match_quality"
-    )
+    quality_window = _extract_constraint_window(base_migration_text, "ck_b23_match_verdicts_match_quality")
     if not quality_window:
         violations.append("base_migration_missing_match_quality_constraint")
     else:
@@ -543,9 +481,7 @@ def run_enforcement(
             violations=violations,
         )
 
-    event_window = _extract_constraint_window(
-        base_migration_text, "ck_b23_revenue_events_event_type"
-    )
+    event_window = _extract_constraint_window(base_migration_text, "ck_b23_revenue_events_event_type")
     if not event_window:
         violations.append("base_migration_missing_revenue_event_type_constraint")
     else:
@@ -560,9 +496,7 @@ def run_enforcement(
     if unique_token not in base_migration_text:
         violations.append("base_migration_missing_revenue_event_idempotency_constraint")
     if unique_token not in canonical_schema_text:
-        violations.append(
-            "canonical_schema_missing_revenue_event_idempotency_constraint"
-        )
+        violations.append("canonical_schema_missing_revenue_event_idempotency_constraint")
 
     resolution_constraint_token = "ck_b23_exception_records_resolution_code_required"
     if resolution_constraint_token not in base_migration_text:
@@ -577,21 +511,14 @@ def run_enforcement(
         "COMMENT ON TABLE public.b23_webhook_ingestion_logs",
     )
     for column in webhook_required_columns:
-        if (
-            re.search(rf"(?m)^\s*{re.escape(column)}\s+[a-zA-Z]", webhook_window)
-            is None
-        ):
+        if re.search(rf"(?m)^\s*{re.escape(column)}\s+[a-zA-Z]", webhook_window) is None:
             violations.append(f"base_migration_missing_webhook_log_column:{column}")
 
-    forbidden_payload_tokens = contract.get(
-        "forbidden_authority_payload_column_tokens", []
-    )
+    forbidden_payload_tokens = contract.get("forbidden_authority_payload_column_tokens", [])
     if isinstance(forbidden_payload_tokens, list):
         for token in forbidden_payload_tokens:
             if token in webhook_window:
-                violations.append(
-                    f"webhook_log_contains_forbidden_payload_token:{token}"
-                )
+                violations.append(f"webhook_log_contains_forbidden_payload_token:{token}")
 
     rls_policy_tokens = (
         "tenant_isolation_policy_b23_match_verdicts",
@@ -668,9 +595,7 @@ def run_enforcement(
             violations.append(f"timing_constant_wrong_type:{name}")
             continue
         if value != expected:
-            violations.append(
-                f"timing_constant_value_mismatch:{name}:{value}:{expected}"
-            )
+            violations.append(f"timing_constant_value_mismatch:{name}:{value}:{expected}")
 
     required_ci_wiring = contract.get("required_ci_wiring", [])
     if not isinstance(required_ci_wiring, list) or not required_ci_wiring:
@@ -697,8 +622,8 @@ def run_enforcement(
     followup_hooks = (
         "def upgrade() -> None:",
         "def downgrade() -> None:",
-        'revision: str = "202604301030"',
-        'down_revision: Union[str, None] = "202604291200"',
+        "revision: str = \"202604301030\"",
+        "down_revision: Union[str, None] = \"202604291200\"",
         "DROP FUNCTION IF EXISTS public.{_LIFECYCLE_FUNCTION}(integer)",
     )
     for token in followup_hooks:
@@ -709,9 +634,7 @@ def run_enforcement(
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(
-        description="Enforce B2.3-P1 schema authority lock"
-    )
+    parser = argparse.ArgumentParser(description="Enforce B2.3-P1 schema authority lock")
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
     parser.add_argument("--contract-file", default=CONTRACT_FILE)
     parser.add_argument("--ci-workflow-file", default=CI_WORKFLOW_FILE)
@@ -719,9 +642,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--corrective-migration-file", default="")
     parser.add_argument("--canonical-schema-file", default="")
     parser.add_argument("--timing-constants-module", default="")
-    parser.add_argument(
-        "--reversibility-script-file", default=REVERSIBILITY_SCRIPT_FILE
-    )
+    parser.add_argument("--reversibility-script-file", default=REVERSIBILITY_SCRIPT_FILE)
     parser.add_argument("--simulate-regression", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -738,8 +659,7 @@ def main(argv: list[str]) -> int:
 
     base_migration_file = _resolve(
         repo_root,
-        args.base_migration_file
-        or str(schema_surfaces.get("base_migration_file") or ""),
+        args.base_migration_file or str(schema_surfaces.get("base_migration_file") or ""),
     )
     corrective_migration_file = _resolve(
         repo_root,
@@ -748,8 +668,7 @@ def main(argv: list[str]) -> int:
     )
     canonical_schema_file = _resolve(
         repo_root,
-        args.canonical_schema_file
-        or str(schema_surfaces.get("canonical_schema_file") or ""),
+        args.canonical_schema_file or str(schema_surfaces.get("canonical_schema_file") or ""),
     )
     timing_constants_module = _resolve(
         repo_root,
