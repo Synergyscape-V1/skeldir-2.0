@@ -193,41 +193,6 @@ def _register_test_worker_authority(
     )
 
 
-def _expire_active_worker_authorities(conn) -> None:
-    conn.execute(
-        text("SELECT set_config('app.b24_worker_authority_access', 'on', true)")
-    )
-    conn.execute(
-        text(
-            """
-            UPDATE public.b24_worker_process_authority
-            SET status = 'expired',
-                expires_at = now() - interval '1 second',
-                revoked_at = COALESCE(revoked_at, now())
-            WHERE status = 'active'
-            """
-        )
-    )
-
-
-def _expire_worker_authority(conn, *, generation_id: str) -> None:
-    conn.execute(
-        text("SELECT set_config('app.b24_worker_authority_access', 'on', true)")
-    )
-    conn.execute(
-        text(
-            """
-            UPDATE public.b24_worker_process_authority
-            SET status = 'expired',
-                expires_at = now() - interval '1 second',
-                revoked_at = COALESCE(revoked_at, now())
-            WHERE generation_id = :generation_id
-            """
-        ),
-        {"generation_id": generation_id},
-    )
-
-
 def _claim_test_dispatch_lease(
     conn,
     *,
@@ -1391,14 +1356,12 @@ async def test_b24_p9_directive_xi_recovery_publication_assignment_runtime(
 
     try:
         with sync_engine.begin() as conn:
-            _expire_active_worker_authorities(conn)
             worker_authority = _register_test_worker_authority(
                 conn,
                 generation_id="directive-xi-prior-generation",
                 pid=4244,
                 process_token="directive-xi-runtime-process-token-prior",
             )
-            _expire_worker_authority(conn, generation_id=worker_authority.generation_id)
             replacement_authority = _register_test_worker_authority(
                 conn,
                 generation_id="directive-xi-replacement-generation",
@@ -1639,7 +1602,6 @@ async def test_b24_p9_directive_xi_stale_publishing_recovery_quarantines(
     )
     try:
         with sync_engine.begin() as conn:
-            _expire_active_worker_authorities(conn)
             _register_test_worker_authority(
                 conn,
                 generation_id="directive-xi-quarantine-generation",

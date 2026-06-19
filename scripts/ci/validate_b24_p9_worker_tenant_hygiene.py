@@ -573,6 +573,7 @@ def validate_directive_ix_dispatch_authority(
         "b24_worker_process_authority",
         "b24_register_worker_process_authority",
         "b24_next_active_worker_generation",
+        "ORDER BY auth.registered_at DESC, auth.generation_id DESC",
         "b24_claim_fit_dispatch",
         "p_fit_id uuid",
         "p_worker_process_token text",
