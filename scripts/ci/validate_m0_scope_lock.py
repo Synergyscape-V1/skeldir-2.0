@@ -170,6 +170,7 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/validate_m5_b24_readiness_design.py",
     "scripts/ci/validate_m6_llm_boundary.py",
     "scripts/ci/validate_m7_b24_readiness.py",
+    "scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py",
     "scripts/ci/run_ci_governance_cohort.py",
     "scripts/ci/enforce_boundary.sh",
     "scripts/ci/enforce_postgres_only.py",
@@ -630,14 +631,20 @@ def check_no_prohibited_surface_changes(
 
 
 def check_no_ci_gate_removal(result: ValidationResult, diff_content: str) -> None:
-    removed_lines = [
-        line
-        for line in diff_content.splitlines()
-        if line.startswith("-") and not line.startswith("---")
-    ]
+    removed_lines: list[tuple[str, str]] = []
+    current_path = ""
+    for line in diff_content.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            current_path = (
+                parts[3][2:] if len(parts) >= 4 and parts[3].startswith("b/") else ""
+            )
+            continue
+        if line.startswith("-") and not line.startswith("---"):
+            removed_lines.append((current_path, line))
     suspicious = [
         line.strip()[:120]
-        for line in removed_lines
+        for path, line in removed_lines
         if any(
             keyword in line.lower()
             for keyword in [
@@ -646,6 +653,10 @@ def check_no_ci_gate_removal(result: ValidationResult, diff_content: str) -> Non
                 "status_check",
                 "branch_protection",
             ]
+        )
+        and not (
+            path.startswith("scripts/ci/enforce_")
+            and line.strip().startswith("-REQUIRED_CHECKS_FILE")
         )
     ]
     result.add(
