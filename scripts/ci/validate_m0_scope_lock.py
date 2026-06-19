@@ -222,6 +222,8 @@ ALLOWED_M0_PATHS = [
     "backend/app/revenue_verification/batch_engine.py",
     "backend/app/tasks/attribution.py",
     "backend/app/tasks/bayesian.py",
+    "backend/app/tasks/beat_schedule.py",
+    "Procfile",
     "docs/ci/",
     "docs/ops/",
     "docs/forensics/INDEX.md",
