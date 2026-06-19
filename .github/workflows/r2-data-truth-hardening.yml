@@ -226,6 +226,36 @@ jobs:
                   ),
               ),
           ]
+          allocation_function_patterns = [
+              (
+                  "check_allocation_sum",
+                  re.compile(
+                      r"\n?CREATE FUNCTION public\.check_allocation_sum\(\) RETURNS trigger.*?\n\s*\$\$;\n",
+                      re.DOTALL,
+                  ),
+              ),
+              (
+                  "check_allocation_sum_stmt_delete",
+                  re.compile(
+                      r"\n?CREATE FUNCTION public\.check_allocation_sum_stmt_delete\(\) RETURNS trigger.*?\n\s*\$\$;\n",
+                      re.DOTALL,
+                  ),
+              ),
+              (
+                  "check_allocation_sum_stmt_insert",
+                  re.compile(
+                      r"\n?CREATE FUNCTION public\.check_allocation_sum_stmt_insert\(\) RETURNS trigger.*?\n\s*\$\$;\n",
+                      re.DOTALL,
+                  ),
+              ),
+              (
+                  "check_allocation_sum_stmt_update",
+                  re.compile(
+                      r"\n?CREATE FUNCTION public\.check_allocation_sum_stmt_update\(\) RETURNS trigger.*?\n\s*\$\$;\n",
+                      re.DOTALL,
+                  ),
+              ),
+          ]
           reordered = text
           deferred_blocks = []
           for label, pattern in function_patterns:
@@ -234,6 +264,26 @@ jobs:
                   raise SystemExit(f"unable to locate {label} function block in canonical schema")
               deferred_blocks.append(match.group(0).strip() + "\n")
               reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
+          allocation_deferred_blocks = []
+          for label, pattern in allocation_function_patterns:
+              match = pattern.search(reordered)
+              if not match:
+                  raise SystemExit(f"unable to locate {label} function block in canonical schema")
+              allocation_deferred_blocks.append(match.group(0).strip() + "\n")
+              reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
+
+          allocation_trigger_marker = "-- Name: attribution_allocations trg_check_allocation_sum; Type: TRIGGER; Schema: public; Owner: -"
+          marker_index = reordered.find(allocation_trigger_marker)
+          if marker_index == -1:
+              raise SystemExit("unable to locate allocation trigger insertion point in canonical schema")
+          reordered = (
+              reordered[:marker_index].rstrip()
+              + "\n\n"
+              + "\n".join(allocation_deferred_blocks)
+              + "\n"
+              + reordered[marker_index:]
+          )
+
           def replace_matview_block(schema_text: str, view_name: str, replacement: str) -> str:
               pattern = re.compile(
                   rf"CREATE MATERIALIZED VIEW (?:public\.)?{re.escape(view_name)} AS\n.*?\n\s*WITH NO DATA;",
