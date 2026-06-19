@@ -210,7 +210,8 @@ def test_b24_p3_queue_payload_is_minimal_capability_wakeup() -> None:
         task_name="app.tasks.bayesian.execute_fit_intent",
         attempt_id=UUID("44444444-4444-4444-8444-444444444444"),
         payload_hash="a" * 64,
-        claim_capability="b" * 64,
+        recovery_generation=0,
+        assigned_worker_generation="directive-x-p3-generation",
         attempt_count=0,
         max_attempts=5,
     )
@@ -220,15 +221,16 @@ def test_b24_p3_queue_payload_is_minimal_capability_wakeup() -> None:
         "task_name",
         "attempt_id",
         "payload_hash",
-        "claim_capability",
+        "recovery_generation",
     }
+    assert "claim_capability" not in row.queue_payload
 
 
 def test_b24_p3_queue_payload_rejects_source_rows_or_manifest() -> None:
     validator = _load_validator()
     mutated = _read(DISPATCH_OUTBOX).replace(
-        '"claim_capability": self.claim_capability,',
-        '"claim_capability": self.claim_capability, "source_rows": [],',
+        '"recovery_generation": str(self.recovery_generation),',
+        '"recovery_generation": str(self.recovery_generation), "source_rows": [],',
     )
     with pytest.raises(validator.ValidationError, match="forbidden"):
         validator.validate_dispatch_outbox(REPO_ROOT, mutated)

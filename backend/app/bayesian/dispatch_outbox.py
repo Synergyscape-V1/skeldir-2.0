@@ -48,7 +48,8 @@ class DispatchOutboxRow:
     task_name: str
     attempt_id: UUID
     payload_hash: str
-    claim_capability: str
+    recovery_generation: int
+    assigned_worker_generation: str
     attempt_count: int
     max_attempts: int
 
@@ -60,12 +61,51 @@ class DispatchOutboxRow:
             "task_name": self.task_name,
             "attempt_id": str(self.attempt_id),
             "payload_hash": self.payload_hash,
-            "claim_capability": self.claim_capability,
+            "recovery_generation": str(self.recovery_generation),
         }
 
 
-def publish_capability_bound_dispatch(row: DispatchOutboxRow) -> str:
-    """Publish a broker wake-up whose execution authority is DB-bound."""
+@dataclass(frozen=True)
+class RecoveryOutboxRow:
+    id: UUID
+    tenant_id: UUID
+    dispatch_id: UUID
+    fit_id: UUID
+    task_name: str
+    attempt_id: UUID
+    payload_hash: str
+    recovery_generation: int
+    publish_attempt_count: int
+
+    @property
+    def queue_payload(self) -> dict[str, str]:
+        return {
+            "dispatch_id": str(self.dispatch_id),
+            "fit_id": str(self.fit_id),
+            "task_name": self.task_name,
+            "attempt_id": str(self.attempt_id),
+            "payload_hash": self.payload_hash,
+            "recovery_generation": str(self.recovery_generation),
+        }
+
+
+def publish_secret_free_dispatch(row: DispatchOutboxRow) -> str:
+    """Publish a broker wake-up whose possession cannot authorize execution."""
+
+    result = celery_app.send_task(
+        BAYESIAN_FIT_EXECUTION_TASK,
+        kwargs=row.queue_payload,
+        queue=QUEUE_BAYESIAN,
+        routing_key=f"{QUEUE_BAYESIAN}.task",
+    )
+    return str(result.id)
+
+
+publish_capability_bound_dispatch = publish_secret_free_dispatch
+
+
+def publish_secret_free_recovery(row: RecoveryOutboxRow) -> str:
+    """Republish a durable recovery wake-up without broker-carried authority."""
 
     result = celery_app.send_task(
         BAYESIAN_FIT_EXECUTION_TASK,
@@ -115,6 +155,9 @@ async def lease_due_dispatch_rows(
                 ORDER BY next_attempt_at ASC, id ASC
                 LIMIT :batch_size
                 FOR UPDATE SKIP LOCKED
+            ),
+            live_generation AS (
+                SELECT public.b24_next_active_worker_generation() AS generation_id
             )
             UPDATE public.b24_fit_dispatch_outbox outbox
             SET status = 'dispatching',
@@ -127,19 +170,18 @@ async def lease_due_dispatch_rows(
                     payload_hash,
                     public.b24_sha256_text(:task_name || ':' || outbox.fit_id::text)
                 ),
-                claim_capability = COALESCE(claim_capability, encode(gen_random_bytes(32), 'hex')),
-                claim_capability_digest = COALESCE(
-                    claim_capability_digest,
-                    public.b24_sha256_text(claim_capability)
-                ),
-                claim_capability_expires_at = COALESCE(
-                    claim_capability_expires_at,
-                    now() + interval '24 hours'
-                ),
+                claim_capability = NULL,
+                claim_capability_digest = NULL,
+                claim_capability_expires_at = NULL,
+                assigned_worker_generation = live_generation.generation_id,
+                assignment_generation = assignment_generation + 1,
+                assignment_expires_at = now() + interval '10 minutes',
+                assignment_reason = 'initial_dispatch',
                 updated_at = now()
-            FROM due
+            FROM due, live_generation
             WHERE outbox.tenant_id = due.tenant_id
               AND outbox.id = due.id
+              AND live_generation.generation_id IS NOT NULL
             RETURNING
                 outbox.id,
                 outbox.tenant_id,
@@ -147,7 +189,8 @@ async def lease_due_dispatch_rows(
                 outbox.task_name,
                 outbox.attempt_id,
                 outbox.payload_hash,
-                outbox.claim_capability,
+                outbox.recovery_generation,
+                outbox.assigned_worker_generation,
                 outbox.attempt_count,
                 outbox.max_attempts
             """
@@ -167,7 +210,8 @@ async def lease_due_dispatch_rows(
             payload_hash=str(
                 row["payload_hash"] or dispatch_payload_hash(fit_id=row["fit_id"])
             ),
-            claim_capability=str(row["claim_capability"]),
+            recovery_generation=int(row["recovery_generation"] or 0),
+            assigned_worker_generation=str(row["assigned_worker_generation"]),
             attempt_count=int(row["attempt_count"]),
             max_attempts=int(row["max_attempts"]),
         )
@@ -268,3 +312,172 @@ async def create_recovery_wakeups(
         {"batch_size": max(1, int(batch_size))},
     )
     return int(result.scalar_one())
+
+
+async def lease_due_recovery_rows(
+    session: AsyncSession,
+    *,
+    batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
+) -> list[RecoveryOutboxRow]:
+    result = await session.execute(
+        text(
+            """
+            WITH live_generation AS (
+                SELECT public.b24_next_active_worker_generation() AS generation_id
+            ),
+            due AS (
+                SELECT tenant_id, id, dispatch_id
+                FROM public.b24_fit_recovery_outbox
+                WHERE status IN ('pending', 'failed_retryable')
+                ORDER BY created_at ASC, id ASC
+                LIMIT :batch_size
+                FOR UPDATE SKIP LOCKED
+            ),
+            assigned AS (
+                UPDATE public.b24_fit_dispatch_outbox outbox
+                SET status = 'dispatching',
+                    assigned_worker_generation = live_generation.generation_id,
+                    assignment_generation = assignment_generation + 1,
+                    assignment_expires_at = now() + interval '10 minutes',
+                    assignment_reason = 'recovery_republish',
+                    dispatching_started_at = now(),
+                    updated_at = now()
+                FROM due, live_generation
+                WHERE outbox.tenant_id = due.tenant_id
+                  AND outbox.id = due.dispatch_id
+                  AND live_generation.generation_id IS NOT NULL
+                RETURNING
+                    outbox.tenant_id,
+                    outbox.id AS dispatch_id,
+                    outbox.fit_id,
+                    outbox.task_name,
+                    outbox.attempt_id,
+                    outbox.payload_hash,
+                    outbox.recovery_generation
+            )
+            UPDATE public.b24_fit_recovery_outbox recovery
+            SET status = 'publishing',
+                publish_attempt_count = publish_attempt_count + 1,
+                updated_at = now()
+            FROM due
+            JOIN assigned
+              ON assigned.tenant_id = due.tenant_id
+             AND assigned.dispatch_id = due.dispatch_id
+            WHERE recovery.tenant_id = due.tenant_id
+              AND recovery.id = due.id
+            RETURNING
+                recovery.id,
+                recovery.tenant_id,
+                recovery.dispatch_id,
+                assigned.fit_id,
+                assigned.task_name,
+                assigned.attempt_id,
+                assigned.payload_hash,
+                assigned.recovery_generation,
+                recovery.publish_attempt_count
+            """
+        ),
+        {"batch_size": max(1, int(batch_size))},
+    )
+    return [
+        RecoveryOutboxRow(
+            id=row["id"],
+            tenant_id=row["tenant_id"],
+            dispatch_id=row["dispatch_id"],
+            fit_id=row["fit_id"],
+            task_name=str(row["task_name"]),
+            attempt_id=row["attempt_id"],
+            payload_hash=str(row["payload_hash"]),
+            recovery_generation=int(row["recovery_generation"]),
+            publish_attempt_count=int(row["publish_attempt_count"]),
+        )
+        for row in result.mappings()
+    ]
+
+
+async def mark_recovery_published(
+    session: AsyncSession,
+    *,
+    row: RecoveryOutboxRow,
+) -> None:
+    await session.execute(
+        text(
+            """
+            UPDATE public.b24_fit_recovery_outbox
+            SET status = 'published',
+                published_at = now(),
+                updated_at = now(),
+                last_error = NULL
+            WHERE tenant_id = :tenant_id
+              AND id = :id;
+            """
+        ),
+        {
+            "tenant_id": str(row.tenant_id),
+            "id": str(row.id),
+        },
+    )
+    await session.execute(
+        text(
+            """
+            UPDATE public.b24_fit_dispatch_outbox
+            SET status = 'dispatched',
+                dispatched_at = now(),
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND id = :dispatch_id;
+            """
+        ),
+        {
+            "tenant_id": str(row.tenant_id),
+            "id": str(row.id),
+            "dispatch_id": str(row.dispatch_id),
+        },
+    )
+
+
+async def mark_recovery_publish_failed(
+    session: AsyncSession,
+    *,
+    row: RecoveryOutboxRow,
+    error: str,
+    max_attempts: int = 5,
+) -> None:
+    await session.execute(
+        text(
+            """
+            UPDATE public.b24_fit_recovery_outbox
+            SET status = CASE
+                    WHEN publish_attempt_count >= :max_attempts THEN 'quarantined'
+                    ELSE 'failed_retryable'
+                END,
+                last_error = :error,
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND id = :id
+            """
+        ),
+        {
+            "tenant_id": str(row.tenant_id),
+            "id": str(row.id),
+            "max_attempts": max(1, int(max_attempts)),
+            "error": error[:2048],
+        },
+    )
+
+
+async def publish_due_recovery_rows(
+    session: AsyncSession,
+    *,
+    publish: Callable[[RecoveryOutboxRow], str] = publish_secret_free_recovery,
+    batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
+) -> list[RecoveryOutboxRow]:
+    rows = await lease_due_recovery_rows(session, batch_size=batch_size)
+    for row in rows:
+        try:
+            publish(row)
+        except Exception as exc:
+            await mark_recovery_publish_failed(session, row=row, error=str(exc))
+            continue
+        await mark_recovery_published(session, row=row)
+    return rows

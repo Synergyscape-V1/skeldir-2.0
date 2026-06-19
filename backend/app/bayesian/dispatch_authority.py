@@ -41,14 +41,23 @@ TERMINAL_OR_NON_EXECUTING_CLAIM_OUTCOMES = {
 
 @dataclass(frozen=True)
 class BayesianDispatchClaim:
-    """Opaque wake-up payload; the broker carries this but does not authorize it."""
+    """Secret-free broker wake-up payload; execution authority lives in Postgres."""
 
     dispatch_id: UUID
     fit_id: UUID
     task_name: str
     attempt_id: UUID
     payload_hash: str
-    claim_capability: str
+    recovery_generation: int = 0
+
+
+@dataclass(frozen=True)
+class BayesianWorkerClaimAuthority:
+    """Process-local worker authority derived from the boot-proven generation."""
+
+    generation_id: str
+    pid: int
+    process_token: str
 
 
 @dataclass(frozen=True)
@@ -77,7 +86,7 @@ def claim_fit_dispatch_sync(
     conn,
     *,
     claim: BayesianDispatchClaim,
-    worker_generation_id: str,
+    worker_authority: BayesianWorkerClaimAuthority,
     lease_seconds: int = 900,
 ) -> BayesianDispatchLease | DispatchClaimOutcome:
     """
@@ -98,8 +107,10 @@ def claim_fit_dispatch_sync(
                     :task_name,
                     :attempt_id,
                     :payload_hash,
-                    :claim_capability,
                     :worker_generation_id,
+                    :worker_pid,
+                    :worker_process_token,
+                    :recovery_generation,
                     :lease_seconds
                 )
                 """
@@ -110,8 +121,10 @@ def claim_fit_dispatch_sync(
                 "task_name": claim.task_name,
                 "attempt_id": str(claim.attempt_id),
                 "payload_hash": claim.payload_hash,
-                "claim_capability": claim.claim_capability,
-                "worker_generation_id": worker_generation_id,
+                "worker_generation_id": worker_authority.generation_id,
+                "worker_pid": int(worker_authority.pid),
+                "worker_process_token": worker_authority.process_token,
+                "recovery_generation": int(claim.recovery_generation),
                 "lease_seconds": max(1, int(lease_seconds)),
             },
         )
@@ -146,8 +159,7 @@ def bind_dispatch_write_context_sync(conn, *, lease: BayesianDispatchLease) -> N
                 set_config('app.b24_dispatch_id', :dispatch_id, true),
                 set_config('app.b24_attempt_id', :attempt_id, true),
                 set_config('app.b24_claim_epoch', :claim_epoch, true),
-                set_config('app.b24_lease_capability', :lease_capability, true),
-                set_config('app.b24_dispatch_fence_required', 'on', true)
+                set_config('app.b24_lease_capability', :lease_capability, true)
             """
         ),
         {
@@ -185,4 +197,40 @@ def create_recovery_wakeups_sync(conn, *, batch_size: int = 25) -> int:
             text("SELECT public.b24_create_fit_recovery_wakeups(:batch_size)"),
             {"batch_size": max(1, int(batch_size))},
         ).scalar_one()
+    )
+
+
+def register_worker_process_authority_sync(
+    conn,
+    *,
+    generation_id: str,
+    pid: int,
+    parent_pid: int,
+    topology_fingerprint: str,
+    process_token: str,
+    ttl_seconds: int = 3600,
+) -> None:
+    """Register a boot-proven worker process token digest for DB claim checks."""
+
+    conn.execute(
+        text(
+            """
+            SELECT public.b24_register_worker_process_authority(
+                :generation_id,
+                :pid,
+                :parent_pid,
+                :topology_fingerprint,
+                :process_token,
+                :ttl_seconds
+            )
+            """
+        ),
+        {
+            "generation_id": generation_id,
+            "pid": int(pid),
+            "parent_pid": int(parent_pid),
+            "topology_fingerprint": topology_fingerprint,
+            "process_token": process_token,
+            "ttl_seconds": max(30, int(ttl_seconds)),
+        },
     )

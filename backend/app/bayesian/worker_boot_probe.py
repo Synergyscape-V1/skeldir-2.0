@@ -23,6 +23,11 @@ from app.bayesian.db_boot_probe import (
     BayesianWorkerBootTopologyProbeError,
     run_bayesian_worker_boot_topology_probe,
 )
+from app.bayesian.db_engine import create_bayesian_worker_engine
+from app.bayesian.dispatch_authority import (
+    BayesianWorkerClaimAuthority,
+    register_worker_process_authority_sync,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +234,24 @@ def _authority_token(
     ).hexdigest()
 
 
+def _register_process_authority(authority: BayesianWorkerExecutionAuthority) -> None:
+    """Persist only a digest of this process token for database claim checks."""
+
+    engine = create_bayesian_worker_engine()
+    try:
+        with engine.begin() as conn:
+            register_worker_process_authority_sync(
+                conn,
+                generation_id=authority.generation_id,
+                pid=authority.pid,
+                parent_pid=authority.parent_pid,
+                topology_fingerprint=authority.topology_fingerprint,
+                process_token=authority.token,
+            )
+    finally:
+        engine.dispose()
+
+
 def _derive_process_authority_from_generation() -> BayesianWorkerExecutionAuthority:
     global _bayesian_worker_generation_proof
     proof = _bayesian_worker_generation_proof
@@ -288,6 +311,25 @@ def bayesian_worker_boot_topology_probe_has_passed() -> bool:
         and authority.topology_fingerprint == proof.topology_fingerprint
         and topology_fingerprint == proof.topology_fingerprint
         and hmac.compare_digest(authority.token, expected_token)
+    )
+
+
+def current_bayesian_worker_claim_authority() -> BayesianWorkerClaimAuthority:
+    """Return the authenticated process authority required for dispatch claim."""
+
+    if not bayesian_worker_boot_topology_probe_has_passed():
+        raise BayesianWorkerBootTopologyProofMissing(
+            "bayesian_worker_boot_topology_probe_required"
+        )
+    authority = _bayesian_execution_authority
+    if authority is None:
+        raise BayesianWorkerBootTopologyProofMissing(
+            "bayesian_worker_process_authority_unavailable"
+        )
+    return BayesianWorkerClaimAuthority(
+        generation_id=authority.generation_id,
+        pid=authority.pid,
+        process_token=authority.token,
     )
 
 
@@ -359,6 +401,7 @@ def _run_bayesian_worker_boot_topology_probe_if_needed() -> None:
     )
     _persist_generation_authority_file(_bayesian_worker_generation_proof)
     _bayesian_execution_authority = _derive_process_authority_from_generation()
+    _register_process_authority(_bayesian_execution_authority)
     logger.info(
         "bayesian_worker_boot_topology_probe_passed",
         extra={
@@ -423,6 +466,7 @@ def _derive_bayesian_child_authority_if_needed() -> None:
             }
         )
         raise SystemExit("bayesian_worker_child_authority_failed") from exc
+    _register_process_authority(_bayesian_execution_authority)
     logger.info(
         "bayesian_worker_child_authorized",
         extra={

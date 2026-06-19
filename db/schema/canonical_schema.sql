@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict JjCd4j6jzIa6bDKa5icTyXK8apFRtov9QsZcdgalVIwnQULSYoPhfuhftTqc2fd
+\restrict KjLUmjeC2GffcjSqpHKE5ZXydSwPjPkyOeggDvs4wYJr0Qd6W7GYNftobHp8dbT
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -78,45 +78,62 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
 
 
 --
--- Name: b24_claim_fit_dispatch(uuid, uuid, text, uuid, text, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: b24_claim_fit_dispatch(uuid, uuid, text, uuid, text, text, integer, text, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid, p_task_name text, p_attempt_id uuid, p_payload_hash text, p_claim_capability text, p_worker_generation text, p_lease_seconds integer DEFAULT 330) RETURNS TABLE(outcome text, tenant_id uuid, fit_id uuid, dispatch_id uuid, attempt_id uuid, claim_epoch integer, lease_capability text, lease_expires_at timestamp with time zone)
+CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid, p_task_name text, p_attempt_id uuid, p_payload_hash text, p_worker_generation text, p_worker_pid integer, p_worker_process_token text, p_recovery_generation integer DEFAULT 0, p_lease_seconds integer DEFAULT 330) RETURNS TABLE(outcome text, tenant_id uuid, fit_id uuid, dispatch_id uuid, attempt_id uuid, claim_epoch integer, lease_capability text, lease_expires_at timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
         DECLARE
             v_row public.b24_fit_dispatch_outbox%ROWTYPE;
-            v_digest text := public.b24_sha256_text(p_claim_capability);
             v_lease text;
             v_lease_digest text;
             v_next_epoch integer;
             v_lease_seconds integer := LEAST(GREATEST(COALESCE(p_lease_seconds, 330), 30), 900);
             v_outcome text;
         BEGIN
-            PERFORM set_config('app.b24_claim_capability_digest', v_digest, true);
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+            PERFORM set_config('app.b24_dispatch_claim_access', 'on', true);
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM public.b24_worker_process_authority auth
+                WHERE auth.generation_id = p_worker_generation
+                  AND auth.pid = p_worker_pid
+                  AND auth.process_token_digest = public.b24_sha256_text(p_worker_process_token)
+                  AND auth.status = 'active'
+                  AND auth.revoked_at IS NULL
+                  AND auth.expires_at > now()
+            ) THEN
+                RETURN QUERY SELECT 'UNAUTHORIZED', NULL::uuid, NULL::uuid, NULL::uuid,
+                    NULL::uuid, NULL::integer, NULL::text, NULL::timestamptz;
+                RETURN;
+            END IF;
 
             SELECT *
             INTO v_row
             FROM public.b24_fit_dispatch_outbox outbox
             WHERE outbox.id = p_dispatch_id
+              AND outbox.fit_id = p_fit_id
             FOR UPDATE;
 
             IF NOT FOUND THEN
-                RETURN QUERY SELECT 'UNAUTHORIZED', NULL::uuid, NULL::uuid, p_dispatch_id,
-                    p_attempt_id, NULL::integer, NULL::text, NULL::timestamptz;
+                RETURN QUERY SELECT 'UNAUTHORIZED', NULL::uuid, NULL::uuid, NULL::uuid,
+                    NULL::uuid, NULL::integer, NULL::text, NULL::timestamptz;
                 RETURN;
             END IF;
 
-            IF v_row.claim_capability_digest <> v_digest
-               OR v_row.fit_id <> p_fit_id
+            IF v_row.fit_id <> p_fit_id
                OR v_row.task_name <> p_task_name
                OR v_row.attempt_id <> p_attempt_id
                OR v_row.payload_hash <> p_payload_hash
-               OR v_row.claim_capability_expires_at <= now() THEN
-                RETURN QUERY SELECT 'UNAUTHORIZED', v_row.tenant_id, v_row.fit_id,
-                    v_row.id, v_row.attempt_id, v_row.claim_epoch, NULL::text,
-                    v_row.lease_expires_at;
+               OR COALESCE(v_row.recovery_generation, 0) <> COALESCE(p_recovery_generation, 0)
+               OR v_row.assigned_worker_generation IS DISTINCT FROM p_worker_generation
+               OR v_row.assignment_expires_at IS NULL
+               OR v_row.assignment_expires_at <= now() THEN
+                RETURN QUERY SELECT 'UNAUTHORIZED', NULL::uuid, NULL::uuid, NULL::uuid,
+                    NULL::uuid, NULL::integer, NULL::text, NULL::timestamptz;
                 RETURN;
             END IF;
 
@@ -166,6 +183,9 @@ CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid,
                 claim_count = claim_count + 1,
                 redelivery_count = redelivery_count + CASE WHEN v_row.claim_count > 0 THEN 1 ELSE 0 END,
                 next_recovery_at = now() + (v_lease_seconds * interval '1 second'),
+                claim_capability = NULL,
+                claim_capability_digest = NULL,
+                claim_capability_expires_at = NULL,
                 updated_at = now()
             WHERE outbox.tenant_id = v_row.tenant_id
               AND outbox.id = v_row.id;
@@ -175,7 +195,6 @@ CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid,
             PERFORM set_config('app.b24_attempt_id', v_row.attempt_id::text, true);
             PERFORM set_config('app.b24_claim_epoch', v_next_epoch::text, true);
             PERFORM set_config('app.b24_lease_capability', v_lease, true);
-            PERFORM set_config('app.b24_dispatch_fence_required', 'on', true);
 
             RETURN QUERY SELECT v_outcome, v_row.tenant_id, v_row.fit_id, v_row.id,
                 v_row.attempt_id, v_next_epoch, v_lease,
@@ -218,8 +237,8 @@ CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 2
         DECLARE
             v_count integer := 0;
             v_row record;
-            v_claim text;
             v_generation integer;
+            v_attempt_id uuid;
         BEGIN
             PERFORM set_config('app.b24_recovery_reconciler', 'on', true);
 
@@ -237,13 +256,20 @@ CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 2
                 LIMIT LEAST(GREATEST(COALESCE(p_limit, 25), 1), 100)
                 FOR UPDATE SKIP LOCKED
             LOOP
-                v_claim := encode(gen_random_bytes(32), 'hex');
                 v_generation := v_row.recovery_generation + 1;
+                v_attempt_id := gen_random_uuid();
                 UPDATE public.b24_fit_dispatch_outbox outbox
                 SET status = 'stale_recovered',
-                    claim_capability = v_claim,
-                    claim_capability_digest = public.b24_sha256_text(v_claim),
-                    claim_capability_expires_at = now() + interval '24 hours',
+                    attempt_id = v_attempt_id,
+                    claim_capability = NULL,
+                    claim_capability_digest = NULL,
+                    claim_capability_expires_at = NULL,
+                    lease_capability_digest = NULL,
+                    lease_expires_at = NULL,
+                    assigned_worker_generation = NULL,
+                    assignment_generation = assignment_generation + 1,
+                    assignment_expires_at = NULL,
+                    assignment_reason = 'stale_recovery',
                     recovery_generation = v_generation,
                     next_recovery_at = now() + interval '5 minutes',
                     updated_at = now()
@@ -264,10 +290,10 @@ CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 2
                     v_row.id,
                     v_row.tenant_id,
                     v_row.fit_id,
-                    v_row.attempt_id,
+                    v_attempt_id,
                     v_row.task_name,
                     v_row.payload_hash,
-                    v_claim,
+                    NULL,
                     v_generation
                 )
                 ON CONFLICT (tenant_id, dispatch_id, recovery_generation) DO NOTHING;
@@ -315,6 +341,10 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
             v_tenant_id uuid;
             v_fit_id uuid;
         BEGIN
+            IF TG_OP = 'DELETE' THEN
+                RAISE EXCEPTION 'b24_dispatch_delete_forbidden';
+            END IF;
+
             IF TG_OP = 'UPDATE' THEN
                 IF TG_ARGV[0] = 'fit' THEN
                     IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.id IS DISTINCT FROM OLD.id THEN
@@ -331,13 +361,12 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
                 END IF;
             END IF;
 
-            IF current_setting('app.b24_dispatch_fence_required', true) IS DISTINCT FROM 'on' THEN
-                RETURN NEW;
-            END IF;
-
             IF TG_ARGV[0] = 'fit' THEN
                 v_tenant_id := NEW.tenant_id;
                 v_fit_id := NEW.id;
+                IF TG_OP = 'INSERT' AND NEW.status IN ('queued', 'pending') THEN
+                    RETURN NEW;
+                END IF;
             ELSIF TG_ARGV[0] = 'artifact' THEN
                 v_tenant_id := NEW.tenant_id;
                 v_fit_id := NEW.fit_id;
@@ -399,6 +428,89 @@ CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
 
 
 --
+-- Name: b24_next_active_worker_generation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+        DECLARE
+            v_generation text;
+        BEGIN
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+
+            SELECT auth.generation_id
+            INTO v_generation
+            FROM public.b24_worker_process_authority auth
+            WHERE auth.status = 'active'
+              AND auth.revoked_at IS NULL
+              AND auth.expires_at > now()
+            ORDER BY auth.registered_at ASC, auth.generation_id ASC
+            LIMIT 1;
+            RETURN v_generation;
+        END
+        $$;
+
+
+--
+-- Name: b24_register_worker_process_authority(text, integer, integer, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id text, p_pid integer, p_parent_pid integer, p_topology_fingerprint text, p_process_token text, p_ttl_seconds integer DEFAULT 3600) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+        DECLARE
+            v_ttl integer := LEAST(GREATEST(COALESCE(p_ttl_seconds, 3600), 30), 86400);
+        BEGIN
+            IF p_generation_id IS NULL
+               OR p_generation_id = ''
+               OR p_generation_id = 'unknown-generation'
+               OR p_process_token IS NULL
+               OR p_process_token = ''
+               OR p_topology_fingerprint !~ '^[a-f0-9]{64}$' THEN
+                RAISE EXCEPTION 'b24_worker_process_authority_invalid';
+            END IF;
+
+            PERFORM set_config('app.b24_worker_authority_access', 'on', true);
+
+            INSERT INTO public.b24_worker_process_authority (
+                generation_id,
+                pid,
+                parent_pid,
+                topology_fingerprint,
+                process_token_digest,
+                status,
+                registered_at,
+                expires_at,
+                revoked_at
+            )
+            VALUES (
+                p_generation_id,
+                p_pid,
+                p_parent_pid,
+                p_topology_fingerprint,
+                public.b24_sha256_text(p_process_token),
+                'active',
+                now(),
+                now() + (v_ttl * interval '1 second'),
+                NULL
+            )
+            ON CONFLICT (generation_id, pid)
+            DO UPDATE SET
+                parent_pid = EXCLUDED.parent_pid,
+                topology_fingerprint = EXCLUDED.topology_fingerprint,
+                process_token_digest = EXCLUDED.process_token_digest,
+                status = 'active',
+                registered_at = now(),
+                expires_at = EXCLUDED.expires_at,
+                revoked_at = NULL;
+        END
+        $_$;
+
+
+--
 -- Name: b24_sha256_text(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -419,7 +531,7 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1; -- Â±1 cent rounding tolerance
+            tolerance_cents INTEGER := 1; -- Ãƒâ€šÃ‚Â±1 cent rounding tolerance
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
@@ -1573,8 +1685,8 @@ CREATE TABLE public.b23_match_verdicts (
     last_transition_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    canonical_expected_gross_amount_minor integer NOT NULL,
-    canonical_captured_gross_amount_minor integer NOT NULL,
+    canonical_expected_gross_amount_minor integer CONSTRAINT b23_match_verdicts_canonical_expected_gross_amount_min_not_null NOT NULL,
+    canonical_captured_gross_amount_minor integer CONSTRAINT b23_match_verdicts_canonical_captured_gross_amount_min_not_null NOT NULL,
     canonical_net_verified_amount_minor integer NOT NULL,
     discrepancy_amount_minor integer NOT NULL,
     discrepancy_ratio_bps integer NOT NULL,
@@ -1873,9 +1985,9 @@ CREATE TABLE public.b24_fit_dispatch_outbox (
     task_name text NOT NULL,
     attempt_id uuid NOT NULL,
     payload_hash character(64) NOT NULL,
-    claim_capability text NOT NULL,
-    claim_capability_digest character(64) NOT NULL,
-    claim_capability_expires_at timestamp with time zone NOT NULL,
+    claim_capability text,
+    claim_capability_digest character(64),
+    claim_capability_expires_at timestamp with time zone,
     lease_owner text,
     lease_capability_digest character(64),
     lease_acquired_at timestamp with time zone,
@@ -1890,6 +2002,11 @@ CREATE TABLE public.b24_fit_dispatch_outbox (
     superseded_by uuid,
     terminal_reason text,
     next_recovery_at timestamp with time zone NOT NULL,
+    assigned_worker_generation text,
+    assignment_generation integer DEFAULT 0 NOT NULL,
+    assignment_expires_at timestamp with time zone,
+    assignment_reason text,
+    CONSTRAINT ck_b24_fit_dispatch_outbox_assignment_generation_non_negative CHECK ((assignment_generation >= 0)),
     CONSTRAINT ck_b24_fit_dispatch_outbox_attempt_count CHECK ((attempt_count >= 0)),
     CONSTRAINT ck_b24_fit_dispatch_outbox_claim_capability_digest_sha256 CHECK ((claim_capability_digest ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_b24_fit_dispatch_outbox_claim_count_non_negative CHECK ((claim_count >= 0)),
@@ -1918,7 +2035,7 @@ CREATE TABLE public.b24_fit_recovery_outbox (
     attempt_id uuid NOT NULL,
     task_name text NOT NULL,
     payload_hash character(64) NOT NULL,
-    claim_capability text NOT NULL,
+    claim_capability text,
     recovery_generation integer NOT NULL,
     status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1967,6 +2084,29 @@ CREATE TABLE public.b24_source_window_feature_authority (
 );
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b24_worker_process_authority; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b24_worker_process_authority (
+    generation_id text NOT NULL,
+    pid integer NOT NULL,
+    parent_pid integer NOT NULL,
+    topology_fingerprint character(64) NOT NULL,
+    process_token_digest character(64) NOT NULL,
+    status character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    registered_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    CONSTRAINT ck_b24_worker_process_authority_digest CHECK ((process_token_digest ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_b24_worker_process_authority_generation CHECK ((length(generation_id) >= 16)),
+    CONSTRAINT ck_b24_worker_process_authority_status CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'revoked'::character varying, 'expired'::character varying])::text[]))),
+    CONSTRAINT ck_b24_worker_process_authority_topology_fingerprint CHECK ((topology_fingerprint ~ '^[a-f0-9]{64}$'::text))
+);
+
+ALTER TABLE ONLY public.b24_worker_process_authority FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -6049,6 +6189,14 @@ ALTER TABLE ONLY public.b24_source_window_feature_authority
 
 
 --
+-- Name: b24_worker_process_authority b24_worker_process_authority_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b24_worker_process_authority
+    ADD CONSTRAINT b24_worker_process_authority_pkey PRIMARY KEY (generation_id, pid);
+
+
+--
 -- Name: bayesian_artifact_storage_quotas bayesian_artifact_storage_quotas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8905,7 +9053,7 @@ CREATE INDEX idx_b23_p4_attribution_order_ref_expr ON public.attribution_events 
 
 
 --
--- Name: b23 p4 match rate tenant transition status index; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_b23_p4_match_rate_tenant_transition_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_b23_p4_match_rate_tenant_transition_status ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at DESC, status) WHERE ((status)::text = ANY ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]));
@@ -8940,7 +9088,7 @@ CREATE INDEX idx_b23_p4_worker_dlq_open_status_failed_at ON public.worker_failed
 
 
 --
--- Name: b23 revenue events tenant event effect sign index; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_b23_revenue_events_tenant_event_effect_sign; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_b23_revenue_events_tenant_event_effect_sign ON public.b23_revenue_events USING btree (tenant_id, event_type, net_effect_sign, event_occurred_at DESC);
@@ -9196,6 +9344,13 @@ CREATE INDEX idx_b24_p4_revenue_events_provider_cardinality ON public.b23_revenu
 --
 
 CREATE INDEX idx_b24_p4_revenue_events_provider_early_stop ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
+
+
+--
+-- Name: idx_b24_worker_process_authority_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b24_worker_process_authority_active ON public.b24_worker_process_authority USING btree (expires_at, registered_at) WHERE ((status)::text = 'active'::text);
 
 
 --
@@ -11666,14 +11821,14 @@ CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities AFTER INSERT OR 
 -- Name: bayesian_artifacts trg_b24_dispatch_fence_artifacts; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_b24_dispatch_fence_artifacts BEFORE INSERT OR UPDATE ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('artifact');
+CREATE TRIGGER trg_b24_dispatch_fence_artifacts BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('artifact');
 
 
 --
 -- Name: bayesian_model_fits trg_b24_dispatch_fence_fits; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_b24_dispatch_fence_fits BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('fit');
+CREATE TRIGGER trg_b24_dispatch_fence_fits BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('fit');
 
 
 --
@@ -12638,6 +12793,12 @@ ALTER TABLE public.b24_fit_recovery_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: b24_worker_process_authority; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b24_worker_process_authority ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: bayesian_artifact_storage_quotas; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -12884,6 +13045,13 @@ ALTER TABLE public.dead_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: b24_worker_process_authority deny_all_b24_worker_process_authority; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY deny_all_b24_worker_process_authority ON public.b24_worker_process_authority USING (false) WITH CHECK (false);
+
+
+--
 -- Name: b24_fit_dispatch_outbox dispatch_capability_claim_select_b24_fit_dispatch_outbox; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -12895,6 +13063,13 @@ CREATE POLICY dispatch_capability_claim_select_b24_fit_dispatch_outbox ON public
 --
 
 CREATE POLICY dispatch_capability_claim_update_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox FOR UPDATE USING ((((claim_capability_digest)::text = NULLIF(current_setting('app.b24_claim_capability_digest'::text, true), ''::text)) AND (claim_capability_expires_at > now()))) WITH CHECK ((((claim_capability_digest)::text = NULLIF(current_setting('app.b24_claim_capability_digest'::text, true), ''::text)) AND (claim_capability_expires_at > now())));
+
+
+--
+-- Name: b24_fit_dispatch_outbox dispatch_claim_function_access_b24_fit_dispatch_outbox; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dispatch_claim_function_access_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((current_setting('app.b24_dispatch_claim_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_dispatch_claim_access'::text, true) = 'on'::text));
 
 
 --
@@ -12928,6 +13103,12 @@ ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: b24_worker_process_authority function_access_b24_worker_process_authority; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY function_access_b24_worker_process_authority ON public.b24_worker_process_authority USING ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text));
 
 --
 -- Name: investigation_jobs; Type: ROW SECURITY; Schema: public; Owner: -
@@ -13369,7 +13550,7 @@ CREATE POLICY tenant_isolation_policy_b23_match_verdicts ON public.b23_match_ver
 
 
 --
--- Name: b23_revenue_events tenant isolation policy; Type: POLICY; Schema: public; Owner: -
+-- Name: b23_revenue_events tenant_isolation_policy_b23_revenue_events; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
@@ -13786,4 +13967,4 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict JjCd4j6jzIa6bDKa5icTyXK8apFRtov9QsZcdgalVIwnQULSYoPhfuhftTqc2fd
+\unrestrict KjLUmjeC2GffcjSqpHKE5ZXydSwPjPkyOeggDvs4wYJr0Qd6W7GYNftobHp8dbT

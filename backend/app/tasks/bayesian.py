@@ -26,12 +26,17 @@ from app.bayesian.db_engine import (
 from app.bayesian.dispatch_authority import (
     BAYESIAN_FIT_EXECUTION_TASK,
     BayesianDispatchClaim,
+    BayesianDispatchLease,
+    BayesianWorkerClaimAuthority,
+    claim_fit_dispatch_sync,
+    mark_dispatch_running_sync,
 )
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.bayesian.tenant_context import bind_transaction_local_tenant
 from app.bayesian.worker_boot_probe import (
     assert_bayesian_worker_boot_topology_proven,
+    current_bayesian_worker_claim_authority,
     ensure_bayesian_worker_boot_probe_signal_registered,
 )
 from app.celery_app import celery_app
@@ -177,13 +182,28 @@ def _build_fallback_payload(
 
 
 def _persist_fit_timeout_if_requested(
-    *, tenant_id: UUID, fit_id: UUID | None, runtime_seconds: int
+    *,
+    tenant_id: UUID,
+    fit_id: UUID | None,
+    runtime_seconds: int,
+    dispatch_claim: BayesianDispatchClaim | None = None,
+    worker_authority: BayesianWorkerClaimAuthority | None = None,
 ) -> bool:
     if fit_id is None:
         return False
     engine = create_bayesian_worker_engine()
     try:
         with engine.begin() as conn:
+            if dispatch_claim is not None and worker_authority is not None:
+                lease = claim_fit_dispatch_sync(
+                    conn,
+                    claim=dispatch_claim,
+                    worker_authority=worker_authority,
+                    lease_seconds=300,
+                )
+                if not isinstance(lease, BayesianDispatchLease):
+                    return False
+                mark_dispatch_running_sync(conn, lease=lease)
             return mark_fit_timeout_sync(
                 conn,
                 tenant_id=tenant_id,
@@ -201,6 +221,8 @@ def _emit_fallback_event(
     correlation_id: UUID,
     elapsed_ms: int,
     fit_id: UUID | None = None,
+    dispatch_claim: BayesianDispatchClaim | None = None,
+    worker_authority: BayesianWorkerClaimAuthority | None = None,
 ) -> dict:
     fallback_payload = _build_fallback_payload(
         task_id=task_id,
@@ -229,6 +251,8 @@ def _emit_fallback_event(
         tenant_id=tenant_id,
         fit_id=fit_id,
         runtime_seconds=max(0, elapsed_ms // 1000),
+        dispatch_claim=dispatch_claim,
+        worker_authority=worker_authority,
     )
     return fallback_payload
 
@@ -347,7 +371,7 @@ def execute_fit_intent(
     task_name: str,
     attempt_id: str,
     payload_hash: str,
-    claim_capability: str,
+    recovery_generation: str = "0",
 ) -> dict:
     """Execute one Bayesian fit only after DB validates dispatch authority."""
 
@@ -360,8 +384,9 @@ def execute_fit_intent(
         task_name=task_name,
         attempt_id=_as_uuid(attempt_id),
         payload_hash=payload_hash,
-        claim_capability=claim_capability,
+        recovery_generation=int(recovery_generation),
     )
+    worker_authority = current_bayesian_worker_claim_authority()
     task_id = str(self.request.id)
     engine = create_bayesian_worker_engine()
     try:
@@ -370,6 +395,7 @@ def execute_fit_intent(
             fit_id=claim.fit_id,
             task_id=task_id,
             dispatch_claim=claim,
+            worker_authority=worker_authority,
         )
     finally:
         engine.dispose()

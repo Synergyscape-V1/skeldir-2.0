@@ -366,9 +366,6 @@ async def claim_fit_for_snapshot(
                             task_name,
                             attempt_id,
                             payload_hash,
-                            claim_capability,
-                            claim_capability_digest,
-                            claim_capability_expires_at,
                             status,
                             attempt_count,
                             next_attempt_at,
@@ -382,18 +379,12 @@ async def claim_fit_for_snapshot(
                             'app.tasks.bayesian.execute_fit_intent',
                             gen_random_uuid(),
                             public.b24_sha256_text('app.tasks.bayesian.execute_fit_intent:' || id::text),
-                            claim.claim_capability,
-                            public.b24_sha256_text(claim.claim_capability),
-                            now() + interval '24 hours',
                             'pending',
                             0,
                             now(),
                             now(),
                             now()
                         FROM claimed_fit
-                        CROSS JOIN LATERAL (
-                            SELECT encode(gen_random_bytes(32), 'hex') AS claim_capability
-                        ) claim
                         WHERE NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
                         ON CONFLICT (tenant_id, fit_id)
                         DO UPDATE SET
@@ -445,51 +436,9 @@ async def claim_fit_for_snapshot(
                             payload_hash = public.b24_sha256_text(
                                 'app.tasks.bayesian.execute_fit_intent:' || EXCLUDED.fit_id::text
                             ),
-                            claim_capability = CASE
-                                WHEN b24_fit_dispatch_outbox.status IN (
-                                    'dispatched',
-                                    'leased',
-                                    'running',
-                                    'completed',
-                                    'failed_terminal',
-                                    'cancelled',
-                                    'expired',
-                                    'superseded',
-                                    'quarantined'
-                                )
-                                    THEN b24_fit_dispatch_outbox.claim_capability
-                                ELSE EXCLUDED.claim_capability
-                            END,
-                            claim_capability_digest = CASE
-                                WHEN b24_fit_dispatch_outbox.status IN (
-                                    'dispatched',
-                                    'leased',
-                                    'running',
-                                    'completed',
-                                    'failed_terminal',
-                                    'cancelled',
-                                    'expired',
-                                    'superseded',
-                                    'quarantined'
-                                )
-                                    THEN b24_fit_dispatch_outbox.claim_capability_digest
-                                ELSE EXCLUDED.claim_capability_digest
-                            END,
-                            claim_capability_expires_at = CASE
-                                WHEN b24_fit_dispatch_outbox.status IN (
-                                    'dispatched',
-                                    'leased',
-                                    'running',
-                                    'completed',
-                                    'failed_terminal',
-                                    'cancelled',
-                                    'expired',
-                                    'superseded',
-                                    'quarantined'
-                                )
-                                    THEN b24_fit_dispatch_outbox.claim_capability_expires_at
-                                ELSE now() + interval '24 hours'
-                            END,
+                            claim_capability = NULL,
+                            claim_capability_digest = NULL,
+                            claim_capability_expires_at = NULL,
                             updated_at = now()
                         RETURNING id, fit_id
                     ),

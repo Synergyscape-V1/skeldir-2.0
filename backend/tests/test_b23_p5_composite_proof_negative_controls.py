@@ -129,7 +129,9 @@ def _copy_p5_structural_fixture(tmp_path: Path) -> Path:
     manifest_path = "contracts-internal/governance/b23_p5_composite_proof.main.json"
     pytest_manifest_path = "contracts-internal/governance/b23_p5_pytest_suite.main.json"
     manifest = json.loads((REPO_ROOT / manifest_path).read_text(encoding="utf-8"))
-    pytest_manifest = json.loads((REPO_ROOT / pytest_manifest_path).read_text(encoding="utf-8"))
+    pytest_manifest = json.loads(
+        (REPO_ROOT / pytest_manifest_path).read_text(encoding="utf-8")
+    )
     files = {
         manifest_path,
         pytest_manifest_path,
@@ -154,9 +156,14 @@ def _copy_p5_structural_fixture(tmp_path: Path) -> Path:
 
 def test_p1_remove_match_verdict_status_value_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace(root / "db/schema/canonical_schema.sql", "'matched_confirmed'::character varying, ", "")
         _replace(
-            root / "alembic/versions/007_skeldir_foundation/202604291200_b23_p1_schema_authority_lock.py",
+            root / "db/schema/canonical_schema.sql",
+            "'matched_confirmed'::character varying, ",
+            "",
+        )
+        _replace(
+            root
+            / "alembic/versions/007_skeldir_foundation/202604291200_b23_p1_schema_authority_lock.py",
             "                        'matched_confirmed',\n",
             "",
         )
@@ -189,9 +196,14 @@ def test_p1_remove_exception_resolution_code_constraint_fails(tmp_path: Path) ->
 
 def test_p1_remove_revenue_event_type_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace(root / "db/schema/canonical_schema.sql", "'chargeback_lost'::character varying, ", "")
         _replace(
-            root / "alembic/versions/007_skeldir_foundation/202604291200_b23_p1_schema_authority_lock.py",
+            root / "db/schema/canonical_schema.sql",
+            "'chargeback_lost'::character varying, ",
+            "",
+        )
+        _replace(
+            root
+            / "alembic/versions/007_skeldir_foundation/202604291200_b23_p1_schema_authority_lock.py",
             "                        'chargeback_lost',\n",
             "",
         )
@@ -207,7 +219,9 @@ def test_p1_remove_revenue_event_type_fails(tmp_path: Path) -> None:
 
 def test_p2_add_unsupported_platform_without_extractor_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        contract = root / "contracts-internal/governance/b23_p2_match_engine_kernel.main.json"
+        contract = (
+            root / "contracts-internal/governance/b23_p2_match_engine_kernel.main.json"
+        )
         payload = json.loads(contract.read_text(encoding="utf-8"))
         payload["platform_keyed_extraction_registry"]["providers"].append("square")
         contract.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -256,9 +270,14 @@ def test_p2_hardcode_arrival_window_literal_fails(tmp_path: Path) -> None:
 
 
 def test_p2_arrival_guard_runtime_negative_control_is_manifested() -> None:
-    manifest = json.loads((REPO_ROOT / "contracts-internal/governance/b23_p5_pytest_suite.main.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (
+            REPO_ROOT / "contracts-internal/governance/b23_p5_pytest_suite.main.json"
+        ).read_text(encoding="utf-8")
+    )
     p2_runtime = [
-        entry for entry in manifest["required_test_files"]
+        entry
+        for entry in manifest["required_test_files"]
         if entry["path"] == "backend/tests/test_b23_p2_match_engine_kernel.py"
     ][0]
     assert "arrival_window_guard" in p2_runtime["gate_classes"]
@@ -276,7 +295,8 @@ def test_p2_reachable_llm_call_from_match_path_fails(tmp_path: Path) -> None:
         )
         text = text.replace(
             "extracted = extract_revenue_from_typed_input(match_input.verified_revenue_input)",
-            f"{provider}.res" + "ponses.create(model='gpt-4.1-mini', input='forbidden')\n"
+            f"{provider}.res"
+            + "ponses.create(model='gpt-4.1-mini', input='forbidden')\n"
             "    extracted = extract_revenue_from_typed_input(match_input.verified_revenue_input)",
             1,
         )
@@ -293,7 +313,11 @@ def test_p2_reachable_llm_call_from_match_path_fails(tmp_path: Path) -> None:
 
 def test_p2_remove_refund_chargeback_handler_registration_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace(root / "backend/app/revenue_verification/match_engine_kernel.py", '        "chargeback_lost",\n', "")
+        _replace(
+            root / "backend/app/revenue_verification/match_engine_kernel.py",
+            '        "chargeback_lost",\n',
+            "",
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -323,7 +347,11 @@ def test_p3_remove_transition_task_registration_fails(tmp_path: Path) -> None:
 
 def test_p3_remove_flagged_alert_exception_creation_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace_all(root / "backend/app/revenue_verification/match_engine_kernel.py", "reconcile_b23_attribution_exception_lifecycle", "exception_lifecycle_removed")
+        _replace_all(
+            root / "backend/app/revenue_verification/match_engine_kernel.py",
+            "reconcile_b23_attribution_exception_lifecycle",
+            "exception_lifecycle_removed",
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -336,7 +364,11 @@ def test_p3_remove_flagged_alert_exception_creation_fails(tmp_path: Path) -> Non
 
 def test_p3_collapse_provisional_confirmed_statuses_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace_all(root / "frontend/src/types/api/reconciliation.ts", "matched_provisional", "matched")
+        _replace_all(
+            root / "frontend/src/types/api/reconciliation.ts",
+            "matched_provisional",
+            "matched",
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -349,7 +381,11 @@ def test_p3_collapse_provisional_confirmed_statuses_fails(tmp_path: Path) -> Non
 
 def test_p4_route_b23_task_to_default_queue_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace(root / "backend/app/celery_app.py", "'queue': QUEUE_B23_MATCH_ENGINE", "'queue': 'default'")
+        _replace(
+            root / "backend/app/celery_app.py",
+            "'queue': QUEUE_B23_MATCH_ENGINE",
+            "'queue': 'default'",
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -362,7 +398,11 @@ def test_p4_route_b23_task_to_default_queue_fails(tmp_path: Path) -> None:
 
 def test_p4_worker_consumes_llm_queue_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace(root / "Procfile", "--queues=b23_match_engine", "--queues=b23_match_engine,llm")
+        _replace(
+            root / "Procfile",
+            "--queues=b23_match_engine",
+            "--queues=b23_match_engine,llm",
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -375,7 +415,9 @@ def test_p4_worker_consumes_llm_queue_fails(tmp_path: Path) -> None:
 
 def test_p4_remove_dedicated_db_pool_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace_all(root / "backend/app/db/session.py", "b23_engine", "shared_engine_removed")
+        _replace_all(
+            root / "backend/app/db/session.py", "b23_engine", "shared_engine_removed"
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -386,12 +428,14 @@ def test_p4_remove_dedicated_db_pool_fails(tmp_path: Path) -> None:
     )
 
 
-def test_p4_benchmark_scope_fixture_insert_inside_timed_region_fails(tmp_path: Path) -> None:
+def test_p4_benchmark_scope_fixture_insert_inside_timed_region_fails(
+    tmp_path: Path,
+) -> None:
     def mutate(root: Path) -> None:
         _replace(
             root / "backend/tests/test_b23_p4_queue_performance.py",
-            "event.listen(b23_engine.sync_engine, \"before_cursor_execute\", count_statement)",
-            "event.listen(b23_engine.sync_engine, \"before_cursor_execute\", count_statement)\n    await _seed_b23_p4_benchmark_data(tenant_a)",
+            'event.listen(b23_engine.sync_engine, "before_cursor_execute", count_statement)',
+            'event.listen(b23_engine.sync_engine, "before_cursor_execute", count_statement)\n    await _seed_b23_p4_benchmark_data(tenant_a)',
         )
 
     _assert_correct_then_mutated_fails(
@@ -406,7 +450,11 @@ def test_p4_benchmark_scope_fixture_insert_inside_timed_region_fails(tmp_path: P
 def test_p4_replace_microbatch_with_n_plus_one_loop_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
         path = root / "backend/app/revenue_verification/batch_engine.py"
-        path.write_text(path.read_text(encoding="utf-8") + "\n# regression sentinel: for match_input in rows\n", encoding="utf-8")
+        path.write_text(
+            path.read_text(encoding="utf-8")
+            + "\n# regression sentinel: for match_input in rows\n",
+            encoding="utf-8",
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -419,7 +467,11 @@ def test_p4_replace_microbatch_with_n_plus_one_loop_fails(tmp_path: Path) -> Non
 
 def test_p4_remove_telemetry_sql_index_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace(root / "db/schema/canonical_schema.sql", "idx_b23_p4_match_rate_tenant_transition_status", "idx_b23_p4_match_rate_removed")
+        _replace_all(
+            root / "db/schema/canonical_schema.sql",
+            "idx_b23_p4_match_rate_tenant_transition_status",
+            "removed_b23_p4_match_rate_index",
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -432,7 +484,11 @@ def test_p4_remove_telemetry_sql_index_fails(tmp_path: Path) -> None:
 
 def test_frontend_generated_type_drift_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
-        _replace_all(root / "frontend/src/types/api/reconciliation.ts", "matched_confirmed", "matched")
+        _replace_all(
+            root / "frontend/src/types/api/reconciliation.ts",
+            "matched_confirmed",
+            "matched",
+        )
 
     _assert_correct_then_mutated_fails(
         tmp_path,
@@ -444,7 +500,11 @@ def test_frontend_generated_type_drift_fails(tmp_path: Path) -> None:
 
 
 def test_manifest_required_runtime_proof_self_exemption_fails(tmp_path: Path) -> None:
-    manifest = json.loads((REPO_ROOT / "contracts-internal/governance/b23_p5_composite_proof.main.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (
+            REPO_ROOT / "contracts-internal/governance/b23_p5_composite_proof.main.json"
+        ).read_text(encoding="utf-8")
+    )
     manifest["skip_policy"]["exempt_from_skip_failure"] = ["p4_runtime_benchmark"]
     bad_manifest = tmp_path / "bad_manifest.json"
     summary = tmp_path / "summary.json"
@@ -467,7 +527,9 @@ def test_manifest_required_runtime_proof_self_exemption_fails(tmp_path: Path) ->
         check=False,
     )
     assert result.returncode != 0, result.stdout
-    assert "required_proof_self_exemption_forbidden:p4_runtime_benchmark" in result.stdout
+    assert (
+        "required_proof_self_exemption_forbidden:p4_runtime_benchmark" in result.stdout
+    )
 
 
 def test_branch_protection_missing_composite_check_fails(tmp_path: Path) -> None:
@@ -494,12 +556,18 @@ def test_branch_protection_missing_composite_check_fails(tmp_path: Path) -> None
         check=False,
     )
     assert result.returncode != 0, result.stdout
-    assert "required_check_missing_from_branch_protection:B2.3 Composite Proof Harness" in result.stdout
+    assert (
+        "required_check_missing_from_branch_protection:B2.3 Composite Proof Harness"
+        in result.stdout
+    )
 
 
 def test_p0_contract_version_regression_fails(tmp_path: Path) -> None:
     fixture = _copy_p5_structural_fixture(tmp_path)
-    p0_contract = fixture / "contracts-internal/governance/b23_p0_semantic_authority_freeze.main.json"
+    p0_contract = (
+        fixture
+        / "contracts-internal/governance/b23_p0_semantic_authority_freeze.main.json"
+    )
     payload = json.loads(p0_contract.read_text(encoding="utf-8"))
     payload["contract_version"] = "9.9.9"
     p0_contract.write_text(json.dumps(payload, indent=2), encoding="utf-8")

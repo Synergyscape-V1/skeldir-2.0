@@ -8,6 +8,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 
+from app.bayesian.dispatch_authority import (
+    BAYESIAN_FIT_EXECUTION_TASK,
+    dispatch_payload_hash,
+)
 from app.db.session import engine, get_session
 
 
@@ -62,6 +66,11 @@ async def _insert_test_fit(
     interval_element_count: int | None = 0,
 ) -> UUID:
     resolved_fit_id = fit_id or uuid4()
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=resolved_fit_id)
+    generation_id = f"p7-diagnostic-proof-{uuid4().hex[:16]}"
+    process_token = f"p7-diagnostic-token-{uuid4().hex}"
     async with get_session(tenant_id) as session:
         await session.execute(
             text(
@@ -108,27 +117,27 @@ async def _insert_test_fit(
                     :source_window_start,
                     :source_window_end,
                     :source_snapshot_hash,
-                    :status,
+                    'queued',
                     'eligible',
                     'complete',
-                    :fallback_applied,
-                    :fallback_reason,
+                    false,
+                    NULL,
                     60,
                     1000,
                     2,
                     2,
                     1000,
-                    :r_hat_max,
-                    :ess_min,
-                    :divergence_count,
-                    :hdi_lower,
-                    :hdi_upper,
-                    CAST(:interval_shape AS jsonb),
-                    :interval_element_count,
+                    1.0,
+                    500.0,
+                    0,
+                    NULL,
+                    NULL,
+                    CAST('[]' AS jsonb),
+                    0,
                     256,
-                    :credible_interval_status,
-                    :diagnostic_status,
-                    :diagnostic_failure_reason,
+                    'not_available',
+                    'unavailable',
+                    'skipped_non_sampled',
                     'b24-p7-diagnostic-policy-v1',
                     'b24-p7-target-filter-v1',
                     'b24-p7-interval-policy-v1',
@@ -143,6 +152,137 @@ async def _insert_test_fit(
                 "source_window_start": START,
                 "source_window_end": END,
                 "source_snapshot_hash": VALID_HASH,
+            },
+        )
+        await session.execute(
+            text(
+                """
+                SELECT public.b24_register_worker_process_authority(
+                    :generation_id,
+                    4242,
+                    1,
+                    :topology_fingerprint,
+                    :process_token,
+                    3600
+                )
+                """
+            ),
+            {
+                "generation_id": generation_id,
+                "topology_fingerprint": "7" * 64,
+                "process_token": process_token,
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO public.b24_fit_dispatch_outbox (
+                    tenant_id,
+                    id,
+                    fit_id,
+                    dispatch_key,
+                    task_name,
+                    attempt_id,
+                    payload_hash,
+                    assigned_worker_generation,
+                    assignment_generation,
+                    assignment_expires_at,
+                    assignment_reason,
+                    status,
+                    next_attempt_at,
+                    next_recovery_at
+                )
+                VALUES (
+                    :tenant_id,
+                    :dispatch_id,
+                    :fit_id,
+                    :dispatch_key,
+                    :task_name,
+                    :attempt_id,
+                    :payload_hash,
+                    :assigned_worker_generation,
+                    1,
+                    now() + interval '10 minutes',
+                    'p7_diagnostic_semantics_test',
+                    'dispatched',
+                    now(),
+                    now() + interval '1 hour'
+                )
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "dispatch_id": str(dispatch_id),
+                "fit_id": str(resolved_fit_id),
+                "dispatch_key": f"b24-p7-test:{tenant_id}:{resolved_fit_id}",
+                "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                "attempt_id": str(attempt_id),
+                "payload_hash": payload_hash,
+                "assigned_worker_generation": generation_id,
+            },
+        )
+        claim_row = (
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM public.b24_claim_fit_dispatch(
+                            :dispatch_id,
+                            :fit_id,
+                            :task_name,
+                            :attempt_id,
+                            :payload_hash,
+                            :worker_generation,
+                            4242,
+                            :process_token,
+                            0,
+                            300
+                        )
+                        """
+                    ),
+                    {
+                        "dispatch_id": str(dispatch_id),
+                        "fit_id": str(resolved_fit_id),
+                        "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                        "attempt_id": str(attempt_id),
+                        "payload_hash": payload_hash,
+                        "worker_generation": generation_id,
+                        "process_token": process_token,
+                    },
+                )
+            )
+            .mappings()
+            .one()
+        )
+        assert claim_row["outcome"] == "ACQUIRED"
+        await session.execute(text("SELECT public.b24_mark_fit_dispatch_running()"))
+        await session.execute(
+            text(
+                """
+                UPDATE public.bayesian_model_fits
+                SET status = :status,
+                    fallback_applied = :fallback_applied,
+                    fallback_reason = :fallback_reason,
+                    r_hat_max = :r_hat_max,
+                    ess_min = :ess_min,
+                    divergence_count = :divergence_count,
+                    hdi_lower = :hdi_lower,
+                    hdi_upper = :hdi_upper,
+                    interval_shape = CAST(:interval_shape AS jsonb),
+                    interval_element_count = :interval_element_count,
+                    credible_interval_status = :credible_interval_status,
+                    diagnostic_status = :diagnostic_status,
+                    diagnostic_failure_reason = :diagnostic_failure_reason,
+                    diagnostics_computed_at = now(),
+                    updated_at = now()
+                WHERE tenant_id = :tenant_id
+                  AND id = :fit_id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "fit_id": str(resolved_fit_id),
                 "status": status,
                 "fallback_applied": fallback_applied,
                 "fallback_reason": fallback_reason,
@@ -339,7 +479,12 @@ async def test_b24_p7_db_persists_representative_failure_states_unavailable(
     }
 
     inserted: list[UUID] = []
-    for _, (status, fallback_reason, diagnostic_status, diagnostic_reason) in cases.items():
+    for _, (
+        status,
+        fallback_reason,
+        diagnostic_status,
+        diagnostic_reason,
+    ) in cases.items():
         inserted.append(
             await _insert_test_fit(
                 tenant_id,
