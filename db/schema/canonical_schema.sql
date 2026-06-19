@@ -446,7 +446,7 @@ CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
             WHERE auth.status = 'active'
               AND auth.revoked_at IS NULL
               AND auth.expires_at > now()
-            ORDER BY auth.registered_at ASC, auth.generation_id ASC
+            ORDER BY auth.registered_at DESC, auth.generation_id DESC
             LIMIT 1;
             RETURN v_generation;
         END
