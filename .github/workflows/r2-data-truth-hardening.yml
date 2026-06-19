@@ -295,7 +295,7 @@ jobs:
               return updated
 
           allocation_summary_view_bootstrap = textwrap.dedent("""\
-              CREATE MATERIALIZED VIEW mv_allocation_summary AS
+              CREATE MATERIALIZED VIEW public.mv_allocation_summary AS
                SELECT aa.tenant_id,
                   aa.event_id,
                   aa.model_version,
@@ -320,7 +320,7 @@ jobs:
               allocation_summary_view_bootstrap,
           )
           reconciliation_status_view_bootstrap = textwrap.dedent("""\
-              CREATE MATERIALIZED VIEW mv_reconciliation_status AS
+              CREATE MATERIALIZED VIEW public.mv_reconciliation_status AS
                SELECT rr.tenant_id,
                   rr.state,
                   rr.last_run_at,
