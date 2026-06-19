@@ -201,6 +201,8 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/app/revenue_verification/batch_engine.py",
     "backend/app/tasks/attribution.py",
     "backend/app/tasks/bayesian.py",
+    "backend/app/tasks/beat_schedule.py",
+    "Procfile",
     "db/schema/canonical_schema.sql",
     "db/schema/canonical_schema.yaml",
     "docs/ci/",
