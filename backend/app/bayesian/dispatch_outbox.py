@@ -321,21 +321,24 @@ async def lease_due_recovery_rows(
     batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
     stale_publishing_seconds: int = DEFAULT_STALE_RECOVERY_PUBLISHING_SECONDS,
 ) -> list[RecoveryOutboxRow]:
+    await session.execute(
+        text(
+            """
+            SELECT
+                set_config('app.b24_recovery_reconciler', 'on', true),
+                set_config('app.b24_dispatch_claim_access', 'on', true)
+            """
+        )
+    )
     result = await session.execute(
         text(
             """
             WITH live_generation AS (
                 SELECT public.b24_next_active_worker_generation() AS generation_id
             ),
-            recovery_reconciler_access AS (
-                SELECT
-                    set_config('app.b24_recovery_reconciler', 'on', true),
-                    set_config('app.b24_dispatch_claim_access', 'on', true)
-            ),
             due AS (
                 SELECT tenant_id, id, dispatch_id
                 FROM public.b24_fit_recovery_outbox
-                CROSS JOIN recovery_reconciler_access
                 WHERE (
                     status IN ('pending', 'failed_retryable')
                     OR (
@@ -511,21 +514,24 @@ def lease_due_recovery_rows_sync(
     batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
     stale_publishing_seconds: int = DEFAULT_STALE_RECOVERY_PUBLISHING_SECONDS,
 ) -> list[RecoveryOutboxRow]:
+    conn.execute(
+        text(
+            """
+            SELECT
+                set_config('app.b24_recovery_reconciler', 'on', true),
+                set_config('app.b24_dispatch_claim_access', 'on', true)
+            """
+        )
+    )
     result = conn.execute(
         text(
             """
             WITH live_generation AS (
                 SELECT public.b24_next_active_worker_generation() AS generation_id
             ),
-            recovery_reconciler_access AS (
-                SELECT
-                    set_config('app.b24_recovery_reconciler', 'on', true),
-                    set_config('app.b24_dispatch_claim_access', 'on', true)
-            ),
             due AS (
                 SELECT tenant_id, id, dispatch_id
                 FROM public.b24_fit_recovery_outbox
-                CROSS JOIN recovery_reconciler_access
                 WHERE (
                     status IN ('pending', 'failed_retryable')
                     OR (
