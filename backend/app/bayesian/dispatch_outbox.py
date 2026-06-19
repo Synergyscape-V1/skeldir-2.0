@@ -327,9 +327,15 @@ async def lease_due_recovery_rows(
             WITH live_generation AS (
                 SELECT public.b24_next_active_worker_generation() AS generation_id
             ),
+            recovery_reconciler_access AS (
+                SELECT
+                    set_config('app.b24_recovery_reconciler', 'on', true),
+                    set_config('app.b24_dispatch_claim_access', 'on', true)
+            ),
             due AS (
                 SELECT tenant_id, id, dispatch_id
                 FROM public.b24_fit_recovery_outbox
+                CROSS JOIN recovery_reconciler_access
                 WHERE (
                     status IN ('pending', 'failed_retryable')
                     OR (
@@ -511,9 +517,15 @@ def lease_due_recovery_rows_sync(
             WITH live_generation AS (
                 SELECT public.b24_next_active_worker_generation() AS generation_id
             ),
+            recovery_reconciler_access AS (
+                SELECT
+                    set_config('app.b24_recovery_reconciler', 'on', true),
+                    set_config('app.b24_dispatch_claim_access', 'on', true)
+            ),
             due AS (
                 SELECT tenant_id, id, dispatch_id
                 FROM public.b24_fit_recovery_outbox
+                CROSS JOIN recovery_reconciler_access
                 WHERE (
                     status IN ('pending', 'failed_retryable')
                     OR (

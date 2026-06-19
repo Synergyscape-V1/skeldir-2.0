@@ -519,6 +519,8 @@ def validate_directive_ix_dispatch_authority(
         "mark_recovery_published_sync",
         "mark_recovery_publish_failed_sync",
         "DEFAULT_STALE_RECOVERY_PUBLISHING_SECONDS = 300",
+        "app.b24_recovery_reconciler",
+        "app.b24_dispatch_claim_access",
         "updated_at <= now() - (:stale_publishing_seconds * interval '1 second')",
         '"dispatch_id": str(self.id)',
         '"attempt_id": str(self.attempt_id)',
