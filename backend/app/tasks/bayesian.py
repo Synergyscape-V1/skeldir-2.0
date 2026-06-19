@@ -29,8 +29,10 @@ from app.bayesian.dispatch_authority import (
     BayesianDispatchLease,
     BayesianWorkerClaimAuthority,
     claim_fit_dispatch_sync,
+    create_recovery_wakeups_sync,
     mark_dispatch_running_sync,
 )
+from app.bayesian.dispatch_outbox import publish_due_recovery_rows_sync
 from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.bayesian.tenant_context import bind_transaction_local_tenant
@@ -51,6 +53,7 @@ FEATURE_AUTHORITY_BUILD_TASK_NAME = "app.tasks.bayesian.build_feature_authority"
 FEATURE_AUTHORITY_DISPATCH_TASK_NAME = (
     "app.tasks.bayesian.dispatch_feature_authority_build"
 )
+RECOVERY_RECONCILER_TASK_NAME = "app.tasks.bayesian.reconcile_fit_recovery_wakeups"
 FEATURE_AUTHORITY_DISPATCH_RETRY_BACKOFF_S = 30
 FEATURE_AUTHORITY_MAX_DISPATCH_ATTEMPTS = 5
 
@@ -72,6 +75,7 @@ REQUIRED_BAYESIAN_TASK_NAMES = frozenset(
     {
         "app.tasks.bayesian.run_mcmc_inference",
         "app.tasks.bayesian.execute_fit_intent",
+        RECOVERY_RECONCILER_TASK_NAME,
         FEATURE_AUTHORITY_DISPATCH_TASK_NAME,
         FEATURE_AUTHORITY_BUILD_TASK_NAME,
         "app.tasks.bayesian.run_resource_contention",
@@ -403,6 +407,57 @@ def execute_fit_intent(
         "compute_started", payload.get("status") == "sampled_unvalidated"
     )
     _append_probe_event({"event": "bayesian_fit_intent_executed", **payload})
+    return payload
+
+
+@_bayesian_task(
+    bind=True,
+    name=RECOVERY_RECONCILER_TASK_NAME,
+    routing_key="bayesian.task",
+    soft_time_limit=30,
+    time_limit=60,
+    acks_late=True,
+    max_retries=0,
+)
+def reconcile_fit_recovery_wakeups(
+    self,
+    *,
+    batch_size: int = 25,
+    stale_publishing_seconds: int = 300,
+) -> dict:
+    """Detect recoverable fit dispatches and republish secret-free wake-ups."""
+
+    assert_bayesian_worker_boot_topology_proven()
+    task_id = str(self.request.id)
+    engine = create_bayesian_worker_engine()
+    try:
+        with engine.begin() as conn:
+            created = create_recovery_wakeups_sync(conn, batch_size=batch_size)
+            published_rows = publish_due_recovery_rows_sync(
+                conn,
+                batch_size=batch_size,
+                stale_publishing_seconds=stale_publishing_seconds,
+            )
+    finally:
+        engine.dispose()
+
+    payload = {
+        "status": "ok",
+        "task_id": task_id,
+        "recovery_wakeups_created": int(created),
+        "recovery_wakeups_published": len(published_rows),
+        "recovery_dispatch_ids": [str(row.dispatch_id) for row in published_rows],
+    }
+    logger.info(
+        "bayesian_recovery_reconciler_completed",
+        extra={
+            "event_type": "bayesian.recovery",
+            "task_id": task_id,
+            "recovery_wakeups_created": payload["recovery_wakeups_created"],
+            "recovery_wakeups_published": payload["recovery_wakeups_published"],
+        },
+    )
+    _append_probe_event({"event": "bayesian_recovery_reconciler_completed", **payload})
     return payload
 
 

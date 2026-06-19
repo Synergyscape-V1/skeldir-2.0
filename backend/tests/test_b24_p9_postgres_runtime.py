@@ -33,9 +33,14 @@ from app.bayesian.dispatch_authority import (
     DispatchClaimOutcome,
     bind_dispatch_write_context_sync,
     claim_fit_dispatch_sync,
+    complete_dispatch_sync,
     dispatch_payload_hash,
     mark_dispatch_running_sync,
     register_worker_process_authority_sync,
+)
+from app.bayesian.dispatch_outbox import (
+    RecoveryOutboxRow,
+    publish_due_recovery_rows_sync,
 )
 from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.fit_execution import (
@@ -1315,7 +1320,7 @@ async def test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
+async def test_b24_p9_directive_xi_recovery_publication_assignment_runtime(
     test_tenant_pair,
 ) -> None:
     await _assert_table_exists("b24_fit_dispatch_outbox")
@@ -1331,12 +1336,43 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
         to_sync_postgres_dsn(get_database_url()),
         poolclass=NullPool,
     )
+    published_rows: list[RecoveryOutboxRow] = []
+
+    def _capture_recovery_publish(row: RecoveryOutboxRow) -> str:
+        published_rows.append(row)
+        payload = row.queue_payload
+        assert set(payload) == {
+            "dispatch_id",
+            "fit_id",
+            "task_name",
+            "attempt_id",
+            "payload_hash",
+            "recovery_generation",
+        }
+        assert "claim_capability" not in payload
+        assert "lease_capability" not in payload
+        assert "worker_process_token" not in payload
+        return f"recovery-task-{row.id}"
+
     try:
         with sync_engine.begin() as conn:
+            replacement_authority = _register_test_worker_authority(
+                conn,
+                generation_id="directive-xi-replacement-generation",
+                pid=4243,
+                process_token="directive-xi-runtime-process-token-replacement",
+            )
             worker_authority = _register_test_worker_authority(
                 conn,
-                generation_id="directive-x-recovery-generation",
-                process_token="directive-x-runtime-process-token-0002",
+                generation_id="directive-xi-prior-generation",
+                pid=4244,
+                process_token="directive-xi-runtime-process-token-prior",
+            )
+            wrong_authority = _register_test_worker_authority(
+                conn,
+                generation_id="directive-xi-wrong-generation",
+                pid=4245,
+                process_token="directive-xi-runtime-process-token-wrong",
             )
             _set_tenant_context(conn, tenant_a)
             conn.execute(
@@ -1354,6 +1390,8 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
                         assignment_generation,
                         assignment_expires_at,
                         assignment_reason,
+                        lease_owner,
+                        lease_expires_at,
                         status,
                         next_attempt_at,
                         next_recovery_at
@@ -1368,8 +1406,10 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
                         :payload_hash,
                         :assigned_worker_generation,
                         1,
-                        now() + interval '10 minutes',
+                        now() - interval '1 minute',
                         'runtime_recovery_test',
+                        :lease_owner,
+                        now() - interval '1 minute',
                         'dispatched',
                         now(),
                         now()
@@ -1385,6 +1425,7 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
                     "attempt_id": str(attempt_id),
                     "payload_hash": payload_hash,
                     "assigned_worker_generation": worker_authority.generation_id,
+                    "lease_owner": worker_authority.generation_id,
                 },
             )
 
@@ -1418,6 +1459,60 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
             assert int(row["recovery_generation"]) == 1
             assert row["claim_capability"] is None
             assert row["attempt_id"] != attempt_id
+            recovered_attempt_id = row["attempt_id"]
+
+        with sync_engine.begin() as conn:
+            rows = publish_due_recovery_rows_sync(
+                conn,
+                publish=_capture_recovery_publish,
+                batch_size=10,
+            )
+            assert len(rows) == 1
+            assert len(published_rows) == 1
+            recovery_row = rows[0]
+            assert recovery_row.dispatch_id == dispatch_id
+            assert recovery_row.fit_id == fit_id
+            assert recovery_row.attempt_id == recovered_attempt_id
+            assert recovery_row.recovery_generation == 1
+
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            state = (
+                conn.execute(
+                    text(
+                        """
+                        SELECT
+                            recovery.status AS recovery_status,
+                            recovery.publish_attempt_count,
+                            dispatch.status AS dispatch_status,
+                            dispatch.assigned_worker_generation,
+                            dispatch.assignment_reason,
+                            dispatch.recovery_generation
+                        FROM public.b24_fit_recovery_outbox recovery
+                        JOIN public.b24_fit_dispatch_outbox dispatch
+                          ON dispatch.tenant_id = recovery.tenant_id
+                         AND dispatch.id = recovery.dispatch_id
+                        WHERE recovery.tenant_id = :tenant_id
+                          AND recovery.dispatch_id = :dispatch_id
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_a),
+                        "dispatch_id": str(dispatch_id),
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            assert state["recovery_status"] == "published"
+            assert int(state["publish_attempt_count"]) == 1
+            assert state["dispatch_status"] == "dispatched"
+            assert (
+                state["assigned_worker_generation"]
+                == replacement_authority.generation_id
+            )
+            assert state["assignment_reason"] == "recovery_republish"
+            assert int(state["recovery_generation"]) == 1
 
         stale_claim = BayesianDispatchClaim(
             dispatch_id=dispatch_id,
@@ -1436,6 +1531,206 @@ async def test_b24_p9_directive_ix_stale_lease_and_recovery_runtime(
                 )
                 == DispatchClaimOutcome.UNAUTHORIZED
             )
+
+        recovered_claim = BayesianDispatchClaim(
+            dispatch_id=dispatch_id,
+            fit_id=fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=recovered_attempt_id,
+            payload_hash=payload_hash,
+            recovery_generation=1,
+        )
+        with sync_engine.begin() as conn:
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=recovered_claim,
+                    worker_authority=worker_authority,
+                )
+                == DispatchClaimOutcome.UNAUTHORIZED
+            )
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=recovered_claim,
+                    worker_authority=wrong_authority,
+                )
+                == DispatchClaimOutcome.UNAUTHORIZED
+            )
+            lease = claim_fit_dispatch_sync(
+                conn,
+                claim=recovered_claim,
+                worker_authority=replacement_authority,
+                lease_seconds=120,
+            )
+            assert isinstance(lease, BayesianDispatchLease)
+            assert lease.outcome is DispatchClaimOutcome.ACQUIRED
+            mark_dispatch_running_sync(conn, lease=lease)
+            complete_dispatch_sync(conn, lease=lease)
+
+        with sync_engine.begin() as conn:
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=recovered_claim,
+                    worker_authority=replacement_authority,
+                )
+                == DispatchClaimOutcome.ALREADY_COMPLETED
+            )
+    finally:
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_directive_xi_stale_publishing_recovery_quarantines(
+    test_tenant_pair,
+) -> None:
+    await _assert_table_exists("b24_fit_dispatch_outbox")
+    await _assert_table_exists("b24_fit_recovery_outbox")
+    tenant_a, _tenant_b = test_tenant_pair
+    fit_id = uuid4()
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    recovery_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    await _insert_fit(tenant_a, fit_id=fit_id, source_hash="7" * 64)
+
+    sync_engine = create_engine(
+        to_sync_postgres_dsn(get_database_url()),
+        poolclass=NullPool,
+    )
+    try:
+        with sync_engine.begin() as conn:
+            _register_test_worker_authority(
+                conn,
+                generation_id="directive-xi-quarantine-generation",
+                pid=4246,
+                process_token="directive-xi-runtime-process-token-quarantine",
+            )
+            _set_tenant_context(conn, tenant_a)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        recovery_generation,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        1,
+                        'stale_recovered',
+                        now(),
+                        now()
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "dispatch_key": f"b24-fit:{tenant_a}:{fit_id}",
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                },
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_recovery_outbox (
+                        tenant_id,
+                        id,
+                        dispatch_id,
+                        fit_id,
+                        attempt_id,
+                        task_name,
+                        payload_hash,
+                        claim_capability,
+                        recovery_generation,
+                        status,
+                        publish_attempt_count,
+                        updated_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :recovery_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :attempt_id,
+                        :task_name,
+                        :payload_hash,
+                        NULL,
+                        1,
+                        'publishing',
+                        4,
+                        now() - interval '10 minutes'
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "recovery_id": str(recovery_id),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "attempt_id": str(attempt_id),
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "payload_hash": payload_hash,
+                },
+            )
+
+        def _fail_publish(row: RecoveryOutboxRow) -> str:
+            assert row.id == recovery_id
+            assert row.publish_attempt_count == 5
+            raise RuntimeError("synthetic publisher crash after stale lease release")
+
+        with sync_engine.begin() as conn:
+            rows = publish_due_recovery_rows_sync(
+                conn,
+                publish=_fail_publish,
+                batch_size=10,
+                stale_publishing_seconds=1,
+            )
+            assert len(rows) == 1
+
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            state = (
+                conn.execute(
+                    text(
+                        """
+                        SELECT status, publish_attempt_count, last_error
+                        FROM public.b24_fit_recovery_outbox
+                        WHERE tenant_id = :tenant_id
+                          AND id = :recovery_id
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_a),
+                        "recovery_id": str(recovery_id),
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            assert state["status"] == "quarantined"
+            assert int(state["publish_attempt_count"]) == 5
+            assert "synthetic publisher crash" in state["last_error"]
     finally:
         sync_engine.dispose()
 

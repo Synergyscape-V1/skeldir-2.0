@@ -25,6 +25,8 @@ DISPATCH_OUTBOX = BAYESIAN_PACKAGE / "dispatch_outbox.py"
 ARTIFACT_REPOSITORY = BAYESIAN_PACKAGE / "artifact_repository.py"
 MODELS = BAYESIAN_PACKAGE / "models.py"
 TASKS_BAYESIAN = Path("backend/app/tasks/bayesian.py")
+BEAT_SCHEDULE = Path("backend/app/tasks/beat_schedule.py")
+PROCFILE = Path("Procfile")
 P9_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202606081200_b24_p9_worker_tenant_hygiene.py"
 )
@@ -62,6 +64,7 @@ REQUIRED_FILES = {
     ARTIFACT_REPOSITORY,
     MODELS,
     TASKS_BAYESIAN,
+    BEAT_SCHEDULE,
     P9_MIGRATION,
     P9_DIRECTIVE_IX_MIGRATION,
     P9_DIRECTIVE_X_MIGRATION,
@@ -71,6 +74,7 @@ REQUIRED_FILES = {
     CI_WORKFLOW,
     B07_P5_TIMEOUT_RUNTIME_TEST,
     MAKEFILE,
+    PROCFILE,
     REQUIRED_STATUS_CONTRACT,
 }
 
@@ -272,7 +276,7 @@ def validate_bayesian_worker_boot_probe(
         "P9 Bayesian task module must register boot probe signal only when tasks are registered",
     )
     _require(
-        tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 6,
+        tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 7,
         "P9 Bayesian task entries must fail closed on missing boot proof",
     )
     for token in (
@@ -461,6 +465,8 @@ def validate_directive_ix_dispatch_authority(
     authority_text: str | None = None,
     outbox_text: str | None = None,
     tasks_text: str | None = None,
+    beat_text: str | None = None,
+    procfile_text: str | None = None,
     migration_text: str | None = None,
     models_text: str | None = None,
 ) -> None:
@@ -469,6 +475,8 @@ def validate_directive_ix_dispatch_authority(
     )
     outbox = outbox_text if outbox_text is not None else _read(DISPATCH_OUTBOX)
     tasks = tasks_text if tasks_text is not None else _read(TASKS_BAYESIAN)
+    beat = beat_text if beat_text is not None else _read(BEAT_SCHEDULE)
+    procfile = procfile_text if procfile_text is not None else _read(PROCFILE)
     migration = (
         migration_text
         if migration_text is not None
@@ -506,6 +514,12 @@ def validate_directive_ix_dispatch_authority(
         "publish_capability_bound_dispatch",
         "publish_secret_free_dispatch",
         "publish_due_recovery_rows",
+        "publish_due_recovery_rows_sync",
+        "lease_due_recovery_rows_sync",
+        "mark_recovery_published_sync",
+        "mark_recovery_publish_failed_sync",
+        "DEFAULT_STALE_RECOVERY_PUBLISHING_SECONDS = 300",
+        "updated_at <= now() - (:stale_publishing_seconds * interval '1 second')",
         '"dispatch_id": str(self.id)',
         '"attempt_id": str(self.attempt_id)',
         '"payload_hash": self.payload_hash',
@@ -525,6 +539,10 @@ def validate_directive_ix_dispatch_authority(
         "BayesianDispatchClaim",
         "dispatch_claim=claim",
         "worker_authority=worker_authority",
+        "RECOVERY_RECONCILER_TASK_NAME",
+        "create_recovery_wakeups_sync(conn, batch_size=batch_size)",
+        "publish_due_recovery_rows_sync(",
+        "bayesian_recovery_reconciler_completed",
         "fit_id: str",
     ):
         _require(token in tasks, f"Directive IX Celery task missing: {token}")
@@ -532,6 +550,23 @@ def validate_directive_ix_dispatch_authority(
         "claim_capability: str" not in tasks,
         "Directive X Celery task must not accept broker capability",
     )
+    for token in (
+        '"b24-p9-bayesian-recovery-reconciler"',
+        '"task": "app.tasks.bayesian.reconcile_fit_recovery_wakeups"',
+        '"queue": QUEUE_BAYESIAN',
+        '"routing_key": f"{QUEUE_BAYESIAN}.task"',
+        "B24_P9_RECOVERY_RECONCILE_INTERVAL_SECONDS",
+        "B24_P9_RECOVERY_STALE_PUBLISHING_SECONDS",
+        "SKELDIR_B24_P9_DISABLE_RECOVERY_RECONCILER_JOB",
+    ):
+        _require(token in beat, f"Directive XI beat schedule missing: {token}")
+    for token in (
+        "beat: cd backend && celery -A app.celery_app.celery_app beat",
+        "worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian",
+        "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1",
+        "--queues=bayesian",
+    ):
+        _require(token in procfile, f"Directive XI launch profile missing: {token}")
     for token in (
         "b24_worker_process_authority",
         "b24_register_worker_process_authority",
@@ -678,7 +713,8 @@ def validate_tests_and_ci(
         "test_b24_p9_session_level_guc_poison_is_detected",
         "test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction",
         "test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime",
-        "test_b24_p9_directive_ix_stale_lease_and_recovery_runtime",
+        "test_b24_p9_directive_xi_recovery_publication_assignment_runtime",
+        "test_b24_p9_directive_xi_stale_publishing_recovery_quarantines",
         "test_b24_p9_concurrent_tenant_isolation_db_and_runtime_surfaces",
         "bind_transaction_local_tenant",
         "assert_fresh_checkout_is_clean",

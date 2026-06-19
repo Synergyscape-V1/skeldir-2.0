@@ -42,9 +42,11 @@ DB_TOPOLOGY = ROOT / "backend/app/bayesian/db_topology.py"
 DB_BOOT_PROBE = ROOT / "backend/app/bayesian/db_boot_probe.py"
 WORKER_BOOT_PROBE = ROOT / "backend/app/bayesian/worker_boot_probe.py"
 TASKS_BAYESIAN = ROOT / "backend/app/tasks/bayesian.py"
+BEAT_SCHEDULE = ROOT / "backend/app/tasks/beat_schedule.py"
 TENANT_CONTEXT = ROOT / "backend/app/bayesian/tenant_context.py"
 DISPATCH_AUTHORITY = ROOT / "backend/app/bayesian/dispatch_authority.py"
 DISPATCH_OUTBOX = ROOT / "backend/app/bayesian/dispatch_outbox.py"
+PROCFILE = ROOT / "Procfile"
 TEMP_WORKSPACE = ROOT / "backend/app/bayesian/temp_workspace.py"
 CHILD_ENVIRONMENT = ROOT / "backend/app/bayesian/child_environment.py"
 COMPILEDIR_REAPER = ROOT / "backend/app/bayesian/compiledir_reaper.py"
@@ -894,6 +896,51 @@ def test_b24_p9_directive_x_celery_task_rejects_broker_authority() -> None:
     assert "attempt_id: str" in tasks
     assert "dispatch_id: str" in tasks
     assert "def execute_fit_intent(self, *, fit_id: str)" not in tasks
+
+
+def test_b24_p9_directive_xi_recovery_scheduler_is_production_wired() -> None:
+    tasks = _read(TASKS_BAYESIAN)
+    beat = _read(BEAT_SCHEDULE)
+    outbox = _read(DISPATCH_OUTBOX)
+    procfile = _read(PROCFILE)
+
+    assert (
+        'RECOVERY_RECONCILER_TASK_NAME = "app.tasks.bayesian.reconcile_fit_recovery_wakeups"'
+        in tasks
+    )
+    assert "RECOVERY_RECONCILER_TASK_NAME" in tasks
+    assert "create_recovery_wakeups_sync(conn, batch_size=batch_size)" in tasks
+    assert "publish_due_recovery_rows_sync(" in tasks
+    assert "assert_bayesian_worker_boot_topology_proven()" in tasks
+    assert '"event_type": "bayesian.recovery"' in tasks
+
+    assert '"b24-p9-bayesian-recovery-reconciler"' in beat
+    assert '"task": "app.tasks.bayesian.reconcile_fit_recovery_wakeups"' in beat
+    assert '"queue": QUEUE_BAYESIAN' in beat
+    assert '"routing_key": f"{QUEUE_BAYESIAN}.task"' in beat
+    assert "B24_P9_RECOVERY_RECONCILE_INTERVAL_SECONDS" in beat
+    assert "B24_P9_RECOVERY_STALE_PUBLISHING_SECONDS" in beat
+    assert "SKELDIR_B24_P9_DISABLE_RECOVERY_RECONCILER_JOB" in beat
+
+    assert "DEFAULT_STALE_RECOVERY_PUBLISHING_SECONDS = 300" in outbox
+    assert "publish_due_recovery_rows_sync" in outbox
+    assert "lease_due_recovery_rows_sync" in outbox
+    assert "mark_recovery_published_sync" in outbox
+    assert "mark_recovery_publish_failed_sync" in outbox
+    assert "status = 'publishing'" in outbox
+    assert (
+        "updated_at <= now() - (:stale_publishing_seconds * interval '1 second')"
+        in outbox
+    )
+    assert '"claim_capability":' not in outbox
+    assert '"lease_capability":' not in outbox
+    assert "worker_process_token" not in outbox
+
+    assert "beat: cd backend && celery -A app.celery_app.celery_app beat" in procfile
+    assert (
+        "worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian" in procfile
+    )
+    assert "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1" in procfile
 
 
 def test_b24_p9_same_process_sequential_reused_worker_runtime_lane(
