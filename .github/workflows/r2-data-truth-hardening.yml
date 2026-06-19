@@ -309,8 +309,8 @@ jobs:
                           WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
                           ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
                       END AS drift_cents
-                 FROM (attribution_allocations aa
-                   LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
+                 FROM (public.attribution_allocations aa
+                   LEFT JOIN public.attribution_events e ON ((aa.event_id = e.id)))
                 GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
                 WITH NO DATA;"""
           ).strip()
@@ -325,10 +325,10 @@ jobs:
                   rr.state,
                   rr.last_run_at,
                   rr.id AS reconciliation_run_id
-                 FROM (reconciliation_runs rr
+                 FROM (public.reconciliation_runs rr
                    JOIN ( SELECT reconciliation_runs.tenant_id,
                           max(reconciliation_runs.last_run_at) AS max_last_run_at
-                         FROM reconciliation_runs
+                         FROM public.reconciliation_runs
                 GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
                 WITH NO DATA;"""
           ).strip()
