@@ -28,8 +28,10 @@ from app.bayesian.dispatch_authority import (
     BayesianDispatchClaim,
     BayesianDispatchLease,
     BayesianWorkerClaimAuthority,
+    DispatchClaimOutcome,
     claim_fit_dispatch_sync,
     create_recovery_wakeups_sync,
+    fail_dispatch_recoverable_sync,
     mark_dispatch_running_sync,
 )
 from app.bayesian.dispatch_outbox import publish_due_recovery_rows_sync
@@ -54,6 +56,9 @@ FEATURE_AUTHORITY_DISPATCH_TASK_NAME = (
     "app.tasks.bayesian.dispatch_feature_authority_build"
 )
 RECOVERY_RECONCILER_TASK_NAME = "app.tasks.bayesian.reconcile_fit_recovery_wakeups"
+RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME = (
+    "app.tasks.bayesian.probe_recoverable_failure_ack"
+)
 FEATURE_AUTHORITY_DISPATCH_RETRY_BACKOFF_S = 30
 FEATURE_AUTHORITY_MAX_DISPATCH_ATTEMPTS = 5
 
@@ -76,6 +81,7 @@ REQUIRED_BAYESIAN_TASK_NAMES = frozenset(
         "app.tasks.bayesian.run_mcmc_inference",
         "app.tasks.bayesian.execute_fit_intent",
         RECOVERY_RECONCILER_TASK_NAME,
+        RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME,
         FEATURE_AUTHORITY_DISPATCH_TASK_NAME,
         FEATURE_AUTHORITY_BUILD_TASK_NAME,
         "app.tasks.bayesian.run_resource_contention",
@@ -406,7 +412,97 @@ def execute_fit_intent(
     payload.setdefault(
         "compute_started", payload.get("status") == "sampled_unvalidated"
     )
+    payload.setdefault("dispatch_id", str(claim.dispatch_id))
+    payload.setdefault("fit_id", str(claim.fit_id))
+    payload.setdefault("recovery_generation", int(claim.recovery_generation))
     _append_probe_event({"event": "bayesian_fit_intent_executed", **payload})
+    return payload
+
+
+@_bayesian_task(
+    bind=True,
+    name=RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME,
+    routing_key="bayesian.task",
+    soft_time_limit=30,
+    time_limit=60,
+    acks_late=True,
+    max_retries=0,
+)
+def probe_recoverable_failure_ack(
+    self,
+    *,
+    dispatch_id: str,
+    fit_id: str,
+    task_name: str,
+    attempt_id: str,
+    payload_hash: str,
+    recovery_generation: str = "0",
+    correlation_id: str,
+) -> dict:
+    """Physically acknowledge a recoverable failure through the Bayesian queue."""
+
+    assert_bayesian_worker_boot_topology_proven()
+    if task_name != BAYESIAN_FIT_EXECUTION_TASK:
+        raise RuntimeError("bayesian_dispatch_task_name_mismatch")
+    claim = BayesianDispatchClaim(
+        dispatch_id=_as_uuid(dispatch_id),
+        fit_id=_as_uuid(fit_id),
+        task_name=task_name,
+        attempt_id=_as_uuid(attempt_id),
+        payload_hash=payload_hash,
+        recovery_generation=int(recovery_generation),
+    )
+    worker_authority = current_bayesian_worker_claim_authority()
+    task_id = str(self.request.id)
+    engine = create_bayesian_worker_engine()
+    try:
+        with engine.begin() as conn:
+            lease = claim_fit_dispatch_sync(
+                conn,
+                claim=claim,
+                worker_authority=worker_authority,
+            )
+            if not isinstance(lease, BayesianDispatchLease):
+                payload = {
+                    "status": str(lease).lower(),
+                    "claim_outcome": str(lease),
+                    "task_id": task_id,
+                    "correlation_id": correlation_id,
+                    "dispatch_id": str(claim.dispatch_id),
+                    "fit_id": str(claim.fit_id),
+                    "compute_started": False,
+                    "worker_generation": worker_authority.generation_id,
+                    "worker_pid": worker_authority.pid,
+                }
+                _append_probe_event(
+                    {"event": "bayesian_recoverable_failure_ack_probe", **payload}
+                )
+                return payload
+            mark_dispatch_running_sync(conn, lease=lease)
+            outcome = fail_dispatch_recoverable_sync(
+                conn,
+                lease=lease,
+                reason="directive_xiv_acknowledged_worker_failure",
+            )
+    finally:
+        engine.dispose()
+    payload = {
+        "status": (
+            "failed_terminal"
+            if outcome is DispatchClaimOutcome.TERMINAL_FAILURE
+            else "failed_retryable"
+        ),
+        "claim_outcome": outcome.value,
+        "task_id": task_id,
+        "correlation_id": correlation_id,
+        "dispatch_id": str(claim.dispatch_id),
+        "fit_id": str(claim.fit_id),
+        "compute_started": False,
+        "worker_generation": worker_authority.generation_id,
+        "worker_pid": worker_authority.pid,
+        "failure_taxonomy": "recoverable_acknowledged_worker_failure",
+    }
+    _append_probe_event({"event": "bayesian_recoverable_failure_ack_probe", **payload})
     return payload
 
 
@@ -445,8 +541,15 @@ def reconcile_fit_recovery_wakeups(
         "status": "ok",
         "task_id": task_id,
         "recovery_wakeups_created": int(created),
-        "recovery_wakeups_published": len(published_rows),
+        "recovery_wakeups_published": sum(
+            1 for row in published_rows if row.published_task_id is not None
+        ),
         "recovery_dispatch_ids": [str(row.dispatch_id) for row in published_rows],
+        "recovery_published_task_ids": [
+            str(row.published_task_id)
+            for row in published_rows
+            if row.published_task_id is not None
+        ],
     }
     logger.info(
         "bayesian_recovery_reconciler_completed",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Callable
@@ -77,6 +77,7 @@ class RecoveryOutboxRow:
     payload_hash: str
     recovery_generation: int
     publish_attempt_count: int
+    published_task_id: str | None = None
 
     @property
     def queue_payload(self) -> dict[str, str]:
@@ -494,14 +495,17 @@ async def publish_due_recovery_rows(
         batch_size=batch_size,
         stale_publishing_seconds=stale_publishing_seconds,
     )
+    attempted_rows: list[RecoveryOutboxRow] = []
     for row in rows:
         try:
-            publish(row)
+            published_task_id = publish(row)
         except Exception as exc:
             await mark_recovery_publish_failed(session, row=row, error=str(exc))
+            attempted_rows.append(row)
             continue
         await mark_recovery_published(session, row=row)
-    return rows
+        attempted_rows.append(replace(row, published_task_id=published_task_id))
+    return attempted_rows
 
 
 def lease_due_recovery_rows_sync(
@@ -678,11 +682,14 @@ def publish_due_recovery_rows_sync(
         batch_size=batch_size,
         stale_publishing_seconds=stale_publishing_seconds,
     )
+    attempted_rows: list[RecoveryOutboxRow] = []
     for row in rows:
         try:
-            publish(row)
+            published_task_id = publish(row)
         except Exception as exc:
             mark_recovery_publish_failed_sync(conn, row=row, error=str(exc))
+            attempted_rows.append(row)
             continue
         mark_recovery_published_sync(conn, row=row)
-    return rows
+        attempted_rows.append(replace(row, published_task_id=published_task_id))
+    return attempted_rows

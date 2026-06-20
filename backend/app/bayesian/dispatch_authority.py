@@ -191,6 +191,19 @@ def fail_dispatch_terminal_sync(
     )
 
 
+def fail_dispatch_recoverable_sync(
+    conn, *, lease: BayesianDispatchLease, reason: str
+) -> DispatchClaimOutcome:
+    bind_dispatch_write_context_sync(conn, lease=lease)
+    status = conn.execute(
+        text("SELECT public.b24_fail_fit_dispatch_recoverable(:reason)"),
+        {"reason": reason[:256]},
+    ).scalar_one()
+    if str(status) == "failed_terminal":
+        return DispatchClaimOutcome.TERMINAL_FAILURE
+    return DispatchClaimOutcome.RETRYABLE_INFRASTRUCTURE_FAILURE
+
+
 def create_recovery_wakeups_sync(conn, *, batch_size: int = 25) -> int:
     return int(
         conn.execute(

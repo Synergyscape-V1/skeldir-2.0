@@ -39,6 +39,9 @@ P9_DIRECTIVE_X_MIGRATION = Path(
 P9_DIRECTIVE_XIII_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202606201300_b24_p9_directive_xiii_shared_recovery.py"
 )
+P9_DIRECTIVE_XIV_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202606201430_b24_p9_directive_xiv_failure_ack_recovery.py"
+)
 P9_TESTS = Path("backend/tests/test_b24_p9_worker_tenant_hygiene.py")
 P9_DB_TESTS = Path("backend/tests/test_b24_p9_postgres_runtime.py")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
@@ -72,6 +75,7 @@ REQUIRED_FILES = {
     P9_DIRECTIVE_IX_MIGRATION,
     P9_DIRECTIVE_X_MIGRATION,
     P9_DIRECTIVE_XIII_MIGRATION,
+    P9_DIRECTIVE_XIV_MIGRATION,
     P9_TESTS,
     P9_DB_TESTS,
     WORKFLOW,
@@ -280,7 +284,7 @@ def validate_bayesian_worker_boot_probe(
         "P9 Bayesian task module must register boot probe signal only when tasks are registered",
     )
     _require(
-        tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 7,
+        tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 8,
         "P9 Bayesian task entries must fail closed on missing boot proof",
     )
     for token in (
@@ -302,7 +306,7 @@ def validate_bayesian_worker_boot_probe(
             f"P9 Bayesian task registration still depends on topology env: {forbidden}",
         )
     _require(
-        tasks.count("@_bayesian_task(") >= 6,
+        tasks.count("@_bayesian_task(") >= 8,
         "P9 Bayesian task entries must use the structural task-registration gate",
     )
     _require(
@@ -489,11 +493,13 @@ def validate_directive_ix_dispatch_authority(
         + _read(P9_DIRECTIVE_X_MIGRATION)
         + "\n"
         + _read(P9_DIRECTIVE_XIII_MIGRATION)
+        + "\n"
+        + _read(P9_DIRECTIVE_XIV_MIGRATION)
     )
     current_migration = (
         migration_text
         if migration_text is not None
-        else _read(P9_DIRECTIVE_XIII_MIGRATION)
+        else _read(P9_DIRECTIVE_XIV_MIGRATION)
     )
     models = models_text if models_text is not None else _read(MODELS)
     for token in (
@@ -515,6 +521,7 @@ def validate_directive_ix_dispatch_authority(
         "claim_fit_dispatch_sync",
         "bind_dispatch_write_context_sync",
         "create_recovery_wakeups_sync",
+        "fail_dispatch_recoverable_sync",
         "register_worker_process_authority_sync",
     ):
         _require(token in authority, f"Directive IX authority missing: {token}")
@@ -526,6 +533,7 @@ def validate_directive_ix_dispatch_authority(
         "lease_due_recovery_rows_sync",
         "mark_recovery_published_sync",
         "mark_recovery_publish_failed_sync",
+        "published_task_id",
         "DEFAULT_STALE_RECOVERY_PUBLISHING_SECONDS = 300",
         "app.b24_recovery_reconciler",
         "app.b24_dispatch_claim_access",
@@ -552,9 +560,14 @@ def validate_directive_ix_dispatch_authority(
         "dispatch_claim=claim",
         "worker_authority=worker_authority",
         "RECOVERY_RECONCILER_TASK_NAME",
+        "RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME",
         "create_recovery_wakeups_sync(conn, batch_size=batch_size)",
         "publish_due_recovery_rows_sync(",
+        "probe_recoverable_failure_ack",
+        "fail_dispatch_recoverable_sync(",
+        "bayesian_recoverable_failure_ack_probe",
         "bayesian_recovery_reconciler_completed",
+        "recovery_published_task_ids",
         "fit_id: str",
     ):
         _require(token in tasks, f"Directive IX Celery task missing: {token}")
@@ -598,6 +611,9 @@ def validate_directive_ix_dispatch_authority(
         "b24_mark_fit_dispatch_running",
         "b24_complete_fit_dispatch",
         "b24_fail_fit_dispatch_terminal",
+        "b24_fail_fit_dispatch_recoverable",
+        "failure_ack_recovery_required",
+        "recoverable_ack:",
         "b24_create_fit_recovery_wakeups",
         "b24_fit_recovery_outbox",
         "ENABLE ROW LEVEL SECURITY",
@@ -657,13 +673,15 @@ def validate_artifact_authority(
 
 
 def validate_tests_and_ci(
+    p9_tests_text: str | None = None,
+    p9_db_tests_text: str | None = None,
     workflow_text: str | None = None,
     ci_workflow_text: str | None = None,
     b07_p5_timeout_test_text: str | None = None,
     required_status_text: str | None = None,
 ) -> None:
-    tests = _read(P9_TESTS)
-    db_tests = _read(P9_DB_TESTS)
+    tests = p9_tests_text if p9_tests_text is not None else _read(P9_TESTS)
+    db_tests = p9_db_tests_text if p9_db_tests_text is not None else _read(P9_DB_TESTS)
     workflow = workflow_text if workflow_text is not None else _read(WORKFLOW)
     ci_workflow = (
         ci_workflow_text if ci_workflow_text is not None else _read(CI_WORKFLOW)
@@ -734,10 +752,16 @@ def validate_tests_and_ci(
         "test_b24_p9_directive_xi_stale_publishing_recovery_quarantines",
         "test_b24_p9_directive_xiii_shared_recovery_claim_liveness",
         "test_b24_p9_directive_xiii_broker_backed_recovery_liveness",
+        "test_b24_p9_directive_xiv_failure_ack_revokes_stale_authority",
+        "test_b24_p9_directive_xiv_broker_backed_failure_ack_recovery",
         "celery_app.conf.task_always_eager = False",
         "assert celery_app.conf.task_always_eager is False",
+        "bayesian_recoverable_failure_ack_probe",
         "bayesian_recovery_reconciler_completed",
         "bayesian_fit_intent_executed",
+        "_assert_dispatch_state_remains",
+        "failure_ack_recovery_required",
+        "recovery_published_task_ids",
         "recovery_shared_eligible",
         "postgresql://",
         "memory://",
@@ -1065,6 +1089,8 @@ def run_negative_controls() -> None:
                 + _read(P9_DIRECTIVE_X_MIGRATION)
                 + "\n"
                 + _read(P9_DIRECTIVE_XIII_MIGRATION)
+                + "\n"
+                + _read(P9_DIRECTIVE_XIV_MIGRATION)
                 + "\nPERFORM set_config('app.b24_dispatch_fence_required', 'on', true);\n"
             ),
             "caller-controlled GUC",
@@ -1078,6 +1104,8 @@ def run_negative_controls() -> None:
                     + _read(P9_DIRECTIVE_X_MIGRATION)
                     + "\n"
                     + _read(P9_DIRECTIVE_XIII_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIV_MIGRATION)
                 ).replace(
                     "p_worker_process_token text",
                     "p_worker_process_token_removed text",
@@ -1101,9 +1129,77 @@ def run_negative_controls() -> None:
                         "v_shared_recovery_eligible",
                         "v_specific_replacement_only",
                     )
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIV_MIGRATION)
                 ),
             ),
             "recovery_shared_eligible",
+        ),
+        (
+            "directive_xiv_recoverable_failure_api_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                authority_text=_read(DISPATCH_AUTHORITY).replace(
+                    "fail_dispatch_recoverable_sync",
+                    "fail_dispatch_recoverable_removed",
+                ),
+                migration_text=(
+                    _read(P9_DIRECTIVE_IX_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_X_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIII_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIV_MIGRATION).replace(
+                        "b24_fail_fit_dispatch_recoverable",
+                        "b24_fail_fit_dispatch_recoverable_removed",
+                    )
+                ),
+            ),
+            "recoverable",
+        ),
+        (
+            "directive_xiv_failure_ack_assignment_revocation_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                migration_text=(
+                    _read(P9_DIRECTIVE_IX_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_X_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIII_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIV_MIGRATION).replace(
+                        "failure_ack_recovery_required",
+                        "initial_dispatch",
+                    )
+                ),
+            ),
+            "failure_ack",
+        ),
+        (
+            "directive_xiv_recovery_task_correlation_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                outbox_text=_read(DISPATCH_OUTBOX).replace(
+                    "published_task_id", "published_task_removed"
+                ),
+                tasks_text=_read(TASKS_BAYESIAN).replace(
+                    "recovery_published_task_ids", "recovery_task_ids_removed"
+                ),
+            ),
+            "published_task",
+        ),
+        (
+            "directive_xiv_broker_failure_ack_proof_removed",
+            lambda: validate_tests_and_ci(
+                p9_db_tests_text=_read(P9_DB_TESTS).replace(
+                    "test_b24_p9_directive_xiv_broker_backed_failure_ack_recovery",
+                    "test_b24_p9_directive_xiv_broker_backed_failure_ack_removed",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "failure_ack",
         ),
         (
             "directive_ix_db_fence_rejection_removed",
@@ -1114,6 +1210,8 @@ def run_negative_controls() -> None:
                     + _read(P9_DIRECTIVE_X_MIGRATION)
                     + "\n"
                     + _read(P9_DIRECTIVE_XIII_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIV_MIGRATION)
                 ).replace(
                     "b24_dispatch_fence_rejected",
                     "b24_dispatch_fence_allowed",

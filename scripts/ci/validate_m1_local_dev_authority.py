@@ -194,6 +194,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "alembic/versions/007_skeldir_foundation/202606141200_b24_p9_directive_ix_dispatch_authority.py",
     "alembic/versions/007_skeldir_foundation/202606181200_b24_p9_directive_x_broker_independent_authority.py",
     "alembic/versions/007_skeldir_foundation/202606201300_b24_p9_directive_xiii_shared_recovery.py",
+    "alembic/versions/007_skeldir_foundation/202606201430_b24_p9_directive_xiv_failure_ack_recovery.py",
     "backend/Dockerfile.bayesian",
     "backend/requirements.txt",
     "backend/requirements-bayesian.txt",
