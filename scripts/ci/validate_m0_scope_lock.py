@@ -214,6 +214,7 @@ ALLOWED_M0_PATHS = [
     "alembic/versions/007_skeldir_foundation/202606081200_b24_p9_worker_tenant_hygiene.py",
     "alembic/versions/007_skeldir_foundation/202606141200_b24_p9_directive_ix_dispatch_authority.py",
     "alembic/versions/007_skeldir_foundation/202606181200_b24_p9_directive_x_broker_independent_authority.py",
+    "alembic/versions/007_skeldir_foundation/202606201300_b24_p9_directive_xiii_shared_recovery.py",
     "backend/app/bayesian/",
     "backend/Dockerfile.bayesian",
     "backend/requirements.txt",

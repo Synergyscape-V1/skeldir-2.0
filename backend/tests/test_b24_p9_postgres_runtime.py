@@ -306,6 +306,9 @@ def _worker_env(*, include_bayesian_tasks: bool, log_path: Path) -> dict[str, st
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"] = "github_actions_postgres_15_alpine"
     env["SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY"] = "connection_lifetime"
     env["BAYESIAN_PROBE_LOG_PATH"] = str(log_path)
+    env["SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_DIR"] = str(
+        log_path.parent / "worker_authority"
+    )
     return env
 
 
@@ -1362,11 +1365,11 @@ async def test_b24_p9_directive_xi_recovery_publication_assignment_runtime(
                 pid=4244,
                 process_token="directive-xi-runtime-process-token-prior",
             )
-            replacement_authority = _register_test_worker_authority(
+            peer_authority = _register_test_worker_authority(
                 conn,
-                generation_id="directive-xi-replacement-generation",
+                generation_id="directive-xi-peer-generation",
                 pid=4243,
-                process_token="directive-xi-runtime-process-token-replacement",
+                process_token="directive-xi-runtime-process-token-peer",
             )
             _set_tenant_context(conn, tenant_a)
             conn.execute(
@@ -1501,11 +1504,8 @@ async def test_b24_p9_directive_xi_recovery_publication_assignment_runtime(
             assert state["recovery_status"] == "published"
             assert int(state["publish_attempt_count"]) == 1
             assert state["dispatch_status"] == "dispatched"
-            assert (
-                state["assigned_worker_generation"]
-                == replacement_authority.generation_id
-            )
-            assert state["assignment_reason"] == "recovery_republish"
+            assert state["assigned_worker_generation"] is None
+            assert state["assignment_reason"] == "recovery_shared_eligible"
             assert int(state["recovery_generation"]) == 1
 
         stale_claim = BayesianDispatchClaim(
@@ -1545,27 +1545,32 @@ async def test_b24_p9_directive_xi_recovery_publication_assignment_runtime(
                 claim_fit_dispatch_sync(
                     conn,
                     claim=recovered_claim,
-                    worker_authority=worker_authority,
-                )
-                == DispatchClaimOutcome.UNAUTHORIZED
-            )
-            assert (
-                claim_fit_dispatch_sync(
-                    conn,
-                    claim=recovered_claim,
-                    worker_authority=wrong_authority,
+                    worker_authority=BayesianWorkerClaimAuthority(
+                        generation_id=worker_authority.generation_id,
+                        pid=worker_authority.pid,
+                        process_token="directive-xi-forged-current-token",
+                    ),
                 )
                 == DispatchClaimOutcome.UNAUTHORIZED
             )
             lease = claim_fit_dispatch_sync(
                 conn,
                 claim=recovered_claim,
-                worker_authority=replacement_authority,
+                worker_authority=worker_authority,
                 lease_seconds=120,
             )
             assert isinstance(lease, BayesianDispatchLease)
             assert lease.outcome is DispatchClaimOutcome.ACQUIRED
+            assert lease.tenant_id == tenant_a
             mark_dispatch_running_sync(conn, lease=lease)
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=recovered_claim,
+                    worker_authority=wrong_authority,
+                )
+                == DispatchClaimOutcome.ACTIVE_LEASE
+            )
             complete_dispatch_sync(conn, lease=lease)
 
         with sync_engine.begin() as conn:
@@ -1573,10 +1578,468 @@ async def test_b24_p9_directive_xi_recovery_publication_assignment_runtime(
                 claim_fit_dispatch_sync(
                     conn,
                     claim=recovered_claim,
-                    worker_authority=replacement_authority,
+                    worker_authority=peer_authority,
                 )
                 == DispatchClaimOutcome.ALREADY_COMPLETED
             )
+    finally:
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_directive_xiii_shared_recovery_claim_liveness(
+    test_tenant_pair,
+) -> None:
+    await _assert_table_exists("b24_fit_dispatch_outbox")
+    tenant_a, _tenant_b = test_tenant_pair
+    fit_id = uuid4()
+    unassigned_fit_id = uuid4()
+    dispatch_id = uuid4()
+    unassigned_dispatch_id = uuid4()
+    stale_attempt_id = uuid4()
+    current_attempt_id = uuid4()
+    unassigned_attempt_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    unassigned_payload_hash = dispatch_payload_hash(fit_id=unassigned_fit_id)
+    await _insert_fit(tenant_a, fit_id=fit_id, source_hash="6" * 64)
+    await _insert_fit(tenant_a, fit_id=unassigned_fit_id, source_hash="7" * 64)
+
+    sync_engine = create_engine(
+        to_sync_postgres_dsn(get_database_url()),
+        poolclass=NullPool,
+    )
+    try:
+        with sync_engine.begin() as conn:
+            original_authority = _register_test_worker_authority(
+                conn,
+                generation_id="directive-xiii-original-generation",
+                pid=4250,
+                process_token="directive-xiii-original-token",
+            )
+            peer_authority = _register_test_worker_authority(
+                conn,
+                generation_id="directive-xiii-peer-generation",
+                pid=4251,
+                process_token="directive-xiii-peer-token",
+            )
+            _set_tenant_context(conn, tenant_a)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        assigned_worker_generation,
+                        assignment_generation,
+                        assignment_expires_at,
+                        assignment_reason,
+                        recovery_generation,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        NULL,
+                        3,
+                        now() + interval '10 minutes',
+                        'recovery_shared_eligible',
+                        2,
+                        'dispatched',
+                        now(),
+                        now() + interval '10 minutes'
+                    )
+                    ON CONFLICT ON CONSTRAINT uq_b24_fit_dispatch_outbox_fit
+                    DO UPDATE SET
+                        id = EXCLUDED.id,
+                        dispatch_key = EXCLUDED.dispatch_key,
+                        task_name = EXCLUDED.task_name,
+                        attempt_id = EXCLUDED.attempt_id,
+                        payload_hash = EXCLUDED.payload_hash,
+                        assigned_worker_generation = NULL,
+                        assignment_generation = EXCLUDED.assignment_generation,
+                        assignment_expires_at = EXCLUDED.assignment_expires_at,
+                        assignment_reason = EXCLUDED.assignment_reason,
+                        recovery_generation = EXCLUDED.recovery_generation,
+                        status = EXCLUDED.status,
+                        next_attempt_at = EXCLUDED.next_attempt_at,
+                        next_recovery_at = EXCLUDED.next_recovery_at,
+                        updated_at = now()
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "dispatch_key": f"b24-p9-xiii:{tenant_a}:{fit_id}",
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(current_attempt_id),
+                    "payload_hash": payload_hash,
+                },
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        assigned_worker_generation,
+                        assignment_generation,
+                        assignment_expires_at,
+                        assignment_reason,
+                        recovery_generation,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        NULL,
+                        1,
+                        now() + interval '10 minutes',
+                        'initial_dispatch',
+                        0,
+                        'dispatched',
+                        now(),
+                        now() + interval '10 minutes'
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(unassigned_dispatch_id),
+                    "fit_id": str(unassigned_fit_id),
+                    "dispatch_key": (
+                        f"b24-p9-xiii-null-initial:{tenant_a}:{unassigned_fit_id}"
+                    ),
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(unassigned_attempt_id),
+                    "payload_hash": unassigned_payload_hash,
+                },
+            )
+
+        stale_claim = BayesianDispatchClaim(
+            dispatch_id=dispatch_id,
+            fit_id=fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=stale_attempt_id,
+            payload_hash=payload_hash,
+            recovery_generation=1,
+        )
+        current_claim = BayesianDispatchClaim(
+            dispatch_id=dispatch_id,
+            fit_id=fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=current_attempt_id,
+            payload_hash=payload_hash,
+            recovery_generation=2,
+        )
+        unassigned_initial_claim = BayesianDispatchClaim(
+            dispatch_id=unassigned_dispatch_id,
+            fit_id=unassigned_fit_id,
+            task_name=BAYESIAN_FIT_EXECUTION_TASK,
+            attempt_id=unassigned_attempt_id,
+            payload_hash=unassigned_payload_hash,
+            recovery_generation=0,
+        )
+        with sync_engine.begin() as conn:
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=unassigned_initial_claim,
+                    worker_authority=peer_authority,
+                )
+                == DispatchClaimOutcome.UNAUTHORIZED
+            )
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=stale_claim,
+                    worker_authority=original_authority,
+                )
+                == DispatchClaimOutcome.UNAUTHORIZED
+            )
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=current_claim,
+                    worker_authority=BayesianWorkerClaimAuthority(
+                        generation_id=peer_authority.generation_id,
+                        pid=peer_authority.pid,
+                        process_token="directive-xiii-forged-token",
+                    ),
+                )
+                == DispatchClaimOutcome.UNAUTHORIZED
+            )
+            lease = claim_fit_dispatch_sync(
+                conn,
+                claim=current_claim,
+                worker_authority=peer_authority,
+                lease_seconds=120,
+            )
+            assert isinstance(lease, BayesianDispatchLease)
+            assert lease.outcome is DispatchClaimOutcome.ACQUIRED
+            assert lease.tenant_id == tenant_a
+            assert lease.fit_id == fit_id
+            assert (
+                claim_fit_dispatch_sync(
+                    conn,
+                    claim=current_claim,
+                    worker_authority=original_authority,
+                )
+                == DispatchClaimOutcome.ACTIVE_LEASE
+            )
+    finally:
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_directive_xiii_broker_backed_recovery_liveness(
+    test_tenant_pair,
+    tmp_path: Path,
+) -> None:
+    await _assert_table_exists("b24_fit_dispatch_outbox")
+    await _assert_table_exists("b24_fit_recovery_outbox")
+    tenant_a, _tenant_b = test_tenant_pair
+    fit_id = uuid4()
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    await _insert_fit(tenant_a, fit_id=fit_id, source_hash="5" * 64)
+
+    sync_engine = create_engine(
+        to_sync_postgres_dsn(get_database_url()),
+        poolclass=NullPool,
+    )
+    try:
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        assigned_worker_generation,
+                        assignment_generation,
+                        assignment_expires_at,
+                        assignment_reason,
+                        lease_owner,
+                        lease_expires_at,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        'directive-xiii-stale-worker',
+                        1,
+                        now() - interval '5 minutes',
+                        'broker_backed_liveness_seed',
+                        'directive-xiii-stale-worker',
+                        now() - interval '5 minutes',
+                        'dispatched',
+                        now(),
+                        now()
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "dispatch_key": f"b24-p9-xiii-broker:{tenant_a}:{fit_id}",
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                },
+            )
+
+        from app.celery_app import celery_app
+        from app.core.queues import QUEUE_BAYESIAN
+        from app.tasks.bayesian import RECOVERY_RECONCILER_TASK_NAME
+
+        original_eager = celery_app.conf.task_always_eager
+        celery_app.conf.task_always_eager = False
+        worker_log = tmp_path / "p9_xiii_broker_worker.log"
+        probe_log = tmp_path / "p9_xiii_broker_probe.jsonl"
+        worker_env = _worker_env(include_bayesian_tasks=True, log_path=probe_log)
+        worker_env["B24_BAYESIAN_WORKSPACE_ROOT"] = str(tmp_path / "workspaces")
+        worker_env["B24_PYTENSOR_ROOT"] = str(tmp_path / "compiledirs")
+        worker_log_handle = worker_log.open("w", encoding="utf-8", buffering=1)
+        process: subprocess.Popen[str] | None = None
+        try:
+            assert celery_app.conf.task_always_eager is False
+            broker_url = str(celery_app.conf.broker_url)
+            assert "postgresql://" in broker_url
+            assert "memory://" not in broker_url
+
+            celery_app.send_task(
+                RECOVERY_RECONCILER_TASK_NAME,
+                kwargs={"batch_size": 10, "stale_publishing_seconds": 1},
+                queue=QUEUE_BAYESIAN,
+                routing_key=f"{QUEUE_BAYESIAN}.task",
+            )
+            no_worker_log = _wait_for_log(
+                probe_log,
+                "bayesian_recovery_reconciler_completed",
+                timeout_s=2,
+            )
+            assert "bayesian_recovery_reconciler_completed" not in no_worker_log
+            with sync_engine.begin() as conn:
+                _set_tenant_context(conn, tenant_a)
+                pending_state = (
+                    conn.execute(
+                        text(
+                            """
+                            SELECT
+                                dispatch.status AS dispatch_status,
+                                COUNT(recovery.id) AS recovery_rows
+                            FROM public.b24_fit_dispatch_outbox dispatch
+                            LEFT JOIN public.b24_fit_recovery_outbox recovery
+                              ON recovery.tenant_id = dispatch.tenant_id
+                             AND recovery.dispatch_id = dispatch.id
+                            WHERE dispatch.tenant_id = :tenant_id
+                              AND dispatch.id = :dispatch_id
+                            GROUP BY dispatch.status
+                            """
+                        ),
+                        {
+                            "tenant_id": str(tenant_a),
+                            "dispatch_id": str(dispatch_id),
+                        },
+                    )
+                    .mappings()
+                    .one()
+                )
+                assert pending_state["dispatch_status"] == "dispatched"
+                assert int(pending_state["recovery_rows"]) == 0
+
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "app.celery_app.celery_app",
+                    "worker",
+                    "-P",
+                    "solo",
+                    "-c",
+                    "1",
+                    "-Q",
+                    QUEUE_BAYESIAN,
+                    "--loglevel=INFO",
+                    "--without-gossip",
+                    "--without-mingle",
+                    "--without-heartbeat",
+                ],
+                cwd=ROOT / "backend",
+                env=worker_env,
+                text=True,
+                stdout=worker_log_handle,
+                stderr=subprocess.STDOUT,
+            )
+            ready_log = _wait_for_log(worker_log, " ready", timeout_s=90)
+            worker_log_handle.flush()
+            assert process.poll() is None, ready_log
+            assert " ready" in ready_log
+            assert f".> {QUEUE_BAYESIAN}" in ready_log
+
+            recovery_log = _wait_for_log(
+                probe_log,
+                "bayesian_recovery_reconciler_completed",
+                timeout_s=90,
+            )
+            assert "bayesian_recovery_reconciler_completed" in recovery_log
+            executed_log = _wait_for_log(
+                probe_log,
+                "bayesian_fit_intent_executed",
+                timeout_s=90,
+            )
+            assert "bayesian_fit_intent_executed" in executed_log
+        finally:
+            celery_app.conf.task_always_eager = original_eager
+            if process is not None:
+                _terminate_worker(process)
+            worker_log_handle.close()
+
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            state = (
+                conn.execute(
+                    text(
+                        """
+                        SELECT
+                            recovery.status AS recovery_status,
+                            recovery.publish_attempt_count,
+                            dispatch.status AS dispatch_status,
+                            dispatch.assigned_worker_generation,
+                            dispatch.assignment_reason,
+                            dispatch.recovery_generation,
+                            dispatch.claim_count,
+                            dispatch.lease_owner,
+                            dispatch.terminal_reason
+                        FROM public.b24_fit_recovery_outbox recovery
+                        JOIN public.b24_fit_dispatch_outbox dispatch
+                          ON dispatch.tenant_id = recovery.tenant_id
+                         AND dispatch.id = recovery.dispatch_id
+                        WHERE recovery.tenant_id = :tenant_id
+                          AND recovery.dispatch_id = :dispatch_id
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_a),
+                        "dispatch_id": str(dispatch_id),
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            assert state["recovery_status"] == "published"
+            assert int(state["publish_attempt_count"]) == 1
+            assert state["dispatch_status"] == "failed_terminal"
+            assert state["assigned_worker_generation"] is None
+            assert state["assignment_reason"] == "recovery_shared_eligible"
+            assert int(state["recovery_generation"]) == 1
+            assert int(state["claim_count"]) == 1
+            assert state["lease_owner"]
+            assert state["terminal_reason"]
     finally:
         sync_engine.dispose()
 
