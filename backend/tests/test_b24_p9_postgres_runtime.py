@@ -1594,13 +1594,16 @@ async def test_b24_p9_directive_xiii_shared_recovery_claim_liveness(
     await _assert_table_exists("b24_fit_dispatch_outbox")
     tenant_a, _tenant_b = test_tenant_pair
     fit_id = uuid4()
+    unassigned_fit_id = uuid4()
     dispatch_id = uuid4()
     unassigned_dispatch_id = uuid4()
     stale_attempt_id = uuid4()
     current_attempt_id = uuid4()
     unassigned_attempt_id = uuid4()
     payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    unassigned_payload_hash = dispatch_payload_hash(fit_id=unassigned_fit_id)
     await _insert_fit(tenant_a, fit_id=fit_id, source_hash="6" * 64)
+    await _insert_fit(tenant_a, fit_id=unassigned_fit_id, source_hash="7" * 64)
 
     sync_engine = create_engine(
         to_sync_postgres_dsn(get_database_url()),
@@ -1712,11 +1715,13 @@ async def test_b24_p9_directive_xiii_shared_recovery_claim_liveness(
                 {
                     "tenant_id": str(tenant_a),
                     "dispatch_id": str(unassigned_dispatch_id),
-                    "fit_id": str(fit_id),
-                    "dispatch_key": f"b24-p9-xiii-null-initial:{tenant_a}:{fit_id}",
+                    "fit_id": str(unassigned_fit_id),
+                    "dispatch_key": (
+                        f"b24-p9-xiii-null-initial:{tenant_a}:{unassigned_fit_id}"
+                    ),
                     "task_name": BAYESIAN_FIT_EXECUTION_TASK,
                     "attempt_id": str(unassigned_attempt_id),
-                    "payload_hash": payload_hash,
+                    "payload_hash": unassigned_payload_hash,
                 },
             )
 
@@ -1738,10 +1743,10 @@ async def test_b24_p9_directive_xiii_shared_recovery_claim_liveness(
         )
         unassigned_initial_claim = BayesianDispatchClaim(
             dispatch_id=unassigned_dispatch_id,
-            fit_id=fit_id,
+            fit_id=unassigned_fit_id,
             task_name=BAYESIAN_FIT_EXECUTION_TASK,
             attempt_id=unassigned_attempt_id,
-            payload_hash=payload_hash,
+            payload_hash=unassigned_payload_hash,
             recovery_generation=0,
         )
         with sync_engine.begin() as conn:
