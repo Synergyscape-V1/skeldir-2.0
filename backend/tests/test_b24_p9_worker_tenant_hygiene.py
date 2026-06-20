@@ -379,7 +379,7 @@ def test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun() -> 
     assert "task_prerun" not in boot_probe
     assert "if _BAYESIAN_TASKS_REGISTERED:" in tasks
     assert "ensure_bayesian_worker_boot_probe_signal_registered()" in tasks
-    assert tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 6
+    assert tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 8
 
 
 def test_b24_p9_non_bayesian_worker_registry_excludes_bayesian_tasks() -> None:
@@ -852,6 +852,7 @@ def test_b24_p9_directive_x_dispatch_authority_is_broker_independent() -> None:
         "BayesianWorkerClaimAuthority",
         "claim_fit_dispatch_sync",
         "bind_dispatch_write_context_sync",
+        "fail_dispatch_recoverable_sync",
         "register_worker_process_authority_sync",
     ):
         assert token in authority
@@ -910,10 +911,14 @@ def test_b24_p9_directive_xi_recovery_scheduler_is_production_wired() -> None:
         in tasks
     )
     assert "RECOVERY_RECONCILER_TASK_NAME" in tasks
+    assert "RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME" in tasks
     assert "create_recovery_wakeups_sync(conn, batch_size=batch_size)" in tasks
     assert "publish_due_recovery_rows_sync(" in tasks
+    assert "probe_recoverable_failure_ack" in tasks
+    assert "fail_dispatch_recoverable_sync(" in tasks
     assert "assert_bayesian_worker_boot_topology_proven()" in tasks
     assert '"event_type": "bayesian.recovery"' in tasks
+    assert "recovery_published_task_ids" in tasks
 
     assert '"b24-p9-bayesian-recovery-reconciler"' in beat
     assert '"task": "app.tasks.bayesian.reconcile_fit_recovery_wakeups"' in beat
@@ -928,6 +933,7 @@ def test_b24_p9_directive_xi_recovery_scheduler_is_production_wired() -> None:
     assert "lease_due_recovery_rows_sync" in outbox
     assert "mark_recovery_published_sync" in outbox
     assert "mark_recovery_publish_failed_sync" in outbox
+    assert "published_task_id" in outbox
     assert "app.b24_recovery_reconciler" in outbox
     assert "app.b24_dispatch_claim_access" in outbox
     assert "status = 'publishing'" in outbox

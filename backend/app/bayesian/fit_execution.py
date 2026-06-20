@@ -29,6 +29,7 @@ from app.bayesian.dispatch_authority import (
     bind_dispatch_write_context_sync,
     claim_fit_dispatch_sync,
     complete_dispatch_sync,
+    fail_dispatch_recoverable_sync,
     fail_dispatch_terminal_sync,
     mark_dispatch_running_sync,
 )
@@ -804,23 +805,16 @@ def execute_fit_intent_sync(
                             conn, lease=dispatch_lease, reason=diagnostic_reason
                         )
                 else:
-                    _mark_fit_failure(
-                        conn,
-                        tenant_id=tenant_id,
-                        fit_id=fit_id,
-                        status=FitStatus.FAILED,
-                        fallback_reason=FallbackReason.WORKER_FAILURE,
-                        runtime_seconds=runtime_seconds,
-                        dispatch_lease=dispatch_lease,
-                    )
                     if dispatch_lease is not None:
-                        fail_dispatch_terminal_sync(
+                        fail_dispatch_recoverable_sync(
                             conn,
                             lease=dispatch_lease,
                             reason=FallbackReason.WORKER_FAILURE.value,
                         )
             return {
-                "status": "failed",
+                "status": (
+                    "failed" if diagnostic_reason is not None else "failed_retryable"
+                ),
                 "fallback_reason": (
                     FallbackReason.NO_CONVERGENCE.value
                     if diagnostic_reason is not None

@@ -395,6 +395,84 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
 
 
 --
+-- Name: b24_fail_fit_dispatch_recoverable(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b24_fail_fit_dispatch_recoverable(p_reason text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    v_row record;
+    v_terminal boolean;
+    v_status text;
+BEGIN
+    SELECT *
+    INTO v_row
+    FROM b24_fit_dispatch_outbox outbox
+    WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
+      AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id)
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'b24_dispatch_recoverable_failure_fence_rejected';
+    END IF;
+
+    v_terminal := COALESCE(v_row.claim_count, 0) >= COALESCE(v_row.max_attempts, 1);
+    v_status := CASE WHEN v_terminal THEN 'failed_terminal' ELSE 'failed_retryable' END;
+
+    UPDATE public.bayesian_model_fits fit
+    SET status = CASE WHEN v_terminal THEN 'failed' ELSE 'queued' END,
+        fallback_applied = CASE WHEN v_terminal THEN true ELSE false END,
+        fallback_reason = CASE
+            WHEN v_terminal THEN COALESCE(NULLIF(p_reason, ''), 'worker_failure')
+            ELSE NULL
+        END,
+        credible_interval_status = CASE
+            WHEN v_terminal THEN 'not_available'
+            ELSE fit.credible_interval_status
+        END,
+        diagnostic_status = CASE
+            WHEN v_terminal THEN 'unavailable'
+            ELSE fit.diagnostic_status
+        END,
+        diagnostic_failure_reason = CASE
+            WHEN v_terminal THEN 'skipped_non_sampled'
+            ELSE fit.diagnostic_failure_reason
+        END,
+        completed_at = CASE WHEN v_terminal THEN now() ELSE NULL END,
+        updated_at = now()
+    WHERE fit.tenant_id = v_row.tenant_id
+      AND fit.id = v_row.fit_id
+      AND fit.status IN ('pending', 'queued', 'running', 'persist_pending');
+
+    UPDATE public.b24_fit_dispatch_outbox outbox
+    SET status = v_status,
+        terminal_reason = LEFT(
+            'recoverable_ack:' || COALESCE(NULLIF(p_reason, ''), 'worker_failure'),
+            512
+        ),
+        lease_owner = NULL,
+        lease_capability_digest = NULL,
+        lease_acquired_at = NULL,
+        lease_expires_at = NULL,
+        last_heartbeat_at = NULL,
+        assigned_worker_generation = NULL,
+        assignment_generation = assignment_generation + 1,
+        assignment_expires_at = NULL,
+        assignment_reason = 'failure_ack_recovery_required',
+        next_recovery_at = now(),
+        completed_at = CASE WHEN v_terminal THEN now() ELSE NULL END,
+        updated_at = now()
+    WHERE outbox.tenant_id = v_row.tenant_id
+      AND outbox.id = v_row.id;
+
+    RETURN v_status;
+END
+$$;
+
+
+--
 -- Name: b24_fail_fit_dispatch_terminal(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
