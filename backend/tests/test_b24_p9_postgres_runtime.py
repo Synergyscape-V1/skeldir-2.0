@@ -1661,6 +1661,22 @@ async def test_b24_p9_directive_xiii_shared_recovery_claim_liveness(
                         now(),
                         now() + interval '10 minutes'
                     )
+                    ON CONFLICT ON CONSTRAINT uq_b24_fit_dispatch_outbox_fit
+                    DO UPDATE SET
+                        id = EXCLUDED.id,
+                        dispatch_key = EXCLUDED.dispatch_key,
+                        task_name = EXCLUDED.task_name,
+                        attempt_id = EXCLUDED.attempt_id,
+                        payload_hash = EXCLUDED.payload_hash,
+                        assigned_worker_generation = NULL,
+                        assignment_generation = EXCLUDED.assignment_generation,
+                        assignment_expires_at = EXCLUDED.assignment_expires_at,
+                        assignment_reason = EXCLUDED.assignment_reason,
+                        recovery_generation = EXCLUDED.recovery_generation,
+                        status = EXCLUDED.status,
+                        next_attempt_at = EXCLUDED.next_attempt_at,
+                        next_recovery_at = EXCLUDED.next_recovery_at,
+                        updated_at = now()
                     """
                 ),
                 {
