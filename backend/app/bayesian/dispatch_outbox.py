@@ -333,10 +333,7 @@ async def lease_due_recovery_rows(
     result = await session.execute(
         text(
             """
-            WITH live_generation AS (
-                SELECT public.b24_next_active_worker_generation() AS generation_id
-            ),
-            due AS (
+            WITH due AS (
                 SELECT tenant_id, id, dispatch_id
                 FROM public.b24_fit_recovery_outbox
                 WHERE (
@@ -353,16 +350,15 @@ async def lease_due_recovery_rows(
             assigned AS (
                 UPDATE public.b24_fit_dispatch_outbox outbox
                 SET status = 'dispatching',
-                    assigned_worker_generation = live_generation.generation_id,
+                    assigned_worker_generation = NULL,
                     assignment_generation = assignment_generation + 1,
                     assignment_expires_at = now() + interval '10 minutes',
-                    assignment_reason = 'recovery_republish',
+                    assignment_reason = 'recovery_shared_eligible',
                     dispatching_started_at = now(),
                     updated_at = now()
-                FROM due, live_generation
+                FROM due
                 WHERE outbox.tenant_id = due.tenant_id
                   AND outbox.id = due.dispatch_id
-                  AND live_generation.generation_id IS NOT NULL
                 RETURNING
                     outbox.tenant_id,
                     outbox.id AS dispatch_id,
@@ -526,10 +522,7 @@ def lease_due_recovery_rows_sync(
     result = conn.execute(
         text(
             """
-            WITH live_generation AS (
-                SELECT public.b24_next_active_worker_generation() AS generation_id
-            ),
-            due AS (
+            WITH due AS (
                 SELECT tenant_id, id, dispatch_id
                 FROM public.b24_fit_recovery_outbox
                 WHERE (
@@ -546,16 +539,15 @@ def lease_due_recovery_rows_sync(
             assigned AS (
                 UPDATE public.b24_fit_dispatch_outbox outbox
                 SET status = 'dispatching',
-                    assigned_worker_generation = live_generation.generation_id,
+                    assigned_worker_generation = NULL,
                     assignment_generation = assignment_generation + 1,
                     assignment_expires_at = now() + interval '10 minutes',
-                    assignment_reason = 'recovery_republish',
+                    assignment_reason = 'recovery_shared_eligible',
                     dispatching_started_at = now(),
                     updated_at = now()
-                FROM due, live_generation
+                FROM due
                 WHERE outbox.tenant_id = due.tenant_id
                   AND outbox.id = due.dispatch_id
-                  AND live_generation.generation_id IS NOT NULL
                 RETURNING
                     outbox.tenant_id,
                     outbox.id AS dispatch_id,

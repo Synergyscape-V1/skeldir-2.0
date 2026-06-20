@@ -92,6 +92,7 @@ CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid,
             v_next_epoch integer;
             v_lease_seconds integer := LEAST(GREATEST(COALESCE(p_lease_seconds, 330), 30), 900);
             v_outcome text;
+            v_shared_recovery_eligible boolean;
         BEGIN
             PERFORM set_config('app.b24_worker_authority_access', 'on', true);
             PERFORM set_config('app.b24_dispatch_claim_access', 'on', true);
@@ -124,12 +125,23 @@ CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid,
                 RETURN;
             END IF;
 
+            v_shared_recovery_eligible := (
+                COALESCE(v_row.recovery_generation, 0) > 0
+                AND COALESCE(p_recovery_generation, 0) = COALESCE(v_row.recovery_generation, 0)
+                AND v_row.assigned_worker_generation IS NULL
+                AND v_row.assignment_reason = 'recovery_shared_eligible'
+            );
+
             IF v_row.fit_id <> p_fit_id
                OR v_row.task_name <> p_task_name
                OR v_row.attempt_id <> p_attempt_id
                OR v_row.payload_hash <> p_payload_hash
                OR COALESCE(v_row.recovery_generation, 0) <> COALESCE(p_recovery_generation, 0)
-               OR v_row.assigned_worker_generation IS DISTINCT FROM p_worker_generation
+               OR NOT COALESCE(
+                    v_row.assigned_worker_generation = p_worker_generation
+                    OR v_shared_recovery_eligible,
+                    false
+               )
                OR v_row.assignment_expires_at IS NULL
                OR v_row.assignment_expires_at <= now() THEN
                 RETURN QUERY SELECT 'UNAUTHORIZED', NULL::uuid, NULL::uuid, NULL::uuid,

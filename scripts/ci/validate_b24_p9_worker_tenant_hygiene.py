@@ -36,6 +36,9 @@ P9_DIRECTIVE_IX_MIGRATION = Path(
 P9_DIRECTIVE_X_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202606181200_b24_p9_directive_x_broker_independent_authority.py"
 )
+P9_DIRECTIVE_XIII_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202606201300_b24_p9_directive_xiii_shared_recovery.py"
+)
 P9_TESTS = Path("backend/tests/test_b24_p9_worker_tenant_hygiene.py")
 P9_DB_TESTS = Path("backend/tests/test_b24_p9_postgres_runtime.py")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
@@ -68,6 +71,7 @@ REQUIRED_FILES = {
     P9_MIGRATION,
     P9_DIRECTIVE_IX_MIGRATION,
     P9_DIRECTIVE_X_MIGRATION,
+    P9_DIRECTIVE_XIII_MIGRATION,
     P9_TESTS,
     P9_DB_TESTS,
     WORKFLOW,
@@ -480,12 +484,16 @@ def validate_directive_ix_dispatch_authority(
     migration = (
         migration_text
         if migration_text is not None
-        else _read(P9_DIRECTIVE_IX_MIGRATION) + "\n" + _read(P9_DIRECTIVE_X_MIGRATION)
+        else _read(P9_DIRECTIVE_IX_MIGRATION)
+        + "\n"
+        + _read(P9_DIRECTIVE_X_MIGRATION)
+        + "\n"
+        + _read(P9_DIRECTIVE_XIII_MIGRATION)
     )
     current_migration = (
         migration_text
         if migration_text is not None
-        else _read(P9_DIRECTIVE_X_MIGRATION)
+        else _read(P9_DIRECTIVE_XIII_MIGRATION)
     )
     models = models_text if models_text is not None else _read(MODELS)
     for token in (
@@ -522,6 +530,8 @@ def validate_directive_ix_dispatch_authority(
         "app.b24_recovery_reconciler",
         "app.b24_dispatch_claim_access",
         "updated_at <= now() - (:stale_publishing_seconds * interval '1 second')",
+        "assigned_worker_generation = NULL",
+        "assignment_reason = 'recovery_shared_eligible'",
         '"dispatch_id": str(self.id)',
         '"attempt_id": str(self.attempt_id)',
         '"payload_hash": self.payload_hash',
@@ -577,6 +587,10 @@ def validate_directive_ix_dispatch_authority(
         "b24_claim_fit_dispatch",
         "p_fit_id uuid",
         "p_worker_process_token text",
+        "v_shared_recovery_eligible",
+        "assignment_reason = 'recovery_shared_eligible'",
+        "NOT COALESCE(",
+        "v_row.assigned_worker_generation = p_worker_generation",
         "b24_current_dispatch_fence_valid",
         "b24_enforce_dispatch_fence",
         "trg_b24_dispatch_fence_fits",
@@ -718,6 +732,15 @@ def validate_tests_and_ci(
         "test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime",
         "test_b24_p9_directive_xi_recovery_publication_assignment_runtime",
         "test_b24_p9_directive_xi_stale_publishing_recovery_quarantines",
+        "test_b24_p9_directive_xiii_shared_recovery_claim_liveness",
+        "test_b24_p9_directive_xiii_broker_backed_recovery_liveness",
+        "celery_app.conf.task_always_eager = False",
+        "assert celery_app.conf.task_always_eager is False",
+        "bayesian_recovery_reconciler_completed",
+        "bayesian_fit_intent_executed",
+        "recovery_shared_eligible",
+        "postgresql://",
+        "memory://",
         "test_b24_p9_concurrent_tenant_isolation_db_and_runtime_surfaces",
         "bind_transaction_local_tenant",
         "assert_fresh_checkout_is_clean",
@@ -1040,6 +1063,8 @@ def run_negative_controls() -> None:
                 migration_text=_read(P9_DIRECTIVE_IX_MIGRATION)
                 + "\n"
                 + _read(P9_DIRECTIVE_X_MIGRATION)
+                + "\n"
+                + _read(P9_DIRECTIVE_XIII_MIGRATION)
                 + "\nPERFORM set_config('app.b24_dispatch_fence_required', 'on', true);\n"
             ),
             "caller-controlled GUC",
@@ -1050,13 +1075,35 @@ def run_negative_controls() -> None:
                 migration_text=(
                     _read(P9_DIRECTIVE_IX_MIGRATION)
                     + "\n"
-                    + _read(P9_DIRECTIVE_X_MIGRATION).replace(
-                        "p_worker_process_token text",
-                        "p_worker_process_token_removed text",
-                    )
+                    + _read(P9_DIRECTIVE_X_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIII_MIGRATION)
+                ).replace(
+                    "p_worker_process_token text",
+                    "p_worker_process_token_removed text",
                 )
             ),
             "p_worker_process_token",
+        ),
+        (
+            "directive_xiii_shared_recovery_removed",
+            lambda: validate_directive_ix_dispatch_authority(
+                outbox_text=_read(DISPATCH_OUTBOX).replace(
+                    "recovery_shared_eligible",
+                    "recovery_republish",
+                ),
+                migration_text=(
+                    _read(P9_DIRECTIVE_IX_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_X_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIII_MIGRATION).replace(
+                        "v_shared_recovery_eligible",
+                        "v_specific_replacement_only",
+                    )
+                ),
+            ),
+            "recovery_shared_eligible",
         ),
         (
             "directive_ix_db_fence_rejection_removed",
@@ -1065,6 +1112,8 @@ def run_negative_controls() -> None:
                     _read(P9_DIRECTIVE_IX_MIGRATION)
                     + "\n"
                     + _read(P9_DIRECTIVE_X_MIGRATION)
+                    + "\n"
+                    + _read(P9_DIRECTIVE_XIII_MIGRATION)
                 ).replace(
                     "b24_dispatch_fence_rejected",
                     "b24_dispatch_fence_allowed",
