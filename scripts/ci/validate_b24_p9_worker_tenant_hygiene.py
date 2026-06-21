@@ -44,6 +44,7 @@ P9_DIRECTIVE_XIV_MIGRATION = Path(
 )
 P9_TESTS = Path("backend/tests/test_b24_p9_worker_tenant_hygiene.py")
 P9_DB_TESTS = Path("backend/tests/test_b24_p9_postgres_runtime.py")
+P9_RAW_DB_TESTS = Path("backend/tests/test_b24_p9_raw_driver_postgres_runtime.py")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
 CI_WORKFLOW = Path(".github/workflows/ci.yml")
 B07_P5_TIMEOUT_RUNTIME_TEST = Path(
@@ -78,6 +79,7 @@ REQUIRED_FILES = {
     P9_DIRECTIVE_XIV_MIGRATION,
     P9_TESTS,
     P9_DB_TESTS,
+    P9_RAW_DB_TESTS,
     WORKFLOW,
     CI_WORKFLOW,
     B07_P5_TIMEOUT_RUNTIME_TEST,
@@ -675,6 +677,7 @@ def validate_artifact_authority(
 def validate_tests_and_ci(
     p9_tests_text: str | None = None,
     p9_db_tests_text: str | None = None,
+    p9_raw_db_tests_text: str | None = None,
     workflow_text: str | None = None,
     ci_workflow_text: str | None = None,
     b07_p5_timeout_test_text: str | None = None,
@@ -682,6 +685,11 @@ def validate_tests_and_ci(
 ) -> None:
     tests = p9_tests_text if p9_tests_text is not None else _read(P9_TESTS)
     db_tests = p9_db_tests_text if p9_db_tests_text is not None else _read(P9_DB_TESTS)
+    raw_db_tests = (
+        p9_raw_db_tests_text
+        if p9_raw_db_tests_text is not None
+        else _read(P9_RAW_DB_TESTS)
+    )
     workflow = workflow_text if workflow_text is not None else _read(WORKFLOW)
     ci_workflow = (
         ci_workflow_text if ci_workflow_text is not None else _read(CI_WORKFLOW)
@@ -798,6 +806,7 @@ def validate_tests_and_ci(
         "B2.4-P5 PostgreSQL Runtime Proof",
         "test_b24_p9_worker_tenant_hygiene.py",
         "test_b24_p9_postgres_runtime.py",
+        "test_b24_p9_raw_driver_postgres_runtime.py",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
         "SKELDIR_CELERY_WORKER_ROLE",
         "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",
@@ -810,6 +819,56 @@ def validate_tests_and_ci(
         "scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control",
     ):
         _require(token in workflow, f"P9 workflow wiring missing: {token}")
+    for token in (
+        "DIRECTIVE_XVI_RAW_PSYCOPG_RUNTIME_ROLE_PROOF",
+        "DIRECTIVE_XVI_RAW_ASYNCPG_REPRESENTATIVE_PROOF",
+        "DIRECTIVE_XVI_SECURITY_DEFINER_DIRECT_ABUSE_PROOF",
+        "import psycopg2",
+        "import asyncpg",
+        "psycopg2.connect(_runtime_dsn())",
+        "asyncpg.connect(async_dsn)",
+        "cur.execute(sql, params)",
+        "test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql",
+        "test_b24_p9_directive_xvi_raw_asyncpg_representative_hostile_writes",
+        "current_user",
+        "rolsuper",
+        "rolbypassrls",
+        "pg_has_role(current_user, 'migration_owner', 'member')",
+        "owns_protected_tables",
+        "inherits_bypassrls",
+        "INSERT INTO public.bayesian_model_fits",
+        "UPDATE public.bayesian_model_fits",
+        "INSERT INTO public.bayesian_artifacts",
+        "INSERT INTO public.b24_fit_dispatch_outbox",
+        "INSERT INTO public.b24_fit_recovery_outbox",
+        "DELETE FROM public.bayesian_model_fits",
+        "public.b24_claim_fit_dispatch",
+        "public.b24_mark_fit_dispatch_running()",
+        "public.b24_complete_fit_dispatch()",
+        "public.b24_fail_fit_dispatch_terminal",
+        "public.b24_fail_fit_dispatch_recoverable",
+        "forged-process-token",
+        "stale_recovery_claim",
+        "wrong_pid_claim",
+        "wrong_task_claim",
+        "UPDATE 0",
+    ):
+        _require(token in raw_db_tests, f"P9 raw DB proof missing: {token}")
+    for forbidden in (
+        "from sqlalchemy",
+        "import sqlalchemy",
+        "create_engine",
+        "Session",
+        "text(",
+        "claim_fit_dispatch_sync",
+        "bind_dispatch_write_context_sync",
+        "mark_dispatch_running_sync",
+        "fail_dispatch_recoverable_sync",
+    ):
+        _require(
+            forbidden not in raw_db_tests,
+            f"P9 raw DB proof regressed to helper-mediated proof: {forbidden}",
+        )
     for token in (
         "B2.1-P4 Queue Isolation + Performance Semantics Lock",
         "B2.1-P6 Full End-to-End Closure + Downstream Readiness",
@@ -1255,6 +1314,75 @@ def run_negative_controls() -> None:
                 ci_workflow_text=_read(CI_WORKFLOW),
             ),
             "broker",
+        ),
+        (
+            "directive_xvi_raw_file_removed",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql",
+                    "test_b24_p9_directive_xvi_raw_psycopg_removed",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "raw_psycopg",
+        ),
+        (
+            "directive_xvi_sqlalchemy_substitution",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "import pytest",
+                    "import pytest\nfrom sqlalchemy import create_engine",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "helper-mediated",
+        ),
+        (
+            "directive_xvi_role_hygiene_removed",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "rolbypassrls",
+                    "role_bypass_check_removed",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "rolbypassrls",
+        ),
+        (
+            "directive_xvi_asyncpg_removed",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "asyncpg.connect(async_dsn)",
+                    "asyncpg_connect_removed(async_dsn)",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "asyncpg.connect",
+        ),
+        (
+            "directive_xvi_workflow_omits_raw_file",
+            lambda: validate_tests_and_ci(
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW).replace(
+                    " backend/tests/test_b24_p9_raw_driver_postgres_runtime.py",
+                    "",
+                ),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "raw_driver",
         ),
         (
             "directive_ix_db_fence_rejection_removed",
