@@ -2944,54 +2944,19 @@ async def test_b24_p9_directive_xv_disabled_beat_schedule_blocks_recovery(
 
         original_eager = celery_app.conf.task_always_eager
         celery_app.conf.task_always_eager = False
-        worker_log = tmp_path / "p9_xv_disabled_schedule_worker.log"
         beat_log = tmp_path / "p9_xv_disabled_schedule_beat.log"
         probe_log = tmp_path / "p9_xv_disabled_schedule_probe.jsonl"
         beat_schedule_db = tmp_path / "p9_xv_disabled_celerybeat-schedule"
-        worker_env = _worker_env(include_bayesian_tasks=True, log_path=probe_log)
-        worker_env["B24_BAYESIAN_WORKSPACE_ROOT"] = str(tmp_path / "workspaces")
-        worker_env["B24_PYTENSOR_ROOT"] = str(tmp_path / "compiledirs")
         beat_env = _beat_env(
             log_path=probe_log,
             recovery_interval_seconds=1,
             disable_recovery_schedule=True,
         )
-        worker_log_handle = worker_log.open("w", encoding="utf-8", buffering=1)
         beat_log_handle = beat_log.open("w", encoding="utf-8", buffering=1)
-        worker_process: subprocess.Popen[str] | None = None
         beat_process: subprocess.Popen[str] | None = None
         try:
             assert celery_app.conf.task_always_eager is False
-            worker_process = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-m",
-                    "celery",
-                    "-A",
-                    "app.celery_app.celery_app",
-                    "worker",
-                    "-P",
-                    "solo",
-                    "-c",
-                    "1",
-                    "-Q",
-                    QUEUE_BAYESIAN,
-                    "--loglevel=INFO",
-                    "--without-gossip",
-                    "--without-mingle",
-                    "--without-heartbeat",
-                ],
-                cwd=ROOT / "backend",
-                env=worker_env,
-                text=True,
-                stdout=worker_log_handle,
-                stderr=subprocess.STDOUT,
-            )
-            ready_log = _wait_for_log(worker_log, " ready", timeout_s=90)
-            worker_log_handle.flush()
-            assert worker_process.poll() is None, ready_log
-            assert " ready" in ready_log
-            assert f".> {QUEUE_BAYESIAN}" in ready_log
+            broker_message_baseline_id = _max_broker_message_id(sync_engine)
 
             beat_process = subprocess.Popen(
                 [
@@ -3028,6 +2993,26 @@ async def test_b24_p9_directive_xv_disabled_beat_schedule_blocks_recovery(
                 "failure_ack_recovery_required"
             )
             assert RECOVERY_RECONCILER_TASK_NAME not in _read_log(beat_log)
+            with sync_engine.begin() as conn:
+                disabled_beat_message_count = conn.execute(
+                    text(
+                        """
+                        SELECT count(*)::integer
+                        FROM public.kombu_message msg
+                        JOIN public.kombu_queue queue
+                          ON queue.id = msg.queue_id
+                        WHERE queue.name = :queue_name
+                          AND msg.id > :after_message_id
+                          AND msg.payload LIKE :task_filter
+                        """
+                    ),
+                    {
+                        "queue_name": QUEUE_BAYESIAN,
+                        "after_message_id": int(broker_message_baseline_id),
+                        "task_filter": f"%{RECOVERY_RECONCILER_TASK_NAME}%",
+                    },
+                ).scalar_one()
+            assert disabled_beat_message_count == 0
             assert not [
                 event
                 for event in _read_probe_events(probe_log)
@@ -3036,10 +3021,8 @@ async def test_b24_p9_directive_xv_disabled_beat_schedule_blocks_recovery(
             ]
         finally:
             celery_app.conf.task_always_eager = original_eager
-            for process in (worker_process, beat_process):
-                if process is not None:
-                    _terminate_worker(process)
-            worker_log_handle.close()
+            if beat_process is not None:
+                _terminate_worker(beat_process)
             beat_log_handle.close()
     finally:
         sync_engine.dispose()
