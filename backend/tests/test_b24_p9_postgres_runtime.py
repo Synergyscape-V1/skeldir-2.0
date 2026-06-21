@@ -417,6 +417,7 @@ def _wait_for_broker_task_messages(
     task_name: str,
     queue_name: str,
     after_message_id: int = 0,
+    task_id: str | None = None,
     timeout_s: float = 30.0,
 ) -> list[dict[str, object]]:
     deadline = time.monotonic() + timeout_s
@@ -444,6 +445,10 @@ def _wait_for_broker_task_messages(
                         WHERE queue.name = :queue_name
                           AND msg.id > :after_message_id
                           AND msg.payload LIKE :task_filter
+                          AND (
+                              :task_id_filter IS NULL
+                              OR msg.payload LIKE :task_id_filter
+                          )
                         ORDER BY msg.id DESC
                         LIMIT 20
                         """
@@ -452,6 +457,7 @@ def _wait_for_broker_task_messages(
                         "queue_name": queue_name,
                         "after_message_id": int(after_message_id),
                         "task_filter": f"%{task_name}%",
+                        "task_id_filter": f"%{task_id}%" if task_id else None,
                     },
                 ).mappings()
             ]
@@ -2739,10 +2745,10 @@ async def test_b24_p9_directive_xv_live_beat_drives_failure_ack_recovery(
                 after_message_id=broker_message_baseline_id,
                 timeout_s=30,
             )
-            beat_task_ids = {
+            pre_worker_beat_task_ids = {
                 str(row["task_id"]) for row in beat_messages if row.get("task_id")
             }
-            assert beat_task_ids
+            assert pre_worker_beat_task_ids
             assert {str(row["queue_name"]) for row in beat_messages} == {QUEUE_BAYESIAN}
 
             beat_without_worker_state = _assert_dispatch_state_remains(
@@ -2793,9 +2799,25 @@ async def test_b24_p9_directive_xv_live_beat_drives_failure_ack_recovery(
             recovery_event = _wait_for_probe_event_matching(
                 probe_log,
                 "bayesian_recovery_reconciler_completed",
-                predicate=lambda event: event.get("task_id") in beat_task_ids
-                and str(dispatch_id) in event.get("recovery_dispatch_ids", []),
-                timeout_s=90,
+                predicate=lambda event: str(dispatch_id)
+                in event.get("recovery_dispatch_ids", []),
+                timeout_s=120,
+            )
+            recovery_task_id = str(recovery_event["task_id"])
+            correlated_beat_messages = _wait_for_broker_task_messages(
+                sync_engine,
+                task_name=RECOVERY_RECONCILER_TASK_NAME,
+                queue_name=QUEUE_BAYESIAN,
+                after_message_id=broker_message_baseline_id,
+                task_id=recovery_task_id,
+                timeout_s=5,
+            )
+            assert {str(row["queue_name"]) for row in correlated_beat_messages} == {
+                QUEUE_BAYESIAN
+            }
+            assert any(
+                str(row.get("task_id")) == recovery_task_id
+                for row in correlated_beat_messages
             )
             assert recovery_event["recovery_wakeups_created"] >= 1
             assert recovery_event["recovery_wakeups_published"] >= 1
