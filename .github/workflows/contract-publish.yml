@@ -39,7 +39,7 @@ jobs:
           fi
       
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: contracts-v${{ steps.version.outputs.version }}
           name: Contracts v${{ steps.version.outputs.version }}
