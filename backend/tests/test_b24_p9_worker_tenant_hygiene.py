@@ -47,6 +47,7 @@ TENANT_CONTEXT = ROOT / "backend/app/bayesian/tenant_context.py"
 DISPATCH_AUTHORITY = ROOT / "backend/app/bayesian/dispatch_authority.py"
 DISPATCH_OUTBOX = ROOT / "backend/app/bayesian/dispatch_outbox.py"
 PROCFILE = ROOT / "Procfile"
+P9_DB_TESTS = ROOT / "backend/tests/test_b24_p9_postgres_runtime.py"
 TEMP_WORKSPACE = ROOT / "backend/app/bayesian/temp_workspace.py"
 CHILD_ENVIRONMENT = ROOT / "backend/app/bayesian/child_environment.py"
 COMPILEDIR_REAPER = ROOT / "backend/app/bayesian/compiledir_reaper.py"
@@ -950,6 +951,45 @@ def test_b24_p9_directive_xi_recovery_scheduler_is_production_wired() -> None:
         "worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian" in procfile
     )
     assert "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1" in procfile
+
+
+def test_b24_p9_directive_xv_live_beat_proof_is_runtime_scoped() -> None:
+    db_tests = _read(P9_DB_TESTS)
+    for token in (
+        "test_b24_p9_directive_xv_live_beat_drives_failure_ack_recovery",
+        "test_b24_p9_directive_xv_disabled_beat_schedule_blocks_recovery",
+        "_beat_env",
+        "_wait_for_broker_task_messages",
+        "_max_broker_message_id",
+        "B24_P9_RECOVERY_RECONCILE_INTERVAL_SECONDS",
+        "SKELDIR_B24_P9_DISABLE_RECOVERY_RECONCILER_JOB",
+        "b24-p9-bayesian-recovery-reconciler",
+        "RECOVERY_RECONCILER_TASK_NAME in beat_emission_log",
+        'event.get("task_id") in beat_task_ids',
+        "failure_ack_recovery_required",
+        "recovery_published_task_ids",
+        "bayesian_fit_intent_executed",
+        "assert celery_app.conf.task_always_eager is False",
+        "memory://",
+    ):
+        assert token in db_tests
+    assert (
+        "celery_app.send_task(\n                RECOVERY_RECONCILER_TASK_NAME"
+        in db_tests
+    )
+    live_beat_test = db_tests.split(
+        "async def test_b24_p9_directive_xv_live_beat_drives_failure_ack_recovery",
+        1,
+    )[1].split(
+        "async def test_b24_p9_directive_xv_disabled_beat_schedule_blocks_recovery",
+        1,
+    )[
+        0
+    ]
+    assert (
+        "celery_app.send_task(\n                RECOVERY_RECONCILER_TASK_NAME"
+        not in live_beat_test
+    )
 
 
 def test_b24_p9_same_process_sequential_reused_worker_runtime_lane(

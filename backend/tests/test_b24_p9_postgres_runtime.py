@@ -313,6 +313,31 @@ def _worker_env(*, include_bayesian_tasks: bool, log_path: Path) -> dict[str, st
     return env
 
 
+def _beat_env(
+    *,
+    log_path: Path,
+    recovery_interval_seconds: int = 1,
+    disable_recovery_schedule: bool = False,
+) -> dict[str, str]:
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT)
+    env["C_FORCE_ROOT"] = "true"
+    multiproc_dir = log_path.parent / "prometheus_multiproc_beat"
+    multiproc_dir.mkdir(parents=True, exist_ok=True)
+    env["PROMETHEUS_MULTIPROC_DIR"] = str(multiproc_dir)
+    env["SKELDIR_B24_P9_REQUIRE_DB_PROOFS"] = "1"
+    env["B24_P9_RECOVERY_RECONCILE_INTERVAL_SECONDS"] = str(
+        max(1, int(recovery_interval_seconds))
+    )
+    env["B24_P9_RECOVERY_BATCH_SIZE"] = "10"
+    env["B24_P9_RECOVERY_STALE_PUBLISHING_SECONDS"] = "1"
+    if disable_recovery_schedule:
+        env["SKELDIR_B24_P9_DISABLE_RECOVERY_RECONCILER_JOB"] = "1"
+    else:
+        env.pop("SKELDIR_B24_P9_DISABLE_RECOVERY_RECONCILER_JOB", None)
+    return env
+
+
 def _terminate_worker(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
@@ -384,6 +409,74 @@ def _wait_for_probe_event_matching(
     raise AssertionError(
         f"probe event {event_name!r} matching predicate not observed; events={events!r}"
     )
+
+
+def _wait_for_broker_task_messages(
+    sync_engine,
+    *,
+    task_name: str,
+    queue_name: str,
+    after_message_id: int = 0,
+    timeout_s: float = 30.0,
+) -> list[dict[str, object]]:
+    deadline = time.monotonic() + timeout_s
+    last_rows: list[dict[str, object]] = []
+    while time.monotonic() < deadline:
+        with sync_engine.begin() as conn:
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT
+                            msg.id,
+                            queue.name AS queue_name,
+                            msg.visible,
+                            COALESCE(
+                                msg.payload::jsonb -> 'headers' ->> 'id',
+                                msg.payload::jsonb -> 'headers' ->> 'task_id',
+                                msg.payload::jsonb ->> 'id'
+                            ) AS task_id,
+                            msg.payload::text AS payload
+                        FROM public.kombu_message msg
+                        JOIN public.kombu_queue queue
+                          ON queue.id = msg.queue_id
+                        WHERE queue.name = :queue_name
+                          AND msg.id > :after_message_id
+                          AND msg.payload LIKE :task_filter
+                        ORDER BY msg.id DESC
+                        LIMIT 20
+                        """
+                    ),
+                    {
+                        "queue_name": queue_name,
+                        "after_message_id": int(after_message_id),
+                        "task_filter": f"%{task_name}%",
+                    },
+                ).mappings()
+            ]
+        last_rows = rows
+        if rows:
+            return rows
+        time.sleep(0.25)
+    raise AssertionError(
+        f"broker task {task_name!r} not observed on queue {queue_name!r}; rows={last_rows!r}"
+    )
+
+
+def _max_broker_message_id(sync_engine) -> int:
+    with sync_engine.begin() as conn:
+        regclass = conn.execute(
+            text("SELECT to_regclass('public.kombu_message')")
+        ).scalar_one()
+        if regclass is None:
+            return 0
+        return int(
+            conn.execute(
+                text("SELECT COALESCE(MAX(id), 0) FROM public.kombu_message")
+            ).scalar_one()
+            or 0
+        )
 
 
 def _poll_dispatch_state(
@@ -2415,6 +2508,517 @@ async def test_b24_p9_directive_xiv_broker_backed_failure_ack_recovery(
             if process is not None:
                 _terminate_worker(process)
             worker_log_handle.close()
+    finally:
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_directive_xv_live_beat_drives_failure_ack_recovery(
+    test_tenant_pair,
+    tmp_path: Path,
+) -> None:
+    await _assert_table_exists("b24_fit_dispatch_outbox")
+    await _assert_table_exists("b24_fit_recovery_outbox")
+    tenant_a, _tenant_b = test_tenant_pair
+    fit_id = uuid4()
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    correlation_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    await _insert_fit(tenant_a, fit_id=fit_id, source_hash="e" * 64)
+
+    sync_engine = create_engine(
+        to_sync_postgres_dsn(get_database_url()),
+        poolclass=NullPool,
+    )
+    try:
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        assigned_worker_generation,
+                        assignment_generation,
+                        assignment_expires_at,
+                        assignment_reason,
+                        recovery_generation,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        NULL,
+                        1,
+                        now() + interval '10 minutes',
+                        'recovery_shared_eligible',
+                        1,
+                        'dispatched',
+                        now(),
+                        now() + interval '10 minutes'
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "dispatch_key": f"b24-p9-xv-live-beat:{tenant_a}:{fit_id}",
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                },
+            )
+
+        from app.celery_app import celery_app
+        from app.core.queues import QUEUE_BAYESIAN
+        from app.tasks.bayesian import (
+            RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME,
+            RECOVERY_RECONCILER_TASK_NAME,
+        )
+
+        original_eager = celery_app.conf.task_always_eager
+        celery_app.conf.task_always_eager = False
+        worker_log = tmp_path / "p9_xv_live_beat_worker.log"
+        worker_restart_log = tmp_path / "p9_xv_live_beat_worker_restart.log"
+        beat_log = tmp_path / "p9_xv_live_beat_scheduler.log"
+        probe_log = tmp_path / "p9_xv_live_beat_probe.jsonl"
+        beat_schedule_db = tmp_path / "p9_xv_celerybeat-schedule"
+        worker_env = _worker_env(include_bayesian_tasks=True, log_path=probe_log)
+        worker_env["B24_BAYESIAN_WORKSPACE_ROOT"] = str(tmp_path / "workspaces")
+        worker_env["B24_PYTENSOR_ROOT"] = str(tmp_path / "compiledirs")
+        beat_env = _beat_env(log_path=probe_log, recovery_interval_seconds=1)
+        worker_log_handle = worker_log.open("w", encoding="utf-8", buffering=1)
+        worker_restart_log_handle = worker_restart_log.open(
+            "w", encoding="utf-8", buffering=1
+        )
+        beat_log_handle = beat_log.open("w", encoding="utf-8", buffering=1)
+        worker_process: subprocess.Popen[str] | None = None
+        worker_restart_process: subprocess.Popen[str] | None = None
+        beat_process: subprocess.Popen[str] | None = None
+        try:
+            assert celery_app.conf.task_always_eager is False
+            broker_url = str(celery_app.conf.broker_url)
+            assert "postgresql://" in broker_url
+            assert "memory://" not in broker_url
+
+            worker_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "app.celery_app.celery_app",
+                    "worker",
+                    "-P",
+                    "solo",
+                    "-c",
+                    "1",
+                    "-Q",
+                    QUEUE_BAYESIAN,
+                    "--loglevel=INFO",
+                    "--without-gossip",
+                    "--without-mingle",
+                    "--without-heartbeat",
+                ],
+                cwd=ROOT / "backend",
+                env=worker_env,
+                text=True,
+                stdout=worker_log_handle,
+                stderr=subprocess.STDOUT,
+            )
+            ready_log = _wait_for_log(worker_log, " ready", timeout_s=90)
+            worker_log_handle.flush()
+            assert worker_process.poll() is None, ready_log
+            assert " ready" in ready_log
+            assert f".> {QUEUE_BAYESIAN}" in ready_log
+
+            ack_probe_result = celery_app.send_task(
+                RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME,
+                kwargs={
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                    "recovery_generation": "1",
+                    "correlation_id": str(correlation_id),
+                },
+                queue=QUEUE_BAYESIAN,
+                routing_key=f"{QUEUE_BAYESIAN}.task",
+            )
+            ack_event = _wait_for_probe_event_matching(
+                probe_log,
+                "bayesian_recoverable_failure_ack_probe",
+                predicate=lambda event: event.get("dispatch_id") == str(dispatch_id),
+                timeout_s=90,
+            )
+            assert ack_event["task_id"] == str(ack_probe_result.id)
+            assert ack_event["correlation_id"] == str(correlation_id)
+            assert ack_event["failure_taxonomy"] == (
+                "recoverable_acknowledged_worker_failure"
+            )
+
+            failure_ack_state = _poll_dispatch_state(
+                sync_engine,
+                tenant_id=tenant_a,
+                dispatch_id=dispatch_id,
+                expected=lambda row: row["dispatch_status"] == "failed_retryable"
+                and row["fit_status"] == "queued"
+                and row["assignment_reason"] == "failure_ack_recovery_required"
+                and row["assignment_expires_at"] is None
+                and int(row["claim_count"]) == 1
+                and int(row["recovery_rows"]) == 0,
+                timeout_s=30,
+            )
+            assert failure_ack_state["lease_owner"] is None
+
+            no_beat_state = _assert_dispatch_state_remains(
+                sync_engine,
+                tenant_id=tenant_a,
+                dispatch_id=dispatch_id,
+                expected=lambda row: row["dispatch_status"] == "failed_retryable"
+                and int(row["recovery_rows"]) == 0,
+                duration_s=2.5,
+            )
+            assert no_beat_state["assignment_reason"] == (
+                "failure_ack_recovery_required"
+            )
+
+            _terminate_worker(worker_process)
+            worker_process = None
+
+            broker_message_baseline_id = _max_broker_message_id(sync_engine)
+            beat_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "app.celery_app.celery_app",
+                    "beat",
+                    "--loglevel=INFO",
+                    "--pidfile=",
+                    "--schedule",
+                    str(beat_schedule_db),
+                ],
+                cwd=ROOT / "backend",
+                env=beat_env,
+                text=True,
+                stdout=beat_log_handle,
+                stderr=subprocess.STDOUT,
+            )
+            beat_emission_log = _wait_for_log(
+                beat_log,
+                "b24-p9-bayesian-recovery-reconciler",
+                timeout_s=90,
+            )
+            beat_log_handle.flush()
+            assert beat_process.poll() is None, beat_emission_log
+            assert RECOVERY_RECONCILER_TASK_NAME in beat_emission_log
+
+            beat_messages = _wait_for_broker_task_messages(
+                sync_engine,
+                task_name=RECOVERY_RECONCILER_TASK_NAME,
+                queue_name=QUEUE_BAYESIAN,
+                after_message_id=broker_message_baseline_id,
+                timeout_s=30,
+            )
+            beat_task_ids = {
+                str(row["task_id"]) for row in beat_messages if row.get("task_id")
+            }
+            assert beat_task_ids
+            assert {str(row["queue_name"]) for row in beat_messages} == {QUEUE_BAYESIAN}
+
+            beat_without_worker_state = _assert_dispatch_state_remains(
+                sync_engine,
+                tenant_id=tenant_a,
+                dispatch_id=dispatch_id,
+                expected=lambda row: row["dispatch_status"] == "failed_retryable"
+                and int(row["recovery_rows"]) == 0,
+                duration_s=2.0,
+            )
+            assert beat_without_worker_state["assignment_reason"] == (
+                "failure_ack_recovery_required"
+            )
+
+            worker_restart_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "app.celery_app.celery_app",
+                    "worker",
+                    "-P",
+                    "solo",
+                    "-c",
+                    "1",
+                    "-Q",
+                    QUEUE_BAYESIAN,
+                    "--loglevel=INFO",
+                    "--without-gossip",
+                    "--without-mingle",
+                    "--without-heartbeat",
+                ],
+                cwd=ROOT / "backend",
+                env=worker_env,
+                text=True,
+                stdout=worker_restart_log_handle,
+                stderr=subprocess.STDOUT,
+            )
+            restart_ready_log = _wait_for_log(
+                worker_restart_log, " ready", timeout_s=90
+            )
+            worker_restart_log_handle.flush()
+            assert worker_restart_process.poll() is None, restart_ready_log
+            assert " ready" in restart_ready_log
+            assert f".> {QUEUE_BAYESIAN}" in restart_ready_log
+
+            recovery_event = _wait_for_probe_event_matching(
+                probe_log,
+                "bayesian_recovery_reconciler_completed",
+                predicate=lambda event: event.get("task_id") in beat_task_ids
+                and str(dispatch_id) in event.get("recovery_dispatch_ids", []),
+                timeout_s=90,
+            )
+            assert recovery_event["recovery_wakeups_created"] >= 1
+            assert recovery_event["recovery_wakeups_published"] >= 1
+            published_task_ids = recovery_event["recovery_published_task_ids"]
+            assert isinstance(published_task_ids, list)
+            assert published_task_ids
+
+            executed_event = _wait_for_probe_event_matching(
+                probe_log,
+                "bayesian_fit_intent_executed",
+                predicate=lambda event: event.get("dispatch_id") == str(dispatch_id)
+                and event.get("task_id") in published_task_ids,
+                timeout_s=90,
+            )
+            assert executed_event["task_id"] in published_task_ids
+            assert executed_event["dispatch_id"] == str(dispatch_id)
+            assert executed_event["compute_started"] is False
+
+            final_state = _poll_dispatch_state(
+                sync_engine,
+                tenant_id=tenant_a,
+                dispatch_id=dispatch_id,
+                expected=lambda row: row["dispatch_status"]
+                in {"completed", "failed_terminal", "failed_retryable"}
+                and int(row["recovery_rows"]) >= 1
+                and row["recovery_status"] == "published"
+                and int(row["recovery_publish_attempt_count"]) >= 1
+                and int(row["recovery_generation"]) == 2
+                and int(row["claim_count"]) >= 2,
+                timeout_s=30,
+            )
+            assert final_state["assignment_reason"] == "recovery_shared_eligible"
+            if final_state["dispatch_status"] != "failed_retryable":
+                assert final_state["lease_owner"]
+        finally:
+            celery_app.conf.task_always_eager = original_eager
+            for process in (worker_process, worker_restart_process, beat_process):
+                if process is not None:
+                    _terminate_worker(process)
+            worker_log_handle.close()
+            worker_restart_log_handle.close()
+            beat_log_handle.close()
+    finally:
+        sync_engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_b24_p9_directive_xv_disabled_beat_schedule_blocks_recovery(
+    test_tenant_pair,
+    tmp_path: Path,
+) -> None:
+    await _assert_table_exists("b24_fit_dispatch_outbox")
+    await _assert_table_exists("b24_fit_recovery_outbox")
+    tenant_a, _tenant_b = test_tenant_pair
+    fit_id = uuid4()
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    payload_hash = dispatch_payload_hash(fit_id=fit_id)
+    await _insert_fit(tenant_a, fit_id=fit_id, source_hash="f" * 64)
+
+    sync_engine = create_engine(
+        to_sync_postgres_dsn(get_database_url()),
+        poolclass=NullPool,
+    )
+    try:
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_fit_dispatch_outbox (
+                        tenant_id,
+                        id,
+                        fit_id,
+                        dispatch_key,
+                        task_name,
+                        attempt_id,
+                        payload_hash,
+                        assigned_worker_generation,
+                        assignment_generation,
+                        assignment_expires_at,
+                        assignment_reason,
+                        recovery_generation,
+                        status,
+                        next_attempt_at,
+                        next_recovery_at,
+                        terminal_reason
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :dispatch_id,
+                        :fit_id,
+                        :dispatch_key,
+                        :task_name,
+                        :attempt_id,
+                        :payload_hash,
+                        NULL,
+                        2,
+                        NULL,
+                        'failure_ack_recovery_required',
+                        1,
+                        'failed_retryable',
+                        now(),
+                        now(),
+                        'recoverable_ack:directive_xv_disabled_schedule_seed'
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "dispatch_key": f"b24-p9-xv-disabled-beat:{tenant_a}:{fit_id}",
+                    "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                },
+            )
+
+        from app.celery_app import celery_app
+        from app.core.queues import QUEUE_BAYESIAN
+        from app.tasks.bayesian import RECOVERY_RECONCILER_TASK_NAME
+
+        original_eager = celery_app.conf.task_always_eager
+        celery_app.conf.task_always_eager = False
+        worker_log = tmp_path / "p9_xv_disabled_schedule_worker.log"
+        beat_log = tmp_path / "p9_xv_disabled_schedule_beat.log"
+        probe_log = tmp_path / "p9_xv_disabled_schedule_probe.jsonl"
+        beat_schedule_db = tmp_path / "p9_xv_disabled_celerybeat-schedule"
+        worker_env = _worker_env(include_bayesian_tasks=True, log_path=probe_log)
+        worker_env["B24_BAYESIAN_WORKSPACE_ROOT"] = str(tmp_path / "workspaces")
+        worker_env["B24_PYTENSOR_ROOT"] = str(tmp_path / "compiledirs")
+        beat_env = _beat_env(
+            log_path=probe_log,
+            recovery_interval_seconds=1,
+            disable_recovery_schedule=True,
+        )
+        worker_log_handle = worker_log.open("w", encoding="utf-8", buffering=1)
+        beat_log_handle = beat_log.open("w", encoding="utf-8", buffering=1)
+        worker_process: subprocess.Popen[str] | None = None
+        beat_process: subprocess.Popen[str] | None = None
+        try:
+            assert celery_app.conf.task_always_eager is False
+            worker_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "app.celery_app.celery_app",
+                    "worker",
+                    "-P",
+                    "solo",
+                    "-c",
+                    "1",
+                    "-Q",
+                    QUEUE_BAYESIAN,
+                    "--loglevel=INFO",
+                    "--without-gossip",
+                    "--without-mingle",
+                    "--without-heartbeat",
+                ],
+                cwd=ROOT / "backend",
+                env=worker_env,
+                text=True,
+                stdout=worker_log_handle,
+                stderr=subprocess.STDOUT,
+            )
+            ready_log = _wait_for_log(worker_log, " ready", timeout_s=90)
+            worker_log_handle.flush()
+            assert worker_process.poll() is None, ready_log
+            assert " ready" in ready_log
+            assert f".> {QUEUE_BAYESIAN}" in ready_log
+
+            beat_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "app.celery_app.celery_app",
+                    "beat",
+                    "--loglevel=INFO",
+                    "--pidfile=",
+                    "--schedule",
+                    str(beat_schedule_db),
+                ],
+                cwd=ROOT / "backend",
+                env=beat_env,
+                text=True,
+                stdout=beat_log_handle,
+                stderr=subprocess.STDOUT,
+            )
+            beat_start_log = _wait_for_log(beat_log, "beat: Starting", timeout_s=60)
+            beat_log_handle.flush()
+            assert beat_process.poll() is None, beat_start_log
+
+            disabled_state = _assert_dispatch_state_remains(
+                sync_engine,
+                tenant_id=tenant_a,
+                dispatch_id=dispatch_id,
+                expected=lambda row: row["dispatch_status"] == "failed_retryable"
+                and int(row["recovery_rows"]) == 0,
+                duration_s=4.0,
+            )
+            assert disabled_state["assignment_reason"] == (
+                "failure_ack_recovery_required"
+            )
+            assert RECOVERY_RECONCILER_TASK_NAME not in _read_log(beat_log)
+            assert not [
+                event
+                for event in _read_probe_events(probe_log)
+                if event.get("event") == "bayesian_recovery_reconciler_completed"
+                and str(dispatch_id) in event.get("recovery_dispatch_ids", [])
+            ]
+        finally:
+            celery_app.conf.task_always_eager = original_eager
+            for process in (worker_process, beat_process):
+                if process is not None:
+                    _terminate_worker(process)
+            worker_log_handle.close()
+            beat_log_handle.close()
     finally:
         sync_engine.dispose()
 
