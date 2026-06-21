@@ -412,6 +412,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p9_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p9_ci
+      EXPECTED_RUNTIME_DB_USER: app_user
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
       CI: "true"

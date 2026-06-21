@@ -4,7 +4,8 @@ import hashlib
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -13,7 +14,7 @@ import pytest
 from psycopg2.extensions import connection as PsycopgConnection
 from psycopg2.extensions import cursor as PsycopgCursor
 
-from app.core.secrets import get_database_url
+from app.core.secrets import get_database_url, get_migration_database_url
 from app.db.dsn import to_sync_postgres_dsn
 
 
@@ -26,7 +27,27 @@ RAW_DRIVER_PROOF_TOKENS = (
     "DIRECTIVE_XVI_RAW_PSYCOPG_RUNTIME_ROLE_PROOF",
     "DIRECTIVE_XVI_RAW_ASYNCPG_REPRESENTATIVE_PROOF",
     "DIRECTIVE_XVI_SECURITY_DEFINER_DIRECT_ABUSE_PROOF",
+    "DIRECTIVE_XVIII_CLASSIFIED_RAW_REJECTION_PROOF",
+    "DIRECTIVE_XVIII_TARGET_PRESENT_ZERO_ROW_PROOF",
+    "DIRECTIVE_XVIII_ASYNCPG_CLASSIFIED_POST_STATE_PROOF",
+    "DIRECTIVE_XVIII_SECURITY_DEFINER_SIGNATURE_PROOF",
+    "DIRECTIVE_XVIII_EXPLICIT_RUNTIME_ROLE_BINDING_PROOF",
 )
+POSTGRES_INTEGRITY_SQLSTATES = frozenset({"23503", "23514"})
+POSTGRES_PLPGSQL_RAISE_SQLSTATE = "P0001"
+POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE = "42501"
+FORBIDDEN_MALFORMED_SQLSTATES = frozenset(
+    {
+        "42601",  # syntax_error
+        "42703",  # undefined_column
+        "42P01",  # undefined_table
+        "42883",  # undefined_function
+        "42804",  # datatype_mismatch
+        "22P02",  # invalid_text_representation
+        "25P02",  # in_failed_sql_transaction
+    }
+)
+SecurityStateReader = Callable[[], tuple[Any, ...]]
 
 
 def _require_db_proofs() -> bool:
@@ -60,6 +81,10 @@ def _runtime_dsn() -> str:
     return to_sync_postgres_dsn(get_database_url())
 
 
+def _migration_dsn() -> str:
+    return to_sync_postgres_dsn(get_migration_database_url())
+
+
 def _payload_hash(fit_id: UUID) -> str:
     return hashlib.sha256(
         f"{BAYESIAN_FIT_EXECUTION_TASK}:{fit_id}".encode("utf-8")
@@ -70,6 +95,16 @@ def _payload_hash(fit_id: UUID) -> str:
 def _raw_runtime_connection() -> Iterator[PsycopgConnection]:
     _require_protected_db_mode()
     conn = psycopg2.connect(_runtime_dsn())
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def _raw_migration_connection() -> Iterator[PsycopgConnection]:
+    _require_protected_db_mode()
+    conn = psycopg2.connect(_migration_dsn())
     try:
         yield conn
     finally:
@@ -270,22 +305,166 @@ def _bind_raw_lease(cur: PsycopgCursor, lease: dict[str, Any]) -> None:
     )
 
 
+def _expected_runtime_db_user() -> str:
+    """DIRECTIVE_XVIII_EXPLICIT_RUNTIME_ROLE_BINDING_PROOF."""
+
+    expected = os.getenv("EXPECTED_RUNTIME_DB_USER")
+    assert expected, "EXPECTED_RUNTIME_DB_USER must be explicitly bound in P9 CI"
+    assert urlparse(_runtime_dsn()).username == expected
+    return expected
+
+
+def _target_present_fit_state(tenant_id: UUID, fit_id: UUID) -> tuple[Any, ...]:
+    """DIRECTIVE_XVIII_TARGET_PRESENT_ZERO_ROW_PROOF."""
+
+    with _raw_migration_connection() as verifier:
+        with verifier.cursor() as cur:
+            _set_tenant(cur, tenant_id)
+            _execute(
+                cur,
+                """
+                SELECT tenant_id, id, status, source_snapshot_hash, fallback_applied
+                FROM public.bayesian_model_fits
+                WHERE tenant_id = %s AND id = %s
+                """,
+                (str(tenant_id), str(fit_id)),
+            )
+            row = cur.fetchone()
+    assert row is not None, "accepted zero-row hostile proof requires target_present"
+    return row
+
+
+def _dispatch_mutation_state(tenant_id: UUID, dispatch_id: UUID) -> tuple[Any, ...]:
+    with _raw_migration_connection() as verifier:
+        with verifier.cursor() as cur:
+            _set_tenant(cur, tenant_id)
+            _execute(
+                cur,
+                """
+                SELECT
+                    tenant_id,
+                    id,
+                    status,
+                    claim_epoch,
+                    lease_capability_digest,
+                    lease_owner,
+                    completed_at,
+                    terminal_reason,
+                    recovery_generation
+                FROM public.b24_fit_dispatch_outbox
+                WHERE tenant_id = %s AND id = %s
+                """,
+                (str(tenant_id), str(dispatch_id)),
+            )
+            row = cur.fetchone()
+    assert row is not None, "SECURITY DEFINER abuse proof requires target_present"
+    return row
+
+
+def _assert_post_state_unchanged(
+    reader: SecurityStateReader,
+    before: tuple[Any, ...],
+) -> None:
+    assert reader() == before
+
+
+def _assert_psycopg_security_rejection(
+    exc: psycopg2.Error,
+    *,
+    expected_sqlstates: set[str],
+    expected_message_tokens: tuple[str, ...],
+) -> None:
+    """DIRECTIVE_XVIII_CLASSIFIED_RAW_REJECTION_PROOF."""
+
+    sqlstate = exc.pgcode or getattr(exc.diag, "sqlstate", None)
+    message = str(exc)
+    assert sqlstate, f"PostgreSQL rejection missing SQLSTATE: {message}"
+    assert sqlstate not in FORBIDDEN_MALFORMED_SQLSTATES, message
+    assert (
+        sqlstate in expected_sqlstates
+    ), f"Unexpected PostgreSQL rejection SQLSTATE {sqlstate}: {message}"
+    assert any(token in message for token in expected_message_tokens), message
+
+
+def _assert_asyncpg_security_rejection(
+    exc: asyncpg.PostgresError,
+    *,
+    expected_sqlstates: set[str],
+    expected_message_tokens: tuple[str, ...],
+) -> None:
+    """DIRECTIVE_XVIII_ASYNCPG_CLASSIFIED_POST_STATE_PROOF."""
+
+    sqlstate = exc.sqlstate
+    message = str(exc)
+    assert sqlstate, f"asyncpg rejection missing SQLSTATE: {message}"
+    assert sqlstate not in FORBIDDEN_MALFORMED_SQLSTATES, message
+    assert (
+        sqlstate in expected_sqlstates
+    ), f"Unexpected asyncpg rejection SQLSTATE {sqlstate}: {message}"
+    assert any(token in message for token in expected_message_tokens), message
+
+
 def _assert_raw_rejected(
     conn: PsycopgConnection,
     sql: str,
     params: tuple[Any, ...] = (),
     *,
+    expected_sqlstates: set[str],
+    expected_message_tokens: tuple[str, ...],
     allowed_zero_rowcount: bool = False,
+    target_present_reader: SecurityStateReader | None = None,
+    post_state_verifier: Callable[[tuple[Any, ...]], None] | None = None,
 ) -> None:
+    target_present = target_present_reader() if target_present_reader else None
     with conn.cursor() as cur:
         try:
             _execute(cur, sql, params)
-        except psycopg2.Error:
+        except psycopg2.Error as exc:
             conn.rollback()
+            _assert_psycopg_security_rejection(
+                exc,
+                expected_sqlstates=expected_sqlstates,
+                expected_message_tokens=expected_message_tokens,
+            )
+            if target_present is not None:
+                assert post_state_verifier is not None
+                post_state_verifier(target_present)
             return
         rowcount = int(cur.rowcount or 0)
         conn.rollback()
     assert allowed_zero_rowcount and rowcount == 0
+    assert target_present is not None
+    assert post_state_verifier is not None
+    post_state_verifier(target_present)
+
+
+def _assert_security_definer_signatures_present(cur: PsycopgCursor) -> None:
+    """DIRECTIVE_XVIII_SECURITY_DEFINER_SIGNATURE_PROOF."""
+
+    for signature in (
+        "public.b24_mark_fit_dispatch_running()",
+        "public.b24_complete_fit_dispatch()",
+        "public.b24_fail_fit_dispatch_terminal(text)",
+        "public.b24_fail_fit_dispatch_recoverable(text)",
+    ):
+        assert _scalar(cur, "SELECT to_regprocedure(%s)", (signature,)) is not None
+
+
+def _security_definer_direct_abuse_sql(function_expr: str) -> str:
+    """Bind valid hostile GUC values before invoking direct abuse probes."""
+
+    return f"""
+        WITH dispatch_context AS MATERIALIZED (
+            SELECT
+                set_config('app.current_tenant_id', %s, true),
+                set_config('app.b24_dispatch_id', %s, true),
+                set_config('app.b24_attempt_id', %s, true),
+                set_config('app.b24_claim_epoch', '0', true),
+                set_config('app.b24_lease_capability', 'unauthorized-lease', true)
+        )
+        SELECT {function_expr}
+        FROM dispatch_context
+    """
 
 
 def _assert_no_authority_mutation(
@@ -309,6 +488,27 @@ def _assert_no_authority_mutation(
     assert row[0] in {"dispatched", "failed_retryable", "stale_recovered"}
     assert row[2] is None or row[0] == "dispatched"
     assert row[3] is None
+
+
+def test_b24_p9_directive_xviii_rejects_malformed_sqlstate_classifiers() -> None:
+    """FORBIDDEN_MALFORMED_SQLSTATES negative classifier control."""
+
+    class _Diag:
+        sqlstate = "42601"
+
+    class _MalformedPsycopgError(psycopg2.Error):
+        pgcode = "42601"
+        diag = _Diag()
+
+        def __str__(self) -> str:
+            return "syntax error near hostile proof"
+
+    with pytest.raises(AssertionError):
+        _assert_psycopg_security_rejection(
+            _MalformedPsycopgError(),
+            expected_sqlstates={POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE},
+            expected_message_tokens=("permission denied",),
+        )
 
 
 def _assert_runtime_role_hygiene(cur: PsycopgCursor) -> None:
@@ -350,7 +550,7 @@ def _assert_runtime_role_hygiene(cur: PsycopgCursor) -> None:
     )
     row = cur.fetchone()
     assert row is not None
-    assert row[0] == (os.getenv("EXPECTED_RUNTIME_DB_USER") or "app_user")
+    assert row[0] == _expected_runtime_db_user()
     assert row[1] is False
     assert row[2] is False
     assert row[3] is False
@@ -374,6 +574,7 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
     with _raw_runtime_connection() as conn:
         with conn.cursor() as cur:
             _assert_runtime_role_hygiene(cur)
+            _assert_security_definer_signatures_present(cur)
             _insert_fit_raw(cur, tenant_a, fit_id)
             _insert_dispatch_raw(
                 cur,
@@ -413,26 +614,52 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 END,
                 "1" * 64,
             ),
+            expected_sqlstates={
+                POSTGRES_PLPGSQL_RAISE_SQLSTATE,
+                POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE,
+            },
+            expected_message_tokens=(
+                "b24_dispatch_fence_rejected",
+                "row-level security",
+            ),
         )
         _assert_raw_rejected(
             conn,
             "UPDATE public.bayesian_model_fits SET status = 'running' WHERE id = %s",
             (str(fit_id),),
+            expected_sqlstates={
+                POSTGRES_PLPGSQL_RAISE_SQLSTATE,
+                POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE,
+            },
+            expected_message_tokens=(
+                "b24_dispatch_fence_rejected",
+                "row-level security",
+            ),
             allowed_zero_rowcount=True,
+            target_present_reader=lambda: _target_present_fit_state(tenant_a, fit_id),
+            post_state_verifier=lambda before: _assert_post_state_unchanged(
+                lambda: _target_present_fit_state(tenant_a, fit_id),
+                before,
+            ),
         )
         _assert_raw_rejected(
             conn,
             """
+            WITH tenant_context AS (
+                SELECT set_config('app.current_tenant_id', %s, true)
+            )
             INSERT INTO public.b24_fit_dispatch_outbox (
                 tenant_id, id, fit_id, dispatch_key, task_name, attempt_id,
                 payload_hash, assigned_worker_generation, assignment_generation,
                 assignment_expires_at, assignment_reason, status, next_attempt_at,
                 next_recovery_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, now() + interval '10 minutes',
-                    'missing_context_raw', 'dispatched', now(), now())
+            SELECT %s, %s, %s, %s, %s, %s, %s, %s, 1, now() + interval '10 minutes',
+                   'missing_context_raw', 'dispatched', now(), now()
+            FROM tenant_context
             """,
             (
+                str(tenant_b),
                 str(tenant_a),
                 str(uuid4()),
                 str(fit_id),
@@ -442,17 +669,31 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 "2" * 64,
                 generation_id,
             ),
+            expected_sqlstates={
+                POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE,
+                *POSTGRES_INTEGRITY_SQLSTATES,
+            },
+            expected_message_tokens=(
+                "row-level security",
+                "permission denied",
+                "violates",
+            ),
         )
         _assert_raw_rejected(
             conn,
             """
+            WITH tenant_context AS (
+                SELECT set_config('app.current_tenant_id', %s, true)
+            )
             INSERT INTO public.b24_fit_recovery_outbox (
                 tenant_id, dispatch_id, fit_id, attempt_id, task_name,
                 payload_hash, recovery_generation
             )
-            VALUES (%s, %s, %s, %s, %s, %s, 99)
+            SELECT %s, %s, %s, %s, %s, %s, 99
+            FROM tenant_context
             """,
             (
+                str(tenant_b),
                 str(tenant_a),
                 str(dispatch_id),
                 str(fit_id),
@@ -460,20 +701,41 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 BAYESIAN_FIT_EXECUTION_TASK,
                 payload_hash,
             ),
+            expected_sqlstates={
+                POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE,
+                *POSTGRES_INTEGRITY_SQLSTATES,
+            },
+            expected_message_tokens=(
+                "row-level security",
+                "permission denied",
+                "violates",
+            ),
         )
         _assert_raw_rejected(
             conn,
             """
+            WITH dispatch_context AS (
+                SELECT
+                    set_config('app.current_tenant_id', %s, true),
+                    set_config('app.b24_dispatch_id', %s, true),
+                    set_config('app.b24_attempt_id', %s, true),
+                    set_config('app.b24_claim_epoch', '0', true),
+                    set_config('app.b24_lease_capability', 'unauthorized-lease', true)
+            )
             INSERT INTO public.bayesian_artifacts (
                 tenant_id, fit_id, artifact_ref, artifact_hash, artifact_type,
                 storage_backend, artifact_uri_internal, artifact_size_bytes,
                 payload_bytes, payload_byte_count, lifecycle_status,
                 retention_class, policy_version
             )
-            VALUES (%s, %s, %s, %s, 'diagnostics', 'postgres', %s, 2, %s, 2,
-                    'active', 'audit', 'b24-p9-xvi')
+            SELECT %s, %s, %s, %s, 'diagnostics', 'postgres', %s, 2, %s, 2,
+                   'active', 'audit', 'b24-p9-xvi'
+            FROM dispatch_context
             """,
             (
+                str(tenant_a),
+                str(uuid4()),
+                str(uuid4()),
                 str(tenant_a),
                 str(fit_id),
                 f"b24://artifact/{tenant_a}/{fit_id}/diagnostics/abcdef123456",
@@ -481,15 +743,38 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 f"b24://artifact/{tenant_a}/{fit_id}/diagnostics/abcdef123456",
                 psycopg2.Binary(b"{}"),
             ),
+            expected_sqlstates={
+                POSTGRES_PLPGSQL_RAISE_SQLSTATE,
+                POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE,
+            },
+            expected_message_tokens=(
+                "b24_dispatch_fence_rejected",
+                "row-level security",
+            ),
         )
         _assert_raw_rejected(
             conn,
             "DELETE FROM public.bayesian_model_fits WHERE id = %s",
             (str(fit_id),),
+            expected_sqlstates={
+                POSTGRES_PLPGSQL_RAISE_SQLSTATE,
+                POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE,
+            },
+            expected_message_tokens=(
+                "b24_dispatch_delete_forbidden",
+                "row-level security",
+                "permission denied",
+            ),
             allowed_zero_rowcount=True,
+            target_present_reader=lambda: _target_present_fit_state(tenant_a, fit_id),
+            post_state_verifier=lambda before: _assert_post_state_unchanged(
+                lambda: _target_present_fit_state(tenant_a, fit_id),
+                before,
+            ),
         )
 
         with conn.cursor() as cur:
+            wrong_tenant_before = _target_present_fit_state(tenant_a, fit_id)
             _set_tenant(cur, tenant_b)
             _execute(
                 cur,
@@ -497,6 +782,10 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 (str(fit_id),),
             )
             assert int(cur.rowcount or 0) == 0
+            _assert_post_state_unchanged(
+                lambda: _target_present_fit_state(tenant_a, fit_id),
+                wrong_tenant_before,
+            )
             _execute(
                 cur,
                 """
@@ -595,12 +884,30 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
         conn.rollback()
 
         for function_sql in (
-            "SELECT public.b24_mark_fit_dispatch_running()",
-            "SELECT public.b24_complete_fit_dispatch()",
-            "SELECT public.b24_fail_fit_dispatch_terminal('xvi_direct_abuse')",
-            "SELECT public.b24_fail_fit_dispatch_recoverable('xvi_direct_abuse')",
+            "public.b24_mark_fit_dispatch_running()",
+            "public.b24_complete_fit_dispatch()",
+            "public.b24_fail_fit_dispatch_terminal('xvi_direct_abuse')",
+            "public.b24_fail_fit_dispatch_recoverable('xvi_direct_abuse')",
         ):
-            _assert_raw_rejected(conn, function_sql)
+            _assert_raw_rejected(
+                conn,
+                _security_definer_direct_abuse_sql(function_sql),
+                (str(tenant_a), str(uuid4()), str(uuid4())),
+                expected_sqlstates={POSTGRES_PLPGSQL_RAISE_SQLSTATE},
+                expected_message_tokens=(
+                    "b24_dispatch_running_fence_rejected",
+                    "b24_dispatch_complete_fence_rejected",
+                    "b24_dispatch_failure_fence_rejected",
+                    "b24_dispatch_recoverable_failure_fence_rejected",
+                ),
+                target_present_reader=lambda: _dispatch_mutation_state(
+                    tenant_a, dispatch_id
+                ),
+                post_state_verifier=lambda before: _assert_post_state_unchanged(
+                    lambda: _dispatch_mutation_state(tenant_a, dispatch_id),
+                    before,
+                ),
+            )
 
         with conn.cursor() as cur:
             stale_recovery_claim = _claim_raw(
@@ -644,9 +951,9 @@ async def test_b24_p9_directive_xvi_raw_asyncpg_representative_hostile_writes(
     conn = await asyncpg.connect(async_dsn)
     try:
         current_user = await conn.fetchval("SELECT current_user")
-        assert current_user == (os.getenv("EXPECTED_RUNTIME_DB_USER") or "app_user")
+        assert current_user == _expected_runtime_db_user()
 
-        with pytest.raises(Exception):
+        with pytest.raises(asyncpg.PostgresError) as rejected_insert:
             async with conn.transaction():
                 await conn.execute(
                     """
@@ -667,7 +974,19 @@ async def test_b24_p9_directive_xvi_raw_asyncpg_representative_hostile_writes(
                     END,
                     "6" * 64,
                 )
+        _assert_asyncpg_security_rejection(
+            rejected_insert.value,
+            expected_sqlstates={
+                POSTGRES_PLPGSQL_RAISE_SQLSTATE,
+                POSTGRES_INSUFFICIENT_PRIVILEGE_SQLSTATE,
+            },
+            expected_message_tokens=(
+                "b24_dispatch_fence_rejected",
+                "row-level security",
+            ),
+        )
 
+        before = _target_present_fit_state(tenant_a, fit_id)
         async with conn.transaction():
             await conn.execute(
                 "SELECT set_config('app.current_tenant_id', $1, true)", str(tenant_b)
@@ -677,5 +996,9 @@ async def test_b24_p9_directive_xvi_raw_asyncpg_representative_hostile_writes(
                 fit_id,
             )
             assert result == "UPDATE 0"
+        _assert_post_state_unchanged(
+            lambda: _target_present_fit_state(tenant_a, fit_id),
+            before,
+        )
     finally:
         await conn.close()
