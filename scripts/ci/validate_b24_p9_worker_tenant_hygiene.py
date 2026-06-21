@@ -808,6 +808,7 @@ def validate_tests_and_ci(
         "test_b24_p9_postgres_runtime.py",
         "test_b24_p9_raw_driver_postgres_runtime.py",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
+        "EXPECTED_RUNTIME_DB_USER: app_user",
         "SKELDIR_CELERY_WORKER_ROLE",
         "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY",
@@ -823,6 +824,34 @@ def validate_tests_and_ci(
         "DIRECTIVE_XVI_RAW_PSYCOPG_RUNTIME_ROLE_PROOF",
         "DIRECTIVE_XVI_RAW_ASYNCPG_REPRESENTATIVE_PROOF",
         "DIRECTIVE_XVI_SECURITY_DEFINER_DIRECT_ABUSE_PROOF",
+        "DIRECTIVE_XVIII_CLASSIFIED_RAW_REJECTION_PROOF",
+        "DIRECTIVE_XVIII_TARGET_PRESENT_ZERO_ROW_PROOF",
+        "DIRECTIVE_XVIII_ASYNCPG_CLASSIFIED_POST_STATE_PROOF",
+        "DIRECTIVE_XVIII_SECURITY_DEFINER_SIGNATURE_PROOF",
+        "DIRECTIVE_XVIII_EXPLICIT_RUNTIME_ROLE_BINDING_PROOF",
+        "FORBIDDEN_MALFORMED_SQLSTATES",
+        '"42601"',
+        '"42703"',
+        '"42P01"',
+        '"42883"',
+        '"42804"',
+        '"22P02"',
+        '"25P02"',
+        "exc.pgcode",
+        "exc.diag",
+        "exc.sqlstate",
+        "_assert_psycopg_security_rejection",
+        "_assert_asyncpg_security_rejection",
+        "pytest.raises(asyncpg.PostgresError)",
+        "get_migration_database_url",
+        "psycopg2.connect(_migration_dsn())",
+        "_target_present_fit_state",
+        "target_present_reader",
+        "post_state_verifier",
+        "_assert_post_state_unchanged",
+        "to_regprocedure",
+        "_expected_runtime_db_user",
+        'assert expected, "EXPECTED_RUNTIME_DB_USER must be explicitly bound in P9 CI"',
         "import psycopg2",
         "import asyncpg",
         "psycopg2.connect(_runtime_dsn())",
@@ -854,6 +883,15 @@ def validate_tests_and_ci(
         "UPDATE 0",
     ):
         _require(token in raw_db_tests, f"P9 raw DB proof missing: {token}")
+    for forbidden in (
+        "pytest.raises(Exception)",
+        '(os.getenv("EXPECTED_RUNTIME_DB_USER") or "app_user")',
+        "except psycopg2.Error:\n            conn.rollback()\n            return",
+    ):
+        _require(
+            forbidden not in raw_db_tests,
+            f"P9 raw DB proof regressed to generic or implicit proof: {forbidden}",
+        )
     for forbidden in (
         "from sqlalchemy",
         "import sqlalchemy",
@@ -1383,6 +1421,89 @@ def run_negative_controls() -> None:
                 ci_workflow_text=_read(CI_WORKFLOW),
             ),
             "raw_driver",
+        ),
+        (
+            "directive_xviii_forbidden_sqlstate_guard_removed",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "FORBIDDEN_MALFORMED_SQLSTATES",
+                    "FORBIDDEN_SQLSTATE_GUARD_REMOVED",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "FORBIDDEN_MALFORMED_SQLSTATES",
+        ),
+        (
+            "directive_xviii_generic_asyncpg_exception_restored",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "pytest.raises(asyncpg.PostgresError)",
+                    "pytest.raises(Exception)",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "pytest.raises(asyncpg.PostgresError)",
+        ),
+        (
+            "directive_xviii_target_present_removed",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "_target_present_fit_state",
+                    "_fit_target_probe_removed",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "_target_present_fit_state",
+        ),
+        (
+            "directive_xviii_post_state_verifier_removed",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "post_state_verifier",
+                    "state_after_attack_check_removed",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "post_state_verifier",
+        ),
+        (
+            "directive_xviii_runtime_user_binding_removed",
+            lambda: validate_tests_and_ci(
+                workflow_text=_read(WORKFLOW).replace(
+                    "      EXPECTED_RUNTIME_DB_USER: app_user\n",
+                    "",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "EXPECTED_RUNTIME_DB_USER",
+        ),
+        (
+            "directive_xviii_security_definer_signature_removed",
+            lambda: validate_tests_and_ci(
+                p9_raw_db_tests_text=_read(P9_RAW_DB_TESTS).replace(
+                    "to_regprocedure",
+                    "regproc_signature_probe_removed",
+                ),
+                b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),
+                required_status_text=_read(REQUIRED_STATUS_CONTRACT),
+                workflow_text=_read(WORKFLOW),
+                ci_workflow_text=_read(CI_WORKFLOW),
+            ),
+            "to_regprocedure",
         ),
         (
             "directive_ix_db_fence_rejection_removed",
