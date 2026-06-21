@@ -205,12 +205,15 @@ def _claim_raw(
     dispatch_id: UUID,
     fit_id: UUID,
     attempt_id: UUID,
+    tenant_id: UUID | None = None,
     payload_hash: str,
     generation_id: str,
     pid: int,
     process_token: str,
     recovery_generation: int = 0,
 ) -> dict[str, Any]:
+    if tenant_id is not None:
+        _set_tenant(cur, tenant_id)
     _execute(
         cur,
         """
@@ -524,6 +527,7 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 dispatch_id=dispatch_id,
                 fit_id=fit_id,
                 attempt_id=attempt_id,
+                tenant_id=tenant_a,
                 payload_hash=payload_hash,
                 generation_id=generation_id,
                 pid=pid,
@@ -534,6 +538,7 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 dispatch_id=dispatch_id,
                 fit_id=fit_id,
                 attempt_id=attempt_id,
+                tenant_id=tenant_a,
                 payload_hash=payload_hash,
                 generation_id=generation_id,
                 pid=pid + 1,
@@ -544,6 +549,7 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 dispatch_id=dispatch_id,
                 fit_id=fit_id,
                 attempt_id=attempt_id,
+                tenant_id=tenant_a,
                 payload_hash="5" * 64,
                 generation_id=generation_id,
                 pid=pid,
@@ -554,6 +560,7 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 dispatch_id=dispatch_id,
                 fit_id=fit_id,
                 attempt_id=attempt_id,
+                tenant_id=tenant_a,
                 payload_hash=payload_hash,
                 generation_id=generation_id,
                 pid=pid,
@@ -601,6 +608,7 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
                 dispatch_id=dispatch_id,
                 fit_id=fit_id,
                 attempt_id=attempt_id,
+                tenant_id=tenant_a,
                 payload_hash=payload_hash,
                 generation_id=generation_id,
                 pid=pid,
