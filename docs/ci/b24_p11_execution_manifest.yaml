@@ -1,0 +1,353 @@
+- phase_id: B2.4-P1-P10
+  workflow_job: B2.4 Gate Dry Run
+  required_status: B2.4 Gate Dry Run
+  test_artifact_path: artifacts/junit/b24_gate_dry_run.xml
+  expected_test_modules:
+    - scripts/ci
+  expected_test_cases:
+    - ci_b24_gate_dry_run
+    - validate_m5_b24_readiness
+    - validate_m6_llm_boundary
+    - validate_m7_b24_readiness
+    - validate_b24_p1_authority_schema
+    - validate_b24_p2_source_snapshot
+    - validate_b24_p3_fit_planning
+    - validate_b24_p4_resource_bounds
+    - validate_b24_p5_runtime_harness
+    - validate_b24_p6_real_fit_worker
+    - validate_b24_p7_diagnostics
+    - validate_b24_p8_artifact_lifecycle
+    - validate_b24_p9_worker_tenant_hygiene
+    - validate_b24_p10_projection
+  minimum_test_count: 14
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - make ci-b24-gate-dry-run
+    - make validate-m5-b24-readiness
+    - make validate-m6-llm-boundary
+    - make validate-m7-b24-readiness
+    - make validate-b24-p1-authority-schema
+    - make validate-b24-p2-source-snapshot
+    - make validate-b24-p3-fit-planning
+    - make validate-b24-p4-resource-bounds
+    - make validate-b24-p5-runtime-harness
+    - make validate-b24-p6-real-fit-worker
+    - make validate-b24-p7-diagnostics
+    - make validate-b24-p8-artifact-lifecycle
+    - make validate-b24-p9-worker-tenant-hygiene
+    - make validate-b24-p10-projection
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P1
+  workflow_job: B2.4-P1 DB Proof
+  required_status: B2.4-P1 DB Proof
+  test_artifact_path: artifacts/junit/b24_p1_db_proof.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p1_authority_schema_runtime.py
+  expected_test_cases:
+    - backend/tests/test_b24_p1_authority_schema_runtime.py::test_b24_p1_rls_blocks_cross_tenant_and_missing_context
+    - backend/tests/test_b24_p1_authority_schema_runtime.py::test_b24_p1_hash_state_and_numeric_constraints_fail
+    - backend/tests/test_b24_p1_authority_schema_runtime.py::test_b24_p1_artifact_constraints_and_fk_are_enforced
+    - backend/tests/test_b24_p1_authority_schema_runtime.py::test_b24_p1_artifact_fk_is_tenant_bound
+    - backend/tests/test_b24_p1_authority_schema_runtime.py::test_b24_p1_fit_identity_is_unique_over_window_and_hash
+    - backend/tests/test_b24_p1_authority_schema_runtime.py::test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exist
+  minimum_test_count: 6
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - pytest backend/tests/test_b24_p1_authority_schema_runtime.py
+    - --junitxml=artifacts/junit/b24_p1_db_proof.xml
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P4
+  workflow_job: B2.4-P4 PostgreSQL Runtime Proof
+  required_status: B2.4-P4 PostgreSQL Runtime Proof
+  test_artifact_path: artifacts/junit/b24_p4_postgres_runtime.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p4_postgres_runtime.py
+  expected_test_cases:
+    - backend/tests/test_b24_p4_postgres_runtime.py::test_b24_p4_runtime_deprecated_profiling_table_absent
+    - backend/tests/test_b24_p4_postgres_runtime.py::test_b24_p4_runtime_authority_build_request_outbox_and_causal_dispatch
+    - backend/tests/test_b24_p4_postgres_runtime.py::test_b24_p4_runtime_sweeper_ignores_fresh_pending_outbox
+    - backend/tests/test_b24_p4_postgres_runtime.py::test_b24_p4_runtime_sweeper_claims_retry_due_rows_only
+    - backend/tests/test_b24_p4_postgres_runtime.py::test_b24_p4_runtime_rls_force_enabled_for_p4_tables
+  minimum_test_count: 5
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - pytest backend/tests/test_b24_p4_postgres_runtime.py
+    - --junitxml=artifacts/junit/b24_p4_postgres_runtime.xml
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P5
+  workflow_job: B2.4-P5 Bayesian Runtime Harness
+  required_status: B2.4-P5 Bayesian Runtime Harness
+  test_artifact_path: artifacts/junit/b24_p5_bayesian_runtime_harness.xml
+  expected_test_modules:
+    - app.bayesian.runtime_probe
+  expected_test_cases:
+    - runtime_report
+    - pytensor_compile
+    - thread_budget
+    - compiledir_concurrency
+    - child_env_airgap
+    - child_import_airgap
+    - child_boot_airgap
+    - fork_multiprocessing_negative_controls
+    - compiledir_lifecycle
+    - reaper_probe
+    - tiny_benchmark
+    - supervisor_kill
+    - parent_death
+    - behavioral_negative_controls
+  minimum_test_count: 14
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - python -m app.bayesian.runtime_probe runtime-report
+    - python -m app.bayesian.runtime_probe pytensor-compile
+    - python -m app.bayesian.runtime_probe thread-budget
+    - python -m app.bayesian.runtime_probe compiledir-concurrency
+    - python -m app.bayesian.runtime_probe child-env-airgap
+    - python -m app.bayesian.runtime_probe child-import-airgap
+    - python -m app.bayesian.runtime_probe child-boot-airgap
+    - python -m app.bayesian.runtime_probe fork-multiprocessing-negative-controls
+    - python -m app.bayesian.runtime_probe compiledir-lifecycle
+    - python -m app.bayesian.runtime_probe reaper-probe
+    - python -m app.bayesian.runtime_probe tiny-benchmark
+    - python -m app.bayesian.runtime_probe supervisor-kill
+    - python -m app.bayesian.runtime_probe parent-death
+    - python -m app.bayesian.runtime_probe behavioral-negative-controls
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P5
+  workflow_job: B2.4-P5 PostgreSQL Runtime Proof
+  required_status: B2.4-P5 PostgreSQL Runtime Proof
+  test_artifact_path: artifacts/junit/b24_p5_postgres_runtime.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p5_postgres_runtime.py
+  expected_test_cases:
+    - backend/tests/test_b24_p5_postgres_runtime.py::test_b24_p5_worker_timeout_fallback_persists_tenant_scoped_fit_state
+    - backend/tests/test_b24_p5_postgres_runtime.py::test_b24_p5_sampler_child_opens_zero_postgres_connections
+  minimum_test_count: 2
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - pytest backend/tests/test_b24_p5_postgres_runtime.py
+    - --junitxml=artifacts/junit/b24_p5_postgres_runtime.xml
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P6
+  workflow_job: B2.4-P6 Real Fit Worker Proof
+  required_status: B2.4-P6 Real Fit Worker Proof
+  test_artifact_path: artifacts/junit/b24_p6_real_fit_worker.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p6_real_fit_worker.py
+  expected_test_cases:
+    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_hash_derived_observed_signal_is_erased
+    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_observed_signal_is_source_snapshot_replay_derived
+    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_fit_id_only_resolution_is_explicit_rls_capability
+    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_parent_keeps_pymc_child_only
+    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_ci_validator_negative_controls
+    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_real_fit_uses_frozen_source_snapshot_authority
+    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_source_snapshot_mismatch_fails_before_sampler
+  minimum_test_count: 7
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - pytest backend/tests/test_b24_p6_real_fit_worker.py
+    - --junitxml=artifacts/junit/b24_p6_real_fit_worker.xml
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P7
+  workflow_job: B2.4-P7 Diagnostic Semantics Proof
+  required_status: B2.4-P7 Diagnostic Semantics Proof
+  test_artifact_path: artifacts/junit/b24_p7_diagnostic_semantics.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p7_diagnostic_semantics.py
+    - backend/tests/test_b24_p7_postgres_runtime.py
+  expected_test_cases:
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_bad_rhat_blocks_interval
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_low_ess_blocks_interval
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_divergence_blocks_interval
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_positive_interval_requires_all_governed_conditions
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_nonfinite_governed_diagnostics_cannot_pass
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_interval_payload_bounds_are_enforced
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_policy_versions_and_target_scope_are_centralized
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_parent_imports_no_native_diagnostic_stack
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_arviz_calls_are_child_scoped_and_governed
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_stage_markers_are_ordered_and_classified
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_result_contract_rejects_trace_payloads_and_nonfinite_values
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_sampled_unvalidated_alone_is_not_interval_valid
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_diagnostic_stage_timeout_is_classified
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_oversized_scope_fails_before_arviz_diagnostic_calls
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_non_target_deterministic_nan_does_not_poison_governed_target
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_migration_contains_interval_conditionality_constraints
+    - backend/tests/test_b24_p7_diagnostic_semantics.py::test_b24_p7_ci_validator_negative_controls
+    - backend/tests/test_b24_p7_postgres_runtime.py::test_b24_p7_db_rejects_available_interval_without_passed_diagnostics
+    - backend/tests/test_b24_p7_postgres_runtime.py::test_b24_p7_db_accepts_available_interval_only_with_passed_diagnostics
+    - backend/tests/test_b24_p7_postgres_runtime.py::test_b24_p7_db_persists_representative_failure_states_unavailable
+  minimum_test_count: 20
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - pytest backend/tests/test_b24_p7_diagnostic_semantics.py backend/tests/test_b24_p7_postgres_runtime.py
+    - --junitxml=artifacts/junit/b24_p7_diagnostic_semantics.xml
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P8
+  workflow_job: B2.4-P8 Artifact Lifecycle Proof
+  required_status: B2.4-P8 Artifact Lifecycle Proof
+  test_artifact_path: artifacts/junit/b24_p8_artifact_lifecycle.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p8_artifact_lifecycle.py
+    - backend/tests/test_b24_p8_postgres_runtime.py
+  expected_test_cases:
+    - backend/tests/test_b24_p8_artifact_lifecycle.py::test_b24_p8_policy_rejects_trace_type_and_oversized_payloads
+    - backend/tests/test_b24_p8_artifact_lifecycle.py::test_b24_p8_hash_binds_to_exact_encoded_bytes
+    - backend/tests/test_b24_p8_artifact_lifecycle.py::test_b24_p8_metadata_projection_airgaps_payload_bytes
+    - backend/tests/test_b24_p8_artifact_lifecycle.py::test_b24_p8_validator_negative_controls
+    - backend/tests/test_b24_p8_artifact_lifecycle.py::test_b24_p8_repository_contains_no_forbidden_storage_or_decompression
+    - backend/tests/test_b24_p8_postgres_runtime.py::test_b24_p8_repository_persists_verifies_quota_and_prunes
+    - backend/tests/test_b24_p8_postgres_runtime.py::test_b24_p8_atomic_quota_allows_exactly_two_concurrent_artifacts
+  minimum_test_count: 7
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - pytest backend/tests/test_b24_p8_artifact_lifecycle.py backend/tests/test_b24_p8_postgres_runtime.py
+    - --junitxml=artifacts/junit/b24_p8_artifact_lifecycle.xml
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P9
+  workflow_job: B2.4-P9 Worker Tenant Hygiene Proof
+  required_status: B2.4-P9 Worker Tenant Hygiene Proof
+  test_artifact_path: artifacts/junit/b24_p9_worker_tenant_hygiene.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py
+    - backend/tests/test_b24_p9_postgres_runtime.py
+    - backend/tests/test_b24_p9_raw_driver_postgres_runtime.py
+  expected_test_cases:
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_transaction_context_uses_set_local_only
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_bayesian_worker_engine_factory_is_nonpooled
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_runtime_sync_dsn_preserves_security_query
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_db_topology_policy_is_code_authority_not_dsn_proof
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_unknown_topology_fails_closed_in_protected_mode
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_opaque_hostname_requires_attestation_not_string_inference
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_pooler_and_proxy_topologies_fail_closed
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_boot_probe_is_physical_not_connectivity_only
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_non_bayesian_worker_registry_excludes_bayesian_tasks
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_bayesian_registration_wires_tasks_and_boot_probe
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_topology_env_alone_does_not_register_bayesian_tasks
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_worker_role_registration_contradiction_fails_closed
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_bayesian_task_entry_requires_process_local_boot_proof
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_child_authority_payload_cannot_mint_execution
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_parent_death_invalidates_child_authority
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_bayesian_task_module_registry_gate_is_structural
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_bayesian_tasks_use_nonpooled_worker_engine
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_workspace_scopes_and_cleans_tenant_fit_hash_attempt
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_compiledir_scopes_tenant_fit_hash_attempt
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_child_env_is_allowlisted_without_parent_mutation
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_artifact_ref_contains_tenant_authority
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_fit_execution_wires_cleanup_and_payload_airgap
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_directive_x_dispatch_authority_is_broker_independent
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_directive_x_celery_task_rejects_broker_authority
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_directive_xi_recovery_scheduler_is_production_wired
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_directive_xv_live_beat_proof_is_runtime_scoped
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_same_process_sequential_reused_worker_runtime_lane
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_concurrent_tenant_isolation_runtime_surfaces
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_concurrent_janitor_toctou_safe
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_logs_and_failure_payloads_do_not_emit_sentinels
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_native_memory_lifecycle_child_per_fit_parent_airgap
+    - backend/tests/test_b24_p9_worker_tenant_hygiene.py::test_b24_p9_validator_negative_controls
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_bayesian_worker_engine_uses_nullpool_structural_sanitation
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_direct_topology_attestation_precedes_backend_pid_proof
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_boot_probe_physically_proves_session_boundary
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_boot_probe_failure_is_fatal_before_task_consumption
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_registered_bayesian_process_always_runs_boot_probe
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_child_process_init_derives_authority_without_db_probe
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_non_bayesian_registry_rejects_broker_misrouted_bayesian_task
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_pool_poison_is_closed_and_replaced_without_manual_reset
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_pg_stat_activity_backend_not_idle_in_transaction
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_reset_failure_surface_replaced_by_invalidation_or_close
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_representative_same_process_worker_path_exercises_db_lifecycle
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_transaction_local_guc_clean_return_and_sequential_isolation
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_db_proof_requires_explicit_flag_in_ci
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_session_level_guc_poison_is_detected
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_ix_pre_tenant_claim_and_fence_runtime
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_xi_recovery_publication_assignment_runtime
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_xiii_shared_recovery_claim_liveness
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_xiv_failure_ack_revokes_stale_authority
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_xiv_broker_backed_failure_ack_recovery
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_xv_live_beat_drives_failure_ack_recovery
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_xv_disabled_beat_schedule_blocks_recovery
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_xiii_broker_backed_recovery_liveness
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_directive_xi_stale_publishing_recovery_quarantines
+    - backend/tests/test_b24_p9_postgres_runtime.py::test_b24_p9_concurrent_tenant_isolation_db_and_runtime_surfaces
+    - backend/tests/test_b24_p9_raw_driver_postgres_runtime.py::test_b24_p9_directive_xviii_rejects_malformed_sqlstate_classifiers
+    - backend/tests/test_b24_p9_raw_driver_postgres_runtime.py::test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
+    - backend/tests/test_b24_p9_raw_driver_postgres_runtime.py::test_b24_p9_directive_xvi_raw_asyncpg_representative_hostile_writes
+  minimum_test_count: 61
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - pytest backend/tests/test_b24_p9_worker_tenant_hygiene.py backend/tests/test_b24_p9_postgres_runtime.py backend/tests/test_b24_p9_raw_driver_postgres_runtime.py
+    - --junitxml=artifacts/junit/b24_p9_worker_tenant_hygiene.xml
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P10
+  workflow_job: B2.4-P10 Read-Only Projection Proof
+  required_status: B2.4-P10 Read-Only Projection Proof
+  test_artifact_path: artifacts/junit/b24_p10_projection.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p10_projection.py
+  expected_test_cases:
+    - backend/tests/test_b24_p10_projection.py::test_b24_p10_sql_roots_on_deterministic_left_and_left_joins_bayesian
+    - backend/tests/test_b24_p10_projection.py::test_b24_p10_no_fit_preserves_deterministic_revenue
+    - backend/tests/test_b24_p10_projection.py::test_b24_p10_backend_policy_classifies_interval_width
+    - backend/tests/test_b24_p10_projection.py::test_b24_p10_unavailable_states_are_reason_coded
+    - backend/tests/test_b24_p10_projection.py::test_b24_p10_projection_schema_validates_converged_and_fallback_cases
+    - backend/tests/test_b24_p10_projection.py::test_b24_p10_no_authority_fields_leak_from_dto
+    - backend/tests/test_b24_p10_projection.py::test_b24_p10_static_validator_negative_controls
+  minimum_test_count: 7
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - pytest backend/tests/test_b24_p10_projection.py
+    - --junitxml=artifacts/junit/b24_p10_projection.xml
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P11
+  workflow_job: B2.4-P11 CI Gates and Negative Control Harness
+  required_status: B2.4-P11 CI Gates and Negative Control Harness
+  test_artifact_path: artifacts/junit/b24_p11_ci_gates.xml
+  expected_test_modules:
+    - scripts/ci
+  expected_test_cases:
+    - validate_b24_p11_ci_gates
+    - validate_b24_p11_workflow_vacuity
+    - validate_live_branch_protection
+    - validate_b24_p11_execution_artifacts
+  minimum_test_count: 4
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - make validate-b24-p11-ci-gates
+    - python scripts/ci/validate_b24_p11_workflow_vacuity.py --negative-control
+    - python scripts/ci/validate_live_branch_protection.py --negative-control
+    - python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
