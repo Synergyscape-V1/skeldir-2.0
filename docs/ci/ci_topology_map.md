@@ -70,6 +70,9 @@
 - `B2.2-P5 Webhook Latency Adjudication`
 - `B2.2-P6 Merge-Blocking Closure + Downstream Readiness`
 - `B2.3 Composite Proof Harness`
+- `B2.4 Gate Dry Run`
+- `B2.4-P1 DB Proof`
+- `B2.4-P4 PostgreSQL Runtime Proof`
 - `B2.4-P5 Bayesian Runtime Harness`
 - `B2.4-P5 PostgreSQL Runtime Proof`
 - `B2.4-P6 Real Fit Worker Proof`
@@ -80,6 +83,7 @@
 - `validate-b24-p8-artifact-lifecycle`
 - `B2.4-P9 Worker Tenant Hygiene Proof`
 - `B2.4-P10 Read-Only Projection Proof`
+- `B2.4-P11 CI Gates and Negative Control Harness`
 - `B1.7 Explanation Runtime Adjudication`
 - `B1.7 P4 Mixed Workload Benchmark`
 - `m0-maintainability-scope-lock`
@@ -111,7 +115,7 @@ No historical or legacy gates still execute by default after M3 classification. 
 
 ## Execution Cohorts
 
-- `b2-4-dry-run`: 11 registered gate(s)
+- `b2-4-dry-run`: 15 registered gate(s)
 - `contract-governance`: 25 registered gate(s)
 - `db-backed-governance`: 18 registered gate(s)
 - `m0-m1-m2-preservation`: 3 registered gate(s)
@@ -125,4 +129,4 @@ No historical or legacy gates still execute by default after M3 classification. 
 
 ## B2.4 Insertion Lane
 
-B2.4 gates attach through `.github/workflows/b2_4-gate-dry-run.yml` and the `b2-4-dry-run` registry cohort. P5's dedicated `B2.4-P5 Bayesian Runtime Harness` and `B2.4-P5 PostgreSQL Runtime Proof` are required on protected `main` because they carry the native Bayesian runtime containment proof and the durable timeout fallback proof. P6's dedicated `B2.4-P6 Real Fit Worker Proof` is required because it proves fit-id-only runtime execution under `app_user`, frozen P2/P4 source replay, source-derived observed input, and child-only PyMC execution. P7's dedicated `B2.4-P7 Diagnostic Semantics Proof` is required because it proves governed child-side diagnostics, finite-value thresholding, strict zero-divergence interval conditionality, bounded interval summaries, and no interval exposure after failed diagnostics. P8's dedicated `B2.4-P8 Artifact Lifecycle Proof` is required because it proves Postgres-native bounded artifact persistence, exact stored-byte hash verification, tenant quota enforcement, audit-preserving pruning, and the absence of cloud/local/large-object storage. P9's dedicated `B2.4-P9 Worker Tenant Hygiene Proof` is required because it proves transaction-local tenant context, clean connection return, tenant/fit/hash/attempt workspaces and compiledirs, tenant-bound artifact refs, parent env immutability, failure cleanup, and log payload hygiene. P10's dedicated `B2.4-P10 Read-Only Projection Proof` is required because it proves deterministic-left confidence projection, backend-owned confidence semantics, no-fit/stale-fit preservation, payload/authority airgap, no compute trigger, and no frontend-owned thresholding. The metadata dry-run lane does not expand `ci.yml` and does not mutate M0/M1/M2 workflows.
+B2.4 gates attach through `.github/workflows/b2_4-gate-dry-run.yml` and the `b2-4-dry-run` registry cohort. The aggregate `B2.4 Gate Dry Run` job is required on protected `main` because it executes the static P1-P10 validator lane and fails on missing Makefile/registry wiring. P1's dedicated `B2.4-P1 DB Proof` is required because it proves the authority schema and RLS/GUC substrate against real PostgreSQL. P4's dedicated `B2.4-P4 PostgreSQL Runtime Proof` is required because it proves resource-bound persistence behavior against real PostgreSQL. P5's dedicated `B2.4-P5 Bayesian Runtime Harness` and `B2.4-P5 PostgreSQL Runtime Proof` are required because they carry the native Bayesian runtime containment proof and the durable timeout fallback proof. P6's dedicated `B2.4-P6 Real Fit Worker Proof` is required because it proves fit-id-only runtime execution under `app_user`, frozen P2/P4 source replay, source-derived observed input, and child-only PyMC execution. P7's dedicated `B2.4-P7 Diagnostic Semantics Proof` is required because it proves governed child-side diagnostics, finite-value thresholding, strict zero-divergence interval conditionality, bounded interval summaries, and no interval exposure after failed diagnostics. P8's dedicated `B2.4-P8 Artifact Lifecycle Proof` is required because it proves Postgres-native bounded artifact persistence, exact stored-byte hash verification, tenant quota enforcement, audit-preserving pruning, and the absence of cloud/local/large-object storage. P9's dedicated `B2.4-P9 Worker Tenant Hygiene Proof` is required because it proves transaction-local tenant context, clean connection return, tenant/fit/hash/attempt workspaces and compiledirs, tenant-bound artifact refs, parent env immutability, failure cleanup, and log payload hygiene. P10's dedicated `B2.4-P10 Read-Only Projection Proof` is required because it proves deterministic-left confidence projection, backend-owned confidence semantics, no-fit/stale-fit preservation, payload/authority airgap, no compute trigger, and no frontend-owned thresholding. P11's dedicated `B2.4-P11 CI Gates and Negative Control Harness` is required because it proves the B2.4 gate system cannot silently omit, skip, unregister, downgrade, or overclaim P1-P10 proof jobs. The metadata dry-run lane does not expand `ci.yml` and does not mutate M0/M1/M2 workflows.

@@ -1,0 +1,172 @@
+- phase_id: B2.4-P1
+  phase_name: Authority Schema, RLS, and Module Transition
+  load_bearing_invariant: Bayesian authority schema, RLS/GUC isolation, hash constraints, tenant indexes, state constraints, no-router boundary, and no LLM/PyMC runtime contamination remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p1_authority_schema.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+    - B2.4-P1 DB Proof
+  make_target: validate-b24-p1-authority-schema
+  negative_control_command: python scripts/ci/validate_b24_p1_authority_schema.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+    - B2.4-P1 DB Proof
+  registry_id: validate-b24-p1-authority-schema
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P1 schema/RLS proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P2
+  phase_name: Deterministic Input Contract and Source Snapshot Authority
+  load_bearing_invariant: Deterministic input manifests, eligibility preflight, sparse privacy suppression, repeatable-read snapshotting, canonical ordering, sentinel hashing, streaming SHA-256, and no-PII source boundaries remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p2_source_snapshot.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+  make_target: validate-b24-p2-source-snapshot
+  negative_control_command: python scripts/ci/validate_b24_p2_source_snapshot.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+  registry_id: validate-b24-p2-source-snapshot
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P2 snapshot determinism proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P3
+  phase_name: Fit Planning, Debounced Atomic Claim, and Queue Idempotency
+  load_bearing_invariant: Dirty-event capture, debounce planning, hash-independent active execution leases, atomic fit claims, transactional dispatch outbox, fit-id-only payloads, duplicate delivery idempotency, and source query-plan fallback indexes remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p3_fit_planning.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+  make_target: validate-b24-p3-fit-planning
+  negative_control_command: python scripts/ci/validate_b24_p3_fit_planning.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+  registry_id: validate-b24-p3-fit-planning
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P3 planning/claim proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P4
+  phase_name: Input Cardinality, Memory Envelope, and Pre-Graph Resource Controls
+  load_bearing_invariant: Preflight lease ordering, deterministic resource/cardinality/memory/graph envelopes, bounded source-profile query strategy, pre-dispatch rejection, durable fallback taxonomy, and no sampler-runtime leakage remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p4_resource_bounds.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+    - B2.4-P4 PostgreSQL Runtime Proof
+  make_target: validate-b24-p4-resource-bounds
+  negative_control_command: python scripts/ci/validate_b24_p4_resource_bounds.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+    - B2.4-P4 PostgreSQL Runtime Proof
+  registry_id: validate-b24-p4-resource-bounds
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P4 resource-bound proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P5
+  phase_name: Bayesian Runtime Environment and Native Kill-Semantics Harness
+  load_bearing_invariant: Bayesian dependency lane, runtime parity image, PyTensor compile proof, tiny PyMC benchmark, native thread caps, compiledir isolation, process-group kill semantics, durable timeout fallback, stale-running recovery, and boundary non-regression remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p5_runtime_harness.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+    - B2.4-P5 Bayesian Runtime Harness
+    - B2.4-P5 PostgreSQL Runtime Proof
+  make_target: validate-b24-p5-runtime-harness
+  negative_control_command: python scripts/ci/validate_b24_p5_runtime_harness.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+    - B2.4-P5 Bayesian Runtime Harness
+    - B2.4-P5 PostgreSQL Runtime Proof
+  registry_id: validate-b24-p5-runtime-harness
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P5 runtime/native-kill proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P6
+  phase_name: Real Bayesian Fit Worker
+  load_bearing_invariant: Fit-id-only parent execution, explicit RLS tenant-resolution capability, frozen P2/P4 source replay, source-derived observed input, and child-only PyMC execution remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p6_real_fit_worker.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+    - B2.4-P6 Real Fit Worker Proof
+  make_target: validate-b24-p6-real-fit-worker
+  negative_control_command: python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+    - B2.4-P6 Real Fit Worker Proof
+  registry_id: validate-b24-p6-real-fit-worker
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P6 real-fit proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P7
+  phase_name: Diagnostic Semantics and Interval Conditionality
+  load_bearing_invariant: Diagnostic validity, governed target scope, finite-value gates, strict zero-divergence conditionality, bounded interval payloads, child-contained ArviZ execution, and diagnostic/execution lifecycle separation remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p7_diagnostics.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+    - B2.4-P7 Diagnostic Semantics Proof
+  make_target: validate-b24-p7-diagnostics
+  negative_control_command: python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+    - B2.4-P7 Diagnostic Semantics Proof
+  registry_id: validate-b24-p7-diagnostics
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P7 diagnostic/interval proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P8
+  phase_name: Artifact Persistence, Lifecycle, and Storage Governance
+  load_bearing_invariant: Postgres-native small-artifact persistence, lifecycle, retention, tenant quota, hash integrity, pruning auditability, and public/cloud/LLM non-exposure remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p8_artifact_lifecycle.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+    - B2.4-P8 Artifact Lifecycle Proof
+  make_target: validate-b24-p8-artifact-lifecycle
+  negative_control_command: python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+    - B2.4-P8 Artifact Lifecycle Proof
+  registry_id: validate-b24-p8-artifact-lifecycle
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P8 artifact lifecycle proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P9
+  phase_name: Worker Tenant Hygiene and Raw DB Boundary
+  load_bearing_invariant: Transaction-local tenant context, direct-Postgres topology attestation, clean connection return, scoped workspace/compiledir, tenant-bound artifacts, parent env immutability, cleanup, log payload airgap, and raw-driver hostile SQL protections remain machine-falsifiable.
+  validator_target: scripts/ci/validate_b24_p9_worker_tenant_hygiene.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+    - B2.4-P9 Worker Tenant Hygiene Proof
+  make_target: validate-b24-p9-worker-tenant-hygiene
+  negative_control_command: python scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+    - B2.4-P9 Worker Tenant Hygiene Proof
+  registry_id: validate-b24-p9-worker-tenant-hygiene
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P9 worker tenant-hygiene proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P10
+  phase_name: Read-Only Confidence Projection
+  load_bearing_invariant: Internal projection remains deterministic-left, backend-owned, payload-free, no-fit preserving, non-computing, non-public, and frontend-threshold-free.
+  validator_target: scripts/ci/validate_b24_p10_projection.py
+  workflow_job:
+    - B2.4 Gate Dry Run
+    - B2.4-P10 Read-Only Projection Proof
+  make_target: validate-b24-p10-projection
+  negative_control_command: python scripts/ci/validate_b24_p10_projection.py --negative-control
+  required_status_name:
+    - B2.4 Gate Dry Run
+    - B2.4-P10 Read-Only Projection Proof
+  registry_id: validate-b24-p10-projection
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement for P10 projection proof coverage, not production-topology trust closure.
+- phase_id: B2.4-P11
+  phase_name: CI Gates and Negative Control Harness
+  load_bearing_invariant: P11 proves the B2.4 CI gate system cannot silently omit, skip, unregister, downgrade, or overclaim P1-P10 proofs.
+  validator_target: scripts/ci/validate_b24_p11_ci_gates.py
+  workflow_job:
+    - B2.4-P11 CI Gates and Negative Control Harness
+  make_target: validate-b24-p11-ci-gates
+  negative_control_command: python scripts/ci/validate_b24_p11_ci_gates.py --negative-control
+  required_status_name:
+    - B2.4-P11 CI Gates and Negative Control Harness
+  registry_id: validate-b24-p11-ci-gates
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P11 proves merge-blocking CI enforcement, not production-topology trust closure.

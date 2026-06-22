@@ -1811,3 +1811,21 @@
   local_reproduction_command: make validate-b24-p10-projection
   risk_if_removed: Loss of merge-blocking proof that confidence output cannot collapse deterministic revenue, leak authority/payload fields, trigger Bayesian compute, or move threshold ownership into frontend code.
   decision: keep_required
+- gate_id: validate-b24-p11-ci-gates
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4-P11 CI Gates and Negative Control Harness
+  script: scripts/ci/validate_b24_p11_ci_gates.py
+  owning_phase: B2.4-P11
+  protected_invariant: B2.4-P11 CI gate coverage, required-status alignment, workflow/Makefile/registry consistency, negative-control non-vacuity, structured evidence emission, and non-overclaim boundaries remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P11 is not subsumed by P1-P10 because it verifies the gate system itself:
+    phase coverage, workflow job names, Makefile targets, registry entries,
+    required statuses, structured evidence, and negative-control normalization.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p11_ci_gates.py --negative-control
+  local_reproduction_command: make validate-b24-p11-ci-gates
+  risk_if_removed: Loss of merge-blocking proof that B2.4 CI cannot silently omit, skip, unregister, downgrade, or overclaim P1-P10 proof jobs.
+  decision: keep_required
