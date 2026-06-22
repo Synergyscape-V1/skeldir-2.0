@@ -639,7 +639,7 @@ jobs:
         run: python scripts/ci/validate_live_branch_protection.py --negative-control
 
       - name: Validate execution artifacts negative controls
-        run: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control --summary-path ""
+        run: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control --negative-control-only --summary-path ""
 
       - name: Write P11 command execution artifact
         run: |
