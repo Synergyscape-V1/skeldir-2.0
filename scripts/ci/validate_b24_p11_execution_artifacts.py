@@ -274,16 +274,25 @@ def _manifest(path: Path, artifact: Path, expected: list[str], minimum: int = 1)
     )
 
 
-def _expect_failure(name: str, func: Any, expected: str) -> None:
+def _expect_failure(name: str, func: Any, expected: str) -> dict[str, str]:
     try:
         func()
     except ValidationError as exc:
         _require(expected.lower() in str(exc).lower(), f"{name} failed for wrong reason: {exc}")
+        result = {
+            "name": name,
+            "status": "pass",
+            "expected_failure_reason": expected,
+            "observed_failure_reason": str(exc),
+        }
+        print(f"B24_P11_NEGATIVE_CONTROL_PASS {name}: {exc}")
+        return result
     else:
         raise ValidationError(f"negative control did not fail: {name}")
 
 
-def run_negative_controls() -> None:
+def run_negative_controls() -> list[dict[str, str]]:
+    results: list[dict[str, str]] = []
     with tempfile.TemporaryDirectory(dir=ROOT / "artifacts") as temp:
         base = Path(temp)
         manifest = base / "manifest.yaml"
@@ -292,27 +301,57 @@ def run_negative_controls() -> None:
         _write_xml(xml, [("backend.tests.test_negative", "test_required", None)])
         _manifest(manifest, xml, expected)
         validate_artifacts(manifest_path=manifest, output_path=base / "positive.json", summary_path=None)
-        _expect_failure(
-            "missing_artifact",
-            lambda: (_manifest(manifest, base / "missing.xml", expected), validate_artifacts(manifest_path=manifest, output_path=base / "missing.json", summary_path=None)),
-            "missing junit",
+        xml.write_text("<testsuite><testcase", encoding="utf-8")
+        _manifest(manifest, xml, expected)
+        results.append(
+            _expect_failure(
+                "invalid_xml",
+                lambda: validate_artifacts(manifest_path=manifest, output_path=base / "invalid_xml.json", summary_path=None),
+                "invalid JUnit XML artifact",
+            )
+        )
+        _write_xml(
+            xml,
+            [
+                ("backend.tests.test_negative", "test_required", None),
+                ("backend.tests.other_negative", "test_required", None),
+            ],
+        )
+        _manifest(manifest, xml, expected)
+        results.append(
+            _expect_failure(
+                "duplicate_testcase",
+                lambda: validate_artifacts(manifest_path=manifest, output_path=base / "duplicate_testcase.json", summary_path=None),
+                "duplicate testcase names",
+            )
+        )
+        results.append(
+            _expect_failure(
+                "missing_artifact",
+                lambda: (
+                    _manifest(manifest, base / "missing.xml", expected),
+                    validate_artifacts(manifest_path=manifest, output_path=base / "missing.json", summary_path=None),
+                ),
+                "missing junit",
+            )
         )
         _write_xml(xml, [])
         _manifest(manifest, xml, expected)
-        _expect_failure("zero_tests", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "zero.json", summary_path=None), "zero")
+        results.append(_expect_failure("zero_tests", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "zero.json", summary_path=None), "zero"))
         _write_xml(xml, [("backend.tests.test_negative", "test_other", None)])
-        _expect_failure("missing_expected", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "missing_case.json", summary_path=None), "missing expected")
+        results.append(_expect_failure("missing_expected", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "missing_case.json", summary_path=None), "missing expected"))
         _write_xml(xml, [("backend.tests.test_negative", "test_required", "skip")])
-        _expect_failure("skip", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "skip.json", summary_path=None), "skipped")
+        results.append(_expect_failure("skip", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "skip.json", summary_path=None), "skipped"))
         _write_xml(xml, [("backend.tests.test_negative", "test_required", "xfail")])
-        _expect_failure("xfail", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "xfail.json", summary_path=None), "xfail")
+        results.append(_expect_failure("xfail", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "xfail.json", summary_path=None), "xfail"))
         _write_xml(xml, [("backend.tests.test_negative", "test_required", "xpass")])
-        _expect_failure("xpass", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "xpass.json", summary_path=None), "xpass")
+        results.append(_expect_failure("xpass", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "xpass.json", summary_path=None), "xpass"))
         _write_xml(xml, [("backend.tests.test_negative", "test_required", "failure")])
-        _expect_failure("failure", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "failure.json", summary_path=None), "failing")
+        results.append(_expect_failure("failure", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "failure.json", summary_path=None), "failing"))
         _write_xml(xml, [("backend.tests.test_negative", "test_required", None)])
         _manifest(manifest, xml, expected, minimum=2)
-        _expect_failure("below_minimum", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "minimum.json", summary_path=None), "below minimum")
+        results.append(_expect_failure("below_minimum", lambda: validate_artifacts(manifest_path=manifest, output_path=base / "minimum.json", summary_path=None), "below minimum"))
+    return results
 
 
 def main() -> int:
@@ -324,16 +363,38 @@ def main() -> int:
     parser.add_argument("--negative-control-only", action="store_true")
     args = parser.parse_args()
     try:
+        negative_results: list[dict[str, str]] = []
         if args.negative_control:
-            run_negative_controls()
+            negative_results = run_negative_controls()
         if args.negative_control_only:
+            output_path = ROOT / args.output
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "b24-p11-execution-artifacts-negative-controls-v1",
+                        "commit_sha": os.environ.get("GITHUB_SHA", "local"),
+                        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "negative_control_status": "pass",
+                        "negative_controls": negative_results,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
             print("B24_P11_EXECUTION_ARTIFACT_NEGATIVE_CONTROLS_PASS")
             return 0
-        validate_artifacts(
+        payload = validate_artifacts(
             manifest_path=ROOT / args.manifest,
             output_path=ROOT / args.output,
             summary_path=ROOT / args.summary_path if args.summary_path else None,
         )
+        if negative_results:
+            payload["negative_control_status"] = "pass"
+            payload["negative_controls"] = negative_results
+            (ROOT / args.output).write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     except ValidationError as exc:
         print(f"B24_P11_EXECUTION_ARTIFACT_VALIDATION_FAIL: {exc}")
         return 1

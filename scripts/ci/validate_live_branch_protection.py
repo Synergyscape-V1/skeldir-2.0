@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -112,6 +112,7 @@ def validate_live(
     output_path: Path = DEFAULT_OUTPUT,
     mock_live_path: Path | None = None,
     summary_path: Path | None = DEFAULT_SUMMARY,
+    fetch_live: Callable[[str, str, str | None], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     contract = _load_contract(contract_path)
     expected = set(str(item) for item in contract["required_contexts"])
@@ -119,6 +120,9 @@ def validate_live(
     branch = str(contract["branch"])
     if mock_live_path:
         live = json.loads(mock_live_path.read_text(encoding="utf-8"))
+    elif fetch_live:
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        live = fetch_live(repository, branch, token)
     else:
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
         live = _fetch_live(repository, branch, token=token)
@@ -171,16 +175,25 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _expect_failure(name: str, func: Any, expected: str) -> None:
+def _expect_failure(name: str, func: Any, expected: str) -> dict[str, str]:
     try:
         func()
     except ValidationError as exc:
         _require(expected.lower() in str(exc).lower(), f"{name} failed for wrong reason: {exc}")
+        result = {
+            "name": name,
+            "status": "pass",
+            "expected_failure_reason": expected,
+            "observed_failure_reason": str(exc),
+        }
+        print(f"B24_P11_NEGATIVE_CONTROL_PASS {name}: {exc}")
+        return result
     else:
         raise ValidationError(f"negative control did not fail: {name}")
 
 
-def run_negative_controls(contract_path: Path) -> None:
+def run_negative_controls(contract_path: Path) -> list[dict[str, str]]:
+    results: list[dict[str, str]] = []
     contract = _load_contract(contract_path)
     expected = list(str(item) for item in contract["required_contexts"])
     with tempfile.TemporaryDirectory(dir=ROOT / "artifacts") as temp:
@@ -189,16 +202,44 @@ def run_negative_controls(contract_path: Path) -> None:
         good = {"classic": {"contexts": expected, "strict": True}, "rulesets": []}
         _write_json(live, good)
         validate_live(contract_path=contract_path, output_path=base / "good.json", mock_live_path=live, summary_path=None)
+        results.append(
+            _expect_failure(
+                "api_unreadable",
+                lambda: validate_live(
+                    contract_path=contract_path,
+                    output_path=base / "api_unreadable.json",
+                    fetch_live=lambda _repository, _branch, _token: (_ for _ in ()).throw(
+                        ValidationError("GitHub API unreadable for injected transport failure")
+                    ),
+                    summary_path=None,
+                ),
+                "GitHub API unreadable",
+            )
+        )
+        results.append(
+            _expect_failure(
+                "permission_denied",
+                lambda: validate_live(
+                    contract_path=contract_path,
+                    output_path=base / "permission_denied.json",
+                    fetch_live=lambda _repository, _branch, _token: (_ for _ in ()).throw(
+                        ValidationError("GitHub API error 403 permission denied for injected transport failure")
+                    ),
+                    summary_path=None,
+                ),
+                "permission",
+            )
+        )
         missing = expected[:-1]
         _write_json(live, {"classic": {"contexts": missing, "strict": True}, "rulesets": []})
-        _expect_failure("missing_context", lambda: validate_live(contract_path=contract_path, output_path=base / "missing.json", mock_live_path=live, summary_path=None), "missing")
+        results.append(_expect_failure("missing_context", lambda: validate_live(contract_path=contract_path, output_path=base / "missing.json", mock_live_path=live, summary_path=None), "missing"))
         stale = [*expected, "Obsolete B2.4 Context"]
         _write_json(live, {"classic": {"contexts": stale, "strict": True}, "rulesets": []})
-        _expect_failure("stale_context", lambda: validate_live(contract_path=contract_path, output_path=base / "stale.json", mock_live_path=live, summary_path=None), "extra stale")
+        results.append(_expect_failure("stale_context", lambda: validate_live(contract_path=contract_path, output_path=base / "stale.json", mock_live_path=live, summary_path=None), "extra stale"))
         _write_json(live, {"classic": {"contexts": expected, "strict": False}, "rulesets": []})
-        _expect_failure("strict_disabled", lambda: validate_live(contract_path=contract_path, output_path=base / "strict.json", mock_live_path=live, summary_path=None), "strict")
+        results.append(_expect_failure("strict_disabled", lambda: validate_live(contract_path=contract_path, output_path=base / "strict.json", mock_live_path=live, summary_path=None), "strict"))
         _write_json(live, {"classic": {"message": "requires admin"}, "rulesets": []})
-        _expect_failure("unreadable_payload", lambda: validate_live(contract_path=contract_path, output_path=base / "unreadable.json", mock_live_path=live, summary_path=None), "missing contexts")
+        results.append(_expect_failure("unreadable_payload", lambda: validate_live(contract_path=contract_path, output_path=base / "unreadable.json", mock_live_path=live, summary_path=None), "missing contexts"))
         rulesets = [
             {
                 "enforcement": "active",
@@ -212,7 +253,8 @@ def run_negative_controls(contract_path: Path) -> None:
             }
         ]
         _write_json(live, {"classic": {"contexts": expected, "strict": True}, "rulesets": rulesets})
-        _expect_failure("ruleset_mismatch", lambda: validate_live(contract_path=contract_path, output_path=base / "ruleset.json", mock_live_path=live, summary_path=None), "ruleset")
+        results.append(_expect_failure("ruleset_mismatch", lambda: validate_live(contract_path=contract_path, output_path=base / "ruleset.json", mock_live_path=live, summary_path=None), "ruleset"))
+    return results
 
 
 def main() -> int:
@@ -225,14 +267,19 @@ def main() -> int:
     args = parser.parse_args()
     try:
         contract = ROOT / args.contract
+        negative_results: list[dict[str, str]] = []
         if args.negative_control:
-            run_negative_controls(contract)
-        validate_live(
+            negative_results = run_negative_controls(contract)
+        payload = validate_live(
             contract_path=contract,
             output_path=ROOT / args.output,
             mock_live_path=ROOT / args.mock_live_json if args.mock_live_json else None,
             summary_path=ROOT / args.summary_path if args.summary_path else None,
         )
+        if negative_results:
+            payload["negative_control_status"] = "pass"
+            payload["negative_controls"] = negative_results
+            (ROOT / args.output).write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     except ValidationError as exc:
         print(f"B24_P11_LIVE_BRANCH_PROTECTION_VALIDATION_FAIL: {exc}")
         return 1
