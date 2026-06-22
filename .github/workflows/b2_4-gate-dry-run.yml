@@ -649,10 +649,15 @@ jobs:
             --case validate_b24_p11_ci_gates \
             --case validate_b24_p11_workflow_vacuity \
             --case validate_live_branch_protection \
-            --case validate_b24_p11_execution_artifacts
+            --case validate_b24_p11_execution_artifacts \
+            --case invalid_xml_negative_control \
+            --case duplicate_testcase_negative_control \
+            --case duplicate_required_context_negative_control \
+            --case api_unreadable_negative_control \
+            --case permission_denied_negative_control
 
       - name: Validate downloaded execution artifacts
-        run: python scripts/ci/validate_b24_p11_execution_artifacts.py
+        run: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control
 
       - name: Upload P11 execution-physical proof artifacts
         uses: actions/upload-artifact@v4

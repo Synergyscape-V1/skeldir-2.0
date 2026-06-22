@@ -178,16 +178,25 @@ def _write_fixture(base: Path, workflow_text: str, manifest_text: str, contract_
     return workflows, contract, manifest
 
 
-def _expect_failure(name: str, func: Any, expected: str) -> None:
+def _expect_failure(name: str, func: Any, expected: str) -> dict[str, str]:
     try:
         func()
     except ValidationError as exc:
         _require(expected.lower() in str(exc).lower(), f"{name} failed for wrong reason: {exc}")
+        result = {
+            "name": name,
+            "status": "pass",
+            "expected_failure_reason": expected,
+            "observed_failure_reason": str(exc),
+        }
+        print(f"B24_P11_NEGATIVE_CONTROL_PASS {name}: {exc}")
+        return result
     else:
         raise ValidationError(f"negative control did not fail: {name}")
 
 
-def run_negative_controls() -> None:
+def run_negative_controls() -> list[dict[str, str]]:
+    results: list[dict[str, str]] = []
     job = "B2.4-P11 CI Gates and Negative Control Harness"
     manifest = yaml.safe_dump(
         [
@@ -214,18 +223,41 @@ jobs:
         base = Path(temp)
         workflows, contract, manifest_path = _write_fixture(base, good, manifest, [job])
         validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "good.json", summary_path=None)
+        duplicate_base = base / "duplicate_required_context"
+        duplicate_workflows = duplicate_base / ".github/workflows"
+        duplicate_workflows.mkdir(parents=True)
+        (duplicate_workflows / "b2_4_a.yml").write_text(good, encoding="utf-8")
+        (duplicate_workflows / "b2_4_b.yml").write_text(good.replace("name: fixture", "name: duplicate fixture"), encoding="utf-8")
+        duplicate_contract = duplicate_base / "contract.json"
+        duplicate_contract.write_text(json.dumps({"required_contexts": [job]}), encoding="utf-8")
+        duplicate_manifest = duplicate_base / "manifest.yaml"
+        duplicate_manifest.write_text(manifest, encoding="utf-8")
+        results.append(
+            _expect_failure(
+                "duplicate_required_context",
+                lambda: validate_workflows(
+                    workflows_dir=duplicate_workflows,
+                    contract_path=duplicate_contract,
+                    manifest_path=duplicate_manifest,
+                    output_path=base / "duplicate_required_context.json",
+                    summary_path=None,
+                ),
+                "duplicated across workflows",
+            )
+        )
         path_filtered = good.replace("pull_request:", "pull_request:\n    paths:\n      - docs/**")
         workflows, contract, manifest_path = _write_fixture(base / "paths", path_filtered, manifest, [job])
-        _expect_failure("paths", lambda: validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "paths.json", summary_path=None), "paths")
+        results.append(_expect_failure("paths", lambda: validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "paths.json", summary_path=None), "paths"))
         paths_ignore = good.replace("pull_request:", "pull_request:\n    paths-ignore:\n      - docs/**")
         workflows, contract, manifest_path = _write_fixture(base / "paths_ignore", paths_ignore, manifest, [job])
-        _expect_failure("paths_ignore", lambda: validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "paths_ignore.json", summary_path=None), "paths")
+        results.append(_expect_failure("paths_ignore", lambda: validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "paths_ignore.json", summary_path=None), "paths"))
         conditional = good.replace("runs-on: ubuntu-latest", "if: ${{ github.event_name == 'push' }}\n    runs-on: ubuntu-latest")
         workflows, contract, manifest_path = _write_fixture(base / "if", conditional, manifest, [job])
-        _expect_failure("conditional", lambda: validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "if.json", summary_path=None), "if condition")
+        results.append(_expect_failure("conditional", lambda: validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "if.json", summary_path=None), "if condition"))
         dummy = good.replace("make validate-b24-p11-ci-gates", "echo success")
         workflows, contract, manifest_path = _write_fixture(base / "dummy", dummy, manifest, [job])
-        _expect_failure("dummy", lambda: validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "dummy.json", summary_path=None), "required proof command")
+        results.append(_expect_failure("dummy", lambda: validate_workflows(workflows_dir=workflows, contract_path=contract, manifest_path=manifest_path, output_path=base / "dummy.json", summary_path=None), "required proof command"))
+    return results
 
 
 def main() -> int:
@@ -235,12 +267,17 @@ def main() -> int:
     parser.add_argument("--negative-control", action="store_true")
     args = parser.parse_args()
     try:
+        negative_results: list[dict[str, str]] = []
         if args.negative_control:
-            run_negative_controls()
-        validate_workflows(
+            negative_results = run_negative_controls()
+        payload = validate_workflows(
             output_path=ROOT / args.output,
             summary_path=ROOT / args.summary_path if args.summary_path else None,
         )
+        if negative_results:
+            payload["negative_control_status"] = "pass"
+            payload["negative_controls"] = negative_results
+            (ROOT / args.output).write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     except ValidationError as exc:
         print(f"B24_P11_WORKFLOW_VACUITY_VALIDATION_FAIL: {exc}")
         return 1

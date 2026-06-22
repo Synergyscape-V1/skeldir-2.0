@@ -340,7 +340,12 @@
     - validate_b24_p11_workflow_vacuity
     - validate_live_branch_protection
     - validate_b24_p11_execution_artifacts
-  minimum_test_count: 4
+    - invalid_xml_negative_control
+    - duplicate_testcase_negative_control
+    - duplicate_required_context_negative_control
+    - api_unreadable_negative_control
+    - permission_denied_negative_control
+  minimum_test_count: 9
   allowed_skips: []
   allowed_xfails: []
   required_markers: []

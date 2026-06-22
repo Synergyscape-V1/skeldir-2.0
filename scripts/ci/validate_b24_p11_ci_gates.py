@@ -31,6 +31,19 @@ LIVE_BRANCH_VALIDATOR = ROOT / "scripts/ci/validate_live_branch_protection.py"
 WORKFLOW_VACUITY_VALIDATOR = ROOT / "scripts/ci/validate_b24_p11_workflow_vacuity.py"
 COMMAND_JUNIT_WRITER = ROOT / "scripts/ci/write_b24_p11_command_junit.py"
 DEFAULT_SUMMARY = ROOT / "artifacts/b24_p11_ci_gate_matrix.json"
+DIRECTIVE_II_NEGATIVE_CONTROLS = {
+    "validate_b24_p11_execution_artifacts.py": (
+        "invalid_xml",
+        "duplicate_testcase",
+    ),
+    "validate_b24_p11_workflow_vacuity.py": (
+        "duplicate_required_context",
+    ),
+    "validate_live_branch_protection.py": (
+        "api_unreadable",
+        "permission_denied",
+    ),
+}
 
 EXPECTED_PHASES = tuple(f"B2.4-P{i}" for i in range(1, 12))
 P1_TO_P10 = set(EXPECTED_PHASES[:10])
@@ -251,6 +264,30 @@ def validate_all(
         COMMAND_JUNIT_WRITER,
     ):
         _require(path.exists(), f"P11 execution-physical validator missing: {path.relative_to(ROOT).as_posix()}")
+    validator_text_by_name = {
+        EXECUTION_VALIDATOR.name: _read(EXECUTION_VALIDATOR),
+        LIVE_BRANCH_VALIDATOR.name: _read(LIVE_BRANCH_VALIDATOR),
+        WORKFLOW_VACUITY_VALIDATOR.name: _read(WORKFLOW_VACUITY_VALIDATOR),
+    }
+    for validator_name, control_names in DIRECTIVE_II_NEGATIVE_CONTROLS.items():
+        validator_text = validator_text_by_name[validator_name]
+        for control_name in control_names:
+            _require(
+                control_name in validator_text,
+                f"Directive II negative control missing from {validator_name}: {control_name}",
+            )
+            _require(
+                control_name in manifest_text or f"{control_name}_negative_control" in manifest_text,
+                f"Directive II negative control missing from execution manifest: {control_name}",
+            )
+            _require(
+                control_name in workflow_text or f"{control_name}_negative_control" in workflow_text,
+                f"Directive II negative control missing from workflow attestation: {control_name}",
+            )
+            _require(
+                control_name in evidence_text,
+                f"Directive II negative control missing from evidence pack: {control_name}",
+            )
 
     manifest_jobs = {str(row["workflow_job"]) for row in execution_manifest}
     _require(
