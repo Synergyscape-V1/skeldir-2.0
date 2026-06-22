@@ -117,7 +117,7 @@ export default function CampaignTable({ campaigns, channelAttribution }: { campa
                 <td style={{ ...tdBase, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{row.verifiedRevenueFormatted}</td>
                 <td style={{ ...tdBase, textAlign: 'right' }}><DiscrepancyCell pct={row.discrepancyPct} status={row.discrepancyStatus} /></td>
                 <td style={tdBase}>
-                  <MiniRangeBar lower={row.roas?.lower || 0} upper={row.roas?.upper || 0} bucket={row.confidenceBucket} estimate={row.roas?.estimate} />
+                  <MiniRangeBar lower={row.roas?.lower || 0} upper={row.roas?.upper || 0} bucket={row.intervalBand} estimate={row.roas?.estimate} />
                 </td>
                 <td style={{ ...tdBase, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{row.weightFormatted}</td>
               </tr>

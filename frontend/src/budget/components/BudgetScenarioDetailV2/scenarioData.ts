@@ -8,7 +8,7 @@ export const SCENARIO = {
   name: 'Q4 Growth & Max Reach',
   subtitle: '(Illustrative)',
   status: 'active' as const,
-  confidenceBucket: 'medium' as const,
+  confidenceLabel: 'Moderate confidence',
   actionImplication: 'Monitor for 1-2 more weeks',
   /** Reference example: $50k total with allocation split per Budget Scenario Detail spec */
   proposedTotalBudget: '$50,000',
