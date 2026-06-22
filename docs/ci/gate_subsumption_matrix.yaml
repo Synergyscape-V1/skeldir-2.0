@@ -1796,3 +1796,18 @@
   local_reproduction_command: make validate-b24-p9-worker-tenant-hygiene
   risk_if_removed: Loss of merge-blocking proof for cross-tenant worker hygiene and failure-path residue controls.
   decision: keep_required
+- gate_id: validate-b24-p10-projection
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4-P10 Read-Only Projection Proof
+  script: scripts/ci/validate_b24_p10_projection.py
+  owning_phase: B2.4-P10
+  protected_invariant: B2.4-P10 read-only confidence projection remains deterministic-left, backend-owned, payload-free, no-fit preserving, non-computing, non-public, and frontend-threshold-free.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: Required P10 gate preserves a unique projection-boundary invariant not covered by P7 diagnostics, P8 artifact lifecycle, or P9 worker tenant hygiene.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p10_projection.py --negative-control
+  local_reproduction_command: make validate-b24-p10-projection
+  risk_if_removed: Loss of merge-blocking proof that confidence output cannot collapse deterministic revenue, leak authority/payload fields, trigger Bayesian compute, or move threshold ownership into frontend code.
+  decision: keep_required
