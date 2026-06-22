@@ -1829,3 +1829,63 @@
   local_reproduction_command: make validate-b24-p11-ci-gates
   risk_if_removed: Loss of merge-blocking proof that B2.4 CI cannot silently omit, skip, unregister, downgrade, or overclaim P1-P10 proof jobs.
   decision: keep_required
+- gate_id: validate-b24-p11-execution-artifacts
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4-P11 CI Gates and Negative Control Harness
+  script: scripts/ci/validate_b24_p11_execution_artifacts.py
+  owning_phase: B2.4-P11
+  protected_invariant: B2.4-P11 execution artifacts remain machine-parseable and fail closed on missing, zero, skipped, xfailed, failed, or renamed required proof cases.
+  current_status: utility
+  default_execution: true
+  candidate_action: keep_utility
+  subsuming_gate: validate-b24-p11-ci-gates
+  subsumption_evidence: The execution-artifact parser is the physical execution sub-gate used by the P11 required context, not a standalone required context.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control --negative-control-only
+  local_reproduction_command: make validate-b24-p11-execution-artifacts
+  risk_if_removed: Loss of proof that required B2.4 jobs physically executed expected cases without skip, xfail, xpass, missing-case, or zero-test vacuity.
+  decision: keep_utility
+- gate_id: validate-b24-p11-workflow-vacuity
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4-P11 CI Gates and Negative Control Harness
+  script: scripts/ci/validate_b24_p11_workflow_vacuity.py
+  owning_phase: B2.4-P11
+  protected_invariant: Required B2.4 workflow jobs cannot be path-filtered, conditionally bypassed, duplicated, or dummy-satisfied.
+  current_status: utility
+  default_execution: true
+  candidate_action: keep_utility
+  subsuming_gate: validate-b24-p11-ci-gates
+  subsumption_evidence: The workflow-vacuity scanner is the path-filter and dummy-job sub-gate used by the P11 required context, not a standalone required context.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p11_workflow_vacuity.py --negative-control
+  local_reproduction_command: make validate-b24-p11-workflow-vacuity
+  risk_if_removed: Loss of proof that B2.4 required contexts cannot be satisfied by path-filtered, conditionally bypassed, or dummy jobs.
+  decision: keep_utility
+- gate_id: validate-live-branch-protection
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4-P11 CI Gates and Negative Control Harness
+  script: scripts/ci/validate_live_branch_protection.py
+  owning_phase: B2.4-P11
+  protected_invariant: Live GitHub branch protection and ruleset required contexts exactly match the local required-status contract and fail closed on unreadable state.
+  current_status: utility
+  default_execution: true
+  candidate_action: keep_utility
+  subsuming_gate: validate-b24-p11-ci-gates
+  subsumption_evidence: The live branch-protection validator is the external enforcement sub-gate used by the P11 required context, not a standalone required context.
+  negative_control_preserved_by: python scripts/ci/validate_live_branch_protection.py --negative-control
+  local_reproduction_command: make validate-b24-p11-live-branch-protection
+  risk_if_removed: Loss of continuous proof that live GitHub protected-branch enforcement matches the repository required-status contract.
+  decision: keep_utility
+- gate_id: write-b24-p11-command-junit
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/write_b24_p11_command_junit.py
+  owning_phase: B2.4-P11
+  protected_invariant: Non-pytest B2.4 proof command sequences produce JUnit-compatible attestations only after their command steps succeed.
+  current_status: utility
+  default_execution: true
+  candidate_action: keep_utility
+  subsuming_gate: validate-b24-p11-ci-gates
+  subsumption_evidence: The writer is a helper for command proof attestation consumed by the P11 execution-artifact parser, not an independent proof gate.
+  negative_control_preserved_by: python scripts/ci/write_b24_p11_command_junit.py --help
+  local_reproduction_command: python scripts/ci/write_b24_p11_command_junit.py --help
+  risk_if_removed: Loss of equivalent machine-readable execution artifacts for non-pytest B2.4 proof command jobs.
+  decision: keep_utility

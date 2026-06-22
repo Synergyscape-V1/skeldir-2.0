@@ -7,6 +7,12 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  statuses: read
+
 jobs:
   b2-4-gate-dry-run:
     name: B2.4 Gate Dry Run
@@ -68,6 +74,32 @@ jobs:
 
       - name: Validate B2.4-P10 read-only projection
         run: make validate-b24-p10-projection
+
+      - name: Write B2.4 aggregate command execution artifact
+        run: |
+          python scripts/ci/write_b24_p11_command_junit.py \
+            --output artifacts/junit/b24_gate_dry_run.xml \
+            --suite b24_gate_dry_run \
+            --case ci_b24_gate_dry_run \
+            --case validate_m5_b24_readiness \
+            --case validate_m6_llm_boundary \
+            --case validate_m7_b24_readiness \
+            --case validate_b24_p1_authority_schema \
+            --case validate_b24_p2_source_snapshot \
+            --case validate_b24_p3_fit_planning \
+            --case validate_b24_p4_resource_bounds \
+            --case validate_b24_p5_runtime_harness \
+            --case validate_b24_p6_real_fit_worker \
+            --case validate_b24_p7_diagnostics \
+            --case validate_b24_p8_artifact_lifecycle \
+            --case validate_b24_p9_worker_tenant_hygiene \
+            --case validate_b24_p10_projection
+
+      - name: Upload B2.4 aggregate execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-gate-dry-run
+          path: artifacts/junit/b24_gate_dry_run.xml
 
   b2-4-p5-runtime:
     name: B2.4-P5 Bayesian Runtime Harness
@@ -156,6 +188,32 @@ jobs:
           docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
             python -m app.bayesian.runtime_probe behavioral-negative-controls
 
+      - name: Write Bayesian runtime command execution artifact
+        run: |
+          python scripts/ci/write_b24_p11_command_junit.py \
+            --output artifacts/junit/b24_p5_bayesian_runtime_harness.xml \
+            --suite b24_p5_bayesian_runtime_harness \
+            --case runtime_report \
+            --case pytensor_compile \
+            --case thread_budget \
+            --case compiledir_concurrency \
+            --case child_env_airgap \
+            --case child_import_airgap \
+            --case child_boot_airgap \
+            --case fork_multiprocessing_negative_controls \
+            --case compiledir_lifecycle \
+            --case reaper_probe \
+            --case tiny_benchmark \
+            --case supervisor_kill \
+            --case parent_death \
+            --case behavioral_negative_controls
+
+      - name: Upload Bayesian runtime execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p5-bayesian-runtime
+          path: artifacts/junit/b24_p5_bayesian_runtime_harness.xml
+
   b2-4-p5-postgres-runtime-proof:
     name: B2.4-P5 PostgreSQL Runtime Proof
     runs-on: ubuntu-latest
@@ -214,7 +272,14 @@ jobs:
 
       - name: Run durable timeout fallback PostgreSQL proof
         run: |
-          pytest backend/tests/test_b24_p5_postgres_runtime.py -q -rA
+          mkdir -p artifacts/junit
+          pytest backend/tests/test_b24_p5_postgres_runtime.py -q -rA --junitxml=artifacts/junit/b24_p5_postgres_runtime.xml
+
+      - name: Upload B2.4-P5 PostgreSQL execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p5-postgres
+          path: artifacts/junit/b24_p5_postgres_runtime.xml
 
   b2-4-p6-real-fit-worker-proof:
     name: B2.4-P6 Real Fit Worker Proof
@@ -275,7 +340,14 @@ jobs:
 
       - name: Run source-authorized real-fit worker proof
         run: |
-          pytest backend/tests/test_b24_p6_real_fit_worker.py -q -rA
+          mkdir -p artifacts/junit
+          pytest backend/tests/test_b24_p6_real_fit_worker.py -q -rA --junitxml=artifacts/junit/b24_p6_real_fit_worker.xml
+
+      - name: Upload B2.4-P6 execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p6-real-fit-worker
+          path: artifacts/junit/b24_p6_real_fit_worker.xml
 
   b2-4-p7-diagnostic-semantics-proof:
     name: B2.4-P7 Diagnostic Semantics Proof
@@ -334,7 +406,14 @@ jobs:
 
       - name: Run diagnostic semantics proof
         run: |
-          pytest backend/tests/test_b24_p7_diagnostic_semantics.py backend/tests/test_b24_p7_postgres_runtime.py -q -rA
+          mkdir -p artifacts/junit
+          pytest backend/tests/test_b24_p7_diagnostic_semantics.py backend/tests/test_b24_p7_postgres_runtime.py -q -rA --junitxml=artifacts/junit/b24_p7_diagnostic_semantics.xml
+
+      - name: Upload B2.4-P7 execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p7-diagnostic-semantics
+          path: artifacts/junit/b24_p7_diagnostic_semantics.xml
 
   b2-4-p8-artifact-lifecycle-proof:
     name: B2.4-P8 Artifact Lifecycle Proof
@@ -393,7 +472,14 @@ jobs:
 
       - name: Run artifact lifecycle proof
         run: |
-          pytest backend/tests/test_b24_p8_artifact_lifecycle.py backend/tests/test_b24_p8_postgres_runtime.py -q -rA
+          mkdir -p artifacts/junit
+          pytest backend/tests/test_b24_p8_artifact_lifecycle.py backend/tests/test_b24_p8_postgres_runtime.py -q -rA --junitxml=artifacts/junit/b24_p8_artifact_lifecycle.xml
+
+      - name: Upload B2.4-P8 execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p8-artifact-lifecycle
+          path: artifacts/junit/b24_p8_artifact_lifecycle.xml
 
   b2-4-p9-worker-tenant-hygiene-proof:
     name: B2.4-P9 Worker Tenant Hygiene Proof
@@ -458,7 +544,14 @@ jobs:
 
       - name: Run worker tenant hygiene proof
         run: |
-          pytest backend/tests/test_b24_p9_worker_tenant_hygiene.py backend/tests/test_b24_p9_postgres_runtime.py backend/tests/test_b24_p9_raw_driver_postgres_runtime.py -q -rA
+          mkdir -p artifacts/junit
+          pytest backend/tests/test_b24_p9_worker_tenant_hygiene.py backend/tests/test_b24_p9_postgres_runtime.py backend/tests/test_b24_p9_raw_driver_postgres_runtime.py -q -rA --junitxml=artifacts/junit/b24_p9_worker_tenant_hygiene.xml
+
+      - name: Upload B2.4-P9 execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p9-worker-tenant-hygiene
+          path: artifacts/junit/b24_p9_worker_tenant_hygiene.xml
 
   b2-4-p10-read-only-projection-proof:
     name: B2.4-P10 Read-Only Projection Proof
@@ -488,11 +581,29 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/backend
           DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p10_ci
         run: |
-          pytest backend/tests/test_b24_p10_projection.py -q -rA
+          mkdir -p artifacts/junit
+          pytest backend/tests/test_b24_p10_projection.py -q -rA --junitxml=artifacts/junit/b24_p10_projection.xml
+
+      - name: Upload B2.4-P10 execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p10-projection
+          path: artifacts/junit/b24_p10_projection.xml
 
   b2-4-p11-ci-gates-and-negative-control-harness:
     name: B2.4-P11 CI Gates and Negative Control Harness
     runs-on: ubuntu-latest
+    needs:
+      - b2-4-gate-dry-run
+      - b2-4-p5-runtime
+      - b2-4-p5-postgres-runtime-proof
+      - b2-4-p6-real-fit-worker-proof
+      - b2-4-p7-diagnostic-semantics-proof
+      - b2-4-p8-artifact-lifecycle-proof
+      - b2-4-p9-worker-tenant-hygiene-proof
+      - b2-4-p10-read-only-projection-proof
+      - b2-4-p1-db-proof
+      - b2-4-p4-postgres-runtime-proof
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -509,8 +620,50 @@ jobs:
           python -m pip install --upgrade pip
           pip install "pyyaml>=6.0"
 
+      - name: Download B2.4 execution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: b24-p11-junit-*
+          path: artifacts/junit
+          merge-multiple: true
+
       - name: Run P11 CI gate matrix and negative controls
         run: make validate-b24-p11-ci-gates
+
+      - name: Validate workflow vacuity and negative controls
+        run: python scripts/ci/validate_b24_p11_workflow_vacuity.py --negative-control
+
+      - name: Validate live branch protection and negative controls
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
+        run: python scripts/ci/validate_live_branch_protection.py --negative-control
+
+      - name: Validate execution artifacts negative controls
+        run: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control --negative-control-only --summary-path ""
+
+      - name: Write P11 command execution artifact
+        run: |
+          python scripts/ci/write_b24_p11_command_junit.py \
+            --output artifacts/junit/b24_p11_ci_gates.xml \
+            --suite b24_p11_ci_gates \
+            --case validate_b24_p11_ci_gates \
+            --case validate_b24_p11_workflow_vacuity \
+            --case validate_live_branch_protection \
+            --case validate_b24_p11_execution_artifacts
+
+      - name: Validate downloaded execution artifacts
+        run: python scripts/ci/validate_b24_p11_execution_artifacts.py
+
+      - name: Upload P11 execution-physical proof artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-execution-physical-proof
+          path: |
+            artifacts/b24_p11_ci_gate_matrix.json
+            artifacts/b24_p11_execution_artifacts.json
+            artifacts/b24_p11_live_branch_protection.json
+            artifacts/b24_p11_workflow_vacuity.json
+            artifacts/junit/*.xml
 
       - name: Upload P11 structured proof summary
         uses: actions/upload-artifact@v4
@@ -569,7 +722,14 @@ jobs:
 
       - name: Run B2.4-P1 DB-backed proofs
         run: |
-          pytest backend/tests/test_b24_p1_authority_schema_runtime.py -q -rA
+          mkdir -p artifacts/junit
+          pytest backend/tests/test_b24_p1_authority_schema_runtime.py -q -rA --junitxml=artifacts/junit/b24_p1_db_proof.xml
+
+      - name: Upload B2.4-P1 execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p1-db-proof
+          path: artifacts/junit/b24_p1_db_proof.xml
 
   b2-4-p4-postgres-runtime-proof:
     name: B2.4-P4 PostgreSQL Runtime Proof
@@ -630,4 +790,11 @@ jobs:
 
       - name: Run fresh PostgreSQL P4 runtime proofs
         run: |
-          pytest backend/tests/test_b24_p4_postgres_runtime.py -q -rA
+          mkdir -p artifacts/junit
+          pytest backend/tests/test_b24_p4_postgres_runtime.py -q -rA --junitxml=artifacts/junit/b24_p4_postgres_runtime.xml
+
+      - name: Upload B2.4-P4 execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p11-junit-p4-postgres-runtime
+          path: artifacts/junit/b24_p4_postgres_runtime.xml

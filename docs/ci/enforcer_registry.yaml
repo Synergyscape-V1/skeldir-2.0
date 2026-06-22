@@ -235,6 +235,94 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b24-p11-execution-artifacts
+  path: scripts/ci/validate_b24_p11_execution_artifacts.py
+  status: utility
+  owning_phase: B2.4-P11
+  protected_invariant: B2.4-P11 execution artifacts remain machine-parseable and fail closed on missing, zero, skipped, xfailed, failed, or renamed required proof cases.
+  command: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control --negative-control-only
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P11 CI Gates and Negative Control Harness
+  local_reproduction_command: make validate-b24-p11-execution-artifacts
+  expected_failure_meaning: B2.4-P11 execution artifacts are missing, vacuous, skipped, xfailed, failing, or missing expected proof cases.
+  first_diagnostic_command: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control --negative-control-only
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: validate-b24-p11-ci-gates
+  registry_action: utility
+- id: validate-b24-p11-workflow-vacuity
+  path: scripts/ci/validate_b24_p11_workflow_vacuity.py
+  status: utility
+  owning_phase: B2.4-P11
+  protected_invariant: Required B2.4 workflow jobs cannot be path-filtered, conditionally bypassed, duplicated, or dummy-satisfied.
+  command: python scripts/ci/validate_b24_p11_workflow_vacuity.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P11 CI Gates and Negative Control Harness
+  local_reproduction_command: make validate-b24-p11-workflow-vacuity
+  expected_failure_meaning: A required B2.4 workflow context is path-filtered, conditionally bypassed, duplicated, missing proof commands, or dummy-satisfied.
+  first_diagnostic_command: python scripts/ci/validate_b24_p11_workflow_vacuity.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: validate-b24-p11-ci-gates
+  registry_action: utility
+- id: validate-live-branch-protection
+  path: scripts/ci/validate_live_branch_protection.py
+  status: utility
+  owning_phase: B2.4-P11
+  protected_invariant: Live GitHub branch protection and ruleset required contexts exactly match the local required-status contract and fail closed on unreadable state.
+  command: python scripts/ci/validate_live_branch_protection.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P11 CI Gates and Negative Control Harness
+  local_reproduction_command: make validate-b24-p11-live-branch-protection
+  expected_failure_meaning: Live GitHub branch protection or rulesets are unreadable, non-strict, stale, missing, or divergent from the local required-status contract.
+  first_diagnostic_command: python scripts/ci/validate_live_branch_protection.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: validate-b24-p11-ci-gates
+  registry_action: utility
+- id: write-b24-p11-command-junit
+  path: scripts/ci/write_b24_p11_command_junit.py
+  status: utility
+  owning_phase: B2.4-P11
+  protected_invariant: Non-pytest B2.4 proof command sequences produce JUnit-compatible attestations only after their command steps succeed.
+  command: python scripts/ci/write_b24_p11_command_junit.py --help
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4 Gate Dry Run
+  local_reproduction_command: python scripts/ci/write_b24_p11_command_junit.py --help
+  expected_failure_meaning: Non-pytest B2.4 command proof attestation cannot be emitted or inspected.
+  first_diagnostic_command: python scripts/ci/write_b24_p11_command_junit.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: validate-b24-p11-ci-gates
+  registry_action: utility
 - id: validate-m7-b24-readiness
   path: scripts/ci/validate_m7_b24_readiness.py
   status: required

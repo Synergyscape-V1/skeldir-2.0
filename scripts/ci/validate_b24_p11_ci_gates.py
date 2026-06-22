@@ -25,6 +25,11 @@ REQUIRED_STATUS = ROOT / "contracts-internal/governance/b03_phase2_required_stat
 CI_README = ROOT / "docs/ci/README.md"
 CI_TOPOLOGY = ROOT / "docs/ci/ci_topology_map.md"
 EVIDENCE_PACK = ROOT / "docs/forensics/B2.4-P11 Remediation Evidence Pack .md"
+EXECUTION_MANIFEST = ROOT / "docs/ci/b24_p11_execution_manifest.yaml"
+EXECUTION_VALIDATOR = ROOT / "scripts/ci/validate_b24_p11_execution_artifacts.py"
+LIVE_BRANCH_VALIDATOR = ROOT / "scripts/ci/validate_live_branch_protection.py"
+WORKFLOW_VACUITY_VALIDATOR = ROOT / "scripts/ci/validate_b24_p11_workflow_vacuity.py"
+COMMAND_JUNIT_WRITER = ROOT / "scripts/ci/write_b24_p11_command_junit.py"
 DEFAULT_SUMMARY = ROOT / "artifacts/b24_p11_ci_gate_matrix.json"
 
 EXPECTED_PHASES = tuple(f"B2.4-P{i}" for i in range(1, 12))
@@ -140,6 +145,38 @@ def _required_contexts(required_text: str) -> set[str]:
     return {str(context) for context in contexts}
 
 
+def _load_execution_manifest(manifest_text: str) -> list[dict[str, Any]]:
+    data = _load_yaml_text(manifest_text, "P11 execution manifest")
+    _require(isinstance(data, list), "P11 execution manifest must be a YAML list")
+    required = {
+        "phase_id",
+        "workflow_job",
+        "required_status",
+        "test_artifact_path",
+        "expected_test_modules",
+        "expected_test_cases",
+        "minimum_test_count",
+        "allowed_skips",
+        "allowed_xfails",
+        "required_markers",
+        "execution_required",
+        "required_command_fragments",
+        "non_overclaim_boundary",
+    }
+    rows: list[dict[str, Any]] = []
+    for row in data:
+        _require(isinstance(row, dict), "P11 execution manifest row must be a mapping")
+        missing = required - set(row)
+        _require(not missing, f"execution manifest row missing fields:{row.get('workflow_job')}:{sorted(missing)}")
+        _require(row["execution_required"] is True, f"execution manifest row must be required: {row.get('workflow_job')}")
+        _require(_as_list(row["expected_test_cases"]), f"execution manifest row lacks expected cases: {row.get('workflow_job')}")
+        _require(int(row["minimum_test_count"]) > 0, f"execution manifest row has non-positive minimum count: {row.get('workflow_job')}")
+        _require(not _as_list(row["allowed_skips"]), f"execution manifest allows skips: {row.get('workflow_job')}")
+        _require(not _as_list(row["allowed_xfails"]), f"execution manifest allows xfails: {row.get('workflow_job')}")
+        rows.append(row)
+    return rows
+
+
 def _load_matrix(matrix_text: str) -> list[dict[str, Any]]:
     data = _load_yaml_text(matrix_text, "P11 phase matrix")
     _require(isinstance(data, list), "P11 phase matrix must be a YAML list")
@@ -179,6 +216,7 @@ def validate_all(
     readme_text: str | None = None,
     topology_text: str | None = None,
     evidence_text: str | None = None,
+    manifest_text: str | None = None,
     summary_path: Path | None = DEFAULT_SUMMARY,
 ) -> dict[str, Any]:
     matrix_text = matrix_text if matrix_text is not None else _read(MATRIX)
@@ -190,8 +228,10 @@ def validate_all(
     readme_text = readme_text if readme_text is not None else _read(CI_README)
     topology_text = topology_text if topology_text is not None else _read(CI_TOPOLOGY)
     evidence_text = evidence_text if evidence_text is not None else _read(EVIDENCE_PACK)
+    manifest_text = manifest_text if manifest_text is not None else _read(EXECUTION_MANIFEST)
 
     matrix = _load_matrix(matrix_text)
+    execution_manifest = _load_execution_manifest(manifest_text)
     workflow_jobs = _workflow_job_names(workflow_text)
     registry = _load_registry(registry_text)
     subsumption_ids = _load_subsumption_ids(subsumption_text)
@@ -203,6 +243,40 @@ def validate_all(
     _require(LOAD_BEARING_REQUIRED_CONTEXTS <= required_contexts, f"required-status contract missing B2.4 contexts: {sorted(LOAD_BEARING_REQUIRED_CONTEXTS - required_contexts)}")
     b24_required = {context for context in required_contexts if context.startswith("B2.4")}
     _require(b24_required == LOAD_BEARING_REQUIRED_CONTEXTS, f"obsolete or missing B2.4 required contexts: {sorted(b24_required ^ LOAD_BEARING_REQUIRED_CONTEXTS)}")
+
+    for path in (
+        EXECUTION_VALIDATOR,
+        LIVE_BRANCH_VALIDATOR,
+        WORKFLOW_VACUITY_VALIDATOR,
+        COMMAND_JUNIT_WRITER,
+    ):
+        _require(path.exists(), f"P11 execution-physical validator missing: {path.relative_to(ROOT).as_posix()}")
+
+    manifest_jobs = {str(row["workflow_job"]) for row in execution_manifest}
+    _require(
+        LOAD_BEARING_REQUIRED_CONTEXTS <= manifest_jobs,
+        f"execution manifest missing required B2.4 contexts: {sorted(LOAD_BEARING_REQUIRED_CONTEXTS - manifest_jobs)}",
+    )
+    manifest_statuses = {str(row["required_status"]) for row in execution_manifest}
+    _require(
+        LOAD_BEARING_REQUIRED_CONTEXTS <= manifest_statuses,
+        f"execution manifest missing required statuses: {sorted(LOAD_BEARING_REQUIRED_CONTEXTS - manifest_statuses)}",
+    )
+    for command in (
+        "validate-b24-p11-workflow-vacuity",
+        "validate-b24-p11-live-branch-protection",
+        "validate-b24-p11-execution-artifacts",
+    ):
+        _require(command in makefile_text, f"P11 Makefile target missing: {command}")
+    for fragment in (
+        "actions/download-artifact@v4",
+        "validate_b24_p11_workflow_vacuity.py --negative-control",
+        "validate_live_branch_protection.py --negative-control",
+        "validate_b24_p11_execution_artifacts.py --negative-control",
+        "validate_b24_p11_execution_artifacts.py",
+        "b24-p11-execution-physical-proof",
+    ):
+        _require(fragment in workflow_text, f"P11 workflow missing execution-physical fragment: {fragment}")
 
     registry_b24_count = sum(
         1
@@ -236,7 +310,7 @@ def validate_all(
 
     _require(NON_OVERCLAIM_PHRASE in evidence_text, "P11 evidence pack missing non-overclaim statement")
 
-    summary = build_summary(matrix)
+    summary = build_summary(matrix, execution_manifest)
     validate_summary_shape(summary)
     if summary_path:
         summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -260,12 +334,19 @@ def _git_sha() -> str:
     return completed.stdout.strip()
 
 
-def build_summary(matrix: list[dict[str, Any]]) -> dict[str, Any]:
+def build_summary(matrix: list[dict[str, Any]], execution_manifest: list[dict[str, Any]]) -> dict[str, Any]:
     timestamp = datetime.now(UTC).isoformat()
     commit_sha = _git_sha()
     run_id = os.environ.get("GITHUB_RUN_ID", "local")
     rows: list[dict[str, Any]] = []
+    manifest_by_job: dict[str, list[dict[str, Any]]] = {}
+    for execution_row in execution_manifest:
+        manifest_by_job.setdefault(str(execution_row["workflow_job"]), []).append(execution_row)
     for row in matrix:
+        execution_rows: list[dict[str, Any]] = []
+        for job in _as_list(row["workflow_job"]):
+            execution_rows.extend(manifest_by_job.get(job, []))
+        expected_count = sum(len(_as_list(item["expected_test_cases"])) for item in execution_rows)
         rows.append(
             {
                 "phase_id": row["phase_id"],
@@ -273,20 +354,33 @@ def build_summary(matrix: list[dict[str, Any]]) -> dict[str, Any]:
                 "workflow_job": _as_list(row["workflow_job"]),
                 "required_status": _as_list(row["required_status_name"]),
                 "negative_control_status": "registered_and_validator_checked",
-                "positive_proof_status": "registered_and_required",
+                "positive_proof_status": "awaiting_execution_artifact_parser",
                 "non_vacuity_status": row["non_vacuity_status"],
+                "execution_artifact_path": [item["test_artifact_path"] for item in execution_rows],
+                "expected_test_count": expected_count,
+                "actual_test_count": 0,
+                "skipped_count": 0,
+                "xfail_count": 0,
+                "failed_count": 0,
+                "missing_expected_cases": [],
+                "live_required_status_verified": False,
+                "path_filter_status": "pending_workflow_vacuity_validator",
                 "commit_sha": commit_sha,
                 "run_id": run_id,
                 "timestamp": timestamp,
             }
         )
     return {
-        "schema_version": "b24-p11-ci-gate-matrix-v1",
+        "schema_version": "b24-p11-ci-gate-matrix-v2",
         "commit_sha": commit_sha,
         "run_id": run_id,
         "timestamp": timestamp,
         "non_overclaim_boundary": NON_OVERCLAIM_PHRASE,
         "required_context_count": len(LOAD_BEARING_REQUIRED_CONTEXTS),
+        "execution_manifest_path": EXECUTION_MANIFEST.relative_to(ROOT).as_posix(),
+        "execution_artifact_status": "pending_execution_parser",
+        "live_enforcement_status": "pending_live_validator",
+        "workflow_vacuity_status": "pending_workflow_vacuity_validator",
         "phase_count": len(rows),
         "phases": rows,
     }
@@ -306,6 +400,15 @@ def validate_summary_shape(summary: dict[str, Any]) -> None:
         "negative_control_status",
         "positive_proof_status",
         "non_vacuity_status",
+        "execution_artifact_path",
+        "expected_test_count",
+        "actual_test_count",
+        "skipped_count",
+        "xfail_count",
+        "failed_count",
+        "missing_expected_cases",
+        "live_required_status_verified",
+        "path_filter_status",
         "commit_sha",
         "run_id",
         "timestamp",
@@ -332,6 +435,7 @@ def run_negative_controls() -> None:
     registry_text = _read(REGISTRY)
     required_text = _read(REQUIRED_STATUS)
     evidence_text = _read(EVIDENCE_PACK)
+    manifest_text = _read(EXECUTION_MANIFEST)
     matrix = _load_matrix(matrix_text)
     without_p10 = [deepcopy(row) for row in matrix if row["phase_id"] != "B2.4-P10"]
     weak_p7 = [deepcopy(row) for row in matrix]
@@ -372,6 +476,11 @@ def run_negative_controls() -> None:
         "overclaim_statement_removed",
         lambda: validate_all(evidence_text=evidence_text.replace(NON_OVERCLAIM_PHRASE, "P11 proves production topology trust closure"), summary_path=None),
         "non-overclaim",
+    )
+    _expect_failure(
+        "execution_manifest_execution_disabled",
+        lambda: validate_all(manifest_text=manifest_text.replace("execution_required: true", "execution_required: false", 1), summary_path=None),
+        "must be required",
     )
 
 
