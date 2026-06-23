@@ -640,7 +640,7 @@ jobs:
       - name: Validate trusted main live branch protection and negative controls
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
         run: python scripts/ci/validate_live_branch_protection.py --mode main --negative-control
 
       - name: Validate execution artifacts negative controls
