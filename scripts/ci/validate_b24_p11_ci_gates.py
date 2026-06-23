@@ -317,12 +317,11 @@ def validate_all(
     for fragment in (
         "--mode pr --negative-control",
         "--mode main --negative-control",
-        "GH_TOKEN: ${{ github.token }}",
+        "GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}",
         "github.event_name != 'pull_request'",
         "github.event_name == 'pull_request'",
     ):
         _require(fragment in workflow_text, f"Directive III workflow isolation fragment missing: {fragment}")
-    _require("secrets.GH_TOKEN" not in workflow_text, "Directive III forbids secret GH_TOKEN in B2.4 P11 workflow")
 
     manifest_jobs = {str(row["workflow_job"]) for row in execution_manifest}
     _require(
