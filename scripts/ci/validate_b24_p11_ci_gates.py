@@ -53,7 +53,7 @@ DIRECTIVE_III_NEGATIVE_CONTROLS = {
     "pr_token_present",
 }
 
-EXPECTED_PHASES = tuple(f"B2.4-P{i}" for i in range(1, 12))
+EXPECTED_PHASES = tuple(f"B2.4-P{i}" for i in range(1, 13))
 P1_TO_P10 = set(EXPECTED_PHASES[:10])
 REQUIRED_MATRIX_FIELDS = {
     "phase_id",
@@ -81,6 +81,7 @@ LOAD_BEARING_REQUIRED_CONTEXTS = {
     "B2.4-P9 Worker Tenant Hygiene Proof",
     "B2.4-P10 Read-Only Projection Proof",
     "B2.4-P11 CI Gates and Negative Control Harness",
+    "B2.4-P12 Internal E2E Proof Harness",
 }
 NON_OVERCLAIM_PHRASE = (
     "P11 proves merge-blocking CI enforcement, not production-topology trust closure"
@@ -208,7 +209,7 @@ def _load_matrix(matrix_text: str) -> list[dict[str, Any]]:
         _require(not missing, f"matrix row missing fields:{row.get('phase_id')}:{sorted(missing)}")
         matrix.append(row)
     phase_ids = [str(row["phase_id"]) for row in matrix]
-    _require(tuple(phase_ids) == EXPECTED_PHASES, f"matrix phases must be ordered P1-P11: {phase_ids}")
+    _require(tuple(phase_ids) == EXPECTED_PHASES, f"matrix phases must be ordered P1-P12: {phase_ids}")
     return matrix
 
 
@@ -462,7 +463,7 @@ def validate_summary_shape(summary: dict[str, Any]) -> None:
         _require(key in summary, f"summary missing field: {key}")
     _require(summary["non_overclaim_boundary"] == NON_OVERCLAIM_PHRASE, "summary overclaim boundary drift")
     phases = summary["phases"]
-    _require(isinstance(phases, list) and len(phases) == 11, "summary must include P1-P11")
+    _require(isinstance(phases, list) and len(phases) == 12, "summary must include P1-P12")
     required = {
         "phase_id",
         "validator",
@@ -516,7 +517,7 @@ def run_negative_controls() -> None:
     _expect_failure(
         "phase_removed",
         lambda: validate_all(matrix_text=yaml.safe_dump(without_p10, sort_keys=False), summary_path=None),
-        "ordered P1-P11",
+        "ordered P1-P12",
     )
     _expect_failure(
         "negative_control_removed",

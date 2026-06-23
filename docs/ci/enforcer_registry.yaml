@@ -235,6 +235,28 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b24-p12-internal-e2e
+  path: scripts/ci/validate_b24_p12_internal_e2e.py
+  status: required
+  owning_phase: B2.4-P12
+  protected_invariant: B2.4-P12 must prove internal/local/CI substrate composition across committed visibility, state-driven async coordination, worker/subprocess boundary evidence, artifacts, diagnostics, projection, sealed payloads, tenant hygiene, and explicit non-overclaim boundaries.
+  command: python scripts/ci/validate_b24_p12_internal_e2e.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P12 Internal E2E Proof Harness
+  local_reproduction_command: make validate-b24-p12-internal-e2e
+  expected_failure_meaning: B2.4-P12 composition proof is missing, uses transaction illusions, arbitrary sleeps, weak payload schema, public/LLM/action boundary leakage, stale required-status wiring, vacuous artifacts, or overclaims production-topology trust closure.
+  first_diagnostic_command: python scripts/ci/validate_b24_p12_internal_e2e.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-b24-p11-execution-artifacts
   path: scripts/ci/validate_b24_p11_execution_artifacts.py
   status: utility
