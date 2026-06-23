@@ -239,7 +239,7 @@
   path: scripts/ci/validate_b24_p12_internal_e2e.py
   status: required
   owning_phase: B2.4-P12
-  protected_invariant: B2.4-P12 must prove internal/local/CI substrate composition across committed visibility, state-driven async coordination, worker/subprocess boundary evidence, artifacts, diagnostics, projection, sealed payloads, tenant hygiene, and explicit non-overclaim boundaries.
+  protected_invariant: B2.4-P12 must prove internal/local/CI substrate composition across committed visibility, state-driven async coordination, worker/subprocess boundary evidence, representative worker resource telemetry, artifacts, diagnostics, projection, sealed payloads, tenant hygiene, and explicit non-overclaim boundaries.
   command: python scripts/ci/validate_b24_p12_internal_e2e.py --negative-control
   workflow_references:
   - .github/workflows/b2_4-gate-dry-run.yml

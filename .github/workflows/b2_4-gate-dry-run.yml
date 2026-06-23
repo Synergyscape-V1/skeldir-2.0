@@ -626,6 +626,7 @@ jobs:
       TESTING: "1"
       CI: "true"
       SKELDIR_B24_P12_REQUIRE_DB_PROOFS: "1"
+      SKELDIR_B24_P12_CA1_TELEMETRY_DIR: artifacts/b24_p12_ca1
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       PLATFORM_TOKEN_KEY_ID: test-key
@@ -658,7 +659,7 @@ jobs:
 
       - name: Run internal E2E composition proof
         run: |
-          mkdir -p artifacts/junit
+          mkdir -p artifacts/junit artifacts/b24_p12_ca1
           pytest backend/tests/test_b24_p12_internal_e2e.py -q -rA --junitxml=artifacts/junit/b24_p12_internal_e2e.xml
 
       - name: Upload B2.4-P12 execution artifact
@@ -666,6 +667,12 @@ jobs:
         with:
           name: b24-p11-junit-p12-internal-e2e
           path: artifacts/junit/b24_p12_internal_e2e.xml
+
+      - name: Upload B2.4-P12 CA1 worker telemetry
+        uses: actions/upload-artifact@v4
+        with:
+          name: b24-p12-ca1-telemetry
+          path: artifacts/b24_p12_ca1/*.json
 
   b2-4-p11-ci-gates-and-negative-control-harness:
     name: B2.4-P11 CI Gates and Negative Control Harness

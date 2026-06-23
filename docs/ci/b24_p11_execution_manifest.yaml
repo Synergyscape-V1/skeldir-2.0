@@ -371,18 +371,21 @@
   expected_test_cases:
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_committed_visibility_and_uncommitted_negative_control
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_terminal_waiter_is_state_driven_and_diagnostic
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_ca1_subprocess_worker_boundary_consumes_committed_representative_state
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_ca1_subprocess_worker_boundary_negative_control_rejects_uncommitted_state
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_async_coordination_uses_no_arbitrary_sleep
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_positive_projection_payload_is_backend_owned_and_sealed
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_cold_start_projection_is_reason_coded_without_sampling
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_diagnostic_failures_block_intervals
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_resource_and_duplicate_burst_controls_are_pre_worker
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_ca1_runtime_oversized_rejection_occurs_before_graph_or_sampler
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_artifact_hash_corruption_and_pruning_degrade_auditably
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_projection_read_only_and_missing_fit_safe
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_source_snapshot_drift_blocks_current_confidence
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_sequential_tenant_artifact_and_projection_isolation
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_boundary_scans_no_public_route_llm_action_or_overclaim
     - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_validator_negative_controls
-  minimum_test_count: 15
+  minimum_test_count: 18
   allowed_skips: []
   allowed_xfails: []
   required_markers: []
