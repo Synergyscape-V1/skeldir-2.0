@@ -633,10 +633,15 @@ jobs:
       - name: Validate workflow vacuity and negative controls
         run: python scripts/ci/validate_b24_p11_workflow_vacuity.py --negative-control
 
-      - name: Validate live branch protection and negative controls
+      - name: Validate PR-safe branch-protection state machine and negative controls
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        run: python scripts/ci/validate_live_branch_protection.py --mode pr --negative-control
+
+      - name: Validate trusted main live branch protection and negative controls
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
-        run: python scripts/ci/validate_live_branch_protection.py --negative-control
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/ci/validate_live_branch_protection.py --mode main --negative-control
 
       - name: Validate execution artifacts negative controls
         run: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control --negative-control-only --summary-path ""
@@ -654,7 +659,13 @@ jobs:
             --case duplicate_testcase_negative_control \
             --case duplicate_required_context_negative_control \
             --case api_unreadable_negative_control \
-            --case permission_denied_negative_control
+            --case permission_denied_negative_control \
+            --case subprocess_invalid_token_negative_control \
+            --case subprocess_missing_token_negative_control \
+            --case pr_add_context_no_deadlock_negative_control \
+            --case pr_required_context_removal_negative_control \
+            --case main_missing_new_required_context_negative_control \
+            --case pr_token_present_negative_control
 
       - name: Validate downloaded execution artifacts
         run: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control
