@@ -44,6 +44,14 @@ DIRECTIVE_II_NEGATIVE_CONTROLS = {
         "permission_denied",
     ),
 }
+DIRECTIVE_III_NEGATIVE_CONTROLS = {
+    "subprocess_invalid_token",
+    "subprocess_missing_token",
+    "pr_add_context_no_deadlock",
+    "pr_required_context_removal",
+    "main_missing_new_required_context",
+    "pr_token_present",
+}
 
 EXPECTED_PHASES = tuple(f"B2.4-P{i}" for i in range(1, 12))
 P1_TO_P10 = set(EXPECTED_PHASES[:10])
@@ -288,6 +296,33 @@ def validate_all(
                 control_name in evidence_text,
                 f"Directive II negative control missing from evidence pack: {control_name}",
             )
+    live_validator_text = validator_text_by_name[LIVE_BRANCH_VALIDATOR.name]
+    for control_name in DIRECTIVE_III_NEGATIVE_CONTROLS:
+        _require(
+            control_name in live_validator_text,
+            f"Directive III negative control missing from live validator: {control_name}",
+        )
+        _require(
+            control_name in manifest_text or f"{control_name}_negative_control" in manifest_text,
+            f"Directive III negative control missing from execution manifest: {control_name}",
+        )
+        _require(
+            control_name in workflow_text or f"{control_name}_negative_control" in workflow_text,
+            f"Directive III negative control missing from workflow attestation: {control_name}",
+        )
+        _require(
+            control_name in evidence_text,
+            f"Directive III negative control missing from evidence pack: {control_name}",
+        )
+    for fragment in (
+        "--mode pr --negative-control",
+        "--mode main --negative-control",
+        "GH_TOKEN: ${{ github.token }}",
+        "github.event_name != 'pull_request'",
+        "github.event_name == 'pull_request'",
+    ):
+        _require(fragment in workflow_text, f"Directive III workflow isolation fragment missing: {fragment}")
+    _require("secrets.GH_TOKEN" not in workflow_text, "Directive III forbids secret GH_TOKEN in B2.4 P11 workflow")
 
     manifest_jobs = {str(row["workflow_job"]) for row in execution_manifest}
     _require(
@@ -308,7 +343,7 @@ def validate_all(
     for fragment in (
         "actions/download-artifact@v4",
         "validate_b24_p11_workflow_vacuity.py --negative-control",
-        "validate_live_branch_protection.py --negative-control",
+        "validate_live_branch_protection.py --mode",
         "validate_b24_p11_execution_artifacts.py --negative-control",
         "validate_b24_p11_execution_artifacts.py",
         "b24-p11-execution-physical-proof",

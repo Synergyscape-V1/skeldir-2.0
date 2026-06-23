@@ -87,6 +87,17 @@ def _step_if_disallowed(step: dict[str, Any]) -> bool:
     expr = str(step["if"]).lower()
     if expr.strip() in {"${{ always() }}", "always()"} and "upload" in str(step.get("name", "")).lower():
         return False
+    name = str(step.get("name", "")).lower()
+    directive_iii_allowed = {
+        "validate pr-safe branch-protection state machine and negative controls": (
+            "github.event_name == 'pull_request' || github.ref != 'refs/heads/main'"
+        ),
+        "validate trusted main live branch protection and negative controls": (
+            "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'"
+        ),
+    }
+    if name in directive_iii_allowed and expr.strip() == directive_iii_allowed[name]:
+        return False
     return True
 
 
