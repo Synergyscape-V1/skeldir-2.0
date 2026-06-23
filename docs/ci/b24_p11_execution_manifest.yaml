@@ -362,3 +362,33 @@
     - python scripts/ci/validate_live_branch_protection.py --mode
     - python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control
   non_overclaim_boundary: P11 proves merge-blocking CI enforcement with execution-physical validation, not production-topology trust closure.
+- phase_id: B2.4-P12
+  workflow_job: B2.4-P12 Internal E2E Proof Harness
+  required_status: B2.4-P12 Internal E2E Proof Harness
+  test_artifact_path: artifacts/junit/b24_p12_internal_e2e.xml
+  expected_test_modules:
+    - backend/tests/test_b24_p12_internal_e2e.py
+  expected_test_cases:
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_committed_visibility_and_uncommitted_negative_control
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_terminal_waiter_is_state_driven_and_diagnostic
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_async_coordination_uses_no_arbitrary_sleep
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_positive_projection_payload_is_backend_owned_and_sealed
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_cold_start_projection_is_reason_coded_without_sampling
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_diagnostic_failures_block_intervals
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_resource_and_duplicate_burst_controls_are_pre_worker
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_artifact_hash_corruption_and_pruning_degrade_auditably
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_projection_read_only_and_missing_fit_safe
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_source_snapshot_drift_blocks_current_confidence
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_sequential_tenant_artifact_and_projection_isolation
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_boundary_scans_no_public_route_llm_action_or_overclaim
+    - backend/tests/test_b24_p12_internal_e2e.py::test_b24_p12_validator_negative_controls
+  minimum_test_count: 15
+  allowed_skips: []
+  allowed_xfails: []
+  required_markers: []
+  execution_required: true
+  required_command_fragments:
+    - python scripts/ci/validate_b24_p12_internal_e2e.py --negative-control
+    - pytest backend/tests/test_b24_p12_internal_e2e.py
+    - --junitxml=artifacts/junit/b24_p12_internal_e2e.xml
+  non_overclaim_boundary: P12 proves internal/local/CI topology substrate composition and does not claim production-topology trust closure.

@@ -170,3 +170,17 @@
   evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
   non_vacuity_status: behavioral_negative_control_registered
   non_overclaim_boundary: P11 proves merge-blocking CI enforcement, not production-topology trust closure.
+- phase_id: B2.4-P12
+  phase_name: Internal E2E Proof Harness
+  load_bearing_invariant: Internal/local/CI composition proof validates committed visibility, state-driven async coordination, worker/subprocess boundary composition, diagnostics/artifact/projection lifecycle, sealed payloads, tenant hygiene, and non-overclaim boundaries.
+  validator_target: scripts/ci/validate_b24_p12_internal_e2e.py
+  workflow_job:
+    - B2.4-P12 Internal E2E Proof Harness
+  make_target: validate-b24-p12-internal-e2e
+  negative_control_command: python scripts/ci/validate_b24_p12_internal_e2e.py --negative-control
+  required_status_name:
+    - B2.4-P12 Internal E2E Proof Harness
+  registry_id: validate-b24-p12-internal-e2e
+  evidence_artifact: artifacts/b24_p11_ci_gate_matrix.json
+  non_vacuity_status: behavioral_negative_control_registered
+  non_overclaim_boundary: P12 proves internal/local/CI topology substrate composition and does not claim production-topology trust closure.

@@ -24,7 +24,7 @@ This directory is the M3 CI governance surface. The registry and matrix are exec
 
 ## Execution Cohorts
 
-- `b2-4-dry-run`: 15 registered gate(s)
+- `b2-4-dry-run`: 16 registered gate(s)
 - `contract-governance`: 25 registered gate(s)
 - `db-backed-governance`: 18 registered gate(s)
 - `m0-m1-m2-preservation`: 3 registered gate(s)
