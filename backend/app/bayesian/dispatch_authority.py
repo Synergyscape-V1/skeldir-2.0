@@ -96,6 +96,17 @@ def claim_fit_dispatch_sync(
     remains default-deny before the database validates the opaque capability.
     """
 
+    conn.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                '00000000-0000-0000-0000-000000000000',
+                true
+            )
+            """
+        )
+    )
     row = (
         conn.execute(
             text(

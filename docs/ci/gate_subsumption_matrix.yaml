@@ -1834,7 +1834,7 @@
   job: B2.4-P12 Internal E2E Proof Harness
   script: scripts/ci/validate_b24_p12_internal_e2e.py
   owning_phase: B2.4-P12
-  protected_invariant: B2.4-P12 internal composition proof, committed visibility, state-driven async coordination, sealed payloads, artifact lifecycle, tenant hygiene, projection read-only semantics, and non-overclaim boundary remain machine-falsifiable.
+  protected_invariant: B2.4-P12 internal composition proof, committed visibility, real worker subprocess boundary, representative worker resource telemetry, state-driven async coordination, sealed payloads, artifact lifecycle, tenant hygiene, projection read-only semantics, and non-overclaim boundary remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
