@@ -3,15 +3,30 @@
   job: B2.5-P1 Contract Authority
   script: scripts/ci/validate_b25_p1_contracts.py
   owning_phase: B2.5-P1
-  protected_invariant: B2.5-P1 contract-only TrustEnvelope authority is strict, versioned, audience-bound, subject-authority-bound, evidence-time-bound, JSON-safe, provider-text-isolated, and adversarially validated.
+  protected_invariant: B2.5-P1 contract-only TrustEnvelope authority is strict, versioned, subject-conditioned, audience-bound, subject-authority-bound, evidence-time-bound, validity-window-bounded, JSON-safe, provider-text-isolated, recursively closed, type-strict, signing-allowlisted, and adversarially validated.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: No B2.4 or existing contract gate validates the new TrustEnvelope contract pack, B2.5 examples, strict field coverage, schema downgrade rejection, raw identifier exclusion, or typed B2.5 negative-control families.
+  subsumption_evidence: No B2.4 or existing contract gate validates the new TrustEnvelope contract pack, B2.5 examples, subject-conditioned required/prohibited field semantics, schema downgrade rejection, raw identifier exclusion, recursive closure, bounded validity, or typed B2.5 negative-control families.
   negative_control_preserved_by: python scripts/ci/validate_b25_p1_contracts.py --negative-control
   local_reproduction_command: make validate-b25-p1-contracts
-  risk_if_removed: Future B2.5 runtime work could emit malformed, audience-portable, mutable-workflow, raw-identifier-bearing, float-money, offset-timestamp, provider-text-authoritative, or schema-downgraded TrustEnvelopes without a merge-blocking signal.
+  risk_if_removed: Future B2.5 runtime work could emit malformed, audience-portable, mutable-workflow, raw-identifier-bearing, fabricated-money, offset-timestamp, far-future-valid, provider-text-authoritative, type-confused, sibling-field-injected, or schema-downgraded TrustEnvelopes without a merge-blocking signal.
+  decision: keep_required
+- gate_id: validate-b25-p1-trust-drift
+  workflow: .github/workflows/b2_5-p1-contracts.yml
+  job: B2.5-P1 Contract Authority
+  script: scripts/ci/validate_b25_p1_trust_drift.py
+  owning_phase: B2.5-P1
+  protected_invariant: B2.5-P1 has no authorized runtime TrustEnvelope model; backend hand-written trust/envelope models are blocked until a generated-model phase is explicitly authorized.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: Existing database schema drift and contract validators do not detect application-model TrustEnvelope drift or unauthorized backend trust model paths.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p1_trust_drift.py --negative-control
+  local_reproduction_command: make validate-b25-p1-trust-drift
+  risk_if_removed: Future developers could add divergent hand-written backend TrustEnvelope models without contract-generation or schema-diff enforcement.
   decision: keep_required
 - gate_id: validate-b24-p1-authority-schema
   workflow: .github/workflows/b2_4-gate-dry-run.yml

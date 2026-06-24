@@ -158,6 +158,9 @@ validate-b24-p12-internal-e2e: ## Run B2.4-P12 internal E2E harness validator wi
 validate-b25-p1-contracts: ## Run B2.5-P1 TrustEnvelope contract authority validator with negative controls
 	@python scripts/ci/validate_b25_p1_contracts.py --negative-control
 
+validate-b25-p1-trust-drift: ## Run B2.5-P1 TrustEnvelope runtime model drift tripwire with negative controls
+	@python scripts/ci/validate_b25_p1_trust_drift.py --negative-control
+
 ops-seed-diagnostics: $(ENV_FILE) ## Seed local-only M4 diagnostic fixtures through the API container image
 	@$(OPS_RUN) scripts/ops/seed_diagnostics.py
 

@@ -8,7 +8,7 @@ import copy
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,7 @@ ERROR_SCHEMA_PATH = CONTRACT_DIR / "error-envelope.schema.json"
 OPENAPI_PATH = CONTRACT_DIR / "trust-api.openapi.yaml"
 SCHEMA_REGISTRY_PATH = CONTRACT_DIR / "schema-version-registry.yaml"
 SUBJECT_REGISTRY_PATH = CONTRACT_DIR / "subject-authority-registry.yaml"
+MAX_VALIDITY_WINDOW_SECONDS = 86400
 
 REQUIRED_FILES = (
     "trust-envelope.v1.yaml",
@@ -43,7 +44,7 @@ REQUIRED_FILES = (
     "schema-version-registry.yaml",
 )
 
-REQUIRED_TRUST_FIELDS = (
+REQUIRED_COMMON_TRUST_FIELDS = (
     "envelope_version",
     "schema_version",
     "canonicalization_version",
@@ -56,14 +57,6 @@ REQUIRED_TRUST_FIELDS = (
     "subject_ref_hash",
     "truth_type",
     "truth_authority",
-    "deterministic_verification_status",
-    "match_verdict_status",
-    "verified_revenue_minor",
-    "currency",
-    "discrepancy_class",
-    "attribution_model",
-    "model_assumption",
-    "causal_status",
     "confidence_metadata",
     "provenance_chain",
     "data_completeness_status",
@@ -85,6 +78,79 @@ REQUIRED_TRUST_FIELDS = (
     "valid_until",
     "untrusted_display_data",
 )
+
+SUBJECT_CONDITIONAL_FIELDS = {
+    "revenue_claim": {
+        "required": {
+            "deterministic_verification_status",
+            "verified_revenue_minor",
+            "currency",
+        },
+        "forbidden": {
+            "match_verdict_status",
+            "discrepancy_class",
+            "attribution_model",
+            "model_assumption",
+            "causal_status",
+        },
+    },
+    "match_verdict": {
+        "required": {"match_verdict_status"},
+        "forbidden": {
+            "deterministic_verification_status",
+            "verified_revenue_minor",
+            "currency",
+            "discrepancy_class",
+            "attribution_model",
+            "model_assumption",
+            "causal_status",
+        },
+    },
+    "attribution_result": {
+        "required": {"attribution_model", "model_assumption", "causal_status"},
+        "forbidden": {
+            "deterministic_verification_status",
+            "match_verdict_status",
+            "verified_revenue_minor",
+            "currency",
+            "discrepancy_class",
+        },
+    },
+    "reconciliation_discrepancy": {
+        "required": {"discrepancy_class"},
+        "forbidden": {
+            "deterministic_verification_status",
+            "match_verdict_status",
+            "verified_revenue_minor",
+            "currency",
+            "attribution_model",
+            "model_assumption",
+            "causal_status",
+        },
+    },
+    "confidence_projection": {
+        "required": set(),
+        "forbidden": {
+            "deterministic_verification_status",
+            "match_verdict_status",
+            "verified_revenue_minor",
+            "currency",
+            "discrepancy_class",
+            "attribution_model",
+            "model_assumption",
+            "causal_status",
+        },
+    },
+}
+
+REQUIRED_EVIDENCE_TEMPORAL_FIELDS = {
+    "evidence_snapshot_at",
+    "evidence_snapshot_hash",
+    "source_read_started_at",
+    "source_read_completed_at",
+    "max_source_read_skew_ms",
+    "snapshot_consistency_status",
+}
 
 REQUIRED_EXAMPLES = (
     "deterministic_only_verified.json",
@@ -108,6 +174,11 @@ REQUIRED_EXAMPLES = (
     "human_workflow_state_rejected.json",
     "subject_authority_rejected.json",
     "mutable_workflow_subject_rejected.json",
+    "revenue_claim_valid_with_verified_revenue_minor.json",
+    "confidence_projection_valid_without_verified_revenue_minor.json",
+    "attribution_result_valid_with_model_assumption_and_causal_status.json",
+    "degraded_confidence_valid_without_fabricated_money.json",
+    "refusal_valid_without_fabricated_money.json",
 )
 
 ERROR_EXAMPLES = {
@@ -121,6 +192,7 @@ ERROR_EXAMPLES = {
     "human_workflow_state_rejected.json",
     "subject_authority_rejected.json",
     "mutable_workflow_subject_rejected.json",
+    "refusal_valid_without_fabricated_money.json",
 }
 
 FORBIDDEN_EXTERNAL_FIELDS = {
@@ -164,6 +236,7 @@ class ContractValidationError(RuntimeError):
 class NegativeControl:
     name: str
     schema_name: str
+    fixture_name: str
     mutate: Callable[[dict[str, Any]], None]
     expected_keyword: str
     expected_path: str
@@ -263,13 +336,67 @@ def _parse_z(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
+def _forbid_present(doc: dict[str, Any], fields: Iterable[str], context: str) -> None:
+    present = sorted(field for field in fields if field in doc)
+    if present:
+        raise ContractValidationError(f"custom:forbidden_field:{context}.{present[0]}")
+
+
 def _custom_trust_checks(doc: dict[str, Any]) -> None:
     subject_authority = doc.get("subject_authority", {})
     for field in ("subject_type", "subject_ref", "subject_ref_hash"):
         if doc.get(field) != subject_authority.get(field):
             raise ContractValidationError(f"custom:subject_mirror:{field}")
 
+    subject_type = doc.get("subject_type")
+    if isinstance(subject_type, str):
+        expected_prefix = f"urn:skeldir:{subject_type}:"
+        if isinstance(doc.get("subject_ref"), str) and not doc["subject_ref"].startswith(
+            expected_prefix
+        ):
+            raise ContractValidationError("custom:subject_ref_prefix:subject_ref")
+
+        conditional = SUBJECT_CONDITIONAL_FIELDS.get(subject_type, {})
+        for field in conditional.get("required", set()):
+            if field not in doc:
+                raise ContractValidationError(
+                    f"custom:subject_required:{subject_type}.{field}"
+                )
+        _forbid_present(
+            doc, conditional.get("forbidden", set()), f"{subject_type}.forbidden"
+        )
+
+    truth_type = doc.get("truth_type")
+    allowed_truth_by_subject = {
+        "revenue_claim": {"deterministic_revenue_verification"},
+        "match_verdict": {"deterministic_match_verdict", "degraded_or_unavailable_truth"},
+        "attribution_result": {"deterministic_attribution"},
+        "reconciliation_discrepancy": {"deterministic_match_verdict"},
+        "confidence_projection": {
+            "confidence_projection_context",
+            "degraded_or_unavailable_truth",
+        },
+    }
+    if (
+        isinstance(subject_type, str)
+        and isinstance(truth_type, str)
+        and truth_type not in allowed_truth_by_subject.get(subject_type, set())
+    ):
+        raise ContractValidationError("custom:truth_subject_pair:truth_type")
+
+    if truth_type == "degraded_or_unavailable_truth":
+        _forbid_present(doc, ("verified_revenue_minor", "currency"), "degraded_truth")
+        if doc.get("fallback_applied") is not True:
+            raise ContractValidationError("custom:degraded_requires_fallback:fallback_applied")
+
     boundary = doc.get("evidence_temporal_boundary", {})
+    missing_boundary = sorted(
+        field for field in REQUIRED_EVIDENCE_TEMPORAL_FIELDS if field not in boundary
+    )
+    if missing_boundary:
+        raise ContractValidationError(
+            f"custom:evidence_boundary_missing:evidence_temporal_boundary.{missing_boundary[0]}"
+        )
     start = boundary.get("source_read_started_at")
     completed = boundary.get("source_read_completed_at")
     if isinstance(start, str) and isinstance(completed, str):
@@ -279,14 +406,23 @@ def _custom_trust_checks(doc: dict[str, Any]) -> None:
             )
 
     if doc.get("valid_until") and doc.get("created_at"):
-        if _parse_z(doc["valid_until"]) <= _parse_z(doc["created_at"]):
+        created_at = _parse_z(doc["created_at"])
+        valid_until = _parse_z(doc["valid_until"])
+        if valid_until <= created_at:
             raise ContractValidationError("custom:temporal_order:valid_until")
+        if valid_until > created_at + timedelta(seconds=MAX_VALIDITY_WINDOW_SECONDS):
+            raise ContractValidationError("custom:validity_window:valid_until")
 
 
 def _validate_doc(
     doc: dict[str, Any], schema_name: str
 ) -> list[tuple[str, str, str]]:
-    schema_path = TRUST_SCHEMA_PATH if schema_name == "trust" else ERROR_SCHEMA_PATH
+    schema_paths = {
+        "trust": TRUST_SCHEMA_PATH,
+        "error": ERROR_SCHEMA_PATH,
+        "signature": CONTRACT_DIR / "signature.schema.json",
+    }
+    schema_path = schema_paths[schema_name]
     errors = sorted(_validator(schema_path).iter_errors(doc), key=str)
     formatted = [_format_error(error) for error in errors]
     if not formatted and schema_name == "trust":
@@ -296,6 +432,38 @@ def _validate_doc(
             _, keyword, path = str(exc).split(":", 2)
             formatted.append((keyword, path, str(exc)))
     return formatted
+
+
+def _trust_fixture(name: str) -> dict[str, Any]:
+    fixtures = {
+        "match": "deterministic_only_verified.json",
+        "revenue": "revenue_claim_valid_with_verified_revenue_minor.json",
+        "confidence": "confidence_projection_valid_without_verified_revenue_minor.json",
+        "attribution": "attribution_result_valid_with_model_assumption_and_causal_status.json",
+        "degraded": "degraded_confidence_valid_without_fabricated_money.json",
+        "refusal": "refusal_valid_without_fabricated_money.json",
+    }
+    if name == "signature":
+        revenue = _read_json(EXAMPLES_DIR / fixtures["revenue"])
+        return {
+            "signature_schema_version": "trust-signature-v1",
+            "signature_hash": revenue["signature_hash"],
+            "signature": revenue["signature"],
+            "signing_algorithm": revenue["signing_algorithm"],
+            "signing_key_id": revenue["signing_key_id"],
+        }
+    if name == "discrepancy":
+        doc = _read_json(EXAMPLES_DIR / fixtures["match"])
+        doc["subject_type"] = "reconciliation_discrepancy"
+        doc["subject_ref"] = "urn:skeldir:reconciliation_discrepancy:rd_001"
+        doc["subject_ref_hash"] = "sha256:" + "5" * 64
+        doc["subject_authority"]["subject_type"] = doc["subject_type"]
+        doc["subject_authority"]["subject_ref"] = doc["subject_ref"]
+        doc["subject_authority"]["subject_ref_hash"] = doc["subject_ref_hash"]
+        doc["discrepancy_class"] = "amount_mismatch"
+        doc.pop("match_verdict_status", None)
+        return doc
+    return _read_json(EXAMPLES_DIR / fixtures[name])
 
 
 def _walk_dicts(value: Any) -> Iterable[dict[str, Any]]:
@@ -350,48 +518,128 @@ def _assign(path: str, value: Any) -> Callable[[dict[str, Any]], None]:
     return lambda doc: _set_path(doc, path, value)
 
 
+def _append_control(
+    controls: list[NegativeControl],
+    name: str,
+    fixture_name: str,
+    mutate: Callable[[dict[str, Any]], None],
+    expected_keyword: str,
+    expected_path: str = "",
+    schema_name: str = "trust",
+) -> None:
+    controls.append(
+        NegativeControl(
+            name=name,
+            schema_name=schema_name,
+            fixture_name=fixture_name,
+            mutate=mutate,
+            expected_keyword=expected_keyword,
+            expected_path=expected_path,
+        )
+    )
+
+
+def _type_confusion_values() -> tuple[Any, ...]:
+    return (None, [], {})
+
+
 def _negative_controls() -> list[NegativeControl]:
-    return [
-        NegativeControl("missing_policy_action_authority", "trust", _remove("policy_action_authority"), "required", ""),
-        NegativeControl("policy_auto_executable_forbidden", "trust", _assign("policy_action_authority.policy_state", "auto_executable_within_policy"), "enum", "policy_action_authority.policy_state"),
-        NegativeControl("missing_schema_version", "trust", _remove("schema_version"), "required", ""),
-        NegativeControl("schema_version_v0", "trust", _assign("schema_version", "v0"), "const", "schema_version"),
-        NegativeControl("unknown_canonicalization_version", "trust", _assign("canonicalization_version", "trust-canonical-json-v999"), "const", "canonicalization_version"),
-        NegativeControl("missing_audience_binding", "trust", _remove("audience_binding"), "required", ""),
-        NegativeControl("raw_client_id_present", "trust", _add_top_level("client_id", "client_raw_1"), "additionalProperties", ""),
-        NegativeControl("raw_tenant_id_present", "trust", _add_top_level("tenant_id", "00000000-0000-0000-0000-000000000001"), "additionalProperties", ""),
-        NegativeControl("missing_subject_authority", "trust", _remove("subject_authority"), "required", ""),
-        NegativeControl("subject_type_exception_record", "trust", _assign("subject_authority.subject_type", "exception_record"), "enum", "subject_authority.subject_type"),
-        NegativeControl("allowed_source_table_exception_records", "trust", _assign("subject_authority.allowed_source_tables", ["b23_exception_records"]), "enum", "subject_authority.allowed_source_tables.0"),
-        NegativeControl("mutable_workflow_subject_true", "trust", _assign("subject_authority.mutable_workflow_subject", True), "const", "subject_authority.mutable_workflow_subject"),
-        NegativeControl("subject_ref_human_review_queue", "trust", _assign("subject_authority.subject_ref", "urn:skeldir:human_review_queue:case_001"), "pattern", "subject_authority.subject_ref"),
-        NegativeControl("missing_evidence_temporal_boundary", "trust", _remove("evidence_temporal_boundary"), "required", ""),
-        NegativeControl("timestamp_minus_offset", "trust", _assign("created_at", "2026-06-24T05:00:02-05:00"), "pattern", "created_at"),
-        NegativeControl("timestamp_plus_zero_offset", "trust", _assign("created_at", "2026-06-24T10:00:02+00:00"), "pattern", "created_at"),
-        NegativeControl("source_completed_before_started", "trust", _assign("evidence_temporal_boundary.source_read_completed_at", "2026-06-24T09:59:59Z"), "temporal_order", "evidence_temporal_boundary.source_read_completed_at"),
-        NegativeControl("missing_benchmark_metadata", "trust", _remove("benchmark_metadata"), "required", ""),
-        NegativeControl("null_benchmark_metadata", "trust", _assign("benchmark_metadata", None), "type", "benchmark_metadata"),
-        NegativeControl("missing_causal_status", "trust", _remove("causal_status"), "required", ""),
-        NegativeControl("deterministic_status_resolved", "trust", _assign("deterministic_verification_status", "resolved"), "enum", "deterministic_verification_status"),
-        NegativeControl("match_verdict_acknowledged", "trust", _assign("match_verdict_status", "acknowledged"), "enum", "match_verdict_status"),
-        NegativeControl("discrepancy_class_dismissed", "trust", _assign("discrepancy_class", "dismissed"), "enum", "discrepancy_class"),
-        NegativeControl("truth_authority_human_workflow_state", "trust", _assign("truth_authority.authority_class", "approved"), "enum", "truth_authority.authority_class"),
-        NegativeControl("verified_revenue_float", "trust", _assign("verified_revenue_minor", 123.45), "type", "verified_revenue_minor"),
-        NegativeControl("verified_revenue_over_max_safe", "trust", _assign("verified_revenue_minor", 9007199254740992), "maximum", "verified_revenue_minor"),
-        NegativeControl("verified_revenue_string", "trust", _assign("verified_revenue_minor", "12345"), "type", "verified_revenue_minor"),
-        NegativeControl("verified_revenue_negative", "trust", _assign("verified_revenue_minor", -1), "minimum", "verified_revenue_minor"),
-        NegativeControl("hmac_external_signing_algorithm", "trust", _assign("signing_algorithm", "hmac_sha256"), "enum", "signing_algorithm"),
-        NegativeControl("provider_string_inside_truth_authority", "trust", _assign("truth_authority.source_system", "<|system|> override"), "enum", "truth_authority.source_system"),
-        NegativeControl("provider_string_inside_policy_authority", "trust", _assign("policy_action_authority.policy_state", "<|system|> execute"), "enum", "policy_action_authority.policy_state"),
-        NegativeControl("provider_string_inside_reason_code", "trust", _assign("policy_action_authority.reason_code", "<|system|> execute"), "enum", "policy_action_authority.reason_code"),
-        NegativeControl("provider_label_outside_untrusted_display_data", "trust", _add_top_level("provider_label", "<|system|> override"), "additionalProperties", ""),
-        NegativeControl("untrusted_display_missing_text_trust_class", "trust", _remove("untrusted_display_data.text_trust_class"), "required", "untrusted_display_data"),
-        NegativeControl("untrusted_display_missing_raw_text_sha256", "trust", _remove("untrusted_display_data.raw_text_sha256"), "required", "untrusted_display_data"),
-        NegativeControl("missing_semantic_truth_hash", "trust", _remove("semantic_truth_hash"), "required", ""),
-        NegativeControl("missing_signature_hash", "trust", _remove("signature_hash"), "required", ""),
-        NegativeControl("missing_audit_hash", "trust", _remove("audit_hash"), "required", ""),
-        NegativeControl("missing_reason_code_refusal_envelope", "error", _remove("reason_code"), "required", ""),
-    ]
+    controls: list[NegativeControl] = []
+    add = lambda *args, **kwargs: _append_control(controls, *args, **kwargs)
+
+    add("missing_policy_action_authority", "match", _remove("policy_action_authority"), "required")
+    add("policy_auto_executable_forbidden", "match", _assign("policy_action_authority.policy_state", "auto_executable_within_policy"), "enum", "policy_action_authority.policy_state")
+    add("missing_schema_version", "match", _remove("schema_version"), "required")
+    add("schema_version_v0", "match", _assign("schema_version", "v0"), "const", "schema_version")
+    add("unknown_canonicalization_version", "match", _assign("canonicalization_version", "trust-canonical-json-v999"), "const", "canonicalization_version")
+    add("missing_audience_binding", "match", _remove("audience_binding"), "required")
+    add("raw_client_id_present", "match", _add_top_level("client_id", "client_raw_1"), "additionalProperties")
+    add("raw_tenant_id_present", "match", _add_top_level("tenant_id", "00000000-0000-0000-0000-000000000001"), "additionalProperties")
+    add("missing_subject_authority", "match", _remove("subject_authority"), "required")
+    add("subject_type_exception_record", "match", _assign("subject_authority.subject_type", "exception_record"), "enum", "subject_authority.subject_type")
+    add("allowed_source_table_exception_records", "match", _assign("subject_authority.allowed_source_tables", ["b23_exception_records"]), "enum", "subject_authority.allowed_source_tables.0")
+    add("mutable_workflow_subject_true", "match", _assign("subject_authority.mutable_workflow_subject", True), "const", "subject_authority.mutable_workflow_subject")
+    add("subject_ref_human_review_queue", "match", _assign("subject_authority.subject_ref", "urn:skeldir:human_review_queue:case_001"), "pattern", "subject_authority.subject_ref")
+    add("missing_evidence_temporal_boundary", "match", _remove("evidence_temporal_boundary"), "required")
+    add("missing_evidence_snapshot_hash", "match", _remove("evidence_temporal_boundary.evidence_snapshot_hash"), "required", "evidence_temporal_boundary")
+    add("missing_max_source_read_skew_ms", "match", _remove("evidence_temporal_boundary.max_source_read_skew_ms"), "required", "evidence_temporal_boundary")
+    add("timestamp_minus_offset", "match", _assign("created_at", "2026-06-24T05:00:02-05:00"), "pattern", "created_at")
+    add("timestamp_plus_zero_offset", "match", _assign("created_at", "2026-06-24T10:00:02+00:00"), "pattern", "created_at")
+    add("source_completed_before_started", "match", _assign("evidence_temporal_boundary.source_read_completed_at", "2026-06-24T09:59:59Z"), "temporal_order", "evidence_temporal_boundary.source_read_completed_at")
+    add("valid_until_equal_created_at", "match", _assign("valid_until", "2026-06-24T10:00:02Z"), "temporal_order", "valid_until")
+    add("valid_until_before_created_at", "match", _assign("valid_until", "2026-06-24T10:00:01Z"), "temporal_order", "valid_until")
+    add("valid_until_100_years_after_created_at", "match", _assign("valid_until", "2126-06-24T10:00:02Z"), "validity_window", "valid_until")
+    add("valid_until_9999_12_31", "match", _assign("valid_until", "9999-12-31T23:59:59Z"), "validity_window", "valid_until")
+    add("missing_benchmark_metadata", "match", _remove("benchmark_metadata"), "required")
+    add("null_benchmark_metadata", "match", _assign("benchmark_metadata", None), "type", "benchmark_metadata")
+    add("revenue_claim_missing_verified_revenue_minor", "revenue", _remove("verified_revenue_minor"), "required")
+    add("revenue_claim_missing_currency", "revenue", _remove("currency"), "required")
+    add("confidence_projection_with_fabricated_verified_revenue_minor", "confidence", lambda doc: (doc.__setitem__("verified_revenue_minor", 12345), doc.__setitem__("currency", "USD")), "not")
+    add("degraded_envelope_with_fabricated_money", "degraded", lambda doc: (doc.__setitem__("verified_revenue_minor", 12345), doc.__setitem__("currency", "USD")), "not")
+    add("refusal_envelope_with_fabricated_money", "refusal", lambda doc: (doc.__setitem__("verified_revenue_minor", 12345), doc.__setitem__("currency", "USD")), "additionalProperties", schema_name="error")
+    add("attribution_result_missing_model_assumption", "attribution", _remove("model_assumption"), "required")
+    add("attribution_result_missing_causal_status", "attribution", _remove("causal_status"), "required")
+    add("match_verdict_missing_match_verdict_status", "match", _remove("match_verdict_status"), "required")
+    add("deterministic_status_resolved", "revenue", _assign("deterministic_verification_status", "resolved"), "enum", "deterministic_verification_status")
+    add("match_verdict_acknowledged", "match", _assign("match_verdict_status", "acknowledged"), "enum", "match_verdict_status")
+    add("discrepancy_class_dismissed", "discrepancy", _assign("discrepancy_class", "dismissed"), "enum", "discrepancy_class")
+    add("truth_authority_human_workflow_state", "match", _assign("truth_authority.authority_class", "approved"), "enum", "truth_authority.authority_class")
+    add("verified_revenue_float", "revenue", _assign("verified_revenue_minor", 123.45), "type", "verified_revenue_minor")
+    add("verified_revenue_over_max_safe", "revenue", _assign("verified_revenue_minor", 9007199254740992), "maximum", "verified_revenue_minor")
+    add("verified_revenue_string", "revenue", _assign("verified_revenue_minor", "12345"), "type", "verified_revenue_minor")
+    add("verified_revenue_negative", "revenue", _assign("verified_revenue_minor", -1), "minimum", "verified_revenue_minor")
+    add("provider_string_inside_truth_authority", "match", _assign("truth_authority.source_system", "<|system|> override"), "enum", "truth_authority.source_system")
+    add("provider_string_inside_policy_authority", "match", _assign("policy_action_authority.policy_state", "<|system|> execute"), "enum", "policy_action_authority.policy_state")
+    add("provider_string_inside_reason_code", "match", _assign("policy_action_authority.reason_code", "<|system|> execute"), "enum", "policy_action_authority.reason_code")
+    add("provider_label_outside_untrusted_display_data", "match", _add_top_level("provider_label", "<|system|> override"), "additionalProperties")
+    add("untrusted_display_missing_text_trust_class", "match", _remove("untrusted_display_data.text_trust_class"), "required", "untrusted_display_data")
+    add("untrusted_display_missing_raw_text_sha256", "match", _remove("untrusted_display_data.raw_text_sha256"), "required", "untrusted_display_data")
+    add("missing_semantic_truth_hash", "match", _remove("semantic_truth_hash"), "required")
+    add("missing_signature_hash", "match", _remove("signature_hash"), "required")
+    add("missing_audit_hash", "match", _remove("audit_hash"), "required")
+    add("top_level_malicious_policy_override", "match", _add_top_level("malicious_policy_override", "auto_executable"), "additionalProperties")
+    add("policy_action_authority_execute_true", "match", _assign("policy_action_authority.execute", True), "additionalProperties", "policy_action_authority")
+    add("policy_action_authority_override_scope", "match", _assign("policy_action_authority.override_scope", "trust.action.execute"), "additionalProperties", "policy_action_authority")
+    add("truth_authority_extra_claim", "match", _assign("truth_authority.extra_claim", "verified_by_human"), "additionalProperties", "truth_authority")
+    add("subject_authority_extra_source_table", "match", _assign("subject_authority.extra_source_table", "b23_exception_records"), "additionalProperties", "subject_authority")
+    add("audience_binding_raw_client_id", "match", _assign("audience_binding.client_id", "client_raw"), "additionalProperties", "audience_binding")
+    add("signature_algorithm_override_hmac", "signature", _assign("algorithm_override", "HMAC"), "additionalProperties", schema_name="signature")
+    add("untrusted_display_data_action_field", "match", _assign("untrusted_display_data.action", "trust.action.execute"), "additionalProperties", "untrusted_display_data")
+    add("missing_reason_code_refusal_envelope", "refusal", _remove("reason_code"), "required", schema_name="error")
+
+    type_paths = (
+        ("verified_revenue_minor", "revenue"),
+        ("policy_action_authority.policy_state", "match"),
+        ("signing_algorithm", "match"),
+        ("schema_version", "match"),
+        ("canonicalization_version", "match"),
+        ("created_at", "match"),
+        ("valid_until", "match"),
+        ("tenant_id_hash", "match"),
+        ("semantic_truth_hash", "match"),
+        ("signature_hash", "match"),
+        ("audit_hash", "match"),
+    )
+    for path, fixture in type_paths:
+        for value in _type_confusion_values():
+            label = type(value).__name__ if value is not None else "null"
+            safe_path = path.replace(".", "_")
+            expected = "const" if path in {"schema_version", "canonicalization_version"} else "type"
+            add(f"type_confusion_{safe_path}_{label}", fixture, _assign(path, value), expected, path)
+    for path, fixture in (("audience_binding", "match"), ("subject_authority", "match")):
+        for value in (None, [], "string"):
+            label = type(value).__name__ if value is not None else "null"
+            add(f"type_confusion_{path}_{label}", fixture, _assign(path, value), "type", path)
+    for value in (None, "false", 0):
+        label = type(value).__name__ if value is not None else "null"
+        add(f"type_confusion_fallback_applied_{label}", "match", _assign("fallback_applied", value), "type", "fallback_applied")
+    for value in ("HMAC", "HS256", "none", "RS128", "custom", ""):
+        add(f"signing_algorithm_forbidden_{value or 'empty'}", "match", _assign("signing_algorithm", value), "enum", "signing_algorithm")
+    for value in _type_confusion_values():
+        label = type(value).__name__ if value is not None else "null"
+        add(f"signing_algorithm_forbidden_{label}", "match", _assign("signing_algorithm", value), "type", "signing_algorithm")
+
+    return controls
 
 
 def validate_contract_tree() -> None:
@@ -407,14 +655,64 @@ def validate_contract_tree() -> None:
 def validate_required_fields() -> None:
     schema = _read_yaml(TRUST_SCHEMA_PATH)
     actual = set(schema.get("required", []))
-    missing = sorted(set(REQUIRED_TRUST_FIELDS) - actual)
-    _require(not missing, f"TrustEnvelope schema missing required fields: {missing}")
-    extras = sorted(actual - set(REQUIRED_TRUST_FIELDS))
-    _require(not extras, f"unexpected top-level required fields: {extras}")
+    missing = sorted(set(REQUIRED_COMMON_TRUST_FIELDS) - actual)
+    _require(not missing, f"TrustEnvelope schema missing common required fields: {missing}")
+    extras = sorted(actual - set(REQUIRED_COMMON_TRUST_FIELDS))
+    _require(not extras, f"unexpected global required fields: {extras}")
     _require(
         schema.get("additionalProperties") is False,
         "TrustEnvelope must set additionalProperties: false",
     )
+    all_of = schema.get("allOf", [])
+    _require(all_of, "TrustEnvelope must declare subject-conditioned allOf rules")
+    schema_text = json.dumps(all_of, sort_keys=True)
+    for subject_type, rules in SUBJECT_CONDITIONAL_FIELDS.items():
+        _require(subject_type in schema_text, f"missing conditional rule for {subject_type}")
+        for field in rules["required"]:
+            _require(
+                field in schema_text,
+                f"missing subject-conditioned required field {subject_type}.{field}",
+            )
+        for field in rules["forbidden"]:
+            _require(
+                field in schema_text,
+                f"missing subject-conditioned forbidden field {subject_type}.{field}",
+            )
+
+
+def validate_evidence_temporal_boundary_contract() -> None:
+    schema = _read_json(CONTRACT_DIR / "evidence-temporal-boundary.schema.json")
+    required = set(schema.get("required", []))
+    missing = sorted(REQUIRED_EVIDENCE_TEMPORAL_FIELDS - required)
+    _require(not missing, f"evidence temporal boundary missing fields: {missing}")
+
+
+def _check_object_closure(value: Any, path: str, failures: list[str]) -> None:
+    if isinstance(value, dict):
+        is_object = value.get("type") == "object"
+        has_extension_map = isinstance(value.get("additionalProperties"), dict)
+        if is_object and not has_extension_map:
+            closed = (
+                value.get("additionalProperties") is False
+                or value.get("unevaluatedProperties") is False
+            )
+            if not closed:
+                failures.append(path)
+        for key, child in value.items():
+            _check_object_closure(child, f"{path}.{key}", failures)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _check_object_closure(child, f"{path}[{index}]", failures)
+
+
+def validate_recursive_schema_closure() -> None:
+    failures: list[str] = []
+    for path in sorted(CONTRACT_DIR.glob("*.json")) + sorted(CONTRACT_DIR.glob("*.yaml")):
+        if path.name in {"schema-version-registry.yaml", "subject-authority-registry.yaml"}:
+            continue
+        schema = _load_schema(path)
+        _check_object_closure(schema, path.name, failures)
+    _require(not failures, f"object schemas not recursively closed: {failures}")
 
 
 def validate_registries() -> None:
@@ -488,11 +786,9 @@ def validate_examples() -> tuple[int, int]:
 
 
 def run_negative_controls() -> int:
-    base = _read_json(EXAMPLES_DIR / "deterministic_only_verified.json")
-    error_base = _read_json(EXAMPLES_DIR / "scope_denied.json")
     count = 0
     for control in _negative_controls():
-        original = error_base if control.schema_name == "error" else base
+        original = _trust_fixture(control.fixture_name)
         mutated = copy.deepcopy(original)
         control.mutate(mutated)
         _require(
@@ -528,19 +824,40 @@ def validate_no_human_workflow_states_in_truth_enums() -> None:
         _require(not overlap, f"{field} permits human workflow states: {overlap}")
 
 
+def validate_signing_algorithm_allowlist() -> int:
+    schema = _read_yaml(TRUST_SCHEMA_PATH)
+    allowed = schema["properties"]["signing_algorithm"]["enum"]
+    _require(
+        allowed == ["ed25519", "rsa_pss_sha256", "ecdsa_p256_sha256"],
+        f"unexpected signing algorithm allowlist: {allowed}",
+    )
+    for algorithm in allowed:
+        doc = _trust_fixture("revenue")
+        doc["signing_algorithm"] = algorithm
+        errors = _validate_doc(doc, "trust")
+        _require(not errors, f"allowed signing algorithm failed: {algorithm}: {errors}")
+    return len(allowed)
+
+
 def validate_all(include_negative: bool) -> None:
     validate_contract_tree()
     validate_required_fields()
+    validate_evidence_temporal_boundary_contract()
+    validate_recursive_schema_closure()
     validate_registries()
     validate_openapi()
     validate_no_human_workflow_states_in_truth_enums()
+    signing_positive_count = validate_signing_algorithm_allowlist()
     trust_count, error_count = validate_examples()
     negative_count = run_negative_controls() if include_negative else 0
     print("B25_P1_CONTRACT_VALIDATION_PASS")
     print(f"required_files={len(REQUIRED_FILES)}")
-    print(f"required_trust_fields={len(REQUIRED_TRUST_FIELDS)}")
+    print(f"required_common_trust_fields={len(REQUIRED_COMMON_TRUST_FIELDS)}")
+    print(f"subject_conditioned_fields={sum(len(v['required']) + len(v['forbidden']) for v in SUBJECT_CONDITIONAL_FIELDS.values())}")
+    print(f"max_validity_window_seconds={MAX_VALIDITY_WINDOW_SECONDS}")
     print(f"trust_examples_validated={trust_count}")
     print(f"error_examples_validated={error_count}")
+    print(f"signing_algorithm_positive_controls_passed={signing_positive_count}")
     if include_negative:
         print(f"typed_negative_controls_passed={negative_count}")
         print("meta_negative_controls=mutation_changed_payload, syntactic_json_valid, expected_keyword_path_checked")

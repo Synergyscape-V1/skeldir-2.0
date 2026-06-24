@@ -158,6 +158,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b24_p11_workflow_vacuity.py",
     "scripts/ci/validate_b24_p12_internal_e2e.py",
     "scripts/ci/validate_b25_p1_contracts.py",
+    "scripts/ci/validate_b25_p1_trust_drift.py",
     "scripts/ci/validate_live_branch_protection.py",
     "scripts/ci/write_b24_p11_command_junit.py",
     "scripts/ci/validate_m5_b24_readiness_design.py",

@@ -114,6 +114,7 @@ paths:
                     type: array
                     items:
                       type: object
+                      additionalProperties: false
         "403":
           $ref: "#/components/responses/TrustError"
   /api/trust/v1/verify:
