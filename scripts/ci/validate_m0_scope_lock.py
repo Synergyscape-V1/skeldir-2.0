@@ -193,6 +193,7 @@ ALLOWED_M0_PATHS = [
     ".github/workflows/m4-operational-runbooks.yml",
     ".github/workflows/b2_4-gate-dry-run.yml",
     ".github/workflows/b2_5-p1-contracts.yml",
+    ".github/workflows/contract-publish.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/r2-data-truth-hardening.yml",
     ".github/actions/setup-postgres-ci/",
