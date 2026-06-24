@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/confidence-metadata.schema.json",
+  "title": "B2.5-P1 ConfidenceMetadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "confidence_status",
+    "confidence_authority",
+    "confidence_score_basis_points",
+    "bayesian_model_type",
+    "bayesian_model_version",
+    "diagnostics_status",
+    "unavailable_reason"
+  ],
+  "properties": {
+    "confidence_status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "unavailable",
+        "degraded",
+        "diagnostics_failed"
+      ]
+    },
+    "confidence_authority": {
+      "type": "string",
+      "enum": [
+        "deterministic_only",
+        "b24_confidence_projection",
+        "explicitly_unavailable"
+      ]
+    },
+    "confidence_score_basis_points": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "bayesian_model_type": {
+      "type": ["string", "null"],
+      "enum": [
+        "pymc_marketing_mmm",
+        "deterministic_only",
+        null
+      ]
+    },
+    "bayesian_model_version": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+    },
+    "diagnostics_status": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "not_applicable",
+        "unavailable"
+      ]
+    },
+    "unavailable_reason": {
+      "type": ["string", "null"],
+      "enum": [
+        "cold_start_insufficient_data",
+        "diagnostics_failed",
+        "artifact_pruned",
+        "source_snapshot_stale",
+        "model_not_fit",
+        "not_applicable",
+        null
+      ]
+    }
+  }
+}

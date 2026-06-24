@@ -9,6 +9,8 @@ from pathlib import Path
 
 INDEX_PATH = Path("docs/forensics/INDEX.md")
 EVIDENCE_ROOT = Path("docs/forensics")
+INDEX_PATH_POSIX = INDEX_PATH.as_posix()
+EVIDENCE_ROOT_POSIX = EVIDENCE_ROOT.as_posix()
 PLACEHOLDER_TOKENS = ("pending", "local-uncommitted", "ci-pending")
 B057_PHASE_TAG = "B0.5.7"
 GIT_FETCH_ATTEMPTS = 4
@@ -71,7 +73,7 @@ def changed_index_rows() -> list[str]:
         base_ref = None
 
     rows: list[str] = []
-    for line in git_diff(base_ref, str(INDEX_PATH)):
+    for line in git_diff(base_ref, INDEX_PATH_POSIX):
         if not line.startswith("+|"):
             continue
         # Skip diff metadata for files
@@ -135,19 +137,19 @@ def main() -> int:
         return 1
 
     index_text = INDEX_PATH.read_text(encoding="utf-8")
-    modified = set(changed_files())
+    modified = {Path(path).as_posix() for path in changed_files()}
 
     evidence_changed = [
         path
         for path in modified
-        if path.startswith(str(EVIDENCE_ROOT))
+        if path.startswith(f"{EVIDENCE_ROOT_POSIX}/")
         and path.lower().endswith(".md")
-        and Path(path) != INDEX_PATH
+        and path != INDEX_PATH_POSIX
     ]
 
     errors: list[str] = []
 
-    if evidence_changed and str(INDEX_PATH) not in modified:
+    if evidence_changed and INDEX_PATH_POSIX not in modified:
         errors.append(
             "docs/forensics/INDEX.md must be updated when evidence packs change."
         )

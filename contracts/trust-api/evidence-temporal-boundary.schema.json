@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/evidence-temporal-boundary.schema.json",
+  "title": "B2.5-P1 EvidenceTemporalBoundary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidence_snapshot_at",
+    "source_read_started_at",
+    "source_read_completed_at",
+    "data_freshness_seconds",
+    "staleness_status"
+  ],
+  "properties": {
+    "evidence_snapshot_at": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+    },
+    "source_read_started_at": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+    },
+    "source_read_completed_at": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+    },
+    "data_freshness_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 31536000
+    },
+    "staleness_status": {
+      "type": "string",
+      "enum": [
+        "current",
+        "stale_degraded",
+        "unavailable"
+      ]
+    }
+  }
+}

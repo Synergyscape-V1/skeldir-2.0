@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/text-disposition.schema.json",
+  "title": "B2.5-P1 UntrustedDisplayData",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "text_trust_class",
+    "raw_text_sha256",
+    "display_text",
+    "display_transform",
+    "text_disposition_version"
+  ],
+  "properties": {
+    "text_trust_class": {
+      "type": "string",
+      "enum": [
+        "none",
+        "provider_controlled_quarantined",
+        "operator_controlled_safe_label"
+      ]
+    },
+    "raw_text_sha256": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/nullableSha256Tagged"
+    },
+    "display_text": {
+      "type": ["string", "null"],
+      "maxLength": 512
+    },
+    "display_transform": {
+      "type": "string",
+      "enum": [
+        "none",
+        "escaped_display_only",
+        "redacted"
+      ]
+    },
+    "text_disposition_version": {
+      "type": "string",
+      "const": "text-disposition-v1"
+    }
+  }
+}

@@ -1,0 +1,176 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Trust API Contract Authority
+  version: 1.0.0
+  description: >
+    B2.5-P1 contract-only authority for future TrustEnvelope read, query,
+    verification, and JWKS surfaces. This file defines future contract shape
+    only; it does not authorize runtime routes, signing services, agent auth,
+    MCP adapter behavior, or autonomous action behavior.
+servers:
+  - url: https://api.skeldir.example
+paths:
+  /api/trust/v1/envelopes/{subject_type}/{subject_ref}:
+    get:
+      operationId: getTrustEnvelope
+      summary: Future read surface for one TrustEnvelope
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subject_type
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/SubjectType"
+        - name: subject_ref
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Schema-bound TrustEnvelope.
+          content:
+            application/json:
+              schema:
+                $ref: "trust-envelope.v1.yaml"
+        "400":
+          $ref: "#/components/responses/TrustError"
+        "403":
+          $ref: "#/components/responses/TrustError"
+  /api/trust/v1/envelopes/query:
+    post:
+      operationId: queryTrustEnvelopes
+      summary: Future bounded query surface for TrustEnvelope lookup
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - subject_type
+                - subject_ref_hash
+              properties:
+                subject_type:
+                  $ref: "#/components/schemas/SubjectType"
+                subject_ref_hash:
+                  type: string
+                  pattern: ^sha256:[0-9a-f]{64}$
+      responses:
+        "200":
+          description: Query results.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - envelopes
+                properties:
+                  envelopes:
+                    type: array
+                    items:
+                      $ref: "trust-envelope.v1.yaml"
+        "400":
+          $ref: "#/components/responses/TrustError"
+        "403":
+          $ref: "#/components/responses/TrustError"
+  /api/trust/v1/keys/jwks:
+    get:
+      operationId: getTrustJwks
+      summary: Future public verification key surface
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Future JWKS response.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - keys
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+        "403":
+          $ref: "#/components/responses/TrustError"
+  /api/trust/v1/verify:
+    post:
+      operationId: verifyTrustEnvelope
+      summary: Future verification surface for a supplied TrustEnvelope
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "trust-envelope.v1.yaml"
+      responses:
+        "200":
+          description: Future verification result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - verification_status
+                  - schema_version
+                  - canonicalization_version
+                properties:
+                  verification_status:
+                    type: string
+                    enum:
+                      - verified
+                      - rejected
+                  schema_version:
+                    type: string
+                  canonicalization_version:
+                    type: string
+        "400":
+          $ref: "#/components/responses/TrustError"
+components:
+  responses:
+    TrustError:
+      description: Typed Trust API refusal or validation error.
+      content:
+        application/json:
+          schema:
+            $ref: "error-envelope.schema.json"
+  schemas:
+    SubjectType:
+      type: string
+      enum:
+        - revenue_claim
+        - match_verdict
+        - attribution_result
+        - reconciliation_discrepancy
+        - confidence_projection

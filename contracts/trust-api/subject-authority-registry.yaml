@@ -1,0 +1,56 @@
+registry_version: b25-p1-subject-authority-registry-v1
+allowed_subject_types:
+  revenue_claim:
+    source_authority_class: deterministic_machine_fact
+    allowed_source_tables:
+      - b23_revenue_events
+      - webhook_ingress_identities
+  match_verdict:
+    source_authority_class: deterministic_machine_fact
+    allowed_source_tables:
+      - b23_match_verdicts
+      - b23_revenue_events
+  attribution_result:
+    source_authority_class: deterministic_projection
+    allowed_source_tables:
+      - attribution_allocations
+      - b23_match_verdicts
+  reconciliation_discrepancy:
+    source_authority_class: deterministic_machine_fact
+    allowed_source_tables:
+      - b23_match_verdicts
+      - b23_revenue_events
+  confidence_projection:
+    source_authority_class: confidence_metadata_projection
+    allowed_source_tables:
+      - bayesian_model_fits
+      - bayesian_artifacts
+      - b23_match_verdicts
+forbidden_subject_types:
+  - exception_record
+  - ticket
+  - review_case
+  - investigation
+  - budget_action
+  - human_workflow
+  - manual_resolution
+forbidden_authoritative_tables:
+  - b23_exception_records
+  - human_review_queue
+  - budget_review_jobs
+  - investigation_tickets
+  - case_management_records
+  - manual_resolution_records
+mutable_workflow_subject_allowed: false
+external_identifier_policy:
+  required_hash_fields:
+    - tenant_id_hash
+    - audience_binding.audience_id_hash
+    - subject_ref_hash
+  forbidden_external_fields:
+    - tenant_id
+    - client_id
+    - agent_client_id
+    - user_id
+    - service_token_id
+    - raw_account_id

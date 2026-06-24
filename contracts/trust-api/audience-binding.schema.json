@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/audience-binding.schema.json",
+  "title": "B2.5-P1 AudienceBinding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "audience_mode",
+    "audience_id_hash",
+    "audience_scope",
+    "presentation_policy",
+    "replay_context_required"
+  ],
+  "properties": {
+    "audience_mode": {
+      "type": "string",
+      "enum": [
+        "tenant_internal",
+        "agent_client_bound",
+        "external_verifier_bound",
+        "public_verification_only"
+      ]
+    },
+    "audience_id_hash": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+    },
+    "audience_scope": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "trust.envelope.read",
+          "trust.envelope.verify",
+          "trust.keys.read",
+          "trust.export.create_limited"
+        ]
+      }
+    },
+    "presentation_policy": {
+      "type": "string",
+      "enum": [
+        "bearer_not_authority",
+        "bound_presenter_required",
+        "verification_only"
+      ]
+    },
+    "replay_context_required": {
+      "type": "boolean"
+    }
+  }
+}

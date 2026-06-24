@@ -1,0 +1,44 @@
+name: B2.5-P1 Contract Authority
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "contracts/trust-api/**"
+      - "scripts/ci/validate_b25_p1_contracts.py"
+      - "Makefile"
+      - ".github/workflows/b2_5-p1-contracts.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "contracts/trust-api/**"
+      - "scripts/ci/validate_b25_p1_contracts.py"
+      - "Makefile"
+      - ".github/workflows/b2_5-p1-contracts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b25-p1-contract-authority:
+    name: B2.5-P1 Contract Authority
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validator dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "pyyaml>=6.0" "jsonschema>=4.25.0"
+
+      - name: Validate B2.5-P1 contract authority and negative controls
+        run: make validate-b25-p1-contracts
