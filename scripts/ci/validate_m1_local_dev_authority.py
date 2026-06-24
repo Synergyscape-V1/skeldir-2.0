@@ -137,6 +137,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/run_m2_test_feedback_loop.sh",
     "scripts/ci/validate_m2_test_feedback_loop.py",
     "scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py",
+    "scripts/ci/enforce_forensics_index.py",
     "scripts/ci/enforce_postgres_only.py",
     "scripts/ci/run_ci_governance_cohort.py",
     "scripts/ci/phase2_schema_closure_gate.py",

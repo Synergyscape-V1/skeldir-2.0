@@ -174,6 +174,7 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/validate_m6_llm_boundary.py",
     "scripts/ci/validate_m7_b24_readiness.py",
     "scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py",
+    "scripts/ci/enforce_forensics_index.py",
     "scripts/ci/run_ci_governance_cohort.py",
     "scripts/ci/enforce_boundary.sh",
     "scripts/ci/enforce_postgres_only.py",
