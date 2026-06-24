@@ -5,7 +5,10 @@ on:
     branches:
       - main
     paths:
-      - 'contracts/**/*.yaml'
+      - 'contracts/openapi/v1/**/*.yaml'
+
+permissions:
+  contents: write
 
 jobs:
   tag-release:
@@ -21,11 +24,23 @@ jobs:
       - name: Get contract version
         id: version
         run: |
-          VERSION=$(grep -A 2 "^info:" contracts/openapi/v1/auth.yaml | grep "version:" | awk '{print $2}' | tr -d '"')
+          CONTRACT_FILE="contracts/openapi/v1/auth.yaml"
+          if [ ! -f "$CONTRACT_FILE" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Legacy contract publish skipped: $CONTRACT_FILE not found"
+            exit 0
+          fi
+          VERSION=$(grep -A 2 "^info:" "$CONTRACT_FILE" | grep "version:" | awk '{print $2}' | tr -d '"')
+          if [ -z "$VERSION" ]; then
+            echo "Contract version missing from $CONTRACT_FILE" >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "publish=true" >> "$GITHUB_OUTPUT"
           echo "Contract version: $VERSION"
       
       - name: Create git tag
+        if: steps.version.outputs.publish == 'true'
         run: |
           TAG="contracts-v${{ steps.version.outputs.version }}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -39,6 +54,7 @@ jobs:
           fi
       
       - name: Create GitHub Release
+        if: steps.version.outputs.publish == 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: contracts-v${{ steps.version.outputs.version }}
@@ -68,4 +84,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
