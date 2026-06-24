@@ -165,6 +165,7 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/validate_m0_scope_lock.py",
     "scripts/ci/validate_m1_local_dev_authority.py",
     "scripts/ci/validate_b25_p1_contracts.py",
+    "scripts/ci/validate_b25_p1_trust_drift.py",
     "scripts/ci/run_m1_onboarding_bootstrap.sh",
     "scripts/ci/validate_m2_test_feedback_loop.py",
     "scripts/ci/run_m2_test_feedback_loop.sh",

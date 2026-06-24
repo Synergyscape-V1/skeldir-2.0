@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Block unauthorized B2.5-P1 runtime TrustEnvelope model drift.
+
+B2.5-P1 is contract authority only. Until a later phase authorizes generated
+application models, backend hand-written TrustEnvelope schemas/models are a
+semantic drift risk and must fail CI.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+PROTECTED_PATH_PATTERNS = (
+    "backend/**/trust*.py",
+    "backend/**/trust_envelope*.py",
+    "backend/**/schemas/*trust*.py",
+    "backend/**/schemas/*envelope*.py",
+    "backend/**/models/*trust*.py",
+    "backend/**/models/*envelope*.py",
+)
+
+PYDANTIC_TRUST_MODEL_PATTERNS = (
+    re.compile(r"(?m)^class\s+TrustEnvelope\b.*\bBaseModel\b"),
+    re.compile(r"(?m)^class\s+\w*Trust\w*Envelope\w*\b.*\bBaseModel\b"),
+    re.compile(r"(?m)^class\s+\w*Envelope\w*\b.*\bBaseModel\b"),
+)
+
+ALLOWED_NON_RUNTIME_PATHS = (
+    "backend/app/bayesian/snapshot_supersession.py",
+)
+
+
+@dataclass(frozen=True)
+class DriftViolation:
+    path: str
+    reason: str
+
+
+def _norm(path: Path | str) -> str:
+    return str(path).replace("\\", "/")
+
+
+def _is_allowed(path: str) -> bool:
+    return path in ALLOWED_NON_RUNTIME_PATHS
+
+
+def _matches_protected_path(path: str) -> bool:
+    return any(fnmatch.fnmatch(path, pattern) for pattern in PROTECTED_PATH_PATTERNS)
+
+
+def inspect_file(path: str, text: str) -> list[DriftViolation]:
+    if _is_allowed(path):
+        return []
+    violations: list[DriftViolation] = []
+    if _matches_protected_path(path):
+        violations.append(
+            DriftViolation(path, "backend TrustEnvelope/trust model path is forbidden in B2.5-P1")
+        )
+    lowered = text.lower()
+    if "trustenvelope" in lowered or "trust envelope" in lowered:
+        for pattern in PYDANTIC_TRUST_MODEL_PATTERNS:
+            if pattern.search(text):
+                violations.append(
+                    DriftViolation(path, "hand-written Pydantic TrustEnvelope model is forbidden in B2.5-P1")
+                )
+                break
+    return violations
+
+
+def scan_tree() -> list[DriftViolation]:
+    violations: list[DriftViolation] = []
+    for path in (ROOT / "backend").rglob("*.py"):
+        rel = _norm(path.relative_to(ROOT))
+        text = path.read_text(encoding="utf-8", errors="replace")
+        violations.extend(inspect_file(rel, text))
+    return violations
+
+
+def run_negative_controls() -> int:
+    controls = {
+        "backend/app/schemas/trust.py": "from pydantic import BaseModel\nclass TrustEnvelope(BaseModel):\n    pass\n",
+        "backend/app/schemas/trust_envelope.py": "from pydantic import BaseModel\nclass TrustEnvelope(BaseModel):\n    pass\n",
+        "backend/app/models/trust_runtime.py": "from pydantic import BaseModel\nclass RuntimeTrustEnvelope(BaseModel):\n    pass\n",
+        "backend/app/models/payment_envelope.py": "from pydantic import BaseModel\nclass TrustEnvelope(BaseModel):\n    pass\n",
+    }
+    passed = 0
+    for path, text in controls.items():
+        violations = inspect_file(path, text)
+        if not violations:
+            raise RuntimeError(f"negative control did not fail: {path}")
+        passed += 1
+    return passed
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--negative-control", action="store_true")
+    args = parser.parse_args()
+
+    try:
+        violations = scan_tree()
+        if violations:
+            for violation in violations:
+                print(f"B25_P1_TRUST_DRIFT_VIOLATION {violation.path}: {violation.reason}")
+            return 1
+        print("B25_P1_TRUST_DRIFT_VALIDATION_PASS")
+        print(f"protected_path_patterns={len(PROTECTED_PATH_PATTERNS)}")
+        if args.negative_control:
+            count = run_negative_controls()
+            print(f"drift_negative_controls_passed={count}")
+            print("meta_negative_controls=unauthorized_backend_trust_paths_and_pydantic_models_fail")
+        return 0
+    except RuntimeError as exc:
+        print(f"B25_P1_TRUST_DRIFT_VALIDATION_FAIL: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

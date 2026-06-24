@@ -6,15 +6,29 @@ on:
     paths:
       - "contracts/trust-api/**"
       - "scripts/ci/validate_b25_p1_contracts.py"
+      - "scripts/ci/validate_b25_p1_trust_drift.py"
       - "Makefile"
       - ".github/workflows/b2_5-p1-contracts.yml"
+      - "backend/**/trust*.py"
+      - "backend/**/trust_envelope*.py"
+      - "backend/**/schemas/*trust*.py"
+      - "backend/**/schemas/*envelope*.py"
+      - "backend/**/models/*trust*.py"
+      - "backend/**/models/*envelope*.py"
   pull_request:
     branches: [main, develop]
     paths:
       - "contracts/trust-api/**"
       - "scripts/ci/validate_b25_p1_contracts.py"
+      - "scripts/ci/validate_b25_p1_trust_drift.py"
       - "Makefile"
       - ".github/workflows/b2_5-p1-contracts.yml"
+      - "backend/**/trust*.py"
+      - "backend/**/trust_envelope*.py"
+      - "backend/**/schemas/*trust*.py"
+      - "backend/**/schemas/*envelope*.py"
+      - "backend/**/models/*trust*.py"
+      - "backend/**/models/*envelope*.py"
   workflow_dispatch:
 
 permissions:
@@ -42,3 +56,6 @@ jobs:
 
       - name: Validate B2.5-P1 contract authority and negative controls
         run: make validate-b25-p1-contracts
+
+      - name: Validate B2.5-P1 TrustEnvelope drift tripwire
+        run: make validate-b25-p1-trust-drift

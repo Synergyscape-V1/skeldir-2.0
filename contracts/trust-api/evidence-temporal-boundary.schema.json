@@ -6,8 +6,11 @@
   "additionalProperties": false,
   "required": [
     "evidence_snapshot_at",
+    "evidence_snapshot_hash",
     "source_read_started_at",
     "source_read_completed_at",
+    "max_source_read_skew_ms",
+    "snapshot_consistency_status",
     "data_freshness_seconds",
     "staleness_status"
   ],
@@ -30,6 +33,22 @@
       "type": "string",
       "enum": [
         "current",
+        "stale_degraded",
+        "unavailable"
+      ]
+    },
+    "evidence_snapshot_hash": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+    },
+    "max_source_read_skew_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "snapshot_consistency_status": {
+      "type": "string",
+      "enum": [
+        "consistent",
         "stale_degraded",
         "unavailable"
       ]
