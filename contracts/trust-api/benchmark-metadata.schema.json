@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/benchmark-metadata.schema.json",
+  "title": "B2.5-P1 BenchmarkMetadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "benchmark_status",
+    "benchmark_authority",
+    "benchmark_ref",
+    "benchmark_hash",
+    "unavailable_reason"
+  ],
+  "properties": {
+    "benchmark_status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "unavailable",
+        "degraded"
+      ]
+    },
+    "benchmark_authority": {
+      "type": "string",
+      "enum": [
+        "tenant_longitudinal",
+        "privacy_safe_aggregate",
+        "explicitly_unavailable"
+      ]
+    },
+    "benchmark_ref": {
+      "type": ["string", "null"],
+      "pattern": "^urn:skeldir:benchmark:[A-Za-z0-9._:-]+$"
+    },
+    "benchmark_hash": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/nullableSha256Tagged"
+    },
+    "unavailable_reason": {
+      "type": ["string", "null"],
+      "enum": [
+        "benchmark_source_not_configured",
+        "privacy_threshold_not_met",
+        "source_snapshot_stale",
+        "not_applicable",
+        null
+      ]
+    }
+  }
+}

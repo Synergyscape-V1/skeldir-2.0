@@ -1,0 +1,24 @@
+registry_version: b25-p1-schema-version-registry-v1
+supported_schema_versions:
+  - schema_version: trust-envelope-schema-v1
+    envelope_version: trust-envelope-v1
+    status: supported
+    schema_file: trust-envelope.v1.yaml
+supported_canonicalization_versions:
+  - canonicalization_version: trust-canonical-json-v1
+    status: supported
+    rule: JSON objects sorted by UTF-8 key bytes, no floats, no NaN/Infinity, UTC Z-only timestamps, and v1 JSON-safe integer bounds.
+supported_signature_schema_versions:
+  - signature_schema_version: trust-signature-v1
+    status: supported
+    schema_file: signature.schema.json
+deprecated_schema_versions: []
+forbidden_schema_versions:
+  - v0
+  - trust-envelope-schema-v0
+failure_semantics:
+  missing_schema_version: schema_version_unsupported
+  unknown_schema_version: schema_version_unsupported
+  deprecated_schema_version: schema_version_unsupported
+  missing_canonicalization_version: canonicalization_version_unsupported
+  unknown_canonicalization_version: canonicalization_version_unsupported

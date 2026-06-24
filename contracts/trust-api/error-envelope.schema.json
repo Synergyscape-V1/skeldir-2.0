@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/error-envelope.schema.json",
+  "title": "B2.5-P1 TrustErrorEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "error_envelope_version",
+    "schema_version",
+    "error_type",
+    "reason_code",
+    "tenant_id_hash",
+    "audience_binding",
+    "created_at",
+    "audit_ref",
+    "audit_hash"
+  ],
+  "properties": {
+    "error_envelope_version": {
+      "type": "string",
+      "const": "trust-error-envelope-v1"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "trust-envelope-schema-v1"
+    },
+    "error_type": {
+      "type": "string",
+      "enum": [
+        "scope_denied",
+        "replay_rejected",
+        "schema_version_unsupported",
+        "schema_downgrade_rejected",
+        "canonical_timestamp_rejected",
+        "human_workflow_state_rejected",
+        "subject_authority_rejected",
+        "mutable_workflow_subject_rejected",
+        "money_source_not_authoritative",
+        "money_amount_exceeds_json_safe_integer",
+        "validation_failed"
+      ]
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "scope_denied",
+        "replay_rejected",
+        "schema_version_unsupported",
+        "schema_downgrade_rejected",
+        "canonical_timestamp_rejected",
+        "human_workflow_state_rejected",
+        "subject_authority_rejected",
+        "mutable_workflow_subject_rejected",
+        "money_source_not_authoritative",
+        "money_amount_exceeds_json_safe_integer",
+        "validation_failed"
+      ]
+    },
+    "tenant_id_hash": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+    },
+    "audience_binding": {
+      "$ref": "audience-binding.schema.json"
+    },
+    "created_at": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+    },
+    "audit_ref": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/auditRef"
+    },
+    "audit_hash": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+    }
+  }
+}

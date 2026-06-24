@@ -1,3 +1,18 @@
+- gate_id: validate-b25-p1-contracts
+  workflow: .github/workflows/b2_5-p1-contracts.yml
+  job: B2.5-P1 Contract Authority
+  script: scripts/ci/validate_b25_p1_contracts.py
+  owning_phase: B2.5-P1
+  protected_invariant: B2.5-P1 contract-only TrustEnvelope authority is strict, versioned, audience-bound, subject-authority-bound, evidence-time-bound, JSON-safe, provider-text-isolated, and adversarially validated.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: No B2.4 or existing contract gate validates the new TrustEnvelope contract pack, B2.5 examples, strict field coverage, schema downgrade rejection, raw identifier exclusion, or typed B2.5 negative-control families.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p1_contracts.py --negative-control
+  local_reproduction_command: make validate-b25-p1-contracts
+  risk_if_removed: Future B2.5 runtime work could emit malformed, audience-portable, mutable-workflow, raw-identifier-bearing, float-money, offset-timestamp, provider-text-authoritative, or schema-downgraded TrustEnvelopes without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-b24-p1-authority-schema
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run

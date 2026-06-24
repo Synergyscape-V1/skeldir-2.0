@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/subject-authority.schema.json",
+  "title": "B2.5-P1 SubjectAuthority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject_type",
+    "subject_ref",
+    "subject_ref_hash",
+    "source_authority_class",
+    "allowed_source_tables",
+    "mutable_workflow_subject"
+  ],
+  "properties": {
+    "subject_type": {
+      "type": "string",
+      "enum": [
+        "revenue_claim",
+        "match_verdict",
+        "attribution_result",
+        "reconciliation_discrepancy",
+        "confidence_projection"
+      ]
+    },
+    "subject_ref": {
+      "type": "string",
+      "pattern": "^urn:skeldir:(revenue_claim|match_verdict|attribution_result|reconciliation_discrepancy|confidence_projection):[A-Za-z0-9._:-]+$"
+    },
+    "subject_ref_hash": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+    },
+    "source_authority_class": {
+      "type": "string",
+      "enum": [
+        "deterministic_machine_fact",
+        "deterministic_projection",
+        "confidence_metadata_projection",
+        "refusal_or_degraded_state"
+      ]
+    },
+    "allowed_source_tables": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "b23_match_verdicts",
+          "b23_revenue_events",
+          "webhook_ingress_identities",
+          "attribution_allocations",
+          "bayesian_model_fits",
+          "bayesian_artifacts"
+        ]
+      }
+    },
+    "mutable_workflow_subject": {
+      "const": false
+    }
+  }
+}

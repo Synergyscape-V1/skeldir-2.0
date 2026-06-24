@@ -1,3 +1,25 @@
+- id: validate-b25-p1-contracts
+  path: scripts/ci/validate_b25_p1_contracts.py
+  status: required
+  owning_phase: B2.5-P1
+  protected_invariant: B2.5-P1 TrustEnvelope contract authority, schema-version fail-closed behavior, audience binding, subject authority, evidence temporal boundary, JSON-safe integer money, provider-text isolation, refusal/error envelopes, example corpus, and typed negative controls remain machine-falsifiable.
+  command: python scripts/ci/validate_b25_p1_contracts.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p1-contracts.yml
+  workflow_job_name: B2.5-P1 Contract Authority
+  local_reproduction_command: make validate-b25-p1-contracts
+  expected_failure_meaning: B2.5-P1 contract authority is missing, under-required, version-loose, audience-unbound, mutable-workflow-authoritative, raw-identifier-leaky, float/unsafe-money permissive, provider-text laundering, or lacks non-vacuous negative controls.
+  first_diagnostic_command: python scripts/ci/validate_b25_p1_contracts.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-contract-authority
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-b24-p1-authority-schema
   path: scripts/ci/validate_b24_p1_authority_schema.py
   status: required

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/signature.schema.json",
+  "title": "B2.5-P1 SignatureMetadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "signature_schema_version",
+    "signature_hash",
+    "signature",
+    "signing_algorithm",
+    "signing_key_id"
+  ],
+  "properties": {
+    "signature_schema_version": {
+      "type": "string",
+      "const": "trust-signature-v1"
+    },
+    "signature_hash": {
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 2048
+    },
+    "signing_algorithm": {
+      "type": "string",
+      "enum": [
+        "ed25519",
+        "rsa_pss_sha256",
+        "ecdsa_p256_sha256"
+      ]
+    },
+    "signing_key_id": {
+      "type": "string",
+      "pattern": "^kid:[A-Za-z0-9._:-]{8,128}$"
+    }
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/provenance-chain.schema.json",
+  "title": "B2.5-P1 ProvenanceChain",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "provenance_type",
+      "authority_table",
+      "source_ref",
+      "source_ref_hash",
+      "source_snapshot_hash",
+      "observed_at",
+      "display_metadata"
+    ],
+    "properties": {
+      "provenance_type": {
+        "type": "string",
+        "enum": [
+          "webhook_signature",
+          "revenue_event",
+          "match_verdict",
+          "attribution_allocation",
+          "bayesian_fit",
+          "bayesian_artifact",
+          "source_snapshot",
+          "policy_decision"
+        ]
+      },
+      "authority_table": {
+        "type": "string",
+        "enum": [
+          "webhook_ingress_identities",
+          "b23_revenue_events",
+          "b23_match_verdicts",
+          "attribution_allocations",
+          "bayesian_model_fits",
+          "bayesian_artifacts"
+        ]
+      },
+      "source_ref": {
+        "type": "string",
+        "pattern": "^urn:skeldir:[A-Za-z0-9._:-]+$"
+      },
+      "source_ref_hash": {
+        "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+      },
+      "source_snapshot_hash": {
+        "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+      },
+      "observed_at": {
+        "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+      },
+      "display_metadata": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text_trust_class",
+          "raw_text_sha256",
+          "display_transform"
+        ],
+        "properties": {
+          "text_trust_class": {
+            "type": "string",
+            "enum": [
+              "none",
+              "provider_controlled_quarantined",
+              "operator_controlled_safe_label"
+            ]
+          },
+          "raw_text_sha256": {
+            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/nullableSha256Tagged"
+          },
+          "display_transform": {
+            "type": "string",
+            "enum": [
+              "none",
+              "escaped_display_only",
+              "redacted"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
