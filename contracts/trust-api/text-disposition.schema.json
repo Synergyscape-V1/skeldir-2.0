@@ -17,13 +17,65 @@
       "enum": [
         "none",
         "provider_controlled_quarantined",
-        "operator_controlled_safe_label"
+        "operator_controlled_safe_label",
+        "machine_authority_enum",
+        "machine_authority_code",
+        "safe_system_enum",
+        "opaque_reference",
+        "untrusted_display_label",
+        "quarantined_text_hash",
+        "redacted_text"
+      ]
+    },
+    "content_safety_flags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "safe_printable",
+          "overlong",
+          "control_characters",
+          "null_byte",
+          "bidi_control_characters",
+          "markup_or_script",
+          "known_machine_instruction_indicators",
+          "json_xml_markdown_delimiter_breakout",
+          "tool_call_syntax",
+          "unknown_binary_or_invalid_encoding"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "disposition_action": {
+      "type": "string",
+      "enum": [
+        "reject_or_refuse",
+        "preserve_as_safe_system_value",
+        "emit_untrusted_display_label",
+        "replace_with_keyed_opaque_reference",
+        "omit_raw_text_and_emit_quarantine_metadata",
+        "redact_with_reason"
       ]
     },
     "raw_text_sha256": {
       "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/nullableSha256Tagged"
     },
+    "raw_text_hmac": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "display_text": {
+      "type": ["string", "null"],
+      "maxLength": 512
+    },
+    "normalized_display_text": {
       "type": ["string", "null"],
       "maxLength": 512
     },
@@ -33,6 +85,68 @@
         "none",
         "escaped_display_only",
         "redacted"
+      ]
+    },
+    "opaque_reference_hash": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "opaque_reference_metadata": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "hash_algorithm",
+        "hash_domain",
+        "key_scope",
+        "key_version",
+        "provider",
+        "source_field_path"
+      ],
+      "properties": {
+        "hash_algorithm": {
+          "type": "string",
+          "const": "hmac-sha256"
+        },
+        "hash_domain": {
+          "type": "string",
+          "const": "opaque_reference_v1"
+        },
+        "key_scope": {
+          "type": "string",
+          "enum": ["tenant_scoped", "trust_scope"]
+        },
+        "key_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "source_field_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "redaction_reason": {
+      "type": ["string", "null"],
+      "enum": [
+        "provider_text_forbidden_in_machine_authority",
+        "field_policy_rejected",
+        "unsafe_untrusted_text_quarantined",
+        "field_policy_redacted",
+        null
       ]
     },
     "text_disposition_version": {

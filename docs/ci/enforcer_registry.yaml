@@ -1,3 +1,25 @@
+- id: validate-b25-p3-text-disposition
+  path: scripts/ci/validate_b25_p3_text_disposition.py
+  status: required
+  owning_phase: B2.5-P3
+  protected_invariant: B2.5-P3 deterministic untrusted text disposition remains total over TrustEnvelope string fields, total over text trust/risk matrix cells, rejects provider text from machine-authority fields, quarantines known syntactic risk indicators without claiming comprehensive prompt-injection detection, pseudonymizes opaque provider references with tenant-scoped domain-separated HMAC, preserves P2 canonical/hash invariants, and blocks later-phase Trust API scope overreach.
+  command: python scripts/ci/validate_b25_p3_text_disposition.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p3-text-disposition.yml
+  workflow_job_name: B2.5-P3 Text Disposition
+  local_reproduction_command: make validate-b25-p3-text-disposition
+  expected_failure_meaning: B2.5-P3 text disposition is missing, partial, default-allowing, regex-overclaiming, fixture-hardcoded, raw-text-leaky, NUL/control/bidi unsafe, raw-SHA provider-reference enumerable, P2-regressing, or has expanded into routes/builders/signing/auth/audit/export/MCP/action authority.
+  first_diagnostic_command: python scripts/ci/validate_b25_p3_text_disposition.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-text-disposition
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-b25-p2-canonicalization
   path: scripts/ci/validate_b25_p2_canonicalization.py
   status: required

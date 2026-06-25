@@ -40,13 +40,17 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/canonicalization.py",
     "backend/app/trust/hash_domains.py",
     "backend/app/trust/hash_identity.py",
+    "backend/app/trust/opaque_reference.py",
     "backend/app/trust/schema_versions.py",
+    "backend/app/trust/text_disposition.py",
+    "backend/app/trust/text_safety_registry.py",
     "backend/tests/trust/test_b25_p2_array_ordering.py",
     "backend/tests/trust/test_b25_p2_canonicalization.py",
     "backend/tests/trust/test_b25_p2_hash_identity.py",
     "backend/tests/trust/test_b25_p2_manifest_coverage.py",
     "backend/tests/trust/test_b25_p2_schema_versions.py",
     "backend/tests/trust/test_b25_p2_serializer_boundaries.py",
+    "backend/tests/trust/test_b25_p3_text_disposition.py",
 )
 
 
