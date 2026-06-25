@@ -1,3 +1,18 @@
+- gate_id: validate-b25-p3-text-disposition
+  workflow: .github/workflows/b2_5-p3-text-disposition.yml
+  job: B2.5-P3 Text Disposition
+  script: scripts/ci/validate_b25_p3_text_disposition.py
+  owning_phase: B2.5-P3
+  protected_invariant: B2.5-P3 text disposition is a pure deterministic boundary over TrustEnvelope string authority, finite syntactic risk classification, safe display projection, keyed opaque provider-reference pseudonymization, NUL/control/bidi desync prevention, P1/P2 preservation, and later-phase scope exclusion.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1 validates contract authority and P2 validates canonical/hash identity, but neither validates total text field trust taxonomy, total disposition matrix, provider-text machine-authority rejection, keyed opaque reference HMAC semantics, unsafe text quarantine metadata, anti-hardcoding controls, or P3-specific scope exclusion.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p3_text_disposition.py --negative-control
+  local_reproduction_command: make validate-b25-p3-text-disposition
+  risk_if_removed: Future TrustEnvelope builder/API work could accept provider-controlled strings as authority, leak raw unsafe text into machine-readable output, create enumerable provider-reference hashes, or destabilize canonical/hash behavior without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-b25-p2-canonicalization
   workflow: .github/workflows/b2_5-p2-canonicalization.yml
   job: B2.5-P2 Canonicalization

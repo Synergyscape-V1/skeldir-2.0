@@ -12,12 +12,12 @@ from app.trust.hash_domains import validate_hash_domain_manifest_against_schema
 def test_hash_domain_manifest_covers_every_schema_field_path() -> None:
     assert (
         validate_hash_domain_manifest_against_schema(discover_schema_field_paths())
-        == 94
+        == 107
     )
 
 
 def test_array_ordering_manifest_covers_every_schema_array_path() -> None:
     assert (
         validate_array_ordering_manifest_against_schema(discover_schema_array_paths())
-        == 5
+        == 6
     )

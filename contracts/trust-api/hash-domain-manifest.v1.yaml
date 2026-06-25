@@ -95,9 +95,22 @@ field_domains:
   - {field_path: truth_authority.source_system, domain: semantic_truth_v1}
   - {field_path: truth_type, domain: semantic_truth_v1}
   - {field_path: untrusted_display_data, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.content_safety_flags, domain: display_only_excluded_v1}
   - {field_path: untrusted_display_data.display_text, domain: display_only_excluded_v1}
   - {field_path: untrusted_display_data.display_transform, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.disposition_action, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.normalized_display_text, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.opaque_reference_hash, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.opaque_reference_metadata, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.opaque_reference_metadata.hash_algorithm, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.opaque_reference_metadata.hash_domain, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.opaque_reference_metadata.key_scope, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.opaque_reference_metadata.key_version, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.opaque_reference_metadata.provider, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.opaque_reference_metadata.source_field_path, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.raw_text_hmac, domain: display_only_excluded_v1}
   - {field_path: untrusted_display_data.raw_text_sha256, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.redaction_reason, domain: display_only_excluded_v1}
   - {field_path: untrusted_display_data.text_disposition_version, domain: display_only_excluded_v1}
   - {field_path: untrusted_display_data.text_trust_class, domain: display_only_excluded_v1}
   - {field_path: valid_until, domain: signature_material_v1}

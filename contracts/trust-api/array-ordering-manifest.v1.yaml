@@ -23,4 +23,6 @@ array_fields:
   - field_path: subject_authority.allowed_source_tables
     ordering: unordered_set_sort_by_canonical_element_hash
     rationale: Source table arrays are JSON-schema unique sets and do not carry sequence semantics.
-
+  - field_path: untrusted_display_data.content_safety_flags
+    ordering: unordered_set_sort_by_canonical_element_hash
+    rationale: P3 content risk flags are unordered classification facts; retrieval or detector order must not affect canonical bytes.
