@@ -5,12 +5,16 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from app.trust.hash_identity import (
     build_semantic_truth_hash_input,
     compute_artifact_hash,
     compute_semantic_truth_hash,
     compute_signature_hash,
+    validate_hash_domain_wrapper,
 )
+from app.trust.hash_domains import HashDomainError
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -52,6 +56,22 @@ def test_display_only_text_does_not_contaminate_semantic_truth_hash() -> None:
     assert compute_semantic_truth_hash(payload) == compute_semantic_truth_hash(changed)
 
 
+def test_semantic_unicode_probe_participates_in_semantic_truth_hash() -> None:
+    payload = json.loads(
+        (
+            EXAMPLES / "canonicalization/revenue_claim_semantic_unicode_valid.json"
+        ).read_text(encoding="utf-8")
+    )
+    changed = copy.deepcopy(payload)
+    del changed["semantic_unicode_probe"]
+
+    assert (
+        build_semantic_truth_hash_input(payload)["payload"]["semantic_unicode_probe"]
+        == payload["semantic_unicode_probe"]
+    )
+    assert compute_semantic_truth_hash(payload) != compute_semantic_truth_hash(changed)
+
+
 def test_semantic_mutation_changes_only_semantic_identity() -> None:
     payload = _fixture()
     changed = copy.deepcopy(payload)
@@ -64,7 +84,9 @@ def test_artifact_payload_hash_is_domain_separated_from_semantic_truth() -> None
     payload = _fixture()
 
     assert compute_semantic_truth_hash(payload) != compute_artifact_hash(b"same bytes")
-    assert compute_artifact_hash(b"artifact-v1") != compute_artifact_hash(b"artifact-v2")
+    assert compute_artifact_hash(b"artifact-v1") != compute_artifact_hash(
+        b"artifact-v2"
+    )
 
 
 def test_structured_hash_input_prevents_concatenation_ambiguity() -> None:
@@ -83,3 +105,15 @@ def test_structured_hash_input_prevents_concatenation_ambiguity() -> None:
     assert input_1["payload"]["subject_ref"] != input_2["payload"]["subject_ref"]
     assert compute_semantic_truth_hash(case_1) != compute_semantic_truth_hash(case_2)
 
+
+def test_hash_domain_wrapper_rejects_extra_or_wrong_domain_payload_fields() -> None:
+    valid = build_semantic_truth_hash_input(_fixture())
+    extra_key = copy.deepcopy(valid)
+    extra_key["malicious_policy_override"] = True
+    wrong_payload = copy.deepcopy(valid)
+    wrong_payload["payload"]["signing_key_id"] = "kid:bad"
+
+    with pytest.raises(HashDomainError, match="hash_wrapper_extra_keys"):
+        validate_hash_domain_wrapper(extra_key)
+    with pytest.raises(HashDomainError, match="hash_wrapper_payload_domain_mismatch"):
+        validate_hash_domain_wrapper(wrong_payload)
