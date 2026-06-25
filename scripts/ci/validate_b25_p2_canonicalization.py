@@ -7,7 +7,6 @@ import argparse
 import copy
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -42,6 +41,7 @@ from app.trust.hash_domains import (  # noqa: E402
     validate_hash_domain_manifest_against_schema,
 )
 from app.trust.hash_identity import (  # noqa: E402
+    HASH_DOMAIN_WRAPPER_SCHEMA,
     build_semantic_truth_hash_input,
     compute_artifact_hash,
     compute_semantic_truth_hash,
@@ -368,7 +368,9 @@ def validate_structured_hash_input_controls() -> int:
 def validate_hash_wrapper_closure_controls() -> int:
     payload = _fixture()
     valid = build_semantic_truth_hash_input(payload)
-    controls: list[dict[str, Any]] = []
+    controls: list[Any] = []
+
+    controls.append("not an object")
 
     missing_payload = copy.deepcopy(valid)
     del missing_payload["payload"]
@@ -424,6 +426,50 @@ def validate_hash_wrapper_closure_controls() -> int:
                 f"hash wrapper negative control accepted: {control}"
             )
     return passed
+
+
+def validate_declarative_hash_wrapper_schema_controls() -> int:
+    schema = HASH_DOMAIN_WRAPPER_SCHEMA
+    expected = {
+        "hash_domain",
+        "schema_version",
+        "canonicalization_version",
+        "hash_algorithm",
+        "payload",
+    }
+    if schema.get("additionalProperties") is not False:
+        raise B25P2ValidationError(
+            "HashDomainWrapper schema must set additionalProperties:false"
+        )
+    if set(schema.get("required", [])) != expected:
+        raise B25P2ValidationError("HashDomainWrapper schema required keys mismatch")
+    properties = schema.get("properties")
+    if not isinstance(properties, dict) or set(properties) != expected:
+        raise B25P2ValidationError("HashDomainWrapper schema property keys mismatch")
+    if properties["hash_algorithm"].get("const") != "sha-256":
+        raise B25P2ValidationError("HashDomainWrapper schema must const-lock algorithm")
+    if set(properties["hash_domain"].get("enum", [])) != {
+        "semantic_truth_v1",
+        "artifact_payload_v1",
+        "signature_material_v1",
+    }:
+        raise B25P2ValidationError("HashDomainWrapper schema domain enum mismatch")
+
+    source = (ROOT / "backend/app/trust/hash_identity.py").read_text(encoding="utf-8")
+    forbidden_fragments = (
+        "HASH_WRAPPER_KEYS",
+        "set(wrapper)",
+        "keys -",
+        "- keys",
+    )
+    offenders = [fragment for fragment in forbidden_fragments if fragment in source]
+    if offenders:
+        raise B25P2ValidationError(
+            f"procedural hash wrapper closure fragments remain: {offenders}"
+        )
+    if "Draft202012Validator(HASH_DOMAIN_WRAPPER_SCHEMA)" not in source:
+        raise B25P2ValidationError("HashDomainWrapper schema validator is not wired")
+    return 7
 
 
 def validate_version_negative_controls() -> int:
@@ -689,6 +735,25 @@ def validate_manual_mapper_controls() -> int:
     return len(forbidden) + len(required)
 
 
+def validate_standalone_pytest_workflow_step() -> int:
+    workflow = (ROOT / ".github/workflows/b2_5-p2-canonicalization.yml").read_text(
+        encoding="utf-8"
+    )
+    trust_pytest_step_command = "python -m pytest backend/tests/trust -q"
+    validator_command = "make validate-b25-p2-canonicalization"
+    if trust_pytest_step_command not in workflow:
+        raise B25P2ValidationError("standalone trust pytest workflow step missing")
+    if validator_command not in workflow:
+        raise B25P2ValidationError("P2 validator workflow step missing")
+    if workflow.index(trust_pytest_step_command) > workflow.index(validator_command):
+        raise B25P2ValidationError(
+            "standalone trust pytest step must run before P2 validator"
+        )
+    if "Run backend trust pytest" not in workflow:
+        raise B25P2ValidationError("standalone trust pytest step name missing")
+    return 4
+
+
 def validate_null_presence_controls() -> int:
     payload = _fixture()
     canonical = canonicalize_envelope_payload(payload)
@@ -746,27 +811,6 @@ def validate_scope_guard() -> int:
     return len(patterns)
 
 
-def run_pytest_suite() -> int:
-    command = [sys.executable, "-m", "pytest", "backend/tests/trust", "-q"]
-    print("pytest_command=" + " ".join(command))
-    result = subprocess.run(
-        command,
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    print(result.stdout, end="")
-    if result.stderr:
-        print(result.stderr, end="")
-    if result.returncode != 0:
-        raise B25P2ValidationError("backend/tests/trust pytest suite failed")
-    match = re.search(r"(\d+) passed", result.stdout)
-    if not match:
-        raise B25P2ValidationError("pytest passed count missing from output")
-    return int(match.group(1))
-
-
 def validate_all(args: argparse.Namespace) -> None:
     validate_profile_registry()
     canonical_examples = validate_canonical_examples()
@@ -777,6 +821,7 @@ def validate_all(args: argparse.Namespace) -> None:
     hash_mutations = validate_hash_domain_mutations()
     structured = validate_structured_hash_input_controls()
     hash_wrapper_controls = validate_hash_wrapper_closure_controls()
+    declarative_wrapper_controls = validate_declarative_hash_wrapper_schema_controls()
     version_controls = validate_version_negative_controls()
     numeric_controls = validate_numeric_negative_controls()
     unicode_controls = validate_unicode_negative_controls()
@@ -785,12 +830,10 @@ def validate_all(args: argparse.Namespace) -> None:
     ensure_ascii_controls = validate_ensure_ascii_controls()
     hash_format_controls = validate_hash_output_format_controls()
     manual_mapper_controls = validate_manual_mapper_controls()
+    standalone_pytest_step_controls = validate_standalone_pytest_workflow_step()
     null_controls = validate_null_presence_controls()
     manifest_paths, array_paths = validate_manifest_coverage()
     scope_controls = validate_scope_guard()
-    pytest_count = 0
-    if args.pytest:
-        pytest_count = run_pytest_suite()
 
     print("B25_P2_CANONICALIZATION_VALIDATION_PASS")
     print(f"canonicalization_profile={CANONICALIZATION_PROFILE}")
@@ -802,6 +845,10 @@ def validate_all(args: argparse.Namespace) -> None:
     print(f"hash_domain_mutations_passed={hash_mutations}")
     print(f"structured_hash_input_controls_passed={structured}")
     print(f"hash_wrapper_closure_controls_passed={hash_wrapper_controls}")
+    print(
+        "declarative_hash_wrapper_schema_controls_passed="
+        f"{declarative_wrapper_controls}"
+    )
     print(f"version_negative_controls_passed={version_controls}")
     print(f"numeric_negative_controls_passed={numeric_controls}")
     print(f"unicode_negative_controls_passed={unicode_controls}")
@@ -811,8 +858,11 @@ def validate_all(args: argparse.Namespace) -> None:
     print(f"ensure_ascii_controls_passed={ensure_ascii_controls}")
     print(f"hash_output_format_controls_passed={hash_format_controls}")
     print(f"manual_mapper_controls_passed={manual_mapper_controls}")
+    print(
+        "standalone_trust_pytest_ci_step_controls_passed="
+        f"{standalone_pytest_step_controls}"
+    )
     print(f"null_presence_controls_passed={null_controls}")
-    print(f"pytest_trust_tests_passed={pytest_count}")
     print(f"manifest_field_paths_checked={manifest_paths}")
     print(f"array_field_paths_checked={array_paths}")
     print(f"scope_overreach_controls_passed={scope_controls}")
@@ -839,8 +889,6 @@ def main() -> int:
     parser.add_argument("--null-presence-check", action="store_true")
     parser.add_argument("--array-ordering-check", action="store_true")
     parser.add_argument("--scope-guard", action="store_true")
-    parser.add_argument("--pytest", action="store_true", default=True)
-    parser.add_argument("--no-pytest", action="store_false", dest="pytest")
     args = parser.parse_args()
 
     try:

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.trust.hash_identity import (
+    HASH_DOMAIN_WRAPPER_SCHEMA,
     build_semantic_truth_hash_input,
     compute_artifact_hash,
     compute_semantic_truth_hash,
@@ -113,7 +114,24 @@ def test_hash_domain_wrapper_rejects_extra_or_wrong_domain_payload_fields() -> N
     wrong_payload = copy.deepcopy(valid)
     wrong_payload["payload"]["signing_key_id"] = "kid:bad"
 
-    with pytest.raises(HashDomainError, match="hash_wrapper_extra_keys"):
+    with pytest.raises(
+        HashDomainError,
+        match="hash_wrapper_schema_validation_failed:additionalProperties",
+    ):
         validate_hash_domain_wrapper(extra_key)
     with pytest.raises(HashDomainError, match="hash_wrapper_payload_domain_mismatch"):
         validate_hash_domain_wrapper(wrong_payload)
+
+
+def test_hash_domain_wrapper_schema_is_declaratively_closed() -> None:
+    assert HASH_DOMAIN_WRAPPER_SCHEMA["additionalProperties"] is False
+    assert set(HASH_DOMAIN_WRAPPER_SCHEMA["required"]) == {
+        "hash_domain",
+        "schema_version",
+        "canonicalization_version",
+        "hash_algorithm",
+        "payload",
+    }
+    assert HASH_DOMAIN_WRAPPER_SCHEMA["properties"]["hash_algorithm"]["const"] == (
+        "sha-256"
+    )
