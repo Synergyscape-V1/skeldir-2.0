@@ -36,6 +36,11 @@ jobs:
   b25-p2-canonicalization:
     name: B2.5-P2 Canonicalization
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p2_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p2_ci
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p2_ci
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p2_ci
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
