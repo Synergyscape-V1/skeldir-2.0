@@ -1,0 +1,8 @@
+{
+  "canonicalization_profile": "RFC8785-JCS-Skeldir-v1",
+  "expected_canonical_byte_length": 3866,
+  "expected_canonical_sha256": "sha256:584e72047c0fcec09a021646178f5819ae0b121aa33d53714577cfed9289b1e2",
+  "expected_canonical_utf8_prefix": "{\"artifact_hash\":null,\"artifact_ref\":null,\"audience_binding\":{\"audience_id_hash\":\"sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"audi",
+  "expected_semantic_truth_hash": "sha256:ca09efb9a2066641a3148a5a772eb40c2fe2ddd3799e6c4b4e61b493c96d3d7e",
+  "source_fixture": "../revenue_claim_valid_with_verified_revenue_minor.json"
+}

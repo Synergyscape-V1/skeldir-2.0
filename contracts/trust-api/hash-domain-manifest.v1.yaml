@@ -1,0 +1,103 @@
+manifest_version: b25-p2-hash-domain-manifest-v1
+schema_version: trust-envelope-schema-v1
+canonicalization_version: trust-canonical-json-v1
+domains:
+  semantic_truth_v1: deterministic truth and provenance fields that define the envelope's financial-trust semantics
+  signature_material_v1: issuance, audience, policy, validity, and signing-key metadata signed around semantic truth
+  artifact_payload_v1: artifact references and payload identity fields
+  derived_hash_field_v1: fields populated from hash computation rather than used directly as their own input
+  display_only_excluded_v1: untrusted or display-only text metadata excluded from semantic identity in P2
+field_domains:
+  - {field_path: artifact_hash, domain: derived_hash_field_v1}
+  - {field_path: artifact_ref, domain: artifact_payload_v1}
+  - {field_path: attribution_model, domain: semantic_truth_v1}
+  - {field_path: audience_binding, domain: signature_material_v1}
+  - {field_path: audience_binding.audience_id_hash, domain: signature_material_v1}
+  - {field_path: audience_binding.audience_mode, domain: signature_material_v1}
+  - {field_path: audience_binding.audience_scope, domain: signature_material_v1}
+  - {field_path: audience_binding.presentation_policy, domain: signature_material_v1}
+  - {field_path: audience_binding.replay_context_required, domain: signature_material_v1}
+  - {field_path: audit_hash, domain: signature_material_v1}
+  - {field_path: audit_ref, domain: signature_material_v1}
+  - {field_path: benchmark_metadata, domain: semantic_truth_v1}
+  - {field_path: benchmark_metadata.benchmark_authority, domain: semantic_truth_v1}
+  - {field_path: benchmark_metadata.benchmark_hash, domain: semantic_truth_v1}
+  - {field_path: benchmark_metadata.benchmark_ref, domain: semantic_truth_v1}
+  - {field_path: benchmark_metadata.benchmark_status, domain: semantic_truth_v1}
+  - {field_path: benchmark_metadata.unavailable_reason, domain: semantic_truth_v1}
+  - {field_path: canonicalization_version, domain: semantic_truth_v1}
+  - {field_path: causal_status, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.bayesian_model_type, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.bayesian_model_version, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.confidence_authority, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.confidence_score_basis_points, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.confidence_status, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.diagnostics_status, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.unavailable_reason, domain: semantic_truth_v1}
+  - {field_path: created_at, domain: signature_material_v1}
+  - {field_path: currency, domain: semantic_truth_v1}
+  - {field_path: data_completeness_status, domain: semantic_truth_v1}
+  - {field_path: deterministic_verification_status, domain: semantic_truth_v1}
+  - {field_path: discrepancy_class, domain: semantic_truth_v1}
+  - {field_path: envelope_id, domain: signature_material_v1}
+  - {field_path: envelope_version, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.data_freshness_seconds, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.evidence_snapshot_at, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.evidence_snapshot_hash, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.max_source_read_skew_ms, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.snapshot_consistency_status, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.source_read_completed_at, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.source_read_started_at, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.staleness_status, domain: semantic_truth_v1}
+  - {field_path: fallback_applied, domain: semantic_truth_v1}
+  - {field_path: fallback_reason, domain: semantic_truth_v1}
+  - {field_path: match_verdict_status, domain: semantic_truth_v1}
+  - {field_path: model_assumption, domain: semantic_truth_v1}
+  - {field_path: policy_action_authority, domain: signature_material_v1}
+  - {field_path: policy_action_authority.allowed_scopes, domain: signature_material_v1}
+  - {field_path: policy_action_authority.forbidden_scopes, domain: signature_material_v1}
+  - {field_path: policy_action_authority.policy_state, domain: signature_material_v1}
+  - {field_path: policy_action_authority.reason_code, domain: signature_material_v1}
+  - {field_path: provenance_chain, domain: semantic_truth_v1}
+  - {field_path: "provenance_chain[].authority_table", domain: semantic_truth_v1}
+  - {field_path: "provenance_chain[].display_metadata", domain: display_only_excluded_v1}
+  - {field_path: "provenance_chain[].display_metadata.display_transform", domain: display_only_excluded_v1}
+  - {field_path: "provenance_chain[].display_metadata.raw_text_sha256", domain: display_only_excluded_v1}
+  - {field_path: "provenance_chain[].display_metadata.text_trust_class", domain: display_only_excluded_v1}
+  - {field_path: "provenance_chain[].observed_at", domain: semantic_truth_v1}
+  - {field_path: "provenance_chain[].provenance_type", domain: semantic_truth_v1}
+  - {field_path: "provenance_chain[].source_ref", domain: semantic_truth_v1}
+  - {field_path: "provenance_chain[].source_ref_hash", domain: semantic_truth_v1}
+  - {field_path: "provenance_chain[].source_snapshot_hash", domain: semantic_truth_v1}
+  - {field_path: schema_version, domain: semantic_truth_v1}
+  - {field_path: semantic_truth_hash, domain: derived_hash_field_v1}
+  - {field_path: signature, domain: display_only_excluded_v1}
+  - {field_path: signature_hash, domain: derived_hash_field_v1}
+  - {field_path: signing_algorithm, domain: signature_material_v1}
+  - {field_path: signing_key_id, domain: signature_material_v1}
+  - {field_path: subject_authority, domain: semantic_truth_v1}
+  - {field_path: subject_authority.allowed_source_tables, domain: semantic_truth_v1}
+  - {field_path: subject_authority.mutable_workflow_subject, domain: semantic_truth_v1}
+  - {field_path: subject_authority.source_authority_class, domain: semantic_truth_v1}
+  - {field_path: subject_authority.subject_ref, domain: semantic_truth_v1}
+  - {field_path: subject_authority.subject_ref_hash, domain: semantic_truth_v1}
+  - {field_path: subject_authority.subject_type, domain: semantic_truth_v1}
+  - {field_path: subject_ref, domain: semantic_truth_v1}
+  - {field_path: subject_ref_hash, domain: semantic_truth_v1}
+  - {field_path: subject_type, domain: semantic_truth_v1}
+  - {field_path: tenant_id_hash, domain: semantic_truth_v1}
+  - {field_path: truth_authority, domain: semantic_truth_v1}
+  - {field_path: truth_authority.authority_class, domain: semantic_truth_v1}
+  - {field_path: truth_authority.source_snapshot_hash, domain: semantic_truth_v1}
+  - {field_path: truth_authority.source_system, domain: semantic_truth_v1}
+  - {field_path: truth_type, domain: semantic_truth_v1}
+  - {field_path: untrusted_display_data, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.display_text, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.display_transform, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.raw_text_sha256, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.text_disposition_version, domain: display_only_excluded_v1}
+  - {field_path: untrusted_display_data.text_trust_class, domain: display_only_excluded_v1}
+  - {field_path: valid_until, domain: signature_material_v1}
+  - {field_path: verified_revenue_minor, domain: semantic_truth_v1}

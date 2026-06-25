@@ -1,3 +1,25 @@
+- id: validate-b25-p2-canonicalization
+  path: scripts/ci/validate_b25_p2_canonicalization.py
+  status: required
+  owning_phase: B2.5-P2
+  protected_invariant: B2.5-P2 standards-bound TrustEnvelope canonicalization, deterministic UTF-8 bytes, structured semantic/artifact/signature hash identity, fixed sha256 hash encoding, null-presence semantics, array-ordering manifest coverage, schema/canonicalization version fail-closed behavior, serializer-boundary controls, and scope-boundary controls remain machine-falsifiable.
+  command: python scripts/ci/validate_b25_p2_canonicalization.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p2-canonicalization.yml
+  workflow_job_name: B2.5-P2 Canonicalization
+  local_reproduction_command: make validate-b25-p2-canonicalization
+  expected_failure_meaning: B2.5-P2 canonicalization is missing, serializer-dependent, version-loose, array-order-dependent, Unicode/numeric unsafe, hash-domain ambiguous, hash-output format loose, manifest-incomplete, Pydantic/native serializer contaminated, or has overreached into later Trust API phases.
+  first_diagnostic_command: python scripts/ci/validate_b25_p2_canonicalization.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-canonicalization
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-b25-p1-contracts
   path: scripts/ci/validate_b25_p1_contracts.py
   status: required

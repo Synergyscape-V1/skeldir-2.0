@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Block unauthorized B2.5-P1 runtime TrustEnvelope model drift.
+"""Block unauthorized B2.5 runtime TrustEnvelope model drift.
 
-B2.5-P1 is contract authority only. Until a later phase authorizes generated
-application models, backend hand-written TrustEnvelope schemas/models are a
-semantic drift risk and must fail CI.
+B2.5-P1 was contract authority only. B2.5-P2 authorizes deterministic
+canonicalization/hash modules, but still does not authorize generated or
+hand-written runtime TrustEnvelope models, builders, routes, signers, or
+schema drift.
 """
 
 from __future__ import annotations
@@ -34,6 +35,18 @@ PYDANTIC_TRUST_MODEL_PATTERNS = (
 
 ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/bayesian/snapshot_supersession.py",
+    "backend/app/trust/__init__.py",
+    "backend/app/trust/array_ordering.py",
+    "backend/app/trust/canonicalization.py",
+    "backend/app/trust/hash_domains.py",
+    "backend/app/trust/hash_identity.py",
+    "backend/app/trust/schema_versions.py",
+    "backend/tests/trust/test_b25_p2_array_ordering.py",
+    "backend/tests/trust/test_b25_p2_canonicalization.py",
+    "backend/tests/trust/test_b25_p2_hash_identity.py",
+    "backend/tests/trust/test_b25_p2_manifest_coverage.py",
+    "backend/tests/trust/test_b25_p2_schema_versions.py",
+    "backend/tests/trust/test_b25_p2_serializer_boundaries.py",
 )
 
 

@@ -1,3 +1,18 @@
+- gate_id: validate-b25-p2-canonicalization
+  workflow: .github/workflows/b2_5-p2-canonicalization.yml
+  job: B2.5-P2 Canonicalization
+  script: scripts/ci/validate_b25_p2_canonicalization.py
+  owning_phase: B2.5-P2
+  protected_invariant: B2.5-P2 canonical TrustEnvelope identity is standards-bound, byte-stable, manifest-classified, version-governed, serializer-boundary protected, and scope-limited to canonicalization/hash identity.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1 validates TrustEnvelope shape but does not validate canonical bytes, semantic/artifact/signature hash-domain separation, provenance-order stability, fixed hash output encoding, null-vs-missing bytes, array-ordering coverage, unsafe serializer controls, or P2 scope guardrails.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p2_canonicalization.py --negative-control
+  local_reproduction_command: make validate-b25-p2-canonicalization
+  risk_if_removed: Future signing, verification, replay, cache identity, audit reconstruction, and agent-readable trust surfaces could consume nondeterministic or serializer-dependent TrustEnvelope bytes without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-b25-p1-contracts
   workflow: .github/workflows/b2_5-p1-contracts.yml
   job: B2.5-P1 Contract Authority

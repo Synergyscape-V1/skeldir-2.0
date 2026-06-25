@@ -1,0 +1,34 @@
+registry_version: b25-p2-canonicalization-version-registry-v1
+canonicalization_versions:
+  - canonicalization_version: trust-canonical-json-v1
+    status: supported
+    profile_name: RFC8785-JCS-Skeldir-v1
+    standard_reference: RFC 8785 JSON Canonicalization Scheme, restricted by Skeldir TrustEnvelope v1 JSON profile
+    hash_algorithm: sha-256
+    hash_output_encoding: sha256-lowercase-hex-prefixed
+    json_restrictions:
+      - objects only use string property names
+      - booleans and null preserve JSON meaning
+      - integers must remain within signed JSON-safe bounds
+      - floats, NaN, Infinity, -Infinity, Decimal, binary, and native object values are rejected before bytes
+    unicode_policy:
+      normalization: none
+      valid_unicode: preserved exactly under the canonicalization profile
+      invalid_unicode: lone surrogates and non-scalar values fail before bytes
+    number_policy:
+      integers: JSON-safe integer bounds only
+      floats: forbidden
+      decimals: forbidden unless represented by an explicitly versioned string field
+    timestamp_policy: UTC Z-only strings validated by TrustEnvelope schema; no local-time rewrite during canonicalization
+    object_key_ordering_policy: canonical JSON object member ordering by the approved profile serializer
+    array_ordering_policy: array-ordering-manifest.v1.yaml
+    provenance_ordering_policy: declared key tuple in array-ordering-manifest.v1.yaml
+    null_missing_field_policy: explicit null remains present; missing remains missing only when schema permits omission
+    serializer_boundary_policy: only backend/app/trust/canonicalization.py may emit canonical bytes
+    compatible_schema_versions:
+      - trust-envelope-schema-v1
+    forbidden_fallbacks:
+      - latest
+      - default
+      - schema_only
+
