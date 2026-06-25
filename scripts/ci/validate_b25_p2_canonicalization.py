@@ -38,6 +38,7 @@ from app.trust.canonicalization import (  # noqa: E402
     canonicalize_envelope_payload,
 )
 from app.trust.hash_domains import (  # noqa: E402
+    HashDomainError,
     validate_hash_domain_manifest_against_schema,
 )
 from app.trust.hash_identity import (  # noqa: E402
@@ -45,6 +46,7 @@ from app.trust.hash_identity import (  # noqa: E402
     compute_artifact_hash,
     compute_semantic_truth_hash,
     compute_signature_hash,
+    validate_hash_domain_wrapper,
 )
 from app.trust.schema_versions import (  # noqa: E402
     VersionRegistryError,
@@ -75,7 +77,9 @@ def _expanded_trust_schema() -> dict[str, Any]:
             ref = value.get("$ref")
             if isinstance(ref, str):
                 if ref.startswith("#/$defs/"):
-                    return expand(copy.deepcopy(root_schema["$defs"][ref.rsplit("/", 1)[-1]]))
+                    return expand(
+                        copy.deepcopy(root_schema["$defs"][ref.rsplit("/", 1)[-1]])
+                    )
                 file_ref, _, fragment = ref.partition("#")
                 if file_ref:
                     target = _read_schema(CONTRACT_DIR / file_ref.rsplit("/", 1)[-1])
@@ -131,7 +135,9 @@ def discover_schema_array_paths() -> set[str]:
     return _discover_schema_paths()[1]
 
 
-def _fixture(name: str = "revenue_claim_valid_with_verified_revenue_minor.json") -> dict[str, Any]:
+def _fixture(
+    name: str = "revenue_claim_valid_with_verified_revenue_minor.json",
+) -> dict[str, Any]:
     doc = _read_json(EXAMPLES_DIR / name)
     if not isinstance(doc, dict):
         raise B25P2ValidationError(f"fixture is not an object: {name}")
@@ -176,12 +182,16 @@ def validate_profile_registry() -> None:
         and row.get("status") == "supported"
     ]
     if len(supported) != 1:
-        raise B25P2ValidationError("canonicalization version registry missing supported v1")
+        raise B25P2ValidationError(
+            "canonicalization version registry missing supported v1"
+        )
     row = supported[0]
     if row.get("profile_name") != CANONICALIZATION_PROFILE:
         raise B25P2ValidationError("canonicalization profile mismatch")
     if "trust-envelope-schema-v1" not in row.get("compatible_schema_versions", []):
-        raise B25P2ValidationError("canonicalization profile missing schema compatibility")
+        raise B25P2ValidationError(
+            "canonicalization profile missing schema compatibility"
+        )
 
 
 def validate_canonical_examples() -> int:
@@ -210,14 +220,48 @@ def validate_golden_byte_fixtures() -> int:
         canonical = canonicalize_envelope_payload(payload)
         canonical_hash = "sha256:" + __import__("hashlib").sha256(canonical).hexdigest()
         semantic_hash = compute_semantic_truth_hash(payload)
+        expected_length = manifest.get("expected_canonical_byte_length")
+        if expected_length is not None and len(canonical) != expected_length:
+            raise B25P2ValidationError(
+                f"golden canonical byte length mismatch: {manifest_path.name}"
+            )
         if canonical_hash != manifest["expected_canonical_sha256"]:
-            raise B25P2ValidationError(f"golden canonical hash mismatch: {manifest_path.name}")
+            raise B25P2ValidationError(
+                f"golden canonical hash mismatch: {manifest_path.name}"
+            )
         if semantic_hash != manifest["expected_semantic_truth_hash"]:
-            raise B25P2ValidationError(f"golden semantic hash mismatch: {manifest_path.name}")
+            raise B25P2ValidationError(
+                f"golden semantic hash mismatch: {manifest_path.name}"
+            )
+        expected_prefix = manifest.get("expected_canonical_utf8_prefix")
+        if expected_prefix and not canonical.startswith(
+            expected_prefix.encode("utf-8")
+        ):
+            raise B25P2ValidationError(
+                f"golden canonical UTF-8 prefix mismatch: {manifest_path.name}"
+            )
+        for fragment in manifest.get("expected_canonical_utf8_contains", []):
+            if fragment.encode("utf-8") not in canonical:
+                raise B25P2ValidationError(
+                    f"golden canonical UTF-8 fragment missing: {manifest_path.name}"
+                )
+        field_path = manifest.get("semantic_hash_bearing_field_path")
+        if (
+            field_path
+            and field_path not in build_semantic_truth_hash_input(payload)["payload"]
+        ):
+            raise B25P2ValidationError(
+                f"semantic hash-bearing field absent from hash input: {field_path}"
+            )
         wrong = copy.deepcopy(manifest)
         wrong["expected_canonical_sha256"] = "sha256:" + "0" * 64
         if canonical_hash == wrong["expected_canonical_sha256"]:
             raise B25P2ValidationError("wrong expected canonical hash was accepted")
+        wrong["expected_canonical_byte_length"] = len(canonical) + 1
+        if len(canonical) == wrong["expected_canonical_byte_length"]:
+            raise B25P2ValidationError(
+                "wrong expected canonical byte length was accepted"
+            )
         count += 1
     return count
 
@@ -305,12 +349,81 @@ def validate_structured_hash_input_controls() -> int:
     case_2["subject_authority"]["subject_ref"] = case_2["subject_ref"]
     input_1 = build_semantic_truth_hash_input(case_1)
     input_2 = build_semantic_truth_hash_input(case_2)
-    for key in ("hash_domain", "schema_version", "canonicalization_version", "hash_algorithm", "payload"):
+    for key in (
+        "hash_domain",
+        "schema_version",
+        "canonicalization_version",
+        "hash_algorithm",
+        "payload",
+    ):
         if key not in input_1:
             raise B25P2ValidationError(f"structured hash input missing {key}")
-    if input_1 == input_2 or compute_semantic_truth_hash(case_1) == compute_semantic_truth_hash(case_2):
+    if input_1 == input_2 or compute_semantic_truth_hash(
+        case_1
+    ) == compute_semantic_truth_hash(case_2):
         raise B25P2ValidationError("structured hash input ambiguity not separated")
     return 1
+
+
+def validate_hash_wrapper_closure_controls() -> int:
+    payload = _fixture()
+    valid = build_semantic_truth_hash_input(payload)
+    controls: list[dict[str, Any]] = []
+
+    missing_payload = copy.deepcopy(valid)
+    del missing_payload["payload"]
+    controls.append(missing_payload)
+
+    extra_key = copy.deepcopy(valid)
+    extra_key["malicious_policy_override"] = True
+    controls.append(extra_key)
+
+    bad_algorithm = copy.deepcopy(valid)
+    bad_algorithm["hash_algorithm"] = "sha512"
+    controls.append(bad_algorithm)
+
+    unknown_domain = copy.deepcopy(valid)
+    unknown_domain["hash_domain"] = "signature_material_v1_shadow"
+    controls.append(unknown_domain)
+
+    bad_payload_type = copy.deepcopy(valid)
+    bad_payload_type["payload"] = ["not", "object"]
+    controls.append(bad_payload_type)
+
+    signature_field_in_semantic = copy.deepcopy(valid)
+    signature_field_in_semantic["payload"]["signing_key_id"] = "kid:bad"
+    controls.append(signature_field_in_semantic)
+
+    display_field_in_semantic = copy.deepcopy(valid)
+    display_field_in_semantic["payload"]["untrusted_display_data"] = {
+        "display_text": "not semantic"
+    }
+    controls.append(display_field_in_semantic)
+
+    wrapper_payload_field = copy.deepcopy(valid)
+    wrapper_payload_field["payload"]["payload"] = {"conflict": True}
+    controls.append(wrapper_payload_field)
+
+    invalid_artifact_hash = {
+        "hash_domain": "artifact_payload_v1",
+        "schema_version": "trust-envelope-schema-v1",
+        "canonicalization_version": "trust-canonical-json-v1",
+        "hash_algorithm": "sha-256",
+        "payload": {"artifact_bytes_sha256": "sha256:" + "z" * 64},
+    }
+    controls.append(invalid_artifact_hash)
+
+    passed = 0
+    for control in controls:
+        try:
+            validate_hash_domain_wrapper(control)
+        except (HashDomainError, VersionRegistryError):
+            passed += 1
+        else:
+            raise B25P2ValidationError(
+                f"hash wrapper negative control accepted: {control}"
+            )
+    return passed
 
 
 def validate_version_negative_controls() -> int:
@@ -363,6 +476,52 @@ def validate_unicode_negative_controls() -> int:
     raise B25P2ValidationError("lone surrogate accepted")
 
 
+def validate_unicode_semantic_controls() -> int:
+    payload = _read_json(
+        CANONICAL_EXAMPLES_DIR / "revenue_claim_semantic_unicode_valid.json"
+    )
+    if not isinstance(payload, dict):
+        raise B25P2ValidationError("semantic Unicode fixture is not an object")
+    canonical = canonicalize_envelope_payload(payload)
+    raw_fragment = (
+        b'"semantic_unicode_probe":"'
+        + str(payload["semantic_unicode_probe"]).encode("utf-8")
+        + b'"'
+    )
+    if raw_fragment not in canonical:
+        raise B25P2ValidationError(
+            "semantic Unicode bytes missing from canonical UTF-8"
+        )
+
+    ensure_ascii_bytes = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    if raw_fragment in ensure_ascii_bytes or b"\\u" not in ensure_ascii_bytes:
+        raise B25P2ValidationError("ensure_ascii=True did not escape Unicode control")
+    if ensure_ascii_bytes == canonical:
+        raise B25P2ValidationError("ensure_ascii=True bytes matched canonical bytes")
+
+    semantic_input = build_semantic_truth_hash_input(payload)
+    if (
+        semantic_input["payload"].get("semantic_unicode_probe")
+        != payload["semantic_unicode_probe"]
+    ):
+        raise B25P2ValidationError("semantic Unicode field missing from hash payload")
+    without_probe = copy.deepcopy(payload)
+    del without_probe["semantic_unicode_probe"]
+    if compute_semantic_truth_hash(payload) == compute_semantic_truth_hash(
+        without_probe
+    ):
+        raise B25P2ValidationError(
+            "semantic Unicode field did not affect semantic hash"
+        )
+    return 4
+
+
 FORBIDDEN_TEXT_PATTERNS = (
     "model_dump_json",
     "exclude_none=True",
@@ -388,11 +547,23 @@ def inspect_static_text(path: Path, text: str) -> list[str]:
         violations.append(f"{path.as_posix()}:str")
     if re.search(r"\brepr\s*\(\s*(envelope|payload|model|trust)", text):
         violations.append(f"{path.as_posix()}:repr")
-    if "json.dumps" in text and path.name not in {"canonicalization.py", "array_ordering.py"}:
+    if "ensure_ascii=True" in text:
+        violations.append(f"{path.as_posix()}:ensure_ascii_true")
+    if "json.dumps" in text and path.name not in {
+        "canonicalization.py",
+        "array_ordering.py",
+    }:
         violations.append(f"{path.as_posix()}:json.dumps")
-    if path.name in {"canonicalization.py", "array_ordering.py"} and "json.dumps" in text:
+    if (
+        path.name in {"canonicalization.py", "array_ordering.py"}
+        and "json.dumps" in text
+    ):
         if "allow_nan=False" not in text:
             violations.append(f"{path.as_posix()}:json.dumps_without_allow_nan_false")
+        if "ensure_ascii=False" not in text:
+            violations.append(
+                f"{path.as_posix()}:json.dumps_without_ensure_ascii_false"
+            )
     return violations
 
 
@@ -400,9 +571,15 @@ def validate_static_serializer_boundaries() -> tuple[int, int]:
     violations: list[str] = []
     trust_dir = ROOT / "backend/app/trust"
     for path in trust_dir.rglob("*.py"):
-        violations.extend(inspect_static_text(path.relative_to(ROOT), path.read_text(encoding="utf-8")))
+        violations.extend(
+            inspect_static_text(
+                path.relative_to(ROOT), path.read_text(encoding="utf-8")
+            )
+        )
     if violations:
-        raise B25P2ValidationError(f"trust serializer boundary violations: {violations}")
+        raise B25P2ValidationError(
+            f"trust serializer boundary violations: {violations}"
+        )
 
     unsafe_controls = [
         "blob = json.dumps(payload, sort_keys=True).encode('utf-8')",
@@ -424,9 +601,41 @@ def validate_static_serializer_boundaries() -> tuple[int, int]:
         bool(inspect_static_text(Path("backend/app/trust/hash_identity.py"), text))
         for text in pydantic_controls
     )
-    if unsafe_passed != len(unsafe_controls) or pydantic_passed != len(pydantic_controls):
+    if unsafe_passed != len(unsafe_controls) or pydantic_passed != len(
+        pydantic_controls
+    ):
         raise B25P2ValidationError("static negative controls did not all fire")
     return unsafe_passed, pydantic_passed
+
+
+def validate_ensure_ascii_controls() -> int:
+    controls = [
+        (
+            Path("backend/app/trust/canonicalization.py"),
+            "blob = json.dumps(payload, ensure_ascii=True, allow_nan=False)",
+        ),
+        (
+            Path("backend/app/trust/canonicalization.py"),
+            "blob = json.dumps(payload, sort_keys=True, allow_nan=False)",
+        ),
+        (
+            Path("backend/app/trust/hash_identity.py"),
+            "blob = json.dumps(payload, ensure_ascii=True, allow_nan=False)",
+        ),
+    ]
+    passed = sum(bool(inspect_static_text(path, text)) for path, text in controls)
+    approved = inspect_static_text(
+        Path("backend/app/trust/canonicalization.py"),
+        "blob = json.dumps(payload, sort_keys=True, separators=(',', ':'), "
+        "ensure_ascii=False, allow_nan=False)",
+    )
+    if approved:
+        raise B25P2ValidationError(
+            f"approved ensure_ascii=False control failed: {approved}"
+        )
+    if passed != len(controls):
+        raise B25P2ValidationError("ensure_ascii static controls did not all fire")
+    return passed + 1
 
 
 def validate_hash_output_format_controls() -> int:
@@ -452,12 +661,46 @@ def validate_hash_output_format_controls() -> int:
     return count + len(bad_values)
 
 
+def validate_manual_mapper_controls() -> int:
+    trust_dir = ROOT / "backend/app/trust"
+    violations: list[str] = []
+    forbidden = (
+        "MANUAL_TRUST_FIELD_MAP",
+        "manual_mapper",
+        "hashlib.sha256(json.dumps",
+        "sha256(json.dumps",
+    )
+    for path in trust_dir.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for token in forbidden:
+            if token in text:
+                violations.append(f"{path.relative_to(ROOT).as_posix()}:{token}")
+    hash_identity = (trust_dir / "hash_identity.py").read_text(encoding="utf-8")
+    required = (
+        "project_domain_payload(prepared, SEMANTIC_DOMAIN)",
+        "project_domain_payload(",
+        "validate_hash_domain_wrapper(",
+    )
+    for token in required:
+        if token not in hash_identity:
+            violations.append(f"backend/app/trust/hash_identity.py:missing:{token}")
+    if violations:
+        raise B25P2ValidationError(f"manual mapper controls failed: {violations}")
+    return len(forbidden) + len(required)
+
+
 def validate_null_presence_controls() -> int:
     payload = _fixture()
     canonical = canonicalize_envelope_payload(payload)
-    for fragment in (b'"artifact_hash":null', b'"artifact_ref":null', b'"display_text":null'):
+    for fragment in (
+        b'"artifact_hash":null',
+        b'"artifact_ref":null',
+        b'"display_text":null',
+    ):
         if fragment not in canonical:
-            raise B25P2ValidationError(f"explicit null missing from bytes: {fragment!r}")
+            raise B25P2ValidationError(
+                f"explicit null missing from bytes: {fragment!r}"
+            )
     missing = copy.deepcopy(payload)
     del missing["benchmark_metadata"]
     try:
@@ -479,9 +722,15 @@ def validate_scope_guard() -> int:
     disallowed = []
     backend = ROOT / "backend/app"
     patterns = (
-        ("api/trust route", re.compile(r"api/trust|/trust/v1|APIRouter\(.*trust", re.I)),
+        (
+            "api/trust route",
+            re.compile(r"api/trust|/trust/v1|APIRouter\(.*trust", re.I),
+        ),
         ("TrustEnvelopeBuilder", re.compile(r"class\s+TrustEnvelopeBuilder\b")),
-        ("signer implementation", re.compile(r"class\s+\w*Signer\b|def\s+sign_trust_envelope\b")),
+        (
+            "signer implementation",
+            re.compile(r"class\s+\w*Signer\b|def\s+sign_trust_envelope\b"),
+        ),
         ("Trust JWKS runtime endpoint", re.compile(r"trust.*jwks|jwks.*trust", re.I)),
     )
     for path in backend.rglob("*.py"):
@@ -497,18 +746,25 @@ def validate_scope_guard() -> int:
     return len(patterns)
 
 
-def run_pytest_suite() -> None:
+def run_pytest_suite() -> int:
+    command = [sys.executable, "-m", "pytest", "backend/tests/trust", "-q"]
+    print("pytest_command=" + " ".join(command))
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "backend/tests/trust", "-q"],
+        command,
         cwd=ROOT,
         text=True,
         capture_output=True,
         check=False,
     )
+    print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="")
     if result.returncode != 0:
-        print(result.stdout)
-        print(result.stderr)
         raise B25P2ValidationError("backend/tests/trust pytest suite failed")
+    match = re.search(r"(\d+) passed", result.stdout)
+    if not match:
+        raise B25P2ValidationError("pytest passed count missing from output")
+    return int(match.group(1))
 
 
 def validate_all(args: argparse.Namespace) -> None:
@@ -520,16 +776,21 @@ def validate_all(args: argparse.Namespace) -> None:
     array_controls = validate_array_ordering_controls()
     hash_mutations = validate_hash_domain_mutations()
     structured = validate_structured_hash_input_controls()
+    hash_wrapper_controls = validate_hash_wrapper_closure_controls()
     version_controls = validate_version_negative_controls()
     numeric_controls = validate_numeric_negative_controls()
     unicode_controls = validate_unicode_negative_controls()
+    unicode_semantic_controls = validate_unicode_semantic_controls()
     unsafe_controls, pydantic_controls = validate_static_serializer_boundaries()
+    ensure_ascii_controls = validate_ensure_ascii_controls()
     hash_format_controls = validate_hash_output_format_controls()
+    manual_mapper_controls = validate_manual_mapper_controls()
     null_controls = validate_null_presence_controls()
     manifest_paths, array_paths = validate_manifest_coverage()
     scope_controls = validate_scope_guard()
+    pytest_count = 0
     if args.pytest:
-        run_pytest_suite()
+        pytest_count = run_pytest_suite()
 
     print("B25_P2_CANONICALIZATION_VALIDATION_PASS")
     print(f"canonicalization_profile={CANONICALIZATION_PROFILE}")
@@ -540,13 +801,18 @@ def validate_all(args: argparse.Namespace) -> None:
     print(f"array_ordering_controls_passed={array_controls}")
     print(f"hash_domain_mutations_passed={hash_mutations}")
     print(f"structured_hash_input_controls_passed={structured}")
+    print(f"hash_wrapper_closure_controls_passed={hash_wrapper_controls}")
     print(f"version_negative_controls_passed={version_controls}")
     print(f"numeric_negative_controls_passed={numeric_controls}")
     print(f"unicode_negative_controls_passed={unicode_controls}")
+    print(f"unicode_semantic_controls_passed={unicode_semantic_controls}")
     print(f"unsafe_serializer_controls_passed={unsafe_controls}")
     print(f"pydantic_serializer_controls_passed={pydantic_controls}")
+    print(f"ensure_ascii_controls_passed={ensure_ascii_controls}")
     print(f"hash_output_format_controls_passed={hash_format_controls}")
+    print(f"manual_mapper_controls_passed={manual_mapper_controls}")
     print(f"null_presence_controls_passed={null_controls}")
+    print(f"pytest_trust_tests_passed={pytest_count}")
     print(f"manifest_field_paths_checked={manifest_paths}")
     print(f"array_field_paths_checked={array_paths}")
     print(f"scope_overreach_controls_passed={scope_controls}")

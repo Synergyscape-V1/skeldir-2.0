@@ -46,6 +46,10 @@ properties:
   canonicalization_version:
     type: string
     const: trust-canonical-json-v1
+  semantic_unicode_probe:
+    type: string
+    const: Café-東京
+    description: Narrow fixture-only semantic probe used to prove UTF-8 bytes participate in B2.5-P2 canonical hash identity.
   envelope_id:
     type: string
     pattern: ^env_[0-9a-f]{32}$

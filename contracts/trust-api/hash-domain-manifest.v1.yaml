@@ -72,6 +72,7 @@ field_domains:
   - {field_path: "provenance_chain[].source_ref_hash", domain: semantic_truth_v1}
   - {field_path: "provenance_chain[].source_snapshot_hash", domain: semantic_truth_v1}
   - {field_path: schema_version, domain: semantic_truth_v1}
+  - {field_path: semantic_unicode_probe, domain: semantic_truth_v1}
   - {field_path: semantic_truth_hash, domain: derived_hash_field_v1}
   - {field_path: signature, domain: display_only_excluded_v1}
   - {field_path: signature_hash, domain: derived_hash_field_v1}

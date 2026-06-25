@@ -18,7 +18,9 @@ ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = ROOT / "contracts/trust-api/examples"
 
 
-def _fixture(name: str = "revenue_claim_valid_with_verified_revenue_minor.json") -> dict:
+def _fixture(
+    name: str = "revenue_claim_valid_with_verified_revenue_minor.json",
+) -> dict:
     return json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
 
 
@@ -35,8 +37,12 @@ def test_key_order_permutations_produce_identical_canonical_bytes_and_hash() -> 
     permuted = _reverse_object_order(payload)
 
     assert CANONICALIZATION_PROFILE == "RFC8785-JCS-Skeldir-v1"
-    assert canonicalize_envelope_payload(payload) == canonicalize_envelope_payload(permuted)
-    assert compute_envelope_payload_hash(payload) == compute_envelope_payload_hash(permuted)
+    assert canonicalize_envelope_payload(payload) == canonicalize_envelope_payload(
+        permuted
+    )
+    assert compute_envelope_payload_hash(payload) == compute_envelope_payload_hash(
+        permuted
+    )
 
 
 def test_explicit_null_is_preserved_in_canonical_bytes() -> None:
@@ -66,6 +72,20 @@ def test_unicode_preserves_nfc_and_nfd_as_distinct_bytes() -> None:
     assert canonicalize_envelope_payload(nfc) != canonicalize_envelope_payload(nfd)
 
 
+def test_semantic_unicode_probe_is_raw_utf8_in_canonical_bytes() -> None:
+    payload = _fixture("canonicalization/revenue_claim_semantic_unicode_valid.json")
+
+    canonical = canonicalize_envelope_payload(payload)
+    expected_fragment = (
+        b'"semantic_unicode_probe":"'
+        + payload["semantic_unicode_probe"].encode("utf-8")
+        + b'"'
+    )
+
+    assert expected_fragment in canonical
+    assert b"\\u6771" not in canonical
+
+
 def test_lone_surrogate_fails_before_canonical_bytes() -> None:
     payload = _fixture()
     payload["untrusted_display_data"]["display_text"] = "\ud800"
@@ -89,4 +109,3 @@ def test_json_safe_integer_bounds_are_enforced_before_bytes() -> None:
 
     with pytest.raises(CanonicalizationError):
         canonicalize_envelope_payload(payload)
-

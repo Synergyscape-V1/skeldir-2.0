@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from hashlib import sha256
 from typing import Any
@@ -15,13 +16,29 @@ from app.trust.canonicalization import (
     canonicalize_signature_material,
     validate_envelope_schema,
 )
-from app.trust.hash_domains import project_domain_payload
+from app.trust.hash_domains import (
+    HashDomainError,
+    classify_hash_domain,
+    project_domain_payload,
+)
 from app.trust.schema_versions import validate_schema_canonicalization_compatibility
 
 
 SEMANTIC_DOMAIN = "semantic_truth_v1"
 ARTIFACT_DOMAIN = "artifact_payload_v1"
 SIGNATURE_DOMAIN = "signature_material_v1"
+HASH_WRAPPER_KEYS = frozenset(
+    {
+        "hash_domain",
+        "schema_version",
+        "canonicalization_version",
+        "hash_algorithm",
+        "payload",
+    }
+)
+HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_ARTIFACT_BYTES_FIELDS = frozenset({"artifact_bytes_sha256"})
+_SIGNATURE_DERIVED_FIELDS = frozenset({"semantic_truth_hash", "artifact_hash"})
 
 
 class HashIdentityError(ValueError):
@@ -30,6 +47,77 @@ class HashIdentityError(ValueError):
 
 def _tagged_sha256(data: bytes) -> str:
     return f"sha256:{sha256(data).hexdigest()}"
+
+
+def _iter_payload_paths(value: Any, path: str = "") -> list[str]:
+    paths: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}" if path else key
+            paths.append(child_path)
+            paths.extend(_iter_payload_paths(child, child_path))
+    elif isinstance(value, list):
+        child_path = f"{path}[]"
+        for child in value:
+            paths.extend(_iter_payload_paths(child, child_path))
+    return paths
+
+
+def _get_path_value(payload: dict[str, Any], path: str) -> Any:
+    value: Any = payload
+    for part in path.split("."):
+        if part.endswith("[]"):
+            return None
+        value = value[part]
+    return value
+
+
+def _validate_payload_path(domain: str, path: str, value: Any) -> None:
+    if domain == ARTIFACT_DOMAIN and path in _ARTIFACT_BYTES_FIELDS:
+        if not isinstance(value, str) or not HASH_RE.match(value):
+            raise HashDomainError(f"hash_wrapper_invalid_artifact_bytes_hash:{path}")
+        return
+    if domain == SIGNATURE_DOMAIN and path in _SIGNATURE_DERIVED_FIELDS:
+        if not isinstance(value, str) or not HASH_RE.match(value):
+            raise HashDomainError(f"hash_wrapper_invalid_derived_hash:{path}")
+        return
+
+    declared_domain = classify_hash_domain(path)
+    if declared_domain != domain:
+        raise HashDomainError(
+            f"hash_wrapper_payload_domain_mismatch:{domain}:{path}:{declared_domain}"
+        )
+
+
+def validate_hash_domain_wrapper(wrapper: dict[str, Any]) -> dict[str, Any]:
+    """Validate closed hash-domain wrapper shape before canonical byte encoding."""
+    if not isinstance(wrapper, dict):
+        raise HashDomainError("hash_wrapper_not_object")
+    keys = set(wrapper)
+    missing = sorted(HASH_WRAPPER_KEYS - keys)
+    extra = sorted(keys - HASH_WRAPPER_KEYS)
+    if missing:
+        raise HashDomainError(f"hash_wrapper_missing_keys:{missing}")
+    if extra:
+        raise HashDomainError(f"hash_wrapper_extra_keys:{extra}")
+
+    domain = wrapper["hash_domain"]
+    if domain not in {SEMANTIC_DOMAIN, ARTIFACT_DOMAIN, SIGNATURE_DOMAIN}:
+        raise HashDomainError(f"hash_wrapper_unknown_domain:{domain}")
+    if wrapper["hash_algorithm"] != HASH_ALGORITHM:
+        raise HashDomainError(
+            f"hash_wrapper_unsupported_algorithm:{wrapper['hash_algorithm']}"
+        )
+    validate_schema_canonicalization_compatibility(
+        wrapper["schema_version"], wrapper["canonicalization_version"]
+    )
+
+    payload = wrapper["payload"]
+    if not isinstance(payload, dict):
+        raise HashDomainError("hash_wrapper_payload_not_object")
+    for path in _iter_payload_paths(payload):
+        _validate_payload_path(domain, path, _get_path_value(payload, path))
+    return deepcopy(wrapper)
 
 
 def _versions(payload: dict[str, Any]) -> tuple[str, str]:
@@ -45,16 +133,20 @@ def build_semantic_truth_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
     schema_version, canonicalization_version = _versions(payload)
     validate_envelope_schema(payload)
     prepared = _canonicalize_arrays(payload)
-    return {
-        "hash_domain": SEMANTIC_DOMAIN,
-        "schema_version": schema_version,
-        "canonicalization_version": canonicalization_version,
-        "hash_algorithm": HASH_ALGORITHM,
-        "payload": project_domain_payload(prepared, SEMANTIC_DOMAIN),
-    }
+    return validate_hash_domain_wrapper(
+        {
+            "hash_domain": SEMANTIC_DOMAIN,
+            "schema_version": schema_version,
+            "canonicalization_version": canonicalization_version,
+            "hash_algorithm": HASH_ALGORITHM,
+            "payload": project_domain_payload(prepared, SEMANTIC_DOMAIN),
+        }
+    )
 
 
-def build_artifact_hash_input(payload_or_bytes: dict[str, Any] | bytes) -> dict[str, Any]:
+def build_artifact_hash_input(
+    payload_or_bytes: dict[str, Any] | bytes,
+) -> dict[str, Any]:
     """Build the structured artifact hash input object."""
     if isinstance(payload_or_bytes, bytes):
         artifact_payload: dict[str, Any] = {
@@ -64,25 +156,37 @@ def build_artifact_hash_input(payload_or_bytes: dict[str, Any] | bytes) -> dict[
         canonicalization_version = "trust-canonical-json-v1"
     elif isinstance(payload_or_bytes, dict):
         payload = deepcopy(payload_or_bytes)
-        schema_version = payload.pop("schema_version", "trust-envelope-schema-v1")
-        canonicalization_version = payload.pop(
+        schema_version = payload.get("schema_version", "trust-envelope-schema-v1")
+        canonicalization_version = payload.get(
             "canonicalization_version", "trust-canonical-json-v1"
         )
         if not isinstance(schema_version, str) or not isinstance(
             canonicalization_version, str
         ):
             raise HashIdentityError("artifact_version_not_string")
-        artifact_payload = payload
+        if "envelope_version" in payload:
+            validate_envelope_schema(payload)
+            artifact_payload = project_domain_payload(
+                _canonicalize_arrays(payload), ARTIFACT_DOMAIN
+            )
+        else:
+            payload.pop("schema_version", None)
+            payload.pop("canonicalization_version", None)
+            artifact_payload = payload
     else:
         raise HashIdentityError("artifact_payload_not_object_or_bytes")
-    validate_schema_canonicalization_compatibility(schema_version, canonicalization_version)
-    return {
-        "hash_domain": ARTIFACT_DOMAIN,
-        "schema_version": schema_version,
-        "canonicalization_version": canonicalization_version,
-        "hash_algorithm": HASH_ALGORITHM,
-        "payload": artifact_payload,
-    }
+    validate_schema_canonicalization_compatibility(
+        schema_version, canonicalization_version
+    )
+    return validate_hash_domain_wrapper(
+        {
+            "hash_domain": ARTIFACT_DOMAIN,
+            "schema_version": schema_version,
+            "canonicalization_version": canonicalization_version,
+            "hash_algorithm": HASH_ALGORITHM,
+            "payload": artifact_payload,
+        }
+    )
 
 
 def build_signature_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
@@ -97,13 +201,15 @@ def build_signature_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
     artifact_hash = payload.get("artifact_hash")
     if artifact_hash is not None:
         signature_material["artifact_hash"] = artifact_hash
-    return {
-        "hash_domain": SIGNATURE_DOMAIN,
-        "schema_version": schema_version,
-        "canonicalization_version": canonicalization_version,
-        "hash_algorithm": HASH_ALGORITHM,
-        "payload": signature_material,
-    }
+    return validate_hash_domain_wrapper(
+        {
+            "hash_domain": SIGNATURE_DOMAIN,
+            "schema_version": schema_version,
+            "canonicalization_version": canonicalization_version,
+            "hash_algorithm": HASH_ALGORITHM,
+            "payload": signature_material,
+        }
+    )
 
 
 def compute_semantic_truth_hash(payload: dict[str, Any]) -> str:
@@ -118,7 +224,9 @@ def compute_artifact_hash(payload_or_bytes: dict[str, Any] | bytes) -> str:
 
 def compute_signature_hash(payload_or_signature_material: dict[str, Any]) -> str:
     """Compute sha256:<hex> over structured canonical signature-domain bytes."""
-    return _tagged_sha256(canonicalize_signature_material(payload_or_signature_material))
+    return _tagged_sha256(
+        canonicalize_signature_material(payload_or_signature_material)
+    )
 
 
 def compute_envelope_payload_hash(payload: dict[str, Any]) -> str:
