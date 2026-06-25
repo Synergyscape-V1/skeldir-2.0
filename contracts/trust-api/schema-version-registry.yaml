@@ -7,7 +7,9 @@ supported_schema_versions:
 supported_canonicalization_versions:
   - canonicalization_version: trust-canonical-json-v1
     status: supported
-    rule: JSON objects sorted by UTF-8 key bytes, no floats, no NaN/Infinity, UTC Z-only timestamps, and v1 JSON-safe integer bounds.
+    profile_name: RFC8785-JCS-Skeldir-v1
+    profile_registry: canonicalization-version-registry.yaml
+    rule: RFC8785-JCS-Skeldir-v1 canonical JSON profile; no floats, no NaN/Infinity, UTC Z-only timestamps, manifest-driven array ordering, exact Unicode preservation, and v1 JSON-safe integer bounds.
 supported_signature_schema_versions:
   - signature_schema_version: trust-signature-v1
     status: supported

@@ -1,0 +1,26 @@
+manifest_version: b25-p2-array-ordering-manifest-v1
+schema_version: trust-envelope-schema-v1
+canonicalization_version: trust-canonical-json-v1
+array_fields:
+  - field_path: audience_binding.audience_scope
+    ordering: unordered_set_sort_by_canonical_element_hash
+    rationale: Scope arrays are JSON-schema unique sets and do not carry sequence semantics.
+  - field_path: policy_action_authority.allowed_scopes
+    ordering: unordered_set_sort_by_canonical_element_hash
+    rationale: Scope arrays are JSON-schema unique sets and do not carry sequence semantics.
+  - field_path: policy_action_authority.forbidden_scopes
+    ordering: unordered_set_sort_by_canonical_element_hash
+    rationale: Forbidden-scope arrays are JSON-schema unique sets and do not carry sequence semantics.
+  - field_path: provenance_chain
+    ordering: unordered_set_sort_by_declared_key_tuple
+    sort_key:
+      - provenance_type
+      - source_ref
+      - observed_at
+      - source_snapshot_hash
+      - source_ref_hash
+    rationale: P1 provenance entries expose these stable source identity fields; DB retrieval order is not authoritative.
+  - field_path: subject_authority.allowed_source_tables
+    ordering: unordered_set_sort_by_canonical_element_hash
+    rationale: Source table arrays are JSON-schema unique sets and do not carry sequence semantics.
+
