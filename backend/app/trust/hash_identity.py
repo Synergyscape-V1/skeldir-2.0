@@ -7,6 +7,8 @@ from copy import deepcopy
 from hashlib import sha256
 from typing import Any
 
+from jsonschema import Draft202012Validator
+
 from app.trust.canonicalization import (
     HASH_ALGORITHM,
     _canonicalize_arrays,
@@ -27,15 +29,30 @@ from app.trust.schema_versions import validate_schema_canonicalization_compatibi
 SEMANTIC_DOMAIN = "semantic_truth_v1"
 ARTIFACT_DOMAIN = "artifact_payload_v1"
 SIGNATURE_DOMAIN = "signature_material_v1"
-HASH_WRAPPER_KEYS = frozenset(
-    {
+HASH_DOMAIN_WRAPPER_SCHEMA: dict[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "B2.5-P2 HashDomainWrapper",
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
         "hash_domain",
         "schema_version",
         "canonicalization_version",
         "hash_algorithm",
         "payload",
-    }
-)
+    ],
+    "properties": {
+        "hash_domain": {
+            "type": "string",
+            "enum": [SEMANTIC_DOMAIN, ARTIFACT_DOMAIN, SIGNATURE_DOMAIN],
+        },
+        "schema_version": {"type": "string"},
+        "canonicalization_version": {"type": "string"},
+        "hash_algorithm": {"type": "string", "const": HASH_ALGORITHM},
+        "payload": {"type": "object"},
+    },
+}
+_HASH_DOMAIN_WRAPPER_VALIDATOR = Draft202012Validator(HASH_DOMAIN_WRAPPER_SCHEMA)
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ARTIFACT_BYTES_FIELDS = frozenset({"artifact_bytes_sha256"})
 _SIGNATURE_DERIVED_FIELDS = frozenset({"semantic_truth_hash", "artifact_hash"})
@@ -89,35 +106,37 @@ def _validate_payload_path(domain: str, path: str, value: Any) -> None:
         )
 
 
-def validate_hash_domain_wrapper(wrapper: dict[str, Any]) -> dict[str, Any]:
-    """Validate closed hash-domain wrapper shape before canonical byte encoding."""
-    if not isinstance(wrapper, dict):
-        raise HashDomainError("hash_wrapper_not_object")
-    keys = set(wrapper)
-    missing = sorted(HASH_WRAPPER_KEYS - keys)
-    extra = sorted(keys - HASH_WRAPPER_KEYS)
-    if missing:
-        raise HashDomainError(f"hash_wrapper_missing_keys:{missing}")
-    if extra:
-        raise HashDomainError(f"hash_wrapper_extra_keys:{extra}")
-
-    domain = wrapper["hash_domain"]
-    if domain not in {SEMANTIC_DOMAIN, ARTIFACT_DOMAIN, SIGNATURE_DOMAIN}:
-        raise HashDomainError(f"hash_wrapper_unknown_domain:{domain}")
-    if wrapper["hash_algorithm"] != HASH_ALGORITHM:
+def _validate_hash_domain_wrapper_schema(wrapper: Any) -> dict[str, Any]:
+    """Apply the declarative wrapper closure contract before domain checks."""
+    errors = sorted(
+        _HASH_DOMAIN_WRAPPER_VALIDATOR.iter_errors(wrapper),
+        key=lambda error: (list(error.path), list(error.schema_path)),
+    )
+    if errors:
+        first = errors[0]
+        path = ".".join(str(part) for part in first.absolute_path) or "$"
         raise HashDomainError(
-            f"hash_wrapper_unsupported_algorithm:{wrapper['hash_algorithm']}"
+            f"hash_wrapper_schema_validation_failed:{first.validator}:{path}"
         )
+    if not isinstance(wrapper, dict):
+        raise HashDomainError("hash_wrapper_schema_validation_failed:type:$")
+    return wrapper
+
+
+def validate_hash_domain_wrapper(wrapper: Any) -> dict[str, Any]:
+    """Validate closed hash-domain wrapper shape before canonical byte encoding."""
+    validated = _validate_hash_domain_wrapper_schema(wrapper)
+    wrapper_copy = deepcopy(validated)
+
     validate_schema_canonicalization_compatibility(
-        wrapper["schema_version"], wrapper["canonicalization_version"]
+        wrapper_copy["schema_version"], wrapper_copy["canonicalization_version"]
     )
 
-    payload = wrapper["payload"]
-    if not isinstance(payload, dict):
-        raise HashDomainError("hash_wrapper_payload_not_object")
+    domain = wrapper_copy["hash_domain"]
+    payload = wrapper_copy["payload"]
     for path in _iter_payload_paths(payload):
         _validate_payload_path(domain, path, _get_path_value(payload, path))
-    return deepcopy(wrapper)
+    return wrapper_copy
 
 
 def _versions(payload: dict[str, Any]) -> tuple[str, str]:

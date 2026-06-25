@@ -64,5 +64,8 @@ jobs:
       - name: Validate B2.5-P1 TrustEnvelope drift tripwire
         run: make validate-b25-p1-trust-drift
 
+      - name: Run backend trust pytest
+        run: python -m pytest backend/tests/trust -q
+
       - name: Validate B2.5-P2 canonicalization and negative controls
         run: make validate-b25-p2-canonicalization
