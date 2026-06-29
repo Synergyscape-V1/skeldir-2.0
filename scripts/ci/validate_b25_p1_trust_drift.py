@@ -42,8 +42,13 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/hash_identity.py",
     "backend/app/trust/money_authority_registry.py",
     "backend/app/trust/money_source_adapter.py",
+    "backend/app/trust/benchmark_defaults.py",
+    "backend/app/trust/builder.py",
     "backend/app/trust/opaque_reference.py",
+    "backend/app/trust/policy_defaults.py",
+    "backend/app/trust/refusal.py",
     "backend/app/trust/schema_versions.py",
+    "backend/app/trust/source_adapters.py",
     "backend/app/trust/text_disposition.py",
     "backend/app/trust/text_safety_registry.py",
     "backend/tests/trust/test_b25_p2_array_ordering.py",
@@ -54,6 +59,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p2_serializer_boundaries.py",
     "backend/tests/trust/test_b25_p3_text_disposition.py",
     "backend/tests/trust/test_b25_p4_money_authority.py",
+    "backend/tests/trust/test_b25_p5_builder.py",
 )
 
 
@@ -81,14 +87,19 @@ def inspect_file(path: str, text: str) -> list[DriftViolation]:
     violations: list[DriftViolation] = []
     if _matches_protected_path(path):
         violations.append(
-            DriftViolation(path, "backend TrustEnvelope/trust model path is forbidden in B2.5-P1")
+            DriftViolation(
+                path, "backend TrustEnvelope/trust model path is forbidden in B2.5-P1"
+            )
         )
     lowered = text.lower()
     if "trustenvelope" in lowered or "trust envelope" in lowered:
         for pattern in PYDANTIC_TRUST_MODEL_PATTERNS:
             if pattern.search(text):
                 violations.append(
-                    DriftViolation(path, "hand-written Pydantic TrustEnvelope model is forbidden in B2.5-P1")
+                    DriftViolation(
+                        path,
+                        "hand-written Pydantic TrustEnvelope model is forbidden in B2.5-P1",
+                    )
                 )
                 break
     return violations
@@ -128,14 +139,18 @@ def main() -> int:
         violations = scan_tree()
         if violations:
             for violation in violations:
-                print(f"B25_P1_TRUST_DRIFT_VIOLATION {violation.path}: {violation.reason}")
+                print(
+                    f"B25_P1_TRUST_DRIFT_VIOLATION {violation.path}: {violation.reason}"
+                )
             return 1
         print("B25_P1_TRUST_DRIFT_VALIDATION_PASS")
         print(f"protected_path_patterns={len(PROTECTED_PATH_PATTERNS)}")
         if args.negative_control:
             count = run_negative_controls()
             print(f"drift_negative_controls_passed={count}")
-            print("meta_negative_controls=unauthorized_backend_trust_paths_and_pydantic_models_fail")
+            print(
+                "meta_negative_controls=unauthorized_backend_trust_paths_and_pydantic_models_fail"
+            )
         return 0
     except RuntimeError as exc:
         print(f"B25_P1_TRUST_DRIFT_VALIDATION_FAIL: {exc}")
