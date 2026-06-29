@@ -1,3 +1,18 @@
+- gate_id: validate-b25-p5-builder
+  workflow: .github/workflows/b2_5-p5-builder.yml
+  job: B2.5-P5 Trust Builder
+  script: scripts/ci/validate_b25_p5_builder.py
+  owning_phase: B2.5-P5
+  protected_invariant: B2.5-P5 unsigned read-only TrustEnvelope builder assembles schema-valid, canonicalizable payloads from approved sources while preserving tenant isolation, no raw tenant IDs, no mutation, no compute dispatch, no LLM/dynamic import path, P3 text disposition, P4 money authority, unavailable confidence/benchmark honesty, conservative policy defaults, and P5 scope boundaries.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, and P4 validates money authority, but none validates the read-only builder's source registry totality, tenant-bound source read, wrong-tenant refusal, payload assembly, runtime no-LLM trace, no-compute/no-mutation behavior, or P5-specific scope boundary.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p5_builder.py --negative-control
+  local_reproduction_command: make validate-b25-p5-builder
+  risk_if_removed: Future Trust API work could launder false authority through a builder that reads wrong sources, leaks raw tenant IDs, mutates state, dispatches compute, imports LLM code, bypasses P3/P4, fabricates unavailable metadata, or overclaims P6+ behavior without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-b25-p4-money-authority
   workflow: .github/workflows/b2_5-p4-money-authority.yml
   job: B2.5-P4 Money Authority

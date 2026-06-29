@@ -1,3 +1,25 @@
+- id: validate-b25-p5-builder
+  path: scripts/ci/validate_b25_p5_builder.py
+  status: required
+  owning_phase: B2.5-P5
+  protected_invariant: B2.5-P5 unsigned TrustEnvelope builder remains source-registry-total, tenant-bound, read-only, compute-dispatch-free, audit-write-free, LLM/dynamic-import-free, P3 text-disposition integrated, P4 money-authority integrated, explicit about unavailable confidence/benchmarks, conservative on policy authority, schema-valid, canonicalizable, and scoped away from routes/signing/auth/audit/export/MCP/action authority.
+  command: python scripts/ci/validate_b25_p5_builder.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p5-builder.yml
+  workflow_job_name: B2.5-P5 Trust Builder
+  local_reproduction_command: make validate-b25-p5-builder
+  expected_failure_meaning: B2.5-P5 builder is missing, schema-invalid, field-source-incomplete, raw-tenant-leaky, wrong-tenant-visible, mutating, compute-dispatching, LLM/dynamic-import contaminated, bypassing P3/P4, silently nulling confidence/benchmark metadata, policy-escalating, causal-overclaiming, prior-phase-regressing, or expanded into P6+ surfaces.
+  first_diagnostic_command: python scripts/ci/validate_b25_p5_builder.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-trust-builder
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-b25-p4-money-authority
   path: scripts/ci/validate_b25_p4_money_authority.py
   status: required

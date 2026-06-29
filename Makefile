@@ -179,6 +179,12 @@ validate-b25-p4-money-authority: ## Run B2.5-P4 authoritative money source adapt
 validate-b25-p4-money-authority-negative: ## Run B2.5-P4 money authority negative-control validator
 	@python scripts/ci/validate_b25_p4_money_authority.py --negative-control
 
+validate-b25-p5-builder: ## Run B2.5-P5 unsigned TrustEnvelope builder validator with negative controls
+	@python scripts/ci/validate_b25_p5_builder.py --negative-control
+
+validate-b25-p5-builder-negative: ## Run B2.5-P5 builder negative-control validator
+	@python scripts/ci/validate_b25_p5_builder.py --negative-control
+
 ops-seed-diagnostics: $(ENV_FILE) ## Seed local-only M4 diagnostic fixtures through the API container image
 	@$(OPS_RUN) scripts/ops/seed_diagnostics.py
 
