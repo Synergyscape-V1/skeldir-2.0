@@ -26,8 +26,10 @@ from app.trust.builder import (  # noqa: E402
     TrustEnvelopeBuildRequest,
     build_unsigned_trust_envelope,
 )
+from app.trust.benchmark_defaults import unavailable_benchmark_metadata  # noqa: E402
 from app.trust.canonicalization import canonicalize_envelope_payload  # noqa: E402
 from app.trust.money_source_adapter import AuthoritativeMoneyMinor  # noqa: E402
+from app.trust.policy_defaults import read_only_policy_authority  # noqa: E402
 from app.trust.source_adapters import (  # noqa: E402
     TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY,
 )
@@ -57,6 +59,40 @@ FORBIDDEN_DYNAMIC_NAMES = {
     "pkg_resources",
     "entry_points",
     "load_entry_point",
+}
+FORBIDDEN_PYDANTIC_CONSTRUCT_ATTRS = {"model_construct", "construct"}
+FORBIDDEN_NATIVE_DISPATCH_IMPORTS = {
+    "asyncio",
+    "threading",
+    "multiprocessing",
+    "subprocess",
+    "anyio",
+    "trio",
+    "concurrent.futures",
+    "fastapi.BackgroundTasks",
+    "starlette.background.BackgroundTask",
+}
+FORBIDDEN_NATIVE_DISPATCH_CALLS = {
+    "asyncio.create_task",
+    "asyncio.ensure_future",
+    "asyncio.gather",
+    "loop.create_task",
+    "run_in_executor",
+    "concurrent.futures.ThreadPoolExecutor",
+    "concurrent.futures.ProcessPoolExecutor",
+    "ThreadPoolExecutor",
+    "ProcessPoolExecutor",
+    "submit",
+    "threading.Thread",
+    "multiprocessing.Process",
+    "fastapi.BackgroundTasks",
+    "BackgroundTasks",
+    "starlette.background.BackgroundTask",
+    "BackgroundTask",
+    "anyio.create_task_group",
+    "trio.open_nursery",
+    "subprocess.Popen",
+    "Popen",
 }
 FORBIDDEN_SCOPE_TOKENS = (
     "APIRouter",
@@ -269,6 +305,136 @@ def _imports_for(path: Path) -> set[str]:
     return imports
 
 
+def _trust_dependency_paths() -> tuple[Path, ...]:
+    visited: set[Path] = set()
+    stack = list(TRUST_PATHS)
+    while stack:
+        path = stack.pop()
+        if path in visited or not path.exists():
+            continue
+        visited.add(path)
+        for module in _imports_for(path):
+            if module.startswith("app.trust"):
+                rel = module.replace(".", "/") + ".py"
+                candidate = ROOT / "backend" / rel
+                if candidate.exists():
+                    stack.append(candidate)
+    return tuple(sorted(visited))
+
+
+def _dotted_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _dotted_name(node.value)
+        if parent:
+            return f"{parent}.{node.attr}"
+        return node.attr
+    return ""
+
+
+def _scan_pydantic_construct_bypass(tree: ast.AST, *, label: str) -> int:
+    checked = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            checked += 1
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in FORBIDDEN_PYDANTIC_CONSTRUCT_ATTRS
+            ):
+                raise B25P5ValidationError(
+                    f"pydantic validation-bypass {node.func.attr} in {label}"
+                )
+    return checked
+
+
+def validate_pydantic_construct_ban() -> int:
+    checked = 0
+    for path in _trust_dependency_paths():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        checked += _scan_pydantic_construct_bypass(tree, label=str(path))
+    return checked
+
+
+def _import_aliases(tree: ast.AST, *, label: str) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root_name = alias.name.split(".", 1)[0]
+                local_name = alias.asname or root_name
+                aliases[local_name] = alias.name
+                if alias.name in FORBIDDEN_NATIVE_DISPATCH_IMPORTS:
+                    raise B25P5ValidationError(
+                        f"native dispatch import {alias.name} in {label}"
+                    )
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            module = node.module
+            if module in FORBIDDEN_NATIVE_DISPATCH_IMPORTS:
+                raise B25P5ValidationError(
+                    f"native dispatch import {module} in {label}"
+                )
+            for alias in node.names:
+                full_name = f"{module}.{alias.name}"
+                local_name = alias.asname or alias.name
+                aliases[local_name] = full_name
+                if full_name in FORBIDDEN_NATIVE_DISPATCH_IMPORTS:
+                    raise B25P5ValidationError(
+                        f"native dispatch import {full_name} in {label}"
+                    )
+                if full_name in FORBIDDEN_NATIVE_DISPATCH_CALLS:
+                    raise B25P5ValidationError(
+                        f"native dispatch symbol import {full_name} in {label}"
+                    )
+    return aliases
+
+
+def _resolve_alias(name: str, aliases: dict[str, str]) -> str:
+    head, dot, tail = name.partition(".")
+    if head in aliases:
+        return aliases[head] + (f".{tail}" if dot else "")
+    return name
+
+
+def _scan_native_dispatch_ban(tree: ast.AST, *, label: str) -> int:
+    aliases = _import_aliases(tree, label=label)
+    checked = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            checked += 1
+            target = _resolve_alias(_dotted_name(node.func), aliases)
+            target_tail = target.rsplit(".", 1)[-1]
+            if (
+                target in FORBIDDEN_NATIVE_DISPATCH_CALLS
+                or target_tail in FORBIDDEN_NATIVE_DISPATCH_CALLS
+            ):
+                raise B25P5ValidationError(
+                    f"native background dispatch call {target} in {label}"
+                )
+            if isinstance(node.func, ast.Attribute) and node.func.attr in {
+                "create_task",
+                "ensure_future",
+                "run_in_executor",
+                "submit",
+                "gather",
+                "open_nursery",
+                "create_task_group",
+                "Popen",
+            }:
+                raise B25P5ValidationError(
+                    f"native background dispatch method {node.func.attr} in {label}"
+                )
+    return checked
+
+
+def validate_native_dispatch_ban() -> int:
+    checked = 0
+    for path in _trust_dependency_paths():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        checked += _scan_native_dispatch_ban(tree, label=str(path))
+    return checked
+
+
 def validate_ast_no_llm_imports() -> int:
     checked = 0
     for path in TRUST_PATHS:
@@ -376,6 +542,116 @@ def validate_p3_p4_policy_benchmark_confidence() -> tuple[int, int, int, int, in
     if payload["confidence_metadata"]["confidence_status"] != "unavailable":
         raise B25P5ValidationError("confidence unavailable default missing")
     return 1, 1, 1, 1, 1
+
+
+def _poison_default_projection(value: dict[str, object]) -> None:
+    value["injected_tenant_id"] = "tenant-contamination-negative-control"
+    value["injected_provider"] = "provider-contamination-negative-control"
+    for child in value.values():
+        if isinstance(child, list):
+            child.append("mutated-scope")
+        elif isinstance(child, dict):
+            child["mutated_nested_key"] = "mutated-value"
+
+
+def validate_default_factory_isolation(
+    *,
+    policy_factory: Any = read_only_policy_authority,
+    benchmark_factory: Any = unavailable_benchmark_metadata,
+) -> tuple[int, int]:
+    policy_a = policy_factory()
+    policy_b = policy_factory()
+    benchmark_a = benchmark_factory()
+    benchmark_b = benchmark_factory()
+    for label, value in {
+        "policy_a": policy_a,
+        "policy_b": policy_b,
+        "benchmark_a": benchmark_a,
+        "benchmark_b": benchmark_b,
+    }.items():
+        if not isinstance(value, dict):
+            raise B25P5ValidationError(f"{label} default is not a materialized dict")
+    if policy_a is policy_b or benchmark_a is benchmark_b:
+        raise B25P5ValidationError("policy/benchmark factory returned shared dict")
+    if policy_a.get("allowed_scopes") is policy_b.get("allowed_scopes"):
+        raise B25P5ValidationError("policy factory returned shared allowed_scopes")
+    if policy_a.get("forbidden_scopes") is policy_b.get("forbidden_scopes"):
+        raise B25P5ValidationError("policy factory returned shared forbidden_scopes")
+
+    _poison_default_projection(policy_a)
+    _poison_default_projection(benchmark_a)
+    policy_a["policy_state"] = "auto_executable_within_policy"
+    benchmark_a["benchmark_status"] = "provider_injected"
+
+    policy_c = policy_factory()
+    benchmark_c = benchmark_factory()
+    if policy_c.get("policy_state") != "read_only":
+        raise B25P5ValidationError("policy default mutation contaminated later call")
+    if policy_c.get("allowed_scopes") != [
+        "trust.envelope.read",
+        "trust.envelope.verify",
+    ]:
+        raise B25P5ValidationError("policy allowed_scopes mutation contaminated later call")
+    if benchmark_c.get("benchmark_status") != "unavailable":
+        raise B25P5ValidationError("benchmark mutation contaminated later call")
+    serialized = f"{policy_c!r}\n{benchmark_c!r}"
+    for forbidden in (
+        "tenant-contamination-negative-control",
+        "provider-contamination-negative-control",
+        "mutated-scope",
+        "auto_executable_within_policy",
+    ):
+        if forbidden in serialized:
+            raise B25P5ValidationError(
+                f"default contamination token survived: {forbidden}"
+            )
+    return 4, 5
+
+
+def validate_payload_default_mutation_isolation() -> int:
+    tenant_a = uuid4()
+    tenant_b = uuid4()
+    verdict_a = uuid4()
+    verdict_b = uuid4()
+    session_a = FakeReadOnlySession(_row(tenant_id=tenant_a, verdict_id=verdict_a))
+    session_b = FakeReadOnlySession(_row(tenant_id=tenant_b, verdict_id=verdict_b))
+    result_a = asyncio.run(
+        build_unsigned_trust_envelope(session_a, _request(tenant_a, verdict_a))
+    )
+    if result_a.unsigned_payload is None:
+        raise B25P5ValidationError("default isolation fixture A did not build")
+    policy_a = result_a.unsigned_payload["policy_action_authority"]
+    benchmark_a = result_a.unsigned_payload["benchmark_metadata"]
+    if not isinstance(policy_a, dict) or not isinstance(benchmark_a, dict):
+        raise B25P5ValidationError("payload defaults are not dict projections")
+    _poison_default_projection(policy_a)
+    _poison_default_projection(benchmark_a)
+    policy_a["policy_state"] = "auto_executable_within_policy"
+    benchmark_a["benchmark_status"] = "provider_injected"
+
+    result_b = asyncio.run(
+        build_unsigned_trust_envelope(session_b, _request(tenant_b, verdict_b))
+    )
+    if result_b.unsigned_payload is None:
+        raise B25P5ValidationError("default isolation fixture B did not build")
+    policy_b = result_b.unsigned_payload["policy_action_authority"]
+    benchmark_b = result_b.unsigned_payload["benchmark_metadata"]
+    if policy_b["policy_state"] != "read_only":
+        raise B25P5ValidationError("payload policy mutation crossed requests")
+    if benchmark_b["benchmark_status"] != "unavailable":
+        raise B25P5ValidationError("payload benchmark mutation crossed requests")
+    serialized = str(result_b.unsigned_payload)
+    for forbidden in (
+        "tenant-contamination-negative-control",
+        "provider-contamination-negative-control",
+        "mutated-scope",
+        str(tenant_a),
+    ):
+        if forbidden in serialized:
+            raise B25P5ValidationError(
+                f"payload default contamination token survived: {forbidden}"
+            )
+    return 6
 
 
 def validate_non_causal_attribution_boundary() -> int:
@@ -506,6 +782,73 @@ def validate_meta_negative_controls() -> int:
     return controls
 
 
+def validate_follow_up_meta_negative_controls() -> tuple[int, int, int]:
+    shared_policy = {
+        "policy_state": "read_only",
+        "allowed_scopes": ["trust.envelope.read", "trust.envelope.verify"],
+        "forbidden_scopes": ["trust.action.execute"],
+        "reason_code": "p1_contract_boundary_only",
+    }
+    shared_benchmark = {
+        "benchmark_status": "unavailable",
+        "benchmark_authority": "explicitly_unavailable",
+        "benchmark_ref": None,
+        "benchmark_hash": None,
+        "unavailable_reason": "benchmark_source_not_configured",
+    }
+
+    def shared_policy_factory() -> dict[str, object]:
+        return shared_policy
+
+    def shared_benchmark_factory() -> dict[str, object]:
+        return shared_benchmark
+
+    try:
+        validate_default_factory_isolation(
+            policy_factory=shared_policy_factory,
+            benchmark_factory=shared_benchmark_factory,
+        )
+    except B25P5ValidationError:
+        mutable_default_controls = 1
+    else:
+        raise B25P5ValidationError("shared mutable default negative control passed")
+
+    pydantic_controls = 0
+    for source in (
+        "SomeModel.model_construct(trust='bypass')",
+        "SomeModel.construct(trust='bypass')",
+    ):
+        try:
+            _scan_pydantic_construct_bypass(
+                ast.parse(source), label="pydantic_meta_negative"
+            )
+        except B25P5ValidationError:
+            pydantic_controls += 1
+        else:
+            raise B25P5ValidationError(
+                f"pydantic construct negative control passed: {source}"
+            )
+
+    native_controls = 0
+    for source in (
+        "import asyncio\nasyncio.create_task(do_work())",
+        (
+            "from concurrent.futures import ThreadPoolExecutor\n"
+            "ThreadPoolExecutor().submit(do_work)"
+        ),
+    ):
+        try:
+            _scan_native_dispatch_ban(ast.parse(source), label="dispatch_meta_negative")
+        except B25P5ValidationError:
+            native_controls += 1
+        else:
+            raise B25P5ValidationError(
+                f"native dispatch negative control passed: {source}"
+            )
+
+    return mutable_default_controls, pydantic_controls, native_controls
+
+
 def validate_all() -> None:
     field_count = validate_field_source_registry()
     success_controls = validate_builder_success_schema()
@@ -516,6 +859,8 @@ def validate_all() -> None:
     ast_controls = validate_ast_no_llm_imports()
     transitive_controls = validate_transitive_no_llm_imports()
     dynamic_controls = validate_dynamic_import_ban()
+    pydantic_construct_controls = validate_pydantic_construct_ban()
+    native_dispatch_controls = validate_native_dispatch_ban()
     runtime_controls = validate_runtime_sys_modules_trace()
     (
         p3_controls,
@@ -524,6 +869,10 @@ def validate_all() -> None:
         benchmark_controls,
         confidence_controls,
     ) = validate_p3_p4_policy_benchmark_confidence()
+    immutable_default_controls, default_factory_controls = (
+        validate_default_factory_isolation()
+    )
+    default_payload_controls = validate_payload_default_mutation_isolation()
     non_causal_controls = validate_non_causal_attribution_boundary()
     canonical_controls = 1 if result.unsigned_payload else 0
     p1_controls, p2_controls, p3_regression, p4_controls_regression = (
@@ -531,6 +880,11 @@ def validate_all() -> None:
     )
     scope_controls = validate_scope_overreach()
     meta_controls = validate_meta_negative_controls()
+    (
+        mutable_default_meta_controls,
+        pydantic_meta_controls,
+        native_dispatch_meta_controls,
+    ) = validate_follow_up_meta_negative_controls()
 
     print("B25_P5_BUILDER_VALIDATION_PASS")
     print(f"field_source_registry_fields_checked={field_count}")
@@ -545,11 +899,18 @@ def validate_all() -> None:
     print(f"ast_no_llm_import_controls_passed={ast_controls}")
     print(f"transitive_no_llm_import_controls_passed={transitive_controls}")
     print(f"dynamic_import_ban_controls_passed={dynamic_controls}")
+    print(f"pydantic_construct_ban_controls_passed={pydantic_construct_controls}")
+    print(f"native_dispatch_ban_controls_passed={native_dispatch_controls}")
     print(f"runtime_sys_modules_trace_controls_passed={runtime_controls}")
     print(f"p3_text_disposition_integration_controls_passed={p3_controls}")
     print(f"p4_money_authority_integration_controls_passed={p4_controls}")
     print(f"policy_default_controls_passed={policy_controls}")
     print(f"benchmark_unavailable_controls_passed={benchmark_controls}")
+    print(f"immutable_default_controls_passed={immutable_default_controls}")
+    print(
+        "default_mutation_isolation_controls_passed="
+        f"{default_factory_controls + default_payload_controls}"
+    )
     print(f"confidence_unavailable_controls_passed={confidence_controls}")
     print(f"non_causal_attribution_controls_passed={non_causal_controls}")
     print(f"canonicalization_compatibility_controls_passed={canonical_controls}")
@@ -559,6 +920,9 @@ def validate_all() -> None:
     print(f"p4_regression_controls_passed={p4_controls_regression}")
     print(f"scope_overreach_controls_passed={scope_controls}")
     print(f"meta_negative_controls_passed={meta_controls}")
+    print(f"shared_mutable_default_meta_negative_controls_passed={mutable_default_meta_controls}")
+    print(f"pydantic_construct_meta_negative_controls_passed={pydantic_meta_controls}")
+    print(f"native_dispatch_meta_negative_controls_passed={native_dispatch_meta_controls}")
 
 
 def main() -> int:
