@@ -161,6 +161,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b25_p1_trust_drift.py",
     "scripts/ci/validate_b25_p2_canonicalization.py",
     "scripts/ci/validate_b25_p3_text_disposition.py",
+    "scripts/ci/validate_b25_p4_money_authority.py",
     "scripts/ci/validate_live_branch_protection.py",
     "scripts/ci/write_b24_p11_command_junit.py",
     "scripts/ci/validate_m5_b24_readiness_design.py",
@@ -184,6 +185,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     ".github/workflows/b2_5-p1-contracts.yml",
     ".github/workflows/b2_5-p2-canonicalization.yml",
     ".github/workflows/b2_5-p3-text-disposition.yml",
+    ".github/workflows/b2_5-p4-money-authority.yml",
     ".github/workflows/contract-publish.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/r2-data-truth-hardening.yml",
@@ -262,6 +264,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/forensics/B2.5-P1 Remediation Evidence Pack .md",
     "docs/forensics/B2.5-P2 Remediation Evidence Pack .md",
     "docs/forensics/B2.5-P3 Remediation Evidence Pack .md",
+    "docs/forensics/B2.5-P4 Remediation Evidence Pack .md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/forensics/M5 Remediation Evidence Pack .md",
     "M4 Remediation Evidence Pack.md",
@@ -330,7 +333,13 @@ def read_text(path: str) -> str:
 
 def git(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=REPO_ROOT, text=True, capture_output=True, timeout=60
+        ["git", *args],
+        cwd=REPO_ROOT,
+        encoding="utf-8",
+        errors="replace",
+        text=True,
+        capture_output=True,
+        timeout=60,
     )
 
 
