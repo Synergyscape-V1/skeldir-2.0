@@ -268,6 +268,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/forensics/B2.5-P3 Remediation Evidence Pack .md",
     "docs/forensics/B2.5-P4 Remediation Evidence Pack .md",
     "docs/forensics/B2.5-P5 Remediation Evidence Pack .md",
+    "docs/forensics/B2.5-P5 Follow-Up Corrective Evidence Pack.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/forensics/M5 Remediation Evidence Pack .md",
     "M4 Remediation Evidence Pack.md",
