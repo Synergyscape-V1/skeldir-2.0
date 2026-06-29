@@ -11,8 +11,10 @@ from app.trust.builder import (
     TrustEnvelopeBuildRequest,
     build_unsigned_trust_envelope,
 )
+from app.trust.benchmark_defaults import unavailable_benchmark_metadata
 from app.trust.canonicalization import canonicalize_envelope_payload
 from app.trust.money_source_adapter import AuthoritativeMoneyMinor
+from app.trust.policy_defaults import read_only_policy_authority
 from app.trust.source_adapters import iter_field_source_decisions
 
 
@@ -95,6 +97,16 @@ def _request(tenant_id: UUID, verdict_id: UUID) -> TrustEnvelopeBuildRequest:
             "audience_id": "p5-test-agent",
         },
     )
+
+
+def _poison_default_projection(value: dict[str, object]) -> None:
+    value["injected_tenant_id"] = "tenant-contamination-negative-control"
+    value["injected_provider"] = "provider-contamination-negative-control"
+    for child in value.values():
+        if isinstance(child, list):
+            child.append("mutated-scope")
+        elif isinstance(child, dict):
+            child["mutated_nested_key"] = "mutated-value"
 
 
 @pytest.mark.asyncio
@@ -243,3 +255,76 @@ def test_field_source_registry_covers_contract_required_surface() -> None:
     }:
         assert required in decisions
         assert decisions[required].source_class
+
+
+@pytest.mark.asyncio
+async def test_policy_and_benchmark_defaults_are_request_isolated() -> None:
+    tenant_a = uuid4()
+    tenant_b = uuid4()
+    verdict_a = uuid4()
+    verdict_b = uuid4()
+    session_a = FakeReadOnlySession(_row(tenant_id=tenant_a, verdict_id=verdict_a))
+    session_b = FakeReadOnlySession(_row(tenant_id=tenant_b, verdict_id=verdict_b))
+
+    result_a = await build_unsigned_trust_envelope(
+        session_a, _request(tenant_a, verdict_a)
+    )
+    assert result_a.unsigned_payload is not None
+    policy_a = result_a.unsigned_payload["policy_action_authority"]
+    benchmark_a = result_a.unsigned_payload["benchmark_metadata"]
+    assert isinstance(policy_a, dict)
+    assert isinstance(benchmark_a, dict)
+    _poison_default_projection(policy_a)
+    _poison_default_projection(benchmark_a)
+    policy_a["policy_state"] = "auto_executable_within_policy"
+    benchmark_a["benchmark_status"] = "provider_injected"
+
+    result_b = await build_unsigned_trust_envelope(
+        session_b, _request(tenant_b, verdict_b)
+    )
+
+    assert result_b.unsigned_payload is not None
+    policy_b = result_b.unsigned_payload["policy_action_authority"]
+    benchmark_b = result_b.unsigned_payload["benchmark_metadata"]
+    assert policy_b["policy_state"] == "read_only"
+    assert policy_b["allowed_scopes"] == [
+        "trust.envelope.read",
+        "trust.envelope.verify",
+    ]
+    assert benchmark_b["benchmark_status"] == "unavailable"
+    assert "mutated-scope" not in str(policy_b)
+    assert "provider-contamination-negative-control" not in str(benchmark_b)
+    assert "tenant-contamination-negative-control" not in str(result_b.unsigned_payload)
+
+
+def test_default_factories_return_fresh_nested_structures() -> None:
+    policy_a = read_only_policy_authority()
+    policy_b = read_only_policy_authority()
+    benchmark_a = unavailable_benchmark_metadata()
+    benchmark_b = unavailable_benchmark_metadata()
+
+    assert policy_a is not policy_b
+    assert benchmark_a is not benchmark_b
+    assert policy_a["allowed_scopes"] is not policy_b["allowed_scopes"]
+    assert policy_a["forbidden_scopes"] is not policy_b["forbidden_scopes"]
+
+    _poison_default_projection(policy_a)
+    _poison_default_projection(benchmark_a)
+    policy_a["policy_state"] = "mutated"
+    benchmark_a["benchmark_status"] = "mutated"
+
+    policy_c = read_only_policy_authority()
+    benchmark_c = unavailable_benchmark_metadata()
+    assert policy_c["policy_state"] == "read_only"
+    assert policy_c["allowed_scopes"] == [
+        "trust.envelope.read",
+        "trust.envelope.verify",
+    ]
+    assert policy_c["forbidden_scopes"] == [
+        "trust.action.execute",
+        "trust.policy.override",
+        "trust.envelope.mutate",
+    ]
+    assert benchmark_c["benchmark_status"] == "unavailable"
+    assert "mutated-scope" not in str(policy_c)
+    assert "contamination-negative-control" not in str(benchmark_c)
