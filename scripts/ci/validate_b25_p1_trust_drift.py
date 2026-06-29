@@ -40,6 +40,8 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/canonicalization.py",
     "backend/app/trust/hash_domains.py",
     "backend/app/trust/hash_identity.py",
+    "backend/app/trust/money_authority_registry.py",
+    "backend/app/trust/money_source_adapter.py",
     "backend/app/trust/opaque_reference.py",
     "backend/app/trust/schema_versions.py",
     "backend/app/trust/text_disposition.py",
@@ -51,6 +53,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p2_schema_versions.py",
     "backend/tests/trust/test_b25_p2_serializer_boundaries.py",
     "backend/tests/trust/test_b25_p3_text_disposition.py",
+    "backend/tests/trust/test_b25_p4_money_authority.py",
 )
 
 

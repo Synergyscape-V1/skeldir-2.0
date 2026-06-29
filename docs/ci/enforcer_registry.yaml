@@ -1,3 +1,25 @@
+- id: validate-b25-p4-money-authority
+  path: scripts/ci/validate_b25_p4_money_authority.py
+  status: required
+  owning_phase: B2.5-P4
+  protected_invariant: B2.5-P4 authoritative money source adapter remains total over TrustEnvelope money fields, maps only approved integer minor-unit authority or exact provider decimal strings, refuses legacy DTO/export/budget/dashboard floats with typed money_source_not_authoritative outcomes, fails closed on unknown currency and sub-minor precision, preserves P1/P2/P3 invariants, and blocks later-phase Trust API scope overreach.
+  command: python scripts/ci/validate_b25_p4_money_authority.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p4-money-authority.yml
+  workflow_job_name: B2.5-P4 Money Authority
+  local_reproduction_command: make validate-b25-p4-money-authority
+  expected_failure_meaning: B2.5-P4 money authority is missing, partial, DTO-float-authoritative, legacy-float-crashing, Decimal-float-derived, exponent-loose, unknown-currency-permissive, negative/zero-policy-ambiguous, result-shape-ambiguous, P1/P2/P3-regressing, or has expanded into routes/builders/signing/auth/audit/export/MCP/action authority.
+  first_diagnostic_command: python scripts/ci/validate_b25_p4_money_authority.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-money-authority
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-b25-p3-text-disposition
   path: scripts/ci/validate_b25_p3_text_disposition.py
   status: required

@@ -1,3 +1,18 @@
+- gate_id: validate-b25-p4-money-authority
+  workflow: .github/workflows/b2_5-p4-money-authority.yml
+  job: B2.5-P4 Money Authority
+  script: scripts/ci/validate_b25_p4_money_authority.py
+  owning_phase: B2.5-P4
+  protected_invariant: B2.5-P4 money authority is a pure deterministic adapter over TrustEnvelope money fields, approved integer minor-unit sources, exact provider decimal-string conversion by currency exponent, typed refusal/degraded states for non-authoritative money, and later-phase scope exclusion.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1 validates TrustEnvelope contract shape, P2 validates canonical/hash identity, and P3 validates text disposition, but none validates money-source authority totality, legacy DTO/export/budget float refusal, exact Decimal-from-string minor-unit conversion, currency exponent fail-closed behavior, field-specific negative/zero policy, typed money authority result shape, or P4-specific scope exclusion.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p4_money_authority.py --negative-control
+  local_reproduction_command: make validate-b25-p4-money-authority
+  risk_if_removed: Future TrustEnvelope builder/API work could launder dashboard/export/budget floats or provider decimal ambiguity into authoritative money, silently round sub-minor values, accept unknown currencies, crash on legacy float-only state, or bypass P2 numeric controls without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-b25-p3-text-disposition
   workflow: .github/workflows/b2_5-p3-text-disposition.yml
   job: B2.5-P3 Text Disposition
