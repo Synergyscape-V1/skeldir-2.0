@@ -65,18 +65,19 @@ class ReasonTruthDecision:
 
 
 def evaluate_reason_truth_state(
-    reason_code: str | ReasonCode,
+    reason_code: ReasonCode,
     envelope_candidate: dict[str, Any] | None = None,
 ) -> ReasonTruthDecision:
     """Evaluate one reason code against an optional envelope candidate."""
-    definition = get_reason_definition(reason_code)
+    code = require_reason_code(reason_code)
+    definition = get_reason_definition(code)
     if envelope_candidate is not None:
         validate_reason_truth_payload(definition.code, envelope_candidate)
     return _decision_from_definition(definition)
 
 
 def apply_reason_truth_matrix(
-    reason_code: str | ReasonCode,
+    reason_code: ReasonCode,
     envelope_candidate: dict[str, Any],
 ) -> ReasonTruthDecision:
     """Validate an envelope candidate under a reason-code matrix row."""
@@ -84,13 +85,13 @@ def apply_reason_truth_matrix(
 
 
 def validate_reason_truth_payload(
-    reason_code: str | ReasonCode,
+    reason_code: ReasonCode,
     payload: dict[str, Any],
 ) -> None:
     """Fail closed on P6 contradiction fixtures."""
     if not isinstance(payload, dict):
         raise ReasonTruthMatrixError("payload_not_object")
-    code = coerce_reason_code(reason_code)
+    code = require_reason_code(reason_code)
     definition = get_reason_definition(code)
     _reject_forbidden_fields(definition, payload)
     _validate_fallback(definition, payload)
@@ -132,6 +133,15 @@ def _decision_from_definition(definition: ReasonCodeDefinition) -> ReasonTruthDe
         future_phase_owner=definition.future_phase_owner,
         contradiction_status="accepted_no_contradiction",
     )
+
+
+def require_reason_code(value: object) -> ReasonCode:
+    """Require an internal ReasonCode enum member before matrix evaluation."""
+    if not isinstance(value, ReasonCode):
+        raise ReasonTruthMatrixError(
+            f"reason_code_not_enum:{type(value).__name__}"
+        )
+    return value
 
 
 def _reject_forbidden_fields(
