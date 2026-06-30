@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Block unauthorized B2.5 runtime TrustEnvelope model drift.
 
-B2.5-P1 was contract authority only. B2.5-P2 authorizes deterministic
-canonicalization/hash modules, but still does not authorize generated or
-hand-written runtime TrustEnvelope models, builders, routes, signers, or
-schema drift.
+B2.5-P1 was contract authority only. Later B2.5 subphases authorize narrow
+pure trust modules, but still do not authorize generated or hand-written
+runtime TrustEnvelope models, routes, signers, or schema drift outside the
+phase allowlist below.
 """
 
 from __future__ import annotations
@@ -46,6 +46,8 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/builder.py",
     "backend/app/trust/opaque_reference.py",
     "backend/app/trust/policy_defaults.py",
+    "backend/app/trust/reason_codes.py",
+    "backend/app/trust/reason_truth_matrix.py",
     "backend/app/trust/refusal.py",
     "backend/app/trust/schema_versions.py",
     "backend/app/trust/source_adapters.py",
@@ -60,6 +62,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p3_text_disposition.py",
     "backend/tests/trust/test_b25_p4_money_authority.py",
     "backend/tests/trust/test_b25_p5_builder.py",
+    "backend/tests/trust/test_b25_p6_reason_truth_matrix.py",
 )
 
 

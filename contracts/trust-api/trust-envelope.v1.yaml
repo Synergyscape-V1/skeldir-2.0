@@ -189,8 +189,12 @@ properties:
     - source_snapshot_stale
     - artifact_pruned
     - benchmark_unavailable
+    - policy_denied
+    - policy_engine_not_available
     - money_amount_exceeds_json_safe_integer
+    - money_source_not_authoritative
     - deterministic_evidence_unavailable
+    - provider_text_quarantined
     - null
   evidence_temporal_boundary:
     $ref: evidence-temporal-boundary.schema.json

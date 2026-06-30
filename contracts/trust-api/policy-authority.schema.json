@@ -52,7 +52,11 @@
       "enum": [
         "p1_contract_boundary_only",
         "scope_denied",
+        "tenant_mismatch",
         "replay_rejected",
+        "policy_denied",
+        "policy_engine_not_available",
+        "rate_limited",
         "verification_only",
         "approval_required",
         "simulation_only"

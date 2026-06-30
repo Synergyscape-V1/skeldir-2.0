@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skeldir.local/trust-api/reason-codes.schema.json",
+  "title": "B2.5-P6 Reason Code Authority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reason_codes"
+  ],
+  "properties": {
+    "reason_codes": {
+      "type": "array",
+      "minItems": 18,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/reasonCode"
+      }
+    }
+  },
+  "$defs": {
+    "reasonCode": {
+      "type": "string",
+      "enum": [
+        "scope_denied",
+        "tenant_mismatch",
+        "replay_rejected",
+        "subject_not_found",
+        "deterministic_evidence_unavailable",
+        "confidence_unavailable",
+        "diagnostics_failed",
+        "artifact_pruned",
+        "source_snapshot_stale",
+        "benchmark_unavailable",
+        "policy_denied",
+        "policy_engine_not_available",
+        "money_source_not_authoritative",
+        "provider_text_quarantined",
+        "schema_version_unsupported",
+        "canonicalization_version_unsupported",
+        "signature_algorithm_unsupported",
+        "rate_limited",
+        "schema_downgrade_rejected",
+        "canonical_timestamp_rejected",
+        "human_workflow_state_rejected",
+        "subject_authority_rejected",
+        "mutable_workflow_subject_rejected",
+        "money_amount_exceeds_json_safe_integer",
+        "validation_failed"
+      ]
+    },
+    "envelopeStatus": {
+      "type": "string",
+      "enum": [
+        "success",
+        "degraded",
+        "refused",
+        "unavailable"
+      ]
+    }
+  }
+}

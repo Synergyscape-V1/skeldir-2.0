@@ -11,6 +11,7 @@ from uuid import UUID
 from jsonschema import Draft202012Validator
 
 from app.trust.canonicalization import _read_schema
+from app.trust.reason_truth_matrix import assert_reason_known
 
 
 CONTRACT_DIR = Path(__file__).resolve().parents[3] / "contracts/trust-api"
@@ -83,6 +84,7 @@ def build_error_envelope(
     audience_id: str = "b25-p5-internal-builder",
 ) -> dict[str, object]:
     """Build a schema-valid typed refusal payload without inserting audit rows."""
+    reason_code = assert_reason_known(reason_code).value
     payload = {
         "error_envelope_version": "trust-error-envelope-v1",
         "schema_version": "trust-envelope-schema-v1",

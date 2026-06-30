@@ -1,3 +1,18 @@
+- gate_id: validate-b25-p6-reason-truth-matrix
+  workflow: .github/workflows/b2_5-p6-reason-truth-matrix.yml
+  job: B2.5-P6 Reason Truth Matrix
+  script: scripts/ci/validate_b25_p6_reason_truth_matrix.py
+  owning_phase: B2.5-P6
+  protected_invariant: B2.5-P6 reason truth matrix centralizes refusal, degraded, and unavailable semantics with enum-backed source predicates, field behavior, contradiction rejection, honest confidence/benchmark/money/policy handling, version reason semantics, deferred signature/audit behavior, and no-LLM/no-dispatch/read-only scope.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, and P5 validates builder assembly, but none proves a complete cross-field reason-code truth matrix or its non-vacuous contradiction/future-phase boundary controls.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p6_reason_truth_matrix.py --negative-control
+  local_reproduction_command: make validate-b25-p6-reason-truth-matrix
+  risk_if_removed: Future TrustEnvelope builder/API work could emit ambiguous refusal/degraded states, fake confidence or benchmark values, free-form fallback reasons, money contradictions, policy escalation, provider-text authority leaks, unsupported-version success semantics, or premature signature/audit claims without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-b25-p5-builder
   workflow: .github/workflows/b2_5-p5-builder.yml
   job: B2.5-P5 Trust Builder
