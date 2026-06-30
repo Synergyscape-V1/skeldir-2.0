@@ -392,7 +392,7 @@ REASON_CODE_REGISTRY: dict[ReasonCode, ReasonCodeDefinition] = {
 
 
 def coerce_reason_code(value: str | ReasonCode) -> ReasonCode:
-    """Return a ReasonCode or fail closed for free-form strings."""
+    """Ingress-only conversion from JSON/schema strings to a ReasonCode."""
     if isinstance(value, ReasonCode):
         return value
     try:
@@ -401,13 +401,18 @@ def coerce_reason_code(value: str | ReasonCode) -> ReasonCode:
         raise ReasonCodeRegistryError(f"reason_code_unknown:{value}") from exc
 
 
-def get_reason_definition(value: str | ReasonCode) -> ReasonCodeDefinition:
-    """Return one registered reason-code definition."""
-    code = coerce_reason_code(value)
+def get_reason_definition(value: ReasonCode) -> ReasonCodeDefinition:
+    """Return one registered reason-code definition for an internal enum."""
+    if not isinstance(value, ReasonCode):
+        raise ReasonCodeRegistryError(
+            f"reason_code_not_enum:{type(value).__name__}"
+        )
     try:
-        return REASON_CODE_REGISTRY[code]
+        return REASON_CODE_REGISTRY[value]
     except KeyError as exc:
-        raise ReasonCodeRegistryError(f"reason_code_unregistered:{code.value}") from exc
+        raise ReasonCodeRegistryError(
+            f"reason_code_unregistered:{value.value}"
+        ) from exc
 
 
 def validate_reason_code_registry(

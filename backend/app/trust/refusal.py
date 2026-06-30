@@ -11,6 +11,7 @@ from uuid import UUID
 from jsonschema import Draft202012Validator
 
 from app.trust.canonicalization import _read_schema
+from app.trust.reason_codes import ReasonCode
 from app.trust.reason_truth_matrix import assert_reason_known
 
 
@@ -79,7 +80,7 @@ def default_audience_binding(
 def build_error_envelope(
     *,
     tenant_id: UUID | str,
-    reason_code: str,
+    reason_code: str | ReasonCode,
     created_at: datetime | None = None,
     audience_id: str = "b25-p5-internal-builder",
 ) -> dict[str, object]:
@@ -100,6 +101,27 @@ def build_error_envelope(
     }
     validate_error_envelope(payload)
     return payload
+
+
+def build_exception_error_envelope(
+    *,
+    tenant_id: UUID | str,
+    reason_code: ReasonCode,
+    exception: BaseException,
+    created_at: datetime | None = None,
+    audience_id: str = "b25-p6-exception-boundary",
+) -> dict[str, object]:
+    """Map an upstream exception to a safe enum-backed refusal envelope."""
+    if not isinstance(reason_code, ReasonCode):
+        raise TrustRefusalError(f"reason_code_not_enum:{type(reason_code).__name__}")
+    if not isinstance(exception, BaseException):
+        raise TrustRefusalError("exception_not_base_exception")
+    return build_error_envelope(
+        tenant_id=tenant_id,
+        reason_code=reason_code,
+        created_at=created_at,
+        audience_id=audience_id,
+    )
 
 
 def validate_error_envelope(payload: dict[str, Any]) -> None:
