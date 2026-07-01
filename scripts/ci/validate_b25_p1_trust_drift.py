@@ -37,6 +37,8 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/bayesian/snapshot_supersession.py",
     "backend/app/trust/__init__.py",
     "backend/app/trust/array_ordering.py",
+    "backend/app/trust/audit.py",
+    "backend/app/trust/audit_hash.py",
     "backend/app/trust/canonicalization.py",
     "backend/app/trust/hash_domains.py",
     "backend/app/trust/hash_identity.py",
@@ -46,6 +48,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/builder.py",
     "backend/app/trust/opaque_reference.py",
     "backend/app/trust/policy_defaults.py",
+    "backend/app/trust/provenance.py",
     "backend/app/trust/reason_codes.py",
     "backend/app/trust/reason_truth_matrix.py",
     "backend/app/trust/refusal.py",
@@ -63,6 +66,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p4_money_authority.py",
     "backend/tests/trust/test_b25_p5_builder.py",
     "backend/tests/trust/test_b25_p6_reason_truth_matrix.py",
+    "backend/tests/trust/test_b25_p7_provenance_audit.py",
 )
 
 

@@ -951,6 +951,138 @@ tables:
       name: tenant_isolation_policy_bayesian_artifacts
       using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
       with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  trust_access_log:
+    purpose: "B2.5-P7 tenant-scoped TrustEnvelope access, issuance, refusal, and replay audit authority"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      event_type: {type: TEXT, nullable: false, values: [issuance, refusal, scope_denial, replay]}
+      status: {type: TEXT, nullable: false, values: [success, refused, degraded, replayed]}
+      request_identity_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      idempotency_key_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      subject_type: {type: TEXT, nullable: false}
+      subject_ref_hash: {type: TEXT, nullable: true, format: "sha256:<hex64>"}
+      envelope_hash: {type: TEXT, nullable: true, format: "sha256:<hex64>"}
+      semantic_truth_hash: {type: TEXT, nullable: true, format: "sha256:<hex64>"}
+      policy_state: {type: TEXT, nullable: false}
+      reason_code: {type: TEXT, nullable: true}
+      audit_ref: {type: TEXT, nullable: false, format: "urn:skeldir:audit:<id>"}
+      audit_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      evidence_refs_allowed: {type: BOOLEAN, nullable: false, default: true}
+      replay_count: {type: INTEGER, nullable: false, default: 0}
+      last_replayed_at: {type: TIMESTAMPTZ, nullable: true}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: trust_access_log_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: trust_access_log_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: uq_trust_access_log_audit_ref, type: UNIQUE, columns: [tenant_id, audit_ref]}
+      - {name: uq_trust_access_log_idempotency, type: UNIQUE, columns: [tenant_id, event_type, idempotency_key_hash]}
+      - {name: ck_trust_access_log_event_type, type: CHECK, definition: "event_type in issuance/refusal/scope_denial/replay"}
+      - {name: ck_trust_access_log_status, type: CHECK, definition: "status in success/refused/degraded/replayed"}
+      - {name: ck_trust_access_log_refusal_no_evidence, type: CHECK, definition: "refusal and scope_denial rows have evidence_refs_allowed = false"}
+      - {name: ck_trust_access_log_hashes, type: CHECK, definition: "request, idempotency, audit, subject, envelope, and semantic hashes are sha256:<hex64> when present"}
+      - {name: ck_trust_access_log_audit_ref, type: CHECK, definition: "audit_ref matches urn:skeldir:audit namespace"}
+    indexes:
+      - {name: idx_trust_access_log_subject, columns: [tenant_id, subject_type, subject_ref_hash]}
+      - {name: idx_trust_access_log_created, columns: [tenant_id, created_at DESC]}
+    rls_policy:
+      name: tenant_isolation_policy_trust_access_log
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  trust_envelope_issuance_log:
+    purpose: "B2.5-P7 immutable successful TrustEnvelope issuance audit authority"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      access_audit_ref: {type: TEXT, nullable: false}
+      idempotency_key_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      subject_type: {type: TEXT, nullable: false}
+      subject_ref_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      envelope_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      semantic_truth_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      policy_state: {type: TEXT, nullable: false}
+      audit_ref: {type: TEXT, nullable: false}
+      audit_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      status: {type: TEXT, nullable: false, values: [success]}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: trust_envelope_issuance_log_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: trust_envelope_issuance_log_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: uq_trust_issuance_envelope, type: UNIQUE, columns: [tenant_id, envelope_hash]}
+      - {name: uq_trust_issuance_idempotency, type: UNIQUE, columns: [tenant_id, idempotency_key_hash]}
+      - {name: ck_trust_issuance_status, type: CHECK, definition: "status = success"}
+      - {name: ck_trust_issuance_hashes, type: CHECK, definition: "idempotency, subject, envelope, semantic, and audit hashes are sha256:<hex64>"}
+    indexes:
+      - {name: idx_trust_issuance_subject, columns: [tenant_id, subject_type, subject_ref_hash]}
+    rls_policy:
+      name: tenant_isolation_policy_trust_envelope_issuance_log
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  trust_replay_events:
+    purpose: "B2.5-P7 idempotent TrustEnvelope replay audit authority"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      request_identity_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      idempotency_key_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      original_audit_ref: {type: TEXT, nullable: false}
+      replay_status: {type: TEXT, nullable: false, values: [idempotent_replay]}
+      audit_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: trust_replay_events_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: trust_replay_events_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: uq_trust_replay_event, type: UNIQUE, columns: [tenant_id, idempotency_key_hash, original_audit_ref]}
+      - {name: ck_trust_replay_status, type: CHECK, definition: "replay_status = idempotent_replay"}
+      - {name: ck_trust_replay_hashes, type: CHECK, definition: "request, idempotency, and audit hashes are sha256:<hex64>"}
+    indexes:
+      - {name: idx_trust_replay_created, columns: [tenant_id, created_at DESC]}
+    rls_policy:
+      name: tenant_isolation_policy_trust_replay_events
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  trust_scope_denial_events:
+    purpose: "B2.5-P7 scope-denied/refused TrustEnvelope request audit authority with no evidence-ref leakage"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      request_identity_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      idempotency_key_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      subject_type: {type: TEXT, nullable: false}
+      subject_ref_hash: {type: TEXT, nullable: true}
+      status: {type: TEXT, nullable: false, values: [refused]}
+      reason_code: {type: TEXT, nullable: false, values: [scope_denied, tenant_mismatch]}
+      evidence_refs_leaked: {type: BOOLEAN, nullable: false, default: false}
+      audit_ref: {type: TEXT, nullable: false}
+      audit_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: trust_scope_denial_events_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: trust_scope_denial_events_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: uq_trust_scope_denial_idempotency, type: UNIQUE, columns: [tenant_id, idempotency_key_hash]}
+      - {name: ck_trust_scope_denial_status, type: CHECK, definition: "status = refused"}
+      - {name: ck_trust_scope_denial_reason, type: CHECK, definition: "reason_code in scope_denied/tenant_mismatch"}
+      - {name: ck_trust_scope_denial_no_evidence_leak, type: CHECK, definition: "evidence_refs_leaked = false and subject_ref_hash is null"}
+      - {name: ck_trust_scope_denial_hashes, type: CHECK, definition: "request, idempotency, and audit hashes are sha256:<hex64>"}
+    indexes:
+      - {name: idx_trust_scope_denial_created, columns: [tenant_id, created_at DESC]}
+    rls_policy:
+      name: tenant_isolation_policy_trust_scope_denial_events
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
 # Validation Rules
 validation_rules:
   critical_columns_required:

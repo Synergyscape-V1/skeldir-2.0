@@ -5780,6 +5780,111 @@ CREATE TABLE public.tenants (
 
 
 --
+-- Name: trust_access_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trust_access_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    event_type text NOT NULL,
+    status text NOT NULL,
+    request_identity_hash text NOT NULL,
+    idempotency_key_hash text NOT NULL,
+    subject_type text NOT NULL,
+    subject_ref_hash text,
+    envelope_hash text,
+    semantic_truth_hash text,
+    policy_state text NOT NULL,
+    reason_code text,
+    audit_ref text NOT NULL,
+    audit_hash text NOT NULL,
+    evidence_refs_allowed boolean DEFAULT true NOT NULL,
+    replay_count integer DEFAULT 0 NOT NULL,
+    last_replayed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_trust_access_log_audit_ref CHECK ((audit_ref ~ '^urn:skeldir:audit:[A-Za-z0-9._:-]+$'::text)),
+    CONSTRAINT ck_trust_access_log_event_type CHECK ((event_type = ANY (ARRAY['issuance'::text, 'refusal'::text, 'scope_denial'::text, 'replay'::text]))),
+    CONSTRAINT ck_trust_access_log_hashes CHECK (((request_identity_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (idempotency_key_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (audit_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND ((subject_ref_hash IS NULL) OR (subject_ref_hash ~ '^sha256:[0-9a-f]{64}$'::text)) AND ((envelope_hash IS NULL) OR (envelope_hash ~ '^sha256:[0-9a-f]{64}$'::text)) AND ((semantic_truth_hash IS NULL) OR (semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text)))),
+    CONSTRAINT ck_trust_access_log_refusal_no_evidence CHECK (((event_type <> ALL (ARRAY['refusal'::text, 'scope_denial'::text])) OR (evidence_refs_allowed = false))),
+    CONSTRAINT ck_trust_access_log_status CHECK ((status = ANY (ARRAY['success'::text, 'refused'::text, 'degraded'::text, 'replayed'::text])))
+);
+
+ALTER TABLE ONLY public.trust_access_log FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: trust_envelope_issuance_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trust_envelope_issuance_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    access_audit_ref text NOT NULL,
+    idempotency_key_hash text NOT NULL,
+    subject_type text NOT NULL,
+    subject_ref_hash text NOT NULL,
+    envelope_hash text NOT NULL,
+    semantic_truth_hash text NOT NULL,
+    policy_state text NOT NULL,
+    audit_ref text NOT NULL,
+    audit_hash text NOT NULL,
+    status text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_trust_issuance_hashes CHECK (((idempotency_key_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (subject_ref_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (envelope_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (audit_hash ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT ck_trust_issuance_status CHECK ((status = 'success'::text))
+);
+
+ALTER TABLE ONLY public.trust_envelope_issuance_log FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: trust_replay_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trust_replay_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    request_identity_hash text NOT NULL,
+    idempotency_key_hash text NOT NULL,
+    original_audit_ref text NOT NULL,
+    replay_status text NOT NULL,
+    audit_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_trust_replay_hashes CHECK (((request_identity_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (idempotency_key_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (audit_hash ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT ck_trust_replay_status CHECK ((replay_status = 'idempotent_replay'::text))
+);
+
+ALTER TABLE ONLY public.trust_replay_events FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: trust_scope_denial_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trust_scope_denial_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    request_identity_hash text NOT NULL,
+    idempotency_key_hash text NOT NULL,
+    subject_type text NOT NULL,
+    subject_ref_hash text,
+    status text NOT NULL,
+    reason_code text NOT NULL,
+    evidence_refs_leaked boolean DEFAULT false NOT NULL,
+    audit_ref text NOT NULL,
+    audit_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_trust_scope_denial_hashes CHECK (((request_identity_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (idempotency_key_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (audit_hash ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT ck_trust_scope_denial_no_evidence_leak CHECK (((evidence_refs_leaked = false) AND (subject_ref_hash IS NULL))),
+    CONSTRAINT ck_trust_scope_denial_reason CHECK ((reason_code = ANY (ARRAY['scope_denied'::text, 'tenant_mismatch'::text]))),
+    CONSTRAINT ck_trust_scope_denial_status CHECK ((status = 'refused'::text))
+);
+
+ALTER TABLE ONLY public.trust_scope_denial_events FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7303,6 +7408,38 @@ ALTER TABLE ONLY public.tenants
 
 
 --
+-- Name: trust_access_log trust_access_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_access_log
+    ADD CONSTRAINT trust_access_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trust_envelope_issuance_log trust_envelope_issuance_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_envelope_issuance_log
+    ADD CONSTRAINT trust_envelope_issuance_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trust_replay_events trust_replay_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_replay_events
+    ADD CONSTRAINT trust_replay_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trust_scope_denial_events trust_scope_denial_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_scope_denial_events
+    ADD CONSTRAINT trust_scope_denial_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: attribution_commerce_identities uq_attr_commerce_identity_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7516,6 +7653,54 @@ ALTER TABLE ONLY public.tenant_memberships
 
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT uq_tenant_memberships_tenant_user UNIQUE (tenant_id, user_id);
+
+
+--
+-- Name: trust_access_log uq_trust_access_log_audit_ref; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_access_log
+    ADD CONSTRAINT uq_trust_access_log_audit_ref UNIQUE (tenant_id, audit_ref);
+
+
+--
+-- Name: trust_access_log uq_trust_access_log_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_access_log
+    ADD CONSTRAINT uq_trust_access_log_idempotency UNIQUE (tenant_id, event_type, idempotency_key_hash);
+
+
+--
+-- Name: trust_envelope_issuance_log uq_trust_issuance_envelope; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_envelope_issuance_log
+    ADD CONSTRAINT uq_trust_issuance_envelope UNIQUE (tenant_id, envelope_hash);
+
+
+--
+-- Name: trust_envelope_issuance_log uq_trust_issuance_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_envelope_issuance_log
+    ADD CONSTRAINT uq_trust_issuance_idempotency UNIQUE (tenant_id, idempotency_key_hash);
+
+
+--
+-- Name: trust_replay_events uq_trust_replay_event; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_replay_events
+    ADD CONSTRAINT uq_trust_replay_event UNIQUE (tenant_id, idempotency_key_hash, original_audit_ref);
+
+
+--
+-- Name: trust_scope_denial_events uq_trust_scope_denial_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_scope_denial_events
+    ADD CONSTRAINT uq_trust_scope_denial_idempotency UNIQUE (tenant_id, idempotency_key_hash);
 
 
 --
@@ -10071,6 +10256,41 @@ CREATE INDEX idx_tool_calls_investigation ON public.investigation_tool_calls USI
 --
 
 CREATE INDEX idx_tool_calls_tenant ON public.investigation_tool_calls USING btree (tenant_id, created_at DESC);
+
+
+--
+-- Name: idx_trust_access_log_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_access_log_created ON public.trust_access_log USING btree (tenant_id, created_at DESC);
+
+
+--
+-- Name: idx_trust_access_log_subject; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_access_log_subject ON public.trust_access_log USING btree (tenant_id, subject_type, subject_ref_hash);
+
+
+--
+-- Name: idx_trust_issuance_subject; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_issuance_subject ON public.trust_envelope_issuance_log USING btree (tenant_id, subject_type, subject_ref_hash);
+
+
+--
+-- Name: idx_trust_replay_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_replay_created ON public.trust_replay_events USING btree (tenant_id, created_at DESC);
+
+
+--
+-- Name: idx_trust_scope_denial_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_scope_denial_created ON public.trust_scope_denial_events USING btree (tenant_id, created_at DESC);
 
 
 --
@@ -12738,6 +12958,38 @@ ALTER TABLE ONLY public.tenant_memberships
 
 
 --
+-- Name: trust_access_log trust_access_log_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_access_log
+    ADD CONSTRAINT trust_access_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: trust_envelope_issuance_log trust_envelope_issuance_log_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_envelope_issuance_log
+    ADD CONSTRAINT trust_envelope_issuance_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: trust_replay_events trust_replay_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_replay_events
+    ADD CONSTRAINT trust_replay_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: trust_scope_denial_events trust_scope_denial_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_scope_denial_events
+    ADD CONSTRAINT trust_scope_denial_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: webhook_ingress_identities webhook_ingress_identities_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13976,6 +14228,34 @@ CREATE POLICY tenant_isolation_policy_raw_event_payloads ON public.raw_event_pay
 
 
 --
+-- Name: trust_access_log tenant_isolation_policy_trust_access_log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_trust_access_log ON public.trust_access_log USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: trust_envelope_issuance_log tenant_isolation_policy_trust_envelope_issuance_log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_trust_envelope_issuance_log ON public.trust_envelope_issuance_log USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: trust_replay_events tenant_isolation_policy_trust_replay_events; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_trust_replay_events ON public.trust_replay_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: trust_scope_denial_events tenant_isolation_policy_trust_scope_denial_events; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_trust_scope_denial_events ON public.trust_scope_denial_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
 -- Name: webhook_ingress_identities tenant_isolation_policy_webhook_ingress_identities; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -14007,6 +14287,30 @@ ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.tenant_memberships ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: trust_access_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.trust_access_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: trust_envelope_issuance_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.trust_envelope_issuance_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: trust_replay_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.trust_replay_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: trust_scope_denial_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.trust_scope_denial_events ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
