@@ -18,6 +18,7 @@ from app.trust.money_source_adapter import (
     resolve_authoritative_money,
 )
 from app.trust.policy_defaults import read_only_policy_authority
+from app.trust.provenance import build_match_verdict_provenance_chain
 from app.trust.refusal import (
     build_error_envelope,
     default_audience_binding,
@@ -188,28 +189,6 @@ def _display_data_from_provider_text(raw_text: str) -> dict[str, object]:
     }
 
 
-def _provenance_display_metadata(display_data: dict[str, object]) -> dict[str, object]:
-    raw_hash = display_data.get("raw_text_sha256")
-    transform = str(display_data.get("display_transform") or "none")
-    if raw_hash:
-        return {
-            "text_trust_class": "provider_controlled_quarantined",
-            "raw_text_sha256": raw_hash,
-            "display_transform": "redacted",
-        }
-    if transform == "escaped_display_only":
-        return {
-            "text_trust_class": "operator_controlled_safe_label",
-            "raw_text_sha256": None,
-            "display_transform": "escaped_display_only",
-        }
-    return {
-        "text_trust_class": "none",
-        "raw_text_sha256": None,
-        "display_transform": "none",
-    }
-
-
 def _match_verdict_payload(
     *,
     request: TrustEnvelopeBuildRequest,
@@ -219,9 +198,6 @@ def _match_verdict_payload(
     tenant_id_hash = tenant_hash(request.tenant_id)
     subject_ref_hash = _subject_ref_hash(request.subject_ref)
     source_snapshot_hash = _source_snapshot_hash(source)
-    source_ref = f"urn:skeldir:b23_match_verdicts:{source.id}"
-    source_ref_hash = tagged_sha256({"source_ref": source_ref})
-    observed_at = source.last_transition_at
     created_at = _context_datetime(
         request.request_context, "created_at", source.updated_at
     )
@@ -265,17 +241,12 @@ def _match_verdict_payload(
         },
         "match_verdict_status": normalize_match_verdict_status(source.status),
         "confidence_metadata": _confidence_unavailable(),
-        "provenance_chain": [
-            {
-                "provenance_type": "match_verdict",
-                "authority_table": "b23_match_verdicts",
-                "source_ref": source_ref,
-                "source_ref_hash": source_ref_hash,
-                "source_snapshot_hash": source_snapshot_hash,
-                "observed_at": utc_second(observed_at),
-                "display_metadata": _provenance_display_metadata(display_data),
-            }
-        ],
+        "provenance_chain": build_match_verdict_provenance_chain(
+            source=source,
+            display_data=display_data,
+            money_authority_projection=money_decision.external_projection(),
+            reason_code=None,
+        ),
         "data_completeness_status": data_completeness_for_match_status(source.status),
         "benchmark_metadata": unavailable_benchmark_metadata(),
         "policy_action_authority": read_only_policy_authority(),

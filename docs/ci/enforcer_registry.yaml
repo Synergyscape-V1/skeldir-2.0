@@ -1,3 +1,25 @@
+- id: validate-b25-p7-provenance-audit
+  path: scripts/ci/validate_b25_p7_provenance_audit.py
+  status: required
+  owning_phase: B2.5-P7
+  protected_invariant: B2.5-P7 provenance/audit substrate remains canonical, tenant-scoped, RLS/FORCE-RLS protected, idempotent, retry-safe, PII-free, source-registry-total, audit-ref/hash-attached, no-LLM, no-dynamic-import, no-native-dispatch, scoped only to provenance/audit persistence, and explicitly excludes signing, routes, machine-caller auth, export, MCP, rate limiting, and action authority.
+  command: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p7-provenance-audit.yml
+  workflow_job_name: B2.5-P7 Provenance Audit
+  local_reproduction_command: make validate-b25-p7-provenance-audit
+  expected_failure_meaning: B2.5-P7 provenance/audit is missing source classes, nondeterministic, schema-divergent, raw-tenant or provider-text leaking, not idempotent, missing audit refs/hashes, weakly RLS-protected, wrong-tenant visible, scope-denial evidence leaking, LLM/dynamic-import/dispatch contaminated, writing outside trust audit tables, or expanded into later Trust API phases.
+  first_diagnostic_command: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-provenance-audit
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-b25-p6-reason-truth-matrix
   path: scripts/ci/validate_b25_p6_reason_truth_matrix.py
   status: required

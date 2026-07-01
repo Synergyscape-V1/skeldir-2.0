@@ -22,12 +22,22 @@
         "enum": [
           "webhook_signature",
           "revenue_event",
+          "provider_native_reference",
           "match_verdict",
           "attribution_allocation",
+          "b24_source_snapshot",
           "bayesian_fit",
+          "bayesian_diagnostic",
           "bayesian_artifact",
           "source_snapshot",
-          "policy_decision"
+          "policy_decision",
+          "text_disposition",
+          "money_authority",
+          "reason_code_decision",
+          "audit_access_record",
+          "audit_issuance_record",
+          "audit_hash",
+          "explicit_unavailable"
         ]
       },
       "authority_table": {
@@ -37,8 +47,18 @@
           "b23_revenue_events",
           "b23_match_verdicts",
           "attribution_allocations",
+          "b24_confidence_projection",
           "bayesian_model_fits",
-          "bayesian_artifacts"
+          "bayesian_artifacts",
+          "trust_provenance_source_registry",
+          "trust_policy_defaults",
+          "trust_text_disposition",
+          "trust_money_authority",
+          "trust_reason_truth_matrix",
+          "trust_access_log",
+          "trust_envelope_issuance_log",
+          "trust_replay_events",
+          "trust_scope_denial_events"
         ]
       },
       "source_ref": {
