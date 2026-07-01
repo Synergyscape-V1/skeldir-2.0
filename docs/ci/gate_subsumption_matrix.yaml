@@ -3,15 +3,15 @@
   job: B2.5-P7 Provenance Audit
   script: scripts/ci/validate_b25_p7_provenance_audit.py
   owning_phase: B2.5-P7
-  protected_invariant: B2.5-P7 persists canonical provenance/audit identities through tenant-scoped Postgres audit tables with RLS/FORCE RLS, idempotent retry safety, audit ref/hash attachment, source-registry totality, refusal/scope-denial evidence suppression, no-LLM/no-dispatch scope, and no signing/routes/auth/export/MCP/action authority.
+  protected_invariant: B2.5-P7 persists canonical provenance/audit identities through tenant-scoped Postgres audit tables with RLS/FORCE RLS, independent audit transaction durability across caller rollback/serialization-return failure, explicit-created-at chronological determinism, idempotent retry safety, audit ref/hash attachment, source-registry totality, refusal/scope-denial evidence suppression, no-LLM/no-dispatch scope, and no signing/routes/auth/export/MCP/action authority.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, P5 validates the read-only builder, and P6 validates reason semantics, but none proves Postgres-backed audit persistence, RLS/FORCE-RLS policy, idempotent audit rows, audit ref/hash attachment, replay/scope-denial rows, or P7-specific later-phase exclusions.
-  negative_control_preserved_by: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, P5 validates the read-only builder, and P6 validates reason semantics, but none proves Postgres-backed independent audit transaction durability, rollback-coupling rejection, RLS/FORCE-RLS policy, explicit-created-at clock containment, idempotent audit rows, audit ref/hash attachment, replay/scope-denial rows, or P7-specific later-phase exclusions.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control --skip-prior-phase-subprocesses
   local_reproduction_command: make validate-b25-p7-provenance-audit
-  risk_if_removed: Future Trust API work could lose source provenance totality, persist weakly isolated audit rows, duplicate on retry, leak subject evidence on scope denial, attach unstable audit identity, or silently introduce signing/routes/auth/export/MCP behavior without a merge-blocking signal.
+  risk_if_removed: Future Trust API work could lose source provenance totality, persist weakly isolated or rollback-coupled audit rows, use live clock defaults in audit identity, duplicate on retry, leak subject evidence on scope denial, attach unstable audit identity, or silently introduce signing/routes/auth/export/MCP behavior without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b25-p6-reason-truth-matrix
   workflow: .github/workflows/b2_5-p6-reason-truth-matrix.yml

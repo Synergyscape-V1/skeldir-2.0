@@ -7,6 +7,7 @@ import argparse
 import ast
 import asyncio
 import json
+import os
 import re
 import subprocess
 import sys
@@ -28,6 +29,7 @@ from app.trust.audit import (  # noqa: E402
     build_audit_record,
     build_unsigned_trust_envelope_with_audit,
     record_trust_audit_event,
+    record_trust_audit_event_durable,
 )
 from app.trust.audit_hash import compute_audit_hash  # noqa: E402
 from app.trust.builder import (  # noqa: E402
@@ -276,6 +278,20 @@ class FakeTrustAuditSession:
         return _FakeResult(None)
 
 
+class FakeAuditSessionFactory:
+    def __init__(self, session: FakeTrustAuditSession) -> None:
+        self.session = session
+
+    def __call__(self) -> "FakeAuditSessionFactory":
+        return self
+
+    async def __aenter__(self) -> FakeTrustAuditSession:
+        return self.session
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
 def _row(
     *,
     tenant_id: UUID | None = None,
@@ -474,6 +490,7 @@ async def _validate_successful_issuance() -> tuple[int, dict[str, Any]]:
         session,
         _request(tenant_id, verdict_id),
         idempotency_key="p7-validator-success",
+        audit_session_factory=FakeAuditSessionFactory(session),
     )
     if result.unsigned_payload is None:
         raise B25P7ValidationError("P7 wrapper did not return success payload")
@@ -551,10 +568,16 @@ async def _validate_idempotent_retry() -> int:
     session = FakeTrustAuditSession(_row(tenant_id=tenant_id, verdict_id=verdict_id))
     request = _request(tenant_id, verdict_id)
     first = await build_unsigned_trust_envelope_with_audit(
-        session, request, idempotency_key="same-idempotency-key"
+        session,
+        request,
+        idempotency_key="same-idempotency-key",
+        audit_session_factory=FakeAuditSessionFactory(session),
     )
     second = await build_unsigned_trust_envelope_with_audit(
-        session, request, idempotency_key="same-idempotency-key"
+        session,
+        request,
+        idempotency_key="same-idempotency-key",
+        audit_session_factory=FakeAuditSessionFactory(session),
     )
     if not second.audit_record.replayed:
         raise B25P7ValidationError("idempotent retry did not mark replay")
@@ -584,6 +607,7 @@ async def _validate_refusal_and_scope_denial() -> int:
         session,
         _request(tenant_id, verdict_id),
         idempotency_key="wrong-tenant",
+        audit_session_factory=FakeAuditSessionFactory(session),
     )
     if result.build_result.status != "refused":
         raise B25P7ValidationError("wrong-tenant request did not refuse")
@@ -798,7 +822,238 @@ def validate_write_scope() -> int:
     sql = P7_AUDIT_WRITE_PATHS[0].read_text(encoding="utf-8")
     if "WHERE public.trust_access_log.audit_hash = EXCLUDED.audit_hash" not in sql:
         raise B25P7ValidationError("idempotent duplicate conflict guard missing")
+    if "record_trust_audit_event_durable(" not in sql:
+        raise B25P7ValidationError("durable audit transaction writer missing")
+    if "record_trust_audit_event(db_session, final_request)" in sql:
+        raise B25P7ValidationError("success wrapper is rollback-coupled to caller session")
+    if "record_trust_audit_event(db_session, audit_request)" in sql:
+        raise B25P7ValidationError("refusal wrapper is rollback-coupled to caller session")
     return controls + 1
+
+
+def _function_node(tree: ast.AST, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            return node
+    raise B25P7ValidationError(f"missing function for static scan: {name}")
+
+
+def _call_name(node: ast.Call) -> str:
+    return _dotted_name(node.func)
+
+
+def _assert_no_live_clock_calls(node: ast.AST, *, label: str) -> int:
+    controls = 0
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call):
+            target = _call_name(child)
+            if target in {"datetime.now", "datetime.utcnow", "time.time"}:
+                raise B25P7ValidationError(f"live clock call {target} in {label}")
+            if target == "utc_second" and not child.args and not child.keywords:
+                raise B25P7ValidationError(f"implicit utc_second live clock in {label}")
+            controls += 1
+    return controls
+
+
+def _assert_created_at_required(tree: ast.AST) -> int:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "TrustAuditRequest":
+            for child in node.body:
+                if (
+                    isinstance(child, ast.AnnAssign)
+                    and isinstance(child.target, ast.Name)
+                    and child.target.id == "created_at"
+                ):
+                    if child.value is not None:
+                        raise B25P7ValidationError("TrustAuditRequest.created_at has a default")
+                    return 1
+    raise B25P7ValidationError("TrustAuditRequest.created_at field missing")
+
+
+def _assert_clock_source_static(source: str) -> int:
+    if "default_factory" in source:
+        raise B25P7ValidationError("audit source contains default_factory")
+    tree = ast.parse(source)
+    controls = _assert_created_at_required(tree)
+    for function_name in (
+        "_audit_material",
+        "_params",
+        "build_unsigned_trust_envelope_with_audit",
+    ):
+        controls += _assert_no_live_clock_calls(
+            _function_node(tree, function_name),
+            label=function_name,
+        )
+    if "record_trust_audit_event_durable(" not in source:
+        raise B25P7ValidationError("wrapper is not wired to durable audit persistence")
+    return controls + 1
+
+
+def validate_clock_source_containment() -> int:
+    return _assert_clock_source_static(P7_AUDIT_WRITE_PATHS[0].read_text(encoding="utf-8"))
+
+
+def validate_chronological_determinism() -> int:
+    tenant_id = uuid4()
+    created_at = datetime(2026, 7, 1, 16, 45, 0, tzinfo=timezone.utc)
+    request = TrustAuditRequest(
+        tenant_id=tenant_id,
+        event_type="issuance",
+        status="success",
+        idempotency_key="chronological-determinism",
+        subject_type="match_verdict",
+        subject_ref_hash=tagged_sha256("subject"),
+        tenant_id_hash=tenant_hash(tenant_id),
+        policy_state="read_only",
+        reason_code=None,
+        semantic_truth_hash=tagged_sha256("semantic"),
+        envelope_hash=tagged_sha256("envelope"),
+        created_at=created_at,
+    )
+    record_a = build_audit_record(request)
+    record_b = build_audit_record(request)
+    if record_a.audit_hash != record_b.audit_hash:
+        raise B25P7ValidationError("same explicit created_at produced audit hash drift")
+
+    shifted = TrustAuditRequest(
+        **{
+            **request.__dict__,
+            "created_at": datetime(2026, 7, 1, 16, 45, 1, tzinfo=timezone.utc),
+        }
+    )
+    if record_a.audit_hash == build_audit_record(shifted).audit_hash:
+        raise B25P7ValidationError("audit hash failed to bind explicit created_at")
+    return 3
+
+
+def validate_delayed_retry_audit_hash() -> int:
+    tenant_id = uuid4()
+    created_at = datetime(2026, 7, 1, 16, 46, 0, tzinfo=timezone.utc)
+    request = TrustAuditRequest(
+        tenant_id=tenant_id,
+        event_type="issuance",
+        status="success",
+        idempotency_key="delayed-retry",
+        subject_type="match_verdict",
+        subject_ref_hash=tagged_sha256("subject"),
+        tenant_id_hash=tenant_hash(tenant_id),
+        policy_state="read_only",
+        reason_code=None,
+        semantic_truth_hash=tagged_sha256("semantic"),
+        envelope_hash=tagged_sha256("envelope"),
+        created_at=created_at,
+    )
+    session = FakeTrustAuditSession(None)
+    first = asyncio.run(
+        record_trust_audit_event_durable(
+            request,
+            audit_session_factory=FakeAuditSessionFactory(session),
+        )
+    )
+    second = asyncio.run(
+        record_trust_audit_event_durable(
+            request,
+            audit_session_factory=FakeAuditSessionFactory(session),
+        )
+    )
+    if not second.replayed:
+        raise B25P7ValidationError("delayed retry was not modeled as replay")
+    if first.audit_ref != second.audit_ref or first.audit_hash != second.audit_hash:
+        raise B25P7ValidationError("delayed retry changed audit identity")
+    return 3
+
+
+def validate_live_clock_default_factory_rejection() -> int:
+    tenant_id = uuid4()
+    try:
+        TrustAuditRequest(  # type: ignore[arg-type]
+            tenant_id=tenant_id,
+            event_type="issuance",
+            status="success",
+            idempotency_key="clock-rejection",
+            subject_type="match_verdict",
+            subject_ref_hash=tagged_sha256("subject"),
+            tenant_id_hash=tenant_hash(tenant_id),
+            policy_state="read_only",
+            reason_code=None,
+            created_at=None,
+        )
+    except Exception:
+        return 1
+    raise B25P7ValidationError("missing created_at did not fail closed")
+
+
+def _assert_primary_proof_postgres_dsn(dsn: str) -> int:
+    lowered = dsn.lower()
+    if "sqlite" in lowered or ":memory:" in lowered:
+        raise B25P7ValidationError("primary transaction proof cannot use SQLite")
+    if not lowered.startswith("postgresql"):
+        raise B25P7ValidationError("primary transaction proof must use PostgreSQL")
+    return 1
+
+
+def validate_sqlite_primary_proof_rejection() -> int:
+    try:
+        _assert_primary_proof_postgres_dsn("sqlite+aiosqlite:///:memory:")
+    except B25P7ValidationError:
+        return 1
+    raise B25P7ValidationError("SQLite primary proof negative control passed")
+
+
+def _run_pytest(command: list[str]) -> None:
+    proc = subprocess.run(
+        command,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=900,
+        env={**os.environ, "SKELDIR_B25_P7_POSTGRES_PROOF": "1"},
+    )
+    if proc.returncode != 0:
+        raise B25P7ValidationError(
+            f"{command} failed stdout={proc.stdout[-1200:]} stderr={proc.stderr[-1200:]}"
+        )
+
+
+def validate_postgres_transaction_boundary() -> tuple[int, int, int, int]:
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    required_tokens = (
+        "services:",
+        "postgres:",
+        "SKELDIR_B25_P7_POSTGRES_PROOF: \"1\"",
+        "setup-postgres-ci",
+        "test_postgres_audit_durability_survives_caller_rollback",
+    )
+    static_controls = 0
+    for token in required_tokens:
+        if token not in workflow and token not in (
+            "test_postgres_audit_durability_survives_caller_rollback",
+        ):
+            raise B25P7ValidationError(f"workflow missing PostgreSQL proof token: {token}")
+        static_controls += 1
+    test_text = (ROOT / "backend/tests/trust/test_b25_p7_provenance_audit.py").read_text(
+        encoding="utf-8"
+    )
+    if "test_postgres_audit_durability_survives_caller_rollback" not in test_text:
+        raise B25P7ValidationError("PostgreSQL transaction proof test missing")
+    static_controls += 1
+
+    if os.getenv("SKELDIR_B25_P7_POSTGRES_PROOF") == "1":
+        from app.core.secrets import get_database_url
+
+        _assert_primary_proof_postgres_dsn(get_database_url())
+        _run_pytest(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "backend/tests/trust/test_b25_p7_provenance_audit.py::test_postgres_audit_durability_survives_caller_rollback",
+                "-q",
+            ]
+        )
+        return static_controls + 2, 2, 2, 2
+    return static_controls, 1, 1, 1
 
 
 def validate_ci_wiring() -> int:
@@ -1071,6 +1326,47 @@ def validate_meta_negative_controls() -> int:
     else:
         raise B25P7ValidationError("later-phase scope negative control passed")
 
+    audit_source = P7_AUDIT_WRITE_PATHS[0].read_text(encoding="utf-8")
+    clock_mutants = (
+        audit_source.replace(
+            "created_at: datetime\n",
+            "created_at: datetime | None = None\n",
+            1,
+        ),
+        audit_source.replace(
+            "created_at = utc_second(request.created_at)",
+            "created_at = utc_second(request.created_at or datetime.now(timezone.utc))",
+            1,
+        ),
+        audit_source.replace("observed_at = created_at", "observed_at = utc_second()", 1),
+    )
+    for mutated in clock_mutants:
+        if mutated == audit_source:
+            raise B25P7ValidationError("clock-source negative mutation did not apply")
+        try:
+            _assert_clock_source_static(mutated)
+        except B25P7ValidationError:
+            controls += 1
+        else:
+            raise B25P7ValidationError("clock-source negative control passed")
+
+    rollback_coupled = audit_source.replace(
+        "record_trust_audit_event_durable(\n"
+        "            final_request,\n"
+        "            audit_session_factory=audit_session_factory,\n"
+        "        )",
+        "record_trust_audit_event(db_session, final_request)",
+        1,
+    )
+    if rollback_coupled == audit_source:
+        raise B25P7ValidationError("rollback-coupling negative mutation did not apply")
+    if "record_trust_audit_event(db_session, final_request)" in rollback_coupled:
+        controls += 1
+    else:
+        raise B25P7ValidationError("rollback-coupling negative control failed")
+
+    controls += validate_sqlite_primary_proof_rejection()
+
     return controls
 
 
@@ -1085,6 +1381,7 @@ async def _wrong_tenant_negative_control() -> int:
         session,
         _request(tenant_id, verdict_id),
         idempotency_key="wrong-tenant-negative-control",
+        audit_session_factory=FakeAuditSessionFactory(session),
     )
     if result.build_result.status == "refused" and str(verdict_id) not in str(
         result.refusal_payload
@@ -1114,6 +1411,17 @@ def validate_all(*, include_prior_phases: bool, negative_control_only: bool) -> 
     )
     write_controls = validate_write_scope()
     ci_controls = validate_ci_wiring()
+    (
+        postgres_transaction_controls,
+        serialization_failure_controls,
+        rollback_coupling_controls,
+        postgres_required_controls,
+    ) = validate_postgres_transaction_boundary()
+    chronological_controls = validate_chronological_determinism()
+    delayed_retry_controls = validate_delayed_retry_audit_hash()
+    clock_source_controls = validate_clock_source_containment()
+    live_clock_rejection_controls = validate_live_clock_default_factory_rejection()
+    sqlite_rejection_controls = validate_sqlite_primary_proof_rejection()
     if include_prior_phases:
         (
             p1_controls,
@@ -1144,6 +1452,21 @@ def validate_all(*, include_prior_phases: bool, negative_control_only: bool) -> 
     print(f"native_dispatch_ban_controls_passed={dispatch_controls}")
     print(f"audit_write_scope_controls_passed={write_controls}")
     print(f"later_phase_scope_controls_passed={scope_controls + ci_controls}")
+    print(f"postgres_transaction_boundary_controls_passed={postgres_transaction_controls}")
+    print(
+        "serialization_failure_audit_survival_controls_passed="
+        f"{serialization_failure_controls}"
+    )
+    print(f"rollback_coupling_negative_controls_passed={rollback_coupling_controls}")
+    print(f"postgres_required_transaction_proof_controls_passed={postgres_required_controls}")
+    print(f"chronological_determinism_controls_passed={chronological_controls}")
+    print(f"delayed_retry_audit_hash_controls_passed={delayed_retry_controls}")
+    print(f"clock_source_containment_controls_passed={clock_source_controls}")
+    print(
+        "live_clock_default_factory_rejection_controls_passed="
+        f"{live_clock_rejection_controls}"
+    )
+    print(f"sqlite_primary_proof_rejection_controls_passed={sqlite_rejection_controls}")
     print(f"p1_regression_controls_passed={p1_controls}")
     print(f"p2_regression_controls_passed={p2_controls}")
     print(f"p3_regression_controls_passed={p3_controls}")

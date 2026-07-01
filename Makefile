@@ -192,7 +192,7 @@ validate-b25-p6-reason-truth-matrix-negative: ## Run B2.5-P6 reason truth matrix
 	@python scripts/ci/validate_b25_p6_reason_truth_matrix.py --negative-control
 
 validate-b25-p7-provenance-audit: ## Run B2.5-P7 provenance/audit validator with negative controls
-	@python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control
+	@python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control --skip-prior-phase-subprocesses
 
 validate-b25-p7-provenance-audit-negative: ## Run B2.5-P7 provenance/audit negative-control validator
 	@python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control --negative-control-only
