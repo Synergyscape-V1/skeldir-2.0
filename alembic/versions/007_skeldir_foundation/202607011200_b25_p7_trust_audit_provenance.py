@@ -313,6 +313,4 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS public.idx_trust_access_log_created")
     op.execute("DROP INDEX IF EXISTS public.idx_trust_access_log_subject")
     for table in reversed(TRUST_AUDIT_TABLES):
-        op.execute(
-            f"DROP TABLE IF EXISTS public.{table}"
-        )  # CI:DESTRUCTIVE_OK - rollback removes B2.5-P7 trust audit substrate.
+        op.execute(f"DROP TABLE IF EXISTS public.{table}")  # CI:DESTRUCTIVE_OK - rollback removes B2.5-P7 trust audit substrate.
