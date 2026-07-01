@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -36,6 +38,7 @@ from app.trust.refusal import tenant_hash, utc_second
 
 AuditEventType = Literal["issuance", "refusal", "scope_denial", "replay"]
 AuditStatus = Literal["success", "refused", "degraded", "replayed"]
+AuditSessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 SAFE_REFUSAL_REASONS = {
     ReasonCode.SCOPE_DENIED.value,
@@ -72,11 +75,17 @@ class TrustAuditRequest:
     tenant_id_hash: str
     policy_state: str
     reason_code: str | None
+    created_at: datetime
     semantic_truth_hash: str | None = None
     envelope_hash: str | None = None
     audience_id_hash: str | None = None
     evidence_refs_allowed: bool = True
-    created_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.created_at, datetime):
+            raise TrustAuditError("audit_created_at_required")
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
+            raise TrustAuditError("audit_created_at_timezone_required")
 
 
 @dataclass(frozen=True)
@@ -138,7 +147,7 @@ def _audit_material(request: TrustAuditRequest) -> dict[str, object]:
         event_type=request.event_type,
         idempotency_key_hash=idempotency_hash,
     )
-    created_at = utc_second(request.created_at or datetime.now(timezone.utc))
+    created_at = utc_second(request.created_at)
     return {
         "audit_ref": audit_ref,
         "tenant_id_hash": request.tenant_id_hash,
@@ -401,7 +410,9 @@ def _params(
         "audit_ref": record.audit_ref,
         "audit_hash": record.audit_hash,
         "evidence_refs_allowed": request.evidence_refs_allowed,
-        "created_at": utc_second(request.created_at or datetime.now(timezone.utc)),
+        "created_at": request.created_at.astimezone(timezone.utc).replace(
+            microsecond=0
+        ),
     }
 
 
@@ -416,6 +427,36 @@ async def record_trust_audit_event(
     await _insert_scope_denial_log(db_session, request=request, record=persisted)
     await _insert_replay_log(db_session, request=request, record=persisted)
     return persisted
+
+
+async def record_trust_audit_event_durable(
+    request: TrustAuditRequest,
+    *,
+    audit_session_factory: AuditSessionFactory | None = None,
+) -> TrustAuditRecord:
+    """Persist an audit event in an independent committed transaction."""
+    if audit_session_factory is None:
+        from app.db.session import AsyncSessionLocal
+
+        audit_session_factory = AsyncSessionLocal
+
+    async with audit_session_factory() as audit_session:
+        begin = getattr(audit_session, "begin", None)
+        if callable(begin):
+            async with begin():
+                await audit_session.execute(
+                    text(
+                        "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
+                    ),
+                    {"tenant_id": str(request.tenant_id)},
+                )
+                return await record_trust_audit_event(audit_session, request)
+
+        await audit_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(request.tenant_id)},
+        )
+        return await record_trust_audit_event(audit_session, request)
 
 
 def attach_audit_to_unsigned_payload(
@@ -447,12 +488,15 @@ async def build_unsigned_trust_envelope_with_audit(
     request: TrustEnvelopeBuildRequest,
     *,
     idempotency_key: str,
+    audit_session_factory: AuditSessionFactory | None = None,
 ) -> TrustEnvelopeAuditResult:
     """Build through P5, persist P7 audit, and attach audit refs to the payload."""
     build_result = await build_unsigned_trust_envelope(db_session, request)
     tenant_id_hash = tenant_hash(request.tenant_id)
     created_at = request.request_context.get("created_at")
-    observed_at = created_at if isinstance(created_at, datetime) else utc_second()
+    if not isinstance(created_at, datetime):
+        raise TrustAuditError("audit_created_at_required")
+    observed_at = created_at
     if build_result.status == "success" and build_result.unsigned_payload is not None:
         provisional = deepcopy(build_result.unsigned_payload)
         semantic_truth_hash = str(provisional["semantic_truth_hash"])
@@ -476,7 +520,7 @@ async def build_unsigned_trust_envelope_with_audit(
                 provisional["audience_binding"].get("audience_id_hash")
             ),
             evidence_refs_allowed=True,
-            created_at=created_at if isinstance(created_at, datetime) else None,
+            created_at=created_at,
         )
         initial_record = build_audit_record(audit_request)
         updated_payload = attach_audit_to_unsigned_payload(
@@ -490,7 +534,10 @@ async def build_unsigned_trust_envelope_with_audit(
                 "envelope_hash": compute_envelope_payload_hash(updated_payload),
             }
         )
-        persisted = await record_trust_audit_event(db_session, final_request)
+        persisted = await record_trust_audit_event_durable(
+            final_request,
+            audit_session_factory=audit_session_factory,
+        )
         if persisted.audit_hash != initial_record.audit_hash:
             updated_payload = attach_audit_to_unsigned_payload(
                 updated_payload,
@@ -528,9 +575,12 @@ async def build_unsigned_trust_envelope_with_audit(
             else None
         ),
         evidence_refs_allowed=False,
-        created_at=created_at if isinstance(created_at, datetime) else None,
+        created_at=created_at,
     )
-    persisted = await record_trust_audit_event(db_session, audit_request)
+    persisted = await record_trust_audit_event_durable(
+        audit_request,
+        audit_session_factory=audit_session_factory,
+    )
     safe_refusal = deepcopy(refusal_payload) if refusal_payload else None
     if safe_refusal is not None:
         safe_refusal["audit_ref"] = persisted.audit_ref
