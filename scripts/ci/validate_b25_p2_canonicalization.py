@@ -802,6 +802,8 @@ def validate_scope_guard() -> int:
         rel = path.relative_to(ROOT).as_posix()
         if rel.startswith("backend/app/trust/"):
             continue
+        if rel == "backend/app/api/trust_keys.py":
+            continue
         text = path.read_text(encoding="utf-8", errors="replace")
         for label, pattern in patterns:
             if pattern.search(text):

@@ -1,0 +1,133 @@
+name: B2.5-P8 Signing Verification
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "contracts/trust-api/**"
+      - "backend/app/trust/**"
+      - "backend/app/api/trust_keys.py"
+      - "backend/app/main.py"
+      - "backend/tests/trust/**"
+      - "scripts/ci/validate_b25_p1_contracts.py"
+      - "scripts/ci/validate_b25_p1_trust_drift.py"
+      - "scripts/ci/validate_b25_p2_canonicalization.py"
+      - "scripts/ci/validate_b25_p3_text_disposition.py"
+      - "scripts/ci/validate_b25_p4_money_authority.py"
+      - "scripts/ci/validate_b25_p5_builder.py"
+      - "scripts/ci/validate_b25_p6_reason_truth_matrix.py"
+      - "scripts/ci/validate_b25_p7_provenance_audit.py"
+      - "scripts/ci/validate_b25_p8_signing_verification.py"
+      - "Makefile"
+      - ".github/workflows/b2_5-p8-signing-verification.yml"
+      - "docs/ci/**"
+      - "docs/forensics/**"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "contracts/trust-api/**"
+      - "backend/app/trust/**"
+      - "backend/app/api/trust_keys.py"
+      - "backend/app/main.py"
+      - "backend/tests/trust/**"
+      - "scripts/ci/validate_b25_p1_contracts.py"
+      - "scripts/ci/validate_b25_p1_trust_drift.py"
+      - "scripts/ci/validate_b25_p2_canonicalization.py"
+      - "scripts/ci/validate_b25_p3_text_disposition.py"
+      - "scripts/ci/validate_b25_p4_money_authority.py"
+      - "scripts/ci/validate_b25_p5_builder.py"
+      - "scripts/ci/validate_b25_p6_reason_truth_matrix.py"
+      - "scripts/ci/validate_b25_p7_provenance_audit.py"
+      - "scripts/ci/validate_b25_p8_signing_verification.py"
+      - "Makefile"
+      - ".github/workflows/b2_5-p8-signing-verification.yml"
+      - "docs/ci/**"
+      - "docs/forensics/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b25-p8-signing-verification:
+    name: B2.5-P8 Signing Verification
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p8_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p8_ci
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p8_ci
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p8_ci
+      SKELDIR_B25_P7_POSTGRES_PROOF: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validator dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install "pyyaml>=6.0" "jsonschema>=4.25.0" "pytest>=7.4.0" "psycopg2-binary>=2.9.9"
+
+      - name: Prepare PostgreSQL proof database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p8_ci
+
+      - name: Run trust pytest
+        run: |
+          python -m pytest backend/tests/trust -q
+
+      - name: Validate B2.5-P1 contract authority preservation
+        run: make validate-b25-p1-contracts
+
+      - name: Validate B2.5-P1 TrustEnvelope drift tripwire
+        run: make validate-b25-p1-trust-drift
+
+      - name: Validate B2.5-P2 canonicalization preservation
+        run: make validate-b25-p2-canonicalization
+
+      - name: Validate B2.5-P3 text disposition preservation
+        run: make validate-b25-p3-text-disposition
+
+      - name: Validate B2.5-P4 money authority preservation
+        run: make validate-b25-p4-money-authority
+
+      - name: Validate B2.5-P5 builder preservation
+        run: make validate-b25-p5-builder
+
+      - name: Validate B2.5-P6 reason truth matrix preservation
+        run: make validate-b25-p6-reason-truth-matrix
+
+      - name: Validate B2.5-P7 provenance audit preservation
+        run: make validate-b25-p7-provenance-audit
+
+      - name: Validate B2.5-P8 signing verification
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p8_signing_verification.py --negative-control | tee /tmp/b25_p8_signing_verification.out
+          grep -E '^asymmetric_signer_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
+          grep -E '^public_verification_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
+          grep -E '^load_bearing_tamper_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
+          grep -E '^schema_downgrade_rejection_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
+          grep -E '^jwks_public_only_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out

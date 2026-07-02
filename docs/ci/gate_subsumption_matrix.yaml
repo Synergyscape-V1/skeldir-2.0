@@ -1,3 +1,15 @@
+- gate_id: validate-b25-p8-signing-verification
+  workflow: .github/workflows/b2_5-p8-signing-verification.yml
+  job: B2.5-P8 Signing Verification
+  script: scripts/ci/validate_b25_p8_signing_verification.py
+  owning_phase: B2.5-P8
+  protected_invariant: B2.5-P8 signs canonical TrustEnvelope signature material with envelope-specific Ed25519 keys, verifies through public-only JWKS/key material, rejects HMAC/JWT confusion and schema/canonicalization/signature downgrade, binds financial/policy/provenance/audit/version/timestamp/artifact fields, enforces envelope/key temporal semantics, preserves semantic truth across key rotation, verifies historical verification-authorized keys, rejects revoked/expired/unknown keys, publishes public-only JWKS, and blocks P9/P10/P11+ scope creep.
+  current_status: required
+  default_execution: true
+  negative_control_preserved_by: python scripts/ci/validate_b25_p8_signing_verification.py --negative-control
+  local_reproduction_command: make validate-b25-p8-signing-verification
+  risk_if_removed: Future TrustEnvelope work could accept symmetric or JWT-shaped signatures, verify with private material, leak signing keys in JWKS, omit policy/provenance/audit/version/artifact fields from signature coverage, accept unsupported schema/canonicalization/signature versions, break historical verification after rotation, trust revoked keys, or silently introduce agent/auth/route/export/MCP/action scope before the owning phases.
+  decision: keep_required
 - gate_id: validate-b25-p7-provenance-audit
   workflow: .github/workflows/b2_5-p7-provenance-audit.yml
   job: B2.5-P7 Provenance Audit
