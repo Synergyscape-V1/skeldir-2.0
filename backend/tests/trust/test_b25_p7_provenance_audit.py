@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -164,6 +165,7 @@ def _request(tenant_id: UUID, verdict_id: UUID) -> TrustEnvelopeBuildRequest:
         subject_ref=f"urn:skeldir:match_verdict:{verdict_id}",
         request_context={
             "created_at": datetime(2026, 7, 1, 16, 0, 1, tzinfo=timezone.utc),
+            "created_at_source": "request_issuance_context",
             "valid_until": datetime(2026, 7, 2, 16, 0, 1, tzinfo=timezone.utc),
             "audience_id": "p7-test-agent",
         },
@@ -274,6 +276,7 @@ async def test_scope_denial_audit_suppresses_subject_evidence_refs() -> None:
         reason_code=ReasonCode.SCOPE_DENIED,
         evidence_refs_allowed=False,
         created_at=datetime(2026, 7, 1, 16, 0, 0, tzinfo=timezone.utc),
+        created_at_source="request_issuance_context",
     )
     session = FakeTrustSession(None)
 
@@ -327,6 +330,7 @@ async def test_attach_audit_recomputes_payload_hash_inputs() -> None:
         reason_code=None,
         semantic_truth_hash=str(build.unsigned_payload["semantic_truth_hash"]),
         created_at=datetime(2026, 7, 1, 16, 0, 0, tzinfo=timezone.utc),
+        created_at_source="request_issuance_context",
     )
     record = build_audit_record(audit_request)
 
@@ -379,6 +383,7 @@ def test_trust_audit_request_rejects_live_clock_default_gap() -> None:
             policy_state="read_only",
             reason_code=None,
             created_at=None,
+            created_at_source="request_issuance_context",
         )
 
     with pytest.raises(TrustAuditError, match="audit_created_at_timezone_required"):
@@ -393,6 +398,43 @@ def test_trust_audit_request_rejects_live_clock_default_gap() -> None:
             policy_state="read_only",
             reason_code=None,
             created_at=datetime(2026, 7, 1, 16, 0, 0),
+            created_at_source="request_issuance_context",
+        )
+
+    with pytest.raises(
+        TrustAuditError, match="audit_created_at_source_authority_required"
+    ):
+        TrustAuditRequest(  # type: ignore[arg-type]
+            tenant_id=tenant_id,
+            event_type="issuance",
+            status="success",
+            idempotency_key="non-authoritative-created-at",
+            subject_type="match_verdict",
+            subject_ref_hash=tagged_sha256("subject"),
+            tenant_id_hash=tenant_hash(tenant_id),
+            policy_state="read_only",
+            reason_code=None,
+            created_at=datetime(2026, 7, 1, 16, 0, 0, tzinfo=timezone.utc),
+            created_at_source="synthetic_test_constant",
+        )
+
+
+@pytest.mark.asyncio
+async def test_p7_wrapper_rejects_created_at_without_source_authority() -> None:
+    tenant_id = uuid4()
+    verdict_id = uuid4()
+    session = FakeTrustSession(_row(tenant_id=tenant_id, verdict_id=verdict_id))
+    request = _request(tenant_id, verdict_id)
+    request.request_context.pop("created_at_source")
+
+    with pytest.raises(
+        TrustAuditError, match="audit_created_at_source_authority_required"
+    ):
+        await build_unsigned_trust_envelope_with_audit(
+            session,
+            request,
+            idempotency_key="missing-created-at-source",
+            audit_session_factory=FakeAuditSessionFactory(session),
         )
 
 
@@ -413,6 +455,7 @@ async def test_durable_audit_writer_uses_dedicated_session_factory() -> None:
         semantic_truth_hash=tagged_sha256("semantic"),
         envelope_hash=tagged_sha256("envelope"),
         created_at=datetime(2026, 7, 1, 16, 0, 0, tzinfo=timezone.utc),
+        created_at_source="request_issuance_context",
     )
 
     record = await record_trust_audit_event_durable(
@@ -462,6 +505,55 @@ async def _insert_tenant_for_postgres_proof(migration_url: str, tenant_id: UUID)
         await engine.dispose()
 
 
+def _postgres_role_from_dsn(database_url: str) -> str:
+    role = urlsplit(database_url.replace("postgresql+asyncpg://", "postgresql://")).username
+    if not role or not role.replace("_", "").isalnum():
+        raise AssertionError("PostgreSQL proof runtime role is not grant-safe")
+    return role
+
+
+async def _prepare_rollback_witness_for_postgres_proof(
+    migration_url: str,
+    runtime_role: str,
+) -> None:
+    engine = create_async_engine(to_asyncpg_postgres_dsn(migration_url))
+    quoted_role = f'"{runtime_role}"'
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS public.b25_p7_rollback_witness (
+                        witness_id text PRIMARY KEY,
+                        marker text NOT NULL
+                    )
+                    """
+                )
+            )
+            await connection.execute(
+                text(
+                    f"""
+                    GRANT SELECT, INSERT, DELETE
+                    ON public.b25_p7_rollback_witness
+                    TO {quoted_role}
+                    """
+                )
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _drop_rollback_witness_for_postgres_proof(migration_url: str) -> None:
+    engine = create_async_engine(to_asyncpg_postgres_dsn(migration_url))
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DROP TABLE IF EXISTS public.b25_p7_rollback_witness")
+            )
+    finally:
+        await engine.dispose()
+
+
 def _postgres_audit_request(
     *,
     tenant_id: UUID,
@@ -481,6 +573,7 @@ def _postgres_audit_request(
         semantic_truth_hash=tagged_sha256({"semantic": idempotency_key}),
         envelope_hash=tagged_sha256({"envelope": idempotency_key}),
         created_at=created_at,
+        created_at_source="request_issuance_context",
     )
 
 
@@ -590,33 +683,20 @@ async def test_postgres_audit_durability_survives_caller_rollback() -> None:
     assert database_url.startswith("postgresql")
     tenant_id = uuid4()
     await _insert_tenant_for_postgres_proof(migration_url, tenant_id)
+    await _prepare_rollback_witness_for_postgres_proof(
+        migration_url,
+        _postgres_role_from_dsn(database_url),
+    )
 
     engine = create_async_engine(to_asyncpg_postgres_dsn(database_url))
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        rollback_request = _postgres_audit_request(
+        rollback_coupled_request = _postgres_audit_request(
             tenant_id=tenant_id,
             idempotency_key="rollback-coupled-negative",
             created_at=datetime(2026, 7, 1, 16, 30, 0, tzinfo=timezone.utc),
         )
-        rollback_record = build_audit_record(rollback_request)
-        async with session_factory() as caller_session:
-            await caller_session.begin()
-            await caller_session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-                {"tenant_id": str(tenant_id)},
-            )
-            await record_trust_audit_event(caller_session, rollback_request)
-            await caller_session.rollback()
-        assert (
-            await _audit_row_count(
-                session_factory,
-                tenant_id=tenant_id,
-                audit_ref=rollback_record.audit_ref,
-            )
-            == 0
-        )
-
+        rollback_coupled_record = build_audit_record(rollback_coupled_request)
         created_at = datetime(2026, 7, 1, 16, 31, 0, tzinfo=timezone.utc)
         durable_request = _postgres_audit_request(
             tenant_id=tenant_id,
@@ -629,11 +709,57 @@ async def test_postgres_audit_durability_survives_caller_rollback() -> None:
                 text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                 {"tenant_id": str(tenant_id)},
             )
+            await caller_session.execute(
+                text(
+                    """
+                    INSERT INTO public.b25_p7_rollback_witness (witness_id, marker)
+                    VALUES (:witness_id, :marker)
+                    """
+                ),
+                {
+                    "witness_id": "caller-transaction-rollback-observed",
+                    "marker": "non-audit-canary-inside-caller-transaction",
+                },
+            )
+            witness_count_before_rollback = await caller_session.scalar(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM public.b25_p7_rollback_witness
+                    WHERE witness_id = :witness_id
+                    """
+                ),
+                {"witness_id": "caller-transaction-rollback-observed"},
+            )
+            assert witness_count_before_rollback == 1
+            await record_trust_audit_event(caller_session, rollback_coupled_request)
             first = await record_trust_audit_event_durable(
                 durable_request,
                 audit_session_factory=session_factory,
             )
+            with pytest.raises(RuntimeError, match="post_audit_serialization_failure"):
+                raise RuntimeError("post_audit_serialization_failure")
             await caller_session.rollback()
+            witness_count_after_rollback = await caller_session.scalar(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM public.b25_p7_rollback_witness
+                    WHERE witness_id = :witness_id
+                    """
+                ),
+                {"witness_id": "caller-transaction-rollback-observed"},
+            )
+            assert witness_count_after_rollback == 0
+            await caller_session.rollback()
+        assert (
+            await _audit_row_count(
+                session_factory,
+                tenant_id=tenant_id,
+                audit_ref=rollback_coupled_record.audit_ref,
+            )
+            == 0
+        )
 
         assert (
             await _audit_row_count(
@@ -666,4 +792,5 @@ async def test_postgres_audit_durability_survives_caller_rollback() -> None:
             "replay_event_count": 1,
         }
     finally:
+        await _drop_rollback_witness_for_postgres_proof(migration_url)
         await engine.dispose()

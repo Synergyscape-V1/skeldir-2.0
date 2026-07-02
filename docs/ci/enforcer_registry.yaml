@@ -2,13 +2,13 @@
   path: scripts/ci/validate_b25_p7_provenance_audit.py
   status: required
   owning_phase: B2.5-P7
-  protected_invariant: B2.5-P7 provenance/audit substrate remains canonical, tenant-scoped, RLS/FORCE-RLS protected, idempotent, retry-safe, PII-free, source-registry-total, audit-ref/hash-attached, committed through an independent PostgreSQL audit transaction, stable under caller rollback/serialization-return failure, explicit-created-at deterministic, no-LLM, no-dynamic-import, no-native-dispatch, scoped only to provenance/audit persistence, and explicitly excludes signing, routes, machine-caller auth, export, MCP, rate limiting, and action authority.
+  protected_invariant: B2.5-P7 provenance/audit substrate remains canonical, tenant-scoped, RLS/FORCE-RLS protected, idempotent, retry-safe, PII-free, source-registry-total, audit-ref/hash-attached, committed through an independent PostgreSQL audit transaction, proven durable across caller rollback by an independent PostgreSQL rollback witness, stable under serialization-return failure, explicit-created-at deterministic, guarded against static sentinel timestamp fallbacks, source-authority validated before audit hash material, no-LLM, no-dynamic-import, no-native-dispatch, scoped only to provenance/audit persistence, and explicitly excludes signing, routes, machine-caller auth, export, MCP, rate limiting, and action authority.
   command: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control --skip-prior-phase-subprocesses
   workflow_references:
   - .github/workflows/b2_5-p7-provenance-audit.yml
   workflow_job_name: B2.5-P7 Provenance Audit
   local_reproduction_command: make validate-b25-p7-provenance-audit
-  expected_failure_meaning: B2.5-P7 provenance/audit is missing source classes, nondeterministic, schema-divergent, raw-tenant or provider-text leaking, not idempotent, missing audit refs/hashes, weakly RLS-protected, rollback-coupled, dependent on live clock defaults for audit identity, using SQLite/fakes as primary durability proof, wrong-tenant visible, scope-denial evidence leaking, LLM/dynamic-import/dispatch contaminated, writing outside trust audit tables, or expanded into later Trust API phases.
+  expected_failure_meaning: B2.5-P7 provenance/audit is missing source classes, nondeterministic, schema-divergent, raw-tenant or provider-text leaking, not idempotent, missing audit refs/hashes, weakly RLS-protected, rollback-coupled, missing an independent rollback witness, dependent on live clock defaults or static sentinel fallbacks for audit identity, accepting created_at without source authority, using SQLite/fakes as primary durability proof, wrong-tenant visible, scope-denial evidence leaking, LLM/dynamic-import/dispatch contaminated, writing outside trust audit tables, or expanded into later Trust API phases.
   first_diagnostic_command: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control --skip-prior-phase-subprocesses
   depends_on_db: true
   depends_on_celery: false
