@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.trust.audit import (  # noqa: E402
+    TrustAuditError,
     TrustAuditRequest,
     attach_audit_to_unsigned_payload,
     build_audit_record,
@@ -345,6 +346,7 @@ def _request(tenant_id: UUID, verdict_id: UUID) -> TrustEnvelopeBuildRequest:
         subject_ref=f"urn:skeldir:match_verdict:{verdict_id}",
         request_context={
             "created_at": datetime(2026, 7, 1, 16, 0, 1, tzinfo=timezone.utc),
+            "created_at_source": "request_issuance_context",
             "valid_until": datetime(2026, 7, 2, 16, 0, 1, tzinfo=timezone.utc),
             "audience_id": "p7-validator-agent",
         },
@@ -544,6 +546,7 @@ def validate_payload_rehash_after_audit_attach() -> int:
         reason_code=None,
         semantic_truth_hash=str(build.unsigned_payload["semantic_truth_hash"]),
         created_at=datetime(2026, 7, 1, 16, 0, 0, tzinfo=timezone.utc),
+        created_at_source="request_issuance_context",
     )
     record = build_audit_record(audit_request)
     payload = attach_audit_to_unsigned_payload(
@@ -631,6 +634,7 @@ async def _validate_refusal_and_scope_denial() -> int:
         reason_code=ReasonCode.SCOPE_DENIED,
         evidence_refs_allowed=False,
         created_at=datetime(2026, 7, 1, 16, 0, 0, tzinfo=timezone.utc),
+        created_at_source="request_issuance_context",
     )
     record = await record_trust_audit_event(scope_session, request)
     if not record.audit_ref.startswith("urn:skeldir:audit:scope_denial:"):
@@ -870,6 +874,73 @@ def _assert_created_at_required(tree: ast.AST) -> int:
     raise B25P7ValidationError("TrustAuditRequest.created_at field missing")
 
 
+FORBIDDEN_STATIC_TIMESTAMP_NAMES = {
+    "EPOCH",
+    "epoch",
+    "DEFAULT_CREATED_AT",
+    "SENTINEL_CREATED_AT",
+    "STATIC_CREATED_AT",
+    "fallback_created_at",
+    "fixed_created_at",
+    "constant_created_at",
+    "static_created_at",
+}
+
+
+def _is_created_at_reference(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == "created_at" or node.id.endswith("_created_at")
+    if isinstance(node, ast.Attribute):
+        return node.attr == "created_at"
+    return False
+
+
+def _is_static_timestamp_fallback(node: ast.AST) -> bool:
+    if isinstance(node, ast.Call) and _dotted_name(node.func) == "datetime":
+        if node.args:
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and first.value == 1970:
+                return True
+        return True
+    if isinstance(node, ast.Attribute) and _dotted_name(node) in {
+        "datetime.min",
+        "datetime.max",
+    }:
+        return True
+    if isinstance(node, ast.Name) and node.id in FORBIDDEN_STATIC_TIMESTAMP_NAMES:
+        return True
+    return False
+
+
+def _assert_no_static_timestamp_fallbacks(source: str) -> int:
+    for name in FORBIDDEN_STATIC_TIMESTAMP_NAMES:
+        if re.search(rf"\b{name}\b", source):
+            raise B25P7ValidationError(f"static timestamp fallback token {name}")
+    tree = ast.parse(source)
+    controls = len(FORBIDDEN_STATIC_TIMESTAMP_NAMES)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and _dotted_name(node) in {
+            "datetime.min",
+            "datetime.max",
+        }:
+            raise B25P7ValidationError(f"static timestamp fallback {_dotted_name(node)}")
+        if isinstance(node, ast.Call) and _dotted_name(node.func) == "datetime":
+            if node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and first.value == 1970:
+                    raise B25P7ValidationError("epoch created_at fallback")
+            controls += 1
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+            has_created_at = any(_is_created_at_reference(value) for value in node.values)
+            has_static_fallback = any(
+                _is_static_timestamp_fallback(value) for value in node.values[1:]
+            )
+            if has_created_at and has_static_fallback:
+                raise B25P7ValidationError("created_at-or-static fallback")
+            controls += 1
+    return controls
+
+
 def _assert_clock_source_static(source: str) -> int:
     if "default_factory" in source:
         raise B25P7ValidationError("audit source contains default_factory")
@@ -886,11 +957,175 @@ def _assert_clock_source_static(source: str) -> int:
         )
     if "record_trust_audit_event_durable(" not in source:
         raise B25P7ValidationError("wrapper is not wired to durable audit persistence")
+    controls += _assert_no_static_timestamp_fallbacks(source)
     return controls + 1
 
 
 def validate_clock_source_containment() -> int:
     return _assert_clock_source_static(P7_AUDIT_WRITE_PATHS[0].read_text(encoding="utf-8"))
+
+
+def validate_static_sentinel_created_at_rejection() -> int:
+    audit_source = P7_AUDIT_WRITE_PATHS[0].read_text(encoding="utf-8")
+    controls = _assert_no_static_timestamp_fallbacks(audit_source)
+    mutants = (
+        audit_source.replace(
+            "created_at = utc_second(request.created_at)",
+            (
+                "created_at = utc_second(request.created_at or "
+                "datetime(1970, 1, 1, tzinfo=timezone.utc))"
+            ),
+            1,
+        ),
+        audit_source.replace(
+            "created_at = utc_second(request.created_at)",
+            "created_at = utc_second(request.created_at or datetime.min)",
+            1,
+        ),
+        audit_source.replace(
+            "created_at = utc_second(request.created_at)",
+            (
+                "DEFAULT_CREATED_AT = datetime(1970, 1, 1, tzinfo=timezone.utc)\n"
+                "    created_at = utc_second(request.created_at or DEFAULT_CREATED_AT)"
+            ),
+            1,
+        ),
+        audit_source.replace(
+            "created_at = utc_second(request.created_at)",
+            (
+                "SENTINEL_CREATED_AT = datetime(1970, 1, 1, tzinfo=timezone.utc)\n"
+                "    created_at = utc_second(request.created_at or SENTINEL_CREATED_AT)"
+            ),
+            1,
+        ),
+        audit_source.replace(
+            "created_at = utc_second(request.created_at)",
+            "created_at = utc_second(request.created_at or datetime.max)",
+            1,
+        ),
+        audit_source.replace(
+            "created_at = utc_second(request.created_at)",
+            (
+                "STATIC_CREATED_AT = datetime(1970, 1, 1, tzinfo=timezone.utc)\n"
+                "    created_at = utc_second(request.created_at or STATIC_CREATED_AT)"
+            ),
+            1,
+        ),
+    )
+    for mutated in mutants:
+        if mutated == audit_source:
+            raise B25P7ValidationError("static sentinel negative mutation did not apply")
+        try:
+            _assert_no_static_timestamp_fallbacks(mutated)
+        except B25P7ValidationError:
+            controls += 1
+        else:
+            raise B25P7ValidationError("static sentinel negative control passed")
+    return controls
+
+
+def _assert_created_at_source_authority_static(source: str) -> int:
+    controls = 0
+    for forbidden in (
+        "_fixture_created_at_source",
+        "fixture_created_at_source",
+        "synthetic_caller_constant",
+    ):
+        if forbidden in source:
+            raise B25P7ValidationError(
+                f"non-authoritative created_at source helper in production: {forbidden}"
+            )
+        controls += 1
+    required_tokens = (
+        "AuditTimestampSource",
+        "created_at_source: AuditTimestampSource",
+        "AUDIT_TIMESTAMP_AUTHORITY_SOURCES",
+        "audit_created_at_source_authority_required",
+        "_created_at_source_from_context",
+        '"created_at_source": request.created_at_source',
+    )
+    for token in required_tokens:
+        if token not in source:
+            raise B25P7ValidationError(f"created_at source authority token missing: {token}")
+        controls += 1
+    if "TrustAuditRequest(\n" in source and "created_at_source=created_at_source" not in source:
+        raise B25P7ValidationError("wrapper constructs audit request without source authority")
+    return controls
+
+
+def validate_created_at_source_authority() -> int:
+    audit_source = P7_AUDIT_WRITE_PATHS[0].read_text(encoding="utf-8")
+    controls = _assert_created_at_source_authority_static(audit_source)
+
+    tenant_id = uuid4()
+    authoritative = TrustAuditRequest(
+        tenant_id=tenant_id,
+        event_type="issuance",
+        status="success",
+        idempotency_key="source-authority",
+        subject_type="match_verdict",
+        subject_ref_hash=tagged_sha256("subject"),
+        tenant_id_hash=tenant_hash(tenant_id),
+        policy_state="read_only",
+        reason_code=None,
+        semantic_truth_hash=tagged_sha256("semantic"),
+        envelope_hash=tagged_sha256("envelope"),
+        created_at=datetime(2026, 7, 1, 16, 47, 0, tzinfo=timezone.utc),
+        created_at_source="request_issuance_context",
+    )
+    authoritative_record = build_audit_record(authoritative)
+    retry_original = TrustAuditRequest(
+        **{
+            **authoritative.__dict__,
+            "created_at_source": "persisted_original",
+        }
+    )
+    if authoritative_record.audit_hash == build_audit_record(retry_original).audit_hash:
+        raise B25P7ValidationError("audit hash did not bind created_at source authority")
+    controls += 1
+
+    try:
+        TrustAuditRequest(  # type: ignore[arg-type]
+            **{
+                **authoritative.__dict__,
+                "created_at_source": "synthetic_caller_constant",
+            }
+        )
+    except TrustAuditError as exc:
+        if "audit_created_at_source_authority_required" not in str(exc):
+            raise
+        controls += 1
+    else:
+        raise B25P7ValidationError("non-authoritative created_at source was accepted")
+
+    missing_source_mutant = audit_source.replace(
+        "    created_at_source: AuditTimestampSource\n",
+        "",
+        1,
+    )
+    if missing_source_mutant == audit_source:
+        raise B25P7ValidationError("source-authority negative mutation did not apply")
+    try:
+        _assert_created_at_source_authority_static(missing_source_mutant)
+    except B25P7ValidationError:
+        controls += 1
+    else:
+        raise B25P7ValidationError("missing source-authority negative control passed")
+
+    fallback_helper_mutant = (
+        audit_source
+        + "\n\ndef _fixture_created_at_source():\n"
+        + "    return 'request_issuance_context'\n"
+    )
+    if "_fixture_created_at_source" not in fallback_helper_mutant:
+        raise B25P7ValidationError("fixture-source negative mutation did not apply")
+    try:
+        _assert_created_at_source_authority_static(fallback_helper_mutant)
+    except B25P7ValidationError:
+        controls += 1
+    else:
+        raise B25P7ValidationError("test fixture copied into production negative passed")
+    return controls
 
 
 def validate_chronological_determinism() -> int:
@@ -909,6 +1144,7 @@ def validate_chronological_determinism() -> int:
         semantic_truth_hash=tagged_sha256("semantic"),
         envelope_hash=tagged_sha256("envelope"),
         created_at=created_at,
+        created_at_source="request_issuance_context",
     )
     record_a = build_audit_record(request)
     record_b = build_audit_record(request)
@@ -942,6 +1178,7 @@ def validate_delayed_retry_audit_hash() -> int:
         semantic_truth_hash=tagged_sha256("semantic"),
         envelope_hash=tagged_sha256("envelope"),
         created_at=created_at,
+        created_at_source="persisted_original",
     )
     session = FakeTrustAuditSession(None)
     first = asyncio.run(
@@ -977,6 +1214,7 @@ def validate_live_clock_default_factory_rejection() -> int:
             policy_state="read_only",
             reason_code=None,
             created_at=None,
+            created_at_source="request_issuance_context",
         )
     except Exception:
         return 1
@@ -1016,7 +1254,27 @@ def _run_pytest(command: list[str]) -> None:
         )
 
 
-def validate_postgres_transaction_boundary() -> tuple[int, int, int, int]:
+def _assert_rollback_witness_test_static(test_text: str) -> int:
+    required_tokens = (
+        "CREATE TABLE IF NOT EXISTS public.b25_p7_rollback_witness",
+        "non-audit-canary-inside-caller-transaction",
+        "witness_count_before_rollback",
+        "witness_count_after_rollback",
+        "assert witness_count_before_rollback == 1",
+        "assert witness_count_after_rollback == 0",
+        "post_audit_serialization_failure",
+        "rollback_coupled_record.audit_ref",
+        "DROP TABLE IF EXISTS public.b25_p7_rollback_witness",
+    )
+    controls = 0
+    for token in required_tokens:
+        if token not in test_text:
+            raise B25P7ValidationError(f"rollback witness proof token missing: {token}")
+        controls += 1
+    return controls
+
+
+def validate_postgres_transaction_boundary() -> tuple[int, int, int, int, int, int]:
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     required_tokens = (
         "services:",
@@ -1038,6 +1296,7 @@ def validate_postgres_transaction_boundary() -> tuple[int, int, int, int]:
     if "test_postgres_audit_durability_survives_caller_rollback" not in test_text:
         raise B25P7ValidationError("PostgreSQL transaction proof test missing")
     static_controls += 1
+    rollback_witness_controls = _assert_rollback_witness_test_static(test_text)
 
     if os.getenv("SKELDIR_B25_P7_POSTGRES_PROOF") == "1":
         from app.core.secrets import get_database_url
@@ -1052,8 +1311,22 @@ def validate_postgres_transaction_boundary() -> tuple[int, int, int, int]:
                 "-q",
             ]
         )
-        return static_controls + 2, 2, 2, 2
-    return static_controls, 1, 1, 1
+        return (
+            static_controls + 2,
+            2,
+            2,
+            2,
+            rollback_witness_controls + 1,
+            rollback_witness_controls + 1,
+        )
+    return (
+        static_controls,
+        1,
+        1,
+        1,
+        rollback_witness_controls,
+        rollback_witness_controls,
+    )
 
 
 def validate_ci_wiring() -> int:
@@ -1367,6 +1640,23 @@ def validate_meta_negative_controls() -> int:
 
     controls += validate_sqlite_primary_proof_rejection()
 
+    test_text = (ROOT / "backend/tests/trust/test_b25_p7_provenance_audit.py").read_text(
+        encoding="utf-8"
+    )
+    missing_canary_assertion = test_text.replace(
+        "assert witness_count_after_rollback == 0",
+        "assert witness_count_after_rollback >= 0",
+        1,
+    )
+    if missing_canary_assertion == test_text:
+        raise B25P7ValidationError("rollback witness negative mutation did not apply")
+    try:
+        _assert_rollback_witness_test_static(missing_canary_assertion)
+    except B25P7ValidationError:
+        controls += 1
+    else:
+        raise B25P7ValidationError("missing rollback witness assertion negative passed")
+
     return controls
 
 
@@ -1392,8 +1682,34 @@ async def _wrong_tenant_negative_control() -> int:
 
 def validate_all(*, include_prior_phases: bool, negative_control_only: bool) -> None:
     if negative_control_only:
+        (
+            _postgres_transaction_controls,
+            _serialization_failure_controls,
+            _rollback_coupling_controls,
+            _postgres_required_controls,
+            rollback_witness_canary_controls,
+            caller_transaction_rollback_observed_controls,
+        ) = validate_postgres_transaction_boundary()
+        static_sentinel_controls = validate_static_sentinel_created_at_rejection()
+        created_at_source_authority_controls = validate_created_at_source_authority()
         meta_controls = validate_meta_negative_controls()
         print("B25_P7_PROVENANCE_AUDIT_NEGATIVE_CONTROL_PASS")
+        print(
+            "rollback_witness_canary_controls_passed="
+            f"{rollback_witness_canary_controls}"
+        )
+        print(
+            "caller_transaction_rollback_observed_controls_passed="
+            f"{caller_transaction_rollback_observed_controls}"
+        )
+        print(
+            "static_sentinel_created_at_rejection_controls_passed="
+            f"{static_sentinel_controls}"
+        )
+        print(
+            "created_at_source_authority_controls_passed="
+            f"{created_at_source_authority_controls}"
+        )
         print(f"meta_negative_controls_passed={meta_controls}")
         return
 
@@ -1416,11 +1732,15 @@ def validate_all(*, include_prior_phases: bool, negative_control_only: bool) -> 
         serialization_failure_controls,
         rollback_coupling_controls,
         postgres_required_controls,
+        rollback_witness_canary_controls,
+        caller_transaction_rollback_observed_controls,
     ) = validate_postgres_transaction_boundary()
     chronological_controls = validate_chronological_determinism()
     delayed_retry_controls = validate_delayed_retry_audit_hash()
     clock_source_controls = validate_clock_source_containment()
     live_clock_rejection_controls = validate_live_clock_default_factory_rejection()
+    static_sentinel_controls = validate_static_sentinel_created_at_rejection()
+    created_at_source_authority_controls = validate_created_at_source_authority()
     sqlite_rejection_controls = validate_sqlite_primary_proof_rejection()
     if include_prior_phases:
         (
@@ -1459,12 +1779,28 @@ def validate_all(*, include_prior_phases: bool, negative_control_only: bool) -> 
     )
     print(f"rollback_coupling_negative_controls_passed={rollback_coupling_controls}")
     print(f"postgres_required_transaction_proof_controls_passed={postgres_required_controls}")
+    print(
+        "rollback_witness_canary_controls_passed="
+        f"{rollback_witness_canary_controls}"
+    )
+    print(
+        "caller_transaction_rollback_observed_controls_passed="
+        f"{caller_transaction_rollback_observed_controls}"
+    )
     print(f"chronological_determinism_controls_passed={chronological_controls}")
     print(f"delayed_retry_audit_hash_controls_passed={delayed_retry_controls}")
     print(f"clock_source_containment_controls_passed={clock_source_controls}")
     print(
         "live_clock_default_factory_rejection_controls_passed="
         f"{live_clock_rejection_controls}"
+    )
+    print(
+        "static_sentinel_created_at_rejection_controls_passed="
+        f"{static_sentinel_controls}"
+    )
+    print(
+        "created_at_source_authority_controls_passed="
+        f"{created_at_source_authority_controls}"
     )
     print(f"sqlite_primary_proof_rejection_controls_passed={sqlite_rejection_controls}")
     print(f"p1_regression_controls_passed={p1_controls}")

@@ -117,4 +117,10 @@ jobs:
         run: make validate-b25-p6-reason-truth-matrix
 
       - name: Validate B2.5-P7 provenance audit
-        run: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control --skip-prior-phase-subprocesses
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control --skip-prior-phase-subprocesses | tee /tmp/b25_p7_provenance_audit.out
+          grep -E '^rollback_witness_canary_controls_passed=[1-9][0-9]*$' /tmp/b25_p7_provenance_audit.out
+          grep -E '^caller_transaction_rollback_observed_controls_passed=[1-9][0-9]*$' /tmp/b25_p7_provenance_audit.out
+          grep -E '^static_sentinel_created_at_rejection_controls_passed=[1-9][0-9]*$' /tmp/b25_p7_provenance_audit.out
+          grep -E '^created_at_source_authority_controls_passed=[1-9][0-9]*$' /tmp/b25_p7_provenance_audit.out

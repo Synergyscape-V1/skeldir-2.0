@@ -38,7 +38,11 @@ from app.trust.refusal import tenant_hash, utc_second
 
 AuditEventType = Literal["issuance", "refusal", "scope_denial", "replay"]
 AuditStatus = Literal["success", "refused", "degraded", "replayed"]
+AuditTimestampSource = Literal["request_issuance_context", "persisted_original"]
 AuditSessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+AUDIT_TIMESTAMP_AUTHORITY_SOURCES: frozenset[str] = frozenset(
+    {"request_issuance_context", "persisted_original"}
+)
 
 SAFE_REFUSAL_REASONS = {
     ReasonCode.SCOPE_DENIED.value,
@@ -76,6 +80,7 @@ class TrustAuditRequest:
     policy_state: str
     reason_code: str | None
     created_at: datetime
+    created_at_source: AuditTimestampSource
     semantic_truth_hash: str | None = None
     envelope_hash: str | None = None
     audience_id_hash: str | None = None
@@ -86,6 +91,8 @@ class TrustAuditRequest:
             raise TrustAuditError("audit_created_at_required")
         if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
             raise TrustAuditError("audit_created_at_timezone_required")
+        if self.created_at_source not in AUDIT_TIMESTAMP_AUTHORITY_SOURCES:
+            raise TrustAuditError("audit_created_at_source_authority_required")
 
 
 @dataclass(frozen=True)
@@ -162,6 +169,7 @@ def _audit_material(request: TrustAuditRequest) -> dict[str, object]:
         "policy_state": request.policy_state,
         "evidence_refs_allowed": request.evidence_refs_allowed,
         "created_at": created_at,
+        "created_at_source": request.created_at_source,
     }
 
 
@@ -483,6 +491,15 @@ def attach_audit_to_unsigned_payload(
     return updated
 
 
+def _created_at_source_from_context(
+    request_context: dict[str, object],
+) -> AuditTimestampSource:
+    source = request_context.get("created_at_source")
+    if source not in AUDIT_TIMESTAMP_AUTHORITY_SOURCES:
+        raise TrustAuditError("audit_created_at_source_authority_required")
+    return source  # type: ignore[return-value]
+
+
 async def build_unsigned_trust_envelope_with_audit(
     db_session: AsyncSession,
     request: TrustEnvelopeBuildRequest,
@@ -496,6 +513,7 @@ async def build_unsigned_trust_envelope_with_audit(
     created_at = request.request_context.get("created_at")
     if not isinstance(created_at, datetime):
         raise TrustAuditError("audit_created_at_required")
+    created_at_source = _created_at_source_from_context(request.request_context)
     observed_at = created_at
     if build_result.status == "success" and build_result.unsigned_payload is not None:
         provisional = deepcopy(build_result.unsigned_payload)
@@ -521,6 +539,7 @@ async def build_unsigned_trust_envelope_with_audit(
             ),
             evidence_refs_allowed=True,
             created_at=created_at,
+            created_at_source=created_at_source,
         )
         initial_record = build_audit_record(audit_request)
         updated_payload = attach_audit_to_unsigned_payload(
@@ -576,6 +595,7 @@ async def build_unsigned_trust_envelope_with_audit(
         ),
         evidence_refs_allowed=False,
         created_at=created_at,
+        created_at_source=created_at_source,
     )
     persisted = await record_trust_audit_event_durable(
         audit_request,
