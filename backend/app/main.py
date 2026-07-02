@@ -45,6 +45,7 @@ from app.api import (
     reconciliation,
     revenue_verification,
     revenue,
+    trust_keys,
     webhooks,
 )
 from app.api.problem_details import problem_details_response
@@ -95,6 +96,7 @@ app.include_router(
     tags=["Revenue Verification"],
 )
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
+app.include_router(trust_keys.router, prefix="/api", tags=["Trust Keys"])
 app.include_router(health.router, tags=["Health"])
 app.include_router(webhooks.router, prefix="/api", tags=["Webhooks"])
 app.include_router(investigations.router, tags=["Investigations"])

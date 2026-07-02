@@ -56,6 +56,7 @@ _HASH_DOMAIN_WRAPPER_VALIDATOR = Draft202012Validator(HASH_DOMAIN_WRAPPER_SCHEMA
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ARTIFACT_BYTES_FIELDS = frozenset({"artifact_bytes_sha256"})
 _SIGNATURE_DERIVED_FIELDS = frozenset({"semantic_truth_hash", "artifact_hash"})
+_SIGNATURE_BOUND_ARTIFACT_FIELDS = frozenset({"artifact_ref"})
 
 
 class HashIdentityError(ValueError):
@@ -97,6 +98,10 @@ def _validate_payload_path(domain: str, path: str, value: Any) -> None:
     if domain == SIGNATURE_DOMAIN and path in _SIGNATURE_DERIVED_FIELDS:
         if not isinstance(value, str) or not HASH_RE.match(value):
             raise HashDomainError(f"hash_wrapper_invalid_derived_hash:{path}")
+        return
+    if domain == SIGNATURE_DOMAIN and path in _SIGNATURE_BOUND_ARTIFACT_FIELDS:
+        if value is not None and not isinstance(value, str):
+            raise HashDomainError(f"hash_wrapper_invalid_artifact_ref:{path}")
         return
 
     declared_domain = classify_hash_domain(path)
@@ -220,6 +225,9 @@ def build_signature_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
     artifact_hash = payload.get("artifact_hash")
     if artifact_hash is not None:
         signature_material["artifact_hash"] = artifact_hash
+    artifact_ref = payload.get("artifact_ref")
+    if artifact_ref is not None:
+        signature_material["artifact_ref"] = artifact_ref
     return validate_hash_domain_wrapper(
         {
             "hash_domain": SIGNATURE_DOMAIN,

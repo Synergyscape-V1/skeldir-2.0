@@ -53,9 +53,15 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/reason_truth_matrix.py",
     "backend/app/trust/refusal.py",
     "backend/app/trust/schema_versions.py",
+    "backend/app/trust/schema_verification.py",
+    "backend/app/trust/key_registry.py",
+    "backend/app/trust/signing.py",
+    "backend/app/trust/verification.py",
+    "backend/app/trust/jwks.py",
     "backend/app/trust/source_adapters.py",
     "backend/app/trust/text_disposition.py",
     "backend/app/trust/text_safety_registry.py",
+    "backend/app/api/trust_keys.py",
     "backend/tests/trust/test_b25_p2_array_ordering.py",
     "backend/tests/trust/test_b25_p2_canonicalization.py",
     "backend/tests/trust/test_b25_p2_hash_identity.py",
@@ -67,6 +73,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p5_builder.py",
     "backend/tests/trust/test_b25_p6_reason_truth_matrix.py",
     "backend/tests/trust/test_b25_p7_provenance_audit.py",
+    "backend/tests/trust/test_b25_p8_signing_verification.py",
 )
 
 

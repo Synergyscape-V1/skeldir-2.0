@@ -1,3 +1,27 @@
+- id: validate-b25-p8-signing-verification
+  path: scripts/ci/validate_b25_p8_signing_verification.py
+  status: required
+  owning_phase: B2.5-P8
+  protected_invariant: B2.5-P8 TrustEnvelope signing uses envelope-specific Ed25519 asymmetric signing over canonical P2 signature material, verifies with public/JWKS material only, rejects HMAC/JWT confusion, binds load-bearing financial/policy/provenance/audit/version/timestamp/artifact fields, fails closed on schema/canonicalization/signature downgrade, preserves semantic truth across key rotation, supports verification-authorized historical keys, rejects revoked/expired/unknown keys, publishes public-only JWKS material, and remains scoped away from P9/P10/P11+ routes, agent identity, rate limiting, export, MCP, LLM, compute dispatch, and action authority.
+  command: python scripts/ci/validate_b25_p8_signing_verification.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p8-signing-verification.yml
+  workflow_job_name: B2.5-P8 Signing Verification
+  local_reproduction_command: make validate-b25-p8-signing-verification
+  expected_failure_meaning: B2.5-P8 signing/verification is missing, symmetric/JWT-confused, private-key-dependent for verification, JWKS-private-material-leaking, weakly versioned, tamper-permissive, key-rotation-unsafe, historical-key-broken, revoked/expired/unknown-key permissive, temporal-semantics decorative, non-canonical, LLM/dynamic-import/dispatch contaminated, or expanded into later Trust API phases.
+  first_diagnostic_command: python scripts/ci/validate_b25_p8_signing_verification.py --negative-control --skip-pytest
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-signing-verification
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+  negative_control_mode: built_in
+  evidence_pack: docs/forensics/B2.5-P8 Remediation Evidence Pack.md
 - id: validate-b25-p7-provenance-audit
   path: scripts/ci/validate_b25_p7_provenance_audit.py
   status: required
