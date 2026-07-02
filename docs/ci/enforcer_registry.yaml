@@ -12,6 +12,14 @@
   first_diagnostic_command: python scripts/ci/validate_b25_p8_signing_verification.py --negative-control --skip-pytest
   depends_on_db: false
   depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-signing-verification
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
   negative_control_mode: built_in
   evidence_pack: docs/forensics/B2.5-P8 Remediation Evidence Pack.md
 - id: validate-b25-p7-provenance-audit

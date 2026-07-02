@@ -12,7 +12,7 @@ from app.trust.jwks import default_public_jwks
 router = APIRouter()
 
 
-@router.get("/trust/v1/keys/jwks")
+@router.get("/trust/v1/keys/jwks", openapi_extra={"security": []})
 async def get_trust_jwks(
     x_correlation_id: UUID = Header(..., alias="X-Correlation-ID"),
 ) -> dict[str, object]:

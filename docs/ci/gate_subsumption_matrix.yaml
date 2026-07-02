@@ -6,6 +6,9 @@
   protected_invariant: B2.5-P8 signs canonical TrustEnvelope signature material with envelope-specific Ed25519 keys, verifies through public-only JWKS/key material, rejects HMAC/JWT confusion and schema/canonicalization/signature downgrade, binds financial/policy/provenance/audit/version/timestamp/artifact fields, enforces envelope/key temporal semantics, preserves semantic truth across key rotation, verifies historical verification-authorized keys, rejects revoked/expired/unknown keys, publishes public-only JWKS, and blocks P9/P10/P11+ scope creep.
   current_status: required
   default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, P5 validates read-only envelope assembly, P6 validates reason semantics, and P7 validates provenance/audit persistence, but none proves asymmetric Ed25519 signing, public-only verification/JWKS behavior, HMAC/JWT confusion rejection, key rotation and historical verification semantics, revoked/expired/unknown key rejection, private-key exposure controls, or P8-specific schema/canonicalization/signature downgrade rejection.
   negative_control_preserved_by: python scripts/ci/validate_b25_p8_signing_verification.py --negative-control
   local_reproduction_command: make validate-b25-p8-signing-verification
   risk_if_removed: Future TrustEnvelope work could accept symmetric or JWT-shaped signatures, verify with private material, leak signing keys in JWKS, omit policy/provenance/audit/version/artifact fields from signature coverage, accept unsupported schema/canonicalization/signature versions, break historical verification after rotation, trust revoked keys, or silently introduce agent/auth/route/export/MCP/action scope before the owning phases.
