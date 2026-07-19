@@ -294,6 +294,7 @@ ALLOWED_M0_PATHS = [
     "docs/forensics/B2.5-P7 Follow-Up Corrective Evidence Pack.md",
     "docs/forensics/B2.5-P7 Second Follow-Up Corrective Evidence Pack.md",
     "docs/forensics/B2.5-P8 Remediation Evidence Pack.md",
+    "docs/forensics/B2.5-P9 Remediation Evidence Pack.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/forensics/M5 Remediation Evidence Pack .md",
     "db/schema/canonical_schema.sql",
