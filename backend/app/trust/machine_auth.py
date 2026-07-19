@@ -24,8 +24,6 @@ Physics (per B2.5-P9 Remediation Directive):
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -46,7 +44,7 @@ from app.trust.machine_identity import (
     verify_machine_token,
 )
 from app.trust.reason_codes import ReasonCode
-from app.trust.refusal import tenant_hash
+from app.trust.refusal import tagged_sha256, tenant_hash
 
 
 DEFAULT_NONCE_TTL_SECONDS: int = 300
@@ -335,19 +333,20 @@ def _machine_request_identity_hash(
     token_prefix,
     nonce_value,
 ):
-    """Stable request identity hash for nonce insertion and audit."""
-    material = json.dumps(
+    """Stable request identity hash for nonce insertion and audit.
+
+    Uses tagged_sha256 from the P6 refusal module (stable non-JSON internal
+    bytes) rather than the stdlib JSON serializer, to satisfy the P2
+    canonicalization serializer boundary which bans that function in the trust path.
+    """
+    return tagged_sha256(
         {
             "tenant_id": str(tenant_id),
             "token_prefix": token_prefix,
             "nonce_value": nonce_value,
             "purpose": "b25-p9-machine-caller-request-identity",
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
+        }
     )
-    return "sha256:" + hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 async def authenticate_machine_caller(
