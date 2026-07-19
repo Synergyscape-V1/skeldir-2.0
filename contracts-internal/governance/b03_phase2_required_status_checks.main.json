@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.11.0",
+  "contract_version": "1.12.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -69,6 +69,7 @@
     "B2.4-P11 CI Gates and Negative Control Harness",
     "B2.4-P12 Internal E2E Proof Harness",
     "B2.5-P8 Signing Verification",
+    "B2.5-P9 Machine Identity",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark",
     "m0-maintainability-scope-lock",

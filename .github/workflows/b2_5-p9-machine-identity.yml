@@ -1,0 +1,131 @@
+name: B2.5-P9 Machine Identity
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/app/trust/machine_identity.py"
+      - "backend/app/trust/machine_auth.py"
+      - "backend/tests/trust/test_b25_p9_machine_identity.py"
+      - "alembic/versions/007_skeldir_foundation/202607191200_b25_p9_machine_identity.py"
+      - "scripts/ci/validate_b25_p9_machine_identity.py"
+      - ".github/workflows/b2_5-p9-machine-identity.yml"
+      - "Makefile"
+      - "docs/ci/**"
+      - "docs/forensics/**"
+      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
+      - "contracts/trust-api/**"
+      - "backend/app/trust/**"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/app/trust/machine_identity.py"
+      - "backend/app/trust/machine_auth.py"
+      - "backend/tests/trust/test_b25_p9_machine_identity.py"
+      - "alembic/versions/007_skeldir_foundation/202607191200_b25_p9_machine_identity.py"
+      - "scripts/ci/validate_b25_p9_machine_identity.py"
+      - ".github/workflows/b2_5-p9-machine-identity.yml"
+      - "Makefile"
+      - "docs/ci/**"
+      - "docs/forensics/**"
+      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
+      - "contracts/trust-api/**"
+      - "backend/app/trust/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b25-p9-machine-identity:
+    name: B2.5-P9 Machine Identity
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p9_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p9_ci
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p9_ci
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p9_ci
+      SKELDIR_B25_P7_POSTGRES_PROOF: "1"
+      SKELDIR_B25_P9_POSTGRES_PROOF: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validator dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install "pyyaml>=6.0" "jsonschema>=4.25.0" "pytest>=7.4.0" "psycopg2-binary>=2.9.9"
+
+      - name: Prepare PostgreSQL proof database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p9_ci
+
+      - name: Run trust pytest
+        run: |
+          python -m pytest backend/tests/trust -q
+
+      - name: Validate B2.5-P1 contract authority preservation
+        run: make validate-b25-p1-contracts
+
+      - name: Validate B2.5-P1 TrustEnvelope drift tripwire
+        run: make validate-b25-p1-trust-drift
+
+      - name: Validate B2.5-P2 canonicalization preservation
+        run: make validate-b25-p2-canonicalization
+
+      - name: Validate B2.5-P3 text disposition preservation
+        run: make validate-b25-p3-text-disposition
+
+      - name: Validate B2.5-P4 money authority preservation
+        run: make validate-b25-p4-money-authority
+
+      - name: Validate B2.5-P5 builder preservation
+        run: make validate-b25-p5-builder
+
+      - name: Validate B2.5-P6 reason truth matrix preservation
+        run: make validate-b25-p6-reason-truth-matrix
+
+      - name: Validate B2.5-P7 provenance audit preservation
+        run: make validate-b25-p7-provenance-audit
+
+      - name: Validate B2.5-P8 signing verification preservation
+        run: make validate-b25-p8-signing-verification
+
+      - name: Validate B2.5-P9 machine identity
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p9_machine_identity.py --negative-control | tee /tmp/b25_p9_machine_identity.out
+          grep -E "^B25_P9_MACHINE_IDENTITY_VALIDATION_PASS$" /tmp/b25_p9_machine_identity.out
+          grep -E "^schema_authority_controls_passed=[1-9][0-9]*$" /tmp/b25_p9_machine_identity.out
+          grep -E "^csprng_sha256_ast_ban_controls_passed=[1-9][0-9]*$" /tmp/b25_p9_machine_identity.out
+          grep -E "^scope_registry_governance_controls_passed=[1-9][0-9]*$" /tmp/b25_p9_machine_identity.out
+          grep -E "^timing_oracle_negative_control_passed=1$" /tmp/b25_p9_machine_identity.out
+          grep -E "^concurrent_replay_storm_rejected=1$" /tmp/b25_p9_machine_identity.out
+          grep -E "^rollback_proof_audit_survived=1$" /tmp/b25_p9_machine_identity.out
+          grep -E "^reserved_scope_insertion_rejected=[1-9][0-9]*$" /tmp/b25_p9_machine_identity.out
+          grep -E "^p10_route_absence_controls_passed=1$" /tmp/b25_p9_machine_identity.out
+          grep -E "^governance_binding_controls_passed=[1-9][0-9]*$" /tmp/b25_p9_machine_identity.out
+          grep -E "^pytest_controls_passed=1$" /tmp/b25_p9_machine_identity.out

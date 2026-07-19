@@ -74,6 +74,9 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p6_reason_truth_matrix.py",
     "backend/tests/trust/test_b25_p7_provenance_audit.py",
     "backend/tests/trust/test_b25_p8_signing_verification.py",
+    "backend/app/trust/machine_identity.py",
+    "backend/app/trust/machine_auth.py",
+    "backend/tests/trust/test_b25_p9_machine_identity.py",
 )
 
 
