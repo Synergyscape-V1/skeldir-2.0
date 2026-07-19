@@ -85,6 +85,7 @@
 - `B2.4-P10 Read-Only Projection Proof`
 - `B2.4-P11 CI Gates and Negative Control Harness`
 - `B2.5-P8 Signing Verification`
+- `B2.5-P9 Machine Identity`
 - `B1.7 Explanation Runtime Adjudication`
 - `B1.7 P4 Mixed Workload Benchmark`
 - `m0-maintainability-scope-lock`
