@@ -442,3 +442,4 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
 | --- | --- | --- | --- | --- |
 | EG-5 | docs/forensics/proof_pack/value_trace_proof_pack.md | CI-generated proof pack (human-readable) | CI-generated | CI-generated |
+| B2.5-P8 corrective remediation evidence pack (corrective iteration) | docs/forensics/B2.5-P8 Remediation Evidence Pack.md | Corrective iteration: retired_at temporal forgery bound for verification_only keys, DoS short-circuit spy-based negative controls, CI governance binding (B2.5-P8 required status check on protected main), substrate preservation (Gates 1-6 un-regressed). | PR #608 / main `3f33a0db1`; evidence PR #609 | PR #608 B2.5-P8 Signing Verification: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/29692543919/job/88207678199 ; Main B2.5-P8 run #11: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/29692543919 |
