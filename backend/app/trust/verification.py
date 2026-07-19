@@ -81,6 +81,7 @@ def _assert_temporal_validity(
     *,
     key_valid_from: datetime,
     key_valid_until: datetime | None,
+    key_retired_at: datetime | None,
     at_time: datetime,
 ) -> None:
     created_at = _utc_parse(payload.get("created_at"), "created_at")
@@ -92,6 +93,8 @@ def _assert_temporal_validity(
         raise ValueError("key_not_valid_for_envelope_time")
     if key_valid_until is not None and created_at > key_valid_until.astimezone(timezone.utc):
         raise ValueError("key_not_valid_for_envelope_time")
+    if key_retired_at is not None and created_at > key_retired_at.astimezone(timezone.utc):
+        raise ValueError("temporal_forgery_rejected:created_after_key_retirement")
 
 
 def verify_trust_envelope(
@@ -118,6 +121,7 @@ def verify_trust_envelope(
             candidate,
             key_valid_from=key.valid_from,
             key_valid_until=key.valid_until,
+            key_retired_at=key.retired_at,
             at_time=at_time or datetime.now(timezone.utc),
         )
         material = canonicalize_signature_material(candidate)

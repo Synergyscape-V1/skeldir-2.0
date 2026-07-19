@@ -37,7 +37,17 @@ from app.trust.jwks import (  # noqa: E402
 )
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey  # noqa: E402
 from app.trust.signing import sign_trust_envelope  # noqa: E402
+from app.trust.signing import (  # noqa: E402
+    encode_ed25519_signature,
+    prepare_payload_for_signing,
+    verify_ed25519_signature as _verify_ed25519_signature,
+)
 from app.trust.verification import verify_trust_envelope  # noqa: E402
+from app.trust.canonicalization import (  # noqa: E402
+    canonicalize_envelope_payload,
+    canonicalize_signature_material,
+)
+import time as _time  # noqa: E402
 
 
 class B25P8ValidationError(RuntimeError):
@@ -94,6 +104,7 @@ def _key(
     state: str = "active",
     valid_from: datetime = SIGNING_TIME - timedelta(days=1),
     valid_until: datetime | None = SIGNING_TIME + timedelta(days=30),
+    retired_at: datetime | None = None,
 ) -> TrustSigningKey:
     private_key = _private_key(label)
     return TrustSigningKey(
@@ -104,6 +115,7 @@ def _key(
         state=state,  # type: ignore[arg-type]
         valid_from=valid_from,
         valid_until=valid_until,
+        retired_at=retired_at if state == "verification_only" else None,
     )
 
 
@@ -115,6 +127,7 @@ def _registry() -> TrustKeyRegistry:
                 "kid:b25-p8-verify-old",
                 label="b25-p8-verify-old",
                 state="verification_only",
+                retired_at=SIGNING_TIME,
             ),
         )
     )
@@ -351,6 +364,113 @@ def validate_temporal_and_downgrade_controls() -> tuple[int, int, int, int]:
     return schema_controls, canonical_controls, signature_controls, algorithm_controls
 
 
+def validate_temporal_forgery_and_dos_controls() -> tuple[int, int, int]:
+    """Negative controls for retired-key temporal forgery and DoS short-circuit."""
+    temporal_controls = dos_controls = historical_controls = 0
+
+    retired_key = _key(
+        "kid:b25-p8-verify-old",
+        label="b25-p8-verify-old",
+        state="verification_only",
+        retired_at=SIGNING_TIME,
+    )
+    active_key = _key("kid:b25-p8-active-a", label="b25-p8-active-a")
+    verify_registry = TrustKeyRegistry(
+        (active_key.public_only(), retired_key.public_only())
+    )
+
+    payload = _fixture()
+    payload["created_at"] = "2026-06-25T10:00:02Z"
+    payload["valid_until"] = "2026-06-26T10:00:02Z"
+    prepared = prepare_payload_for_signing(
+        payload,
+        signing_key_id="kid:b25-p8-verify-old",
+        signing_algorithm="ed25519",
+    )
+    material = canonicalize_signature_material(prepared)
+    private_key = Ed25519PrivateKey.from_private_bytes(
+        hashlib.sha256(b"b25-p8-verify-old").digest()
+    )
+    prepared["signature"] = encode_ed25519_signature(private_key.sign(material))
+    canonicalize_envelope_payload(prepared)
+
+    forgery_result = verify_trust_envelope(
+        prepared,
+        key_registry=verify_registry,
+        at_time=datetime(2026, 6, 25, 10, 5, 0, tzinfo=timezone.utc),
+    )
+    if forgery_result.verification_status != "rejected":
+        raise B25P8ValidationError("retired key forged net-new envelope")
+    if forgery_result.reason_code != "temporal_forgery_rejected:created_after_key_retirement":
+        raise B25P8ValidationError(
+            f"temporal forgery wrong reason: {forgery_result.reason_code}"
+        )
+    temporal_controls += 1
+
+    historical_payload = _fixture()
+    historical_payload["created_at"] = "2026-06-24T10:00:02Z"
+    historical_payload["valid_until"] = "2026-06-25T10:00:02Z"
+    historical_prepared = prepare_payload_for_signing(
+        historical_payload,
+        signing_key_id="kid:b25-p8-verify-old",
+        signing_algorithm="ed25519",
+    )
+    historical_material = canonicalize_signature_material(historical_prepared)
+    historical_prepared["signature"] = encode_ed25519_signature(
+        private_key.sign(historical_material)
+    )
+    canonicalize_envelope_payload(historical_prepared)
+    historical_result = verify_trust_envelope(
+        historical_prepared,
+        key_registry=verify_registry,
+        at_time=VERIFY_TIME,
+    )
+    if historical_result.verification_status != "verified":
+        raise B25P8ValidationError("historical envelope from retired key rejected")
+    historical_controls += 1
+
+    signed = _signed_payload()
+    for bad_value in ("trust-envelope-schema-v999", None):
+        bad = copy.deepcopy(signed)
+        if bad_value is None:
+            bad.pop("schema_version", None)
+        else:
+            bad["schema_version"] = bad_value
+        crypto_calls: list[int] = []
+        original_verify = _verify_ed25519_signature
+
+        def spy(public_key: Any, signature: str, mat: bytes) -> None:
+            crypto_calls.append(1)
+            return original_verify(public_key, signature, mat)
+
+        import app.trust.verification as _vmod
+        _orig_attr = _vmod.verify_ed25519_signature
+        _vmod.verify_ed25519_signature = spy
+        try:
+            start = _time.perf_counter()
+            result = verify_trust_envelope(
+                bad,
+                key_registry=_registry().public_only(),
+                at_time=VERIFY_TIME,
+            )
+            elapsed_ms = (_time.perf_counter() - start) * 1000
+        finally:
+            _vmod.verify_ed25519_signature = _orig_attr
+        if result.verification_status != "rejected":
+            raise B25P8ValidationError(f"invalid schema accepted: {bad_value}")
+        if len(crypto_calls) != 0:
+            raise B25P8ValidationError(
+                f"crypto called for invalid schema: {bad_value}"
+            )
+        if elapsed_ms >= 1000:
+            raise B25P8ValidationError(
+                f"schema rejection too slow: {elapsed_ms}ms"
+            )
+        dos_controls += 1
+
+    return temporal_controls, historical_controls, dos_controls
+
+
 def validate_jwks_public_only() -> tuple[int, int]:
     jwks = build_jwks_response(_registry())
     public_count = assert_jwks_public_only(jwks)
@@ -454,6 +574,9 @@ def validate_all(*, include_pytest: bool) -> None:
         signature_controls,
         algorithm_controls,
     ) = validate_temporal_and_downgrade_controls()
+    temporal_controls, historical_controls, dos_controls = (
+        validate_temporal_forgery_and_dos_controls()
+    )
     jwks_controls, private_controls = validate_jwks_public_only()
     (
         scope_controls,
@@ -480,6 +603,9 @@ def validate_all(*, include_pytest: bool) -> None:
     print(f"canonicalization_version_rejection_controls_passed={canonical_controls}")
     print(f"signature_version_rejection_controls_passed={signature_controls}")
     print(f"unsupported_algorithm_rejection_controls_passed={algorithm_controls}")
+    print(f"temporal_forgery_rejection_controls_passed={temporal_controls}")
+    print(f"retired_key_historical_verification_controls_passed={historical_controls}")
+    print(f"dos_short_circuit_controls_passed={dos_controls}")
     print(f"p8_scope_boundary_controls_passed={scope_controls}")
     print(f"no_llm_signing_path_controls_passed={llm_controls}")
     print(f"no_dynamic_import_signing_path_controls_passed={dynamic_controls}")
