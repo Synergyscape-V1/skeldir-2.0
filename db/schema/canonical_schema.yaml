@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # CANONICAL SCHEMA METADATA
 # ============================================================================
 # Source: UPDATED SKELDIR BACKEND ARCHITECTURE GUIDE (§3.1)
@@ -1081,6 +1081,166 @@ tables:
       - {name: idx_trust_scope_denial_created, columns: [tenant_id, created_at DESC]}
     rls_policy:
       name: tenant_isolation_policy_trust_scope_denial_events
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  agent_clients:
+    purpose: "B2.5-P9 tenant-scoped machine-caller (agent) identity authority"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      client_name: {type: TEXT, nullable: false}
+      client_display_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      audience: {type: TEXT, nullable: false}
+      status: {type: TEXT, nullable: false, default: "active", values: [active, revoked, suspended]}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      revoked_at: {type: TIMESTAMPTZ, nullable: true}
+    constraints:
+      - {name: agent_clients_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: agent_clients_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: ck_agent_clients_status, type: CHECK, definition: "status in active/revoked/suspended"}
+      - {name: ck_agent_clients_audience_not_empty, type: CHECK, definition: "length(btrim(audience)) > 0"}
+      - {name: ck_agent_clients_display_hash, type: CHECK, definition: "client_display_hash ~ ^sha256:[0-9a-f]{64}$"}
+      - {name: uq_agent_clients_tenant_name, type: UNIQUE, columns: [tenant_id, client_name]}
+    indexes:
+      - {name: idx_agent_clients_tenant_status, columns: [tenant_id, status, created_at DESC]}
+    rls_policy:
+      name: tenant_isolation_policy_agent_clients
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+  agent_service_credentials:
+    purpose: "B2.5-P9 CSPRNG-generated machine tokens hashed-at-rest with SHA-256 and O(1) prefix lookup"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      agent_client_id: {type: UUID, nullable: false, foreign_key: "agent_clients(id) ON DELETE CASCADE"}
+      token_prefix: {type: TEXT, nullable: false, invariant: credential_lookup_prefix}
+      token_hash: {type: TEXT, nullable: false, format: "hex64_sha256"}
+      hash_algorithm: {type: TEXT, nullable: false, default: "sha256", values: [sha256]}
+      status: {type: TEXT, nullable: false, default: "active", values: [active, revoked, expired]}
+      issued_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      expires_at: {type: TIMESTAMPTZ, nullable: true}
+      revoked_at: {type: TIMESTAMPTZ, nullable: true}
+    constraints:
+      - {name: agent_service_credentials_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: agent_service_credentials_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: agent_service_credentials_agent_client_id_fkey, type: FOREIGN KEY, columns: [agent_client_id], references: "agent_clients(id)", on_delete: CASCADE}
+      - {name: ck_agent_service_credentials_status, type: CHECK, definition: "status in active/revoked/expired"}
+      - {name: ck_agent_service_credentials_hash_algorithm, type: CHECK, definition: "hash_algorithm = sha256"}
+      - {name: ck_agent_service_credentials_prefix_len, type: CHECK, definition: "length(token_prefix) = 8"}
+      - {name: ck_agent_service_credentials_token_hash, type: CHECK, definition: "token_hash ~ ^[0-9a-f]{64}$"}
+      - {name: uq_agent_service_credentials_prefix, type: UNIQUE, columns: [tenant_id, token_prefix]}
+    indexes:
+      - {name: idx_agent_service_credentials_lookup, columns: [tenant_id, token_prefix, status]}
+      - {name: idx_agent_service_credentials_client, columns: [tenant_id, agent_client_id, issued_at DESC]}
+    rls_policy:
+      name: tenant_isolation_policy_agent_service_credentials
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+  agent_scope_grants:
+    purpose: "B2.5-P9 governed scope registry with DB-enforced reserved-action-scope rejection"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      agent_client_id: {type: UUID, nullable: false, foreign_key: "agent_clients(id) ON DELETE CASCADE"}
+      scope_value: {type: TEXT, nullable: false, invariant: governed_scope_enum}
+      granted_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      revoked_at: {type: TIMESTAMPTZ, nullable: true}
+    constraints:
+      - {name: agent_scope_grants_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: agent_scope_grants_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: agent_scope_grants_agent_client_id_fkey, type: FOREIGN KEY, columns: [agent_client_id], references: "agent_clients(id)", on_delete: CASCADE}
+      - {name: ck_agent_scope_grants_scope_value, type: CHECK, definition: "scope_value in design_partner_scopes AND NOT in reserved_action_scopes"}
+      - {name: uq_agent_scope_grants_client_scope, type: UNIQUE, columns: [tenant_id, agent_client_id, scope_value]}
+    indexes:
+      - {name: idx_agent_scope_grants_lookup, columns: [tenant_id, agent_client_id, scope_value]}
+    triggers:
+      - {name: trg_agent_scope_grants_reject_reserved, event: BEFORE INSERT OR UPDATE OF scope_value, function: reject_reserved_trust_action_scope, type: FOR EACH ROW}
+    rls_policy:
+      name: tenant_isolation_policy_agent_scope_grants
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+  agent_token_revocations:
+    purpose: "B2.5-P9 immediate token revocation ledger (prefix-keyed)"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      agent_client_id: {type: UUID, nullable: false, foreign_key: "agent_clients(id) ON DELETE CASCADE"}
+      token_prefix: {type: TEXT, nullable: false}
+      reason_code: {type: TEXT, nullable: false}
+      revoked_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: agent_token_revocations_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: agent_token_revocations_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: agent_token_revocations_agent_client_id_fkey, type: FOREIGN KEY, columns: [agent_client_id], references: "agent_clients(id)", on_delete: CASCADE}
+      - {name: ck_agent_token_revocations_prefix_len, type: CHECK, definition: "length(token_prefix) = 8"}
+      - {name: uq_agent_token_revocations_prefix, type: UNIQUE, columns: [tenant_id, token_prefix]}
+    indexes:
+      - {name: idx_agent_token_revocations_lookup, columns: [tenant_id, token_prefix]}
+    rls_policy:
+      name: tenant_isolation_policy_agent_token_revocations
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+  trust_request_nonces:
+    purpose: "B2.5-P9 anti-TOCTOU atomic replay protection ledger (UNIQUE tenant_id+nonce_value)"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      agent_client_id: {type: UUID, nullable: false, foreign_key: "agent_clients(id) ON DELETE CASCADE"}
+      nonce_value: {type: TEXT, nullable: false, invariant: replay_nonce}
+      request_identity_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      expires_at: {type: TIMESTAMPTZ, nullable: false}
+    constraints:
+      - {name: trust_request_nonces_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: trust_request_nonces_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: trust_request_nonces_agent_client_id_fkey, type: FOREIGN KEY, columns: [agent_client_id], references: "agent_clients(id)", on_delete: CASCADE}
+      - {name: ck_trust_request_nonces_hashes, type: CHECK, definition: "request_identity_hash ~ ^sha256:[0-9a-f]{64}$"}
+      - {name: ck_trust_request_nonces_nonce_not_empty, type: CHECK, definition: "length(btrim(nonce_value)) > 0"}
+      - {name: uq_trust_request_nonces_tenant_nonce, type: UNIQUE, columns: [tenant_id, nonce_value]}
+    indexes:
+      - {name: idx_trust_request_nonces_tenant_expires, columns: [tenant_id, expires_at]}
+      - {name: idx_trust_request_nonces_tenant_created, columns: [tenant_id, created_at DESC]}
+    rls_policy:
+      name: tenant_isolation_policy_trust_request_nonces
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+  trust_rate_limit_state:
+    purpose: "B2.5-P9 skeleton rate-limit ledger per agent_client_id over a rolling window"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      agent_client_id: {type: UUID, nullable: false, foreign_key: "agent_clients(id) ON DELETE CASCADE"}
+      window_started_at: {type: TIMESTAMPTZ, nullable: false}
+      window_ended_at: {type: TIMESTAMPTZ, nullable: false}
+      request_count: {type: INTEGER, nullable: false, default: 0}
+      request_limit: {type: INTEGER, nullable: false}
+      last_request_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: trust_rate_limit_state_pkey, type: PRIMARY KEY, columns: [id]}
+      - {name: trust_rate_limit_state_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
+      - {name: trust_rate_limit_state_agent_client_id_fkey, type: FOREIGN KEY, columns: [agent_client_id], references: "agent_clients(id)", on_delete: CASCADE}
+      - {name: ck_trust_rate_limit_state_non_negative, type: CHECK, definition: "request_count >= 0 AND request_limit > 0"}
+      - {name: uq_trust_rate_limit_state_client_window, type: UNIQUE, columns: [tenant_id, agent_client_id, window_started_at, window_ended_at]}
+    indexes:
+      - {name: idx_trust_rate_limit_state_lookup, columns: [tenant_id, agent_client_id, window_ended_at]}
+    rls_policy:
+      name: tenant_isolation_policy_trust_rate_limit_state
       using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
       with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
 # Validation Rules
