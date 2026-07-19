@@ -36,6 +36,7 @@ class TrustSigningKey:
     state: TrustKeyState
     valid_from: datetime
     valid_until: datetime | None = None
+    retired_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.kid.startswith("kid:"):
@@ -48,6 +49,13 @@ class TrustSigningKey:
             self.valid_until.tzinfo is None or self.valid_until.utcoffset() is None
         ):
             raise TrustKeyRegistryError("trust_key_valid_until_timezone_required")
+        if self.retired_at is not None:
+            if self.retired_at.tzinfo is None or self.retired_at.utcoffset() is None:
+                raise TrustKeyRegistryError("trust_key_retired_at_timezone_required")
+            if self.state == "active":
+                raise TrustKeyRegistryError("active_key_must_not_have_retired_at")
+            if self.retired_at < self.valid_from.astimezone(timezone.utc):
+                raise TrustKeyRegistryError("trust_key_retired_at_before_valid_from")
 
     def public_only(self) -> "TrustSigningKey":
         """Return a verification-safe record without private signing material."""
@@ -72,6 +80,8 @@ class TrustSigningKey:
         if self.valid_until is not None:
             jwk["skeldir_valid_until"] = _utc_second(self.valid_until)
         jwk["skeldir_valid_from"] = _utc_second(self.valid_from)
+        if self.retired_at is not None:
+            jwk["skeldir_retired_at"] = _utc_second(self.retired_at)
         return jwk
 
 

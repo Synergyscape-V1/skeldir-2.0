@@ -28,6 +28,18 @@ from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
 from app.trust.signing import sign_trust_envelope
 from app.trust.verification import verify_trust_envelope
 
+from app.trust.canonicalization import (
+    canonicalize_envelope_payload,
+    canonicalize_signature_material,
+)
+from app.trust.signing import (
+    encode_ed25519_signature,
+    prepare_payload_for_signing,
+    verify_ed25519_signature as _verify_ed25519_signature,
+)
+from unittest.mock import patch
+import time as _time
+
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = ROOT / "contracts/trust-api/examples"
@@ -46,6 +58,7 @@ def _key(
     state: str = "active",
     valid_from: datetime = SIGNING_TIME - timedelta(days=1),
     valid_until: datetime | None = SIGNING_TIME + timedelta(days=30),
+    retired_at: datetime | None = None,
 ) -> TrustSigningKey:
     private_key = _private_key(label)
     return TrustSigningKey(
@@ -56,6 +69,7 @@ def _key(
         state=state,  # type: ignore[arg-type]
         valid_from=valid_from,
         valid_until=valid_until,
+        retired_at=retired_at if state == "verification_only" else None,
     )
 
 
@@ -67,6 +81,7 @@ def _registry() -> TrustKeyRegistry:
                 "kid:b25-p8-verify-old",
                 label="b25-p8-verify-old",
                 state="verification_only",
+                retired_at=SIGNING_TIME,
             ),
         )
     )
@@ -333,3 +348,91 @@ def test_jwks_public_only_and_private_material_negative_control() -> None:
     bad["keys"][0]["d"] = "private-scalar"
     with pytest.raises(TrustJWKSError):
         assert_jwks_public_only(bad)
+
+
+def test_retired_key_cannot_forge_net_new_envelope() -> None:
+    """A compromised retired key cannot verify envelopes created after retirement."""
+    retired_key = _key(
+        "kid:b25-p8-verify-old",
+        label="b25-p8-verify-old",
+        state="verification_only",
+        retired_at=SIGNING_TIME,
+    )
+    active_key = _key("kid:b25-p8-active-a", label="b25-p8-active-a")
+    payload = _fixture()
+    payload["created_at"] = "2026-06-25T10:00:02Z"
+    payload["valid_until"] = "2026-06-26T10:00:02Z"
+    prepared = prepare_payload_for_signing(
+        payload, signing_key_id="kid:b25-p8-verify-old", signing_algorithm="ed25519",
+    )
+    material = canonicalize_signature_material(prepared)
+    private_key = _private_key("b25-p8-verify-old")
+    prepared["signature"] = encode_ed25519_signature(private_key.sign(material))
+    canonicalize_envelope_payload(prepared)
+    verify_registry = TrustKeyRegistry((active_key.public_only(), retired_key.public_only()))
+    result = verify_trust_envelope(
+        prepared, key_registry=verify_registry, at_time=datetime(2026, 6, 25, 10, 5, 0, tzinfo=timezone.utc),
+    )
+    assert result.verification_status == "rejected"
+    assert result.reason_code == "temporal_forgery_rejected:created_after_key_retirement"
+
+
+def test_historical_envelope_from_retired_key_still_verifies() -> None:
+    """Envelopes created at or before retirement remain verifiable."""
+    retired_key = _key(
+        "kid:b25-p8-verify-old", label="b25-p8-verify-old", state="verification_only", retired_at=SIGNING_TIME,
+    )
+    active_key = _key("kid:b25-p8-active-a", label="b25-p8-active-a")
+    payload = _fixture()
+    payload["created_at"] = "2026-06-24T10:00:02Z"
+    payload["valid_until"] = "2026-06-25T10:00:02Z"
+    prepared = prepare_payload_for_signing(
+        payload, signing_key_id="kid:b25-p8-verify-old", signing_algorithm="ed25519",
+    )
+    material = canonicalize_signature_material(prepared)
+    private_key = _private_key("b25-p8-verify-old")
+    prepared["signature"] = encode_ed25519_signature(private_key.sign(material))
+    canonicalize_envelope_payload(prepared)
+    verify_registry = TrustKeyRegistry((active_key.public_only(), retired_key.public_only()))
+    result = verify_trust_envelope(prepared, key_registry=verify_registry, at_time=VERIFY_TIME)
+    assert result.verification_status == "verified"
+
+
+def test_invalid_schema_short_circuits_before_crypto() -> None:
+    """Invalid schema version is rejected without invoking Ed25519 verification."""
+    signed = _signed_payload()
+    bad = copy.deepcopy(signed)
+    bad["schema_version"] = "trust-envelope-schema-v999"
+    crypto_calls: list[int] = []
+    original_verify = _verify_ed25519_signature
+
+    def spy(public_key: Any, signature: str, material: bytes) -> None:
+        crypto_calls.append(1)
+        return original_verify(public_key, signature, material)
+
+    with patch("app.trust.verification.verify_ed25519_signature", spy):
+        start = _time.perf_counter()
+        result = verify_trust_envelope(bad, key_registry=_registry().public_only(), at_time=VERIFY_TIME)
+        elapsed_ms = (_time.perf_counter() - start) * 1000
+    assert result.verification_status == "rejected"
+    assert result.reason_code == "schema_version_unsupported:trust-envelope-schema-v999"
+    assert len(crypto_calls) == 0
+    assert elapsed_ms < 1000
+
+
+def test_missing_schema_short_circuits_before_crypto() -> None:
+    """Missing schema version is rejected without invoking Ed25519 verification."""
+    signed = _signed_payload()
+    bad = copy.deepcopy(signed)
+    bad.pop("schema_version", None)
+    crypto_calls: list[int] = []
+    original_verify = _verify_ed25519_signature
+
+    def spy(public_key: Any, signature: str, material: bytes) -> None:
+        crypto_calls.append(1)
+        return original_verify(public_key, signature, material)
+
+    with patch("app.trust.verification.verify_ed25519_signature", spy):
+        result = verify_trust_envelope(bad, key_registry=_registry().public_only(), at_time=VERIFY_TIME)
+    assert result.verification_status == "rejected"
+    assert len(crypto_calls) == 0

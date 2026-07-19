@@ -131,3 +131,6 @@ jobs:
           grep -E '^load_bearing_tamper_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
           grep -E '^schema_downgrade_rejection_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
           grep -E '^jwks_public_only_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
+          grep -E '^temporal_forgery_rejection_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
+          grep -E '^retired_key_historical_verification_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out
+          grep -E '^dos_short_circuit_controls_passed=[1-9][0-9]*$' /tmp/b25_p8_signing_verification.out

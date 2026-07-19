@@ -109,6 +109,7 @@ def registry_from_public_jwks(jwks: dict[str, Any]) -> TrustKeyRegistry:
         if not isinstance(valid_from, str):
             raise TrustJWKSError("jwks_valid_from_missing")
         valid_until_raw = key.get("skeldir_valid_until")
+        retired_at_raw = key.get("skeldir_retired_at")
         records.append(
             TrustSigningKey(
                 kid=kid,
@@ -120,6 +121,11 @@ def registry_from_public_jwks(jwks: dict[str, Any]) -> TrustKeyRegistry:
                 valid_until=(
                     _parse_utc(valid_until_raw)
                     if isinstance(valid_until_raw, str)
+                    else None
+                ),
+                retired_at=(
+                    _parse_utc(retired_at_raw)
+                    if isinstance(retired_at_raw, str)
                     else None
                 ),
             )
