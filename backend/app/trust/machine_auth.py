@@ -250,81 +250,52 @@ async def _check_rate_limit(
     window_seconds=DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
     request_limit=DEFAULT_RATE_LIMIT_REQUESTS,
 ):
-    """Skeleton rolling-window rate check. Returns True if within budget."""
+    """Atomic fixed-window rate check with zero hot-path row locks.
+
+    Uses one INSERT ... ON CONFLICT DO UPDATE ... RETURNING statement against
+    a deterministic time bucket. The stable bucket boundary is essential: if
+    every request supplied unique start/end timestamps, concurrent requests
+    would never conflict and the limit would be bypassable.
+    """
+    if window_seconds <= 0 or request_limit <= 0:
+        raise ValueError("rate_limit_configuration_must_be_positive")
     now = datetime.now(timezone.utc)
-    window_start = now - timedelta(seconds=window_seconds)
+    bucket_epoch = int(now.timestamp()) // window_seconds * window_seconds
+    window_start = datetime.fromtimestamp(bucket_epoch, tz=timezone.utc)
+    window_end = window_start + timedelta(seconds=window_seconds)
     result = await db_session.execute(
         text(
             """
-            SELECT request_count, request_limit AS limit_value
-            FROM public.trust_rate_limit_state
-            WHERE tenant_id = :tenant_id
-              AND agent_client_id = :agent_client_id
-              AND window_ended_at > :now
-            ORDER BY window_ended_at DESC
-            LIMIT 1
+            INSERT INTO public.trust_rate_limit_state (
+                tenant_id, agent_client_id,
+                window_started_at, window_ended_at,
+                request_count, request_limit
+            ) VALUES (
+                :tenant_id, :agent_client_id,
+                :window_start, :window_end,
+                1, :request_limit
+            )
+            ON CONFLICT (tenant_id, agent_client_id, window_started_at, window_ended_at)
+            DO UPDATE SET request_count = trust_rate_limit_state.request_count + 1,
+                          last_request_at = now(),
+                          updated_at = now()
+            RETURNING request_count
             """
         ),
         {
             "tenant_id": str(tenant_id),
             "agent_client_id": str(agent_client_id),
-            "now": now.isoformat(),
+            "window_start": window_start,
+            "window_end": window_end,
+            "request_limit": request_limit,
         },
     )
     row = result.first()
+    await db_session.commit()
     if row is None:
-        await db_session.execute(
-            text(
-                """
-                INSERT INTO public.trust_rate_limit_state (
-                    tenant_id, agent_client_id,
-                    window_started_at, window_ended_at,
-                    request_count, request_limit
-                ) VALUES (
-                    :tenant_id, :agent_client_id,
-                    :window_start, :window_end,
-                    1, :request_limit
-                )
-                ON CONFLICT (tenant_id, agent_client_id, window_started_at, window_ended_at)
-                DO UPDATE SET request_count = trust_rate_limit_state.request_count + 1,
-                              last_request_at = now(),
-                              updated_at = now()
-                """
-            ),
-            {
-                "tenant_id": str(tenant_id),
-                "agent_client_id": str(agent_client_id),
-                "window_start": window_start.isoformat(),
-                "window_end": now.isoformat(),
-                "request_limit": request_limit,
-            },
-        )
-        await db_session.commit()
         return True
     count = int(row[0])
-    limit_value = int(row[1])
-    if count >= limit_value:
-        return False
-    await db_session.execute(
-        text(
-            """
-            UPDATE public.trust_rate_limit_state
-            SET request_count = request_count + 1,
-                last_request_at = now(),
-                updated_at = now()
-            WHERE tenant_id = :tenant_id
-              AND agent_client_id = :agent_client_id
-              AND window_ended_at > :now
-            """
-        ),
-        {
-            "tenant_id": str(tenant_id),
-            "agent_client_id": str(agent_client_id),
-            "now": now.isoformat(),
-        },
-    )
-    await db_session.commit()
-    return True
+    return count <= request_limit
 
 
 def _machine_request_identity_hash(

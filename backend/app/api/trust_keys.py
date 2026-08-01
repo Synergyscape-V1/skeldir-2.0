@@ -7,6 +7,10 @@ from uuid import UUID
 from fastapi import APIRouter, Header
 
 from app.trust.jwks import default_public_jwks
+from app.trust.runtime_keys import (
+    RuntimeTrustKeyConfigurationError,
+    load_runtime_verification_registry,
+)
 
 
 router = APIRouter()
@@ -18,4 +22,10 @@ async def get_trust_jwks(
 ) -> dict[str, object]:
     """Publish public TrustEnvelope verification keys only."""
     _ = x_correlation_id
-    return default_public_jwks()
+    try:
+        return load_runtime_verification_registry().jwks()
+    except RuntimeTrustKeyConfigurationError:
+        # Preserve the P8 public-key surface before deployment signing authority
+        # is configured; configured deployments additionally publish the active
+        # runtime public key through the same public-only representation.
+        return default_public_jwks()

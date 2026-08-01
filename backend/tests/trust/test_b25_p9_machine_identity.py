@@ -466,19 +466,16 @@ class _MockSession:
             class R:
                 rowcount = 1 if self.nonce_insert_result else 0
             return R()
-        if "trust_rate_limit_state" in sql and "SELECT" in sql:
+        if "trust_rate_limit_state" in sql and "RETURNING" in sql:
             if self.rate_limit_result:
-                # happy path: no existing window row => returns None
-                return _FakeResult(None)
-            # over-limit negative control: return count >= limit
+                class _WithinBudgetResult:
+                    def first(self):
+                        return (1,)
+                return _WithinBudgetResult()
             class _OverLimitResult:
                 def first(self):
-                    return (100, 10)
+                    return (999,)
             return _OverLimitResult()
-        if "trust_rate_limit_state" in sql and "INSERT" in sql:
-            return _FakeNoConflictResult()
-        if "trust_rate_limit_state" in sql and "UPDATE" in sql:
-            return _FakeNoConflictResult()
         return _FakeNoConflictResult()
 
     async def commit(self):

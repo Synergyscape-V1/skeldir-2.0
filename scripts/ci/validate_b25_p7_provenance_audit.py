@@ -1627,6 +1627,7 @@ def validate_meta_negative_controls() -> int:
         "record_trust_audit_event_durable(\n"
         "            final_request,\n"
         "            audit_session_factory=audit_session_factory,\n"
+        "            access_log_only=access_log_only,\n"
         "        )",
         "record_trust_audit_event(db_session, final_request)",
         1,

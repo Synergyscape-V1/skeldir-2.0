@@ -527,13 +527,14 @@ def validate_scope_boundary() -> tuple[int, int, int, int]:
             if token in text:
                 raise B25P8ValidationError(f"compute dispatch token {token} in {path}")
         dispatch_controls += 1
+    # Once later phases are authorized, P8 continues to prove that its own
+    # signing/JWKS files did not absorb machine-auth or read-surface logic.
     runtime_text = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / "backend/app/api").glob("*.py")
+        path.read_text(encoding="utf-8") for path in P8_RUNTIME_PATHS
     )
     for token in FORBIDDEN_LATER_PHASE_RUNTIME_TOKENS:
         if token in runtime_text:
-            raise B25P8ValidationError(f"P9/P10/P11 scope token present: {token}")
+            raise B25P8ValidationError(f"later-phase scope token in P8 runtime: {token}")
     scope_controls += len(FORBIDDEN_LATER_PHASE_RUNTIME_TOKENS)
     for path in (P8_WORKFLOW, MAKEFILE, ENFORCER_REGISTRY, GATE_MATRIX, EVIDENCE_PACK):
         if not path.exists():
