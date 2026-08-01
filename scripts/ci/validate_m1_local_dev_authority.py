@@ -97,6 +97,7 @@ LOCAL_HOSTS = {"postgres", "localhost", "127.0.0.1", "::1"}
 EXTERNAL_MARKERS = ("neon.tech", "amazonaws.com", "rds.amazonaws.com", "supabase.co")
 
 ALLOWED_M1_PATH_PREFIXES = [
+    ".github/CODEOWNERS",
     ".github/workflows/m1-local-dev-authority.yml",
     ".github/workflows/m2-test-feedback-loop.yml",
     ".github/workflows/r7-final-winning-state.yml",
