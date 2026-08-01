@@ -208,6 +208,12 @@ validate-b25-p9-machine-identity: ## Run B2.5-P9 machine identity/scopes/replay/
 validate-b25-p9-machine-identity-negative: ## Run B2.5-P9 machine identity validator without nested pytest
 	@python scripts/ci/validate_b25_p9_machine_identity.py --negative-control --skip-pytest
 
+validate-b25-p10-trust-api-surface: ## Run B2.5-P10 authenticated bounded Trust API validator
+	@python scripts/ci/validate_b25_p10_trust_api_surface.py --negative-control
+
+validate-b25-p10-trust-api-surface-negative: ## Run B2.5-P10 validator without nested pytest
+	@python scripts/ci/validate_b25_p10_trust_api_surface.py --negative-control --skip-pytest
+
 ops-seed-diagnostics: $(ENV_FILE) ## Seed local-only M4 diagnostic fixtures through the API container image
 	@$(OPS_RUN) scripts/ops/seed_diagnostics.py
 

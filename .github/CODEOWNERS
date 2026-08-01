@@ -9,6 +9,7 @@
 # Contract ownership.
 api-contracts/ @Muk223
 api-contracts/openapi/v1/**/*.yaml @Muk223
+contracts/trust-api/ @Muk223
 
 # CI/governance ownership.
 .github/workflows/ @Muk223
@@ -25,6 +26,10 @@ backend/app/security/ @Muk223
 backend/app/core/secrets.py @Muk223
 backend/app/services/platform_credentials.py @Muk223
 backend/app/api/platforms.py @Muk223
+backend/app/trust/ @Muk223
+backend/app/api/trust_*.py @Muk223
+backend/tests/trust/ @Muk223
+scripts/ci/validate_b25_p*.py @Muk223
 
 # Repository docs and scripts.
 docs/ @Muk223

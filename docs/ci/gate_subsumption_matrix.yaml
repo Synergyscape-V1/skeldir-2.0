@@ -2048,7 +2048,7 @@
   job: B2.5-P9 Machine Identity
   script: scripts/ci/validate_b25_p9_machine_identity.py
   owning_phase: B2.5-P9
-  protected_invariant: B2.5-P9 machine-caller identity and access boundary remains tenant-scoped under FORCE ROW LEVEL SECURITY, CSPRNG-generated (secrets.token_urlsafe) machine tokens hashed-at-rest with SHA-256 and O(1) prefix lookup, constant-time hmac.compare_digest verification, atomic UNIQUE(tenant_id, nonce_value) replay protection via INSERT ... ON CONFLICT DO NOTHING (no application-level exists()->insert() TOCTOU race), denial audit writes routed through the P7 autonomous session seam (record_trust_audit_event_durable) so they survive FastAPI exception rollback, reserved B5.2 action scopes (trust.action.propose/execute/approve/reject, auto_executable_within_policy) physically un-issuable at the DB level via CHECK constraint + trigger, Design Partner Mode scope boundary enforced, no uuid4/random/bcrypt/argon2/LLM in the trust credential path, no P10 route logic, and scoped away from P10/P11+ read surface, export, MCP, or action authority.
+  protected_invariant: B2.5-P9 machine-caller identity and access boundary remains tenant-scoped under FORCE ROW LEVEL SECURITY, CSPRNG-generated tokens hashed at rest, constant-time verified, replay-safe, denial-audited, unable to issue reserved B5.2 action scopes, and free of route/export/MCP/action authority inside the P9 credential modules while P10 mounts its separately governed read surface.
   current_status: required
   default_execution: true
   candidate_action: keep_required
@@ -2056,5 +2056,20 @@
   subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, P5 validates the read-only builder, P6 validates reason semantics, P7 validates provenance/audit persistence with autonomous-session durability, and P8 validates asymmetric Ed25519 signing and JWKS verification, but none proves tenant-scoped machine-caller identity tables, CSPRNG token generation with SHA-256 at-rest hashing and O(1) prefix lookup, constant-time hmac.compare_digest verification, atomic UNIQUE(tenant_id, nonce_value) replay protection without TOCTOU races, denial-audit survival of FastAPI exception rollback through the P7 seam, reserved B5.2 action-scope rejection at the DB level via CHECK + trigger, Design Partner Mode scope boundary, or P9-specific uuid4/random/bcrypt/argon2/LLM AST bans in the trust credential path.
   negative_control_preserved_by: python scripts/ci/validate_b25_p9_machine_identity.py --negative-control
   local_reproduction_command: make validate-b25-p9-machine-identity
-  risk_if_removed: Future Trust API work could accept human JWT/RBAC for machine callers, store plaintext or bcrypt/argon2-hashed machine tokens (timing oracle + CPU-exhaustion DoS), use uuid4/random for token entropy, rely on application-level TOCTOU replay checks, vaporize denial audit on FastAPI exception rollback, issue reserved B5.2 action scopes to design-partner agents, leak timing oracles on credential verification, or silently introduce P10/P11+ routes/export/MCP/action authority before the owning phases.
+  risk_if_removed: Future Trust API work could accept human JWT/RBAC for machine callers, store weak machine credentials, use non-CSPRNG entropy, rely on TOCTOU replay checks, vaporize denial audit on rollback, issue reserved action scopes, leak credential timing oracles, or place route/export/MCP/action authority inside the P9 credential modules.
+  decision: keep_required
+- gate_id: validate-b25-p10-trust-api-surface
+  workflow: .github/workflows/b2_5-p10-trust-api-surface.yml
+  job: B2.5-P10 Trust API Surface
+  script: scripts/ci/validate_b25_p10_trust_api_surface.py
+  owning_phase: B2.5-P10
+  protected_invariant: B2.5-P10 exposes only authenticated, tenant-scoped, bounded, read-only TrustEnvelope GET/query/verify operations; composes P5/P7/P8/P9 authority; rate-limits atomically; authenticates before verification; publishes public-only keys; blocks raw tenant IDs, float money, mutation, compute, LLM/task imports, policy elevation, and schema downgrade; and remains merge-blocking.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1-P9 individually prove contract, canonicalization, text, money, builder, truth matrix, audit, signing, and machine-identity invariants, but none proves their mounted external composition, bounded query semantics, authenticate-before-verify oracle closure, deterministic atomic API rate limiting, runtime secret-backed key publication, or P10-specific no-compute and response privacy boundaries.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p10_trust_api_surface.py --negative-control
+  local_reproduction_command: make validate-b25-p10-trust-api-surface
+  risk_if_removed: The Trust API could silently become unauthenticated, unbounded, replay/rate-limit unsafe, oracle-exposing, mutation-capable, compute-triggering, privacy-leaking, cryptographically undiscoverable, contract-divergent, or non-blocking on protected main.
   decision: keep_required

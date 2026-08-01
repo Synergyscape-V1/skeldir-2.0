@@ -2767,13 +2767,13 @@
   path: scripts/ci/validate_b25_p9_machine_identity.py
   status: required
   owning_phase: B2.5-P9
-  protected_invariant: B2.5-P9 machine-caller identity and access boundary remains tenant-scoped under FORCE ROW LEVEL SECURITY, CSPRNG-generated (secrets.token_urlsafe) machine tokens hashed-at-rest with SHA-256 and O(1) prefix lookup, constant-time hmac.compare_digest verification, atomic UNIQUE(tenant_id, nonce_value) replay protection via INSERT ... ON CONFLICT DO NOTHING (no application-level exists()->insert() TOCTOU race), denial audit writes routed through the P7 autonomous session seam (record_trust_audit_event_durable) so they survive FastAPI exception rollback, reserved B5.2 action scopes (trust.action.propose/execute/approve/reject, auto_executable_within_policy) physically un-issuable at the DB level via CHECK constraint + trigger, Design Partner Mode scope boundary enforced, no uuid4/random/bcrypt/argon2/LLM in the trust credential path, no P10 route logic, and scoped away from P10/P11+ read surface, export, MCP, or action authority.
+  protected_invariant: B2.5-P9 machine-caller identity and access boundary remains tenant-scoped under FORCE ROW LEVEL SECURITY, CSPRNG-generated (secrets.token_urlsafe) machine tokens hashed-at-rest with SHA-256 and O(1) prefix lookup, constant-time hmac.compare_digest verification, atomic UNIQUE(tenant_id, nonce_value) replay protection via INSERT ... ON CONFLICT DO NOTHING (no application-level exists()->insert() TOCTOU race), denial audit writes routed through the P7 autonomous session seam (record_trust_audit_event_durable) so they survive FastAPI exception rollback, reserved B5.2 action scopes physically un-issuable at the DB level via CHECK constraint + trigger, Design Partner Mode scope boundary enforced, no uuid4/random/bcrypt/argon2/LLM in the trust credential path, and the P9 credential modules remain free of route/export/MCP/action authority while P10 mounts its separately governed read surface.
   command: python scripts/ci/validate_b25_p9_machine_identity.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p9-machine-identity.yml
   workflow_job_name: B2.5-P9 Machine Identity
   local_reproduction_command: make validate-b25-p9-machine-identity
-  expected_failure_meaning: B2.5-P9 machine identity is missing, non-CSPRNG-generated (uuid4/random), bcrypt/argon2-hashed (timing oracle + CPU-exhaustion DoS), non-constant-time-verified, TOCTOU-vulnerable replay protection, denial-audit coupled to the request session (vaporized on rollback), reserved action scopes issuable, Design Partner Mode boundary violated, LLM/dynamic-import contaminated, or expanded into P10/P11+ routes/export/MCP/action authority.
+  expected_failure_meaning: B2.5-P9 machine identity is missing, non-CSPRNG-generated (uuid4/random), bcrypt/argon2-hashed (timing oracle + CPU-exhaustion DoS), non-constant-time-verified, TOCTOU-vulnerable replay protection, denial-audit coupled to the request session, reserved action scopes issuable, Design Partner Mode boundary violated, LLM/dynamic-import contaminated, or the P9 credential modules acquired route/export/MCP/action authority.
   first_diagnostic_command: python scripts/ci/validate_b25_p9_machine_identity.py --negative-control --skip-pytest
   depends_on_db: true
   depends_on_celery: false
@@ -2782,6 +2782,30 @@
   execution_cohort: b2-5-machine-identity
   ci_visibility: workflow_job
   evidence_pack: docs/forensics/B2.5-P9 Remediation Evidence Pack.md
+  negative_control_mode: required
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-b25-p10-trust-api-surface
+  path: scripts/ci/validate_b25_p10_trust_api_surface.py
+  status: required
+  owning_phase: B2.5-P10
+  protected_invariant: B2.5-P10 mounts an authenticated, tenant-scoped, bounded, read-only TrustEnvelope GET/query/verify API over the P5 builder, P7 durable audit seam, P8 Ed25519 signing and public verification registry, and P9 machine identity, with exact query limits, deterministic atomic rate-limit buckets, no verification oracle before authentication, no raw tenant identifiers, no floating-point money, no mutation/compute/LLM/task authority, and no caller-controlled policy or schema downgrade.
+  command: python scripts/ci/validate_b25_p10_trust_api_surface.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p10-trust-api-surface.yml
+  workflow_job_name: B2.5-P10 Trust API Surface
+  local_reproduction_command: make validate-b25-p10-trust-api-surface
+  expected_failure_meaning: The P10 Trust API is absent, unauthenticated, unbounded, rate-limit-racy, oracle-exposing, mutation/compute/LLM contaminated, privacy-unsafe, cryptographically misconfigured, contract-divergent, or not bound to merge-blocking governance.
+  first_diagnostic_command: python scripts/ci/validate_b25_p10_trust_api_surface.py --negative-control --skip-pytest
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-trust-api-surface
+  ci_visibility: workflow_job
+  evidence_pack: docs/forensics/B2.5-P10 Remediation Evidence Pack .md
   negative_control_mode: required
   replacement: ''
   deprecation_reason: ''

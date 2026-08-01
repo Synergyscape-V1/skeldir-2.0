@@ -427,13 +427,16 @@ def _params(
 async def record_trust_audit_event(
     db_session: AsyncSession,
     request: TrustAuditRequest,
+    *,
+    access_log_only: bool = False,
 ) -> TrustAuditRecord:
     """Persist an idempotent trust audit event and companion event row."""
     record = build_audit_record(request)
     persisted = await _upsert_access_log(db_session, request=request, record=record)
-    await _insert_issuance_log(db_session, request=request, record=persisted)
-    await _insert_scope_denial_log(db_session, request=request, record=persisted)
-    await _insert_replay_log(db_session, request=request, record=persisted)
+    if not access_log_only:
+        await _insert_issuance_log(db_session, request=request, record=persisted)
+        await _insert_scope_denial_log(db_session, request=request, record=persisted)
+        await _insert_replay_log(db_session, request=request, record=persisted)
     return persisted
 
 
@@ -441,6 +444,7 @@ async def record_trust_audit_event_durable(
     request: TrustAuditRequest,
     *,
     audit_session_factory: AuditSessionFactory | None = None,
+    access_log_only: bool = False,
 ) -> TrustAuditRecord:
     """Persist an audit event in an independent committed transaction."""
     if audit_session_factory is None:
@@ -458,13 +462,21 @@ async def record_trust_audit_event_durable(
                     ),
                     {"tenant_id": str(request.tenant_id)},
                 )
-                return await record_trust_audit_event(audit_session, request)
+                return await record_trust_audit_event(
+                    audit_session,
+                    request,
+                    access_log_only=access_log_only,
+                )
 
         await audit_session.execute(
             text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
             {"tenant_id": str(request.tenant_id)},
         )
-        return await record_trust_audit_event(audit_session, request)
+        return await record_trust_audit_event(
+            audit_session,
+            request,
+            access_log_only=access_log_only,
+        )
 
 
 def attach_audit_to_unsigned_payload(
@@ -506,6 +518,7 @@ async def build_unsigned_trust_envelope_with_audit(
     *,
     idempotency_key: str,
     audit_session_factory: AuditSessionFactory | None = None,
+    access_log_only: bool = False,
 ) -> TrustEnvelopeAuditResult:
     """Build through P5, persist P7 audit, and attach audit refs to the payload."""
     build_result = await build_unsigned_trust_envelope(db_session, request)
@@ -556,6 +569,7 @@ async def build_unsigned_trust_envelope_with_audit(
         persisted = await record_trust_audit_event_durable(
             final_request,
             audit_session_factory=audit_session_factory,
+            access_log_only=access_log_only,
         )
         if persisted.audit_hash != initial_record.audit_hash:
             updated_payload = attach_audit_to_unsigned_payload(
@@ -600,6 +614,7 @@ async def build_unsigned_trust_envelope_with_audit(
     persisted = await record_trust_audit_event_durable(
         audit_request,
         audit_session_factory=audit_session_factory,
+        access_log_only=access_log_only,
     )
     safe_refusal = deepcopy(refusal_payload) if refusal_payload else None
     if safe_refusal is not None:

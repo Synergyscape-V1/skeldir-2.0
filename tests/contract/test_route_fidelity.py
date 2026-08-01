@@ -46,6 +46,7 @@ CONTRACT_SCOPE_FILE = (
 CONTRACTS_DIR = (
     Path(__file__).parent.parent.parent / "api-contracts" / "dist" / "openapi" / "v1"
 )
+REPO_ROOT = Path(__file__).parent.parent.parent
 
 
 def load_contract_scope():
@@ -76,6 +77,16 @@ def extract_openapi_operations(contract_path):
                 )
 
     return operations
+
+
+def iter_governed_contract_paths(scope):
+    """Yield each existing OpenAPI document declared by contract scope once."""
+    seen = set()
+    for contract_path in scope.get("spec_mappings", {}).values():
+        full_path = (REPO_ROOT / contract_path).resolve()
+        if full_path.exists() and full_path not in seen:
+            seen.add(full_path)
+            yield full_path
 
 
 def extract_fastapi_routes():
@@ -210,7 +221,7 @@ def test_route_to_contract_mapping():
 
     # Collect all contract operations
     all_contract_operations = {}
-    for contract_file in CONTRACTS_DIR.glob("*.bundled.yaml"):
+    for contract_file in iter_governed_contract_paths(scope):
         operations = extract_openapi_operations(contract_file)
         for op in operations:
             key = f"{op['method']} {op['path']}"
@@ -327,11 +338,12 @@ def test_contract_to_route_mapping():
 
 def test_operation_id_consistency():
     """Test that operation IDs are consistent between routes and contracts."""
+    scope = load_contract_scope()
     routes = extract_fastapi_routes()
 
     # Collect contract operations by path
     contract_operations = {}
-    for contract_file in CONTRACTS_DIR.glob("*.bundled.yaml"):
+    for contract_file in iter_governed_contract_paths(scope):
         operations = extract_openapi_operations(contract_file)
         for op in operations:
             key = f"{op['method']} {op['path']}"

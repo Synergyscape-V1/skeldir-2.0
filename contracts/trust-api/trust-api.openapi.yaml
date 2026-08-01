@@ -3,24 +3,23 @@ info:
   title: Skeldir Trust API Contract Authority
   version: 1.0.0
   description: >
-    B2.5-P1 contract-only authority for future TrustEnvelope read, query,
-    verification, and JWKS surfaces. This file defines future contract shape
-    only; it does not authorize runtime routes, signing services, agent auth,
-    MCP adapter behavior, or autonomous action behavior.
+    B2.5 contract authority for the P10 TrustEnvelope read, bounded-query,
+    authenticated-verification, and public JWKS surfaces. It does not authorize
+    mutation, compute dispatch, LLM behavior, MCP behavior, or autonomous action.
 servers:
   - url: https://api.skeldir.example
 paths:
   /api/trust/v1/envelopes/{subject_type}/{subject_ref}:
     get:
       operationId: getTrustEnvelope
-      summary: Future read surface for one TrustEnvelope
+      summary: Read one signed TrustEnvelope
+      security:
+        - MachineBearer: []
       parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/TrustNonce"
+        - $ref: "#/components/parameters/IdempotencyKey"
         - name: subject_type
           in: path
           required: true
@@ -45,14 +44,14 @@ paths:
   /api/trust/v1/envelopes/query:
     post:
       operationId: queryTrustEnvelopes
-      summary: Future bounded query surface for TrustEnvelope lookup
+      summary: Bounded exact-match query for signed TrustEnvelopes
+      security:
+        - MachineBearer: []
       parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/TrustNonce"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -61,14 +60,31 @@ paths:
               type: object
               additionalProperties: false
               required:
-                - subject_type
-                - subject_ref_hash
+                - subject_types
+                - subject_refs
               properties:
-                subject_type:
-                  $ref: "#/components/schemas/SubjectType"
-                subject_ref_hash:
+                subject_types:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  uniqueItems: true
+                  items:
+                    $ref: "#/components/schemas/SubjectType"
+                subject_refs:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  uniqueItems: true
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 512
+                created_at_after:
                   type: string
-                  pattern: ^sha256:[0-9a-f]{64}$
+                  format: date-time
+                created_at_before:
+                  type: string
+                  format: date-time
       responses:
         "200":
           description: Query results.
@@ -91,7 +107,7 @@ paths:
   /api/trust/v1/keys/jwks:
     get:
       operationId: getTrustJwks
-      summary: Future public verification key surface
+      summary: Public verification key surface
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -120,14 +136,13 @@ paths:
   /api/trust/v1/verify:
     post:
       operationId: verifyTrustEnvelope
-      summary: Future verification surface for a supplied TrustEnvelope
+      summary: Authenticated verification of a supplied TrustEnvelope
+      security:
+        - MachineBearer: []
       parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/TrustNonce"
       requestBody:
         required: true
         content:
@@ -144,21 +159,86 @@ paths:
                 additionalProperties: false
                 required:
                   - verification_status
+                  - reason_code
                   - schema_version
                   - canonicalization_version
+                  - signing_key_id
+                  - signing_algorithm
+                  - signature_hash
+                  - semantic_truth_hash
                 properties:
                   verification_status:
                     type: string
                     enum:
                       - verified
                       - rejected
+                  reason_code:
+                    type:
+                      - string
+                      - "null"
                   schema_version:
-                    type: string
+                    type:
+                      - string
+                      - "null"
                   canonicalization_version:
-                    type: string
+                    type:
+                      - string
+                      - "null"
+                  signing_key_id:
+                    type:
+                      - string
+                      - "null"
+                  signing_algorithm:
+                    type:
+                      - string
+                      - "null"
+                  signature_hash:
+                    type:
+                      - string
+                      - "null"
+                  semantic_truth_hash:
+                    type:
+                      - string
+                      - "null"
         "400":
           $ref: "#/components/responses/TrustError"
 components:
+  securitySchemes:
+    MachineBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-machine-token
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TenantId:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TrustNonce:
+      name: X-Trust-Nonce
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 256
+    IdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
   responses:
     TrustError:
       description: Typed Trust API refusal or validation error.

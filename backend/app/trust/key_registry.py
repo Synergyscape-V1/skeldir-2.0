@@ -108,6 +108,11 @@ class TrustKeyRegistry:
             raise TrustKeyRegistryError("exactly_one_active_private_signing_key_required")
         return active[0]
 
+    @property
+    def keys(self) -> tuple[TrustSigningKey, ...]:
+        """Return the immutable key records for internal registry composition."""
+        return self._keys
+
     def verification_key(self, kid: str) -> TrustSigningKey:
         for key in self._keys:
             if key.kid == kid:

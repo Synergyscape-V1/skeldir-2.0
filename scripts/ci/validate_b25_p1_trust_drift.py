@@ -76,7 +76,12 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p8_signing_verification.py",
     "backend/app/trust/machine_identity.py",
     "backend/app/trust/machine_auth.py",
+    "backend/app/trust/runtime_keys.py",
+    "backend/app/api/trust_api.py",
+    "backend/app/config/contract_scope.yaml",
+    "backend/app/main.py",
     "backend/tests/trust/test_b25_p9_machine_identity.py",
+    "backend/tests/trust/test_b25_p10_trust_api_surface.py",
 )
 
 

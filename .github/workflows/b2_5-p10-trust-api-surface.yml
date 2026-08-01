@@ -1,0 +1,120 @@
+name: B2.5-P10 Trust API Surface
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/api/trust_api.py"
+      - "backend/app/main.py"
+      - "backend/app/config/contract_scope.yaml"
+      - "backend/app/trust/**"
+      - "backend/tests/trust/**"
+      - "contracts/trust-api/**"
+      - "scripts/ci/validate_b25_p10_trust_api_surface.py"
+      - ".github/workflows/b2_5-p10-trust-api-surface.yml"
+      - "Makefile"
+      - "docs/ci/**"
+      - "docs/forensics/**"
+      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/app/api/trust_api.py"
+      - "backend/app/main.py"
+      - "backend/app/config/contract_scope.yaml"
+      - "backend/app/trust/**"
+      - "backend/tests/trust/**"
+      - "contracts/trust-api/**"
+      - "scripts/ci/validate_b25_p10_trust_api_surface.py"
+      - ".github/workflows/b2_5-p10-trust-api-surface.yml"
+      - "Makefile"
+      - "docs/ci/**"
+      - "docs/forensics/**"
+      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b25-p10-trust-api-surface:
+    name: B2.5-P10 Trust API Surface
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p10_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p10_ci
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p10_ci
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p10_ci
+      SKELDIR_B25_P7_POSTGRES_PROOF: "1"
+      SKELDIR_B25_P9_POSTGRES_PROOF: "1"
+      SKELDIR_B25_P10_POSTGRES_PROOF: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validator dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install "pyyaml>=6.0" "jsonschema>=4.25.0"
+
+      - name: Prepare PostgreSQL proof database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p10_ci
+
+      - name: Run P1-P10 trust regression suite
+        run: python -m pytest backend/tests/trust -q
+
+      - name: Validate P1-P9 substrate preservation
+        run: |
+          make validate-b25-p1-contracts
+          make validate-b25-p1-trust-drift
+          make validate-b25-p2-canonicalization
+          make validate-b25-p3-text-disposition
+          make validate-b25-p4-money-authority
+          make validate-b25-p5-builder
+          make validate-b25-p6-reason-truth-matrix
+          make validate-b25-p7-provenance-audit
+          make validate-b25-p8-signing-verification
+          make validate-b25-p9-machine-identity
+
+      - name: Validate B2.5-P10 Trust API surface
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p10_trust_api_surface.py --negative-control | tee /tmp/b25_p10.out
+          grep -E "^B25_P10_TRUST_API_SURFACE_VALIDATION_PASS$" /tmp/b25_p10.out
+          grep -E "^authorized_route_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^bounded_query_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^verify_oracle_auth_controls_passed=1$" /tmp/b25_p10.out
+          grep -E "^rate_limit_atomic_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^read_only_privacy_controls_passed=1$" /tmp/b25_p10.out
+          grep -E "^runtime_key_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^governance_binding_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^negative_controls_fired=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^pytest_controls_passed=1$" /tmp/b25_p10.out
+          grep -E "^unbounded_query_rejected=1$" /tmp/b25_p10.out
+          grep -E "^verify_oracle_auth_enforced=1$" /tmp/b25_p10.out
+          grep -E "^rate_limit_atomic_storm_passed=1$" /tmp/b25_p10.out
+          grep -E "^read_only_snapshot_verified=1$" /tmp/b25_p10.out
