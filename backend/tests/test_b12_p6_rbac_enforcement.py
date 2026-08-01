@@ -267,7 +267,12 @@ def _install_role_query_counter() -> tuple[dict[str, int], Callable[[], None]]:
 
 
 OPERATION_METHODS = {"get", "put", "post", "delete", "patch", "options", "head"}
-ALLOWED_SCHEMES = {"accessBearerAuth", "refreshBearerAuth", "tenantKeyAuth"}
+ALLOWED_SCHEMES = {
+    "accessBearerAuth",
+    "refreshBearerAuth",
+    "tenantKeyAuth",
+    "MachineBearer",
+}
 ALLOWED_ACCESS_SCOPES = {"admin", "manager", "viewer"}
 PUBLIC_ALLOWLIST: set[tuple[str, str]] = {
     ("GET", "/"),
@@ -343,6 +348,11 @@ def _lint_openapi_default_deny_and_scopes(*, doc: dict[str, Any]) -> None:
                             violations.append(f"{route_id}: tenantKeyAuth only allowed on webhook routes")
                         if scopes != []:
                             violations.append(f"{route_id}: tenantKeyAuth scopes must be []")
+                    elif scheme_name == "MachineBearer":
+                        if not path.startswith("/api/trust/"):
+                            violations.append(f"{route_id}: MachineBearer only allowed on trust routes")
+                        if scopes != []:
+                            violations.append(f"{route_id}: MachineBearer scopes must be []")
 
             if path == "/api/auth/refresh" and method_upper == "POST":
                 if effective_security != [{"refreshBearerAuth": []}]:

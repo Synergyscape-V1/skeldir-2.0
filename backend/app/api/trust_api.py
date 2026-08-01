@@ -8,7 +8,8 @@ from enum import Enum
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -36,6 +37,11 @@ from app.trust.verification import verify_trust_envelope
 
 
 router = APIRouter()
+machine_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="MachineBearer",
+    bearerFormat="opaque-machine-token",
+)
 MAX_QUERY_RANGE = timedelta(days=30)
 MAX_QUERY_BODY_BYTES = 64 * 1024
 _FORBIDDEN_QUERY_TOKENS = (
@@ -150,6 +156,10 @@ async def get_machine_db_session(
 async def require_envelope_read_scope(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_machine_db_session)],
+    _: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(machine_bearer),
+    ],
 ) -> MachineCallerContext:
     return await authenticate_machine_caller(
         request,
@@ -161,6 +171,10 @@ async def require_envelope_read_scope(
 async def require_envelope_verify_scope(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_machine_db_session)],
+    _: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(machine_bearer),
+    ],
 ) -> MachineCallerContext:
     return await authenticate_machine_caller(
         request,

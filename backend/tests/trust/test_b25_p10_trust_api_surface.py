@@ -21,7 +21,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.api import trust_api
+from app.api import trust_api, trust_keys
 from app.core.secrets import get_database_url, get_migration_database_url
 from app.db.dsn import to_asyncpg_postgres_dsn
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
@@ -714,3 +714,25 @@ def test_main_mounts_all_p10_routes_and_preserves_public_jwks() -> None:
     keys_source = (ROOT / "backend/app/api/trust_keys.py").read_text(encoding="utf-8")
     assert '"/trust/v1/keys/jwks"' in keys_source
     assert 'openapi_extra={"security": []}' in keys_source
+
+
+def test_runtime_openapi_declares_machine_bearer_default_deny() -> None:
+    app = FastAPI()
+    app.include_router(trust_api.router, prefix="/api")
+    app.include_router(trust_keys.router, prefix="/api")
+    document = app.openapi()
+
+    assert document["components"]["securitySchemes"]["MachineBearer"] == {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque-machine-token",
+    }
+    for method, path in (
+        ("get", "/api/trust/v1/envelopes/{subject_type}/{subject_ref}"),
+        ("post", "/api/trust/v1/envelopes/query"),
+        ("post", "/api/trust/v1/verify"),
+    ):
+        assert document["paths"][path][method]["security"] == [
+            {"MachineBearer": []}
+        ]
+    assert document["paths"]["/api/trust/v1/keys/jwks"]["get"]["security"] == []
