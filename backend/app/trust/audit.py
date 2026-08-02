@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from copy import deepcopy
 from dataclasses import asdict, dataclass
@@ -34,12 +34,14 @@ from app.trust.provenance import replace_audit_provenance_entries
 from app.trust.reason_codes import ReasonCode
 from app.trust.reason_truth_matrix import assert_reason_known
 from app.trust.refusal import tenant_hash, utc_second
+from app.trust.source_adapters import MatchVerdictSource
 
 
 AuditEventType = Literal["issuance", "refusal", "scope_denial", "replay"]
 AuditStatus = Literal["success", "refused", "degraded", "replayed"]
 AuditTimestampSource = Literal["request_issuance_context", "persisted_original"]
 AuditSessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+AuditCpuRunner = Callable[..., Awaitable[Any]]
 AUDIT_TIMESTAMP_AUTHORITY_SOURCES: frozenset[str] = frozenset(
     {"request_issuance_context", "persisted_original"}
 )
@@ -59,6 +61,9 @@ SAFE_REFUSAL_REASONS = {
     ReasonCode.HUMAN_WORKFLOW_STATE_REJECTED.value,
     ReasonCode.MONEY_AMOUNT_EXCEEDS_JSON_SAFE_INTEGER.value,
     ReasonCode.VALIDATION_FAILED.value,
+    ReasonCode.UNSUPPORTED_SUBJECT_TYPE.value,
+    ReasonCode.RESPONSE_BUDGET_EXCEEDED.value,
+    ReasonCode.TENANT_CONTEXT_MISSING.value,
 }
 
 
@@ -519,9 +524,16 @@ async def build_unsigned_trust_envelope_with_audit(
     idempotency_key: str,
     audit_session_factory: AuditSessionFactory | None = None,
     access_log_only: bool = False,
+    source: MatchVerdictSource | None = None,
+    cpu_runner: AuditCpuRunner | None = None,
 ) -> TrustEnvelopeAuditResult:
     """Build through P5, persist P7 audit, and attach audit refs to the payload."""
-    build_result = await build_unsigned_trust_envelope(db_session, request)
+    build_result = await build_unsigned_trust_envelope(
+        db_session,
+        request,
+        source=source,
+        payload_runner=cpu_runner if source is not None else None,
+    )
     tenant_id_hash = tenant_hash(request.tenant_id)
     created_at = request.request_context.get("created_at")
     if not isinstance(created_at, datetime):
@@ -555,15 +567,28 @@ async def build_unsigned_trust_envelope_with_audit(
             created_at_source=created_at_source,
         )
         initial_record = build_audit_record(audit_request)
-        updated_payload = attach_audit_to_unsigned_payload(
-            provisional,
-            audit_record=initial_record,
-            observed_at=observed_at,
-        )
+        if cpu_runner is None:
+            updated_payload = attach_audit_to_unsigned_payload(
+                provisional,
+                audit_record=initial_record,
+                observed_at=observed_at,
+            )
+            envelope_hash = compute_envelope_payload_hash(updated_payload)
+        else:
+            updated_payload = await cpu_runner(
+                attach_audit_to_unsigned_payload,
+                provisional,
+                audit_record=initial_record,
+                observed_at=observed_at,
+            )
+            envelope_hash = await cpu_runner(
+                compute_envelope_payload_hash,
+                updated_payload,
+            )
         final_request = TrustAuditRequest(
             **{
                 **asdict(audit_request),
-                "envelope_hash": compute_envelope_payload_hash(updated_payload),
+                "envelope_hash": envelope_hash,
             }
         )
         persisted = await record_trust_audit_event_durable(
@@ -572,11 +597,19 @@ async def build_unsigned_trust_envelope_with_audit(
             access_log_only=access_log_only,
         )
         if persisted.audit_hash != initial_record.audit_hash:
-            updated_payload = attach_audit_to_unsigned_payload(
-                updated_payload,
-                audit_record=persisted,
-                observed_at=observed_at,
-            )
+            if cpu_runner is None:
+                updated_payload = attach_audit_to_unsigned_payload(
+                    updated_payload,
+                    audit_record=persisted,
+                    observed_at=observed_at,
+                )
+            else:
+                updated_payload = await cpu_runner(
+                    attach_audit_to_unsigned_payload,
+                    updated_payload,
+                    audit_record=persisted,
+                    observed_at=observed_at,
+                )
         return TrustEnvelopeAuditResult(
             build_result=build_result,
             audit_record=persisted,

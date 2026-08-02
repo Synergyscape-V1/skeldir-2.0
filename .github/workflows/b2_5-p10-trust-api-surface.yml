@@ -87,6 +87,12 @@ jobs:
       - name: Run P1-P10 trust regression suite
         run: python -m pytest backend/tests/trust -q
 
+      - name: Emit maximum-concurrency resource evidence
+        run: |
+          set -o pipefail
+          python -m pytest backend/tests/trust/test_b25_p10_postgres_physics.py::test_postgres_maximum_query_resource_envelope -q -s | tee /tmp/b25_p10_resource.out
+          grep -E "P10_RESOURCE_METRICS=" /tmp/b25_p10_resource.out
+
       - name: Validate P1-P9 substrate preservation
         run: |
           make validate-b25-p1-contracts
@@ -112,7 +118,8 @@ jobs:
           grep -E "^read_only_privacy_controls_passed=1$" /tmp/b25_p10.out
           grep -E "^runtime_key_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
           grep -E "^governance_binding_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
-          grep -E "^negative_controls_fired=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^corrective_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^negative_controls_fired=19$" /tmp/b25_p10.out
           grep -E "^pytest_controls_passed=1$" /tmp/b25_p10.out
           grep -E "^unbounded_query_rejected=1$" /tmp/b25_p10.out
           grep -E "^verify_oracle_auth_enforced=1$" /tmp/b25_p10.out

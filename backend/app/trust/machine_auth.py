@@ -26,12 +26,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
 from uuid import UUID
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, status
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.trust.audit import (
     TrustAuditRequest,
@@ -48,6 +46,8 @@ from app.trust.refusal import tagged_sha256, tenant_hash
 
 
 DEFAULT_NONCE_TTL_SECONDS: int = 300
+MIN_NONCE_LENGTH: int = 16
+MAX_NONCE_LENGTH: int = 256
 DEFAULT_RATE_LIMIT_WINDOW_SECONDS: int = 60
 DEFAULT_RATE_LIMIT_REQUESTS: int = 100
 
@@ -235,7 +235,7 @@ async def _atomic_nonce_insert(
             "agent_client_id": str(agent_client_id),
             "nonce_value": nonce_value,
             "request_identity_hash": request_identity_hash,
-            "expires_at": expires_at.isoformat(),
+            "expires_at": expires_at,
         },
     )
     await db_session.commit()
@@ -249,6 +249,7 @@ async def _check_rate_limit(
     agent_client_id,
     window_seconds=DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
     request_limit=DEFAULT_RATE_LIMIT_REQUESTS,
+    at_time: datetime | None = None,
 ):
     """Atomic fixed-window rate check with zero hot-path row locks.
 
@@ -259,7 +260,10 @@ async def _check_rate_limit(
     """
     if window_seconds <= 0 or request_limit <= 0:
         raise ValueError("rate_limit_configuration_must_be_positive")
-    now = datetime.now(timezone.utc)
+    now = at_time or datetime.now(timezone.utc)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("rate_limit_time_must_be_timezone_aware")
+    now = now.astimezone(timezone.utc)
     bucket_epoch = int(now.timestamp()) // window_seconds * window_seconds
     window_start = datetime.fromtimestamp(bucket_epoch, tz=timezone.utc)
     window_end = window_start + timedelta(seconds=window_seconds)
@@ -367,12 +371,12 @@ async def authenticate_machine_caller(
 
     if not auth_header.startswith("Bearer "):
         return await deny(ReasonCode.SCOPE_DENIED)
-    presented_token = auth_header[len("Bearer "):]
+    presented_token = auth_header[len("Bearer ") :]
     if not presented_token or len(presented_token) < 8:
         return await deny(ReasonCode.SCOPE_DENIED)
     if not tenant_header:
         return await deny(ReasonCode.TENANT_MISMATCH)
-    if not nonce_header:
+    if not MIN_NONCE_LENGTH <= len(nonce_header) <= MAX_NONCE_LENGTH:
         return await deny(ReasonCode.REPLAY_REJECTED)
 
     try:

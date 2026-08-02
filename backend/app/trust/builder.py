@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -333,6 +334,9 @@ def _loaded_llm_modules(before: set[str], after: set[str]) -> tuple[str, ...]:
 async def build_unsigned_trust_envelope(
     db_session: AsyncSession,
     request: TrustEnvelopeBuildRequest,
+    *,
+    source: MatchVerdictSource | None = None,
+    payload_runner: Callable[..., Awaitable[dict[str, Any]]] | None = None,
 ) -> TrustEnvelopeBuildResult:
     """Build an unsigned, schema-valid TrustEnvelope payload from approved sources."""
     import sys
@@ -368,11 +372,20 @@ async def build_unsigned_trust_envelope(
             read_only_observation=_read_only_observation(llm_modules=()),
         )
 
-    source = await read_match_verdict_source(
-        db_session,
-        tenant_id=request.tenant_id,
-        subject_ref=request.subject_ref,
-    )
+    if source is not None:
+        expected_ref = f"urn:skeldir:match_verdict:{source.id}"
+        if (
+            request.subject_type != "match_verdict"
+            or source.tenant_id != request.tenant_id
+            or request.subject_ref.lower() != expected_ref.lower()
+        ):
+            raise TrustEnvelopeBuildError("prefetched_source_authority_mismatch")
+    else:
+        source = await read_match_verdict_source(
+            db_session,
+            tenant_id=request.tenant_id,
+            subject_ref=request.subject_ref,
+        )
     if source is None:
         refusal = build_error_envelope(
             tenant_id=request.tenant_id,
@@ -408,11 +421,19 @@ async def build_unsigned_trust_envelope(
             read_only_observation=_read_only_observation(llm_modules=()),
         )
 
-    payload = _match_verdict_payload(
-        request=request,
-        source=source,
-        money_decision=money_decision,
-    )
+    if payload_runner is None:
+        payload = _match_verdict_payload(
+            request=request,
+            source=source,
+            money_decision=money_decision,
+        )
+    else:
+        payload = await payload_runner(
+            _match_verdict_payload,
+            request=request,
+            source=source,
+            money_decision=money_decision,
+        )
     after_modules = set(sys.modules)
     llm_modules = _loaded_llm_modules(before_modules, after_modules)
     if llm_modules:

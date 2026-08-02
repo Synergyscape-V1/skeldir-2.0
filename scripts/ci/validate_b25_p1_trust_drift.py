@@ -77,11 +77,14 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/machine_identity.py",
     "backend/app/trust/machine_auth.py",
     "backend/app/trust/runtime_keys.py",
+    "backend/app/trust/tenant_security.py",
     "backend/app/api/trust_api.py",
     "backend/app/config/contract_scope.yaml",
     "backend/app/main.py",
     "backend/tests/trust/test_b25_p9_machine_identity.py",
     "backend/tests/trust/test_b25_p10_trust_api_surface.py",
+    "backend/tests/trust/test_b25_p10_corrective_action.py",
+    "backend/tests/trust/test_b25_p10_postgres_physics.py",
 )
 
 

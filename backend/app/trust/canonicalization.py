@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,9 @@ def _expanded_trust_schema() -> dict[str, Any]:
             ref = value.get("$ref")
             if isinstance(ref, str):
                 if ref.startswith("#/$defs/"):
-                    return expand(copy.deepcopy(root_schema["$defs"][ref.rsplit("/", 1)[-1]]))
+                    return expand(
+                        copy.deepcopy(root_schema["$defs"][ref.rsplit("/", 1)[-1]])
+                    )
                 file_ref, _, fragment = ref.partition("#")
                 if file_ref:
                     target = _read_schema(CONTRACT_DIR / file_ref.rsplit("/", 1)[-1])
@@ -60,7 +63,9 @@ def _expanded_trust_schema() -> dict[str, Any]:
     return expanded
 
 
+@lru_cache(maxsize=1)
 def _schema_validator() -> Draft202012Validator:
+    """Compile immutable contract validation authority once per worker."""
     return Draft202012Validator(_expanded_trust_schema())
 
 
@@ -70,7 +75,9 @@ def validate_envelope_schema(payload: dict[str, Any]) -> None:
     if errors:
         first = errors[0]
         path = ".".join(str(part) for part in first.absolute_path)
-        raise CanonicalizationError(f"schema_validation_failed:{first.validator}:{path}")
+        raise CanonicalizationError(
+            f"schema_validation_failed:{first.validator}:{path}"
+        )
 
 
 def _assert_safe_value(value: Any, path: str = "$") -> None:
@@ -109,9 +116,7 @@ def _canonicalize_arrays(value: Any, path: str = "") -> Any:
             for key, child in value.items()
         }
     if isinstance(value, list):
-        ordered_children = [
-            _canonicalize_arrays(child, f"{path}[]") for child in value
-        ]
+        ordered_children = [_canonicalize_arrays(child, f"{path}[]") for child in value]
         return canonicalize_array_by_declared_ordering(path, ordered_children)
     return copy.deepcopy(value)
 
@@ -163,4 +168,3 @@ def canonicalize_signature_material(payload: dict[str, Any]) -> bytes:
     from app.trust.hash_identity import build_signature_hash_input
 
     return _canonical_bytes(build_signature_hash_input(payload))
-

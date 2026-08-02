@@ -125,7 +125,9 @@ async def test_authorized_happy_path_returns_signed_verifiable_safe_envelope(
         return SimpleNamespace(unsigned_payload=_unsigned_fixture())
 
     app.dependency_overrides[trust_api.get_machine_db_session] = fake_session
-    app.dependency_overrides[trust_api.require_envelope_read_scope] = fake_scope
+    app.dependency_overrides[trust_api.require_envelope_read_tenant_context] = (
+        fake_scope
+    )
 
     async def fake_registry() -> TrustKeyRegistry:
         return registry
@@ -270,7 +272,11 @@ async def test_verify_oracle_rejects_unauthenticated_before_crypto(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/trust/v1/verify",
-            headers={"X-Tenant-ID": str(uuid4()), "X-Correlation-ID": str(uuid4())},
+            headers={
+                "X-Tenant-ID": str(uuid4()),
+                "X-Correlation-ID": str(uuid4()),
+                "X-Trust-Nonce": "nonce-0123456789abcdef",
+            },
             json=_unsigned_fixture(),
         )
 
@@ -732,7 +738,5 @@ def test_runtime_openapi_declares_machine_bearer_default_deny() -> None:
         ("post", "/api/trust/v1/envelopes/query"),
         ("post", "/api/trust/v1/verify"),
     ):
-        assert document["paths"][path][method]["security"] == [
-            {"MachineBearer": []}
-        ]
+        assert document["paths"][path][method]["security"] == [{"MachineBearer": []}]
     assert document["paths"]["/api/trust/v1/keys/jwks"]["get"]["security"] == []

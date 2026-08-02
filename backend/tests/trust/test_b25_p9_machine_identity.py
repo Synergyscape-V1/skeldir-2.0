@@ -154,7 +154,9 @@ def test_assert_scope_issuable_rejects_reserved_action_scopes() -> None:
         "trust.action.reject",
         "auto_executable_within_policy",
     ):
-        with pytest.raises(ReservedScopeError, match="reserved_action_scope_unissuable"):
+        with pytest.raises(
+            ReservedScopeError, match="reserved_action_scope_unissuable"
+        ):
             assert_scope_issuable(scope)
 
 
@@ -172,7 +174,9 @@ def test_assert_scope_issuable_accepts_design_partner_scopes() -> None:
 
 
 def test_assert_scope_issuable_rejects_unknown_scopes() -> None:
-    with pytest.raises(ReservedScopeError, match="scope_value_not_in_design_partner_registry"):
+    with pytest.raises(
+        ReservedScopeError, match="scope_value_not_in_design_partner_registry"
+    ):
         assert_scope_issuable("trust.bogus.scope")
 
 
@@ -190,6 +194,7 @@ def test_coerce_scope_round_trips_enum_and_string() -> None:
 
 def _collect_imports_and_calls(path: Path) -> tuple[set[str], set[str]]:
     import ast
+
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     imports: set[str] = set()
@@ -221,7 +226,8 @@ def test_p9_runtime_paths_ban_uuid4_and_random() -> None:
     identity_path = P9_RUNTIME_PATHS[0]
     identity_imports, _ = _collect_imports_and_calls(identity_path)
     assert "secrets" in identity_imports, (
-        identity_path, "machine_identity.py must import secrets CSPRNG"
+        identity_path,
+        "machine_identity.py must import secrets CSPRNG",
     )
 
 
@@ -383,11 +389,13 @@ def test_write_denial_audit_uses_autonomous_session_seam(monkeypatch) -> None:
     denial audits through the autonomous seam (not the request-scoped session).
     """
     from app.trust import machine_auth
+
     calls = []
 
     async def fake_durable(request):
         calls.append(request)
         from app.trust.audit import TrustAuditRecord
+
         return TrustAuditRecord(
             audit_ref="urn:skeldir:audit:scope_denial:test",
             audit_hash="sha256:" + "0" * 64,
@@ -400,6 +408,7 @@ def test_write_denial_audit_uses_autonomous_session_seam(monkeypatch) -> None:
 
     monkeypatch.setattr(machine_auth, "record_trust_audit_event_durable", fake_durable)
     import asyncio
+
     tenant_id = uuid4()
     asyncio.run(
         machine_auth._write_denial_audit(
@@ -422,7 +431,9 @@ def test_write_denial_audit_swallows_persistence_failure(monkeypatch) -> None:
     async def failing_durable(request):
         raise RuntimeError("audit store down")
 
-    monkeypatch.setattr(machine_auth, "record_trust_audit_event_durable", failing_durable)
+    monkeypatch.setattr(
+        machine_auth, "record_trust_audit_event_durable", failing_durable
+    )
     asyncio.run(
         machine_auth._write_denial_audit(
             tenant_id=uuid4(),
@@ -463,18 +474,24 @@ class _MockSession:
         if "agent_scope_grants" in sql:
             return _FakeRows([(s,) for s in self.scopes])
         if "ON CONFLICT (tenant_id, nonce_value) DO NOTHING" in sql:
+
             class R:
                 rowcount = 1 if self.nonce_insert_result else 0
+
             return R()
         if "trust_rate_limit_state" in sql and "RETURNING" in sql:
             if self.rate_limit_result:
+
                 class _WithinBudgetResult:
                     def first(self):
                         return (1,)
+
                 return _WithinBudgetResult()
+
             class _OverLimitResult:
                 def first(self):
                     return (999,)
+
             return _OverLimitResult()
         return _FakeNoConflictResult()
 
@@ -485,11 +502,14 @@ class _MockSession:
 class _FakeResult:
     def __init__(self, row):
         self._row = row
+
     def first(self):
         if self._row is None:
             return None
+
         class _Row:
             _mapping = None
+
         row = _Row()
         row._mapping = self._row
         return row
@@ -498,6 +518,7 @@ class _FakeResult:
 class _FakeRows:
     def __init__(self, rows):
         self._rows = rows
+
     def __iter__(self):
         return iter(self._rows)
 
@@ -533,16 +554,18 @@ def test_authenticate_machine_caller_happy_path() -> None:
         {
             "Authorization": f"Bearer {token.plaintext}",
             "X-Tenant-ID": str(tenant_id),
-            "X-Trust-Nonce": "nonce-happy",
+            "X-Trust-Nonce": "nonce-happy-01234567",
             "X-Idempotency-Key": "idem-happy",
         }
     )
     ctx = asyncio.run(
-        authenticate_machine_caller(request, session, required_scope=AgentScope.ENVELOPE_READ)
+        authenticate_machine_caller(
+            request, session, required_scope=AgentScope.ENVELOPE_READ
+        )
     )
     assert ctx.tenant_id == tenant_id
     assert AgentScope.ENVELOPE_READ in ctx.scopes
-    assert ctx.nonce_value == "nonce-happy"
+    assert ctx.nonce_value == "nonce-happy-01234567"
 
 
 def test_authenticate_machine_caller_rejects_missing_bearer() -> None:
@@ -571,7 +594,7 @@ def test_authenticate_machine_caller_rejects_wrong_secret() -> None:
         {
             "Authorization": f"Bearer {token.plaintext}",
             "X-Tenant-ID": str(tenant_id),
-            "X-Trust-Nonce": "nonce-wrong",
+            "X-Trust-Nonce": "nonce-wrong-01234567",
             "X-Idempotency-Key": "idem-wrong",
         }
     )
@@ -596,7 +619,7 @@ def test_authenticate_machine_caller_rejects_tenant_mismatch() -> None:
         {
             "Authorization": f"Bearer {token.plaintext}",
             "X-Tenant-ID": str(tenant_id),
-            "X-Trust-Nonce": "nonce-mismatch",
+            "X-Trust-Nonce": "nonce-mismatch-01234567",
             "X-Idempotency-Key": "idem-mismatch",
         }
     )
@@ -622,7 +645,7 @@ def test_authenticate_machine_caller_rejects_replay() -> None:
         {
             "Authorization": f"Bearer {token.plaintext}",
             "X-Tenant-ID": str(tenant_id),
-            "X-Trust-Nonce": "replay-nonce",
+            "X-Trust-Nonce": "replay-nonce-01234567",
             "X-Idempotency-Key": "idem-replay",
         }
     )
@@ -644,7 +667,7 @@ def test_authenticate_machine_caller_rejects_scope_denial() -> None:
         {
             "Authorization": f"Bearer {token.plaintext}",
             "X-Tenant-ID": str(tenant_id),
-            "X-Trust-Nonce": "nonce-scope",
+            "X-Trust-Nonce": "nonce-scope-01234567",
             "X-Idempotency-Key": "idem-scope",
         }
     )
@@ -674,7 +697,7 @@ def test_authenticate_machine_caller_rejects_rate_limited() -> None:
         {
             "Authorization": f"Bearer {token.plaintext}",
             "X-Tenant-ID": str(tenant_id),
-            "X-Trust-Nonce": "nonce-rate",
+            "X-Trust-Nonce": "nonce-rate-01234567",
             "X-Idempotency-Key": "idem-rate",
         }
     )
@@ -689,10 +712,25 @@ def test_authenticate_machine_caller_rejects_rate_limited() -> None:
 
 
 def test_p1_through_p8_substrate_imports_remain_unchanged() -> None:
-    from app.trust import audit, builder, canonicalization, hash_identity, jwks, key_registry, reason_codes, reason_truth_matrix, refusal, schema_versions, schema_verification, signing, verification
+    from app.trust import (
+        audit,
+        builder,
+        canonicalization,
+        hash_identity,
+        jwks,
+        key_registry,
+        reason_codes,
+        reason_truth_matrix,
+        refusal,
+        schema_versions,
+        schema_verification,
+        signing,
+        verification,
+    )
     from app.trust.audit import record_trust_audit_event_durable
     from app.trust.signing import sign_trust_envelope
     from app.trust.verification import verify_trust_envelope
+
     assert audit is not None
     assert builder is not None
     assert canonicalization is not None
@@ -711,6 +749,7 @@ def test_p1_through_p8_substrate_imports_remain_unchanged() -> None:
 def test_p9_does_not_introduce_p10_route_logic() -> None:
     """P9 is strictly the gateway substrate. No route logic allowed."""
     import ast
+
     for path in P9_RUNTIME_PATHS:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source)

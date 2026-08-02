@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import re
 from typing import Any, Literal
 
 from app.trust.canonicalization import (
@@ -24,6 +25,17 @@ from app.trust.signing import TrustEnvelopeSigningError, verify_ed25519_signatur
 
 
 VerificationStatus = Literal["verified", "rejected"]
+_SAFE_REASON_CODE_RE = re.compile(r"^[a-z0-9_.:-]{1,160}$")
+_FORBIDDEN_REASON_TOKENS = (
+    "database",
+    "postgres",
+    "sql",
+    "guc",
+    "tenant_id",
+    "traceback",
+    "private",
+    "secret",
+)
 
 
 @dataclass(frozen=True)
@@ -43,30 +55,53 @@ class TrustEnvelopeVerificationResult:
         return asdict(self)
 
 
-def _reject(payload: dict[str, Any] | None, reason_code: str) -> TrustEnvelopeVerificationResult:
+def _reject(
+    payload: dict[str, Any] | None, reason_code: str
+) -> TrustEnvelopeVerificationResult:
     payload = payload or {}
     return TrustEnvelopeVerificationResult(
         verification_status="rejected",
         reason_code=reason_code,
-        schema_version=payload.get("schema_version")
-        if isinstance(payload.get("schema_version"), str)
-        else None,
-        canonicalization_version=payload.get("canonicalization_version")
-        if isinstance(payload.get("canonicalization_version"), str)
-        else None,
-        signing_key_id=payload.get("signing_key_id")
-        if isinstance(payload.get("signing_key_id"), str)
-        else None,
-        signing_algorithm=payload.get("signing_algorithm")
-        if isinstance(payload.get("signing_algorithm"), str)
-        else None,
-        signature_hash=payload.get("signature_hash")
-        if isinstance(payload.get("signature_hash"), str)
-        else None,
-        semantic_truth_hash=payload.get("semantic_truth_hash")
-        if isinstance(payload.get("semantic_truth_hash"), str)
-        else None,
+        schema_version=(
+            payload.get("schema_version")
+            if isinstance(payload.get("schema_version"), str)
+            else None
+        ),
+        canonicalization_version=(
+            payload.get("canonicalization_version")
+            if isinstance(payload.get("canonicalization_version"), str)
+            else None
+        ),
+        signing_key_id=(
+            payload.get("signing_key_id")
+            if isinstance(payload.get("signing_key_id"), str)
+            else None
+        ),
+        signing_algorithm=(
+            payload.get("signing_algorithm")
+            if isinstance(payload.get("signing_algorithm"), str)
+            else None
+        ),
+        signature_hash=(
+            payload.get("signature_hash")
+            if isinstance(payload.get("signature_hash"), str)
+            else None
+        ),
+        semantic_truth_hash=(
+            payload.get("semantic_truth_hash")
+            if isinstance(payload.get("semantic_truth_hash"), str)
+            else None
+        ),
     )
+
+
+def _safe_reason_code(exc: Exception) -> str:
+    candidate = str(exc).strip().lower()
+    if not _SAFE_REASON_CODE_RE.fullmatch(candidate):
+        return "verification_failed"
+    if any(token in candidate for token in _FORBIDDEN_REASON_TOKENS):
+        return "verification_failed"
+    return candidate
 
 
 def _utc_parse(value: Any, field: str) -> datetime:
@@ -91,9 +126,13 @@ def _assert_temporal_validity(
         raise ValueError("envelope_expired")
     if created_at < key_valid_from.astimezone(timezone.utc):
         raise ValueError("key_not_valid_for_envelope_time")
-    if key_valid_until is not None and created_at > key_valid_until.astimezone(timezone.utc):
+    if key_valid_until is not None and created_at > key_valid_until.astimezone(
+        timezone.utc
+    ):
         raise ValueError("key_not_valid_for_envelope_time")
-    if key_retired_at is not None and created_at > key_retired_at.astimezone(timezone.utc):
+    if key_retired_at is not None and created_at > key_retired_at.astimezone(
+        timezone.utc
+    ):
         raise ValueError("temporal_forgery_rejected:created_after_key_retirement")
 
 
@@ -127,13 +166,13 @@ def verify_trust_envelope(
         material = canonicalize_signature_material(candidate)
         verify_ed25519_signature(key.public_key, str(candidate["signature"]), material)
     except SignatureMetadataError as exc:
-        return _reject(candidate, str(exc))
+        return _reject(candidate, _safe_reason_code(exc))
     except TrustKeyRegistryError as exc:
-        return _reject(candidate, str(exc))
+        return _reject(candidate, _safe_reason_code(exc))
     except TrustEnvelopeSigningError as exc:
-        return _reject(candidate, str(exc))
+        return _reject(candidate, _safe_reason_code(exc))
     except Exception as exc:
-        return _reject(candidate, str(exc))
+        return _reject(candidate, _safe_reason_code(exc))
     return TrustEnvelopeVerificationResult(
         verification_status="verified",
         reason_code=None,

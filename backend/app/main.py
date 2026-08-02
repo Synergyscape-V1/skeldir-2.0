@@ -56,6 +56,10 @@ from app.middleware import PIIStrippingMiddleware
 from app.middleware.observability import ObservabilityMiddleware
 from app.security.auth import AuthError, forbidden_auth_error, unauthorized_auth_error
 from app.core.secrets import assert_runtime_secret_contract
+from app.trust.tenant_security import (
+    TenantContextMissingException,
+    tenant_context_missing_exception_handler,
+)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -138,6 +142,12 @@ async def auth_error_handler(request: Request, exc: AuthError):
         type_url=exc.type_url,
         code=exc.code,
     )
+
+
+app.add_exception_handler(
+    TenantContextMissingException,
+    tenant_context_missing_exception_handler,
+)
 
 
 @app.exception_handler(HTTPException)

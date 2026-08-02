@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from collections.abc import Sequence
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -389,3 +391,88 @@ async def read_match_verdict_source(
     if row is None:
         return None
     return match_verdict_source_from_mapping(row)
+
+
+async def query_match_verdict_sources(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    subject_refs: Sequence[str],
+    updated_at_after: datetime | None = None,
+    updated_at_before: datetime | None = None,
+    row_limit: int = 50,
+) -> tuple[MatchVerdictSource, ...]:
+    """Read a bounded exact-reference set using persisted verdict chronology.
+
+    P10's temporal predicate is defined over ``b23_match_verdicts.updated_at``.
+    The caller supplies exact subject URNs only; malformed references are normal
+    non-matches and never broaden the query.  The SQL limit is applied before
+    P5 build, signing, audit, or response serialization work.
+    """
+    if row_limit < 1 or row_limit > 50:
+        raise ValueError("match_verdict_row_limit_out_of_bounds")
+    if len(subject_refs) > 50:
+        raise ValueError("match_verdict_reference_limit_exceeded")
+    if updated_at_after is not None and (
+        updated_at_after.tzinfo is None or updated_at_after.utcoffset() is None
+    ):
+        raise ValueError("updated_at_after_timezone_required")
+    if updated_at_before is not None and (
+        updated_at_before.tzinfo is None or updated_at_before.utcoffset() is None
+    ):
+        raise ValueError("updated_at_before_timezone_required")
+
+    verdict_ids = sorted(
+        {
+            verdict_id
+            for subject_ref in subject_refs
+            if (verdict_id := parse_match_verdict_subject_ref(subject_ref)) is not None
+        },
+        key=str,
+    )
+    if not verdict_ids:
+        return ()
+
+    predicates = ["tenant_id = :tenant_id", "id = ANY(:verdict_ids)"]
+    params: dict[str, object] = {
+        "tenant_id": str(tenant_id),
+        "verdict_ids": verdict_ids,
+        "row_limit": row_limit,
+    }
+    if updated_at_after is not None:
+        predicates.append("updated_at >= :updated_at_after")
+        params["updated_at_after"] = updated_at_after.astimezone(timezone.utc)
+    if updated_at_before is not None:
+        predicates.append("updated_at <= :updated_at_before")
+        params["updated_at_before"] = updated_at_before.astimezone(timezone.utc)
+
+    statement = text(
+        f"""
+        SELECT
+            id,
+            tenant_id,
+            webhook_ingress_identity_id,
+            provider,
+            canonical_commerce_reference,
+            provider_native_event_reference,
+            provider_native_commerce_reference,
+            status,
+            match_quality,
+            canonical_net_verified_amount_minor,
+            currency_code,
+            last_transition_at,
+            created_at,
+            updated_at
+        FROM public.b23_match_verdicts
+        WHERE {' AND '.join(predicates)}
+        ORDER BY updated_at ASC, id ASC
+        LIMIT :row_limit
+        """
+    ).bindparams(
+        bindparam(
+            "verdict_ids",
+            type_=ARRAY(PG_UUID(as_uuid=True)),
+        )
+    )
+    result = await session.execute(statement, params)
+    return tuple(match_verdict_source_from_mapping(row) for row in result.mappings())
