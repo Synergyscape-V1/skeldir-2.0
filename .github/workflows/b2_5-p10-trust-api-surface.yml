@@ -91,7 +91,7 @@ jobs:
         run: |
           set -o pipefail
           python -m pytest backend/tests/trust/test_b25_p10_postgres_physics.py::test_postgres_maximum_query_resource_envelope -q -s | tee /tmp/b25_p10_resource.out
-          grep -E "^P10_RESOURCE_METRICS=" /tmp/b25_p10_resource.out
+          grep -E "P10_RESOURCE_METRICS=" /tmp/b25_p10_resource.out
 
       - name: Validate P1-P9 substrate preservation
         run: |
