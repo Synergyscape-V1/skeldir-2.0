@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -10,6 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import JSONResponse
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -27,12 +29,19 @@ from app.trust.builder import TrustEnvelopeBuildRequest
 from app.trust.key_registry import TrustKeyRegistry
 from app.trust.machine_auth import MachineCallerContext, authenticate_machine_caller
 from app.trust.machine_identity import AgentScope
+from app.trust.reason_codes import ReasonCode
 from app.trust.runtime_keys import (
     RuntimeTrustKeyConfigurationError,
     load_runtime_signing_registry,
     load_runtime_verification_registry,
 )
 from app.trust.signing import sign_trust_envelope
+from app.trust.source_adapters import (
+    SUPPORTED_P5_SUBJECT_TYPES,
+    MatchVerdictSource,
+    query_match_verdict_sources,
+)
+from app.trust.tenant_security import assert_authenticated_tenant_context
 from app.trust.verification import verify_trust_envelope
 
 
@@ -44,6 +53,23 @@ machine_bearer = HTTPBearer(
 )
 MAX_QUERY_RANGE = timedelta(days=30)
 MAX_QUERY_BODY_BYTES = 64 * 1024
+MAX_ACCEPTED_SUBJECT_TYPES = 5
+MAX_ACCEPTED_SUBJECT_REFS = 50
+MAX_EXPANDED_LOOKUP_PAIRS = 50
+MAX_RETURNED_OUTCOMES = 2
+MAX_SIGNATURES_PER_REQUEST = 2
+MAX_ISSUANCE_AUDIT_EFFECTS = 2
+MAX_CONCURRENT_QUERY_REQUESTS = 2
+MAX_SERIALIZED_ENVELOPE_BYTES = 64 * 1024
+MAX_AGGREGATE_RESPONSE_BYTES = 4 * 1024 * 1024
+MAX_VERIFY_BODY_BYTES = 256 * 1024
+
+if (
+    MAX_RETURNED_OUTCOMES * MAX_SERIALIZED_ENVELOPE_BYTES + 1024
+    > MAX_AGGREGATE_RESPONSE_BYTES
+):
+    raise RuntimeError("p10_static_aggregate_budget_is_not_closed")
+_QUERY_CONCURRENCY_LIMIT = asyncio.Semaphore(MAX_CONCURRENT_QUERY_REQUESTS)
 _FORBIDDEN_QUERY_TOKENS = (
     "*",
     "?",
@@ -69,13 +95,34 @@ class TrustSubjectType(str, Enum):
     CONFIDENCE_PROJECTION = "confidence_projection"
 
 
+SUPPORTED_TRUST_SUBJECT_TYPES = frozenset({TrustSubjectType.MATCH_VERDICT})
+RESERVED_TRUST_SUBJECT_TYPES = (
+    frozenset(TrustSubjectType) - SUPPORTED_TRUST_SUBJECT_TYPES
+)
+
+if {
+    value.value for value in SUPPORTED_TRUST_SUBJECT_TYPES
+} != SUPPORTED_P5_SUBJECT_TYPES:
+    raise RuntimeError("trust_api_p5_subject_capability_drift")
+
+
+class TrustResponseBudgetExceeded(RuntimeError):
+    """A governed response exceeded a fixed P10 serialization budget."""
+
+
 class TrustQueryRequest(BaseModel):
     """Strictly bounded exact-match query contract; no generic query AST exists."""
 
     model_config = ConfigDict(extra="forbid")
 
-    subject_types: list[TrustSubjectType] = Field(min_length=1, max_length=5)
-    subject_refs: list[str] = Field(min_length=1, max_length=50)
+    subject_types: list[TrustSubjectType] = Field(
+        min_length=1,
+        max_length=MAX_ACCEPTED_SUBJECT_TYPES,
+    )
+    subject_refs: list[str] = Field(
+        min_length=1,
+        max_length=MAX_ACCEPTED_SUBJECT_REFS,
+    )
     created_at_after: datetime | None = None
     created_at_before: datetime | None = None
 
@@ -109,6 +156,8 @@ class TrustQueryRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_range(self) -> "TrustQueryRequest":
+        if len(self.subject_types) * len(self.subject_refs) > MAX_EXPANDED_LOOKUP_PAIRS:
+            raise ValueError("expanded_lookup_pair_limit_exceeded")
         if self.created_at_after is None and self.created_at_before is None:
             return self
         if self.created_at_after is None or self.created_at_before is None:
@@ -143,6 +192,23 @@ async def validate_trust_query_request(
         ) from exc
 
 
+async def validate_trust_verify_request(request: Request) -> TrustVerifyRequest:
+    """Bound hosted verification input before key lookup or cryptographic work."""
+    payload = await request.body()
+    if not payload or len(payload) > MAX_VERIFY_BODY_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid bounded TrustEnvelope verification request.",
+        )
+    try:
+        return TrustVerifyRequest.model_validate_json(payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid bounded TrustEnvelope verification request.",
+        ) from exc
+
+
 async def get_machine_db_session(
     request: Request,
     x_tenant_id: Annotated[UUID, Header(alias="X-Tenant-ID")],
@@ -156,11 +222,20 @@ async def get_machine_db_session(
 async def require_envelope_read_scope(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_machine_db_session)],
+    x_trust_nonce: Annotated[
+        str,
+        Header(
+            alias="X-Trust-Nonce",
+            min_length=16,
+            max_length=256,
+        ),
+    ],
     _: Annotated[
         HTTPAuthorizationCredentials | None,
         Security(machine_bearer),
     ],
 ) -> MachineCallerContext:
+    _ = x_trust_nonce
     return await authenticate_machine_caller(
         request,
         session,
@@ -171,16 +246,43 @@ async def require_envelope_read_scope(
 async def require_envelope_verify_scope(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_machine_db_session)],
+    x_trust_nonce: Annotated[
+        str,
+        Header(
+            alias="X-Trust-Nonce",
+            min_length=16,
+            max_length=256,
+        ),
+    ],
     _: Annotated[
         HTTPAuthorizationCredentials | None,
         Security(machine_bearer),
     ],
 ) -> MachineCallerContext:
+    _ = x_trust_nonce
     return await authenticate_machine_caller(
         request,
         session,
         required_scope=AgentScope.ENVELOPE_VERIFY,
     )
+
+
+async def require_envelope_read_tenant_context(
+    request: Request,
+    caller: Annotated[MachineCallerContext, Depends(require_envelope_read_scope)],
+    session: Annotated[AsyncSession, Depends(get_machine_db_session)],
+) -> MachineCallerContext:
+    """Fail closed unless the authenticated tenant is the active RLS tenant."""
+    return await assert_authenticated_tenant_context(request, session, caller)
+
+
+async def require_envelope_verify_tenant_context(
+    request: Request,
+    caller: Annotated[MachineCallerContext, Depends(require_envelope_verify_scope)],
+    session: Annotated[AsyncSession, Depends(get_machine_db_session)],
+) -> MachineCallerContext:
+    """Apply the same RLS identity invariant before hosted verification."""
+    return await assert_authenticated_tenant_context(request, session, caller)
 
 
 async def get_runtime_signing_registry() -> TrustKeyRegistry:
@@ -210,6 +312,24 @@ def _assert_external_payload_safe(payload: object) -> None:
         if "tenant_id" in payload:
             raise RuntimeError("raw_tenant_id_response_forbidden")
         for key, value in payload.items():
+            normalized_key = key.strip().lower()
+            if normalized_key in {
+                "tenant_id",
+                "agent_client_id",
+                "user_id",
+                "private_key",
+                "private_key_material",
+                "secret",
+                "seed",
+                "credential",
+                "database_url",
+                "sql",
+                "guc",
+                "stack_trace",
+                "traceback",
+                "provider_native_payload",
+            }:
+                raise RuntimeError(f"unsafe_external_field_forbidden:{normalized_key}")
             if isinstance(value, float) and (
                 key.endswith("_minor") or key.endswith("_cents") or "money" in key
             ):
@@ -218,6 +338,18 @@ def _assert_external_payload_safe(payload: object) -> None:
     elif isinstance(payload, list):
         for value in payload:
             _assert_external_payload_safe(value)
+
+
+def _json_response(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
+    _assert_external_payload_safe(payload)
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+def _typed_error_response(reason_code: ReasonCode, *, status_code: int) -> JSONResponse:
+    return _json_response(
+        {"status": "refused", "reason_code": reason_code.value},
+        status_code=status_code,
+    )
 
 
 async def _issue_signed_envelope(
@@ -229,6 +361,7 @@ async def _issue_signed_envelope(
     idempotency_key: str,
     key_registry: TrustKeyRegistry,
     issued_at: datetime,
+    source: MatchVerdictSource | None = None,
 ) -> dict[str, Any] | None:
     build_request = TrustEnvelopeBuildRequest(
         tenant_id=caller.tenant_id,
@@ -245,31 +378,30 @@ async def _issue_signed_envelope(
         build_request,
         idempotency_key=idempotency_key,
         access_log_only=True,
+        source=source,
+        cpu_runner=asyncio.to_thread,
     )
     if result.unsigned_payload is None:
         return None
-    signed = sign_trust_envelope(result.unsigned_payload, key_registry=key_registry)
-    _assert_external_payload_safe(signed)
-    return signed
-
-
-def _in_created_at_range(envelope: dict[str, Any], query: TrustQueryRequest) -> bool:
-    if query.created_at_after is None or query.created_at_before is None:
-        return True
-    raw = envelope.get("created_at")
-    if not isinstance(raw, str) or not raw.endswith("Z"):
-        return False
-    created_at = datetime.fromisoformat(raw.removesuffix("Z") + "+00:00").astimezone(
-        timezone.utc
+    signed = await asyncio.to_thread(
+        sign_trust_envelope,
+        result.unsigned_payload,
+        key_registry=key_registry,
     )
-    return query.created_at_after <= created_at <= query.created_at_before
+    _assert_external_payload_safe(signed)
+    if len(JSONResponse(content=signed).body) > MAX_SERIALIZED_ENVELOPE_BYTES:
+        raise TrustResponseBudgetExceeded("individual_envelope_budget_exceeded")
+    return signed
 
 
 @router.get("/trust/v1/envelopes/{subject_type}/{subject_ref}")
 async def get_trust_envelope(
     subject_type: TrustSubjectType,
     subject_ref: str,
-    caller: Annotated[MachineCallerContext, Depends(require_envelope_read_scope)],
+    caller: Annotated[
+        MachineCallerContext,
+        Depends(require_envelope_read_tenant_context),
+    ],
     session: Annotated[AsyncSession, Depends(get_machine_db_session)],
     key_registry: Annotated[TrustKeyRegistry, Depends(get_runtime_signing_registry)],
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
@@ -277,22 +409,33 @@ async def get_trust_envelope(
         str,
         Header(alias="X-Idempotency-Key", min_length=1, max_length=256),
     ],
-) -> dict[str, Any]:
+) -> JSONResponse:
     _ = x_correlation_id
-    envelope = await _issue_signed_envelope(
-        session=session,
-        caller=caller,
-        subject_type=subject_type.value,
-        subject_ref=subject_ref,
-        idempotency_key=x_idempotency_key,
-        key_registry=key_registry,
-        issued_at=datetime.now(timezone.utc),
-    )
+    if subject_type in RESERVED_TRUST_SUBJECT_TYPES:
+        return _typed_error_response(
+            ReasonCode.UNSUPPORTED_SUBJECT_TYPE,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    try:
+        envelope = await _issue_signed_envelope(
+            session=session,
+            caller=caller,
+            subject_type=subject_type.value,
+            subject_ref=subject_ref,
+            idempotency_key=x_idempotency_key,
+            key_registry=key_registry,
+            issued_at=datetime.now(timezone.utc),
+        )
+    except TrustResponseBudgetExceeded:
+        return _typed_error_response(
+            ReasonCode.RESPONSE_BUDGET_EXCEEDED,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
     if envelope is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found."
         )
-    return envelope
+    return _json_response(envelope)
 
 
 @router.post(
@@ -310,7 +453,10 @@ async def get_trust_envelope(
 )
 async def query_trust_envelopes(
     query: Annotated[TrustQueryRequest, Depends(validate_trust_query_request)],
-    caller: Annotated[MachineCallerContext, Depends(require_envelope_read_scope)],
+    caller: Annotated[
+        MachineCallerContext,
+        Depends(require_envelope_read_tenant_context),
+    ],
     session: Annotated[AsyncSession, Depends(get_machine_db_session)],
     key_registry: Annotated[TrustKeyRegistry, Depends(get_runtime_signing_registry)],
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
@@ -318,36 +464,88 @@ async def query_trust_envelopes(
         str,
         Header(alias="X-Idempotency-Key", min_length=1, max_length=256),
     ],
-) -> dict[str, list[dict[str, Any]]]:
+) -> JSONResponse:
     _ = x_correlation_id
+    if any(value in RESERVED_TRUST_SUBJECT_TYPES for value in query.subject_types):
+        return _typed_error_response(
+            ReasonCode.UNSUPPORTED_SUBJECT_TYPE,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+    async with _QUERY_CONCURRENCY_LIMIT:
+        return await _query_trust_envelopes_with_capacity(
+            query=query,
+            caller=caller,
+            session=session,
+            key_registry=key_registry,
+            idempotency_key=x_idempotency_key,
+        )
+
+
+async def _query_trust_envelopes_with_capacity(
+    *,
+    query: TrustQueryRequest,
+    caller: MachineCallerContext,
+    session: AsyncSession,
+    key_registry: TrustKeyRegistry,
+    idempotency_key: str,
+) -> JSONResponse:
+    """Execute bounded source, audit, signing, and serialization work."""
+
+    sources = await query_match_verdict_sources(
+        session,
+        tenant_id=caller.tenant_id,
+        subject_refs=query.subject_refs,
+        updated_at_after=query.created_at_after,
+        updated_at_before=query.created_at_before,
+        row_limit=MAX_RETURNED_OUTCOMES,
+    )
     issued_at = datetime.now(timezone.utc)
     envelopes: list[dict[str, Any]] = []
-    for subject_type in query.subject_types:
-        for index, subject_ref in enumerate(query.subject_refs):
+    try:
+        for index, source in enumerate(sources):
+            subject_ref = f"urn:skeldir:match_verdict:{source.id}"
             envelope = await _issue_signed_envelope(
                 session=session,
                 caller=caller,
-                subject_type=subject_type.value,
+                subject_type=TrustSubjectType.MATCH_VERDICT.value,
                 subject_ref=subject_ref,
-                idempotency_key=f"{x_idempotency_key}:{subject_type.value}:{index}",
+                idempotency_key=f"{idempotency_key}:match_verdict:{index}",
                 key_registry=key_registry,
                 issued_at=issued_at,
+                source=source,
             )
-            if envelope is not None and _in_created_at_range(envelope, query):
+            if envelope is not None:
                 envelopes.append(envelope)
-    return {"envelopes": envelopes}
+    except TrustResponseBudgetExceeded:
+        return _typed_error_response(
+            ReasonCode.RESPONSE_BUDGET_EXCEEDED,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
+
+    response = _json_response({"envelopes": envelopes})
+    if len(response.body) > MAX_AGGREGATE_RESPONSE_BYTES:
+        return _typed_error_response(
+            ReasonCode.RESPONSE_BUDGET_EXCEEDED,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
+    return response
 
 
 @router.post("/trust/v1/verify")
 async def verify_supplied_trust_envelope(
-    payload: TrustVerifyRequest,
-    caller: Annotated[MachineCallerContext, Depends(require_envelope_verify_scope)],
+    payload: Annotated[TrustVerifyRequest, Depends(validate_trust_verify_request)],
+    caller: Annotated[
+        MachineCallerContext,
+        Depends(require_envelope_verify_tenant_context),
+    ],
     key_registry: Annotated[
         TrustKeyRegistry,
         Depends(get_runtime_verification_registry),
     ],
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-) -> dict[str, object | None]:
+) -> JSONResponse:
     _ = caller, x_correlation_id
     result = verify_trust_envelope(payload.root, key_registry=key_registry)
-    return result.external_projection()
+    projection = result.external_projection()
+    return _json_response(projection)

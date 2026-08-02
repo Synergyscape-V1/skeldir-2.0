@@ -32,6 +32,9 @@ class ReasonCode(StrEnum):
     CANONICALIZATION_VERSION_UNSUPPORTED = "canonicalization_version_unsupported"
     SIGNATURE_ALGORITHM_UNSUPPORTED = "signature_algorithm_unsupported"
     RATE_LIMITED = "rate_limited"
+    UNSUPPORTED_SUBJECT_TYPE = "unsupported_subject_type"
+    RESPONSE_BUDGET_EXCEEDED = "response_budget_exceeded"
+    TENANT_CONTEXT_MISSING = "tenant_context_missing"
 
     # Compatibility codes already present in P1/P5 contracts or examples.
     SCHEMA_DOWNGRADE_REJECTED = "schema_downgrade_rejected"
@@ -63,6 +66,9 @@ REQUIRED_P6_REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.CANONICALIZATION_VERSION_UNSUPPORTED,
         ReasonCode.SIGNATURE_ALGORITHM_UNSUPPORTED,
         ReasonCode.RATE_LIMITED,
+        ReasonCode.UNSUPPORTED_SUBJECT_TYPE,
+        ReasonCode.RESPONSE_BUDGET_EXCEEDED,
+        ReasonCode.TENANT_CONTEXT_MISSING,
     }
 )
 
@@ -344,6 +350,28 @@ REASON_CODE_REGISTRY: dict[ReasonCode, ReasonCodeDefinition] = {
         policy="force_blocked_no_action_scopes",
         future_phase_owner="B2.5-P9",
     ),
+    ReasonCode.UNSUPPORTED_SUBJECT_TYPE: _definition(
+        ReasonCode.UNSUPPORTED_SUBJECT_TYPE,
+        source_predicate="requested_subject_type_is_reserved_without_complete_p5_adapter",
+        envelope_status="refused",
+        policy="force_blocked_no_subject_absence_projection",
+        future_phase_owner="B2.5-P10",
+    ),
+    ReasonCode.RESPONSE_BUDGET_EXCEEDED: _definition(
+        ReasonCode.RESPONSE_BUDGET_EXCEEDED,
+        source_predicate="governed_response_exceeds_fixed_wire_budget",
+        envelope_status="refused",
+        policy="force_blocked_no_silent_truncation",
+        future_phase_owner="B2.5-P10",
+    ),
+    ReasonCode.TENANT_CONTEXT_MISSING: _definition(
+        ReasonCode.TENANT_CONTEXT_MISSING,
+        source_predicate="authenticated_principal_lacks_equal_transaction_local_rls_context",
+        envelope_status="unavailable",
+        policy="fail_closed_before_trust_data_access",
+        audit="autonomous_security_audit_required_before_sanitized_503",
+        future_phase_owner="B2.5-P10",
+    ),
     ReasonCode.SCHEMA_DOWNGRADE_REJECTED: _definition(
         ReasonCode.SCHEMA_DOWNGRADE_REJECTED,
         source_predicate="schema_version_is_deprecated_or_downgraded",
@@ -404,9 +432,7 @@ def coerce_reason_code(value: str | ReasonCode) -> ReasonCode:
 def get_reason_definition(value: ReasonCode) -> ReasonCodeDefinition:
     """Return one registered reason-code definition for an internal enum."""
     if not isinstance(value, ReasonCode):
-        raise ReasonCodeRegistryError(
-            f"reason_code_not_enum:{type(value).__name__}"
-        )
+        raise ReasonCodeRegistryError(f"reason_code_not_enum:{type(value).__name__}")
     try:
         return REASON_CODE_REGISTRY[value]
     except KeyError as exc:
@@ -420,9 +446,13 @@ def validate_reason_code_registry(
 ) -> int:
     """Validate registry completeness, uniqueness, and row semantics."""
     current = registry or REASON_CODE_REGISTRY
-    missing_required = sorted(REQUIRED_P6_REASON_CODES - {code.value for code in current})
+    missing_required = sorted(
+        REQUIRED_P6_REASON_CODES - {code.value for code in current}
+    )
     if missing_required:
-        raise ReasonCodeRegistryError(f"required_reason_codes_missing:{missing_required}")
+        raise ReasonCodeRegistryError(
+            f"required_reason_codes_missing:{missing_required}"
+        )
     if len(current) != len(set(current)):
         raise ReasonCodeRegistryError("duplicate_reason_code_keys")
     for key, definition in current.items():
@@ -436,30 +466,57 @@ def validate_reason_code_registry(
 
 def _validate_definition(definition: ReasonCodeDefinition) -> None:
     if not definition.source_predicate:
-        raise ReasonCodeRegistryError(f"reason_code_missing_source_predicate:{definition.code}")
-    if definition.envelope_status not in {"success", "degraded", "refused", "unavailable"}:
+        raise ReasonCodeRegistryError(
+            f"reason_code_missing_source_predicate:{definition.code}"
+        )
+    if definition.envelope_status not in {
+        "success",
+        "degraded",
+        "refused",
+        "unavailable",
+    }:
         raise ReasonCodeRegistryError(f"reason_code_bad_status:{definition.code}")
     if not definition.allowed_fields:
-        raise ReasonCodeRegistryError(f"reason_code_missing_allowed_fields:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_missing_allowed_fields:{definition.code}"
+        )
     if not definition.policy_action_authority_behavior:
-        raise ReasonCodeRegistryError(f"reason_code_missing_policy_behavior:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_missing_policy_behavior:{definition.code}"
+        )
     if not definition.confidence_metadata_behavior:
-        raise ReasonCodeRegistryError(f"reason_code_missing_confidence_behavior:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_missing_confidence_behavior:{definition.code}"
+        )
     if not definition.benchmark_metadata_behavior:
-        raise ReasonCodeRegistryError(f"reason_code_missing_benchmark_behavior:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_missing_benchmark_behavior:{definition.code}"
+        )
     if not definition.signature_behavior:
-        raise ReasonCodeRegistryError(f"reason_code_missing_signature_behavior:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_missing_signature_behavior:{definition.code}"
+        )
     if not definition.audit_behavior:
-        raise ReasonCodeRegistryError(f"reason_code_missing_audit_behavior:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_missing_audit_behavior:{definition.code}"
+        )
     if definition.fallback_applied not in {"required", "forbidden", "not_applicable"}:
-        raise ReasonCodeRegistryError(f"reason_code_bad_fallback_rule:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_bad_fallback_rule:{definition.code}"
+        )
     fallback = definition.fallback_reason
     if isinstance(fallback, ReasonCode) and fallback.value not in FALLBACK_REASON_CODES:
-        raise ReasonCodeRegistryError(f"reason_code_bad_fallback_reason:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_bad_fallback_reason:{definition.code}"
+        )
     if isinstance(fallback, str) and fallback not in FALLBACK_REASON_CODES:
-        raise ReasonCodeRegistryError(f"reason_code_bad_fallback_reason:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_bad_fallback_reason:{definition.code}"
+        )
     if not definition.canonicalization_behavior:
-        raise ReasonCodeRegistryError(f"reason_code_missing_canonicalization:{definition.code}")
+        raise ReasonCodeRegistryError(
+            f"reason_code_missing_canonicalization:{definition.code}"
+        )
 
 
 validate_reason_code_registry()

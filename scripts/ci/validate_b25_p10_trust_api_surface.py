@@ -15,8 +15,14 @@ ROOT = Path(__file__).resolve().parents[2]
 ROUTE_PATH = ROOT / "backend/app/api/trust_api.py"
 MAIN_PATH = ROOT / "backend/app/main.py"
 AUTH_PATH = ROOT / "backend/app/trust/machine_auth.py"
+ADAPTER_PATH = ROOT / "backend/app/trust/source_adapters.py"
+AUDIT_PATH = ROOT / "backend/app/trust/audit.py"
+TENANT_SECURITY_PATH = ROOT / "backend/app/trust/tenant_security.py"
+VERIFICATION_PATH = ROOT / "backend/app/trust/verification.py"
 RUNTIME_KEYS_PATH = ROOT / "backend/app/trust/runtime_keys.py"
 TEST_PATH = ROOT / "backend/tests/trust/test_b25_p10_trust_api_surface.py"
+CORRECTIVE_TEST_PATH = ROOT / "backend/tests/trust/test_b25_p10_corrective_action.py"
+POSTGRES_TEST_PATH = ROOT / "backend/tests/trust/test_b25_p10_postgres_physics.py"
 CONTRACT_PATH = ROOT / "contracts/trust-api/trust-api.openapi.yaml"
 WORKFLOW_PATH = ROOT / ".github/workflows/b2_5-p10-trust-api-surface.yml"
 MAKEFILE = ROOT / "Makefile"
@@ -47,6 +53,99 @@ def _imports(source: str) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             found.add(node.module)
     return found
+
+
+def _function_source(source: str, function_name: str) -> str:
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == function_name
+        ):
+            lines = source.splitlines()
+            return "\n".join(lines[node.lineno - 1 : node.end_lineno])
+    raise B25P10ValidationError(f"function_missing:{function_name}")
+
+
+def _integer_constant(source: str, name: str) -> int:
+    tree = ast.parse(source)
+
+    def evaluate(node: ast.AST) -> int:
+        if isinstance(node, ast.Constant) and isinstance(node.value, int):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+            return evaluate(node.left) * evaluate(node.right)
+        raise B25P10ValidationError(f"integer_constant_not_static:{name}")
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name
+            for target in node.targets
+        ):
+            return evaluate(node.value)
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+            and node.value is not None
+        ):
+            return evaluate(node.value)
+    raise B25P10ValidationError(f"integer_constant_missing:{name}")
+
+
+def _module_path(module_name: str) -> Path | None:
+    if not module_name.startswith("app"):
+        return None
+    relative = Path(*module_name.split("."))
+    module_file = ROOT / "backend" / relative.with_suffix(".py")
+    if module_file.exists():
+        return module_file
+    package_file = ROOT / "backend" / relative / "__init__.py"
+    return package_file if package_file.exists() else None
+
+
+def validate_transitive_trust_graph(overrides: dict[Path, str] | None = None) -> int:
+    """Reject compute imports/calls anywhere reachable from the Trust API route."""
+    overrides = overrides or {}
+    pending = [ROUTE_PATH]
+    visited: set[Path] = set()
+    forbidden_modules = ("app.llm", "app.tasks", "app.bayesian", "openai", "anthropic")
+    while pending:
+        path = pending.pop()
+        if path in visited:
+            continue
+        visited.add(path)
+        source = overrides.get(path, path.read_text(encoding="utf-8"))
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules = [node.module]
+            else:
+                modules = []
+            for module in modules:
+                _require(
+                    not any(
+                        module == forbidden or module.startswith(forbidden + ".")
+                        for forbidden in forbidden_modules
+                    ),
+                    f"transitive_compute_import:{path.relative_to(ROOT)}:{module}",
+                )
+                resolved = _module_path(module)
+                if resolved is not None and resolved not in visited:
+                    pending.append(resolved)
+            if isinstance(node, ast.Call):
+                call_name = ""
+                if isinstance(node.func, ast.Name):
+                    call_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    call_name = node.func.attr
+                _require(
+                    call_name not in {"delay", "apply_async", "create_task"},
+                    f"transitive_compute_dispatch:{path.relative_to(ROOT)}:{call_name}",
+                )
+    return len(visited)
 
 
 def validate_route_source(source: str) -> int:
@@ -101,8 +200,8 @@ def validate_query_contract(source: str, contract: str) -> int:
     checks = 0
     for token in (
         'model_config = ConfigDict(extra="forbid")',
-        "subject_types: list[TrustSubjectType] = Field(min_length=1, max_length=5)",
-        "subject_refs: list[str] = Field(min_length=1, max_length=50)",
+        "max_length=MAX_ACCEPTED_SUBJECT_TYPES",
+        "max_length=MAX_ACCEPTED_SUBJECT_REFS",
         "MAX_QUERY_RANGE = timedelta(days=30)",
         "MAX_QUERY_BODY_BYTES = 64 * 1024",
         "wildcard_or_regex_subject_ref_forbidden",
@@ -133,6 +232,159 @@ def validate_query_contract(source: str, contract: str) -> int:
         _require(token in contract, f"openapi_query_bound_missing:{token}")
         checks += 1
     return checks
+
+
+def validate_corrective_controls(sources: dict[Path, str]) -> int:
+    route = sources[ROUTE_PATH]
+    adapter = sources[ADAPTER_PATH]
+    tenant = sources[TENANT_SECURITY_PATH]
+    main = sources[MAIN_PATH]
+    audit = sources[AUDIT_PATH]
+    auth = sources[AUTH_PATH]
+    verification = sources[VERIFICATION_PATH]
+    contract = sources[CONTRACT_PATH]
+    corrective_tests = sources[CORRECTIVE_TEST_PATH]
+    postgres_tests = sources[POSTGRES_TEST_PATH]
+
+    query_adapter = _function_source(adapter, "query_match_verdict_sources")
+    _require("datetime.now" not in query_adapter, "temporal_request_clock_substitution")
+    for token in (
+        "updated_at >= :updated_at_after",
+        "updated_at <= :updated_at_before",
+        "ORDER BY updated_at ASC, id ASC",
+    ):
+        _require(
+            token in query_adapter, f"persisted_chronology_control_missing:{token}"
+        )
+    _require("_in_created_at_range" not in route, "issuance_time_filter_regression")
+
+    _require(
+        "SUPPORTED_TRUST_SUBJECT_TYPES = frozenset({TrustSubjectType.MATCH_VERDICT})"
+        in route,
+        "subject_capability_parity_not_exact",
+    )
+    _require(
+        "trust_api_p5_subject_capability_drift" in route,
+        "runtime_capability_guard_missing",
+    )
+    _require(
+        "RESERVED_TRUST_SUBJECT_TYPES" in route, "reserved_subject_behavior_missing"
+    )
+
+    returned = _integer_constant(route, "MAX_RETURNED_OUTCOMES")
+    signatures = _integer_constant(route, "MAX_SIGNATURES_PER_REQUEST")
+    audits = _integer_constant(route, "MAX_ISSUANCE_AUDIT_EFFECTS")
+    expanded = _integer_constant(route, "MAX_EXPANDED_LOOKUP_PAIRS")
+    individual = _integer_constant(route, "MAX_SERIALIZED_ENVELOPE_BYTES")
+    aggregate = _integer_constant(route, "MAX_AGGREGATE_RESPONSE_BYTES")
+    concurrency = _integer_constant(route, "MAX_CONCURRENT_QUERY_REQUESTS")
+    _require(1 <= returned <= 50, "unsafe_returned_item_limit")
+    _require(signatures == returned == audits, "sign_audit_cardinality_not_closed")
+    _require(1 <= concurrency <= 2, "query_concurrency_not_closed")
+    _require(individual <= 256 * 1024, "individual_envelope_ceiling_exceeded")
+    _require(aggregate <= 4 * 1024 * 1024, "aggregate_response_ceiling_exceeded")
+    _require(returned * individual + 1024 <= aggregate, "response_budget_math_open")
+    _require(expanded <= 50, "expanded_lookup_cardinality_unsafe")
+    _require(
+        "expanded_lookup_pair_limit_exceeded" in route,
+        "normalized_cardinality_gate_missing",
+    )
+    _require(
+        "_QUERY_CONCURRENCY_LIMIT" in route, "query_concurrency_enforcement_missing"
+    )
+
+    _require("OFFSET :" not in query_adapter.upper(), "deep_offset_exposed")
+    _require("LIMIT :row_limit" in query_adapter, "database_limit_missing")
+    _require("row_limit=MAX_RETURNED_OUTCOMES" in route, "fetch_limit_not_pushed_down")
+
+    tenant_assertion = _function_source(tenant, "assert_authenticated_tenant_context")
+    _require(
+        tenant_assertion.count("raise _tenant_context_exception") >= 6,
+        "tenant_context_not_fail_hard",
+    )
+    _require("HTTPException" not in tenant, "tenant_context_uses_framework_exception")
+    _require(
+        "class TenantContextMissingException(RuntimeError)" in tenant,
+        "typed_tenant_exception_missing",
+    )
+    _require(
+        "app.add_exception_handler(" in main
+        and "TenantContextMissingException" in main,
+        "tenant_handler_not_registered",
+    )
+    _require(
+        "record_tenant_context_failure_durable(exc)" in tenant,
+        "tenant_handler_audit_bypassed",
+    )
+    _require(
+        "record_trust_audit_event_durable(audit_request" in tenant,
+        "tenant_audit_not_autonomous",
+    )
+    for token in (
+        "requested_tenant != caller.tenant_id",
+        "transaction_tenant != caller.tenant_id",
+        "current_setting('app.current_tenant_id', true)",
+        "rolbypassrls",
+    ):
+        _require(token in tenant_assertion, f"tenant_identity_binding_missing:{token}")
+
+    json_response = _function_source(route, "_json_response")
+    _require("content=payload" in json_response, "wire_payload_mutated_after_signing")
+    _require(
+        "registry_from_public_jwks" in corrective_tests,
+        "fetched_jwks_wire_proof_missing",
+    )
+    verify_route = _function_source(route, "verify_supplied_trust_envelope")
+    _require(
+        "_json_response(projection)" in verify_route, "verify_projection_guard_bypassed"
+    )
+    _require(
+        'if "tenant_id" in payload' in route, "verify_projection_tenant_guard_missing"
+    )
+    _require(
+        "floating_point_money_response_forbidden" in route,
+        "verify_projection_money_guard_missing",
+    )
+    _require(
+        '"tenant_id": str(caller.tenant_id)' not in verify_route,
+        "raw_tenant_in_verify_projection",
+    )
+    _require(
+        "float_money" not in verification, "authoritative_float_in_verify_projection"
+    )
+
+    issuance = _function_source(audit, "build_unsigned_trust_envelope_with_audit")
+    _require(
+        "record_trust_audit_event_durable(" in issuance, "issuance_audit_not_durable"
+    )
+    rate = _function_source(auth, "_check_rate_limit")
+    _require("await db_session.commit()" in rate, "quota_consumption_rollback_coupled")
+    _require(
+        "now.tzinfo is None" in rate and "now.astimezone(timezone.utc)" in rate,
+        "rate_time_not_aware_utc",
+    )
+    _require(
+        '"window_start": window_start' in rate and ".isoformat()" not in rate,
+        "ambiguous_rate_timestamp_binding",
+    )
+    _require(_integer_constant(auth, "MIN_NONCE_LENGTH") == 16, "nonce_minimum_drift")
+    _require(_integer_constant(auth, "MAX_NONCE_LENGTH") == 256, "nonce_maximum_drift")
+    _require(
+        "MIN_NONCE_LENGTH <= len(nonce_header) <= MAX_NONCE_LENGTH" in auth,
+        "runtime_nonce_guard_missing",
+    )
+    _require(
+        "minLength: 16" in contract and "maxLength: 256" in contract,
+        "openapi_nonce_contract_drift",
+    )
+    _require(
+        "P10_RESOURCE_METRICS=" in postgres_tests, "resource_metrics_evidence_missing"
+    )
+
+    graph_count = validate_transitive_trust_graph(
+        {path: value for path, value in sources.items() if path.suffix == ".py"}
+    )
+    return 19 + graph_count
 
 
 def validate_rate_limit(source: str) -> int:
@@ -180,8 +432,14 @@ def validate_mount_and_governance() -> int:
     for path in (
         ROUTE_PATH,
         AUTH_PATH,
+        ADAPTER_PATH,
+        AUDIT_PATH,
+        TENANT_SECURITY_PATH,
+        VERIFICATION_PATH,
         RUNTIME_KEYS_PATH,
         TEST_PATH,
+        CORRECTIVE_TEST_PATH,
+        POSTGRES_TEST_PATH,
         CONTRACT_PATH,
         WORKFLOW_PATH,
         MAKEFILE,
@@ -201,46 +459,171 @@ def validate_mount_and_governance() -> int:
     return checks + 2
 
 
-def validate_negative_controls(route_source: str, auth_source: str) -> int:
+def validate_negative_controls(sources: dict[Path, str]) -> int:
+    def mutation(
+        path: Path, old: str, new: str, *, replace_all: bool = False
+    ) -> dict[Path, str]:
+        _require(
+            old in sources[path], f"negative_control_target_missing:{path.name}:{old}"
+        )
+        updated = dict(sources)
+        updated[path] = sources[path].replace(old, new, -1 if replace_all else 1)
+        return updated
+
     mutations = (
         (
-            lambda: validate_query_contract(
-                route_source.replace("max_length=50", "max_length=500", 1),
-                CONTRACT_PATH.read_text(encoding="utf-8"),
+            mutation(
+                ADAPTER_PATH,
+                "updated_at >= :updated_at_after",
+                "updated_at >= datetime.now(timezone.utc)",
             ),
-            "query_bound_mutation_survived",
+            "NC-P10-01",
         ),
         (
-            lambda: validate_route_source(
-                "from app.llm import output_validation\n" + route_source
+            mutation(
+                ROUTE_PATH,
+                "frozenset({TrustSubjectType.MATCH_VERDICT})",
+                "frozenset({TrustSubjectType.MATCH_VERDICT, TrustSubjectType.REVENUE_CLAIM})",
             ),
-            "llm_import_mutation_survived",
+            "NC-P10-02",
         ),
         (
-            lambda: validate_route_source(
-                route_source.replace(
-                    "required_scope=AgentScope.ENVELOPE_VERIFY",
-                    "required_scope=AgentScope.ENVELOPE_READ",
-                    1,
-                )
+            mutation(
+                ROUTE_PATH,
+                "MAX_RETURNED_OUTCOMES = 2",
+                "MAX_RETURNED_OUTCOMES = 50_000",
             ),
-            "verify_scope_mutation_survived",
+            "NC-P10-03",
         ),
         (
-            lambda: validate_rate_limit(
-                auth_source.replace("bucket_epoch", "request_epoch")
+            mutation(
+                ROUTE_PATH,
+                "MAX_AGGREGATE_RESPONSE_BYTES = 4 * 1024 * 1024",
+                "MAX_AGGREGATE_RESPONSE_BYTES = 8 * 1024 * 1024",
             ),
-            "rate_bucket_mutation_survived",
+            "NC-P10-04",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "MAX_EXPANDED_LOOKUP_PAIRS = 50",
+                "MAX_EXPANDED_LOOKUP_PAIRS = 250",
+            ),
+            "NC-P10-05",
+        ),
+        (
+            mutation(
+                ADAPTER_PATH,
+                "ORDER BY updated_at ASC, id ASC",
+                "ORDER BY updated_at ASC, id ASC OFFSET :offset",
+            ),
+            "NC-P10-06",
+        ),
+        (mutation(ADAPTER_PATH, "LIMIT :row_limit", ""), "NC-P10-07"),
+        (
+            mutation(
+                TENANT_SECURITY_PATH,
+                "if requested_tenant != caller.tenant_id:\n"
+                "        raise _tenant_context_exception(request, caller)",
+                "if requested_tenant != caller.tenant_id:\n" "        return caller",
+            ),
+            "NC-P10-08",
+        ),
+        (
+            mutation(
+                TENANT_SECURITY_PATH,
+                "class TenantContextMissingException(RuntimeError)",
+                "class TenantContextMissingException(HTTPException)",
+            ),
+            "NC-P10-09",
+        ),
+        (
+            mutation(
+                MAIN_PATH,
+                "app.add_exception_handler(",
+                "app.state.unregistered_exception_handler = (",
+            ),
+            "NC-P10-10",
+        ),
+        (
+            mutation(
+                TENANT_SECURITY_PATH,
+                "record_trust_audit_event_durable(audit_request",
+                "record_trust_audit_event(audit_request",
+            ),
+            "NC-P10-11",
+        ),
+        (
+            mutation(
+                TENANT_SECURITY_PATH, "requested_tenant != caller.tenant_id", "False"
+            ),
+            "NC-P10-12",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "content=payload",
+                'content={**payload, "wire_mutation": True}',
+            ),
+            "NC-P10-13",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "projection = result.external_projection()",
+                'projection = {**result.external_projection(), "tenant_id": str(caller.tenant_id)}',
+            ),
+            "NC-P10-14",
+        ),
+        (
+            mutation(
+                AUDIT_PATH,
+                "record_trust_audit_event_durable(",
+                "record_trust_audit_event(",
+                replace_all=True,
+            ),
+            "NC-P10-15",
+        ),
+        (
+            mutation(
+                AUTH_PATH,
+                "await db_session.commit()",
+                "await db_session.rollback()",
+                replace_all=True,
+            ),
+            "NC-P10-16",
+        ),
+        (
+            mutation(
+                AUTH_PATH,
+                "now = now.astimezone(timezone.utc)",
+                "now = now.replace(tzinfo=None)",
+            ),
+            "NC-P10-17",
+        ),
+        (
+            mutation(
+                AUTH_PATH, "MIN_NONCE_LENGTH: int = 16", "MIN_NONCE_LENGTH: int = 0"
+            ),
+            "NC-P10-18",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "from __future__ import annotations",
+                "from __future__ import annotations\nfrom app.tasks import dispatch_trust_compute",
+            ),
+            "NC-P10-19",
         ),
     )
     fired = 0
-    for mutation, message in mutations:
+    for mutated_sources, name in mutations:
         try:
-            mutation()
+            validate_corrective_controls(mutated_sources)
         except B25P10ValidationError:
             fired += 1
         else:
-            raise B25P10ValidationError(message)
+            raise B25P10ValidationError(f"negative_control_survived:{name}")
     return fired
 
 
@@ -270,9 +653,22 @@ def main() -> int:
     parser.add_argument("--skip-pytest", action="store_true")
     args = parser.parse_args()
 
-    route_source = ROUTE_PATH.read_text(encoding="utf-8")
-    auth_source = AUTH_PATH.read_text(encoding="utf-8")
-    contract_source = CONTRACT_PATH.read_text(encoding="utf-8")
+    source_paths = (
+        ROUTE_PATH,
+        MAIN_PATH,
+        AUTH_PATH,
+        ADAPTER_PATH,
+        AUDIT_PATH,
+        TENANT_SECURITY_PATH,
+        VERIFICATION_PATH,
+        CONTRACT_PATH,
+        CORRECTIVE_TEST_PATH,
+        POSTGRES_TEST_PATH,
+    )
+    sources = {path: path.read_text(encoding="utf-8") for path in source_paths}
+    route_source = sources[ROUTE_PATH]
+    auth_source = sources[AUTH_PATH]
+    contract_source = sources[CONTRACT_PATH]
     route_checks = validate_route_source(route_source)
     query_checks = validate_query_contract(route_source, contract_source)
     rate_checks = validate_rate_limit(auth_source)
@@ -280,21 +676,21 @@ def main() -> int:
         RUNTIME_KEYS_PATH.read_text(encoding="utf-8")
     )
     governance_checks = validate_mount_and_governance()
+    corrective_checks = validate_corrective_controls(sources)
     negative_checks = (
-        validate_negative_controls(route_source, auth_source)
-        if args.negative_control
-        else 0
+        validate_negative_controls(sources) if args.negative_control else 0
     )
     pytest_checks = run_pytest(args.skip_pytest)
 
     print("B25_P10_TRUST_API_SURFACE_VALIDATION_PASS")
     print(f"authorized_route_controls_passed={route_checks}")
     print(f"bounded_query_controls_passed={query_checks}")
-    print(f"verify_oracle_auth_controls_passed=1")
+    print("verify_oracle_auth_controls_passed=1")
     print(f"rate_limit_atomic_controls_passed={rate_checks}")
-    print(f"read_only_privacy_controls_passed=1")
+    print("read_only_privacy_controls_passed=1")
     print(f"runtime_key_controls_passed={key_checks}")
     print(f"governance_binding_controls_passed={governance_checks}")
+    print(f"corrective_controls_passed={corrective_checks}")
     print(f"negative_controls_fired={negative_checks}")
     print(f"pytest_controls_passed={pytest_checks}")
     print("unbounded_query_rejected=1")

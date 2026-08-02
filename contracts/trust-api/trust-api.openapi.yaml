@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Trust API Contract Authority
-  version: 1.0.0
+  version: 1.1.0
   description: >
     B2.5 contract authority for the P10 TrustEnvelope read, bounded-query,
     authenticated-verification, and public JWKS surfaces. It does not authorize
@@ -37,14 +37,32 @@ paths:
             application/json:
               schema:
                 $ref: "trust-envelope.v1.yaml"
+                x-max-serialized-bytes: 65536
         "400":
           $ref: "#/components/responses/TrustError"
         "403":
           $ref: "#/components/responses/TrustError"
+        "413":
+          $ref: "#/components/responses/TrustApiError"
+        "422":
+          $ref: "#/components/responses/TrustApiError"
+        "503":
+          $ref: "#/components/responses/TrustApiError"
   /api/trust/v1/envelopes/query:
     post:
       operationId: queryTrustEnvelopes
       summary: Bounded exact-match query for signed TrustEnvelopes
+      description: >
+        Exact-reference selection only. The normalized subject-type/reference
+        expansion may not exceed 50. Temporal predicates are inclusive and use
+        the persisted b23_match_verdicts.updated_at subject chronology; they do
+        not use envelope issuance or request time. OFFSET and caller-controlled
+        page size are not supported.
+      x-max-request-body-bytes: 65536
+      x-max-expanded-lookup-pairs: 50
+      x-max-returned-envelopes: 2
+      x-max-concurrent-query-executions-per-worker: 2
+      x-max-aggregate-response-bytes: 4194304
       security:
         - MachineBearer: []
       parameters:
@@ -82,9 +100,11 @@ paths:
                 created_at_after:
                   type: string
                   format: date-time
+                  description: Inclusive persisted subject updated_at lower bound.
                 created_at_before:
                   type: string
                   format: date-time
+                  description: Inclusive persisted subject updated_at upper bound.
       responses:
         "200":
           description: Query results.
@@ -98,12 +118,20 @@ paths:
                 properties:
                   envelopes:
                     type: array
+                    maxItems: 2
                     items:
                       $ref: "trust-envelope.v1.yaml"
+                    x-max-serialized-item-bytes: 65536
         "400":
           $ref: "#/components/responses/TrustError"
         "403":
           $ref: "#/components/responses/TrustError"
+        "413":
+          $ref: "#/components/responses/TrustApiError"
+        "422":
+          $ref: "#/components/responses/TrustApiError"
+        "503":
+          $ref: "#/components/responses/TrustApiError"
   /api/trust/v1/keys/jwks:
     get:
       operationId: getTrustJwks
@@ -137,6 +165,7 @@ paths:
     post:
       operationId: verifyTrustEnvelope
       summary: Authenticated verification of a supplied TrustEnvelope
+      x-max-request-body-bytes: 262144
       security:
         - MachineBearer: []
       parameters:
@@ -202,6 +231,12 @@ paths:
                       - "null"
         "400":
           $ref: "#/components/responses/TrustError"
+        "413":
+          $ref: "#/components/responses/TrustApiError"
+        "422":
+          $ref: "#/components/responses/TrustApiError"
+        "503":
+          $ref: "#/components/responses/TrustApiError"
 components:
   securitySchemes:
     MachineBearer:
@@ -246,12 +281,47 @@ components:
         application/json:
           schema:
             $ref: "error-envelope.schema.json"
+    TrustApiError:
+      description: Sanitized typed Trust API refusal or availability result.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TrustApiError"
   schemas:
     SubjectType:
       type: string
+      description: >
+        match_verdict is supported. The other values are reserved taxonomy and
+        deterministically return unsupported_subject_type; they never collapse
+        into subject_not_found.
       enum:
         - revenue_claim
         - match_verdict
         - attribution_result
         - reconciliation_discrepancy
         - confidence_projection
+      x-skeldir-supported-values:
+        - match_verdict
+      x-skeldir-reserved-values:
+        - revenue_claim
+        - attribution_result
+        - reconciliation_discrepancy
+        - confidence_projection
+    TrustApiError:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - reason_code
+      properties:
+        status:
+          type: string
+          enum:
+            - refused
+            - unavailable
+        reason_code:
+          type: string
+          enum:
+            - unsupported_subject_type
+            - response_budget_exceeded
+            - tenant_context_unavailable
