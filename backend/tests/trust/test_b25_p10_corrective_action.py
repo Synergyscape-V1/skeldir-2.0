@@ -454,7 +454,7 @@ async def test_verify_body_budget_rejects_before_auth_and_crypto(
             content=b"{" + b"x" * trust_api.MAX_VERIFY_BODY_BYTES + b"}",
         )
 
-    assert response.status_code == 422
+    assert response.status_code == 413
     assert auth_calls == 0
     assert crypto_calls == 0
 
@@ -593,14 +593,36 @@ async def test_tenant_context_audit_binds_trusted_client_route_stage_and_correla
     )
     captured: list[tuple[object, bool]] = []
 
-    async def writer(request, *, access_log_only=False):
+    async def writer(session, request, *, access_log_only=False):
+        _ = session
         captured.append((request, access_log_only))
 
     monkeypatch.setattr(
-        "app.trust.tenant_security.record_trust_audit_event_durable",
+        "app.trust.tenant_security.record_trust_audit_event",
         writer,
     )
-    await record_tenant_context_failure_durable(exc)
+
+    class AuditSession:
+        async def connection(self):
+            return self
+
+        async def execute(self, *args, **kwargs):
+            return None
+
+        async def commit(self):
+            return None
+
+    class AuditContext:
+        async def __aenter__(self):
+            return AuditSession()
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    await record_tenant_context_failure_durable(
+        exc,
+        audit_session_factory=AuditContext,
+    )
 
     request, access_log_only = captured[0]
     assert access_log_only is True

@@ -81,6 +81,7 @@ async def _seed_verdicts(
     tenant_id: UUID,
     count: int,
     base_time: datetime,
+    event_namespace: str = "",
 ) -> list[tuple[UUID, datetime]]:
     await connection.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
@@ -139,7 +140,11 @@ async def _seed_verdicts(
             ),
             {
                 "tenant_id": str(tenant_id),
-                "event_prefix": f"evt-{tenant_id}-",
+                "event_prefix": (
+                    f"evt-{tenant_id}-{event_namespace}-"
+                    if event_namespace
+                    else f"evt-{tenant_id}-"
+                ),
                 "base_time": base_time,
                 "row_count": count,
             },
@@ -223,13 +228,37 @@ async def test_postgres_temporal_authority_bounded_plan_and_large_history() -> N
             seeded = await _seed_verdicts(
                 connection,
                 tenant_id=tenant_id,
-                count=200,
+                count=5002,
                 base_time=base_time,
             )
 
-        selected_ids = [row[0] for row in seeded[:50]]
-        after = base_time + timedelta(hours=10)
-        before = base_time + timedelta(hours=20)
+        selected_ids = [row[0] for row in seeded[:2]]
+        after = base_time
+        before = base_time + timedelta(hours=3)
+
+        async def explain_exact_page(connection):
+            return await connection.scalar(
+                text(
+                    """
+                    EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+                    SELECT id
+                    FROM public.b23_match_verdicts
+                    WHERE tenant_id = :tenant_id
+                      AND id = ANY(CAST(:verdict_ids AS uuid[]))
+                      AND updated_at >= :updated_at_after
+                      AND updated_at <= :updated_at_before
+                    ORDER BY updated_at ASC, id ASC
+                    LIMIT 2
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "verdict_ids": [str(value) for value in selected_ids],
+                    "updated_at_after": after,
+                    "updated_at_before": before,
+                },
+            )
+
         async with runtime_engine.begin() as connection:
             await connection.execute(
                 text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
@@ -244,38 +273,47 @@ async def test_postgres_temporal_authority_bounded_plan_and_large_history() -> N
                 ],
                 updated_at_after=after,
                 updated_at_before=before,
-                row_limit=50,
+                row_limit=trust_api.MAX_EVALUATED_REFS_PER_PAGE,
             )
-            plan = await connection.scalar(
-                text(
-                    """
-                    EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-                    SELECT id
-                    FROM public.b23_match_verdicts
-                    WHERE tenant_id = :tenant_id
-                      AND id = ANY(CAST(:verdict_ids AS uuid[]))
-                      AND updated_at >= :updated_at_after
-                      AND updated_at <= :updated_at_before
-                    ORDER BY updated_at ASC, id ASC
-                    LIMIT 50
-                    """
-                ),
-                {
-                    "tenant_id": str(tenant_id),
-                    "verdict_ids": [str(value) for value in selected_ids],
-                    "updated_at_after": after,
-                    "updated_at_before": before,
-                },
-            )
+            plan_before_growth = await explain_exact_page(connection)
 
-        assert len(seeded) == 200 > trust_api.MAX_RETURNED_OUTCOMES
+        async with migration_engine.begin() as connection:
+            unrelated = await _seed_verdicts(
+                connection,
+                tenant_id=tenant_id,
+                count=5000,
+                base_time=base_time + timedelta(days=365),
+                event_namespace="unrelated",
+            )
+            await connection.execute(text("ANALYZE public.b23_match_verdicts"))
+
+        async with runtime_engine.begin() as connection:
+            await connection.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            plan_after_growth = await explain_exact_page(connection)
+
+        assert len(seeded) == 5002 > 2500 * trust_api.MAX_EVALUATED_REFS_PER_PAGE
+        assert len(unrelated) == 5000
         assert rows
         assert all(after <= row.updated_at <= before for row in rows)
-        assert len(rows) <= 50
-        document = plan[0]
-        assert document["Plan"]["Actual Rows"] <= 50
+        assert len(rows) <= trust_api.MAX_EVALUATED_REFS_PER_PAGE
+        before_document = plan_before_growth[0]
+        document = plan_after_growth[0]
+        query_plan = document["Plan"]
+        assert query_plan["Actual Rows"] <= trust_api.MAX_EVALUATED_REFS_PER_PAGE
         assert document["Execution Time"] < 1000
         assert "Offset" not in str(document)
+        assert "Seq Scan" not in str(document)
+        before_plan = before_document["Plan"]
+        before_blocks = before_plan.get("Shared Hit Blocks", 0) + before_plan.get(
+            "Shared Read Blocks", 0
+        )
+        after_blocks = query_plan.get("Shared Hit Blocks", 0) + query_plan.get(
+            "Shared Read Blocks", 0
+        )
+        assert after_blocks <= before_blocks + 32
     finally:
         await _delete_tenant(migration_engine, tenant_id)
         await runtime_engine.dispose()
@@ -686,7 +724,7 @@ async def test_postgres_maximum_query_resource_envelope(monkeypatch) -> None:
 
             results = await asyncio.wait_for(
                 asyncio.gather(*(request(index) for index in range(2))),
-                timeout=120,
+                timeout=15,
             )
             stop_sampling.set()
             await monitor
@@ -740,10 +778,11 @@ async def test_postgres_maximum_query_resource_envelope(monkeypatch) -> None:
         )
         assert peak_rss_bytes <= int(memory_limit * 0.70)
         assert max(allocation_samples) <= int(memory_limit * 0.70)
-        assert max(latencies) < 120_000
+        assert p95_request_ms <= 5_000
+        assert p99_request_ms <= 10_000
         assert max(event_loop_delays_ms, default=0.0) < 5_000
         assert max(pool_acquire_ms) < 5_000
-        assert max(connection_hold_ms) < 120_000
+        assert max(connection_hold_ms) <= 5_000
         assert max(response_bytes) / request_bytes < 100
         assert five_xx_count == 0
         assert process.pid == process_id

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Trust API Contract Authority
-  version: 1.1.0
+  version: 1.2.0
   description: >
     B2.5 contract authority for the P10 TrustEnvelope read, bounded-query,
     authenticated-verification, and public JWKS surfaces. It does not authorize
@@ -57,9 +57,13 @@ paths:
         expansion may not exceed 50. Temporal predicates are inclusive and use
         the persisted b23_match_verdicts.updated_at subject chronology; they do
         not use envelope issuance or request time. OFFSET and caller-controlled
-        page size are not supported.
+        page size are not supported. At most two accepted references are
+        evaluated per page. The opaque continuation advances over the immutable
+        caller-declared reference sequence, including nonmatching references,
+        until page.complete is true and remaining_count is zero.
       x-max-request-body-bytes: 65536
       x-max-expanded-lookup-pairs: 50
+      x-max-evaluated-references-per-page: 2
       x-max-returned-envelopes: 2
       x-max-concurrent-query-executions-per-worker: 2
       x-max-aggregate-response-bytes: 4194304
@@ -105,6 +109,16 @@ paths:
                   type: string
                   format: date-time
                   description: Inclusive persisted subject updated_at upper bound.
+                continuation_token:
+                  type:
+                    - string
+                    - "null"
+                  minLength: 1
+                  maxLength: 2048
+                  description: >
+                    Opaque, expiring, tenant/request/predicate-bound token from
+                    the immediately preceding page. It never changes admission
+                    or caller-controlled page size.
       responses:
         "200":
           description: Query results.
@@ -115,6 +129,8 @@ paths:
                 additionalProperties: false
                 required:
                   - envelopes
+                  - page
+                  - continuation_token
                 properties:
                   envelopes:
                     type: array
@@ -122,11 +138,49 @@ paths:
                     items:
                       $ref: "trust-envelope.v1.yaml"
                     x-max-serialized-item-bytes: 65536
+                  page:
+                    type: object
+                    additionalProperties: false
+                    required:
+                      - accepted_count
+                      - evaluated_count
+                      - page_evaluated_count
+                      - remaining_count
+                      - complete
+                    properties:
+                      accepted_count:
+                        type: integer
+                        minimum: 1
+                        maximum: 50
+                      evaluated_count:
+                        type: integer
+                        minimum: 1
+                        maximum: 50
+                        description: Cumulative accepted references evaluated.
+                      page_evaluated_count:
+                        type: integer
+                        minimum: 1
+                        maximum: 2
+                      remaining_count:
+                        type: integer
+                        minimum: 0
+                        maximum: 50
+                      complete:
+                        type: boolean
+                  continuation_token:
+                    type:
+                      - string
+                      - "null"
+                    maxLength: 2048
+                    description: >
+                      Required on nonterminal pages and null only when complete.
         "400":
           $ref: "#/components/responses/TrustError"
         "403":
           $ref: "#/components/responses/TrustError"
         "413":
+          $ref: "#/components/responses/TrustApiError"
+        "415":
           $ref: "#/components/responses/TrustApiError"
         "422":
           $ref: "#/components/responses/TrustApiError"
@@ -233,6 +287,8 @@ paths:
           $ref: "#/components/responses/TrustError"
         "413":
           $ref: "#/components/responses/TrustApiError"
+        "415":
+          $ref: "#/components/responses/TrustApiError"
         "422":
           $ref: "#/components/responses/TrustApiError"
         "503":
@@ -325,3 +381,8 @@ components:
             - unsupported_subject_type
             - response_budget_exceeded
             - tenant_context_unavailable
+            - request_body_too_large
+            - unsupported_content_encoding
+            - invalid_content_length
+            - continuation_invalid
+            - continuation_expired

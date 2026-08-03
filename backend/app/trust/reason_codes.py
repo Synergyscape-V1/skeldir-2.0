@@ -35,6 +35,8 @@ class ReasonCode(StrEnum):
     UNSUPPORTED_SUBJECT_TYPE = "unsupported_subject_type"
     RESPONSE_BUDGET_EXCEEDED = "response_budget_exceeded"
     TENANT_CONTEXT_MISSING = "tenant_context_missing"
+    CONTINUATION_INVALID = "continuation_invalid"
+    CONTINUATION_EXPIRED = "continuation_expired"
 
     # Compatibility codes already present in P1/P5 contracts or examples.
     SCHEMA_DOWNGRADE_REJECTED = "schema_downgrade_rejected"
@@ -69,6 +71,8 @@ REQUIRED_P6_REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.UNSUPPORTED_SUBJECT_TYPE,
         ReasonCode.RESPONSE_BUDGET_EXCEEDED,
         ReasonCode.TENANT_CONTEXT_MISSING,
+        ReasonCode.CONTINUATION_INVALID,
+        ReasonCode.CONTINUATION_EXPIRED,
     }
 )
 
@@ -370,6 +374,20 @@ REASON_CODE_REGISTRY: dict[ReasonCode, ReasonCodeDefinition] = {
         envelope_status="unavailable",
         policy="fail_closed_before_trust_data_access",
         audit="autonomous_security_audit_required_before_sanitized_503",
+        future_phase_owner="B2.5-P10",
+    ),
+    ReasonCode.CONTINUATION_INVALID: _definition(
+        ReasonCode.CONTINUATION_INVALID,
+        source_predicate="query_continuation_integrity_or_request_binding_invalid",
+        envelope_status="refused",
+        policy="fail_closed_before_exact_reference_source_access",
+        future_phase_owner="B2.5-P10",
+    ),
+    ReasonCode.CONTINUATION_EXPIRED: _definition(
+        ReasonCode.CONTINUATION_EXPIRED,
+        source_predicate="query_continuation_expiry_reached",
+        envelope_status="refused",
+        policy="fail_closed_before_exact_reference_source_access",
         future_phase_owner="B2.5-P10",
     ),
     ReasonCode.SCHEMA_DOWNGRADE_REJECTED: _definition(

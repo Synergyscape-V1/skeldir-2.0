@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -19,12 +20,16 @@ class ArrayOrderingError(ValueError):
     """Raised when an array field cannot be canonically ordered."""
 
 
+@lru_cache(maxsize=1)
 def _load_manifest() -> dict[str, Any]:
+    """Load the immutable, deploy-time manifest once per worker."""
     with MANIFEST_PATH.open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 
+@lru_cache(maxsize=1)
 def _array_rules() -> dict[str, dict[str, Any]]:
+    """Compile the immutable array-ordering lookup once per worker."""
     return {row["field_path"]: row for row in _load_manifest()["array_fields"]}
 
 
@@ -116,4 +121,3 @@ def validate_array_ordering_manifest_against_schema(
     if extra:
         raise ArrayOrderingError(f"array_manifest_unknown_paths:{extra}")
     return len(manifest_paths)
-

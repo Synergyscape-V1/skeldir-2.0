@@ -148,6 +148,10 @@ app.add_exception_handler(
     TenantContextMissingException,
     tenant_context_missing_exception_handler,
 )
+app.add_exception_handler(
+    trust_api.TrustRequestBoundaryException,
+    trust_api.trust_request_boundary_exception_handler,
+)
 
 
 @app.exception_handler(HTTPException)
