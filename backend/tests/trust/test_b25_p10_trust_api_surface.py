@@ -32,7 +32,6 @@ from app.trust.audit import (
 from app.trust.machine_auth import MachineCallerContext, _check_rate_limit
 from app.trust.machine_identity import AgentScope
 from app.trust.refusal import tagged_sha256, tenant_hash
-from app.trust.signing import sign_trust_envelope
 from app.trust.verification import verify_trust_envelope
 
 
@@ -227,7 +226,8 @@ async def test_unbounded_or_authority_elevating_query_rejected_before_db(
             json=payload,
         )
 
-    assert response.status_code == 422, response.text
+    expected_status = 413 if payload["subject_refs"] == ["x" * (64 * 1024)] else 422
+    assert response.status_code == expected_status, response.text
     assert db_touches == 0
 
 

@@ -42,6 +42,8 @@
         "unsupported_subject_type",
         "response_budget_exceeded",
         "tenant_context_missing",
+        "continuation_invalid",
+        "continuation_expired",
         "schema_downgrade_rejected",
         "canonical_timestamp_rejected",
         "human_workflow_state_rejected",

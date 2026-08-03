@@ -598,10 +598,12 @@ def inspect_static_text(path: Path, text: str) -> list[str]:
     if "json.dumps" in text and path.name not in {
         "canonicalization.py",
         "array_ordering.py",
+        "query_continuation.py",
     }:
         violations.append(f"{path.as_posix()}:json.dumps")
     if (
-        path.name in {"canonicalization.py", "array_ordering.py"}
+        path.name
+        in {"canonicalization.py", "array_ordering.py", "query_continuation.py"}
         and "json.dumps" in text
     ):
         if "allow_nan=False" not in text:

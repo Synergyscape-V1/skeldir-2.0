@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -17,12 +18,16 @@ class HashDomainError(ValueError):
     """Raised when hash-domain classification is missing or invalid."""
 
 
+@lru_cache(maxsize=1)
 def _load_manifest() -> dict[str, Any]:
+    """Load the immutable, deploy-time manifest once per worker."""
     with MANIFEST_PATH.open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 
+@lru_cache(maxsize=1)
 def _field_domains() -> dict[str, str]:
+    """Compile the immutable field-domain lookup once per worker."""
     domains: dict[str, str] = {}
     for row in _load_manifest()["field_domains"]:
         path = row["field_path"]
@@ -92,4 +97,3 @@ def project_domain_payload(payload: dict[str, Any], domain: str) -> dict[str, An
     if not isinstance(projected, dict):
         raise HashDomainError("hash_domain_projection_not_object")
     return projected
-

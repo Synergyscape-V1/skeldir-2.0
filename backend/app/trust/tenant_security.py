@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -11,7 +13,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.trust.audit import TrustAuditRequest, record_trust_audit_event_durable
+from app.trust.audit import (
+    AuditSessionFactory,
+    TrustAuditRequest,
+    record_trust_audit_event,
+)
 from app.trust.machine_auth import MachineCallerContext
 from app.trust.reason_codes import ReasonCode
 from app.trust.refusal import tagged_sha256, tenant_hash
@@ -20,6 +26,17 @@ from app.trust.refusal import tagged_sha256, tenant_hash
 logger = logging.getLogger(__name__)
 TENANT_CONTEXT_FAILURE_STAGE = "post_auth_transaction_rls_assertion"
 TENANT_CONTEXT_EXTERNAL_REASON = "tenant_context_unavailable"
+TENANT_AUDIT_ACQUIRE_TIMEOUT_SECONDS = 0.250
+TENANT_AUDIT_OPERATION_TIMEOUT_SECONDS = 0.750
+TENANT_HANDLER_TIMEOUT_SECONDS = 1.500
+TENANT_EMERGENCY_SIGNAL_TIMEOUT_SECONDS = 0.250
+TENANT_FAILURE_MAX_IN_FLIGHT = 16
+TENANT_EMERGENCY_BUFFER_SIZE = 256
+_TENANT_FAILURE_SLOTS = asyncio.Semaphore(TENANT_FAILURE_MAX_IN_FLIGHT)
+_EMERGENCY_LOG_SLOTS = asyncio.Semaphore(8)
+TENANT_EMERGENCY_SIGNALS: deque[dict[str, str]] = deque(
+    maxlen=TENANT_EMERGENCY_BUFFER_SIZE
+)
 
 
 class TenantContextMissingException(RuntimeError):
@@ -124,8 +141,10 @@ async def assert_authenticated_tenant_context(
 
 async def record_tenant_context_failure_durable(
     exc: TenantContextMissingException,
+    *,
+    audit_session_factory: AuditSessionFactory | None = None,
 ) -> None:
-    """Commit the security failure through P7's independent audit transaction."""
+    """Commit through P7 with separate acquisition and operation deadlines."""
     client_hash = tagged_sha256(
         {
             "agent_client_id": str(exc.agent_client_id),
@@ -151,29 +170,110 @@ async def record_tenant_context_failure_durable(
         created_at=datetime.now(timezone.utc),
         created_at_source="request_issuance_context",
     )
-    await record_trust_audit_event_durable(audit_request, access_log_only=True)
+    if audit_session_factory is None:
+        from app.db.session import AsyncSessionLocal
+
+        audit_session_factory = AsyncSessionLocal
+
+    async with audit_session_factory() as audit_session:
+        await asyncio.wait_for(
+            audit_session.connection(),
+            timeout=TENANT_AUDIT_ACQUIRE_TIMEOUT_SECONDS,
+        )
+
+        async def _persist_and_commit() -> None:
+            await audit_session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(exc.tenant_id)},
+            )
+            await record_trust_audit_event(
+                audit_session,
+                audit_request,
+                access_log_only=True,
+            )
+            await audit_session.commit()
+
+        await asyncio.wait_for(
+            _persist_and_commit(),
+            timeout=TENANT_AUDIT_OPERATION_TIMEOUT_SECONDS,
+        )
+
+
+def _emergency_signal_material(exc: TenantContextMissingException) -> dict[str, str]:
+    return {
+        "event_type": "tenant_context_audit_failure",
+        "tenant_id_hash": tenant_hash(exc.tenant_id),
+        "agent_client_id_hash": tagged_sha256(str(exc.agent_client_id)),
+        "correlation_identity_hash": tagged_sha256(exc.correlation_identity),
+        "route_template": exc.route_template,
+        "failure_stage": exc.failure_stage,
+        "audit_outcome": "emergency_only",
+    }
+
+
+async def _emit_tenant_context_emergency_signal(
+    exc: TenantContextMissingException,
+    failure: BaseException,
+) -> None:
+    """Dispatch a bounded PII-free critical signal even when the DB is unavailable."""
+    material = _emergency_signal_material(exc)
+    TENANT_EMERGENCY_SIGNALS.append(material)
+
+    def _write_log() -> None:
+        logger.critical(
+            "Trust tenant-context audit persistence failed",
+            extra=material,
+            exc_info=(type(failure), failure, failure.__traceback__),
+        )
+
+    async def _bounded_log_slot() -> None:
+        async with _EMERGENCY_LOG_SLOTS:
+            await asyncio.to_thread(_write_log)
+
+    try:
+        await asyncio.wait_for(
+            _bounded_log_slot(),
+            timeout=TENANT_EMERGENCY_SIGNAL_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        # The bounded in-memory signal above remains authoritative emergency
+        # evidence even when logging infrastructure is itself unavailable.
+        return
 
 
 async def tenant_context_missing_exception_handler(
     request: Request,
     exc: TenantContextMissingException,
 ) -> JSONResponse:
-    """Durably audit and emit one sanitized, non-oracular availability failure."""
+    """Finish durable-audit or emergency-only handling within 1.5 seconds."""
+
+    def _set_audit_outcome(value: str) -> None:
+        state = getattr(request, "state", None)
+        if state is not None:
+            state.tenant_context_audit_outcome = value
+
+    async def _audit_or_signal() -> None:
+        acquired = False
+        try:
+            await asyncio.wait_for(_TENANT_FAILURE_SLOTS.acquire(), timeout=0.010)
+            acquired = True
+            await record_tenant_context_failure_durable(exc)
+            _set_audit_outcome("durable_committed")
+        except Exception as failure:
+            _set_audit_outcome("emergency_only")
+            await _emit_tenant_context_emergency_signal(exc, failure)
+        finally:
+            if acquired:
+                _TENANT_FAILURE_SLOTS.release()
+
     try:
-        await record_tenant_context_failure_durable(exc)
-    except Exception:
-        logger.critical(
-            "Trust tenant-context audit persistence failed",
-            extra={
-                "event_type": "tenant_context_audit_failure",
-                "tenant_id_hash": tenant_hash(exc.tenant_id),
-                "agent_client_id_hash": tagged_sha256(str(exc.agent_client_id)),
-                "correlation_identity_hash": tagged_sha256(exc.correlation_identity),
-                "route_template": exc.route_template,
-                "failure_stage": exc.failure_stage,
-            },
-            exc_info=True,
+        await asyncio.wait_for(
+            _audit_or_signal(),
+            timeout=TENANT_HANDLER_TIMEOUT_SECONDS,
         )
+    except Exception:
+        _set_audit_outcome("emergency_only")
+        TENANT_EMERGENCY_SIGNALS.append(_emergency_signal_material(exc))
     return JSONResponse(
         status_code=503,
         content={

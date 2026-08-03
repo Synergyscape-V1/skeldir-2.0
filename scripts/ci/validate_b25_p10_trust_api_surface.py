@@ -18,10 +18,17 @@ AUTH_PATH = ROOT / "backend/app/trust/machine_auth.py"
 ADAPTER_PATH = ROOT / "backend/app/trust/source_adapters.py"
 AUDIT_PATH = ROOT / "backend/app/trust/audit.py"
 TENANT_SECURITY_PATH = ROOT / "backend/app/trust/tenant_security.py"
+CONTINUATION_PATH = ROOT / "backend/app/trust/query_continuation.py"
+HASH_DOMAINS_PATH = ROOT / "backend/app/trust/hash_domains.py"
+ARRAY_ORDERING_PATH = ROOT / "backend/app/trust/array_ordering.py"
+SCHEMA_VERSIONS_PATH = ROOT / "backend/app/trust/schema_versions.py"
 VERIFICATION_PATH = ROOT / "backend/app/trust/verification.py"
 RUNTIME_KEYS_PATH = ROOT / "backend/app/trust/runtime_keys.py"
 TEST_PATH = ROOT / "backend/tests/trust/test_b25_p10_trust_api_surface.py"
 CORRECTIVE_TEST_PATH = ROOT / "backend/tests/trust/test_b25_p10_corrective_action.py"
+CORRECTIVE_II_TEST_PATH = (
+    ROOT / "backend/tests/trust/test_b25_p10_corrective_action_ii.py"
+)
 POSTGRES_TEST_PATH = ROOT / "backend/tests/trust/test_b25_p10_postgres_physics.py"
 CONTRACT_PATH = ROOT / "contracts/trust-api/trust-api.openapi.yaml"
 WORKFLOW_PATH = ROOT / ".github/workflows/b2_5-p10-trust-api-surface.yml"
@@ -204,6 +211,7 @@ def validate_query_contract(source: str, contract: str) -> int:
         "max_length=MAX_ACCEPTED_SUBJECT_REFS",
         "MAX_QUERY_RANGE = timedelta(days=30)",
         "MAX_QUERY_BODY_BYTES = 64 * 1024",
+        "MAX_EVALUATED_REFS_PER_PAGE = 2",
         "wildcard_or_regex_subject_ref_forbidden",
         "subject_types_must_be_unique",
         "query_date_range_exceeds_30_days",
@@ -227,6 +235,10 @@ def validate_query_contract(source: str, contract: str) -> int:
         "maxItems: 50",
         "created_at_after:",
         "created_at_before:",
+        "continuation_token:",
+        "page:",
+        "remaining_count:",
+        "complete:",
         "additionalProperties: false",
     ):
         _require(token in contract, f"openapi_query_bound_missing:{token}")
@@ -295,7 +307,7 @@ def validate_corrective_controls(sources: dict[Path, str]) -> int:
 
     _require("OFFSET :" not in query_adapter.upper(), "deep_offset_exposed")
     _require("LIMIT :row_limit" in query_adapter, "database_limit_missing")
-    _require("row_limit=MAX_RETURNED_OUTCOMES" in route, "fetch_limit_not_pushed_down")
+    _require("row_limit=len(page_refs)" in route, "fetch_limit_not_pushed_down")
 
     tenant_assertion = _function_source(tenant, "assert_authenticated_tenant_context")
     _require(
@@ -308,8 +320,8 @@ def validate_corrective_controls(sources: dict[Path, str]) -> int:
         "typed_tenant_exception_missing",
     )
     _require(
-        "app.add_exception_handler(" in main
-        and "TenantContextMissingException" in main,
+        "app.add_exception_handler(\n    TenantContextMissingException,\n"
+        "    tenant_context_missing_exception_handler,\n)" in main,
         "tenant_handler_not_registered",
     )
     _require(
@@ -317,8 +329,9 @@ def validate_corrective_controls(sources: dict[Path, str]) -> int:
         "tenant_handler_audit_bypassed",
     )
     _require(
-        "record_trust_audit_event_durable(audit_request" in tenant,
-        "tenant_audit_not_autonomous",
+        "record_trust_audit_event(" in tenant
+        and "await audit_session.commit()" in tenant,
+        "tenant_audit_not_explicitly_committed",
     )
     for token in (
         "requested_tenant != caller.tenant_id",
@@ -380,11 +393,197 @@ def validate_corrective_controls(sources: dict[Path, str]) -> int:
     _require(
         "P10_RESOURCE_METRICS=" in postgres_tests, "resource_metrics_evidence_missing"
     )
+    _require("p95_request_ms <= 5_000" in postgres_tests, "p95_slo_missing")
+    _require("p99_request_ms <= 10_000" in postgres_tests, "p99_slo_missing")
 
     graph_count = validate_transitive_trust_graph(
         {path: value for path, value in sources.items() if path.suffix == ".py"}
     )
     return 19 + graph_count
+
+
+def validate_directive_ii_controls(sources: dict[Path, str]) -> int:
+    """Adjudicate work conservation, bounded ingress, liveness, and CI SLOs."""
+    route = sources[ROUTE_PATH]
+    cursor = sources[CONTINUATION_PATH]
+    tenant = sources[TENANT_SECURITY_PATH]
+    contract = sources[CONTRACT_PATH]
+    tests = sources[CORRECTIVE_II_TEST_PATH]
+    postgres_tests = sources[POSTGRES_TEST_PATH]
+    checks = 0
+
+    accepted = _integer_constant(route, "MAX_ACCEPTED_SUBJECT_REFS")
+    evaluated = _integer_constant(route, "MAX_EVALUATED_REFS_PER_PAGE")
+    returned = _integer_constant(route, "MAX_RETURNED_OUTCOMES")
+    _require(accepted == 50, "accepted_work_limit_drift")
+    _require(evaluated == returned == 2, "evaluation_output_capacity_drift")
+    checks += 2
+
+    page_model = route.split("class TrustQueryPageState", 1)[1].split(
+        "class TrustQueryResponse", 1
+    )[0]
+    for token in (
+        "accepted_count",
+        "evaluated_count",
+        "page_evaluated_count",
+        "remaining_count",
+        "complete",
+        "self.evaluated_count + self.remaining_count != self.accepted_count",
+        "self.complete != (self.remaining_count == 0)",
+    ):
+        _require(token in page_model, f"page_conservation_schema_missing:{token}")
+        checks += 1
+    response_model = route.split("class TrustQueryResponse", 1)[1].split(
+        "class TrustVerifyRequest", 1
+    )[0]
+    for token in (
+        "continuation_token",
+        "nonterminal_query_page_missing_continuation",
+        "terminal_query_page_has_continuation",
+    ):
+        _require(token in response_model, f"completion_contract_missing:{token}")
+        checks += 1
+
+    query = _function_source(route, "_query_trust_envelopes_with_capacity")
+    for token in (
+        "trust_query_binding_hash(",
+        "verify_trust_query_continuation(",
+        "start_position + MAX_EVALUATED_REFS_PER_PAGE",
+        "page_refs = query.subject_refs[start_position:end_position]",
+        "subject_refs=page_refs",
+        "row_limit=len(page_refs)",
+        "sources_by_id = {source.id: source for source in sources}",
+        "for page_offset, subject_ref in enumerate(page_refs)",
+        "global_position = start_position + page_offset",
+        "remaining_count = accepted_count - end_position",
+        "complete = remaining_count == 0",
+        "continuation_token = issue_trust_query_continuation(",
+        "next_position=end_position",
+    ):
+        _require(token in query, f"work_conservation_control_missing:{token}")
+        checks += 1
+    _require("OFFSET :" not in query.upper(), "continuation_degenerated_to_offset")
+    checks += 1
+
+    for token in (
+        'CURSOR_PREFIX = "p10c1"',
+        'b"skeldir:b25-p10:query-continuation:v1\\x00"',
+        '"tenant_id_hash": tenant_hash(tenant_id)',
+        '"subject_types": list(subject_types)',
+        '"subject_refs": list(subject_refs)',
+        '"updated_at_after": _normalized_timestamp(updated_at_after)',
+        '"updated_at_before": _normalized_timestamp(updated_at_before)',
+        "key.private_key.sign(",
+        "verification_key.public_key.verify(",
+        "hmac.compare_digest(binding_hash, expected_binding_hash)",
+        "now.astimezone(timezone.utc) >= expires_at",
+        "_b64url(signature) != encoded_signature",
+    ):
+        _require(token in cursor, f"cursor_authority_control_missing:{token}")
+        checks += 1
+    for forbidden in (
+        '"tenant_id":',
+        '"subject_ref":',
+        '"subject_refs": list(subject_refs)',
+    ):
+        if forbidden == '"subject_refs": list(subject_refs)':
+            continue
+        issue = _function_source(cursor, "issue_trust_query_continuation")
+        _require(
+            forbidden not in issue, f"cursor_exposes_sensitive_material:{forbidden}"
+        )
+        checks += 1
+
+    reader = _function_source(route, "_read_bounded_request_body")
+    for token in (
+        'request.headers.get("content-encoding", "")',
+        'if content_encoding not in {"", "identity"}',
+        "unsupported_content_encoding",
+        'request.headers.get("content-length")',
+        "invalid_content_length",
+        "parsed_length > limit",
+        "async for chunk in request.stream()",
+        "remaining = limit + 1 - len(payload)",
+        "len(payload) > limit",
+        "p10_ingress_bytes_consumed",
+    ):
+        _require(token in reader, f"streaming_ingress_control_missing:{token}")
+        checks += 1
+    _require(
+        "async for chunk in request.body()" not in reader,
+        "post_buffer_body_reader_regression",
+    )
+    checks += 1
+    for function_name in (
+        "validate_trust_query_request",
+        "validate_trust_verify_request",
+    ):
+        validator = _function_source(route, function_name)
+        _require(
+            "_read_bounded_request_body" in validator
+            and "await request.body()" not in validator,
+            f"bounded_reader_not_authoritative:{function_name}",
+        )
+        checks += 1
+
+    for token in (
+        "TENANT_AUDIT_ACQUIRE_TIMEOUT_SECONDS = 0.250",
+        "TENANT_AUDIT_OPERATION_TIMEOUT_SECONDS = 0.750",
+        "TENANT_HANDLER_TIMEOUT_SECONDS = 1.500",
+        "TENANT_EMERGENCY_SIGNAL_TIMEOUT_SECONDS = 0.250",
+        "TENANT_FAILURE_MAX_IN_FLIGHT = 16",
+        "TENANT_EMERGENCY_BUFFER_SIZE = 256",
+        "timeout=TENANT_AUDIT_ACQUIRE_TIMEOUT_SECONDS",
+        "audit_session.connection(),",
+        "timeout=TENANT_AUDIT_OPERATION_TIMEOUT_SECONDS",
+        "_audit_or_signal(),",
+        "timeout=TENANT_HANDLER_TIMEOUT_SECONDS",
+        '_set_audit_outcome("durable_committed")',
+        '_set_audit_outcome("emergency_only")',
+    ):
+        _require(token in tenant, f"tenant_liveness_control_missing:{token}")
+        checks += 1
+
+    cache_counts = {
+        HASH_DOMAINS_PATH: 2,
+        ARRAY_ORDERING_PATH: 2,
+        SCHEMA_VERSIONS_PATH: 1,
+    }
+    for path, expected_count in cache_counts.items():
+        _require(
+            sources[path].count("@lru_cache") == expected_count,
+            f"immutable_contract_cache_missing:{path.name}",
+        )
+        checks += 1
+    for token in (
+        "count=5002",
+        '"Seq Scan" not in str(document)',
+        '"Shared Hit Blocks"',
+        "p95_request_ms <= 5_000",
+        "p99_request_ms <= 10_000",
+    ):
+        _require(token in postgres_tests, f"postgres_physics_proof_missing:{token}")
+        checks += 1
+    for token in (
+        "test_complete_fifty_reference_lifecycle_conserves_every_input_once",
+        "test_cursor_tenant_request_predicate_integrity_expiry_and_retry",
+        "test_streaming_ingress_exact_limit_and_declared_overage",
+        "test_tenant_failure_handler_saturates_to_emergency_within_total_deadline",
+    ):
+        _require(token in tests, f"directive_ii_test_missing:{token}")
+        checks += 1
+    for token in (
+        "continuation_token:",
+        "page:",
+        "accepted_count:",
+        "evaluated_count:",
+        "remaining_count:",
+        "complete:",
+        "unsupported_content_encoding",
+    ):
+        _require(token in contract, f"directive_ii_contract_missing:{token}")
+        checks += 1
+    return checks
 
 
 def validate_rate_limit(source: str) -> int:
@@ -435,10 +634,15 @@ def validate_mount_and_governance() -> int:
         ADAPTER_PATH,
         AUDIT_PATH,
         TENANT_SECURITY_PATH,
+        CONTINUATION_PATH,
+        HASH_DOMAINS_PATH,
+        ARRAY_ORDERING_PATH,
+        SCHEMA_VERSIONS_PATH,
         VERIFICATION_PATH,
         RUNTIME_KEYS_PATH,
         TEST_PATH,
         CORRECTIVE_TEST_PATH,
+        CORRECTIVE_II_TEST_PATH,
         POSTGRES_TEST_PATH,
         CONTRACT_PATH,
         WORKFLOW_PATH,
@@ -548,8 +752,8 @@ def validate_negative_controls(sources: dict[Path, str]) -> int:
         (
             mutation(
                 TENANT_SECURITY_PATH,
-                "record_trust_audit_event_durable(audit_request",
-                "record_trust_audit_event(audit_request",
+                "await record_trust_audit_event(\n                audit_session,",
+                "await record_trust_audit_event_durable(\n                audit_session,",
             ),
             "NC-P10-11",
         ),
@@ -615,11 +819,133 @@ def validate_negative_controls(sources: dict[Path, str]) -> int:
             ),
             "NC-P10-19",
         ),
+    ) + (
+        (
+            mutation(
+                ROUTE_PATH,
+                "continuation_token = issue_trust_query_continuation(",
+                "continuation_token = disabled_issue_trust_query_continuation(",
+            ),
+            "NC-P10-II-01-continuation-omitted",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "complete = remaining_count == 0",
+                "complete = True",
+            ),
+            "NC-P10-II-02-false-complete",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "remaining_count = accepted_count - end_position",
+                "remaining_count = accepted_count - len(envelopes)",
+            ),
+            "NC-P10-II-03-progress-by-output",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "subject_refs=page_refs",
+                "subject_refs=query.subject_refs",
+            ),
+            "NC-P10-II-04-unbounded-source-work",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "MAX_ACCEPTED_SUBJECT_REFS = 50",
+                "MAX_ACCEPTED_SUBJECT_REFS = 51",
+            ),
+            "NC-P10-II-05-contract-runtime-drift",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "MAX_EVALUATED_REFS_PER_PAGE = 2",
+                "MAX_EVALUATED_REFS_PER_PAGE = 3",
+            ),
+            "NC-P10-II-06-evaluation-capacity-drift",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "MAX_RETURNED_OUTCOMES = 2",
+                "MAX_RETURNED_OUTCOMES = 3",
+            ),
+            "NC-P10-II-07-output-capacity-drift",
+        ),
+        (
+            mutation(
+                CONTINUATION_PATH,
+                '"tenant_id_hash": tenant_hash(tenant_id)',
+                '"tenant_id_hash": "omitted"',
+            ),
+            "NC-P10-II-08-cross-tenant-replay",
+        ),
+        (
+            mutation(
+                CONTINUATION_PATH,
+                '"subject_refs": list(subject_refs)',
+                '"subject_refs": []',
+            ),
+            "NC-P10-II-09-cross-request-replay",
+        ),
+        (
+            mutation(
+                CONTINUATION_PATH,
+                "verification_key.public_key.verify(",
+                "disabled_public_key_verify(",
+            ),
+            "NC-P10-II-10-unsigned-cursor",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                "request.stream()",
+                "request.body()",
+            ),
+            "NC-P10-II-11-post-buffer-ingress",
+        ),
+        (
+            mutation(
+                ROUTE_PATH,
+                'if content_encoding not in {"", "identity"}:',
+                "if False:",
+            ),
+            "NC-P10-II-12-compression-bypass",
+        ),
+        (
+            mutation(
+                TENANT_SECURITY_PATH,
+                "audit_session.connection(),",
+                "asyncio.sleep(60),",
+            ),
+            "NC-P10-II-13-acquisition-not-bounded",
+        ),
+        (
+            mutation(
+                TENANT_SECURITY_PATH,
+                "TENANT_HANDLER_TIMEOUT_SECONDS = 1.500",
+                "TENANT_HANDLER_TIMEOUT_SECONDS = 15.000",
+            ),
+            "NC-P10-II-14-handler-liveness-drift",
+        ),
+        (
+            mutation(
+                HASH_DOMAINS_PATH,
+                "@lru_cache(maxsize=1)",
+                "# cache removed by latency negative control",
+            ),
+            "NC-P10-II-15-latency-regression",
+        ),
     )
     fired = 0
     for mutated_sources, name in mutations:
         try:
             validate_corrective_controls(mutated_sources)
+            validate_directive_ii_controls(mutated_sources)
         except B25P10ValidationError:
             fired += 1
         else:
@@ -633,7 +959,15 @@ def run_pytest(skip_pytest: bool) -> int:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "backend") + os.pathsep + env.get("PYTHONPATH", "")
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", str(TEST_PATH), "-q"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(TEST_PATH),
+            str(CORRECTIVE_TEST_PATH),
+            str(CORRECTIVE_II_TEST_PATH),
+            "-q",
+        ],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -660,9 +994,14 @@ def main() -> int:
         ADAPTER_PATH,
         AUDIT_PATH,
         TENANT_SECURITY_PATH,
+        CONTINUATION_PATH,
+        HASH_DOMAINS_PATH,
+        ARRAY_ORDERING_PATH,
+        SCHEMA_VERSIONS_PATH,
         VERIFICATION_PATH,
         CONTRACT_PATH,
         CORRECTIVE_TEST_PATH,
+        CORRECTIVE_II_TEST_PATH,
         POSTGRES_TEST_PATH,
     )
     sources = {path: path.read_text(encoding="utf-8") for path in source_paths}
@@ -677,6 +1016,7 @@ def main() -> int:
     )
     governance_checks = validate_mount_and_governance()
     corrective_checks = validate_corrective_controls(sources)
+    directive_ii_checks = validate_directive_ii_controls(sources)
     negative_checks = (
         validate_negative_controls(sources) if args.negative_control else 0
     )
@@ -691,6 +1031,7 @@ def main() -> int:
     print(f"runtime_key_controls_passed={key_checks}")
     print(f"governance_binding_controls_passed={governance_checks}")
     print(f"corrective_controls_passed={corrective_checks}")
+    print(f"directive_ii_controls_passed={directive_ii_checks}")
     print(f"negative_controls_fired={negative_checks}")
     print(f"pytest_controls_passed={pytest_checks}")
     print("unbounded_query_rejected=1")

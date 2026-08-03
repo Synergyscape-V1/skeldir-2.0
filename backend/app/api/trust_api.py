@@ -29,6 +29,14 @@ from app.trust.builder import TrustEnvelopeBuildRequest
 from app.trust.key_registry import TrustKeyRegistry
 from app.trust.machine_auth import MachineCallerContext, authenticate_machine_caller
 from app.trust.machine_identity import AgentScope
+from app.trust.query_continuation import (
+    MAX_CURSOR_TOKEN_BYTES,
+    TrustQueryContinuationError,
+    continuation_expiry,
+    issue_trust_query_continuation,
+    trust_query_binding_hash,
+    verify_trust_query_continuation,
+)
 from app.trust.reason_codes import ReasonCode
 from app.trust.runtime_keys import (
     RuntimeTrustKeyConfigurationError,
@@ -39,6 +47,7 @@ from app.trust.signing import sign_trust_envelope
 from app.trust.source_adapters import (
     SUPPORTED_P5_SUBJECT_TYPES,
     MatchVerdictSource,
+    parse_match_verdict_subject_ref,
     query_match_verdict_sources,
 )
 from app.trust.tenant_security import assert_authenticated_tenant_context
@@ -56,6 +65,7 @@ MAX_QUERY_BODY_BYTES = 64 * 1024
 MAX_ACCEPTED_SUBJECT_TYPES = 5
 MAX_ACCEPTED_SUBJECT_REFS = 50
 MAX_EXPANDED_LOOKUP_PAIRS = 50
+MAX_EVALUATED_REFS_PER_PAGE = 2
 MAX_RETURNED_OUTCOMES = 2
 MAX_SIGNATURES_PER_REQUEST = 2
 MAX_ISSUANCE_AUDIT_EFFECTS = 2
@@ -85,6 +95,11 @@ _FORBIDDEN_QUERY_TOKENS = (
 )
 
 
+def _utc_now() -> datetime:
+    """One injectable aware clock for query continuation and issuance."""
+    return datetime.now(timezone.utc)
+
+
 class TrustSubjectType(str, Enum):
     """P1-governed TrustEnvelope subject vocabulary."""
 
@@ -110,6 +125,18 @@ class TrustResponseBudgetExceeded(RuntimeError):
     """A governed response exceeded a fixed P10 serialization budget."""
 
 
+class TrustRequestBoundaryException(HTTPException):
+    """Typed pre-parsing ingress refusal emitted without downstream work."""
+
+    def __init__(self, *, status_code: int, reason_code: str) -> None:
+        self.status_code = status_code
+        self.reason_code = reason_code
+        super().__init__(
+            status_code=status_code,
+            detail={"status": "refused", "reason_code": reason_code},
+        )
+
+
 class TrustQueryRequest(BaseModel):
     """Strictly bounded exact-match query contract; no generic query AST exists."""
 
@@ -125,6 +152,11 @@ class TrustQueryRequest(BaseModel):
     )
     created_at_after: datetime | None = None
     created_at_before: datetime | None = None
+    continuation_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_CURSOR_TOKEN_BYTES,
+    )
 
     @field_validator("subject_types")
     @classmethod
@@ -173,12 +205,117 @@ class TrustVerifyRequest(RootModel[dict[str, Any]]):
     """One supplied TrustEnvelope for authenticated verification."""
 
 
+class TrustQueryPageState(BaseModel):
+    """Machine-readable conservation state for one bounded query page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    accepted_count: int = Field(ge=1, le=MAX_ACCEPTED_SUBJECT_REFS)
+    evaluated_count: int = Field(ge=1, le=MAX_ACCEPTED_SUBJECT_REFS)
+    page_evaluated_count: int = Field(ge=1, le=MAX_EVALUATED_REFS_PER_PAGE)
+    remaining_count: int = Field(ge=0, le=MAX_ACCEPTED_SUBJECT_REFS)
+    complete: bool
+
+    @model_validator(mode="after")
+    def validate_conservation(self) -> "TrustQueryPageState":
+        if self.evaluated_count + self.remaining_count != self.accepted_count:
+            raise ValueError("query_page_work_conservation_failed")
+        if self.complete != (self.remaining_count == 0):
+            raise ValueError("query_page_completion_state_false")
+        return self
+
+
+class TrustQueryResponse(BaseModel):
+    """Bounded envelopes plus explicit completion or continuation state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    envelopes: list[dict[str, Any]] = Field(max_length=MAX_RETURNED_OUTCOMES)
+    page: TrustQueryPageState
+    continuation_token: str | None = Field(
+        default=None,
+        max_length=MAX_CURSOR_TOKEN_BYTES,
+    )
+
+    @model_validator(mode="after")
+    def validate_continuation_state(self) -> "TrustQueryResponse":
+        if self.page.complete and self.continuation_token is not None:
+            raise ValueError("terminal_query_page_has_continuation")
+        if not self.page.complete and self.continuation_token is None:
+            raise ValueError("nonterminal_query_page_missing_continuation")
+        return self
+
+
+async def trust_request_boundary_exception_handler(
+    request: Request,
+    exc: TrustRequestBoundaryException,
+) -> JSONResponse:
+    """Return the same sanitized shape for declared and streamed overages."""
+    _ = request
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"status": "refused", "reason_code": exc.reason_code},
+    )
+
+
+async def _read_bounded_request_body(request: Request, *, limit: int) -> bytes:
+    """Retain at most ``limit + 1`` bytes without calling ``request.body()``."""
+    content_encoding = request.headers.get("content-encoding", "").strip().lower()
+    if content_encoding not in {"", "identity"}:
+        raise TrustRequestBoundaryException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            reason_code="unsupported_content_encoding",
+        )
+
+    declared_length = request.headers.get("content-length")
+    if declared_length is not None:
+        try:
+            parsed_length = int(declared_length)
+        except ValueError as exc:
+            raise TrustRequestBoundaryException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                reason_code="invalid_content_length",
+            ) from exc
+        if parsed_length < 0:
+            raise TrustRequestBoundaryException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                reason_code="invalid_content_length",
+            )
+        if parsed_length > limit:
+            request.state.p10_ingress_bytes_consumed = 0
+            raise TrustRequestBoundaryException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                reason_code="request_body_too_large",
+            )
+
+    payload = bytearray()
+    async for chunk in request.stream():
+        if not chunk:
+            continue
+        remaining = limit + 1 - len(payload)
+        if remaining <= 0:
+            request.state.p10_ingress_bytes_consumed = limit + 1
+            raise TrustRequestBoundaryException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                reason_code="request_body_too_large",
+            )
+        payload.extend(chunk[:remaining])
+        if len(chunk) > remaining or len(payload) > limit:
+            request.state.p10_ingress_bytes_consumed = limit + 1
+            raise TrustRequestBoundaryException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                reason_code="request_body_too_large",
+            )
+    request.state.p10_ingress_bytes_consumed = len(payload)
+    return bytes(payload)
+
+
 async def validate_trust_query_request(
     request: Request,
 ) -> TrustQueryRequest:
     """Validate the bounded body before any database dependency is opened."""
-    payload = await request.body()
-    if not payload or len(payload) > MAX_QUERY_BODY_BYTES:
+    payload = await _read_bounded_request_body(request, limit=MAX_QUERY_BODY_BYTES)
+    if not payload:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid bounded TrustEnvelope query.",
@@ -194,8 +331,8 @@ async def validate_trust_query_request(
 
 async def validate_trust_verify_request(request: Request) -> TrustVerifyRequest:
     """Bound hosted verification input before key lookup or cryptographic work."""
-    payload = await request.body()
-    if not payload or len(payload) > MAX_VERIFY_BODY_BYTES:
+    payload = await _read_bounded_request_body(request, limit=MAX_VERIFY_BODY_BYTES)
+    if not payload:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid bounded TrustEnvelope verification request.",
@@ -424,7 +561,7 @@ async def get_trust_envelope(
             subject_ref=subject_ref,
             idempotency_key=x_idempotency_key,
             key_registry=key_registry,
-            issued_at=datetime.now(timezone.utc),
+            issued_at=_utc_now(),
         )
     except TrustResponseBudgetExceeded:
         return _typed_error_response(
@@ -440,6 +577,7 @@ async def get_trust_envelope(
 
 @router.post(
     "/trust/v1/envelopes/query",
+    response_model=TrustQueryResponse,
     openapi_extra={
         "requestBody": {
             "required": True,
@@ -490,27 +628,73 @@ async def _query_trust_envelopes_with_capacity(
     key_registry: TrustKeyRegistry,
     idempotency_key: str,
 ) -> JSONResponse:
-    """Execute bounded source, audit, signing, and serialization work."""
-
-    sources = await query_match_verdict_sources(
-        session,
+    """Evaluate one exact-reference page and conserve all accepted work."""
+    now = _utc_now()
+    accepted_count = len(query.subject_refs)
+    binding_hash = trust_query_binding_hash(
         tenant_id=caller.tenant_id,
+        subject_types=[value.value for value in query.subject_types],
         subject_refs=query.subject_refs,
         updated_at_after=query.created_at_after,
         updated_at_before=query.created_at_before,
-        row_limit=MAX_RETURNED_OUTCOMES,
     )
-    issued_at = datetime.now(timezone.utc)
+    if query.continuation_token is None:
+        start_position = 0
+        expires_at = continuation_expiry(now)
+    else:
+        try:
+            continuation = verify_trust_query_continuation(
+                query.continuation_token,
+                key_registry=key_registry,
+                expected_binding_hash=binding_hash,
+                expected_total=accepted_count,
+                now=now,
+            )
+        except TrustQueryContinuationError as exc:
+            reason = (
+                ReasonCode.CONTINUATION_EXPIRED
+                if exc.reason == "continuation_expired"
+                else ReasonCode.CONTINUATION_INVALID
+            )
+            return _typed_error_response(
+                reason,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+        start_position = continuation.next_position
+        expires_at = continuation.expires_at
+
+    end_position = min(
+        start_position + MAX_EVALUATED_REFS_PER_PAGE,
+        accepted_count,
+    )
+    page_refs = query.subject_refs[start_position:end_position]
+    sources = await query_match_verdict_sources(
+        session,
+        tenant_id=caller.tenant_id,
+        subject_refs=page_refs,
+        updated_at_after=query.created_at_after,
+        updated_at_before=query.created_at_before,
+        row_limit=len(page_refs),
+    )
+    sources_by_id = {source.id: source for source in sources}
+    issued_at = now
     envelopes: list[dict[str, Any]] = []
     try:
-        for index, source in enumerate(sources):
-            subject_ref = f"urn:skeldir:match_verdict:{source.id}"
+        for page_offset, subject_ref in enumerate(page_refs):
+            verdict_id = parse_match_verdict_subject_ref(subject_ref)
+            source = sources_by_id.get(verdict_id) if verdict_id is not None else None
+            if source is None:
+                continue
+            global_position = start_position + page_offset
             envelope = await _issue_signed_envelope(
                 session=session,
                 caller=caller,
                 subject_type=TrustSubjectType.MATCH_VERDICT.value,
-                subject_ref=subject_ref,
-                idempotency_key=f"{idempotency_key}:match_verdict:{index}",
+                subject_ref=f"urn:skeldir:match_verdict:{source.id}",
+                idempotency_key=(
+                    f"{idempotency_key}:query:{binding_hash.removeprefix('sha256:')}:"
+                    f"{global_position}"
+                ),
                 key_registry=key_registry,
                 issued_at=issued_at,
                 source=source,
@@ -523,7 +707,29 @@ async def _query_trust_envelopes_with_capacity(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
         )
 
-    response = _json_response({"envelopes": envelopes})
+    remaining_count = accepted_count - end_position
+    complete = remaining_count == 0
+    continuation_token = None
+    if not complete:
+        continuation_token = issue_trust_query_continuation(
+            key_registry=key_registry,
+            binding_hash=binding_hash,
+            next_position=end_position,
+            total_accepted=accepted_count,
+            expires_at=expires_at,
+        )
+    response_model = TrustQueryResponse(
+        envelopes=envelopes,
+        page=TrustQueryPageState(
+            accepted_count=accepted_count,
+            evaluated_count=end_position,
+            page_evaluated_count=len(page_refs),
+            remaining_count=remaining_count,
+            complete=complete,
+        ),
+        continuation_token=continuation_token,
+    )
+    response = _json_response(response_model.model_dump(mode="json"))
     if len(response.body) > MAX_AGGREGATE_RESPONSE_BYTES:
         return _typed_error_response(
             ReasonCode.RESPONSE_BUDGET_EXCEEDED,

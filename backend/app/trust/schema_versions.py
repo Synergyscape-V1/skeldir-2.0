@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,9 @@ class VersionRegistryError(ValueError):
     """Raised when schema/canonicalization versions fail closed."""
 
 
+@lru_cache(maxsize=2)
 def _read_yaml(path: Path) -> dict[str, Any]:
+    """Load immutable, deploy-time version registries once per worker."""
     with path.open(encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     if not isinstance(data, dict):
@@ -81,4 +84,3 @@ def validate_schema_canonicalization_compatibility(
                 )
             return schema, canonical
     raise VersionRegistryError(f"canonicalization_version_unsupported:{canonical}")
-

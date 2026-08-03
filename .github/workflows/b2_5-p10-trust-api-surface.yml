@@ -119,7 +119,8 @@ jobs:
           grep -E "^runtime_key_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
           grep -E "^governance_binding_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
           grep -E "^corrective_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
-          grep -E "^negative_controls_fired=19$" /tmp/b25_p10.out
+          grep -E "^directive_ii_controls_passed=[1-9][0-9]*$" /tmp/b25_p10.out
+          grep -E "^negative_controls_fired=34$" /tmp/b25_p10.out
           grep -E "^pytest_controls_passed=1$" /tmp/b25_p10.out
           grep -E "^unbounded_query_rejected=1$" /tmp/b25_p10.out
           grep -E "^verify_oracle_auth_enforced=1$" /tmp/b25_p10.out
