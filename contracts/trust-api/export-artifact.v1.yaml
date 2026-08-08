@@ -1,0 +1,52 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://schemas.skeldir.local/trust-api/export-artifact.v1.yaml
+title: B2.5-P11 Signed Match-Verdict Export Artifact
+type: object
+additionalProperties: false
+required:
+  - artifact_schema_version
+  - canonicalization_version
+  - artifact_signing_domain
+  - envelopes
+  - artifact_hash
+  - signature
+  - signing_key_id
+  - signing_algorithm
+  - generated_at
+  - tenant_id_hash
+properties:
+  artifact_schema_version:
+    type: string
+    const: b25-p11-export-artifact-v1
+  canonicalization_version:
+    type: string
+    const: b25-p11-artifact-framing-v1
+  artifact_signing_domain:
+    type: string
+    const: "skeldir:b25-p11:export-artifact:v1\\0"
+  envelopes:
+    type: array
+    minItems: 1
+    maxItems: 2
+    items:
+      $ref: trust-envelope.v1.yaml
+  artifact_hash:
+    type: string
+    pattern: ^sha256:[0-9a-f]{64}$
+  signature:
+    type: string
+    pattern: ^ed25519:[A-Za-z0-9_-]+$
+    minLength: 16
+    maxLength: 2048
+  signing_key_id:
+    type: string
+    pattern: ^kid:[A-Za-z0-9._:-]{8,128}$
+  signing_algorithm:
+    type: string
+    const: ed25519
+  generated_at:
+    type: string
+    pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$
+  tenant_id_hash:
+    type: string
+    pattern: ^sha256:[0-9a-f]{64}$

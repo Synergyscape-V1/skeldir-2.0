@@ -807,6 +807,7 @@ def validate_scope_guard() -> int:
         if rel in {
             "backend/app/api/trust_keys.py",
             "backend/app/api/trust_api.py",
+            "backend/app/api/trust_export.py",
         }:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")

@@ -1,0 +1,5 @@
+{
+  "status": "refused",
+  "reason_code": "unsupported_subject_type",
+  "subject_type": "attribution_result"
+}

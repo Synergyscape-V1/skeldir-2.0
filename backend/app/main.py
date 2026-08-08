@@ -46,6 +46,7 @@ from app.api import (
     revenue_verification,
     revenue,
     trust_api,
+    trust_export,
     trust_keys,
     webhooks,
 )
@@ -102,6 +103,7 @@ app.include_router(
 )
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(trust_api.router, prefix="/api", tags=["Trust API"])
+app.include_router(trust_export.router, prefix="/api", tags=["Trust Export"])
 app.include_router(trust_keys.router, prefix="/api", tags=["Trust Keys"])
 app.include_router(health.router, tags=["Health"])
 app.include_router(webhooks.router, prefix="/api", tags=["Webhooks"])
@@ -151,6 +153,10 @@ app.add_exception_handler(
 app.add_exception_handler(
     trust_api.TrustRequestBoundaryException,
     trust_api.trust_request_boundary_exception_handler,
+)
+app.add_exception_handler(
+    trust_export.TrustExportRequestBoundaryException,
+    trust_export.trust_export_request_boundary_exception_handler,
 )
 
 

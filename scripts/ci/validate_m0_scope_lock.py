@@ -253,6 +253,7 @@ ALLOWED_M0_PATHS = [
     "docs/ci/",
     "docs/forensics/B2.5-P10 Remediation Evidence Pack .md",
     "docs/forensics/B2.5-P10 Corrective Remediation Evidence Pack.md",
+    "docs/forensics/B2.5-P11 Remediation Evidence Pack.md",
     "contracts-internal/governance/b03_phase2_required_status_checks.main.json",
     ".github/CODEOWNERS",
     "backend/app/bayesian/",

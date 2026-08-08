@@ -1,12 +1,28 @@
 manifest_version: b25-p2-hash-domain-manifest-v1
 schema_version: trust-envelope-schema-v1
 canonicalization_version: trust-canonical-json-v1
+export_artifact_schema_version: b25-p11-export-artifact-v1
+export_artifact_canonicalization_version: b25-p11-artifact-framing-v1
 domains:
   semantic_truth_v1: deterministic truth and provenance fields that define the envelope's financial-trust semantics
   signature_material_v1: issuance, audience, policy, validity, and signing-key metadata signed around semantic truth
   artifact_payload_v1: artifact references and payload identity fields
   derived_hash_field_v1: fields populated from hash computation rather than used directly as their own input
   display_only_excluded_v1: untrusted or display-only text metadata excluded from semantic identity in P2
+  export_artifact_payload_v1: P11 export identity fields covered by the artifact hash
+  export_artifact_signature_v1: P11 signing metadata bound by the export signature
+  export_artifact_derived_v1: P11 hash and signature values derived from covered material
+export_artifact_field_domains:
+  - {field_path: artifact_schema_version, domain: export_artifact_payload_v1}
+  - {field_path: canonicalization_version, domain: export_artifact_payload_v1}
+  - {field_path: artifact_signing_domain, domain: export_artifact_payload_v1}
+  - {field_path: envelopes, domain: export_artifact_payload_v1}
+  - {field_path: artifact_hash, domain: export_artifact_derived_v1}
+  - {field_path: signature, domain: export_artifact_derived_v1}
+  - {field_path: signing_key_id, domain: export_artifact_signature_v1}
+  - {field_path: signing_algorithm, domain: export_artifact_signature_v1}
+  - {field_path: generated_at, domain: export_artifact_payload_v1}
+  - {field_path: tenant_id_hash, domain: export_artifact_payload_v1}
 field_domains:
   - {field_path: artifact_hash, domain: derived_hash_field_v1}
   - {field_path: artifact_ref, domain: artifact_payload_v1}

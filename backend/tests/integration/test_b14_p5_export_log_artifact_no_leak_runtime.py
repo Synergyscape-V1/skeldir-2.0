@@ -18,6 +18,7 @@ from sqlalchemy import text
 from app.api.export import EXPORT_ROW_ALLOWLIST
 from app.celery_app import celery_app
 from app.core.db import engine
+from app.db.deps import get_db_session
 from app.db.session import get_session
 from app.ingestion.dlq_handler import DLQHandler, route_unresolved_tenant_to_quarantine
 from app.ingestion.event_service import ingest_with_transaction
@@ -83,7 +84,12 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
     async def _auth_override() -> AuthContext:
         return _auth_context_for_tenant(tenant_id)
 
+    async def _db_override():
+        async with get_session(tenant_id=tenant_id) as session:
+            yield session
+
     app.dependency_overrides[get_auth_context] = _auth_override
+    app.dependency_overrides[get_db_session] = _db_override
     try:
         async with engine.begin() as conn:
             await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
@@ -140,17 +146,32 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
                 "/api/export/csv",
                 headers={"X-Correlation-ID": str(uuid4())},
             )
+            xlsx_response = await client.get(
+                "/api/export/excel",
+                headers={"X-Correlation-ID": str(uuid4())},
+            )
     finally:
         app.dependency_overrides.pop(get_auth_context, None)
+        app.dependency_overrides.pop(get_db_session, None)
         celery_app.conf.task_always_eager = original_eager
 
     assert json_response.status_code == 200, json_response.text
     payload = json_response.json()
-    assert set(payload.keys()) == {"tenant_id", "generated_at", "date_range", "data"}
-    assert payload["tenant_id"] == str(tenant_id)
+    assert set(payload.keys()) == {
+        "projection_authority",
+        "projection_schema_version",
+        "tenant_id_hash",
+        "generated_at",
+        "date_range",
+        "rows",
+    }
+    assert payload["projection_authority"] == "non_authoritative_display"
+    assert payload["projection_schema_version"] == "b25-p11-display-v1"
+    assert payload["tenant_id_hash"].startswith("sha256:")
+    assert str(tenant_id) not in json.dumps(payload)
     assert set(payload["date_range"].keys()) == {"start", "end"}
-    assert payload["data"]
-    for row in payload["data"]:
+    assert payload["rows"]
+    for row in payload["rows"]:
         assert set(row.keys()) == set(EXPORT_ROW_ALLOWLIST)
 
     leaks = find_output_leaks(payload, forbidden_keys=output_forbidden_key_set())
@@ -160,6 +181,14 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
     csv_lines = [line.strip() for line in csv_response.text.splitlines() if line.strip()]
     assert csv_lines[0] == "date,channel,revenue,conversions,confidence"
     assert len(csv_lines) >= 2
+    assert xlsx_response.status_code == 200
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(io.BytesIO(xlsx_response.content), data_only=False)
+    assert workbook.sheetnames == ["Export", "Metadata"]
+    assert str(tenant_id) not in "|".join(
+        str(cell.value) for sheet in workbook for row in sheet for cell in row
+    )
 
 
 def test_b14_p5_runtime_logging_redaction_blocks_direct_and_proxy_canaries():

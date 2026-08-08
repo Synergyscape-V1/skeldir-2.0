@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 1.0.0
-  description: Data export endpoints for Skeldir Attribution Intelligence platform
+  version: 2.0.0
+  description: B2.5-P11 non-authoritative display exports; raw tenant_id values are forbidden.
 servers:
   - url: https://api.skeldir.com
     description: Production server
@@ -15,7 +15,7 @@ paths:
       tags:
         - Export
       summary: Export revenue data
-      description: Export revenue data in CSV or JSON format with pagination and date range filtering
+      description: Export bounded display-only revenue projections in CSV, JSON, or XLSX format
       security:
         - BearerAuth: []
       parameters:
@@ -34,10 +34,9 @@ paths:
             enum:
               - csv
               - json
+              - xlsx
             default: json
-          description: Export format (CSV or JSON)
-        - $ref: '../../_common/v1/pagination.yaml#/components/parameters/limit'
-        - $ref: '../../_common/v1/pagination.yaml#/components/parameters/cursor'
+          description: Export format
         - name: start_date
           in: query
           required: false
@@ -75,27 +74,17 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - file_url
-                  - tenant_id
-                properties:
-                  file_url:
-                    type: string
-                    format: uri
-                    description: URL to download the exported file
-                    example: "https://api.skeldir.com/exports/revenue_20251110.json"
-                  tenant_id:
-                    type: string
-                    format: uuid
-                    description: Tenant identifier
-                    example: "550e8400-e29b-41d4-a716-446655440000"
+                $ref: '#/components/schemas/ExportDisplayProjection'
               examples:
                 json_export:
                   summary: JSON export
                   value:
-                    file_url: "https://api.skeldir.com/exports/revenue_20251110.json"
-                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+                    projection_authority: non_authoritative_display
+                    projection_schema_version: b25-p11-display-v1
+                    tenant_id_hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    generated_at: "2026-08-08T12:00:00Z"
+                    date_range: {start: "2026-08-01", end: "2026-08-08"}
+                    rows: []
             text/csv:
               schema:
                 type: string
@@ -103,7 +92,11 @@ paths:
               examples:
                 csv_export:
                   summary: CSV export
-                  value: "date,revenue,channel\n2025-01-01,1000.50,google_search\n2025-01-02,1500.75,facebook_ads"
+                  value: "date,channel,revenue,conversions,confidence\r\n2025-01-01,google_search,1000.50,1,0.90\r\n"
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
         '401':
           $ref: '../../_common/v1/components.yaml#/components/responses/Unauthorized'
         '429':
@@ -111,6 +104,41 @@ paths:
         '500':
           $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
 components:
+  schemas:
+    ExportDisplayProjection:
+      type: object
+      additionalProperties: false
+      required: [projection_authority, projection_schema_version, tenant_id_hash, generated_at, date_range, rows]
+      properties:
+        projection_authority: {type: string, const: non_authoritative_display}
+        projection_schema_version: {type: string, const: b25-p11-display-v1}
+        tenant_id_hash:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+          description: Hashed tenant scope; raw tenant_id is prohibited.
+        generated_at: {type: string, format: date-time}
+        date_range:
+          type: object
+          additionalProperties: false
+          required: [start, end]
+          properties:
+            start: {type: string, format: date}
+            end: {type: string, format: date}
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExportDisplayRow'
+    ExportDisplayRow:
+      type: object
+      additionalProperties: false
+      required: [date, channel, revenue_minor, revenue_display, conversions, confidence_display]
+      properties:
+        date: {type: string, format: date}
+        channel: {type: string}
+        revenue_minor: {type: integer, minimum: -9007199254740991, maximum: 9007199254740991}
+        revenue_display: {type: string}
+        conversions: {type: integer, minimum: 0}
+        confidence_display: {type: string}
   securitySchemes:
     BearerAuth:
       $ref: '../../_common/v1/components.yaml#/components/securitySchemes/BearerAuth'

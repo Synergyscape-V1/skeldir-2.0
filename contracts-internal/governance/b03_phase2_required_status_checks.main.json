@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.13.0",
+  "contract_version": "1.14.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -71,6 +71,7 @@
     "B2.5-P8 Signing Verification",
     "B2.5-P9 Machine Identity",
     "B2.5-P10 Trust API Surface",
+    "B2.5-P11 Export Compatibility",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark",
     "m0-maintainability-scope-lock",

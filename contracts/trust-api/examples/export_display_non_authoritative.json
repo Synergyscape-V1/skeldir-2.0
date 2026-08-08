@@ -1,0 +1,20 @@
+{
+  "projection_authority": "non_authoritative_display",
+  "projection_schema_version": "b25-p11-display-v1",
+  "tenant_id_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "generated_at": "2026-08-08T12:00:00Z",
+  "date_range": {
+    "start": "2026-08-01",
+    "end": "2026-08-08"
+  },
+  "rows": [
+    {
+      "date": "2026-08-08",
+      "channel": "Google",
+      "revenue_minor": 125050,
+      "revenue_display": "1250.50",
+      "conversions": 4,
+      "confidence_display": "0.92"
+    }
+  ]
+}

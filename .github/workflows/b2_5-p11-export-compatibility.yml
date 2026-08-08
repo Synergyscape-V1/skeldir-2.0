@@ -1,0 +1,154 @@
+name: B2.5-P11 Export Compatibility
+
+on:
+  pull_request:
+    paths:
+      - "alembic/versions/007_skeldir_foundation/*b25_p11*"
+      - "api-contracts/openapi/v1/export.yaml"
+      - "api-contracts/dist/openapi/v1/export.bundled.yaml"
+      - "backend/app/api/export.py"
+      - "backend/app/api/trust_export.py"
+      - "backend/app/main.py"
+      - "backend/app/config/contract_scope.yaml"
+      - "backend/app/trust/**"
+      - "backend/requirements*.txt"
+      - "backend/tests/trust/**"
+      - "backend/tests/integration/test_b14_p5_export_log_artifact_no_leak_runtime.py"
+      - "contracts/export/**"
+      - "contracts/trust-api/**"
+      - "scripts/ci/validate_b25_p11_export_compatibility.py"
+      - "scripts/ci/validate_b25_p9_machine_identity.py"
+      - "scripts/ci/validate_b25_p1_trust_drift.py"
+      - ".github/workflows/b2_5-p11-export-compatibility.yml"
+      - "Makefile"
+      - "docs/ci/**"
+      - "docs/forensics/**"
+      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
+  push:
+    branches:
+      - main
+    paths:
+      - "alembic/versions/007_skeldir_foundation/*b25_p11*"
+      - "api-contracts/openapi/v1/export.yaml"
+      - "api-contracts/dist/openapi/v1/export.bundled.yaml"
+      - "backend/app/api/export.py"
+      - "backend/app/api/trust_export.py"
+      - "backend/app/main.py"
+      - "backend/app/config/contract_scope.yaml"
+      - "backend/app/trust/**"
+      - "backend/requirements*.txt"
+      - "backend/tests/trust/**"
+      - "backend/tests/integration/test_b14_p5_export_log_artifact_no_leak_runtime.py"
+      - "contracts/export/**"
+      - "contracts/trust-api/**"
+      - "scripts/ci/validate_b25_p11_export_compatibility.py"
+      - "scripts/ci/validate_b25_p9_machine_identity.py"
+      - "scripts/ci/validate_b25_p1_trust_drift.py"
+      - ".github/workflows/b2_5-p11-export-compatibility.yml"
+      - "Makefile"
+      - "docs/ci/**"
+      - "docs/forensics/**"
+      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b25-p11-export-compatibility:
+    name: B2.5-P11 Export Compatibility
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p11_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p11_ci
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p11_ci
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p11_ci
+      SKELDIR_B25_P7_POSTGRES_PROOF: "1"
+      SKELDIR_B25_P9_POSTGRES_PROOF: "1"
+      SKELDIR_B25_P10_POSTGRES_PROOF: "1"
+      SKELDIR_B25_P11_POSTGRES_PROOF: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validator dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install "pyyaml>=6.0" "jsonschema>=4.25.0"
+
+      - name: Prepare PostgreSQL proof database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p11_ci
+
+      - name: Run P1-P11 trust regression suite
+        run: python -m pytest backend/tests/trust -q
+
+      - name: Emit maximum-valid export resource evidence
+        run: |
+          set -o pipefail
+          python -m pytest backend/tests/trust/test_b25_p11_postgres_physics.py::test_postgres_maximum_export_resource_envelope -q -s | tee /tmp/b25_p11_resource.out
+          grep -E "^P11_RESOURCE_METRICS=" /tmp/b25_p11_resource.out
+
+      - name: Validate P1-P10 substrate preservation
+        run: |
+          make validate-b25-p1-contracts
+          make validate-b25-p1-trust-drift
+          make validate-b25-p2-canonicalization
+          make validate-b25-p3-text-disposition
+          make validate-b25-p4-money-authority
+          make validate-b25-p5-builder
+          make validate-b25-p6-reason-truth-matrix
+          make validate-b25-p7-provenance-audit
+          make validate-b25-p8-signing-verification
+          make validate-b25-p9-machine-identity
+          make validate-b25-p10-trust-api-surface
+          python scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py
+
+      - name: Validate B2.5-P11 export compatibility
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p11_export_compatibility.py --negative-control | tee /tmp/b25_p11.out
+          grep -E "^B25_P11_EXPORT_COMPATIBILITY_VALIDATION_PASS$" /tmp/b25_p11.out
+          grep -E "^projection_authority_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^subject_capability_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^tenant_privacy_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^money_authority_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^artifact_identity_signature_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^display_honesty_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^format_injection_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^bounded_egress_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^read_only_no_compute_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^authorization_continuity_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^contract_compatibility_controls_passed=1$" /tmp/b25_p11.out
+          grep -E "^prior_phase_preservation_bindings_passed=1$" /tmp/b25_p11.out
+          grep -E "^mainline_closure_bindings_passed=1$" /tmp/b25_p11.out
+          grep -E "^explicit_root_files_scanned=[1-9][0-9]*$" /tmp/b25_p11.out
+          grep -E "^shadow_paths_scanned=0$" /tmp/b25_p11.out
+          grep -E "^negative_controls_fired=15$" /tmp/b25_p11.out
+          grep -E "^pytest_controls_passed=1$" /tmp/b25_p11.out
+
+      - name: Validate CI governance
+        run: make validate-ci-governance

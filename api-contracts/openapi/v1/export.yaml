@@ -1,10 +1,11 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 2.0.0
+  version: 3.0.0
   description: |
-    Data export functionality for CSV, JSON, and Excel formats.
-    Supports scheduled exports and custom date ranges.
+    B2.5-P11 human-authorized compatibility projections for CSV, JSON, and
+    Excel. These responses are explicitly non-authoritative display data;
+    raw tenant_id values are forbidden.
   contact:
     name: Skeldir Engineering
     email: engineering@skeldir.com
@@ -91,22 +92,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportData'
               example:
-                tenant_id: '7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f'
+                projection_authority: non_authoritative_display
+                projection_schema_version: b25-p11-display-v1
+                tenant_id_hash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
                   start: '2025-11-01'
                   end: '2025-11-26'
-                data:
+                rows:
                   - date: '2025-11-25'
                     channel: Meta
-                    revenue: 15230.50
+                    revenue_minor: 1523050
+                    revenue_display: '15230.50'
                     conversions: 127
-                    confidence: 0.92
+                    confidence_display: '0.92'
                   - date: '2025-11-25'
                     channel: Google
-                    revenue: 12450.00
+                    revenue_minor: 1245000
+                    revenue_display: '12450.00'
                     conversions: 98
-                    confidence: 0.89
+                    confidence_display: '0.89'
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
                 type: string
@@ -194,22 +199,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportData'
               example:
-                tenant_id: '7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f'
+                projection_authority: non_authoritative_display
+                projection_schema_version: b25-p11-display-v1
+                tenant_id_hash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
                   start: '2025-11-01'
                   end: '2025-11-26'
-                data:
+                rows:
                   - date: '2025-11-25'
                     channel: Meta
-                    revenue: 15230.50
+                    revenue_minor: 1523050
+                    revenue_display: '15230.50'
                     conversions: 127
-                    confidence: 0.92
+                    confidence_display: '0.92'
                   - date: '2025-11-25'
                     channel: Google
-                    revenue: 12450.00
+                    revenue_minor: 1245000
+                    revenue_display: '12450.00'
                     conversions: 98
-                    confidence: 0.89
+                    confidence_display: '0.89'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
@@ -254,16 +263,24 @@ components:
     ExportData:
       type: object
       required:
-        - tenant_id
+        - projection_authority
+        - projection_schema_version
+        - tenant_id_hash
         - generated_at
         - date_range
-        - data
+        - rows
       additionalProperties: false
       properties:
-        tenant_id:
+        projection_authority:
           type: string
-          format: uuid
-          description: Tenant scope for this export payload
+          const: non_authoritative_display
+        projection_schema_version:
+          type: string
+          const: b25-p11-display-v1
+        tenant_id_hash:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+          description: Hashed tenant scope; a raw tenant_id is forbidden.
         generated_at:
           type: string
           format: date-time
@@ -281,7 +298,7 @@ components:
             end:
               type: string
               format: date
-        data:
+        rows:
           type: array
           items:
             $ref: '#/components/schemas/ExportRow'
@@ -290,9 +307,10 @@ components:
       required:
         - date
         - channel
-        - revenue
+        - revenue_minor
+        - revenue_display
         - conversions
-        - confidence
+        - confidence_display
       additionalProperties: false
       properties:
         date:
@@ -300,14 +318,16 @@ components:
           format: date
         channel:
           type: string
-        revenue:
-          type: number
-          format: float
+        revenue_minor:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        revenue_display:
+          type: string
         conversions:
           type: integer
-        confidence:
-          type: number
-          format: float
+        confidence_display:
+          type: string
 
   securitySchemes:
     accessBearerAuth:
