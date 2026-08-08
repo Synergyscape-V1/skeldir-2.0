@@ -421,7 +421,7 @@ async def test_postgres_maximum_export_resource_envelope() -> None:
             "rss_delta_bytes": process.memory_info().rss - rss_before,
             "seeded_history_rows": len(verdict_ids),
         }
-        print("P11_RESOURCE_METRICS=" + json.dumps(metrics, sort_keys=True))
+        print("\nP11_RESOURCE_METRICS=" + json.dumps(metrics, sort_keys=True))
         assert all(response.status_code == 200 for response in responses)
         assert all(len(response.json()["envelopes"]) == 2 for response in responses)
         assert all(
