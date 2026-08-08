@@ -248,14 +248,17 @@ HTTP_CODE=$(curl -s "http://localhost:$ON_DEMAND_PORT/api/export/revenue?format=
 
 if [ "$HTTP_CODE" = "200" ]; then
     GENERATED_AT=$(echo "$RESPONSE" | jq -r '.generated_at // empty')
-    DATA_COUNT=$(echo "$RESPONSE" | jq '.data | length')
+    PROJECTION_AUTHORITY=$(echo "$RESPONSE" | jq -r '.projection_authority // empty')
+    ROW_COUNT=$(echo "$RESPONSE" | jq '.rows | length')
     if [ -n "$GENERATED_AT" ] && [ "$GENERATED_AT" != "null" ] && \
-       [ "$DATA_COUNT" -gt 0 ]; then
+       [ "$PROJECTION_AUTHORITY" = "non_authoritative_display" ] && \
+       [ "$ROW_COUNT" -gt 0 ]; then
         test_pass "Export revenue contains all required fields with correct types"
     else
         test_fail "Export revenue missing required fields or incorrect types"
         echo "  generated_at: $GENERATED_AT"
-        echo "  data_count: $DATA_COUNT"
+        echo "  projection_authority: $PROJECTION_AUTHORITY"
+        echo "  row_count: $ROW_COUNT"
     fi
 else
     test_fail "Export revenue returned HTTP $HTTP_CODE instead of 200"

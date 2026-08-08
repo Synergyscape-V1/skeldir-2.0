@@ -247,9 +247,10 @@ async def _fetch_reporting_rows(
         "channels": channel_filter,
         "row_limit": LEGACY_EXPORT_MAX_ROWS + 1,
     }
-    session_join = ""
-    session_predicate = ""
-    if session_scope is not None:
+    if session_scope is None:
+        session_join = ""
+        session_predicate = ""
+    else:
         session_join = """
             JOIN session_authority sa
               ON sa.tenant_id = e.tenant_id

@@ -499,7 +499,8 @@ async def test_b14_p4_runtime_export_roas_survives_payload_expiry():
             )
         assert export_response.status_code == 200, export_response.text
         payload = export_response.json()
-        assert payload["data"]
+        assert payload["projection_authority"] == "non_authoritative_display"
+        assert payload["rows"]
 
         async with get_session(tenant_id=tenant_id) as db_session:
             rows = await _fetch_reporting_rows(
