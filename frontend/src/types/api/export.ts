@@ -89,11 +89,12 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         ExportData: {
-            /**
-             * Format: uuid
-             * @description Tenant scope for this export payload
-             */
-            tenant_id: string;
+            /** @constant */
+            projection_authority: "non_authoritative_display";
+            /** @constant */
+            projection_schema_version: "b25-p11-display-v1";
+            /** @description Hashed tenant scope; a raw tenant_id is forbidden. */
+            tenant_id_hash: string;
             /**
              * Format: date-time
              * @description When the export was generated
@@ -105,26 +106,24 @@ export interface components {
                 /** Format: date */
                 end: string;
             };
-            data: {
+            rows: {
                 /** Format: date */
                 date: string;
                 channel: string;
-                /** Format: float */
-                revenue: number;
+                revenue_minor: number;
+                revenue_display: string;
                 conversions: number;
-                /** Format: float */
-                confidence: number;
+                confidence_display: string;
             }[];
         };
         ExportRow: {
             /** Format: date */
             date: string;
             channel: string;
-            /** Format: float */
-            revenue: number;
+            revenue_minor: number;
+            revenue_display: string;
             conversions: number;
-            /** Format: float */
-            confidence: number;
+            confidence_display: string;
         };
         /** @description RFC7807 Problem Details for HTTP APIs with Skeldir extensions */
         ProblemDetails: {
@@ -427,36 +426,41 @@ export interface operations {
                     "text/csv": string;
                     /**
                      * @example {
-                     *       "tenant_id": "7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f",
+                     *       "projection_authority": "non_authoritative_display",
+                     *       "projection_schema_version": "b25-p11-display-v1",
+                     *       "tenant_id_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                      *       "generated_at": "2025-11-26T14:30:00Z",
                      *       "date_range": {
                      *         "start": "2025-11-01",
                      *         "end": "2025-11-26"
                      *       },
-                     *       "data": [
+                     *       "rows": [
                      *         {
                      *           "date": "2025-11-25",
                      *           "channel": "Meta",
-                     *           "revenue": 15230.5,
+                     *           "revenue_minor": 1523050,
+                     *           "revenue_display": "15230.50",
                      *           "conversions": 127,
-                     *           "confidence": 0.92
+                     *           "confidence_display": "0.92"
                      *         },
                      *         {
                      *           "date": "2025-11-25",
                      *           "channel": "Google",
-                     *           "revenue": 12450,
+                     *           "revenue_minor": 1245000,
+                     *           "revenue_display": "12450.00",
                      *           "conversions": 98,
-                     *           "confidence": 0.89
+                     *           "confidence_display": "0.89"
                      *         }
                      *       ]
                      *     }
                      */
                     "application/json": {
-                        /**
-                         * Format: uuid
-                         * @description Tenant scope for this export payload
-                         */
-                        tenant_id: string;
+                        /** @constant */
+                        projection_authority: "non_authoritative_display";
+                        /** @constant */
+                        projection_schema_version: "b25-p11-display-v1";
+                        /** @description Hashed tenant scope; a raw tenant_id is forbidden. */
+                        tenant_id_hash: string;
                         /**
                          * Format: date-time
                          * @description When the export was generated
@@ -468,15 +472,14 @@ export interface operations {
                             /** Format: date */
                             end: string;
                         };
-                        data: {
+                        rows: {
                             /** Format: date */
                             date: string;
                             channel: string;
-                            /** Format: float */
-                            revenue: number;
+                            revenue_minor: number;
+                            revenue_display: string;
                             conversions: number;
-                            /** Format: float */
-                            confidence: number;
+                            confidence_display: string;
                         }[];
                     };
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
@@ -866,36 +869,41 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "tenant_id": "7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f",
+                     *       "projection_authority": "non_authoritative_display",
+                     *       "projection_schema_version": "b25-p11-display-v1",
+                     *       "tenant_id_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                      *       "generated_at": "2025-11-26T14:30:00Z",
                      *       "date_range": {
                      *         "start": "2025-11-01",
                      *         "end": "2025-11-26"
                      *       },
-                     *       "data": [
+                     *       "rows": [
                      *         {
                      *           "date": "2025-11-25",
                      *           "channel": "Meta",
-                     *           "revenue": 15230.5,
+                     *           "revenue_minor": 1523050,
+                     *           "revenue_display": "15230.50",
                      *           "conversions": 127,
-                     *           "confidence": 0.92
+                     *           "confidence_display": "0.92"
                      *         },
                      *         {
                      *           "date": "2025-11-25",
                      *           "channel": "Google",
-                     *           "revenue": 12450,
+                     *           "revenue_minor": 1245000,
+                     *           "revenue_display": "12450.00",
                      *           "conversions": 98,
-                     *           "confidence": 0.89
+                     *           "confidence_display": "0.89"
                      *         }
                      *       ]
                      *     }
                      */
                     "application/json": {
-                        /**
-                         * Format: uuid
-                         * @description Tenant scope for this export payload
-                         */
-                        tenant_id: string;
+                        /** @constant */
+                        projection_authority: "non_authoritative_display";
+                        /** @constant */
+                        projection_schema_version: "b25-p11-display-v1";
+                        /** @description Hashed tenant scope; a raw tenant_id is forbidden. */
+                        tenant_id_hash: string;
                         /**
                          * Format: date-time
                          * @description When the export was generated
@@ -907,15 +915,14 @@ export interface operations {
                             /** Format: date */
                             end: string;
                         };
-                        data: {
+                        rows: {
                             /** Format: date */
                             date: string;
                             channel: string;
-                            /** Format: float */
-                            revenue: number;
+                            revenue_minor: number;
+                            revenue_display: string;
                             conversions: number;
-                            /** Format: float */
-                            confidence: number;
+                            confidence_display: string;
                         }[];
                     };
                 };

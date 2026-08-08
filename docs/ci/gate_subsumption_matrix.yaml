@@ -2073,3 +2073,18 @@
   local_reproduction_command: make validate-b25-p10-trust-api-surface
   risk_if_removed: The Trust API could silently become unauthenticated, unbounded, replay/rate-limit unsafe, oracle-exposing, mutation-capable, compute-triggering, privacy-leaking, cryptographically undiscoverable, contract-divergent, or non-blocking on protected main.
   decision: keep_required
+- gate_id: validate-b25-p11-export-compatibility
+  workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  job: B2.5-P11 Export Compatibility
+  script: scripts/ci/validate_b25_p11_export_compatibility.py
+  owning_phase: B2.5-P11
+  protected_invariant: Legacy CSV/JSON/XLSX remain bounded non-authoritative display projections, while the machine export path is match-verdict-only, embeds full signed envelopes, uses distinct canonical artifact identity/signing, stays tenant-safe and read-only, and preserves P1-P10.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1-P10 establish envelope contracts, canonical identity, text/money authority, building, refusal semantics, audit, signing, machine identity, and bounded read APIs; none proves export formats cannot remain or become a parallel financial-truth authority.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p11_export_compatibility.py --negative-control
+  local_reproduction_command: make validate-b25-p11-export-compatibility
+  risk_if_removed: Human exports could leak raw tenant IDs, floats, malformed or formula-active files, and machine exports could aggregate legacy attribution data, omit full signed lineage, weaken bounds, activate reserved subject types, or bypass protected-main proof.
+  decision: keep_required

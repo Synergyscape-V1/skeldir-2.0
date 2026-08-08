@@ -2811,3 +2811,27 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b25-p11-export-compatibility
+  path: scripts/ci/validate_b25_p11_export_compatibility.py
+  status: required
+  owning_phase: B2.5-P11
+  protected_invariant: B2.5-P11 keeps legacy exports explicitly non-authoritative and tenant-safe while machine exports contain only complete signed match-verdict TrustEnvelopes under a distinct artifact hash/signature domain, fixed admission ceilings, read-only source access, and fifteen production negative controls.
+  command: python scripts/ci/validate_b25_p11_export_compatibility.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p11-export-compatibility.yml
+  workflow_job_name: B2.5-P11 Export Compatibility
+  local_reproduction_command: make validate-b25-p11-export-compatibility
+  expected_failure_meaning: The export subsystem became an alternate financial-truth authority, exposed raw tenant identity or float money, emitted invalid/injection-active formats, weakened a bound, accepted a reserved subject type, lost signature/hash verification, acquired compute behavior, or became non-blocking.
+  first_diagnostic_command: python scripts/ci/validate_b25_p11_export_compatibility.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-export-compatibility
+  ci_visibility: workflow_job
+  evidence_pack: docs/forensics/B2.5-P11 Remediation Evidence Pack.md
+  negative_control_mode: required
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep

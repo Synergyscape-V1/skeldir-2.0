@@ -80,6 +80,10 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/tenant_security.py",
     "backend/app/trust/query_continuation.py",
     "backend/app/api/trust_api.py",
+    "backend/app/api/trust_export.py",
+    "backend/app/trust/export_artifact.py",
+    "backend/app/trust/export_projection.py",
+    "backend/app/trust/spreadsheet_safety.py",
     "backend/app/config/contract_scope.yaml",
     "backend/app/main.py",
     "backend/tests/trust/test_b25_p9_machine_identity.py",
@@ -87,6 +91,9 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p10_corrective_action.py",
     "backend/tests/trust/test_b25_p10_corrective_action_ii.py",
     "backend/tests/trust/test_b25_p10_postgres_physics.py",
+    "backend/tests/trust/test_b25_p11_export_artifact.py",
+    "backend/tests/trust/test_b25_p11_export_projection.py",
+    "backend/tests/trust/test_b25_p11_postgres_physics.py",
 )
 
 

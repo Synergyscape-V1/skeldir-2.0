@@ -1337,7 +1337,7 @@ CREATE TABLE public.agent_scope_grants (
     scope_value text NOT NULL,
     granted_at timestamp with time zone DEFAULT now() NOT NULL,
     revoked_at timestamp with time zone,
-    CONSTRAINT ck_agent_scope_grants_scope_value CHECK (((scope_value = ANY (ARRAY['trust.envelope.read'::text, 'trust.envelope.verify'::text, 'trust.audit.read'::text, 'trust.keys.read'::text])) AND (scope_value <> ALL (ARRAY['trust.action.propose'::text, 'trust.action.execute'::text, 'trust.action.approve'::text, 'trust.action.reject'::text, 'auto_executable_within_policy'::text]))))
+    CONSTRAINT ck_agent_scope_grants_scope_value CHECK (((scope_value = ANY (ARRAY['trust.envelope.read'::text, 'trust.envelope.verify'::text, 'trust.audit.read'::text, 'trust.keys.read'::text, 'trust.export.create_limited'::text])) AND (scope_value <> ALL (ARRAY['trust.action.propose'::text, 'trust.action.execute'::text, 'trust.action.approve'::text, 'trust.action.reject'::text, 'auto_executable_within_policy'::text]))))
 );
 
 ALTER TABLE ONLY public.agent_scope_grants FORCE ROW LEVEL SECURITY;

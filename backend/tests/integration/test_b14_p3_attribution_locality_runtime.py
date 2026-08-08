@@ -604,16 +604,20 @@ async def test_b14_p3_runtime_export_partition_preserves_aggregate_and_session_s
     assert aggregate.status_code == 200, aggregate.text
     assert scoped.status_code == 200, scoped.text
 
-    aggregate_rows = aggregate.json()["data"]
-    scoped_rows = scoped.json()["data"]
+    aggregate_payload = aggregate.json()
+    scoped_payload = scoped.json()
+    assert aggregate_payload["projection_authority"] == "non_authoritative_display"
+    assert scoped_payload["projection_authority"] == "non_authoritative_display"
+    aggregate_rows = aggregate_payload["rows"]
+    scoped_rows = scoped_payload["rows"]
 
     assert aggregate_rows
     assert scoped_rows == []
 
-    aggregate_revenue = round(sum(float(row["revenue"]) for row in aggregate_rows), 2)
-    scoped_revenue = round(sum(float(row["revenue"]) for row in scoped_rows), 2)
-    assert aggregate_revenue == 42.00
-    assert scoped_revenue == 0.00
+    aggregate_revenue = sum(int(row["revenue_minor"]) for row in aggregate_rows)
+    scoped_revenue = sum(int(row["revenue_minor"]) for row in scoped_rows)
+    assert aggregate_revenue == 4200
+    assert scoped_revenue == 0
     assert aggregate_revenue > scoped_revenue
 
     aggregate_conversions = sum(int(row["conversions"]) for row in aggregate_rows)

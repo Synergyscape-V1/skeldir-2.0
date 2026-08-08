@@ -27,6 +27,7 @@ from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import enqueue_tenant_task
 from app.tasks.maintenance import _delete_expired_raw_event_payload_rows
 from app.tasks.privacy import _erase_tenant_privacy_surfaces
+from app.trust.export_projection import build_display_projection
 from tests.conftest import _insert_tenant
 
 
@@ -349,8 +350,9 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
             )
         assert export_response.status_code == 200, export_response.text
         export_payload = export_response.json()
-        assert export_payload["data"]
-        for row in export_payload["data"]:
+        assert export_payload["projection_authority"] == "non_authoritative_display"
+        assert export_payload["rows"]
+        for row in export_payload["rows"]:
             assert set(row.keys()) == set(EXPORT_ROW_ALLOWLIST)
         export_leaks = find_output_leaks(export_payload, forbidden_keys=output_forbidden_key_set())
         assert not export_leaks
@@ -395,8 +397,10 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
         app.dependency_overrides[get_auth_context] = _auth_override
         assert tenant_b_export_response.status_code == 200, tenant_b_export_response.text
         tenant_b_export_payload = tenant_b_export_response.json()
-        assert tenant_b_export_payload["tenant_id"] == str(tenant_b)
-        assert tenant_b_export_payload["data"] == []
+        assert tenant_b_export_payload["projection_authority"] == "non_authoritative_display"
+        assert tenant_b_export_payload["tenant_id_hash"].startswith("sha256:")
+        assert str(tenant_b) not in json.dumps(tenant_b_export_payload)
+        assert tenant_b_export_payload["rows"] == []
 
         tenantless_result = recompute_window.apply(
             kwargs={
@@ -579,24 +583,24 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
             and deletion_edge["session_authority_invalidated"] == 0
         )
 
-        export_payload = {
-            "tenant_id": str(tenant_id),
-            "generated_at": _iso(datetime.now(timezone.utc)),
-            "date_range": {"start": str(now.date()), "end": str(now.date())},
-            "data": [
+        export_payload = build_display_projection(
+            tenant_id=tenant_id,
+            start=now.date(),
+            end=now.date(),
+            source_rows=[
                 {
-                    "date": str(now.date()),
+                    "date": now.date(),
                     "channel": "paid_social",
-                    "revenue": "17.00",
+                    "revenue_minor": 1700,
                     "conversions": 1,
-                    "confidence": "0.95",
+                    "confidence_display": "0.95",
                 }
             ],
-        }
+        )
         export_leakage_attempt_blocked = not find_output_leaks(
             export_payload, forbidden_keys=output_forbidden_key_set()
         )
-        assert set(export_payload["data"][0].keys()) == set(EXPORT_ROW_ALLOWLIST)
+        assert set(export_payload["rows"][0].keys()) == set(EXPORT_ROW_ALLOWLIST)
 
         leak_dir = tmp_path / "leak"
         leak_dir.mkdir(parents=True, exist_ok=True)
@@ -640,8 +644,10 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
         tenant_other_export_payload = tenant_other_export_response.json()
         cross_tenant_blocked = (
             tenant_other_export_response.status_code == 200
-            and tenant_other_export_payload.get("tenant_id") == str(tenant_other)
-            and tenant_other_export_payload.get("data") == []
+            and tenant_other_export_payload.get("projection_authority")
+            == "non_authoritative_display"
+            and str(tenant_other) not in json.dumps(tenant_other_export_payload)
+            and tenant_other_export_payload.get("rows") == []
         )
 
         negative_report = {

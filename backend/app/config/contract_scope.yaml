@@ -36,6 +36,11 @@ contract_only_allowlist: []
 runtime_transport_only_allowlist:
   - POST /api/webhooks/stripe/payment_intent_succeeded
 
+# Explicit operation binding for the P11 machine export surface. The route is
+# governed by the /api/trust specification mapping below.
+operation_bindings:
+  POST /api/trust/v1/exports/match-verdicts: createMatchVerdictExportArtifact
+
 # Mapping: In-scope prefixes to their corresponding bundled OpenAPI specifications
 # Used to determine which contract file governs each route
 spec_mappings:

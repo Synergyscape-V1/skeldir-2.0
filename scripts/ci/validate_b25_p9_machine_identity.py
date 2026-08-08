@@ -67,6 +67,7 @@ DESIGN_PARTNER_SCOPES = (
     "trust.envelope.verify",
     "trust.audit.read",
     "trust.keys.read",
+    "trust.export.create_limited",
 )
 WORKFLOW_CONTEXT_NAME = "B2.5-P9 Machine Identity"
 

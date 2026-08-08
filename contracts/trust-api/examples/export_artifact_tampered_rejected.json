@@ -1,0 +1,10 @@
+{
+  "artifact_fixture": "export_artifact_signed_valid.json",
+  "mutation": {
+    "field_path": "envelopes[0].match_verdict_status",
+    "from": "matched",
+    "to": "unmatched"
+  },
+  "expected_verification_status": "rejected",
+  "expected_reason_code": "artifact_hash_mismatch"
+}

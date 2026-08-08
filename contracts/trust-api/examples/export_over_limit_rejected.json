@@ -1,0 +1,5 @@
+{
+  "status": "refused",
+  "reason_code": "request_body_too_large",
+  "limit_bytes": 65536
+}

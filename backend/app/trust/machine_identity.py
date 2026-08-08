@@ -172,6 +172,7 @@ class AgentScope(StrEnum):
     ENVELOPE_VERIFY = "trust.envelope.verify"
     AUDIT_READ = "trust.audit.read"
     KEYS_READ = "trust.keys.read"
+    EXPORT_CREATE_LIMITED = "trust.export.create_limited"
 
 
 #: The complete set of scopes permitted in Design Partner Mode.

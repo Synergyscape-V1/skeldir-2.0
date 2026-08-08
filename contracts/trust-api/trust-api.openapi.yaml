@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Trust API Contract Authority
-  version: 1.2.0
+  version: 1.3.0
   description: >
     B2.5 contract authority for the P10 TrustEnvelope read, bounded-query,
     authenticated-verification, and public JWKS surfaces. It does not authorize
@@ -9,6 +9,85 @@ info:
 servers:
   - url: https://api.skeldir.example
 paths:
+  /api/trust/v1/exports/match-verdicts:
+    post:
+      operationId: createMatchVerdictExportArtifact
+      summary: Create one bounded signed artifact containing match-verdict TrustEnvelopes
+      description: >
+        P11 machine-authorized export projection. Only match_verdict subjects are
+        supported. Up to 50 exact references are admitted, while no more than two
+        are evaluated and signed in one request. The response embeds complete
+        signed TrustEnvelopes and is not an attribution aggregate.
+      x-max-request-body-bytes: 65536
+      x-max-accepted-subject-refs: 50
+      x-max-evaluated-references: 2
+      x-max-signed-envelopes: 2
+      x-max-artifact-bytes: 1048576
+      x-max-concurrent-export-executions-per-worker: 2
+      x-handler-deadline-ms: 1500
+      security:
+        - MachineBearer:
+            - trust.export.create_limited
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/TrustNonce"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - subject_refs
+              properties:
+                subject_refs:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  uniqueItems: true
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 512
+                continuation_token:
+                  type:
+                    - string
+                    - "null"
+                  minLength: 1
+                  maxLength: 2048
+                  description: Opaque tenant/request-bound cursor for the next two admitted references.
+      responses:
+        "200":
+          description: Signed export artifact containing one or two complete signed match-verdict envelopes.
+          headers:
+            X-Export-Accepted-Count:
+              schema: {type: integer, minimum: 1, maximum: 50}
+            X-Export-Evaluated-Count:
+              schema: {type: integer, minimum: 1, maximum: 50}
+            X-Export-Remaining-Count:
+              schema: {type: integer, minimum: 0, maximum: 50}
+            X-Trust-Continuation:
+              required: false
+              schema: {type: string, maxLength: 2048}
+          content:
+            application/json:
+              schema:
+                $ref: export-artifact.v1.yaml
+        "400":
+          $ref: "#/components/responses/TrustApiError"
+        "403":
+          $ref: "#/components/responses/TrustApiError"
+        "413":
+          $ref: "#/components/responses/TrustApiError"
+        "415":
+          $ref: "#/components/responses/TrustApiError"
+        "422":
+          $ref: "#/components/responses/TrustApiError"
+        "503":
+          $ref: "#/components/responses/TrustApiError"
   /api/trust/v1/envelopes/{subject_type}/{subject_ref}:
     get:
       operationId: getTrustEnvelope
