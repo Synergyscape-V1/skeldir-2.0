@@ -169,6 +169,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b25_p8_signing_verification.py",
     "scripts/ci/validate_b25_p10_trust_api_surface.py",
     "scripts/ci/validate_b25_p11_export_compatibility.py",
+    "scripts/contracts/check_error_model.py",
     "scripts/ci/validate_live_branch_protection.py",
     "scripts/ci/write_b24_p11_command_junit.py",
     "scripts/ci/validate_m5_b24_readiness_design.py",
