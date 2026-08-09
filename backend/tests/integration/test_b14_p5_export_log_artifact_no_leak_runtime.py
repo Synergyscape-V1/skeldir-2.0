@@ -150,6 +150,11 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
                 "/api/export/csv",
                 headers={"X-Correlation-ID": str(uuid4())},
             )
+            enriched_csv_response = await client.get(
+                "/api/export/csv",
+                params={"csv_schema_version": "b25-p11-export-csv-v2"},
+                headers={"X-Correlation-ID": str(uuid4())},
+            )
             xlsx_response = await client.get(
                 "/api/export/excel",
                 headers={"X-Correlation-ID": str(uuid4())},
@@ -185,15 +190,26 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
     csv_lines = [
         line.strip() for line in csv_response.text.splitlines() if line.strip()
     ]
-    assert csv_lines[0] == (
+    assert csv_lines[0] == "date,channel,revenue,conversions,confidence"
+    assert len(csv_lines) >= 2
+    assert enriched_csv_response.status_code == 200
+    assert 'profile="https://api.skeldir.com/profiles/export-csv-v2"' in (
+        enriched_csv_response.headers["content-type"]
+    )
+    enriched_csv_lines = [
+        line.strip()
+        for line in enriched_csv_response.text.splitlines()
+        if line.strip()
+    ]
+    assert enriched_csv_lines[0] == (
         "projection_authority,projection_schema_version,date,channel,revenue,"
         "conversions,confidence"
     )
     assert all(
         line.startswith("non_authoritative_display,b25-p11-export-csv-v2,")
-        for line in csv_lines[1:]
+        for line in enriched_csv_lines[1:]
     )
-    assert len(csv_lines) >= 2
+    assert len(enriched_csv_lines) >= 2
     assert xlsx_response.status_code == 200
     from openpyxl import load_workbook
 

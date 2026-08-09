@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 2.1.0
+  version: 3.0.0
   description: B2.5-P11 non-authoritative display exports; raw tenant_id values are forbidden.
 servers:
   - url: https://api.skeldir.com
@@ -53,6 +53,7 @@ paths:
             format: date
           description: End date for revenue data (ISO 8601 format)
           example: "2025-11-10"
+        - $ref: '#/components/parameters/CsvSchemaVersion'
       responses:
         '200':
           description: Revenue data exported successfully
@@ -88,11 +89,16 @@ paths:
             text/csv:
               schema:
                 type: string
-                description: Header-first rectangular b25-p11-export-csv-v2; every data row carries projection_authority=non_authoritative_display and no metadata preamble is permitted.
+                description: Legacy five-column positional CSV preserved for existing consumers.
               examples:
                 csv_export:
-                  summary: CSV export
-                  value: "projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence\r\nnon_authoritative_display,b25-p11-export-csv-v2,2025-01-01,google_search,1000.50,1,0.90\r\n"
+                  summary: Legacy CSV export
+                  value: "date,channel,revenue,conversions,confidence\r\n2025-01-01,google_search,1000.50,1,0.90\r\n"
+            'text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2"':
+              schema:
+                type: string
+                description: Detached self-identifying b25-p11-export-csv-v2.
+              example: "projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence\r\nnon_authoritative_display,b25-p11-export-csv-v2,2025-01-01,google_search,1000.50,1,0.90\r\n"
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
                 type: string
@@ -103,8 +109,40 @@ paths:
           $ref: '../../_common/v1/components.yaml#/components/responses/TooManyRequests'
         '500':
           $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ExportDeadlineExceeded'
 components:
+  parameters:
+    CsvSchemaVersion:
+      name: csv_schema_version
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [legacy-v1, b25-p11-export-csv-v2]
+        default: legacy-v1
+  responses:
+    ExportDeadlineExceeded:
+      description: Bounded export database or handler deadline exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ExportDeadlineError'
   schemas:
+    ExportDeadlineError:
+      type: object
+      additionalProperties: false
+      required: [detail]
+      properties:
+        detail:
+          type: object
+          additionalProperties: false
+          required: [status, reason_code]
+          properties:
+            status: {type: string, const: refused}
+            reason_code:
+              type: string
+              enum: [legacy_export_database_deadline_exceeded, legacy_export_handler_deadline_exceeded]
     ExportDisplayProjection:
       type: object
       additionalProperties: false

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 2.1.0
+  version: 2.0.0
   description: B2.5-P11 non-authoritative display exports; raw tenant_id values are forbidden.
 servers:
   - url: https://api.skeldir.com
@@ -88,11 +88,11 @@ paths:
             text/csv:
               schema:
                 type: string
-                description: Header-first rectangular b25-p11-export-csv-v2; every data row carries projection_authority=non_authoritative_display and no metadata preamble is permitted.
+                description: CSV file content
               examples:
                 csv_export:
                   summary: CSV export
-                  value: "projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence\r\nnon_authoritative_display,b25-p11-export-csv-v2,2025-01-01,google_search,1000.50,1,0.90\r\n"
+                  value: "date,channel,revenue,conversions,confidence\r\n2025-01-01,google_search,1000.50,1,0.90\r\n"
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
                 type: string

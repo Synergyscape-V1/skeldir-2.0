@@ -197,16 +197,6 @@ def _artifact_identity_bytes(payload: dict[str, Any]) -> bytes:
             "tenant_id_hash",
             _require_text(payload["tenant_id_hash"], "tenant_id_hash").encode("utf-8"),
         ),
-        _frame(
-            "signing_key_id",
-            _require_text(payload["signing_key_id"], "signing_key_id").encode("utf-8"),
-        ),
-        _frame(
-            "signing_algorithm",
-            _require_text(payload["signing_algorithm"], "signing_algorithm").encode(
-                "utf-8"
-            ),
-        ),
         _frame("envelope_count", str(len(envelopes)).encode("ascii")),
     ]
     pieces.extend(
@@ -216,9 +206,21 @@ def _artifact_identity_bytes(payload: dict[str, Any]) -> bytes:
     return b"".join(pieces)
 
 
-def export_artifact_signature_material(artifact_hash: str) -> bytes:
-    """Return the domain-separated bytes covered by the export signature."""
-    return EXPORT_ARTIFACT_SIGNING_DOMAIN + artifact_hash.encode("ascii")
+def export_artifact_signature_material(
+    artifact_hash: str,
+    *,
+    signing_key_id: str,
+    signing_algorithm: str,
+) -> bytes:
+    """Bind signer identity to a signer-independent artifact identity."""
+    return b"".join(
+        (
+            EXPORT_ARTIFACT_SIGNING_DOMAIN,
+            _frame("artifact_hash", artifact_hash.encode("ascii")),
+            _frame("signing_key_id", signing_key_id.encode("utf-8")),
+            _frame("signing_algorithm", signing_algorithm.encode("utf-8")),
+        )
+    )
 
 
 def sign_export_artifact(
@@ -242,7 +244,9 @@ def sign_export_artifact(
     )
     signed["artifact_hash"] = compute_artifact_hash(_artifact_identity_bytes(signed))
     signature_material = export_artifact_signature_material(
-        _require_text(signed["artifact_hash"], "artifact_hash")
+        _require_text(signed["artifact_hash"], "artifact_hash"),
+        signing_key_id=key.kid,
+        signing_algorithm=key.algorithm,
     )
     signed["signature_hash"] = compute_detached_signature_hash(signature_material)
     signed["signature"] = encode_ed25519_signature(
@@ -282,7 +286,13 @@ def verify_export_artifact(
         expected_hash = compute_artifact_hash(_artifact_identity_bytes(candidate))
         if candidate["artifact_hash"] != expected_hash:
             raise ExportArtifactError("artifact_hash_mismatch")
-        signature_material = export_artifact_signature_material(expected_hash)
+        signature_material = export_artifact_signature_material(
+            expected_hash,
+            signing_key_id=_require_text(candidate["signing_key_id"], "signing_key_id"),
+            signing_algorithm=_require_text(
+                candidate["signing_algorithm"], "signing_algorithm"
+            ),
+        )
         expected_signature_hash = compute_detached_signature_hash(signature_material)
         if candidate["signature_hash"] != expected_signature_hash:
             raise ExportArtifactError("signature_hash_mismatch")

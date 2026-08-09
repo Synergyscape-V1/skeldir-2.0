@@ -188,6 +188,7 @@ ALLOWED_M0_PATHS = [
     "backend/requirements-lock.txt",
     "contracts/export/v1/export.yaml",
     "contracts/export/baselines/v1.0.0/export.yaml",
+    "contracts/export/CSV_EVOLUTION.md",
     "scripts/ci/run_m1_onboarding_bootstrap.sh",
     "scripts/ci/validate_m2_test_feedback_loop.py",
     "scripts/ci/run_m2_test_feedback_loop.sh",

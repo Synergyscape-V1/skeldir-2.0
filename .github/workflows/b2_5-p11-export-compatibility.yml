@@ -128,6 +128,14 @@ jobs:
           grep -E "^P11_TRACK1_CSV_METRICS=" /tmp/b25_p11_track1_serialization.out
           grep -E "^P11_TRACK1_SERIALIZATION_METRICS=" /tmp/b25_p11_track1_serialization.out
 
+      - name: Prove physical serializer accounting after HTTP timeout
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p11_export_projection.py::test_timeout_retains_capacity_until_physical_serializer_finishes \
+            -q -s | tee /tmp/b25_p11_track1_timeout_serializer.out
+          grep -E "^P11_TRACK1_TIMEOUT_SERIALIZER_METRICS=" /tmp/b25_p11_track1_timeout_serializer.out
+
       - name: Validate P1-P10 substrate preservation
         run: |
           make validate-b25-p1-contracts
@@ -165,6 +173,7 @@ jobs:
           grep -E "^shadow_paths_scanned=0$" /tmp/b25_p11.out
           grep -E "^negative_controls_fired=15$" /tmp/b25_p11.out
           grep -E "^corrective_negative_controls_fired=11$" /tmp/b25_p11.out
+          grep -E "^second_corrective_negative_controls_fired=7$" /tmp/b25_p11.out
           grep -E "^pytest_controls_passed=1$" /tmp/b25_p11.out
 
       - name: Validate CI governance

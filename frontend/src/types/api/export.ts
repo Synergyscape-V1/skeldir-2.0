@@ -88,6 +88,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ExportDeadlineError: {
+            detail: {
+                /** @constant */
+                status: "refused";
+                /** @enum {string} */
+                reason_code: "legacy_export_database_deadline_exceeded" | "legacy_export_handler_deadline_exceeded";
+            };
+        };
         ExportData: {
             /** @constant */
             projection_authority: "non_authoritative_display";
@@ -183,6 +191,22 @@ export interface components {
         };
     };
     responses: {
+        /** @description Bounded export database or handler deadline exceeded */
+        ExportDeadlineExceeded: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    detail: {
+                        /** @constant */
+                        status: "refused";
+                        /** @enum {string} */
+                        reason_code: "legacy_export_database_deadline_exceeded" | "legacy_export_handler_deadline_exceeded";
+                    };
+                };
+            };
+        };
         /** @description Bad Request - validation failed */
         ValidationError: {
             headers: {
@@ -378,6 +402,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats. */
+        CsvSchemaVersion: "legacy-v1" | "b25-p11-export-csv-v2";
         /** @description Unique request correlation ID for distributed tracing */
         CorrelationId: string;
         /** @description Bearer token for authentication (format - Bearer <token>) */
@@ -400,6 +426,8 @@ export interface operations {
                 end_date?: string;
                 /** @description Filter by specific channels */
                 channels?: string[];
+                /** @description Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats. */
+                csv_schema_version?: "legacy-v1" | "b25-p11-export-csv-v2";
             };
             header: {
                 /** @description Unique request correlation ID for distributed tracing */
@@ -423,7 +451,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example date,channel,revenue,conversions,confidence
+                     *     2025-11-25,Meta,15230.50,127,0.92
+                     */
                     "text/csv": string;
+                    /**
+                     * @example projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
+                     *     non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
+                     */
+                    "text/csv; profile=\"https://api.skeldir.com/profiles/export-csv-v2\"": string;
                     /**
                      * @example {
                      *       "projection_authority": "non_authoritative_display",
@@ -678,11 +715,30 @@ export interface operations {
                     };
                 };
             };
+            /** @description Bounded export database or handler deadline exceeded */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @enum {string} */
+                            reason_code: "legacy_export_database_deadline_exceeded" | "legacy_export_handler_deadline_exceeded";
+                        };
+                    };
+                };
+            };
         };
     };
     exportCSV: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats. */
+                csv_schema_version?: "legacy-v1" | "b25-p11-export-csv-v2";
+            };
             header: {
                 /** @description Unique request correlation ID for distributed tracing */
                 "X-Correlation-ID": string;
@@ -706,11 +762,16 @@ export interface operations {
                 };
                 content: {
                     /**
-                     * @example projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
-                     *     non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
-                     *     non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Google,12450.00,98,0.89
+                     * @example date,channel,revenue,conversions,confidence
+                     *     2025-11-25,Meta,15230.50,127,0.92
+                     *     2025-11-25,Google,12450.00,98,0.89
                      */
                     "text/csv": string;
+                    /**
+                     * @example projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
+                     *     non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
+                     */
+                    "text/csv; profile=\"https://api.skeldir.com/profiles/export-csv-v2\"": string;
                 };
             };
             /** @description Unauthorized - invalid or missing authentication */
@@ -839,6 +900,22 @@ export interface operations {
                             /** @example INVALID_FORMAT */
                             code?: string;
                         }[];
+                    };
+                };
+            };
+            /** @description Bounded export database or handler deadline exceeded */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @enum {string} */
+                            reason_code: "legacy_export_database_deadline_exceeded" | "legacy_export_handler_deadline_exceeded";
+                        };
                     };
                 };
             };
@@ -1056,6 +1133,22 @@ export interface operations {
                     };
                 };
             };
+            /** @description Bounded export database or handler deadline exceeded */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @enum {string} */
+                            reason_code: "legacy_export_database_deadline_exceeded" | "legacy_export_handler_deadline_exceeded";
+                        };
+                    };
+                };
+            };
         };
     };
     exportExcel: {
@@ -1210,6 +1303,22 @@ export interface operations {
                             /** @example INVALID_FORMAT */
                             code?: string;
                         }[];
+                    };
+                };
+            };
+            /** @description Bounded export database or handler deadline exceeded */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @enum {string} */
+                            reason_code: "legacy_export_database_deadline_exceeded" | "legacy_export_handler_deadline_exceeded";
+                        };
                     };
                 };
             };

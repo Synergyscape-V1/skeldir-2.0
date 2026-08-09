@@ -47,6 +47,8 @@ EVIDENCE_PATH = Path("docs/forensics/B2.5-P11 Remediation Evidence Pack.md")
 CORRECTIVE_EVIDENCE_PATH = Path(
     "docs/forensics/B2.5-P11 Corrective Remediation Evidence Pack.md"
 )
+CSV_EVOLUTION_POLICY = Path("contracts/export/CSV_EVOLUTION.md")
+P11_PROJECTION_TESTS = Path("backend/tests/trust/test_b25_p11_export_projection.py")
 P7_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202607011200_b25_p7_trust_audit_provenance.py"
 )
@@ -164,6 +166,29 @@ def _validate_schema_and_manifest(overrides: dict[Path, str]) -> None:
     }
     _require(declared == artifact_properties, "export_artifact_hash_manifest_drift")
     _require(
+        manifest.get("export_artifact_hash_input_fields")
+        == [
+            "artifact_schema_version",
+            "canonicalization_version",
+            "artifact_signing_domain",
+            "generated_at",
+            "tenant_id_hash",
+            "envelope_count",
+            "envelopes[]",
+        ],
+        "artifact_hash_input_manifest_drift",
+    )
+    _require(
+        manifest.get("export_artifact_signature_hash_input_fields")
+        == [
+            "artifact_signing_domain",
+            "artifact_hash",
+            "signing_key_id",
+            "signing_algorithm",
+        ],
+        "signature_hash_input_manifest_drift",
+    )
+    _require(
         artifact_schema["properties"]["envelopes"].get("maxItems") == 2,
         "artifact_envelope_ceiling_drift",
     )
@@ -256,6 +281,49 @@ def _validate_contracts(overrides: dict[Path, str]) -> None:
         )
         _require("revenue_minor" in source, f"minor_money_missing:{path}")
         _require("confidence_display" in source, f"confidence_display_missing:{path}")
+    public_contract = _parsed(Path("api-contracts/openapi/v1/export.yaml"), overrides)
+    _require(public_contract["info"]["version"] == "4.0.0", "csv_major_version_missing")
+    for path in (
+        "/api/export/revenue",
+        "/api/export/csv",
+        "/api/export/json",
+        "/api/export/excel",
+    ):
+        _require(
+            "503" in public_contract["paths"][path]["get"]["responses"],
+            f"export_503_contract_missing:{path}",
+        )
+    reason_enum = public_contract["components"]["schemas"]["ExportDeadlineError"][
+        "properties"
+    ]["detail"]["properties"]["reason_code"]["enum"]
+    _require(
+        reason_enum
+        == [
+            "legacy_export_database_deadline_exceeded",
+            "legacy_export_handler_deadline_exceeded",
+        ],
+        "export_503_reason_contract_drift",
+    )
+    baseline = _parsed(Path("contracts/export/baselines/v1.0.0/export.yaml"), overrides)
+    baseline_csv = baseline["paths"]["/api/export/revenue"]["get"]["responses"]["200"][
+        "content"
+    ]["text/csv"]["examples"]["csv_export"]["value"]
+    _require(baseline["info"]["version"] == "2.0.0", "historical_baseline_rewritten")
+    _require(
+        baseline_csv.startswith("date,channel,revenue,conversions,confidence\r\n"),
+        "historical_csv_baseline_rewritten",
+    )
+    current = _parsed(Path("contracts/export/v1/export.yaml"), overrides)
+    _require(current["info"]["version"] == "3.0.0", "csv_contract_major_missing")
+    _require(
+        'text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2"'
+        in current["paths"]["/api/export/revenue"]["get"]["responses"]["200"][
+            "content"
+        ],
+        "enriched_csv_profile_missing",
+    )
+    policy = _text(CSV_EVOLUTION_POLICY, overrides)
+    _require("immutable legacy-v1 positional" in policy, "csv_evolution_policy_missing")
 
 
 def _validate_sources(overrides: dict[Path, str]) -> None:
@@ -342,6 +410,22 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
         'candidate["artifact_hash"] != expected_hash' in artifact,
         "artifact_hash_verify_removed",
     )
+    identity_body = artifact.split("def _artifact_identity_bytes", 1)[1].split(
+        "def export_artifact_signature_material", 1
+    )[0]
+    _require("signing_key_id" not in identity_body, "signer_metadata_in_artifact_hash")
+    _require(
+        "signing_algorithm" not in identity_body, "signer_metadata_in_artifact_hash"
+    )
+    signature_body = artifact.split("def export_artifact_signature_material", 1)[
+        1
+    ].split("def sign_export_artifact", 1)[0]
+    _require(
+        '_frame("artifact_hash"' in signature_body
+        and '_frame("signing_key_id"' in signature_body
+        and '_frame("signing_algorithm"' in signature_body,
+        "signature_key_binding_incomplete",
+    )
     _require('"envelopes": ordered' in artifact, "signed_envelope_embedding_removed")
     _validate_no_post_signature_mutation(artifact)
     _require(
@@ -373,6 +457,11 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
         in legacy,
         "detached_csv_authority_missing",
     )
+    _require(
+        'LEGACY_CSV_COLUMNS = ("date", "channel", "revenue", "conversions", "confidence")'
+        in legacy,
+        "legacy_csv_positional_contract_drift",
+    )
     _validate_csv_header_first(legacy)
     _require('",".join(' not in legacy, "manual_csv_join_present")
     _require(
@@ -399,9 +488,18 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
         "fetchmany(LEGACY_EXPORT_MAX_ROWS + 1)",
     ):
         _require(token in legacy, f"legacy_bound_missing:{token}")
+    for token in (
+        "asyncio.create_task(",
+        "asyncio.to_thread(serializer, serializer_input)",
+        "await asyncio.shield(serializer_task)",
+        "_TRACK1_RETAINED_SERIALIZER_TASKS.add(serializer_task)",
+        "serializer_task.add_done_callback(release_retained_permit)",
+    ):
+        _require(token in legacy, f"physical_serializer_accounting_missing:{token}")
+    projection_tests = _text(P11_PROJECTION_TESTS, overrides)
+    _require("psutil.Process()" in projection_tests, "track1_process_rss_proof_missing")
     _require(
-        legacy.count("await asyncio.to_thread(") >= 2,
-        "track1_cpu_serialization_not_offloaded",
+        "tracemalloc" not in projection_tests, "tracemalloc_substituted_for_process_rss"
     )
     _require("fetchall(" not in legacy, "fetch_all_before_budget_present")
     for token in (
@@ -432,7 +530,10 @@ def _validate_corrective_workflow(overrides: dict[Path, str]) -> None:
         "test_csv_and_xlsx_maximum_concurrent_serialization_stays_in_declared_memory",
         "P11_TRACK1_CSV_METRICS=",
         "P11_TRACK1_SERIALIZATION_METRICS=",
+        "test_timeout_retains_capacity_until_physical_serializer_finishes",
+        "P11_TRACK1_TIMEOUT_SERIALIZER_METRICS=",
         "corrective_negative_controls_fired=11",
+        "second_corrective_negative_controls_fired=7",
     ):
         _require(token in workflow, f"corrective_workflow_proof_missing:{token}")
     _require(
@@ -735,6 +836,76 @@ def run_corrective_negative_controls() -> int:
     return fired
 
 
+def run_second_corrective_negative_controls() -> int:
+    controls = (
+        (
+            "NC-C2-01",
+            _mutated(
+                LEGACY_EXPORT,
+                'LEGACY_CSV_COLUMNS = ("date", "channel", "revenue", "conversions", "confidence")',
+                'LEGACY_CSV_COLUMNS = ("projection_authority", "date", "channel", "revenue", "conversions")',
+            ),
+        ),
+        (
+            "NC-C2-02",
+            _mutated(
+                Path("api-contracts/openapi/v1/export.yaml"),
+                "        '503':\n          $ref: '#/components/responses/ExportDeadlineExceeded'",
+                "",
+            ),
+        ),
+        (
+            "NC-C2-03",
+            _mutated(
+                ARTIFACT,
+                '        _frame("envelope_count", str(len(envelopes)).encode("ascii")),',
+                '        _frame("signing_key_id", payload["signing_key_id"].encode("utf-8")),\n        _frame("envelope_count", str(len(envelopes)).encode("ascii")),',
+            ),
+        ),
+        (
+            "NC-C2-04",
+            _mutated(
+                ARTIFACT,
+                '            _frame("signing_key_id", signing_key_id.encode("utf-8")),',
+                "",
+            ),
+        ),
+        (
+            "NC-C2-05",
+            _mutated(
+                LEGACY_EXPORT,
+                "                serializer_task.add_done_callback(release_retained_permit)",
+                "                _TRACK1_EXPORT_CONCURRENCY_LIMIT.release()",
+            ),
+        ),
+        (
+            "NC-C2-06",
+            _mutated(
+                P11_PROJECTION_TESTS,
+                "process = psutil.Process()",
+                "process = tracemalloc",
+            ),
+        ),
+        (
+            "NC-C2-07",
+            _mutated(
+                Path("contracts/export/baselines/v1.0.0/export.yaml"),
+                'value: "date,channel,revenue,conversions,confidence\\r\\n',
+                'value: "projection_authority,date,channel,revenue,conversions\\r\\n',
+            ),
+        ),
+    )
+    fired = 0
+    for name, override in controls:
+        try:
+            validate_core(override)
+        except (B25P11ValidationError, SyntaxError, KeyError, json.JSONDecodeError):
+            fired += 1
+            continue
+        raise B25P11ValidationError(f"second_corrective_negative_control_silent:{name}")
+    return fired
+
+
 def _run_pytest() -> None:
     command = [
         sys.executable,
@@ -759,11 +930,18 @@ def main(argv: list[str]) -> int:
         corrective_negative_controls = (
             run_corrective_negative_controls() if args.negative_control else 0
         )
+        second_corrective_negative_controls = (
+            run_second_corrective_negative_controls() if args.negative_control else 0
+        )
         if args.negative_control:
             _require(negative_controls == 15, "negative_control_count_drift")
             _require(
                 corrective_negative_controls == 11,
                 "corrective_negative_control_count_drift",
+            )
+            _require(
+                second_corrective_negative_controls == 7,
+                "second_corrective_negative_control_count_drift",
             )
         _run_pytest()
     except B25P11ValidationError as exc:
@@ -787,6 +965,10 @@ def main(argv: list[str]) -> int:
     print("shadow_paths_scanned=0")
     print(f"negative_controls_fired={negative_controls}")
     print(f"corrective_negative_controls_fired={corrective_negative_controls}")
+    print(
+        "second_corrective_negative_controls_fired="
+        f"{second_corrective_negative_controls}"
+    )
     print("pytest_controls_passed=1")
     return 0
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 3.1.0
+  version: 4.0.0
   description: |
     B2.5-P11 human-authorized compatibility projections for CSV, JSON, and
     Excel. These responses are explicitly non-authoritative display data;
@@ -65,6 +65,7 @@ paths:
             items:
               type: string
           description: Filter by specific channels
+        - $ref: '#/components/parameters/CsvSchemaVersion'
         - name: X-Attribution-Session-ID
           in: header
           required: false
@@ -88,7 +89,17 @@ paths:
             text/csv:
               schema:
                 type: string
-                description: Header-first rectangular b25-p11-export-csv-v2 rows; each data record repeats non_authoritative_display so detached files remain self-identifying.
+                description: Legacy five-column positional CSV preserved for existing consumers.
+              example: |
+                date,channel,revenue,conversions,confidence
+                2025-11-25,Meta,15230.50,127,0.92
+            'text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2"':
+              schema:
+                type: string
+                description: Header-first rectangular b25-p11-export-csv-v2 rows; every record carries non_authoritative_display.
+              example: |
+                projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
+                non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
             application/json:
               schema:
                 $ref: '#/components/schemas/ExportData'
@@ -123,6 +134,8 @@ paths:
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '400':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/ExportDeadlineExceeded'
 
   /api/export/csv:
     get:
@@ -143,6 +156,7 @@ paths:
             type: string
             format: uuid
           description: Optional session-local export scope
+        - $ref: '#/components/parameters/CsvSchemaVersion'
       responses:
         '200':
           description: CSV file
@@ -160,13 +174,21 @@ paths:
               schema:
                 type: string
               example: |
+                date,channel,revenue,conversions,confidence
+                2025-11-25,Meta,15230.50,127,0.92
+                2025-11-25,Google,12450.00,98,0.89
+            'text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2"':
+              schema:
+                type: string
+              example: |
                 projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
                 non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
-                non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Google,12450.00,98,0.89
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/ExportDeadlineExceeded'
 
   /api/export/json:
     get:
@@ -224,6 +246,8 @@ paths:
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/ExportDeadlineExceeded'
 
   /api/export/excel:
     get:
@@ -258,9 +282,49 @@ paths:
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '503':
+          $ref: '#/components/responses/ExportDeadlineExceeded'
 
 components:
+  parameters:
+    CsvSchemaVersion:
+      name: csv_schema_version
+      in: query
+      required: false
+      description: Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats.
+      schema:
+        type: string
+        enum: [legacy-v1, b25-p11-export-csv-v2]
+        default: legacy-v1
+  responses:
+    ExportDeadlineExceeded:
+      description: Bounded export database or handler deadline exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ExportDeadlineError'
+          examples:
+            database_deadline:
+              value:
+                detail: {status: refused, reason_code: legacy_export_database_deadline_exceeded}
+            handler_deadline:
+              value:
+                detail: {status: refused, reason_code: legacy_export_handler_deadline_exceeded}
   schemas:
+    ExportDeadlineError:
+      type: object
+      additionalProperties: false
+      required: [detail]
+      properties:
+        detail:
+          type: object
+          additionalProperties: false
+          required: [status, reason_code]
+          properties:
+            status: {type: string, const: refused}
+            reason_code:
+              type: string
+              enum: [legacy_export_database_deadline_exceeded, legacy_export_handler_deadline_exceeded]
     ExportData:
       type: object
       required:

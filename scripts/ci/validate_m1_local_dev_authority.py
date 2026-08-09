@@ -260,6 +260,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "contracts/trust-api/",
     "contracts/export/v1/export.yaml",
     "contracts/export/baselines/v1.0.0/export.yaml",
+    "contracts/export/CSV_EVOLUTION.md",
     "api-contracts/openapi/v1/export.yaml",
     "api-contracts/dist/openapi/v1/export.bundled.yaml",
     "docs/ci/",
