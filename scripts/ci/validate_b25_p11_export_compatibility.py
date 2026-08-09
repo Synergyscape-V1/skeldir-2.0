@@ -304,6 +304,13 @@ def _validate_contracts(overrides: dict[Path, str]) -> None:
         ],
         "export_503_reason_contract_drift",
     )
+    _require(
+        public_contract["components"]["responses"]["ExportDeadlineExceeded"].get(
+            "x-skeldir-shared-error-component"
+        )
+        is True,
+        "export_503_shared_error_provenance_missing",
+    )
     baseline = _parsed(Path("contracts/export/baselines/v1.0.0/export.yaml"), overrides)
     baseline_csv = baseline["paths"]["/api/export/revenue"]["get"]["responses"]["200"][
         "content"

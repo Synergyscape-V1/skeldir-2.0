@@ -298,6 +298,7 @@ components:
         default: legacy-v1
   responses:
     ExportDeadlineExceeded:
+      x-skeldir-shared-error-component: true
       description: Bounded export database or handler deadline exceeded
       content:
         application/json:

@@ -316,6 +316,7 @@ paths:
                 required: *ref_0
                 properties: *ref_1
         '503':
+          x-skeldir-shared-error-component: true
           description: Bounded export database or handler deadline exceeded
           content: &ref_9
             application/json:
@@ -419,6 +420,7 @@ paths:
           headers: *ref_7
           content: *ref_8
         '503':
+          x-skeldir-shared-error-component: true
           description: Bounded export database or handler deadline exceeded
           content: *ref_9
   /api/export/json:
@@ -494,6 +496,7 @@ paths:
           headers: *ref_7
           content: *ref_8
         '503':
+          x-skeldir-shared-error-component: true
           description: Bounded export database or handler deadline exceeded
           content: *ref_9
   /api/export/excel:
@@ -543,6 +546,7 @@ paths:
           headers: *ref_7
           content: *ref_8
         '503':
+          x-skeldir-shared-error-component: true
           description: Bounded export database or handler deadline exceeded
           content: *ref_9
 components:
