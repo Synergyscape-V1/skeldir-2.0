@@ -9,6 +9,7 @@ required:
   - artifact_signing_domain
   - envelopes
   - artifact_hash
+  - signature_hash
   - signature
   - signing_key_id
   - signing_algorithm
@@ -33,6 +34,10 @@ properties:
   artifact_hash:
     type: string
     pattern: ^sha256:[0-9a-f]{64}$
+  signature_hash:
+    type: string
+    pattern: ^sha256:[0-9a-f]{64}$
+    description: SHA-256 identity of the canonical domain-separated bytes covered by the artifact signature; never an alias of artifact_hash or a hash of signature text.
   signature:
     type: string
     pattern: ^ed25519:[A-Za-z0-9_-]+$

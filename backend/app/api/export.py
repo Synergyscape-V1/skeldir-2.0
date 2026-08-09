@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import csv
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 from io import BytesIO, StringIO
 from typing import Annotated
@@ -20,6 +22,7 @@ from fastapi import (
 )
 from openpyxl import Workbook
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db_session
@@ -30,9 +33,11 @@ from app.privacy.output_redaction import (
 )
 from app.security.auth import AuthContext, get_auth_context
 from app.trust.export_projection import build_display_projection, project_display_rows
+from app.trust.refusal import tenant_hash
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 EXPORT_ROW_ALLOWLIST = (
     "date",
@@ -51,19 +56,39 @@ EXPORT_TOP_LEVEL_ALLOWLIST = (
     "rows",
 )
 EXPORT_DATE_RANGE_ALLOWLIST = ("start", "end")
-CSV_COLUMNS = ("date", "channel", "revenue", "conversions", "confidence")
+CSV_SCHEMA_VERSION = "b25-p11-export-csv-v2"
+CSV_COLUMNS = (
+    "projection_authority",
+    "projection_schema_version",
+    "date",
+    "channel",
+    "revenue",
+    "conversions",
+    "confidence",
+)
+XLSX_COLUMNS = ("date", "channel", "revenue", "conversions", "confidence")
 
 LEGACY_EXPORT_MAX_DATE_SPAN_DAYS = 31
 LEGACY_EXPORT_MAX_ROWS = 1_000
 LEGACY_EXPORT_MAX_BYTES = 1_048_576
 LEGACY_EXPORT_MAX_CHANNELS = 32
 LEGACY_EXPORT_MAX_CHANNEL_LENGTH = 256
+TRACK1_MAX_CONCURRENT_EXPORTS = 2
+TRACK1_HANDLER_DEADLINE_SECONDS = 3.0
+TRACK1_DATABASE_STATEMENT_TIMEOUT_MS = 1_250
+TRACK1_DATABASE_WORK_MEM_KIB = 4_096
+TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES = 32 * 1_024 * 1_024
 _LEGACY_ROW_BYTE_ESTIMATE = 512
 _EXPORT_FORBIDDEN_KEYS = output_forbidden_key_set()
+_TRACK1_EXPORT_CONCURRENCY_LIMIT = asyncio.Semaphore(TRACK1_MAX_CONCURRENT_EXPORTS)
 
 
 class LegacyExportLimitExceeded(ValueError):
     """Raised before unbounded legacy export work can occur."""
+
+
+class LegacyExportDeadlineExceeded(TimeoutError):
+    """Raised when a bounded Track-1 database or handler deadline fires."""
 
 
 def _resolve_date_range(
@@ -116,6 +141,8 @@ def _csv_from_rows(rows: list[dict[str, object]]) -> str:
         _enforce_export_row_no_leak(row)
         writer.writerow(
             (
+                "non_authoritative_display",
+                CSV_SCHEMA_VERSION,
                 row["date"],
                 row["channel"],
                 row["revenue_display"],
@@ -131,10 +158,9 @@ def _csv_from_rows(rows: list[dict[str, object]]) -> str:
 
 def _xlsx_from_projection(payload: dict[str, object]) -> bytes:
     _enforce_export_payload_no_leak(payload)
-    workbook = Workbook(write_only=False)
-    worksheet = workbook.active
-    worksheet.title = "Export"
-    worksheet.append(CSV_COLUMNS)
+    workbook = Workbook(write_only=True)
+    worksheet = workbook.create_sheet("Export")
+    worksheet.append(XLSX_COLUMNS)
     rows = payload["rows"]
     if not isinstance(rows, list):
         raise ValueError("export payload rows must be a list")
@@ -293,7 +319,26 @@ async def _fetch_reporting_rows(
         LIMIT :row_limit
         """
     )
-    result = await db_session.execute(query, query_params)
+    await db_session.execute(
+        text(
+            f"SET LOCAL statement_timeout = '{TRACK1_DATABASE_STATEMENT_TIMEOUT_MS}ms'"
+        )
+    )
+    await db_session.execute(
+        text(f"SET LOCAL work_mem = '{TRACK1_DATABASE_WORK_MEM_KIB}kB'")
+    )
+    await db_session.execute(text("SET LOCAL max_parallel_workers_per_gather = 0"))
+    try:
+        result = await db_session.execute(query, query_params)
+    except DBAPIError as exc:
+        sqlstate = getattr(exc.orig, "sqlstate", None) or getattr(
+            exc.orig, "pgcode", None
+        )
+        if sqlstate == "57014":
+            raise LegacyExportDeadlineExceeded(
+                "legacy_export_database_deadline_exceeded"
+            ) from exc
+        raise
     fetched = result.fetchmany(LEGACY_EXPORT_MAX_ROWS + 1)
     if len(fetched) > LEGACY_EXPORT_MAX_ROWS:
         raise LegacyExportLimitExceeded("legacy_export_row_budget_exceeded")
@@ -341,6 +386,78 @@ async def _projection_for_request(
     return rows, payload
 
 
+async def _run_track1_export(
+    *,
+    db_session: AsyncSession,
+    tenant_id: UUID,
+    session_scope: UUID | None,
+    start: date,
+    end: date,
+    channels: list[str] | None,
+    export_format: str,
+) -> tuple[list[dict[str, object]], dict[str, object], str | bytes | None]:
+    """Bound database, CPU serialization, and aggregate per-worker memory."""
+    try:
+        # The deadline includes admission queueing as well as database and
+        # serialization work; saturation cannot create an unbounded wait.
+        async with asyncio.timeout(TRACK1_HANDLER_DEADLINE_SECONDS):
+            async with _TRACK1_EXPORT_CONCURRENCY_LIMIT:
+                rows, payload = await _projection_for_request(
+                    db_session=db_session,
+                    tenant_id=tenant_id,
+                    session_scope=session_scope,
+                    start=start,
+                    end=end,
+                    channels=channels,
+                )
+                if export_format == "csv":
+                    body: str | bytes | None = await asyncio.to_thread(
+                        _csv_from_rows, rows
+                    )
+                elif export_format == "xlsx":
+                    body = await asyncio.to_thread(_xlsx_from_projection, payload)
+                elif export_format == "json":
+                    body = None
+                else:
+                    raise ValueError("unsupported_track1_export_format")
+                return rows, payload, body
+    except LegacyExportDeadlineExceeded:
+        raise
+    except TimeoutError as exc:
+        raise LegacyExportDeadlineExceeded(
+            "legacy_export_handler_deadline_exceeded"
+        ) from exc
+
+
+def _observe_human_export(
+    *,
+    tenant_id: UUID,
+    correlation_id: UUID,
+    export_format: str,
+    row_count: int,
+    artifact_bytes: int,
+) -> None:
+    """Use ordinary application observability for human display downloads."""
+    logger.info(
+        "human_non_authoritative_export_completed",
+        extra={
+            "tenant_id_hash": tenant_hash(tenant_id),
+            "correlation_id": str(correlation_id),
+            "export_format": export_format,
+            "projection_authority": "non_authoritative_display",
+            "row_count": row_count,
+            "artifact_bytes": artifact_bytes,
+        },
+    )
+
+
+def _deadline_error(exc: LegacyExportDeadlineExceeded) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={"status": "refused", "reason_code": str(exc)},
+    )
+
+
 @router.get("/revenue", operation_id="exportRevenue")
 async def export_revenue(
     response: Response,
@@ -358,36 +475,59 @@ async def export_revenue(
     response.headers["X-Correlation-ID"] = str(x_correlation_id)
     try:
         start, end = _resolve_date_range(start_date=start_date, end_date=end_date)
-        rows, payload = await _projection_for_request(
+        normalized_format = export_format.strip().lower()
+        if normalized_format not in {"csv", "xlsx", "json"}:
+            raise HTTPException(status_code=400, detail="Unsupported export format.")
+        rows, payload, serialized = await _run_track1_export(
             db_session=db_session,
             tenant_id=auth_context.tenant_id,
             session_scope=x_attribution_session_id,
             start=start,
             end=end,
             channels=channels,
+            export_format=normalized_format,
         )
-        normalized_format = export_format.strip().lower()
         if normalized_format == "csv":
-            body: str | bytes = _csv_from_rows(rows)
+            if not isinstance(serialized, str):
+                raise ValueError("csv_serialization_missing")
+            body: str | bytes = serialized
             media_type = "text/csv"
             filename = "skeldir-export-revenue.csv"
         elif normalized_format == "xlsx":
-            body = _xlsx_from_projection(payload)
+            if not isinstance(serialized, bytes):
+                raise ValueError("xlsx_serialization_missing")
+            body = serialized
             media_type = (
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             filename = "skeldir-export-revenue.xlsx"
         elif normalized_format == "json":
+            _observe_human_export(
+                tenant_id=auth_context.tenant_id,
+                correlation_id=x_correlation_id,
+                export_format=normalized_format,
+                row_count=len(rows),
+                artifact_bytes=len(str(payload).encode("utf-8")),
+            )
             return payload
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported export format.")
     except LegacyExportLimitExceeded as exc:
         raise _limit_error(exc) from exc
+    except LegacyExportDeadlineExceeded as exc:
+        raise _deadline_error(exc) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Export payload rejected by privacy no-leak boundary.",
         ) from exc
+    _observe_human_export(
+        tenant_id=auth_context.tenant_id,
+        correlation_id=x_correlation_id,
+        export_format=normalized_format,
+        row_count=len(rows),
+        artifact_bytes=(
+            len(body.encode("utf-8")) if isinstance(body, str) else len(body)
+        ),
+    )
     return Response(
         content=body,
         media_type=media_type,
@@ -409,16 +549,29 @@ async def export_csv(
 ):
     try:
         start, end = _resolve_date_range(start_date=None, end_date=None)
-        rows, _ = await _projection_for_request(
+        rows, _, serialized = await _run_track1_export(
             db_session=db_session,
             tenant_id=auth_context.tenant_id,
             session_scope=x_attribution_session_id,
             start=start,
             end=end,
+            channels=None,
+            export_format="csv",
         )
-        body = _csv_from_rows(rows)
+        if not isinstance(serialized, str):
+            raise ValueError("csv_serialization_missing")
+        body = serialized
     except LegacyExportLimitExceeded as exc:
         raise _limit_error(exc) from exc
+    except LegacyExportDeadlineExceeded as exc:
+        raise _deadline_error(exc) from exc
+    _observe_human_export(
+        tenant_id=auth_context.tenant_id,
+        correlation_id=x_correlation_id,
+        export_format="csv",
+        row_count=len(rows),
+        artifact_bytes=len(body.encode("utf-8")),
+    )
     return Response(
         content=body,
         media_type="text/csv",
@@ -442,16 +595,27 @@ async def export_json(
     response.headers["X-Correlation-ID"] = str(x_correlation_id)
     try:
         start, end = _resolve_date_range(start_date=None, end_date=None)
-        _, payload = await _projection_for_request(
+        rows, payload, _ = await _run_track1_export(
             db_session=db_session,
             tenant_id=auth_context.tenant_id,
             session_scope=x_attribution_session_id,
             start=start,
             end=end,
+            channels=None,
+            export_format="json",
+        )
+        _observe_human_export(
+            tenant_id=auth_context.tenant_id,
+            correlation_id=x_correlation_id,
+            export_format="json",
+            row_count=len(rows),
+            artifact_bytes=len(str(payload).encode("utf-8")),
         )
         return payload
     except LegacyExportLimitExceeded as exc:
         raise _limit_error(exc) from exc
+    except LegacyExportDeadlineExceeded as exc:
+        raise _deadline_error(exc) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -467,16 +631,29 @@ async def export_excel(
 ):
     try:
         start, end = _resolve_date_range(start_date=None, end_date=None)
-        _, payload = await _projection_for_request(
+        rows, _, serialized = await _run_track1_export(
             db_session=db_session,
             tenant_id=auth_context.tenant_id,
             session_scope=None,
             start=start,
             end=end,
+            channels=None,
+            export_format="xlsx",
         )
-        body = _xlsx_from_projection(payload)
+        if not isinstance(serialized, bytes):
+            raise ValueError("xlsx_serialization_missing")
+        body = serialized
     except LegacyExportLimitExceeded as exc:
         raise _limit_error(exc) from exc
+    except LegacyExportDeadlineExceeded as exc:
+        raise _deadline_error(exc) from exc
+    _observe_human_export(
+        tenant_id=auth_context.tenant_id,
+        correlation_id=x_correlation_id,
+        export_format="xlsx",
+        row_count=len(rows),
+        artifact_bytes=len(body),
+    )
     return Response(
         content=body,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

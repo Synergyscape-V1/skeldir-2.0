@@ -26,6 +26,7 @@ from app.trust.export_artifact import build_export_artifact, sign_export_artifac
 from app.trust.key_registry import TrustKeyRegistry
 from app.trust.machine_auth import MachineCallerContext, authenticate_machine_caller
 from app.trust.machine_identity import AgentScope
+from app.trust.money_source_adapter import resolve_authoritative_money
 from app.trust.query_continuation import (
     MAX_CURSOR_TOKEN_BYTES,
     TrustQueryContinuationError,
@@ -339,18 +340,37 @@ async def _create_export_with_capacity(
         accepted_count,
     )
     page_refs = export_request.subject_refs[start_position:end_position]
+    # Model A: bounded atomic preflight. No page-one authority is emitted unless
+    # every accepted reference exists for this tenant and satisfies P4 money
+    # authority. Only the current two-reference page is subsequently built,
+    # audited, and signed.
     sources = await query_match_verdict_sources(
         session,
         tenant_id=caller.tenant_id,
-        subject_refs=page_refs,
-        row_limit=len(page_refs) + 1,
+        subject_refs=export_request.subject_refs,
+        row_limit=accepted_count,
     )
-    if len(sources) != len(page_refs):
+    if len(sources) != accepted_count:
         return _typed_error_response(
             ReasonCode.SUBJECT_NOT_FOUND,
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     sources_by_id = {source.id: source for source in sources}
+    if any(
+        resolve_authoritative_money(
+            source_domain="b23_match_verdicts",
+            source_field_path="canonical_net_verified_amount_minor",
+            raw_value=source.canonical_net_verified_amount_minor,
+            currency=source.currency_code,
+            intended_trust_field="verified_revenue_minor",
+        ).amount_minor
+        is None
+        for source in sources
+    ):
+        return _typed_error_response(
+            ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     envelopes: list[dict[str, Any]] = []
     for page_offset, subject_ref in enumerate(page_refs):
         verdict_id = parse_match_verdict_subject_ref(subject_ref)

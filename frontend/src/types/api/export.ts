@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * Export data as CSV
-         * @description Export attribution data in CSV format
+         * @description Export attribution data using header-first rectangular b25-p11-export-csv-v2; authority classification survives detachment without a preamble.
          */
         get: operations["exportCSV"];
         put?: never;
@@ -706,9 +706,9 @@ export interface operations {
                 };
                 content: {
                     /**
-                     * @example date,channel,revenue,conversions,confidence
-                     *     2025-11-25,Meta,15230.50,127,0.92
-                     *     2025-11-25,Google,12450.00,98,0.89
+                     * @example projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
+                     *     non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
+                     *     non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Google,12450.00,98,0.89
                      */
                     "text/csv": string;
                 };

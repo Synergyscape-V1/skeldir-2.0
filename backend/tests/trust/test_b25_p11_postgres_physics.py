@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import psutil
@@ -16,12 +16,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api import trust_export
+from app.api import export as legacy_export
 from app.core.secrets import get_database_url, get_migration_database_url
 from app.db.dsn import to_asyncpg_postgres_dsn
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
+from app.trust.export_artifact import verify_export_artifact
 from app.trust.machine_auth import MachineCallerContext
 from app.trust.machine_identity import AgentScope
 from app.trust.source_adapters import query_match_verdict_sources
@@ -121,10 +124,150 @@ async def _delete_tenant(engine, tenant_id: UUID) -> None:
             text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
             {"tenant_id": str(tenant_id)},
         )
+        # Fixture teardown is not an attribution mutation. Disable only the
+        # allocation sum triggers while removing proof rows, then restore them
+        # inside the same migration-owner transaction.
+        await connection.execute(
+            text("ALTER TABLE public.attribution_allocations DISABLE TRIGGER USER")
+        )
+        await connection.execute(
+            text(
+                "DELETE FROM public.attribution_allocations "
+                "WHERE tenant_id = :tenant_id"
+            ),
+            {"tenant_id": str(tenant_id)},
+        )
+        await connection.execute(
+            text("ALTER TABLE public.attribution_allocations ENABLE TRIGGER USER")
+        )
+        await connection.execute(
+            text("DELETE FROM public.attribution_events WHERE tenant_id = :tenant_id"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await connection.execute(
+            text("DELETE FROM public.session_authority WHERE tenant_id = :tenant_id"),
+            {"tenant_id": str(tenant_id)},
+        )
         await connection.execute(
             text("DELETE FROM public.tenants WHERE id = :tenant_id"),
             {"tenant_id": str(tenant_id)},
         )
+
+
+async def _seed_track1_history(
+    connection,
+    *,
+    tenant_id: UUID,
+    session_id: UUID,
+    count: int,
+    namespace: str,
+) -> None:
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.session_authority (
+                tenant_id, session_id, issued_at, expires_at, last_seen_at, issued_by
+            ) VALUES (
+                :tenant_id, :session_id, now(), now() + interval '1 day', now(),
+                'b25_p11_postgres_proof'
+            )
+            ON CONFLICT (tenant_id, session_id) DO NOTHING
+            """
+        ),
+        {"tenant_id": str(tenant_id), "session_id": str(session_id)},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.channel_taxonomy (
+                code, family, is_paid, display_name, is_active, state
+            )
+            SELECT
+                'p11-channel-' || lpad(ordinal::text, 2, '0'),
+                'direct', false, 'P11 Channel ' || ordinal, true, 'active'
+            FROM generate_series(0, 31) AS ordinal
+            ON CONFLICT (code) DO NOTHING
+            """
+        )
+    )
+    await connection.execute(
+        text(
+            """
+            WITH inserted AS (
+                INSERT INTO public.attribution_events (
+                    id, tenant_id, occurred_at, external_event_id, correlation_id,
+                    session_id, revenue_cents, raw_payload, idempotency_key,
+                    event_type, channel, event_timestamp, processing_status,
+                    retry_count, created_at, updated_at
+                )
+                SELECT
+                    gen_random_uuid(), :tenant_id,
+                    date_trunc('day', now()) - ((ordinal - 1) % 31) * interval '1 day',
+                    :namespace || '-external-' || ordinal,
+                    gen_random_uuid(), :session_id, 100,
+                    jsonb_build_object('source', 'b25-p11-track1-proof'),
+                    :namespace || '-idempotency-' || ordinal,
+                    'purchase',
+                    'p11-channel-' || lpad(((ordinal - 1) % 32)::text, 2, '0'),
+                    date_trunc('day', now()) - ((ordinal - 1) % 31) * interval '1 day',
+                    'processed', 0, now(), now()
+                FROM generate_series(1, :row_count) AS ordinal
+                RETURNING id, channel
+            )
+            INSERT INTO public.attribution_allocations (
+                tenant_id, event_id, channel_code, allocated_revenue_cents,
+                allocation_ratio, model_version, model_type, confidence_score,
+                verified
+            )
+            SELECT
+                :tenant_id, id, channel, 100, 1.0, 'b25-p11-proof-v1',
+                'deterministic', 0.9, true
+            FROM inserted
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "session_id": str(session_id),
+            "namespace": namespace,
+            "row_count": count,
+        },
+    )
+
+
+def _plan_metrics(plan_document: object) -> dict[str, int | float | list[str]]:
+    document = plan_document[0] if isinstance(plan_document, list) else plan_document
+    root = document["Plan"]
+    nodes: list[dict[str, object]] = []
+
+    def visit(node: dict[str, object]) -> None:
+        nodes.append(node)
+        for child in node.get("Plans", []):
+            visit(child)
+
+    visit(root)
+    return {
+        "actual_rows_across_nodes": sum(
+            int(node.get("Actual Rows", 0)) * int(node.get("Actual Loops", 0))
+            for node in nodes
+        ),
+        "execution_ms": float(document.get("Execution Time", 0.0)),
+        "output_rows": int(root.get("Actual Rows", 0)),
+        "shared_blocks": sum(
+            int(node.get("Shared Hit Blocks", 0))
+            + int(node.get("Shared Read Blocks", 0))
+            for node in nodes
+        ),
+        "temp_blocks": sum(
+            int(node.get("Temp Read Blocks", 0))
+            + int(node.get("Temp Written Blocks", 0))
+            for node in nodes
+        ),
+        "node_types": sorted({str(node.get("Node Type")) for node in nodes}),
+    }
 
 
 def _caller(tenant_id: UUID) -> MachineCallerContext:
@@ -333,6 +476,176 @@ async def test_postgres_two_tenant_bounded_plan_and_read_only_snapshot() -> None
 
 
 @pytest.mark.asyncio
+async def test_track1_31_day_source_scaling_timeout_and_connection_occupancy() -> None:
+    tenant_id = uuid4()
+    session_id = uuid4()
+    migration_engine = create_async_engine(
+        to_asyncpg_postgres_dsn(get_migration_database_url())
+    )
+    runtime_engine = create_async_engine(
+        to_asyncpg_postgres_dsn(get_database_url()),
+        pool_size=legacy_export.TRACK1_MAX_CONCURRENT_EXPORTS,
+        max_overflow=0,
+    )
+    sessions = async_sessionmaker(runtime_engine, expire_on_commit=False)
+    points: list[dict[str, object]] = []
+    query = text(
+        """
+        EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+        SELECT
+            date_trunc('day', e.occurred_at)::date AS export_date,
+            aa.channel_code AS channel_code,
+            COALESCE(SUM(aa.allocated_revenue_cents), 0)::bigint AS revenue_cents,
+            COUNT(DISTINCT aa.event_id)::bigint AS conversion_count,
+            COALESCE(AVG(aa.confidence_score), 0)::numeric AS confidence_score
+        FROM public.attribution_allocations aa
+        JOIN public.attribution_events e
+          ON e.id = aa.event_id
+         AND e.tenant_id = aa.tenant_id
+        WHERE aa.tenant_id = :tenant_id
+          AND e.occurred_at >= :start_ts
+          AND e.occurred_at < :end_ts
+        GROUP BY export_date, aa.channel_code
+        ORDER BY export_date ASC, aa.channel_code ASC
+        LIMIT :row_limit
+        """
+    )
+    try:
+        async with migration_engine.begin() as connection:
+            await _insert_tenant(connection, tenant_id, "track1-scaling")
+        total = 0
+        for addition in (100, 900, 9_000):
+            async with migration_engine.begin() as connection:
+                await _seed_track1_history(
+                    connection,
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    count=addition,
+                    namespace=f"track1-{total + addition}",
+                )
+                await connection.execute(text("ANALYZE public.attribution_events"))
+                await connection.execute(text("ANALYZE public.attribution_allocations"))
+            total += addition
+            async with sessions() as session:
+                await session.begin()
+                await session.execute(
+                    text(
+                        "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
+                    ),
+                    {"tenant_id": str(tenant_id)},
+                )
+                await session.execute(
+                    text(
+                        "SET LOCAL statement_timeout = "
+                        f"'{legacy_export.TRACK1_DATABASE_STATEMENT_TIMEOUT_MS}ms'"
+                    )
+                )
+                await session.execute(
+                    text(
+                        "SET LOCAL work_mem = "
+                        f"'{legacy_export.TRACK1_DATABASE_WORK_MEM_KIB}kB'"
+                    )
+                )
+                await session.execute(
+                    text("SET LOCAL max_parallel_workers_per_gather = 0")
+                )
+                started = time.perf_counter()
+                plan = await session.scalar(
+                    query,
+                    {
+                        "tenant_id": str(tenant_id),
+                        "start_ts": datetime.combine(
+                            date.today() - timedelta(days=30),
+                            datetime.min.time(),
+                            tzinfo=timezone.utc,
+                        ),
+                        "end_ts": datetime.combine(
+                            date.today() + timedelta(days=1),
+                            datetime.min.time(),
+                            tzinfo=timezone.utc,
+                        ),
+                        "row_limit": legacy_export.LEGACY_EXPORT_MAX_ROWS + 1,
+                    },
+                )
+                connection_ms = (time.perf_counter() - started) * 1_000
+                metrics = _plan_metrics(plan)
+                metrics.update(
+                    {
+                        "connection_ms": connection_ms,
+                        "source_rows": total,
+                    }
+                )
+                points.append(metrics)
+                await session.rollback()
+
+        assert [point["source_rows"] for point in points] == [100, 1_000, 10_000]
+        assert all(
+            int(point["output_rows"]) <= legacy_export.LEGACY_EXPORT_MAX_ROWS
+            for point in points
+        )
+        assert all(int(point["temp_blocks"]) == 0 for point in points)
+        assert all(
+            float(point["connection_ms"])
+            <= legacy_export.TRACK1_DATABASE_STATEMENT_TIMEOUT_MS * 1.5
+            for point in points
+        )
+
+        async with sessions() as session:
+            await session.begin()
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            production_rows = await legacy_export._fetch_reporting_rows(
+                db_session=session,
+                tenant_id=tenant_id,
+                session_scope=None,
+                start=date.today() - timedelta(days=30),
+                end=date.today(),
+                channels=None,
+            )
+            await session.rollback()
+        assert len(production_rows) == 992
+
+        async with sessions() as session:
+            await session.begin()
+            await session.execute(text("SET LOCAL statement_timeout = '50ms'"))
+            cancellation_started = time.perf_counter()
+            with pytest.raises(DBAPIError) as cancelled:
+                await session.execute(text("SELECT pg_sleep(1)"))
+            cancellation_ms = (time.perf_counter() - cancellation_started) * 1_000
+            assert getattr(cancelled.value.orig, "sqlstate", None) == "57014"
+            assert cancellation_ms < 500
+            await session.rollback()
+
+        assert runtime_engine.pool.checkedout() == 0
+        print(
+            "\nP11_TRACK1_DB_METRICS="
+            + json.dumps(
+                {
+                    "capability": {
+                        "date_span_days": legacy_export.LEGACY_EXPORT_MAX_DATE_SPAN_DAYS,
+                        "max_rows": legacy_export.LEGACY_EXPORT_MAX_ROWS,
+                    },
+                    "cancellation_ms": cancellation_ms,
+                    "concurrency": legacy_export.TRACK1_MAX_CONCURRENT_EXPORTS,
+                    "points": points,
+                    "production_output_rows": len(production_rows),
+                    "statement_timeout_ms": legacy_export.TRACK1_DATABASE_STATEMENT_TIMEOUT_MS,
+                    "work_mem_kib": legacy_export.TRACK1_DATABASE_WORK_MEM_KIB,
+                },
+                sort_keys=True,
+            )
+        )
+    finally:
+        # The proof database is workflow-ephemeral. Keeping this tenant avoids
+        # exercising consequence-bearing allocation deletion triggers as part
+        # of a read-path benchmark; random tenant isolation prevents test bleed.
+        await runtime_engine.dispose()
+        await migration_engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_postgres_maximum_export_resource_envelope() -> None:
     tenant_id = uuid4()
     migration_engine = create_async_engine(
@@ -407,6 +720,12 @@ async def test_postgres_maximum_export_resource_envelope() -> None:
         responses = [value[0] for value in results]
         latencies = [value[1] for value in results]
         response_bytes = [len(value.content) for value in responses]
+        artifacts = [value.json() for value in responses]
+        envelope_bytes = [
+            len(json.dumps(envelope, separators=(",", ":")).encode("utf-8"))
+            for artifact in artifacts
+            for envelope in artifact["envelopes"]
+        ]
         metrics = {
             "accepted_refs": len(refs),
             "artifact_bytes": response_bytes,
@@ -420,10 +739,24 @@ async def test_postgres_maximum_export_resource_envelope() -> None:
             "response_amplification_max": max(response_bytes) / request_bytes,
             "rss_delta_bytes": process.memory_info().rss - rss_before,
             "seeded_history_rows": len(verdict_ids),
+            "maximum_envelope_bytes": max(envelope_bytes),
+            "signature_hashes_distinct_from_artifact_hashes": all(
+                artifact["signature_hash"] != artifact["artifact_hash"]
+                for artifact in artifacts
+            ),
         }
         print("\nP11_RESOURCE_METRICS=" + json.dumps(metrics, sort_keys=True))
         assert all(response.status_code == 200 for response in responses)
         assert all(len(response.json()["envelopes"]) == 2 for response in responses)
+        assert all(
+            verify_export_artifact(
+                artifact,
+                key_registry=_registry().public_only(),
+            ).verification_status
+            == "verified"
+            for artifact in artifacts
+        )
+        assert metrics["signature_hashes_distinct_from_artifact_hashes"] is True
         assert all(
             len(response.content) <= trust_export.MAX_EXPORT_ARTIFACT_BYTES
             for response in responses

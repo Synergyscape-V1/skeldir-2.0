@@ -256,6 +256,19 @@ def compute_signature_hash(payload_or_signature_material: dict[str, Any]) -> str
     )
 
 
+def compute_detached_signature_hash(signature_material: bytes) -> str:
+    """Hash already-canonical, domain-separated bytes covered by a signature.
+
+    TrustEnvelope signature material is a structured mapping and therefore uses
+    ``compute_signature_hash``. Detached export artifacts define their own
+    framing and signing domain, so accepting only bytes here prevents either
+    hashing the textual signature or aliasing the artifact payload hash.
+    """
+    if not isinstance(signature_material, bytes) or not signature_material:
+        raise HashIdentityError("detached_signature_material_bytes_required")
+    return _tagged_sha256(signature_material)
+
+
 def compute_envelope_payload_hash(payload: dict[str, Any]) -> str:
     """Compute a full-envelope canonical payload hash for test/audit tooling."""
     return _tagged_sha256(canonicalize_envelope_payload(payload))
