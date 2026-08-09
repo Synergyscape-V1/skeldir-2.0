@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 3.0.0
+  version: 3.1.0
   description: |
     B2.5-P11 human-authorized compatibility projections for CSV, JSON, and
     Excel. These responses are explicitly non-authoritative display data;
@@ -100,6 +100,7 @@ paths:
             text/csv:
               schema:
                 type: string
+                description: Header-first rectangular b25-p11-export-csv-v2 rows; each data record repeats non_authoritative_display so detached files remain self-identifying.
             application/json:
               schema:
                 type: object
@@ -297,7 +298,7 @@ paths:
   /api/export/csv:
     get:
       summary: Export data as CSV
-      description: Export attribution data in CSV format
+      description: Export attribution data using header-first rectangular b25-p11-export-csv-v2; authority classification survives detachment without a preamble.
       operationId: exportCSV
       tags:
         - Export
@@ -339,9 +340,9 @@ paths:
               schema:
                 type: string
               example: |
-                date,channel,revenue,conversions,confidence
-                2025-11-25,Meta,15230.50,127,0.92
-                2025-11-25,Google,12450.00,98,0.89
+                projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
+                non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
+                non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Google,12450.00,98,0.89
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4

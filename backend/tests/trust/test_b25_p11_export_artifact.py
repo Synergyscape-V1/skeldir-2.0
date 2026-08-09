@@ -25,6 +25,7 @@ from app.trust.export_artifact import (
     verify_export_artifact,
 )
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
+from app.trust.hash_identity import compute_detached_signature_hash
 from app.trust.machine_auth import MachineCallerContext
 from app.trust.machine_identity import AgentScope
 from app.trust.refusal import tenant_hash
@@ -97,6 +98,11 @@ def test_artifact_embeds_full_signed_lineage_and_verifies_with_public_key_only()
     registry = _registry()
     artifact = _signed_artifact(registry)
     assert artifact["artifact_hash"].startswith("sha256:")
+    assert artifact["signature_hash"].startswith("sha256:")
+    assert artifact["signature_hash"] != artifact["artifact_hash"]
+    assert artifact["signature_hash"] == compute_detached_signature_hash(
+        export_artifact_signature_material(str(artifact["artifact_hash"]))
+    )
     assert artifact["signature"].startswith("ed25519:")
     assert artifact["envelopes"][0]["signature"].startswith("ed25519:")
     assert artifact["envelopes"][0]["provenance_chain"]
@@ -142,6 +148,12 @@ def test_embedded_authoritative_value_mutation_and_artifact_hash_mismatch_reject
     result = verify_export_artifact(artifact, key_registry=registry.public_only())
     assert result.verification_status == "rejected"
     assert result.reason_code == "artifact_hash_mismatch"
+
+    artifact = _signed_artifact(registry)
+    artifact["signature_hash"] = "sha256:" + "1" * 64
+    result = verify_export_artifact(artifact, key_registry=registry.public_only())
+    assert result.verification_status == "rejected"
+    assert result.reason_code == "signature_hash_mismatch"
 
 
 def test_wrong_domain_cross_verification_fails_in_both_directions() -> None:
@@ -328,7 +340,7 @@ async def test_machine_route_pages_at_two_and_emits_verifiable_artifacts(
     assert first.headers["X-Export-Remaining-Count"] == "1"
     assert second.headers["X-Export-Remaining-Count"] == "0"
     assert "X-Trust-Continuation" not in second.headers
-    assert row_limits == [3, 2]
+    assert row_limits == [3, 3]
     assert audit_modes == [False, False, False]
     for response in (first, second):
         result = verify_export_artifact(
@@ -372,3 +384,75 @@ async def test_over_limit_and_reserved_subject_inputs_reject_before_db(payload) 
         )
     assert response.status_code == 422
     assert db_touches == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_mode", ["missing", "non_exportable"])
+async def test_atomic_preflight_rejects_full_mixed_set_before_any_p7_issuance(
+    monkeypatch,
+    failure_mode: str,
+) -> None:
+    tenant_id = uuid4()
+    caller = _caller(tenant_id)
+    registry = _registry()
+    verdict_ids = [uuid4() for _ in range(50)]
+    refs = [f"urn:skeldir:match_verdict:{value}" for value in verdict_ids]
+    sources = [_source(tenant_id, value) for value in verdict_ids]
+    if failure_mode == "missing":
+        sources.pop(24)
+    else:
+        failed = sources[24]
+        sources[24] = MatchVerdictSource(
+            **{
+                **failed.__dict__,
+                "canonical_net_verified_amount_minor": None,
+            }
+        )
+    build_calls = 0
+    observed_limits: list[int] = []
+
+    app = FastAPI()
+    app.include_router(trust_export.router, prefix="/api")
+
+    async def fake_session():
+        yield object()
+
+    async def fake_caller() -> MachineCallerContext:
+        return caller
+
+    async def fake_registry() -> TrustKeyRegistry:
+        return registry
+
+    async def fake_query(session, *, tenant_id, subject_refs, row_limit, **kwargs):
+        _ = session, tenant_id, subject_refs, kwargs
+        observed_limits.append(row_limit)
+        return tuple(sources)
+
+    async def forbidden_build(*args, **kwargs):
+        nonlocal build_calls
+        build_calls += 1
+        raise AssertionError("P7 issuance reached before atomic preflight completed")
+
+    app.dependency_overrides[trust_export.get_machine_export_db_session] = fake_session
+    app.dependency_overrides[trust_export.require_export_tenant_context] = fake_caller
+    app.dependency_overrides[trust_export.get_runtime_signing_registry] = fake_registry
+    monkeypatch.setattr(trust_export, "query_match_verdict_sources", fake_query)
+    monkeypatch.setattr(
+        trust_export,
+        "build_unsigned_trust_envelope_with_audit",
+        forbidden_build,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/trust/v1/exports/match-verdicts",
+            headers=_headers(tenant_id, f"p11-atomic-{failure_mode}"),
+            json={"subject_refs": refs},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["status"] == "refused"
+    assert "X-Trust-Continuation" not in response.headers
+    assert observed_limits == [50]
+    assert build_calls == 0

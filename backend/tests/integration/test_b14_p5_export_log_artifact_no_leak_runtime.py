@@ -125,7 +125,9 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
         assert result.status == "success"
 
         window_start = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
-        window_end = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
+        window_end = _iso(
+            now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        )
         recompute_result = enqueue_tenant_task(
             recompute_window,
             envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
@@ -137,7 +139,9 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
         ).get()
         assert recompute_result["status"] == "succeeded"
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             json_response = await client.get(
                 "/api/export/json",
                 headers={"X-Correlation-ID": str(uuid4())},
@@ -178,8 +182,17 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
     assert not leaks
 
     assert csv_response.status_code == 200
-    csv_lines = [line.strip() for line in csv_response.text.splitlines() if line.strip()]
-    assert csv_lines[0] == "date,channel,revenue,conversions,confidence"
+    csv_lines = [
+        line.strip() for line in csv_response.text.splitlines() if line.strip()
+    ]
+    assert csv_lines[0] == (
+        "projection_authority,projection_schema_version,date,channel,revenue,"
+        "conversions,confidence"
+    )
+    assert all(
+        line.startswith("non_authoritative_display,b25-p11-export-csv-v2,")
+        for line in csv_lines[1:]
+    )
     assert len(csv_lines) >= 2
     assert xlsx_response.status_code == 200
     from openpyxl import load_workbook
@@ -258,7 +271,9 @@ def test_b14_p5_runtime_logging_redaction_blocks_direct_and_proxy_canaries():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_b14_p5_runtime_failure_surfaces_redact_dead_letter_and_quarantine(test_tenant):
+async def test_b14_p5_runtime_failure_surfaces_redact_dead_letter_and_quarantine(
+    test_tenant,
+):
     tenant_id = test_tenant
     correlation = str(uuid4())
     payload = {
@@ -298,7 +313,9 @@ async def test_b14_p5_runtime_failure_surfaces_redact_dead_letter_and_quarantine
 
     async with get_session(tenant_id=tenant_id) as session:
         row = await session.execute(
-            text("SELECT raw_payload, error_message, error_detail FROM dead_events WHERE id = :id"),
+            text(
+                "SELECT raw_payload, error_message, error_detail FROM dead_events WHERE id = :id"
+            ),
             {"id": str(dead_event_id)},
         )
         persisted = row.mappings().one()
@@ -321,28 +338,36 @@ async def test_b14_p5_runtime_failure_surfaces_redact_dead_letter_and_quarantine
 
     async with engine.begin() as conn:
         row = (
-            await conn.execute(
-                text(
-                    """
+            (
+                await conn.execute(
+                    text(
+                        """
                     SELECT id, raw_payload
                     FROM dead_events_quarantine
                     WHERE source = :source
                     ORDER BY ingested_at DESC
                     LIMIT 1
                     """
-                ),
-                {"source": quarantine_source},
+                    ),
+                    {"source": quarantine_source},
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         raw_payload = row["raw_payload"]
         key_set = _collect_keys(raw_payload)
         assert "deadletter-user@test.invalid" not in json.dumps(raw_payload)
         assert "198.51.100.44" not in json.dumps(raw_payload)
         assert PROXY_FAILURE_FORBIDDEN_KEYS.isdisjoint(key_set)
-        await conn.execute(text("DELETE FROM dead_events_quarantine WHERE id = :id"), {"id": row["id"]})
+        await conn.execute(
+            text("DELETE FROM dead_events_quarantine WHERE id = :id"), {"id": row["id"]}
+        )
 
 
-def test_b14_p5_runtime_artifact_scanner_fails_on_seeded_canaries_and_passes_sanitized_bundle(tmp_path: Path):
+def test_b14_p5_runtime_artifact_scanner_fails_on_seeded_canaries_and_passes_sanitized_bundle(
+    tmp_path: Path,
+):
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     leak_file = artifacts_dir / "worker.log"

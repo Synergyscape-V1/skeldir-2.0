@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import csv
+import concurrent.futures
 import json
+import time
+import tracemalloc
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from io import BytesIO, StringIO
@@ -12,10 +16,19 @@ from uuid import uuid4
 
 from jsonschema import Draft202012Validator
 from openpyxl import load_workbook
+import pytest
 
+from app.api import export as export_api
 from app.api.export import (
     CSV_COLUMNS,
+    CSV_SCHEMA_VERSION,
     EXPORT_ROW_ALLOWLIST,
+    LEGACY_EXPORT_MAX_BYTES,
+    LEGACY_EXPORT_MAX_ROWS,
+    LegacyExportDeadlineExceeded,
+    TRACK1_MAX_CONCURRENT_EXPORTS,
+    TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES,
+    XLSX_COLUMNS,
     _csv_from_rows,
     _enforce_export_payload_no_leak,
     _xlsx_from_projection,
@@ -134,7 +147,12 @@ def test_csv_round_trip_handles_adversarial_text_without_column_drift() -> None:
     parsed = list(csv.reader(StringIO(rendered, newline="")))
     assert tuple(parsed[0]) == CSV_COLUMNS
     assert len(parsed) == len(rows) + 1
-    assert [record[1] for record in parsed[1:]] == [str(row["channel"]) for row in rows]
+    assert all(
+        record[0] == PROJECTION_AUTHORITY_NON_AUTHORITATIVE for record in parsed[1:]
+    )
+    assert all(record[1] == CSV_SCHEMA_VERSION for record in parsed[1:])
+    assert all(len(record) == len(CSV_COLUMNS) for record in parsed)
+    assert [record[3] for record in parsed[1:]] == [str(row["channel"]) for row in rows]
     assert rendered.endswith("\r\n")
 
 
@@ -154,13 +172,13 @@ def test_formula_prefixes_are_text_in_csv_and_real_xlsx() -> None:
     assert all(str(row["channel"]).startswith("'") for row in rows)
 
     parsed = list(csv.reader(StringIO(_csv_from_rows(rows), newline="")))
-    assert all(record[1].startswith("'") for record in parsed[1:])
+    assert all(record[3].startswith("'") for record in parsed[1:])
 
     workbook_bytes = _xlsx_from_projection(payload)
     workbook = load_workbook(BytesIO(workbook_bytes), data_only=False)
     assert workbook.sheetnames == ["Export", "Metadata"]
     export_sheet = workbook["Export"]
-    assert tuple(cell.value for cell in export_sheet[1]) == CSV_COLUMNS
+    assert tuple(cell.value for cell in export_sheet[1]) == XLSX_COLUMNS
     for cell in export_sheet["B"][1:]:
         assert isinstance(cell.value, str) and cell.value.startswith("'")
         assert cell.data_type != "f"
@@ -181,3 +199,132 @@ def test_spreadsheet_transform_refuses_machine_authority_field_paths() -> None:
         assert "machine_authority_field_neutralization_forbidden" in str(exc)
     else:
         raise AssertionError("machine-authority spreadsheet mutation was accepted")
+
+
+def test_detached_csv_is_header_first_rectangular_self_identifying_at_1000_rows(
+    tmp_path: Path,
+) -> None:
+    _, payload = _projection([f"channel-{index:04d}" for index in range(1_000)])
+    rows = payload["rows"]
+    assert isinstance(rows, list) and len(rows) == LEGACY_EXPORT_MAX_ROWS
+    body = _csv_from_rows(rows)
+    detached = tmp_path / "detached-export.csv"
+    detached.write_bytes(body.encode("utf-8"))
+
+    with detached.open("r", encoding="utf-8", newline="") as stream:
+        records = list(csv.reader(stream))
+    assert tuple(records[0]) == CSV_COLUMNS
+    assert all(len(record) == len(CSV_COLUMNS) for record in records)
+    assert {record[0] for record in records[1:]} == {
+        PROJECTION_AUTHORITY_NON_AUTHORITATIVE
+    }
+    assert {record[1] for record in records[1:]} == {CSV_SCHEMA_VERSION}
+    assert detached.stat().st_size <= LEGACY_EXPORT_MAX_BYTES
+    print(
+        "\nP11_TRACK1_CSV_METRICS="
+        + json.dumps(
+            {
+                "artifact_bytes": detached.stat().st_size,
+                "columns": len(CSV_COLUMNS),
+                "header_first": True,
+                "projection_authority": PROJECTION_AUTHORITY_NON_AUTHORITATIVE,
+                "rectangular": True,
+                "rows": len(records) - 1,
+                "schema_version": CSV_SCHEMA_VERSION,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def test_csv_and_xlsx_maximum_concurrent_serialization_stays_in_declared_memory() -> (
+    None
+):
+    _, payload = _projection([f"channel-{index:04d}" for index in range(1_000)])
+    rows = payload["rows"]
+    assert isinstance(rows, list) and len(rows) == LEGACY_EXPORT_MAX_ROWS
+
+    def serialize_pair() -> tuple[int, int]:
+        csv_bytes = _csv_from_rows(rows).encode("utf-8")
+        xlsx_bytes = _xlsx_from_projection(payload)
+        parsed = load_workbook(BytesIO(xlsx_bytes), read_only=True, data_only=False)
+        assert parsed.sheetnames == ["Export", "Metadata"]
+        return len(csv_bytes), len(xlsx_bytes)
+
+    tracemalloc.start()
+    started = time.perf_counter()
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=TRACK1_MAX_CONCURRENT_EXPORTS
+    ) as executor:
+        sizes = list(
+            executor.map(
+                lambda _: serialize_pair(), range(TRACK1_MAX_CONCURRENT_EXPORTS)
+            )
+        )
+    _, peak = tracemalloc.get_traced_memory()
+    elapsed_ms = (time.perf_counter() - started) * 1_000
+    tracemalloc.stop()
+
+    assert all(
+        csv_bytes <= LEGACY_EXPORT_MAX_BYTES and xlsx_bytes <= LEGACY_EXPORT_MAX_BYTES
+        for csv_bytes, xlsx_bytes in sizes
+    )
+    assert peak <= (
+        TRACK1_MAX_CONCURRENT_EXPORTS * TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES
+    )
+    print(
+        "\nP11_TRACK1_SERIALIZATION_METRICS="
+        + json.dumps(
+            {
+                "concurrency": TRACK1_MAX_CONCURRENT_EXPORTS,
+                "declared_aggregate_working_set_bytes": (
+                    TRACK1_MAX_CONCURRENT_EXPORTS
+                    * TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES
+                ),
+                "elapsed_ms": elapsed_ms,
+                "peak_traced_bytes": peak,
+                "rows_per_export": len(rows),
+                "sizes": [
+                    {"csv_bytes": csv_bytes, "xlsx_bytes": xlsx_bytes}
+                    for csv_bytes, xlsx_bytes in sizes
+                ],
+            },
+            sort_keys=True,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_track1_deadline_includes_saturated_admission_queue(monkeypatch) -> None:
+    semaphore = asyncio.Semaphore(TRACK1_MAX_CONCURRENT_EXPORTS)
+    for _ in range(TRACK1_MAX_CONCURRENT_EXPORTS):
+        await semaphore.acquire()
+    monkeypatch.setattr(export_api, "_TRACK1_EXPORT_CONCURRENCY_LIMIT", semaphore)
+    monkeypatch.setattr(export_api, "TRACK1_HANDLER_DEADLINE_SECONDS", 0.02)
+
+    projection_called = False
+
+    async def forbidden_projection(**_kwargs):
+        nonlocal projection_called
+        projection_called = True
+        raise AssertionError("saturated request reached database work")
+
+    monkeypatch.setattr(export_api, "_projection_for_request", forbidden_projection)
+    try:
+        with pytest.raises(
+            LegacyExportDeadlineExceeded,
+            match="legacy_export_handler_deadline_exceeded",
+        ):
+            await export_api._run_track1_export(
+                db_session=object(),
+                tenant_id=uuid4(),
+                session_scope=None,
+                start=date(2026, 8, 1),
+                end=date(2026, 8, 31),
+                channels=None,
+                export_format="csv",
+            )
+    finally:
+        for _ in range(TRACK1_MAX_CONCURRENT_EXPORTS):
+            semaphore.release()
+    assert projection_called is False

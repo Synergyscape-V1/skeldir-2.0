@@ -44,6 +44,14 @@ MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202608081200_b25_p11_export_scope.py"
 )
 EVIDENCE_PATH = Path("docs/forensics/B2.5-P11 Remediation Evidence Pack.md")
+CORRECTIVE_EVIDENCE_PATH = Path(
+    "docs/forensics/B2.5-P11 Corrective Remediation Evidence Pack.md"
+)
+P7_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202607011200_b25_p7_trust_audit_provenance.py"
+)
+P7_AUDIT = Path("backend/app/trust/audit.py")
+P11_WORKFLOW = Path(".github/workflows/b2_5-p11-export-compatibility.yml")
 VALID_ARTIFACT_EXAMPLE = Path(
     "contracts/trust-api/examples/export_artifact_signed_valid.json"
 )
@@ -112,6 +120,30 @@ def _validate_no_post_signature_mutation(source: str) -> None:
                 forbidden_lines.append(node.lineno)
     _require(signature_line is not None, "artifact_signature_assignment_missing")
     _require(not forbidden_lines, "post_signature_authoritative_mutation")
+
+
+def _validate_csv_header_first(source: str) -> None:
+    tree = ast.parse(source)
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_csv_from_rows"
+    ]
+    _require(len(functions) == 1, "csv_serializer_function_missing")
+    calls = [
+        node
+        for node in ast.walk(functions[0])
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "writerow"
+    ]
+    calls.sort(key=lambda node: node.lineno)
+    _require(bool(calls), "csv_writerow_missing")
+    first_argument = calls[0].args[0] if calls[0].args else None
+    _require(
+        isinstance(first_argument, ast.Name) and first_argument.id == "CSV_COLUMNS",
+        "csv_header_not_first_record",
+    )
 
 
 def _validate_schema_and_manifest(overrides: dict[Path, str]) -> None:
@@ -260,8 +292,17 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
         "reserved_export_subject_activated",
     )
     _require(
-        "row_limit=len(page_refs) + 1" in trust_export,
-        "authoritative_limit_n_plus_one_missing",
+        "subject_refs=export_request.subject_refs" in trust_export
+        and "row_limit=accepted_count" in trust_export,
+        "atomic_preflight_full_set_missing",
+    )
+    _require(
+        "for page_offset, subject_ref in enumerate(page_refs)" in trust_export,
+        "whole_request_envelope_build_reachable",
+    )
+    _require(
+        "resolve_authoritative_money(" in trust_export,
+        "atomic_preflight_exportability_missing",
     )
     for token in (
         "MAX_EXPORT_BODY_BYTES = 65_536",
@@ -277,6 +318,19 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
     ):
         _require(token in trust_export, f"trust_export_control_missing:{token}")
     _require("compute_artifact_hash(" in artifact, "p2_artifact_hash_authority_missing")
+    _require(
+        'signed["signature_hash"] = compute_detached_signature_hash(signature_material)'
+        in artifact,
+        "artifact_signature_hash_authority_missing",
+    )
+    _require(
+        'candidate["signature_hash"] != expected_signature_hash' in artifact,
+        "artifact_signature_hash_verify_removed",
+    )
+    _require(
+        'signed["signature_hash"] = signed["artifact_hash"]' not in artifact,
+        "artifact_signature_hash_collapsed",
+    )
     _require("hashlib" not in artifact, "local_artifact_hash_authority_present")
     _require("json.dumps" not in artifact, "local_json_identity_present")
     _require(
@@ -310,18 +364,45 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
         "formula_prefix_set_incomplete",
     )
     _require("csv.writer(" in legacy, "rfc4180_writer_missing")
+    _require(
+        'CSV_SCHEMA_VERSION = "b25-p11-export-csv-v2"' in legacy,
+        "csv_schema_version_missing",
+    )
+    _require(
+        'CSV_COLUMNS = (\n    "projection_authority",\n    "projection_schema_version",'
+        in legacy,
+        "detached_csv_authority_missing",
+    )
+    _validate_csv_header_first(legacy)
     _require('",".join(' not in legacy, "manual_csv_join_present")
-    _require("Workbook(" in legacy and "workbook.save(" in legacy, "real_xlsx_missing")
+    _require(
+        "Workbook(write_only=True)" in legacy and "workbook.save(" in legacy,
+        "bounded_real_xlsx_missing",
+    )
     _require("SKELDIR-MOCK-XLSX" not in legacy, "mock_xlsx_restored")
     for token in (
         "LEGACY_EXPORT_MAX_DATE_SPAN_DAYS = 31",
         "LEGACY_EXPORT_MAX_ROWS = 1_000",
         "LEGACY_EXPORT_MAX_BYTES = 1_048_576",
+        "LEGACY_EXPORT_MAX_CHANNELS = 32",
+        "TRACK1_MAX_CONCURRENT_EXPORTS = 2\n",
+        "TRACK1_HANDLER_DEADLINE_SECONDS = 3.0",
+        "TRACK1_DATABASE_STATEMENT_TIMEOUT_MS = 1_250",
+        "TRACK1_DATABASE_WORK_MEM_KIB = 4_096",
+        "TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES = 32 * 1_024 * 1_024",
+        "_TRACK1_EXPORT_CONCURRENCY_LIMIT = asyncio.Semaphore(",
+        "SET LOCAL statement_timeout",
+        "SET LOCAL work_mem",
+        "SET LOCAL max_parallel_workers_per_gather = 0",
         "_admit_legacy_export(",
         "LIMIT :row_limit",
         "fetchmany(LEGACY_EXPORT_MAX_ROWS + 1)",
     ):
         _require(token in legacy, f"legacy_bound_missing:{token}")
+    _require(
+        legacy.count("await asyncio.to_thread(") >= 2,
+        "track1_cpu_serialization_not_offloaded",
+    )
     _require("fetchall(" not in legacy, "fetch_all_before_budget_present")
     for token in (
         "EXPORT_ROW_ALLOWLIST",
@@ -329,6 +410,35 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
         "_enforce_export_payload_no_leak(",
     ):
         _require(token in legacy, f"b14_p5_compatibility_symbol_missing:{token}")
+
+
+def _validate_p7_preservation(overrides: dict[Path, str]) -> None:
+    p7_migration = _text(P7_MIGRATION, overrides)
+    p7_audit = _text(P7_AUDIT, overrides)
+    _require("agent_client_id" not in p7_migration, "p7_actor_schema_invented")
+    _require("agent_client_id" not in p7_audit, "p7_audit_actor_field_invented")
+    _require(
+        "access_log_only=False" in _text(TRUST_EXPORT, overrides),
+        "machine_track2_p7_issuance_removed",
+    )
+
+
+def _validate_corrective_workflow(overrides: dict[Path, str]) -> None:
+    workflow = _text(P11_WORKFLOW, overrides)
+    for token in (
+        "test_track1_31_day_source_scaling_timeout_and_connection_occupancy",
+        "P11_TRACK1_DB_METRICS=",
+        "test_detached_csv_is_header_first_rectangular_self_identifying_at_1000_rows",
+        "test_csv_and_xlsx_maximum_concurrent_serialization_stays_in_declared_memory",
+        "P11_TRACK1_CSV_METRICS=",
+        "P11_TRACK1_SERIALIZATION_METRICS=",
+        "corrective_negative_controls_fired=11",
+    ):
+        _require(token in workflow, f"corrective_workflow_proof_missing:{token}")
+    _require(
+        "human_non_authoritative_export_completed" in _text(LEGACY_EXPORT, overrides),
+        "human_export_observability_missing",
+    )
 
 
 def _validate_migration(overrides: dict[Path, str]) -> None:
@@ -390,6 +500,8 @@ def validate_core(overrides: dict[Path, str] | None = None) -> None:
     _validate_schema_and_manifest(active)
     _validate_contracts(active)
     _validate_sources(active)
+    _validate_p7_preservation(active)
+    _validate_corrective_workflow(active)
     _validate_migration(active)
     _validate_examples(active)
 
@@ -464,8 +576,8 @@ def run_negative_controls() -> int:
             "NC-P11-09",
             _mutated(
                 LEGACY_EXPORT,
-                "workbook = Workbook(write_only=False)",
-                'mock = b"PK\\x03\\x04SKELDIR-MOCK-XLSX"\n    workbook = Workbook(write_only=False)',
+                "workbook = Workbook(write_only=True)",
+                'mock = b"PK\\x03\\x04SKELDIR-MOCK-XLSX"\n    workbook = Workbook(write_only=True)',
             ),
         ),
         (
@@ -521,6 +633,108 @@ def run_negative_controls() -> int:
     return fired
 
 
+def run_corrective_negative_controls() -> int:
+    controls = (
+        (
+            "NC-P11-FU-01",
+            _mutated(
+                ARTIFACT,
+                '    signed["signature_hash"] = compute_detached_signature_hash(signature_material)\n',
+                "",
+            ),
+        ),
+        (
+            "NC-P11-FU-02",
+            _mutated(
+                ARTIFACT,
+                'signed["signature_hash"] = compute_detached_signature_hash(signature_material)',
+                'signed["signature_hash"] = signed["artifact_hash"]',
+            ),
+        ),
+        (
+            "NC-P11-FU-03",
+            _mutated(
+                LEGACY_EXPORT,
+                'CSV_COLUMNS = (\n    "projection_authority",',
+                'CSV_COLUMNS = (\n    "authority_removed",',
+            ),
+        ),
+        (
+            "NC-P11-FU-04",
+            _mutated(
+                LEGACY_EXPORT,
+                "    writer.writerow(CSV_COLUMNS)",
+                '    writer.writerow(("metadata-preamble",))\n    writer.writerow(CSV_COLUMNS)',
+            ),
+        ),
+        (
+            "NC-P11-FU-05",
+            _mutated(
+                LEGACY_EXPORT,
+                "LEGACY_EXPORT_MAX_DATE_SPAN_DAYS = 31",
+                "LEGACY_EXPORT_MAX_DATE_SPAN_DAYS = 30",
+            ),
+        ),
+        (
+            "NC-P11-FU-06",
+            _mutated(
+                LEGACY_EXPORT,
+                "SET LOCAL statement_timeout",
+                "SET LOCAL idle_in_transaction_session_timeout",
+            ),
+        ),
+        (
+            "NC-P11-FU-07",
+            _mutated(
+                LEGACY_EXPORT,
+                "TRACK1_MAX_CONCURRENT_EXPORTS = 2",
+                "TRACK1_MAX_CONCURRENT_EXPORTS = 200",
+            ),
+        ),
+        (
+            "NC-P11-FU-08",
+            _mutated(
+                LEGACY_EXPORT,
+                "LEGACY_EXPORT_MAX_ROWS = 1_000",
+                "LEGACY_EXPORT_MAX_ROWS = 1_001",
+            ),
+        ),
+        (
+            "NC-P11-FU-09",
+            _mutated(
+                TRUST_EXPORT,
+                "for page_offset, subject_ref in enumerate(page_refs)",
+                "for page_offset, subject_ref in enumerate(export_request.subject_refs)",
+            ),
+        ),
+        (
+            "NC-P11-FU-10",
+            _mutated(
+                P7_MIGRATION,
+                'revision = "202607011200"',
+                'revision = "202607011200"\n# ALTER trust_access_log ADD agent_client_id uuid',
+            ),
+        ),
+        (
+            "NC-P11-FU-11",
+            _mutated(
+                TRUST_EXPORT,
+                "        subject_refs=export_request.subject_refs,\n        row_limit=accepted_count,",
+                "        subject_refs=page_refs,\n        row_limit=len(page_refs) + 1,",
+            ),
+        ),
+    )
+    fired = 0
+    for name, override in controls:
+        try:
+            validate_core(override)
+        except (B25P11ValidationError, SyntaxError, KeyError, json.JSONDecodeError):
+            fired += 1
+            continue
+        raise B25P11ValidationError(f"corrective_negative_control_silent:{name}")
+    return fired
+
+
 def _run_pytest() -> None:
     command = [
         sys.executable,
@@ -542,8 +756,15 @@ def main(argv: list[str]) -> int:
         scanned = _validate_scan_roots()
         validate_core()
         negative_controls = run_negative_controls() if args.negative_control else 0
+        corrective_negative_controls = (
+            run_corrective_negative_controls() if args.negative_control else 0
+        )
         if args.negative_control:
             _require(negative_controls == 15, "negative_control_count_drift")
+            _require(
+                corrective_negative_controls == 11,
+                "corrective_negative_control_count_drift",
+            )
         _run_pytest()
     except B25P11ValidationError as exc:
         print(f"B25_P11_EXPORT_COMPATIBILITY_VALIDATION_FAIL:{exc}")
@@ -565,6 +786,7 @@ def main(argv: list[str]) -> int:
     print(f"explicit_root_files_scanned={scanned}")
     print("shadow_paths_scanned=0")
     print(f"negative_controls_fired={negative_controls}")
+    print(f"corrective_negative_controls_fired={corrective_negative_controls}")
     print("pytest_controls_passed=1")
     return 0
 

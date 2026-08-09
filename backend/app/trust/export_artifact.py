@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Literal
 
 from app.trust.canonicalization import canonicalize_envelope_payload
-from app.trust.hash_identity import compute_artifact_hash
+from app.trust.hash_identity import (
+    compute_artifact_hash,
+    compute_detached_signature_hash,
+)
 from app.trust.key_registry import TrustKeyRegistry
 from app.trust.signing import (
     TrustEnvelopeSigningError,
@@ -35,7 +38,13 @@ _BASE_FIELDS = frozenset(
     }
 )
 _SIGNED_FIELDS = _BASE_FIELDS | frozenset(
-    {"artifact_hash", "signature", "signing_key_id", "signing_algorithm"}
+    {
+        "artifact_hash",
+        "signature_hash",
+        "signature",
+        "signing_key_id",
+        "signing_algorithm",
+    }
 )
 
 
@@ -232,12 +241,12 @@ def sign_export_artifact(
         key_registry=key_registry,
     )
     signed["artifact_hash"] = compute_artifact_hash(_artifact_identity_bytes(signed))
+    signature_material = export_artifact_signature_material(
+        _require_text(signed["artifact_hash"], "artifact_hash")
+    )
+    signed["signature_hash"] = compute_detached_signature_hash(signature_material)
     signed["signature"] = encode_ed25519_signature(
-        key.private_key.sign(
-            export_artifact_signature_material(
-                _require_text(signed["artifact_hash"], "artifact_hash")
-            )
-        )
+        key.private_key.sign(signature_material)
     )
     _assert_no_raw_tenant_or_float(signed)
     return signed
@@ -273,13 +282,17 @@ def verify_export_artifact(
         expected_hash = compute_artifact_hash(_artifact_identity_bytes(candidate))
         if candidate["artifact_hash"] != expected_hash:
             raise ExportArtifactError("artifact_hash_mismatch")
+        signature_material = export_artifact_signature_material(expected_hash)
+        expected_signature_hash = compute_detached_signature_hash(signature_material)
+        if candidate["signature_hash"] != expected_signature_hash:
+            raise ExportArtifactError("signature_hash_mismatch")
         key = key_registry.verification_key(
             _require_text(candidate["signing_key_id"], "signing_key_id")
         )
         verify_ed25519_signature(
             key.public_key,
             _require_text(candidate["signature"], "signature"),
-            export_artifact_signature_material(expected_hash),
+            signature_material,
         )
     except (
         ExportArtifactError,

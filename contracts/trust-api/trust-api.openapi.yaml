@@ -16,8 +16,10 @@ paths:
       description: >
         P11 machine-authorized export projection. Only match_verdict subjects are
         supported. Up to 50 exact references are admitted, while no more than two
-        are evaluated and signed in one request. The response embeds complete
-        signed TrustEnvelopes and is not an attribution aggregate.
+        are evaluated and signed in one request. Before page-one issuance, the
+        complete bounded set is atomically preflighted for tenant-visible source
+        existence and P4 money eligibility. The response embeds complete signed
+        TrustEnvelopes and is not an attribution aggregate.
       x-max-request-body-bytes: 65536
       x-max-accepted-subject-refs: 50
       x-max-evaluated-references: 2

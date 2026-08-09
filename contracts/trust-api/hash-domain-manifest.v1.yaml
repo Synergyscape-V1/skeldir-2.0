@@ -18,6 +18,7 @@ export_artifact_field_domains:
   - {field_path: artifact_signing_domain, domain: export_artifact_payload_v1}
   - {field_path: envelopes, domain: export_artifact_payload_v1}
   - {field_path: artifact_hash, domain: export_artifact_derived_v1}
+  - {field_path: signature_hash, domain: export_artifact_derived_v1}
   - {field_path: signature, domain: export_artifact_derived_v1}
   - {field_path: signing_key_id, domain: export_artifact_signature_v1}
   - {field_path: signing_algorithm, domain: export_artifact_signature_v1}

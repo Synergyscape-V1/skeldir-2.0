@@ -112,6 +112,22 @@ jobs:
           python -m pytest backend/tests/trust/test_b25_p11_postgres_physics.py::test_postgres_maximum_export_resource_envelope -q -s | tee /tmp/b25_p11_resource.out
           grep -E "^P11_RESOURCE_METRICS=" /tmp/b25_p11_resource.out
 
+      - name: Prove Track-1 PostgreSQL source scaling and cancellation
+        run: |
+          set -o pipefail
+          python -m pytest backend/tests/trust/test_b25_p11_postgres_physics.py::test_track1_31_day_source_scaling_timeout_and_connection_occupancy -q -s | tee /tmp/b25_p11_track1_db.out
+          grep -E "^P11_TRACK1_DB_METRICS=" /tmp/b25_p11_track1_db.out
+
+      - name: Prove detached CSV and concurrent CSV-XLSX memory
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p11_export_projection.py::test_detached_csv_is_header_first_rectangular_self_identifying_at_1000_rows \
+            backend/tests/trust/test_b25_p11_export_projection.py::test_csv_and_xlsx_maximum_concurrent_serialization_stays_in_declared_memory \
+            -q -s | tee /tmp/b25_p11_track1_serialization.out
+          grep -E "^P11_TRACK1_CSV_METRICS=" /tmp/b25_p11_track1_serialization.out
+          grep -E "^P11_TRACK1_SERIALIZATION_METRICS=" /tmp/b25_p11_track1_serialization.out
+
       - name: Validate P1-P10 substrate preservation
         run: |
           make validate-b25-p1-contracts
@@ -148,6 +164,7 @@ jobs:
           grep -E "^explicit_root_files_scanned=[1-9][0-9]*$" /tmp/b25_p11.out
           grep -E "^shadow_paths_scanned=0$" /tmp/b25_p11.out
           grep -E "^negative_controls_fired=15$" /tmp/b25_p11.out
+          grep -E "^corrective_negative_controls_fired=11$" /tmp/b25_p11.out
           grep -E "^pytest_controls_passed=1$" /tmp/b25_p11.out
 
       - name: Validate CI governance
