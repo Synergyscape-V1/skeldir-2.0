@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 import yaml
 
-SCRIPT_VERSION = "1.0.0"
+SCRIPT_VERSION = "1.1.0"
 
 
 VALID_RESPONSE_REF_PREFIXES = (
@@ -40,6 +40,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def response_is_valid(response: Dict[str, Any]) -> bool:
+    # Bundling dereferences response components. Preserve an explicit provenance
+    # marker for shared error responses whose runtime wire intentionally is not
+    # RFC 7807 (for example FastAPI HTTPException's nested ``detail`` object).
+    if response.get("x-skeldir-shared-error-component") is True:
+        return True
+
     if "$ref" in response:
         ref = response["$ref"]
         return any(ref.startswith(prefix) for prefix in VALID_RESPONSE_REF_PREFIXES)

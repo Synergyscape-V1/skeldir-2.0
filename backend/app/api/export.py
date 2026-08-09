@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import csv
 import logging
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta, timezone
 from io import BytesIO, StringIO
-from typing import Annotated
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import (
@@ -57,6 +58,11 @@ EXPORT_TOP_LEVEL_ALLOWLIST = (
 )
 EXPORT_DATE_RANGE_ALLOWLIST = ("start", "end")
 CSV_SCHEMA_VERSION = "b25-p11-export-csv-v2"
+LEGACY_CSV_SCHEMA_VERSION = "legacy-v1"
+ENRICHED_CSV_MEDIA_TYPE = (
+    'text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2"'
+)
+LEGACY_CSV_COLUMNS = ("date", "channel", "revenue", "conversions", "confidence")
 CSV_COLUMNS = (
     "projection_authority",
     "projection_schema_version",
@@ -81,6 +87,7 @@ TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES = 32 * 1_024 * 1_024
 _LEGACY_ROW_BYTE_ESTIMATE = 512
 _EXPORT_FORBIDDEN_KEYS = output_forbidden_key_set()
 _TRACK1_EXPORT_CONCURRENCY_LIMIT = asyncio.Semaphore(TRACK1_MAX_CONCURRENT_EXPORTS)
+_TRACK1_RETAINED_SERIALIZER_TASKS: set[asyncio.Task[Any]] = set()
 
 
 class LegacyExportLimitExceeded(ValueError):
@@ -143,6 +150,30 @@ def _csv_from_rows(rows: list[dict[str, object]]) -> str:
             (
                 "non_authoritative_display",
                 CSV_SCHEMA_VERSION,
+                row["date"],
+                row["channel"],
+                row["revenue_display"],
+                row["conversions"],
+                row["confidence_display"],
+            )
+        )
+    rendered = stream.getvalue()
+    if len(rendered.encode("utf-8")) > LEGACY_EXPORT_MAX_BYTES:
+        raise LegacyExportLimitExceeded("legacy_export_byte_budget_exceeded")
+    return rendered
+
+
+def _legacy_csv_from_rows(rows: list[dict[str, object]]) -> str:
+    """Preserve the original five-column positional contract byte-for-byte."""
+    stream = StringIO(newline="")
+    writer = csv.writer(
+        stream, dialect="excel", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n"
+    )
+    writer.writerow(LEGACY_CSV_COLUMNS)
+    for row in rows:
+        _enforce_export_row_no_leak(row)
+        writer.writerow(
+            (
                 row["date"],
                 row["channel"],
                 row["revenue_display"],
@@ -395,38 +426,79 @@ async def _run_track1_export(
     end: date,
     channels: list[str] | None,
     export_format: str,
+    csv_schema_version: str = LEGACY_CSV_SCHEMA_VERSION,
 ) -> tuple[list[dict[str, object]], dict[str, object], str | bytes | None]:
-    """Bound database, CPU serialization, and aggregate per-worker memory."""
+    """Bound DB and physical serializer lifetime, including after cancellation."""
+    permit_acquired = False
+    serializer_task: asyncio.Task[str | bytes] | None = None
+
+    def release_retained_permit(completed: asyncio.Task[str | bytes]) -> None:
+        # Retrieve executor exceptions so a timed-out HTTP request cannot create
+        # an unobserved task failure. The physical permit is released only when
+        # the underlying to_thread work has actually returned.
+        try:
+            completed.exception()
+        except (asyncio.CancelledError, Exception):
+            pass
+        _TRACK1_RETAINED_SERIALIZER_TASKS.discard(completed)
+        _TRACK1_EXPORT_CONCURRENCY_LIMIT.release()
+
     try:
         # The deadline includes admission queueing as well as database and
         # serialization work; saturation cannot create an unbounded wait.
         async with asyncio.timeout(TRACK1_HANDLER_DEADLINE_SECONDS):
-            async with _TRACK1_EXPORT_CONCURRENCY_LIMIT:
-                rows, payload = await _projection_for_request(
-                    db_session=db_session,
-                    tenant_id=tenant_id,
-                    session_scope=session_scope,
-                    start=start,
-                    end=end,
-                    channels=channels,
-                )
-                if export_format == "csv":
-                    body: str | bytes | None = await asyncio.to_thread(
-                        _csv_from_rows, rows
-                    )
-                elif export_format == "xlsx":
-                    body = await asyncio.to_thread(_xlsx_from_projection, payload)
-                elif export_format == "json":
-                    body = None
+            await _TRACK1_EXPORT_CONCURRENCY_LIMIT.acquire()
+            permit_acquired = True
+            rows, payload = await _projection_for_request(
+                db_session=db_session,
+                tenant_id=tenant_id,
+                session_scope=session_scope,
+                start=start,
+                end=end,
+                channels=channels,
+            )
+            serializer: Callable[[Any], str | bytes] | None
+            serializer_input: Any
+            if export_format == "csv":
+                if csv_schema_version == CSV_SCHEMA_VERSION:
+                    serializer = _csv_from_rows
+                elif csv_schema_version == LEGACY_CSV_SCHEMA_VERSION:
+                    serializer = _legacy_csv_from_rows
                 else:
-                    raise ValueError("unsupported_track1_export_format")
-                return rows, payload, body
+                    raise ValueError("unsupported_csv_schema_version")
+                serializer_input = rows
+            elif export_format == "xlsx":
+                serializer = _xlsx_from_projection
+                serializer_input = payload
+            elif export_format == "json":
+                serializer = None
+                serializer_input = None
+            else:
+                raise ValueError("unsupported_track1_export_format")
+
+            if serializer is None:
+                body: str | bytes | None = None
+            else:
+                serializer_task = asyncio.create_task(
+                    asyncio.to_thread(serializer, serializer_input)
+                )
+                # asyncio cancellation cannot stop an executor thread. Shield
+                # it, and retain the physical permit until its task completes.
+                body = await asyncio.shield(serializer_task)
+            return rows, payload, body
     except LegacyExportDeadlineExceeded:
         raise
     except TimeoutError as exc:
         raise LegacyExportDeadlineExceeded(
             "legacy_export_handler_deadline_exceeded"
         ) from exc
+    finally:
+        if permit_acquired:
+            if serializer_task is not None and not serializer_task.done():
+                _TRACK1_RETAINED_SERIALIZER_TASKS.add(serializer_task)
+                serializer_task.add_done_callback(release_retained_permit)
+            else:
+                _TRACK1_EXPORT_CONCURRENCY_LIMIT.release()
 
 
 def _observe_human_export(
@@ -468,6 +540,9 @@ async def export_revenue(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     channels: list[str] | None = Query(default=None),
+    csv_schema_version: Literal[
+        "legacy-v1", "b25-p11-export-csv-v2"
+    ] = Query(default=LEGACY_CSV_SCHEMA_VERSION),
     x_attribution_session_id: Annotated[
         UUID | None, Header(alias="X-Attribution-Session-ID")
     ] = None,
@@ -486,12 +561,15 @@ async def export_revenue(
             end=end,
             channels=channels,
             export_format=normalized_format,
+            csv_schema_version=csv_schema_version,
         )
         if normalized_format == "csv":
             if not isinstance(serialized, str):
                 raise ValueError("csv_serialization_missing")
             body: str | bytes = serialized
             media_type = "text/csv"
+            if csv_schema_version == CSV_SCHEMA_VERSION:
+                media_type = ENRICHED_CSV_MEDIA_TYPE
             filename = "skeldir-export-revenue.csv"
         elif normalized_format == "xlsx":
             if not isinstance(serialized, bytes):
@@ -543,6 +621,9 @@ async def export_csv(
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
     auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
+    csv_schema_version: Literal[
+        "legacy-v1", "b25-p11-export-csv-v2"
+    ] = Query(default=LEGACY_CSV_SCHEMA_VERSION),
     x_attribution_session_id: Annotated[
         UUID | None, Header(alias="X-Attribution-Session-ID")
     ] = None,
@@ -557,6 +638,7 @@ async def export_csv(
             end=end,
             channels=None,
             export_format="csv",
+            csv_schema_version=csv_schema_version,
         )
         if not isinstance(serialized, str):
             raise ValueError("csv_serialization_missing")
@@ -574,7 +656,11 @@ async def export_csv(
     )
     return Response(
         content=body,
-        media_type="text/csv",
+        media_type=(
+            ENRICHED_CSV_MEDIA_TYPE
+            if csv_schema_version == CSV_SCHEMA_VERSION
+            else "text/csv"
+        ),
         headers={
             "X-Correlation-ID": str(x_correlation_id),
             "Content-Disposition": 'attachment; filename="skeldir-export.csv"',

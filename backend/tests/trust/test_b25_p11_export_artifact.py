@@ -101,7 +101,11 @@ def test_artifact_embeds_full_signed_lineage_and_verifies_with_public_key_only()
     assert artifact["signature_hash"].startswith("sha256:")
     assert artifact["signature_hash"] != artifact["artifact_hash"]
     assert artifact["signature_hash"] == compute_detached_signature_hash(
-        export_artifact_signature_material(str(artifact["artifact_hash"]))
+        export_artifact_signature_material(
+            str(artifact["artifact_hash"]),
+            signing_key_id=str(artifact["signing_key_id"]),
+            signing_algorithm=str(artifact["signing_algorithm"]),
+        )
     )
     assert artifact["signature"].startswith("ed25519:")
     assert artifact["envelopes"][0]["signature"].startswith("ed25519:")
@@ -172,7 +176,11 @@ def test_wrong_domain_cross_verification_fails_in_both_directions() -> None:
         verify_ed25519_signature(
             key.public_key,
             str(envelope["signature"]),
-            export_artifact_signature_material(str(artifact["artifact_hash"])),
+            export_artifact_signature_material(
+                str(artifact["artifact_hash"]),
+                signing_key_id=str(artifact["signing_key_id"]),
+                signing_algorithm=str(artifact["signing_algorithm"]),
+            ),
         )
     assert EXPORT_ARTIFACT_SIGNING_DOMAIN.endswith(b"\x00")
 
@@ -201,6 +209,67 @@ def test_semantic_hash_stable_while_issuance_changes_artifact_hash() -> None:
         == second["envelopes"][0]["semantic_truth_hash"]
     )
     assert first["artifact_hash"] != second["artifact_hash"]
+
+
+def test_key_rotation_preserves_artifact_identity_and_rebinds_signature() -> None:
+    old_private = Ed25519PrivateKey.from_private_bytes(
+        hashlib.sha256(b"b25-p11-artifact-old-key").digest()
+    )
+    new_private = Ed25519PrivateKey.from_private_bytes(
+        hashlib.sha256(b"b25-p11-artifact-new-key").digest()
+    )
+    valid_from = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    old_active = TrustSigningKey(
+        kid="kid:b25-p11-artifact-old",
+        algorithm="ed25519",
+        public_key=old_private.public_key(),
+        private_key=old_private,
+        state="active",
+        valid_from=valid_from,
+    )
+    old_registry = TrustKeyRegistry((old_active,))
+    envelope = _signed_envelope(old_registry)
+    unsigned = build_export_artifact(
+        envelopes=[envelope],
+        tenant_id_hash=str(envelope["tenant_id_hash"]),
+        generated_at=datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc),
+    )
+    old_signed = sign_export_artifact(unsigned, key_registry=old_registry)
+
+    rotated_registry = TrustKeyRegistry(
+        (
+            TrustSigningKey(
+                kid=old_active.kid,
+                algorithm=old_active.algorithm,
+                public_key=old_active.public_key,
+                private_key=None,
+                state="verification_only",
+                valid_from=valid_from,
+                retired_at=datetime(2027, 1, 1, tzinfo=timezone.utc),
+            ),
+            TrustSigningKey(
+                kid="kid:b25-p11-artifact-new",
+                algorithm="ed25519",
+                public_key=new_private.public_key(),
+                private_key=new_private,
+                state="active",
+                valid_from=valid_from,
+            ),
+        )
+    )
+    new_signed = sign_export_artifact(unsigned, key_registry=rotated_registry)
+
+    assert old_signed["artifact_hash"] == new_signed["artifact_hash"]
+    assert old_signed["signing_key_id"] != new_signed["signing_key_id"]
+    assert old_signed["signature_hash"] != new_signed["signature_hash"]
+    assert old_signed["signature"] != new_signed["signature"]
+    public_registry = rotated_registry.public_only()
+    assert verify_export_artifact(
+        old_signed, key_registry=public_registry
+    ).verification_status == "verified"
+    assert verify_export_artifact(
+        new_signed, key_registry=public_registry
+    ).verification_status == "verified"
 
 
 def test_artifact_identity_uses_p2_hash_authority_without_local_json_hashing() -> None:

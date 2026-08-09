@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import csv
 import concurrent.futures
+import gc
 import json
+import threading
 import time
-import tracemalloc
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from io import BytesIO, StringIO
@@ -15,13 +16,21 @@ from pathlib import Path
 from uuid import uuid4
 
 from jsonschema import Draft202012Validator
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from openpyxl import load_workbook
+import psutil
 import pytest
+import yaml
 
 from app.api import export as export_api
+from app.db.deps import get_db_session
+from app.security.auth import get_auth_context
 from app.api.export import (
     CSV_COLUMNS,
     CSV_SCHEMA_VERSION,
+    LEGACY_CSV_COLUMNS,
+    LEGACY_CSV_SCHEMA_VERSION,
     EXPORT_ROW_ALLOWLIST,
     LEGACY_EXPORT_MAX_BYTES,
     LEGACY_EXPORT_MAX_ROWS,
@@ -30,6 +39,7 @@ from app.api.export import (
     TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES,
     XLSX_COLUMNS,
     _csv_from_rows,
+    _legacy_csv_from_rows,
     _enforce_export_payload_no_leak,
     _xlsx_from_projection,
 )
@@ -156,6 +166,16 @@ def test_csv_round_trip_handles_adversarial_text_without_column_drift() -> None:
     assert rendered.endswith("\r\n")
 
 
+def test_legacy_csv_default_contract_is_positionally_unchanged() -> None:
+    _, payload = _projection(["Meta"])
+    rows = payload["rows"]
+    assert isinstance(rows, list)
+    records = list(csv.reader(StringIO(_legacy_csv_from_rows(rows), newline="")))
+    assert tuple(records[0]) == LEGACY_CSV_COLUMNS
+    assert records[1] == ["2026-08-08", "Meta", "125.05", "1", "0.92"]
+    assert LEGACY_CSV_SCHEMA_VERSION == "legacy-v1"
+
+
 def test_formula_prefixes_are_text_in_csv_and_real_xlsx() -> None:
     formulas = [
         "=1+1",
@@ -251,25 +271,41 @@ def test_csv_and_xlsx_maximum_concurrent_serialization_stays_in_declared_memory(
         assert parsed.sheetnames == ["Export", "Metadata"]
         return len(csv_bytes), len(xlsx_bytes)
 
-    tracemalloc.start()
+    gc.collect()
+    process = psutil.Process()
+    baseline_rss = process.memory_info().rss
+    rss_samples = [baseline_rss]
+    sampling_done = threading.Event()
+
+    def sample_process_rss() -> None:
+        while not sampling_done.wait(0.001):
+            rss_samples.append(process.memory_info().rss)
+
+    sampler = threading.Thread(target=sample_process_rss, daemon=True)
+    sampler.start()
     started = time.perf_counter()
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=TRACK1_MAX_CONCURRENT_EXPORTS
-    ) as executor:
-        sizes = list(
-            executor.map(
-                lambda _: serialize_pair(), range(TRACK1_MAX_CONCURRENT_EXPORTS)
+    try:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=TRACK1_MAX_CONCURRENT_EXPORTS
+        ) as executor:
+            sizes = list(
+                executor.map(
+                    lambda _: serialize_pair(), range(TRACK1_MAX_CONCURRENT_EXPORTS)
+                )
             )
-        )
-    _, peak = tracemalloc.get_traced_memory()
+    finally:
+        sampling_done.set()
+        sampler.join(timeout=1)
+        rss_samples.append(process.memory_info().rss)
     elapsed_ms = (time.perf_counter() - started) * 1_000
-    tracemalloc.stop()
+    peak_rss = max(rss_samples)
+    peak_rss_delta = peak_rss - baseline_rss
 
     assert all(
         csv_bytes <= LEGACY_EXPORT_MAX_BYTES and xlsx_bytes <= LEGACY_EXPORT_MAX_BYTES
         for csv_bytes, xlsx_bytes in sizes
     )
-    assert peak <= (
+    assert peak_rss_delta <= (
         TRACK1_MAX_CONCURRENT_EXPORTS * TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES
     )
     print(
@@ -282,7 +318,10 @@ def test_csv_and_xlsx_maximum_concurrent_serialization_stays_in_declared_memory(
                     * TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES
                 ),
                 "elapsed_ms": elapsed_ms,
-                "peak_traced_bytes": peak,
+                "measurement": "psutil.Process.memory_info().rss",
+                "baseline_rss_bytes": baseline_rss,
+                "peak_rss_bytes": peak_rss,
+                "peak_rss_delta_bytes": peak_rss_delta,
                 "rows_per_export": len(rows),
                 "sizes": [
                     {"csv_bytes": csv_bytes, "xlsx_bytes": xlsx_bytes}
@@ -328,3 +367,135 @@ async def test_track1_deadline_includes_saturated_admission_queue(monkeypatch) -
         for _ in range(TRACK1_MAX_CONCURRENT_EXPORTS):
             semaphore.release()
     assert projection_called is False
+
+
+@pytest.mark.asyncio
+async def test_timeout_retains_capacity_until_physical_serializer_finishes(
+    monkeypatch,
+) -> None:
+    semaphore = asyncio.Semaphore(TRACK1_MAX_CONCURRENT_EXPORTS)
+    monkeypatch.setattr(export_api, "_TRACK1_EXPORT_CONCURRENCY_LIMIT", semaphore)
+    monkeypatch.setattr(export_api, "TRACK1_HANDLER_DEADLINE_SECONDS", 0.03)
+    export_api._TRACK1_RETAINED_SERIALIZER_TASKS.clear()
+    _, payload = _projection(["Meta"])
+    rows = payload["rows"]
+    assert isinstance(rows, list)
+
+    async def fast_projection(**_kwargs):
+        return rows, payload
+
+    real_serializer = _csv_from_rows
+    release_physical_work = threading.Event()
+    state_lock = threading.Lock()
+    active = 0
+    peak_active = 0
+    starts = 0
+
+    def blocked_production_serializer(value):
+        nonlocal active, peak_active, starts
+        with state_lock:
+            starts += 1
+            active += 1
+            peak_active = max(peak_active, active)
+        try:
+            release_physical_work.wait(timeout=2)
+            return real_serializer(value)
+        finally:
+            with state_lock:
+                active -= 1
+
+    monkeypatch.setattr(export_api, "_projection_for_request", fast_projection)
+    monkeypatch.setattr(export_api, "_csv_from_rows", blocked_production_serializer)
+
+    async def invoke() -> None:
+        with pytest.raises(
+            LegacyExportDeadlineExceeded,
+            match="legacy_export_handler_deadline_exceeded",
+        ):
+            await export_api._run_track1_export(
+                db_session=object(),
+                tenant_id=uuid4(),
+                session_scope=None,
+                start=date(2026, 8, 1),
+                end=date(2026, 8, 1),
+                channels=None,
+                export_format="csv",
+                csv_schema_version=CSV_SCHEMA_VERSION,
+            )
+
+    await asyncio.gather(invoke(), invoke())
+    assert active == peak_active == starts == TRACK1_MAX_CONCURRENT_EXPORTS
+    assert semaphore._value == 0
+    assert len(export_api._TRACK1_RETAINED_SERIALIZER_TASKS) == 2
+
+    await invoke()
+    assert starts == TRACK1_MAX_CONCURRENT_EXPORTS
+    assert active == TRACK1_MAX_CONCURRENT_EXPORTS
+    assert semaphore._value == 0
+
+    release_physical_work.set()
+    for _ in range(100):
+        if active == 0 and semaphore._value == TRACK1_MAX_CONCURRENT_EXPORTS:
+            break
+        await asyncio.sleep(0.01)
+    assert active == 0
+    assert semaphore._value == TRACK1_MAX_CONCURRENT_EXPORTS
+    assert not export_api._TRACK1_RETAINED_SERIALIZER_TASKS
+    print(
+        "\nP11_TRACK1_TIMEOUT_SERIALIZER_METRICS="
+        + json.dumps(
+            {
+                "active_after_http_timeout": TRACK1_MAX_CONCURRENT_EXPORTS,
+                "capacity_after_http_timeout": 0,
+                "capacity_after_physical_completion": semaphore._value,
+                "peak_physical_serializers": peak_active,
+                "third_serializer_started_while_saturated": False,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reason_code",
+    [
+        "legacy_export_database_deadline_exceeded",
+        "legacy_export_handler_deadline_exceeded",
+    ],
+)
+async def test_runtime_503_matches_authoritative_openapi_schema(
+    monkeypatch, reason_code: str
+) -> None:
+    app = FastAPI()
+    app.include_router(export_api.router, prefix="/api/export")
+
+    async def fake_auth():
+        return type("Auth", (), {"tenant_id": uuid4()})()
+
+    async def fake_db():
+        yield object()
+
+    async def deadline(**_kwargs):
+        raise LegacyExportDeadlineExceeded(reason_code)
+
+    app.dependency_overrides[get_auth_context] = fake_auth
+    app.dependency_overrides[get_db_session] = fake_db
+    monkeypatch.setattr(export_api, "_run_track1_export", deadline)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/export/csv",
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+
+    assert response.status_code == 503
+    contract = yaml.safe_load(
+        (ROOT / "api-contracts/openapi/v1/export.yaml").read_text(encoding="utf-8")
+    )
+    schema = contract["components"]["schemas"]["ExportDeadlineError"]
+    Draft202012Validator(schema).validate(response.json())
+    assert response.json() == {
+        "detail": {"status": "refused", "reason_code": reason_code}
+    }
