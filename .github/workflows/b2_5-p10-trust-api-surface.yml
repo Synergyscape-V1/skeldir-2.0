@@ -1,20 +1,12 @@
 name: B2.5-P10 Trust API Surface
 
 on:
+  # Deliberately NOT path-filtered. This context is a REQUIRED status check.
+  # A required check that is path-filtered never reports on a PR outside its
+  # paths, and GitHub blocks that PR forever waiting for a status that cannot
+  # arrive. The push trigger keeps its paths, which is what the P12 meta-layer
+  # reads for path-trigger integrity.
   pull_request:
-    paths:
-      - "backend/app/api/trust_api.py"
-      - "backend/app/main.py"
-      - "backend/app/config/contract_scope.yaml"
-      - "backend/app/trust/**"
-      - "backend/tests/trust/**"
-      - "contracts/trust-api/**"
-      - "scripts/ci/validate_b25_p10_trust_api_surface.py"
-      - ".github/workflows/b2_5-p10-trust-api-surface.yml"
-      - "Makefile"
-      - "docs/ci/**"
-      - "docs/forensics/**"
-      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
   push:
     branches:
       - main

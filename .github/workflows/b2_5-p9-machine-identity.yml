@@ -16,21 +16,12 @@ on:
       - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
       - "contracts/trust-api/**"
       - "backend/app/trust/**"
+  # Deliberately NOT path-filtered. This context is a REQUIRED status check.
+  # A required check that is path-filtered never reports on a PR outside its
+  # paths, and GitHub blocks that PR forever waiting for a status that cannot
+  # arrive. The push trigger keeps its paths, which is what the P12 meta-layer
+  # reads for path-trigger integrity.
   pull_request:
-    branches: [main, develop]
-    paths:
-      - "backend/app/trust/machine_identity.py"
-      - "backend/app/trust/machine_auth.py"
-      - "backend/tests/trust/test_b25_p9_machine_identity.py"
-      - "alembic/versions/007_skeldir_foundation/202607191200_b25_p9_machine_identity.py"
-      - "scripts/ci/validate_b25_p9_machine_identity.py"
-      - ".github/workflows/b2_5-p9-machine-identity.yml"
-      - "Makefile"
-      - "docs/ci/**"
-      - "docs/forensics/**"
-      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
-      - "contracts/trust-api/**"
-      - "backend/app/trust/**"
   workflow_dispatch:
 
 permissions:

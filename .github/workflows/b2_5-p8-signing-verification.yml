@@ -22,27 +22,12 @@ on:
       - ".github/workflows/b2_5-p8-signing-verification.yml"
       - "docs/ci/**"
       - "docs/forensics/**"
+  # Deliberately NOT path-filtered. This context is a REQUIRED status check.
+  # A required check that is path-filtered never reports on a PR outside its
+  # paths, and GitHub blocks that PR forever waiting for a status that cannot
+  # arrive. The push trigger keeps its paths, which is what the P12 meta-layer
+  # reads for path-trigger integrity.
   pull_request:
-    branches: [main, develop]
-    paths:
-      - "contracts/trust-api/**"
-      - "backend/app/trust/**"
-      - "backend/app/api/trust_keys.py"
-      - "backend/app/main.py"
-      - "backend/tests/trust/**"
-      - "scripts/ci/validate_b25_p1_contracts.py"
-      - "scripts/ci/validate_b25_p1_trust_drift.py"
-      - "scripts/ci/validate_b25_p2_canonicalization.py"
-      - "scripts/ci/validate_b25_p3_text_disposition.py"
-      - "scripts/ci/validate_b25_p4_money_authority.py"
-      - "scripts/ci/validate_b25_p5_builder.py"
-      - "scripts/ci/validate_b25_p6_reason_truth_matrix.py"
-      - "scripts/ci/validate_b25_p7_provenance_audit.py"
-      - "scripts/ci/validate_b25_p8_signing_verification.py"
-      - "Makefile"
-      - ".github/workflows/b2_5-p8-signing-verification.yml"
-      - "docs/ci/**"
-      - "docs/forensics/**"
   workflow_dispatch:
 
 permissions:

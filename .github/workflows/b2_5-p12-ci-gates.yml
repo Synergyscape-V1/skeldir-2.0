@@ -92,7 +92,27 @@ jobs:
           grep -E "^dynamic_import_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_isolation.out
           grep -E "^compute_dispatch_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_isolation.out
           grep -E "^runtime_trace_paths_exercised=5$" /tmp/b25_p12_isolation.out
-          grep -E "^isolation_negative_controls_fired=3$" /tmp/b25_p12_isolation.out
+          grep -E "^isolation_negative_controls_fired=4$" /tmp/b25_p12_isolation.out
+
+      # The fresh-interpreter trace is also invoked directly, not only as a
+      # subprocess of the validator above. Registering it as a named step in the
+      # enforcer registry while leaving it unreachable from any workflow would be
+      # the exact existence-vs-invocation overclaim P13-P0 exists to remove.
+      - name: P12 runtime module trace (fresh interpreter, import-time observable)
+        run: |
+          set -o pipefail
+          python scripts/ci/_b25_p12_runtime_trace.py | tee /tmp/b25_p12_runtime_trace.out
+          python - <<'PY'
+          import json
+          report = json.loads(open("/tmp/b25_p12_runtime_trace.out").read().strip().splitlines()[-1])
+          assert not report["error"], f"runtime trace error: {report['error']}"
+          assert not report["forbidden_modules_loaded"], (
+              f"forbidden modules resident after trust paths: {report['forbidden_modules_loaded']}"
+          )
+          assert len(report["executed_paths"]) == 5, report["executed_paths"]
+          print("runtime_trace_forbidden_modules_loaded=0")
+          print(f"runtime_trace_executed_paths={len(report['executed_paths'])}")
+          PY
 
       # Plane D: prove the proofs above actually run and cannot be evaded.
       - name: P12 CI meta-validation (Plane D non-vacuity)
