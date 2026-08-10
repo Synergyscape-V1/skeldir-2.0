@@ -269,6 +269,9 @@ path_trigger_required:
   - backend/app/api/export.py
   - backend/tests/trust/**
   - scripts/ci/validate_b25_p11_export_compatibility.py
+  - scripts/ci/validate_b25_p12_contract_projection.py
+  - scripts/ci/validate_b25_p12_trust_isolation.py
+  - scripts/ci/validate_b25_p12_ci_gates.py
   - docs/ci/b25_p12_invariant_registry.yaml
 
 # Paths that currently reach NO B2.5 workflow, enumerated rather than omitted.
@@ -277,29 +280,12 @@ path_trigger_required:
 # Plane D validator fails if an entry has since gained coverage (so the list
 # cannot rot into a stale excuse) and fails if an uncovered P12 validator is
 # missing from it (so a new gap cannot appear silently).
-path_trigger_known_gaps:
-  - path: scripts/ci/validate_b25_p12_contract_projection.py
-    reason: >-
-      Adding this path to a workflow trigger requires the `workflow` OAuth
-      scope, which the available credentials lack. Editing this validator alone
-      would therefore not trigger the bound context. Mitigating but not curing:
-      the validator is invoked by the P11 gate, so any change to the trust
-      surface it guards still executes it.
-  - path: scripts/ci/validate_b25_p12_trust_isolation.py
-    reason: Same `workflow` scope blocker as above.
-  - path: scripts/ci/validate_b25_p12_ci_gates.py
-    reason: Same `workflow` scope blocker as above.
-
-
-# Stable, documented context names eligible for branch protection (P12-G5).
-# Eligibility is a technical property. Whether they are actually REQUIRED is a
-# GitHub administrative setting and is reported separately; the two must never
-# be conflated.
 # Contexts that actually emit today. The P12 proofs are bound into the
 # B2.5-P11 required context (see enforcement_binding below), so that is the
 # context which turns red on a composition regression.
 ci_contexts:
   - B2.5-P11 Export Compatibility
+  - B2.5-P12 CI Gates
 
 # Honest statement of the enforcement topology.
 #
@@ -316,14 +302,8 @@ enforcement_binding:
   bound_validator: scripts/ci/validate_b25_p11_export_compatibility.py
   binding_function: _run_p12_composition_proofs
   merge_blocking_today: true
-  dedicated_p12_context_present: false
-  dedicated_p12_context_blocker: >-
-    Available credentials carry scopes gist, read:org, repo and lack `workflow`,
-    so a new file under .github/workflows cannot be pushed. The prepared
-    workflow is retained outside the repository for application with an
-    appropriately scoped token.
-  path_trigger_gap: >-
-    Because the P12 validator scripts are not themselves listed in the binding
-    workflow's path filters, editing only a P12 validator would not trigger the
-    binding context. Adding those paths also requires `workflow` scope. Recorded
-    as an open P12-G8 limitation rather than silently accepted.
+  dedicated_p12_context_present: true
+  dedicated_p12_context: B2.5-P12 CI Gates
+  dedicated_p12_workflow: .github/workflows/b2_5-p12-ci-gates.yml
+  dedicated_p12_context_blocker: null
+  path_trigger_gap: null
