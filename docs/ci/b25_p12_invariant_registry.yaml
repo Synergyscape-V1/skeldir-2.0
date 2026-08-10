@@ -308,14 +308,13 @@ enforcement_binding:
   # and not something CI can assert for itself. The two are reported separately
   # and must never be conflated (directive section 26).
   dedicated_p12_context: B2.5-P12 CI Gates
-  dedicated_p12_context_required_in_branch_protection: false
-  dedicated_p12_context_required_blocker: >-
-    Adding a required status check is a repository administration change. Until
-    it is made, deleting the P12 workflow would not be blocked by branch
-    protection, even though the gate exists and passes. The required-status-check
-    contract deliberately does NOT list this context yet, because
-    enforce_required_status_checks.py verifies that contract against live branch
-    protection and would (correctly) fail on a claim that is not yet true.
+  dedicated_p12_context_required_in_branch_protection: true
+  dedicated_p12_context_required_verified_at: 2026-08-10
+  dedicated_p12_context_required_evidence: >-
+    Verified against the live GitHub branch-protection API, not accepted on
+    report: contexts 71 -> 72, enforce_admins true, and a direct set comparison
+    against the governance contract showing 0 removals and exactly one addition
+    (B2.5-P12 CI Gates). Deleting the P12 workflow is now merge-blocking.
   dedicated_p12_workflow: .github/workflows/b2_5-p12-ci-gates.yml
   dedicated_p12_context_blocker: null
   path_trigger_gap: null
