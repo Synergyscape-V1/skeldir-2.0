@@ -173,6 +173,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     ".github/workflows/b2_5-p12-ci-gates.yml",
     "scripts/ci/validate_b25_p12_contract_projection.py",
     "scripts/ci/validate_b25_p12_trust_isolation.py",
+    "scripts/ci/_b25_p12_runtime_trace.py",
     "scripts/ci/validate_b25_p12_ci_gates.py",
     "docs/ci/b25_p12_invariant_registry.yaml",
     "contracts/trust-api/export-artifact.v2.yaml",
