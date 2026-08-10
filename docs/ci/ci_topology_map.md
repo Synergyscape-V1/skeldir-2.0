@@ -88,6 +88,7 @@
 - `B2.5-P9 Machine Identity`
 - `B2.5-P10 Trust API Surface`
 - `B2.5-P11 Export Compatibility`
+- `B2.5-P12 CI Gates`
 - `B1.7 Explanation Runtime Adjudication`
 - `B1.7 P4 Mixed Workload Benchmark`
 - `m0-maintainability-scope-lock`

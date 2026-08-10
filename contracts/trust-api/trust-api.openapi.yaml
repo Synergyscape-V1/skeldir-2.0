@@ -77,7 +77,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: export-artifact.v1.yaml
+                # Active issuance protocol. Production emits v2 only; v1 is
+                # verification-only and must never be published as a successful
+                # issuance response. Enforced by the P12 contract-projection gate,
+                # which validates a real issued artifact against this exact schema.
+                $ref: export-artifact.v2.yaml
         "400":
           $ref: "#/components/responses/TrustApiError"
         "403":

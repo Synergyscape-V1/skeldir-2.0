@@ -1,0 +1,127 @@
+{
+  "artifact_hash": "sha256:da12e4562b5fc60abc1afc27a764ef2984120cb61bccab671540c3e357587584",
+  "artifact_schema_version": "b25-p11-export-artifact-v2",
+  "artifact_signing_domain": "skeldir:b25-p11:export-artifact:v2\\0",
+  "canonicalization_version": "b25-p11-artifact-framing-v2",
+  "envelopes": [
+    {
+      "artifact_hash": null,
+      "artifact_ref": null,
+      "audience_binding": {
+        "audience_id_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "audience_mode": "tenant_internal",
+        "audience_scope": [
+          "trust.envelope.read",
+          "trust.envelope.verify"
+        ],
+        "presentation_policy": "bearer_not_authority",
+        "replay_context_required": true
+      },
+      "audit_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "audit_ref": "urn:skeldir:audit:audit_001",
+      "benchmark_metadata": {
+        "benchmark_authority": "explicitly_unavailable",
+        "benchmark_hash": null,
+        "benchmark_ref": null,
+        "benchmark_status": "unavailable",
+        "unavailable_reason": "not_applicable"
+      },
+      "canonicalization_version": "trust-canonical-json-v1",
+      "confidence_metadata": {
+        "bayesian_model_type": "deterministic_only",
+        "bayesian_model_version": null,
+        "confidence_authority": "deterministic_only",
+        "confidence_score_basis_points": null,
+        "confidence_status": "unavailable",
+        "diagnostics_status": "not_applicable",
+        "unavailable_reason": "not_applicable"
+      },
+      "created_at": "2026-08-10T12:00:00Z",
+      "data_completeness_status": "complete",
+      "envelope_id": "env_11111111111111111111111111111111",
+      "envelope_version": "trust-envelope-v1",
+      "evidence_temporal_boundary": {
+        "data_freshness_seconds": 1,
+        "evidence_snapshot_at": "2026-06-24T10:00:00Z",
+        "evidence_snapshot_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "max_source_read_skew_ms": 1000,
+        "snapshot_consistency_status": "consistent",
+        "source_read_completed_at": "2026-06-24T10:00:01Z",
+        "source_read_started_at": "2026-06-24T10:00:00Z",
+        "staleness_status": "current"
+      },
+      "fallback_applied": false,
+      "fallback_reason": "none",
+      "match_verdict_status": "matched",
+      "policy_action_authority": {
+        "allowed_scopes": [
+          "trust.envelope.read",
+          "trust.envelope.verify"
+        ],
+        "forbidden_scopes": [
+          "trust.action.execute",
+          "trust.policy.override",
+          "trust.envelope.mutate"
+        ],
+        "policy_state": "read_only",
+        "reason_code": "p1_contract_boundary_only"
+      },
+      "provenance_chain": [
+        {
+          "authority_table": "b23_match_verdicts",
+          "display_metadata": {
+            "display_transform": "none",
+            "raw_text_sha256": null,
+            "text_trust_class": "none"
+          },
+          "observed_at": "2026-06-24T10:00:00Z",
+          "provenance_type": "match_verdict",
+          "source_ref": "urn:skeldir:b23_match_verdicts:mv_001",
+          "source_ref_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "source_snapshot_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "schema_version": "trust-envelope-schema-v1",
+      "semantic_truth_hash": "sha256:d7a44033d48f24dabdb1cbeb336d89b43dd62ada036f7a813b463070ca6f97dc",
+      "signature": "ed25519:lE_t4vBZhg3IrwMsD_px43k2Tj2DgEdErHo5FXuJVMBMVbbVG2t9zm9PxevO1GzBUauITLTI9moSZXBVLUAYBQ",
+      "signature_hash": "sha256:c34b4859035272ce5f18e6752a140a92fa0ff1beb63e90e2e7ffeeeb0803407b",
+      "signing_algorithm": "ed25519",
+      "signing_key_id": "kid:b25-p11-export-artifact-example",
+      "subject_authority": {
+        "allowed_source_tables": [
+          "b23_match_verdicts",
+          "b23_revenue_events"
+        ],
+        "mutable_workflow_subject": false,
+        "source_authority_class": "deterministic_machine_fact",
+        "subject_ref": "urn:skeldir:match_verdict:mv_001",
+        "subject_ref_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "subject_type": "match_verdict"
+      },
+      "subject_ref": "urn:skeldir:match_verdict:mv_001",
+      "subject_ref_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "subject_type": "match_verdict",
+      "tenant_id_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "truth_authority": {
+        "authority_class": "deterministic_machine_fact",
+        "source_snapshot_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "source_system": "skeldir_b23_match_engine"
+      },
+      "truth_type": "deterministic_match_verdict",
+      "untrusted_display_data": {
+        "display_text": null,
+        "display_transform": "none",
+        "raw_text_sha256": null,
+        "text_disposition_version": "text-disposition-v1",
+        "text_trust_class": "none"
+      },
+      "valid_until": "2026-08-11T12:00:00Z"
+    }
+  ],
+  "generated_at": "2026-08-10T12:00:00Z",
+  "signature": "ed25519:ecOk8R9C1U2w36_NI915S9_UyozAJO8txMSVz-Jua5NgZOwjmxDPw-9QJ9805hKOCQy_VB4pcDSYDbv7suDeCw",
+  "signature_hash": "sha256:69c980f92c8105204577ee83d221b466d22d2cd863c8ccae733d51ca75481a42",
+  "signing_algorithm": "ed25519",
+  "signing_key_id": "kid:b25-p11-export-artifact-example",
+  "tenant_id_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

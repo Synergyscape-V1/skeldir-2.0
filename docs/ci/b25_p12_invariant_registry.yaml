@@ -1,0 +1,279 @@
+# B2.5-P12 invariant registry.
+#
+# PURPOSE
+# -------
+# P12 is the epistemic enforcement layer over B2.5. Its job is not to add trust
+# functionality but to make it impossible to violate a B2.5 invariant silently.
+#
+# This file is the authoritative mapping from each required CI domain to the
+# concrete proof that enforces it. It is machine-read by
+# `scripts/ci/validate_b25_p12_ci_gates.py`, which fails if an entry names a
+# validator, workflow or negative control that does not exist, or if a required
+# domain has no proof path at all.
+#
+# DESIGN RULE (directive P12-H24)
+# -------------------------------
+# Compose, do not duplicate. Where P1-P11 already own a strong proof node, this
+# registry POINTS AT IT rather than re-running it inside P12. P12 adds only the
+# proofs that no phase owns: cross-phase composition and CI meta-validation.
+#
+# `proof_owner` therefore distinguishes:
+#   inherited  - an existing phase workflow already enforces this; P12 binds it
+#   p12        - P12 introduces the proof because no phase owned the composition
+#
+# A domain marked `inherited` is NOT weaker: the named workflow is a required
+# context in its own right. P12's contribution for those domains is Plane D,
+# which proves the inherited proof actually executed and was not skipped.
+
+registry_version: b25-p12-invariant-registry-v1
+
+planes:
+  A: Static authority - properties knowable without runtime
+  B: Deterministic runtime - canonicalization, hashing, signing, semantics
+  C: Stateful adversarial runtime - RLS, scopes, replay, no-dispatch
+  D: CI meta-validation - proves planes A-C actually ran
+
+invariants:
+  - id: 1
+    invariant: Trust API contract validation
+    plane: A
+    proof_owner: p12
+    production_path: contracts/trust-api/trust-api.openapi.yaml
+    validator: scripts/ci/validate_b25_p12_contract_projection.py
+    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    negative_control: NC-P12-P0-01
+    note: >-
+      Live issued artifact validated against the schema resolved from the
+      published 200 response. This is the composition no phase owned, and its
+      absence is exactly how the v2-runtime/v1-contract defect survived P11.
+
+  - id: 2
+    invariant: Example validation (lifecycle-aware)
+    plane: A
+    proof_owner: p12
+    production_path: contracts/trust-api/examples
+    validator: scripts/ci/validate_b25_p12_contract_projection.py
+    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    negative_control: NC-P12-P0-02
+    note: >-
+      Active example must validate against the active schema; a historical
+      example must fail it. Without lifecycle classification a historical
+      fixture silently masquerades as active contract proof (P12-H02).
+
+  - id: 3
+    invariant: Generated model drift
+    plane: A
+    proof_owner: inherited
+    production_path: frontend/src/types/api
+    validator: scripts/contracts/generate_frontend_types.sh
+    workflow: .github/workflows/ci.yml
+    negative_control: git diff --exit-code -- frontend/src/types/api
+    note: CI regenerates types and fails on any diff against the committed output.
+
+  - id: 4
+    invariant: Schema-version downgrade rejection
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/schema_verification.py
+    validator: scripts/ci/validate_b25_p8_signing_verification.py
+    workflow: .github/workflows/b2_5-p8-signing-verification.yml
+    negative_control: p8 downgrade fixtures
+    note: >-
+      P8 owns incoming verifier downgrade defense. P12 adds the separate
+      outgoing contract-version fidelity invariant as domain 1 (P12-H04).
+
+  - id: 5
+    invariant: Canonicalization determinism
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/canonicalization.py
+    validator: scripts/ci/validate_b25_p2_canonicalization.py
+    workflow: .github/workflows/b2_5-p2-canonicalization.yml
+    negative_control: p2 ordering/permutation mutations
+
+  - id: 6
+    invariant: Hash separation (semantic / artifact / signature)
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/hash_identity.py
+    validator: scripts/ci/validate_b25_p2_canonicalization.py
+    workflow: .github/workflows/b2_5-p2-canonicalization.yml
+    negative_control: p2 hash-domain collapse mutation
+
+  - id: 7
+    invariant: Deterministic text disposition
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/text_disposition.py
+    validator: scripts/ci/validate_b25_p3_text_disposition.py
+    workflow: .github/workflows/b2_5-p3-text-disposition.yml
+    negative_control: p3 provider-text-into-authority mutation
+
+  - id: 8
+    invariant: Money authority no-float
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/money_source_adapter.py
+    validator: scripts/ci/validate_b25_p4_money_authority.py
+    workflow: .github/workflows/b2_5-p4-money-authority.yml
+    negative_control: p4 float-source mutation
+
+  - id: 9
+    invariant: Signature tamper detection
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/signing.py
+    validator: scripts/ci/validate_b25_p8_signing_verification.py
+    workflow: .github/workflows/b2_5-p8-signing-verification.yml
+    negative_control: p8 load-bearing tamper suite
+
+  - id: 10
+    invariant: JWKS / public verification, private-material exclusion
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/jwks.py
+    validator: scripts/ci/validate_b25_p8_signing_verification.py
+    workflow: .github/workflows/b2_5-p8-signing-verification.yml
+    negative_control: p8 private-material exposure mutation
+
+  - id: 11
+    invariant: Tenant isolation (two-tenant / RLS)
+    plane: C
+    proof_owner: inherited
+    production_path: backend/app/trust/tenant_security.py
+    validator: scripts/ci/validate_b25_p10_trust_api_surface.py
+    workflow: .github/workflows/b2_5-p10-trust-api-surface.yml
+    negative_control: p10 wrong-tenant PostgreSQL proof
+
+  - id: 12
+    invariant: Agent scope denial without evidence leak
+    plane: C
+    proof_owner: inherited
+    production_path: backend/app/trust/machine_auth.py
+    validator: scripts/ci/validate_b25_p9_machine_identity.py
+    workflow: .github/workflows/b2_5-p9-machine-identity.yml
+    negative_control: p9 scope-denial evidence-leak assertions
+
+  - id: 13
+    invariant: Replay rejection (DB-atomic)
+    plane: C
+    proof_owner: inherited
+    production_path: backend/app/trust/machine_auth.py
+    validator: scripts/ci/validate_b25_p9_machine_identity.py
+    workflow: .github/workflows/b2_5-p9-machine-identity.yml
+    negative_control: p9 concurrent replay storm
+    note: >-
+      Atomic INSERT ... ON CONFLICT against real PostgreSQL. Not mocked, because
+      the guarantee is a database constraint (directive section 25).
+
+  - id: 14
+    invariant: No raw tenant ID at external boundary
+    plane: A
+    proof_owner: inherited
+    production_path: backend/app/api/trust_api.py
+    validator: scripts/ci/validate_b25_p11_export_compatibility.py
+    workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+    negative_control: NC-P11-02
+    note: >-
+      Recursive runtime payload scan, not a token grep. Internal raw tenant_id
+      remains legitimate for DB authority; the ban is at the trust boundary.
+
+  - id: 15
+    invariant: AST transitive no-LLM import graph
+    plane: A
+    proof_owner: p12
+    production_path: backend/app/trust
+    validator: scripts/ci/validate_b25_p12_trust_isolation.py
+    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    negative_control: NC-P12-ISO-01
+
+  - id: 16
+    invariant: Dynamic import ban in trust path
+    plane: A
+    proof_owner: p12
+    production_path: backend/app/trust
+    validator: scripts/ci/validate_b25_p12_trust_isolation.py
+    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    negative_control: NC-P12-ISO-02
+
+  - id: 17
+    invariant: Runtime sys.modules trace across trust paths
+    plane: B
+    proof_owner: p12
+    production_path: backend/app/trust
+    validator: scripts/ci/validate_b25_p12_trust_isolation.py
+    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    negative_control: NC-P12-ISO-03
+    note: happy / degraded / refused / verify / export module-load trace.
+
+  - id: 18
+    invariant: No compute dispatch from trust reads
+    plane: C
+    proof_owner: p12
+    production_path: backend/app/api/trust_api.py
+    validator: scripts/ci/validate_b25_p12_trust_isolation.py
+    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    negative_control: NC-P12-ISO-04
+    note: >-
+      Bans indirect dispatch surfaces (send_task, enqueue helpers, outbox,
+      task-name strings), not only direct imports of compute implementations.
+
+  - id: 19
+    invariant: Policy authority never auto-executable
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/policy_defaults.py
+    validator: scripts/ci/validate_b25_p6_reason_truth_matrix.py
+    workflow: .github/workflows/b2_5-p6-reason-truth-matrix.yml
+    negative_control: p6 policy escalation fixtures
+
+  - id: 20
+    invariant: Reason-code cross-field contradiction rejection
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/reason_truth_matrix.py
+    validator: scripts/ci/validate_b25_p6_reason_truth_matrix.py
+    workflow: .github/workflows/b2_5-p6-reason-truth-matrix.yml
+    negative_control: p6 contradiction matrix
+
+  - id: 21
+    invariant: Refusal / degraded state validation
+    plane: B
+    proof_owner: inherited
+    production_path: backend/app/trust/refusal.py
+    validator: scripts/ci/validate_b25_p6_reason_truth_matrix.py
+    workflow: .github/workflows/b2_5-p6-reason-truth-matrix.yml
+    negative_control: p6 registered-state coverage
+
+  - id: 22
+    invariant: Export projection safety
+    plane: A
+    proof_owner: p12
+    production_path: backend/app/api/export.py
+    validator: scripts/ci/validate_b25_p12_contract_projection.py
+    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    negative_control: NC-P12-P0-01
+    note: >-
+      Human G4 honesty and machine TrustEnvelope derivation are owned by P11;
+      P12 adds the missing third leg, active response/schema parity.
+
+# Files whose modification must not be able to evade P12 proof (P12-H25/G8).
+path_trigger_required:
+  - contracts/trust-api/**
+  - backend/app/trust/**
+  - backend/app/api/trust_api.py
+  - backend/app/api/trust_export.py
+  - backend/app/api/export.py
+  - backend/tests/trust/**
+  - scripts/ci/validate_b25_p12_contract_projection.py
+  - scripts/ci/validate_b25_p12_trust_isolation.py
+  - scripts/ci/validate_b25_p12_ci_gates.py
+  - docs/ci/b25_p12_invariant_registry.yaml
+  - .github/workflows/b2_5-p12-ci-gates.yml
+
+# Stable, documented context names eligible for branch protection (P12-G5).
+# Eligibility is a technical property. Whether they are actually REQUIRED is a
+# GitHub administrative setting and is reported separately; the two must never
+# be conflated.
+ci_contexts:
+  - B2.5-P12 CI Gates
