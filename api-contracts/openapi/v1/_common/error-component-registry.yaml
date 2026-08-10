@@ -1,0 +1,94 @@
+# Governed shared error-component registry (B2.5-P11 third corrective).
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# `scripts/contracts/check_error_model.py` enforces that every 4xx/5xx response
+# in a bundled OpenAPI document derives from a governed shared error component.
+# Bundling dereferences `$ref`, which destroys the source-reference lineage the
+# checker originally relied on. The second corrective cycle preserved lineage
+# with a self-asserted boolean marker
+# (`x-skeldir-shared-error-component: true`). A response cannot prove its own
+# provenance by asserting a boolean: that made the marker a repository-wide,
+# unstructured escape hatch through which ANY malformed 4xx/5xx response could
+# declare itself compliant.
+#
+# This registry replaces self-attestation with mechanically verified identity.
+# A response may only claim shared provenance by naming a component ID that
+# exists here, AND its post-bundling response schema must fingerprint-match the
+# canonical schema recorded here exactly. Declaring the wrong ID, declaring a
+# boolean, or mutating the schema all fail closed.
+#
+# AUTHORITY
+# ---------
+# Adding an entry widens what the repository-wide error-model gate accepts.
+# Entries are load-bearing contract authority and are owned by the phase named
+# in `owning_phase`. Do not add an entry to make a local contract pass; change
+# the response to match a governed component, or govern the new shape here with
+# an explicit owner and rationale.
+#
+# FINGERPRINT ALGORITHM
+# ---------------------
+# `sha256` over the canonical JSON serialization of the response's `content`
+# mapping with object keys sorted lexicographically, no insignificant
+# whitespace, and `description`/`examples`/`example`/`x-*` keys excluded.
+# `scripts/contracts/error_component_registry.py` is the single implementation;
+# do not recompute fingerprints by hand.
+
+info:
+  title: Skeldir Governed Shared Error-Component Registry
+  version: 1.0.0
+  description: >-
+    Registry of shared error components whose provenance the repository-wide
+    error-model gate verifies mechanically. Versioned alongside the other
+    `_common` contract fragments.
+
+registry_version: b25-p11-error-component-registry-v1
+
+components:
+  - component_id: skeldir.common.ProblemDetails
+    owning_phase: B0.1
+    rationale: >-
+      Canonical RFC 7807 problem-details response shared by every contract
+      family. Responses matching the RFC 7807 structural rule are accepted by
+      the structural check and do not need to name this component; it is
+      registered so that structural acceptance and registry acceptance cannot
+      diverge.
+    wire_shape: rfc7807
+    structural_rule: rfc7807
+
+  - component_id: skeldir.export.ExportDeadlineExceeded
+    owning_phase: B2.5-P11
+    rationale: >-
+      Bounded Track-1 export deadline refusal. The runtime wire is FastAPI's
+      native nested `detail` object rather than a flat RFC 7807 body, because
+      the refusal is raised as an HTTPException with a structured detail and
+      the reason code must remain machine-readable at `detail.reason_code`.
+      Governed as a closed, additionalProperties:false shape with an exhaustive
+      reason-code enum.
+    wire_shape: fastapi_nested_detail
+    structural_rule: exact_fingerprint
+    schema_fingerprint: "sha256:5fa4993e4f060e4c9b94f7f1b760647ba81a4f0360fda82942c037db81de0db1"
+
+  - component_id: skeldir.export.ExportLimitExceeded
+    owning_phase: B2.5-P11
+    rationale: >-
+      Bounded Track-1 export resource-admission refusal (HTTP 413). Same
+      FastAPI nested-detail wire shape and the same governance rationale as
+      ExportDeadlineExceeded. Declared here because the refusal is deliberate,
+      stable, and consumer-programmable, not an unexpected internal failure.
+    wire_shape: fastapi_nested_detail
+    structural_rule: exact_fingerprint
+    schema_fingerprint: "sha256:e046fdcc94d721f62abc2c127e02eb8cdc354075855236d61adfa0efe03bf207"
+
+  - component_id: skeldir.export.ExportProfileRetired
+    owning_phase: B2.5-P11
+    rationale: >-
+      Governed CSV profile-retirement refusal (HTTP 410). `legacy-v1` emitted a
+      bare five-column artifact that could carry neither `envelope_ref` nor a
+      non-authoritative display label, so it could not satisfy P11-G4. The
+      profile is refused rather than emitted, and the refusal names its
+      replacement so the lifecycle transition is discoverable at runtime rather
+      than only in documentation.
+    wire_shape: fastapi_nested_detail
+    structural_rule: exact_fingerprint
+    schema_fingerprint: "sha256:06f414f9a324c733e35e30020ebe433fa28e0001a9b1e009279452d30fa26db3"

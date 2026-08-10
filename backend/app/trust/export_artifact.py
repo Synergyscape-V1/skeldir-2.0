@@ -21,10 +21,42 @@ from app.trust.signing import (
 from app.trust.verification import verify_trust_envelope
 
 
-EXPORT_ARTIFACT_SCHEMA_VERSION = "b25-p11-export-artifact-v1"
-EXPORT_ARTIFACT_CANONICALIZATION_VERSION = "b25-p11-artifact-framing-v1"
-EXPORT_ARTIFACT_SIGNING_DOMAIN = b"skeldir:b25-p11:export-artifact:v1\x00"
-EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL = "skeldir:b25-p11:export-artifact:v1\\0"
+# ---------------------------------------------------------------------------
+# Artifact protocol registry (B2.5-P11 third corrective)
+# ---------------------------------------------------------------------------
+# A version tuple must denote exactly one cryptographic algorithm. The second
+# corrective cycle changed what the artifact hash covers -- signer identity moved
+# out of the artifact identity and into the signature material -- while leaving
+# the ``v1`` markers byte-identical. That made ``v1`` ambiguous: two incompatible
+# algorithms shared one name, and an artifact legitimately signed under the older
+# framing failed current verification as an indistinguishable
+# ``artifact_hash_mismatch``.
+#
+# The protocols are now separated. ``v1`` is frozen with its original semantics
+# and remains verifiable; ``v2`` carries the corrected signer-independent
+# identity and is the only protocol that may be issued.
+#
+#   version tuple -> exactly one framing/hash/signature-material algorithm
+#
+# Adding a protocol means adding an entry here plus its framing function and a
+# manifest entry; it never means editing an existing entry's semantics.
+
+EXPORT_ARTIFACT_SCHEMA_VERSION_V1 = "b25-p11-export-artifact-v1"
+EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V1 = "b25-p11-artifact-framing-v1"
+EXPORT_ARTIFACT_SIGNING_DOMAIN_V1 = b"skeldir:b25-p11:export-artifact:v1\x00"
+EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL_V1 = "skeldir:b25-p11:export-artifact:v1\\0"
+
+EXPORT_ARTIFACT_SCHEMA_VERSION_V2 = "b25-p11-export-artifact-v2"
+EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V2 = "b25-p11-artifact-framing-v2"
+EXPORT_ARTIFACT_SIGNING_DOMAIN_V2 = b"skeldir:b25-p11:export-artifact:v2\x00"
+EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL_V2 = "skeldir:b25-p11:export-artifact:v2\\0"
+
+#: The protocol new artifacts are issued under.
+EXPORT_ARTIFACT_SCHEMA_VERSION = EXPORT_ARTIFACT_SCHEMA_VERSION_V2
+EXPORT_ARTIFACT_CANONICALIZATION_VERSION = EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V2
+EXPORT_ARTIFACT_SIGNING_DOMAIN = EXPORT_ARTIFACT_SIGNING_DOMAIN_V2
+EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL = EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL_V2
+
 MAX_EXPORT_ARTIFACT_ENVELOPES = 2
 
 _BASE_FIELDS = frozenset(
@@ -150,14 +182,22 @@ def build_export_artifact(
     envelopes: Iterable[dict[str, Any]],
     tenant_id_hash: str,
     generated_at: datetime,
+    protocol: "ExportArtifactProtocol | None" = None,
 ) -> dict[str, Any]:
-    """Build deterministic unsigned artifact content from complete envelopes."""
+    """Build deterministic unsigned artifact content from complete envelopes.
+
+    ``protocol`` exists so historical-protocol fixtures can be constructed by
+    the test suite through the same production framing code that would have
+    produced them originally. Production issuance always uses the active
+    protocol default.
+    """
+    resolved = protocol or ACTIVE_EXPORT_ARTIFACT_PROTOCOL
     ordered = _ordered_envelopes(envelopes)
     _validate_envelopes(ordered, tenant_id_hash=tenant_id_hash)
     artifact = {
-        "artifact_schema_version": EXPORT_ARTIFACT_SCHEMA_VERSION,
-        "canonicalization_version": EXPORT_ARTIFACT_CANONICALIZATION_VERSION,
-        "artifact_signing_domain": EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL,
+        "artifact_schema_version": resolved.schema_version,
+        "canonicalization_version": resolved.canonicalization_version,
+        "artifact_signing_domain": resolved.signing_domain_label,
         "envelopes": ordered,
         "generated_at": _utc_second(generated_at),
         "tenant_id_hash": tenant_id_hash,
@@ -166,7 +206,87 @@ def build_export_artifact(
     return artifact
 
 
-def _artifact_identity_bytes(payload: dict[str, Any]) -> bytes:
+def _artifact_identity_bytes_v1(payload: dict[str, Any]) -> bytes:
+    """Frozen v1 identity framing: signer metadata participates in identity.
+
+    Retained verbatim from the pre-second-corrective implementation so artifacts
+    issued under the original ``v1`` markers keep exactly one interpretation and
+    remain verifiable. Do not modify: changing this function silently
+    reinterprets already-issued artifacts, which is the defect this registry
+    exists to prevent.
+    """
+    required = _BASE_FIELDS | {"signing_key_id", "signing_algorithm"}
+    if not required.issubset(payload):
+        raise ExportArtifactError("artifact_identity_fields_missing")
+    envelopes = _ordered_envelopes(payload["envelopes"])
+    pieces = [
+        _frame(
+            "artifact_schema_version",
+            _require_text(
+                payload["artifact_schema_version"], "artifact_schema_version"
+            ).encode("utf-8"),
+        ),
+        _frame(
+            "canonicalization_version",
+            _require_text(
+                payload["canonicalization_version"], "canonicalization_version"
+            ).encode("utf-8"),
+        ),
+        _frame(
+            "artifact_signing_domain",
+            _require_text(
+                payload["artifact_signing_domain"], "artifact_signing_domain"
+            ).encode("utf-8"),
+        ),
+        _frame(
+            "generated_at",
+            _require_text(payload["generated_at"], "generated_at").encode("utf-8"),
+        ),
+        _frame(
+            "tenant_id_hash",
+            _require_text(payload["tenant_id_hash"], "tenant_id_hash").encode("utf-8"),
+        ),
+        _frame(
+            "signing_key_id",
+            _require_text(payload["signing_key_id"], "signing_key_id").encode("utf-8"),
+        ),
+        _frame(
+            "signing_algorithm",
+            _require_text(payload["signing_algorithm"], "signing_algorithm").encode(
+                "utf-8"
+            ),
+        ),
+        _frame("envelope_count", str(len(envelopes)).encode("ascii")),
+    ]
+    pieces.extend(
+        _frame(f"envelopes[{index}]", canonicalize_envelope_payload(envelope))
+        for index, envelope in enumerate(envelopes)
+    )
+    return b"".join(pieces)
+
+
+def _export_artifact_signature_material_v1(
+    artifact_hash: str,
+    *,
+    signing_key_id: str,
+    signing_algorithm: str,
+) -> bytes:
+    """Frozen v1 signature material: domain plus the raw artifact hash bytes.
+
+    Signer identity is already inside the v1 artifact hash, so it is not framed
+    again here. Parameters are accepted for a uniform dispatch signature.
+    """
+    del signing_key_id, signing_algorithm
+    return EXPORT_ARTIFACT_SIGNING_DOMAIN_V1 + artifact_hash.encode("ascii")
+
+
+def _artifact_identity_bytes_v2(payload: dict[str, Any]) -> bytes:
+    """Active v2 identity framing: signer-independent artifact identity.
+
+    Signer metadata is deliberately excluded here and bound in the signature
+    material instead, so re-signing identical content under a rotated key leaves
+    ``artifact_hash`` stable while ``signature_hash`` and ``signature`` change.
+    """
     if not _BASE_FIELDS.issubset(payload):
         raise ExportArtifactError("artifact_identity_fields_missing")
     envelopes = _ordered_envelopes(payload["envelopes"])
@@ -206,16 +326,16 @@ def _artifact_identity_bytes(payload: dict[str, Any]) -> bytes:
     return b"".join(pieces)
 
 
-def export_artifact_signature_material(
+def _export_artifact_signature_material_v2(
     artifact_hash: str,
     *,
     signing_key_id: str,
     signing_algorithm: str,
 ) -> bytes:
-    """Bind signer identity to a signer-independent artifact identity."""
+    """Active v2 signature material: bind signer to signer-independent identity."""
     return b"".join(
         (
-            EXPORT_ARTIFACT_SIGNING_DOMAIN,
+            EXPORT_ARTIFACT_SIGNING_DOMAIN_V2,
             _frame("artifact_hash", artifact_hash.encode("ascii")),
             _frame("signing_key_id", signing_key_id.encode("utf-8")),
             _frame("signing_algorithm", signing_algorithm.encode("utf-8")),
@@ -223,12 +343,105 @@ def export_artifact_signature_material(
     )
 
 
+@dataclass(frozen=True)
+class ExportArtifactProtocol:
+    """One immutable version tuple bound to exactly one algorithm."""
+
+    schema_version: str
+    canonicalization_version: str
+    signing_domain: bytes
+    signing_domain_label: str
+    identity_bytes: Any
+    signature_material: Any
+    issuable: bool
+
+
+EXPORT_ARTIFACT_PROTOCOL_V1 = ExportArtifactProtocol(
+    schema_version=EXPORT_ARTIFACT_SCHEMA_VERSION_V1,
+    canonicalization_version=EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V1,
+    signing_domain=EXPORT_ARTIFACT_SIGNING_DOMAIN_V1,
+    signing_domain_label=EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL_V1,
+    identity_bytes=_artifact_identity_bytes_v1,
+    signature_material=_export_artifact_signature_material_v1,
+    # Verification-only: historical artifacts stay verifiable, but nothing new
+    # may be issued under the superseded framing.
+    issuable=False,
+)
+
+EXPORT_ARTIFACT_PROTOCOL_V2 = ExportArtifactProtocol(
+    schema_version=EXPORT_ARTIFACT_SCHEMA_VERSION_V2,
+    canonicalization_version=EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V2,
+    signing_domain=EXPORT_ARTIFACT_SIGNING_DOMAIN_V2,
+    signing_domain_label=EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL_V2,
+    identity_bytes=_artifact_identity_bytes_v2,
+    signature_material=_export_artifact_signature_material_v2,
+    issuable=True,
+)
+
+#: Keyed by ``(artifact_schema_version, canonicalization_version)``. The mapping
+#: is a function: one tuple can never resolve to two algorithms.
+EXPORT_ARTIFACT_PROTOCOLS: dict[tuple[str, str], ExportArtifactProtocol] = {
+    (
+        EXPORT_ARTIFACT_PROTOCOL_V1.schema_version,
+        EXPORT_ARTIFACT_PROTOCOL_V1.canonicalization_version,
+    ): EXPORT_ARTIFACT_PROTOCOL_V1,
+    (
+        EXPORT_ARTIFACT_PROTOCOL_V2.schema_version,
+        EXPORT_ARTIFACT_PROTOCOL_V2.canonicalization_version,
+    ): EXPORT_ARTIFACT_PROTOCOL_V2,
+}
+
+ACTIVE_EXPORT_ARTIFACT_PROTOCOL = EXPORT_ARTIFACT_PROTOCOL_V2
+
+
+def resolve_export_artifact_protocol(
+    schema_version: Any, canonicalization_version: Any
+) -> ExportArtifactProtocol:
+    """Dispatch a declared version tuple to its single governed algorithm."""
+    if not isinstance(schema_version, str):
+        raise ExportArtifactError("artifact_schema_version_unsupported")
+    if not isinstance(canonicalization_version, str):
+        raise ExportArtifactError("artifact_canonicalization_version_unsupported")
+    protocol = EXPORT_ARTIFACT_PROTOCOLS.get((schema_version, canonicalization_version))
+    if protocol is None:
+        # Distinguish an unknown/mismatched protocol from ordinary artifact
+        # corruption: a caller must never see `artifact_hash_mismatch` when the
+        # real problem is that the version tuple is not a governed protocol.
+        raise ExportArtifactError(
+            "artifact_protocol_version_unsupported:"
+            f"{schema_version}/{canonicalization_version}"
+        )
+    return protocol
+
+
+def export_artifact_signature_material(
+    artifact_hash: str,
+    *,
+    signing_key_id: str,
+    signing_algorithm: str,
+    protocol: ExportArtifactProtocol | None = None,
+) -> bytes:
+    """Return signature material under the active or an explicit protocol."""
+    resolved = protocol or ACTIVE_EXPORT_ARTIFACT_PROTOCOL
+    return resolved.signature_material(
+        artifact_hash,
+        signing_key_id=signing_key_id,
+        signing_algorithm=signing_algorithm,
+    )
+
+
 def sign_export_artifact(
     payload: dict[str, Any],
     *,
     key_registry: TrustKeyRegistry,
+    allow_historical_protocol: bool = False,
 ) -> dict[str, Any]:
-    """Hash and sign an export with the P8 active key only."""
+    """Hash and sign an export with the P8 active key only.
+
+    ``allow_historical_protocol`` is reserved for constructing historical
+    protocol fixtures in the verification test suite. Production issuance never
+    sets it, so a superseded protocol cannot be emitted by any route.
+    """
     if set(payload) != _BASE_FIELDS:
         raise ExportArtifactError("unsigned_artifact_shape_invalid")
     key = key_registry.active_signing_key()
@@ -242,8 +455,15 @@ def sign_export_artifact(
         tenant_id_hash=_require_text(signed["tenant_id_hash"], "tenant_id_hash"),
         key_registry=key_registry,
     )
-    signed["artifact_hash"] = compute_artifact_hash(_artifact_identity_bytes(signed))
-    signature_material = export_artifact_signature_material(
+    protocol = resolve_export_artifact_protocol(
+        signed["artifact_schema_version"], signed["canonicalization_version"]
+    )
+    if not protocol.issuable and not allow_historical_protocol:
+        raise ExportArtifactError(
+            f"artifact_protocol_not_issuable:{protocol.schema_version}"
+        )
+    signed["artifact_hash"] = compute_artifact_hash(protocol.identity_bytes(signed))
+    signature_material = protocol.signature_material(
         _require_text(signed["artifact_hash"], "artifact_hash"),
         signing_key_id=key.kid,
         signing_algorithm=key.algorithm,
@@ -266,14 +486,14 @@ def verify_export_artifact(
     try:
         if set(candidate) != _SIGNED_FIELDS:
             raise ExportArtifactError("artifact_shape_invalid")
-        if candidate["artifact_schema_version"] != EXPORT_ARTIFACT_SCHEMA_VERSION:
-            raise ExportArtifactError("artifact_schema_version_unsupported")
-        if (
-            candidate["canonicalization_version"]
-            != EXPORT_ARTIFACT_CANONICALIZATION_VERSION
-        ):
-            raise ExportArtifactError("artifact_canonicalization_version_unsupported")
-        if candidate["artifact_signing_domain"] != EXPORT_ARTIFACT_SIGNING_DOMAIN_LABEL:
+        # Dispatch on the declared version tuple before touching any framing, so
+        # an unsupported/retired protocol reports that fact rather than
+        # surfacing as generic hash corruption.
+        protocol = resolve_export_artifact_protocol(
+            candidate["artifact_schema_version"],
+            candidate["canonicalization_version"],
+        )
+        if candidate["artifact_signing_domain"] != protocol.signing_domain_label:
             raise ExportArtifactError("artifact_signing_domain_mismatch")
         if candidate["signing_algorithm"] != "ed25519":
             raise ExportArtifactError("artifact_signing_algorithm_unsupported")
@@ -283,10 +503,10 @@ def verify_export_artifact(
             tenant_id_hash=_require_text(candidate["tenant_id_hash"], "tenant_id_hash"),
             key_registry=key_registry,
         )
-        expected_hash = compute_artifact_hash(_artifact_identity_bytes(candidate))
+        expected_hash = compute_artifact_hash(protocol.identity_bytes(candidate))
         if candidate["artifact_hash"] != expected_hash:
             raise ExportArtifactError("artifact_hash_mismatch")
-        signature_material = export_artifact_signature_material(
+        signature_material = protocol.signature_material(
             expected_hash,
             signing_key_id=_require_text(candidate["signing_key_id"], "signing_key_id"),
             signing_algorithm=_require_text(

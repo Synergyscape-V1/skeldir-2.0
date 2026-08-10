@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * Export data as CSV
-         * @description Export attribution data using header-first rectangular b25-p11-export-csv-v2; authority classification survives detachment without a preamble.
+         * @description Export attribution data as CSV. The default profile `b25-p11-export-csv-compat-v1` keeps the original five legacy columns at positional indices 0-4 and appends `projection_authority` and `projection_schema_version` at indices 5-6, so positional readers are unaffected and the detached file still states its authority class. Request `csv_schema_version=b25-p11-export-csv-v2` for the authority-first profile. Every emitted CSV profile is non-authoritative display data.
          */
         get: operations["exportCSV"];
         put?: never;
@@ -88,6 +88,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ExportLimitError: {
+            detail: {
+                /** @constant */
+                status: "refused";
+                /** @enum {string} */
+                reason_code: "legacy_export_date_span_exceeded" | "legacy_export_channel_count_exceeded" | "legacy_export_channel_length_exceeded" | "legacy_export_row_admission_exceeded" | "legacy_export_byte_admission_exceeded" | "legacy_export_row_budget_exceeded" | "legacy_export_byte_budget_exceeded";
+            };
+        };
+        ExportProfileRetiredError: {
+            detail: {
+                /** @constant */
+                status: "refused";
+                /** @constant */
+                reason_code: "legacy_csv_profile_retired";
+                /** @enum {string} */
+                retired_profile: "legacy-v1";
+                /** @enum {string} */
+                replacement_profile: "b25-p11-export-csv-compat-v1";
+            };
+        };
         ExportDeadlineError: {
             detail: {
                 /** @constant */
@@ -191,6 +211,42 @@ export interface components {
         };
     };
     responses: {
+        /** @description Bounded export resource admission or egress budget exceeded */
+        ExportLimitExceeded: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    detail: {
+                        /** @constant */
+                        status: "refused";
+                        /** @enum {string} */
+                        reason_code: "legacy_export_date_span_exceeded" | "legacy_export_channel_count_exceeded" | "legacy_export_channel_length_exceeded" | "legacy_export_row_admission_exceeded" | "legacy_export_byte_admission_exceeded" | "legacy_export_row_budget_exceeded" | "legacy_export_byte_budget_exceeded";
+                    };
+                };
+            };
+        };
+        /** @description Requested CSV profile is retired and can no longer be emitted */
+        ExportProfileRetired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    detail: {
+                        /** @constant */
+                        status: "refused";
+                        /** @constant */
+                        reason_code: "legacy_csv_profile_retired";
+                        /** @enum {string} */
+                        retired_profile: "legacy-v1";
+                        /** @enum {string} */
+                        replacement_profile: "b25-p11-export-csv-compat-v1";
+                    };
+                };
+            };
+        };
         /** @description Bounded export database or handler deadline exceeded */
         ExportDeadlineExceeded: {
             headers: {
@@ -402,8 +458,8 @@ export interface components {
         };
     };
     parameters: {
-        /** @description Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats. */
-        CsvSchemaVersion: "legacy-v1" | "b25-p11-export-csv-v2";
+        /** @description Select the CSV profile. Ignored for non-CSV formats. `b25-p11-export-csv-compat-v1` (default) keeps the original five legacy columns at their exact positional indices 0-4 and appends `projection_authority` and `projection_schema_version` at indices 5-6, so positional readers are unaffected while the detached file still states its authority class. `b25-p11-export-csv-v2` is the authority-first profile. `legacy-v1` is RETIRED: it emitted a bare five-column artifact that could carry neither `envelope_ref` nor a non-authoritative display label, so a detached file could not state its own authority class (P11-G4). Requesting it returns 410. */
+        CsvSchemaVersion: "b25-p11-export-csv-compat-v1" | "b25-p11-export-csv-v2" | "legacy-v1";
         /** @description Unique request correlation ID for distributed tracing */
         CorrelationId: string;
         /** @description Bearer token for authentication (format - Bearer <token>) */
@@ -426,8 +482,8 @@ export interface operations {
                 end_date?: string;
                 /** @description Filter by specific channels */
                 channels?: string[];
-                /** @description Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats. */
-                csv_schema_version?: "legacy-v1" | "b25-p11-export-csv-v2";
+                /** @description Select the CSV profile. Ignored for non-CSV formats. `b25-p11-export-csv-compat-v1` (default) keeps the original five legacy columns at their exact positional indices 0-4 and appends `projection_authority` and `projection_schema_version` at indices 5-6, so positional readers are unaffected while the detached file still states its authority class. `b25-p11-export-csv-v2` is the authority-first profile. `legacy-v1` is RETIRED: it emitted a bare five-column artifact that could carry neither `envelope_ref` nor a non-authoritative display label, so a detached file could not state its own authority class (P11-G4). Requesting it returns 410. */
+                csv_schema_version?: "b25-p11-export-csv-compat-v1" | "b25-p11-export-csv-v2" | "legacy-v1";
             };
             header: {
                 /** @description Unique request correlation ID for distributed tracing */
@@ -452,10 +508,10 @@ export interface operations {
                 };
                 content: {
                     /**
-                     * @example date,channel,revenue,conversions,confidence
-                     *     2025-11-25,Meta,15230.50,127,0.92
+                     * @example date,channel,revenue,conversions,confidence,projection_authority,projection_schema_version
+                     *     2025-11-25,Meta,15230.50,127,0.92,non_authoritative_display,b25-p11-export-csv-compat-v1
                      */
-                    "text/csv": string;
+                    "text/csv; profile=\"https://api.skeldir.com/profiles/export-csv-compat-v1\"": string;
                     /**
                      * @example projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
                      *     non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
@@ -715,6 +771,42 @@ export interface operations {
                     };
                 };
             };
+            /** @description Requested CSV profile is retired and can no longer be emitted */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @constant */
+                            reason_code: "legacy_csv_profile_retired";
+                            /** @enum {string} */
+                            retired_profile: "legacy-v1";
+                            /** @enum {string} */
+                            replacement_profile: "b25-p11-export-csv-compat-v1";
+                        };
+                    };
+                };
+            };
+            /** @description Bounded export resource admission or egress budget exceeded */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @enum {string} */
+                            reason_code: "legacy_export_date_span_exceeded" | "legacy_export_channel_count_exceeded" | "legacy_export_channel_length_exceeded" | "legacy_export_row_admission_exceeded" | "legacy_export_byte_admission_exceeded" | "legacy_export_row_budget_exceeded" | "legacy_export_byte_budget_exceeded";
+                        };
+                    };
+                };
+            };
             /** @description Bounded export database or handler deadline exceeded */
             503: {
                 headers: {
@@ -736,8 +828,8 @@ export interface operations {
     exportCSV: {
         parameters: {
             query?: {
-                /** @description Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats. */
-                csv_schema_version?: "legacy-v1" | "b25-p11-export-csv-v2";
+                /** @description Select the CSV profile. Ignored for non-CSV formats. `b25-p11-export-csv-compat-v1` (default) keeps the original five legacy columns at their exact positional indices 0-4 and appends `projection_authority` and `projection_schema_version` at indices 5-6, so positional readers are unaffected while the detached file still states its authority class. `b25-p11-export-csv-v2` is the authority-first profile. `legacy-v1` is RETIRED: it emitted a bare five-column artifact that could carry neither `envelope_ref` nor a non-authoritative display label, so a detached file could not state its own authority class (P11-G4). Requesting it returns 410. */
+                csv_schema_version?: "b25-p11-export-csv-compat-v1" | "b25-p11-export-csv-v2" | "legacy-v1";
             };
             header: {
                 /** @description Unique request correlation ID for distributed tracing */
@@ -762,11 +854,11 @@ export interface operations {
                 };
                 content: {
                     /**
-                     * @example date,channel,revenue,conversions,confidence
-                     *     2025-11-25,Meta,15230.50,127,0.92
-                     *     2025-11-25,Google,12450.00,98,0.89
+                     * @example date,channel,revenue,conversions,confidence,projection_authority,projection_schema_version
+                     *     2025-11-25,Meta,15230.50,127,0.92,non_authoritative_display,b25-p11-export-csv-compat-v1
+                     *     2025-11-25,Google,12450.00,98,0.89,non_authoritative_display,b25-p11-export-csv-compat-v1
                      */
-                    "text/csv": string;
+                    "text/csv; profile=\"https://api.skeldir.com/profiles/export-csv-compat-v1\"": string;
                     /**
                      * @example projection_authority,projection_schema_version,date,channel,revenue,conversions,confidence
                      *     non_authoritative_display,b25-p11-export-csv-v2,2025-11-25,Meta,15230.50,127,0.92
@@ -900,6 +992,42 @@ export interface operations {
                             /** @example INVALID_FORMAT */
                             code?: string;
                         }[];
+                    };
+                };
+            };
+            /** @description Requested CSV profile is retired and can no longer be emitted */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @constant */
+                            reason_code: "legacy_csv_profile_retired";
+                            /** @enum {string} */
+                            retired_profile: "legacy-v1";
+                            /** @enum {string} */
+                            replacement_profile: "b25-p11-export-csv-compat-v1";
+                        };
+                    };
+                };
+            };
+            /** @description Bounded export resource admission or egress budget exceeded */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @enum {string} */
+                            reason_code: "legacy_export_date_span_exceeded" | "legacy_export_channel_count_exceeded" | "legacy_export_channel_length_exceeded" | "legacy_export_row_admission_exceeded" | "legacy_export_byte_admission_exceeded" | "legacy_export_row_budget_exceeded" | "legacy_export_byte_budget_exceeded";
+                        };
                     };
                 };
             };
@@ -1133,6 +1261,22 @@ export interface operations {
                     };
                 };
             };
+            /** @description Bounded export resource admission or egress budget exceeded */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @enum {string} */
+                            reason_code: "legacy_export_date_span_exceeded" | "legacy_export_channel_count_exceeded" | "legacy_export_channel_length_exceeded" | "legacy_export_row_admission_exceeded" | "legacy_export_byte_admission_exceeded" | "legacy_export_row_budget_exceeded" | "legacy_export_byte_budget_exceeded";
+                        };
+                    };
+                };
+            };
             /** @description Bounded export database or handler deadline exceeded */
             503: {
                 headers: {
@@ -1303,6 +1447,22 @@ export interface operations {
                             /** @example INVALID_FORMAT */
                             code?: string;
                         }[];
+                    };
+                };
+            };
+            /** @description Bounded export resource admission or egress budget exceeded */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: {
+                            /** @constant */
+                            status: "refused";
+                            /** @enum {string} */
+                            reason_code: "legacy_export_date_span_exceeded" | "legacy_export_channel_count_exceeded" | "legacy_export_channel_length_exceeded" | "legacy_export_row_admission_exceeded" | "legacy_export_byte_admission_exceeded" | "legacy_export_row_budget_exceeded" | "legacy_export_byte_budget_exceeded";
+                        };
                     };
                 };
             };
