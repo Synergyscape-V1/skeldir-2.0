@@ -190,16 +190,33 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
     csv_lines = [
         line.strip() for line in csv_response.text.splitlines() if line.strip()
     ]
-    assert csv_lines[0] == "date,channel,revenue,conversions,confidence"
+    # B2.5-P11 third corrective: the default CSV profile is
+    # `b25-p11-export-csv-compat-v1`. Legacy columns keep their exact positional
+    # indices 0-4 so index-based consumers are unaffected, and the authority
+    # classification is appended at 5-6 so a detached file can still state that
+    # it is non-authoritative (P11-G4).
+    assert csv_lines[0] == (
+        "date,channel,revenue,conversions,confidence,"
+        "projection_authority,projection_schema_version"
+    )
+    assert csv_lines[0].split(",")[:5] == [
+        "date",
+        "channel",
+        "revenue",
+        "conversions",
+        "confidence",
+    ]
+    assert all(
+        line.endswith(",non_authoritative_display,b25-p11-export-csv-compat-v1")
+        for line in csv_lines[1:]
+    )
     assert len(csv_lines) >= 2
     assert enriched_csv_response.status_code == 200
     assert 'profile="https://api.skeldir.com/profiles/export-csv-v2"' in (
         enriched_csv_response.headers["content-type"]
     )
     enriched_csv_lines = [
-        line.strip()
-        for line in enriched_csv_response.text.splitlines()
-        if line.strip()
+        line.strip() for line in enriched_csv_response.text.splitlines() if line.strip()
     ]
     assert enriched_csv_lines[0] == (
         "projection_authority,projection_schema_version,date,channel,revenue,"
