@@ -179,6 +179,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "contracts/trust-api/export-artifact.v2.yaml",
     "contracts/trust-api/examples/export_artifact_signed_valid_v2.json",
     "docs/forensics/B2.5-P12 Remediation Evidence Pack.md",
+    "docs/forensics/B2.5-P13 Remediation Evidence Pack.md",
     "scripts/contracts/error_component_registry.py",
     "api-contracts/openapi/v1/_common/error-component-registry.yaml",
     "scripts/ci/validate_live_branch_protection.py",
