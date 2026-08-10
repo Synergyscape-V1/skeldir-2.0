@@ -58,11 +58,27 @@ EXPORT_TOP_LEVEL_ALLOWLIST = (
 )
 EXPORT_DATE_RANGE_ALLOWLIST = ("start", "end")
 CSV_SCHEMA_VERSION = "b25-p11-export-csv-v2"
+#: Default profile. Preserves the five legacy columns at their exact positional
+#: indices 0..4 and appends the P11-G4 authority classification as trailing
+#: columns 5..6. Index-based legacy readers are unaffected; a detached file can
+#: still identify itself as non-authoritative. See contracts/export/CSV_EVOLUTION.md.
+COMPAT_CSV_SCHEMA_VERSION = "b25-p11-export-csv-compat-v1"
+#: Retired. The bare five-column shape cannot carry an authority classification
+#: without either breaking positional compatibility or adding a forbidden
+#: preamble, so it cannot satisfy P11-G4 and is refused rather than emitted.
 LEGACY_CSV_SCHEMA_VERSION = "legacy-v1"
 ENRICHED_CSV_MEDIA_TYPE = (
     'text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2"'
 )
+COMPAT_CSV_MEDIA_TYPE = (
+    'text/csv; profile="https://api.skeldir.com/profiles/export-csv-compat-v1"'
+)
 LEGACY_CSV_COLUMNS = ("date", "channel", "revenue", "conversions", "confidence")
+#: Legacy positions 0..4 preserved byte-for-byte, authority appended at 5..6.
+COMPAT_CSV_COLUMNS = LEGACY_CSV_COLUMNS + (
+    "projection_authority",
+    "projection_schema_version",
+)
 CSV_COLUMNS = (
     "projection_authority",
     "projection_schema_version",
@@ -72,6 +88,9 @@ CSV_COLUMNS = (
     "conversions",
     "confidence",
 )
+NON_AUTHORITATIVE_DISPLAY = "non_authoritative_display"
+SUPPORTED_CSV_SCHEMA_VERSIONS = (COMPAT_CSV_SCHEMA_VERSION, CSV_SCHEMA_VERSION)
+RETIRED_CSV_SCHEMA_VERSIONS = (LEGACY_CSV_SCHEMA_VERSION,)
 XLSX_COLUMNS = ("date", "channel", "revenue", "conversions", "confidence")
 
 LEGACY_EXPORT_MAX_DATE_SPAN_DAYS = 31
@@ -163,13 +182,19 @@ def _csv_from_rows(rows: list[dict[str, object]]) -> str:
     return rendered
 
 
-def _legacy_csv_from_rows(rows: list[dict[str, object]]) -> str:
-    """Preserve the original five-column positional contract byte-for-byte."""
+def _compat_csv_from_rows(rows: list[dict[str, object]]) -> str:
+    """Emit the positional-compatible, self-identifying default CSV profile.
+
+    Columns 0..4 are the original five legacy columns in their exact original
+    order, so any consumer reading by positional index is unaffected. Columns
+    5..6 carry the P11-G4 authority classification so the detached file can
+    still identify itself as non-authoritative without a preamble.
+    """
     stream = StringIO(newline="")
     writer = csv.writer(
         stream, dialect="excel", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n"
     )
-    writer.writerow(LEGACY_CSV_COLUMNS)
+    writer.writerow(COMPAT_CSV_COLUMNS)
     for row in rows:
         _enforce_export_row_no_leak(row)
         writer.writerow(
@@ -179,6 +204,8 @@ def _legacy_csv_from_rows(rows: list[dict[str, object]]) -> str:
                 row["revenue_display"],
                 row["conversions"],
                 row["confidence_display"],
+                NON_AUTHORITATIVE_DISPLAY,
+                COMPAT_CSV_SCHEMA_VERSION,
             )
         )
     rendered = stream.getvalue()
@@ -396,6 +423,29 @@ def _limit_error(exc: LegacyExportLimitExceeded) -> HTTPException:
     )
 
 
+def _assert_csv_profile_supported(csv_schema_version: str) -> None:
+    """Refuse retired CSV profiles before any tenant work is admitted.
+
+    ``legacy-v1`` emitted a bare five-column artifact that could carry neither
+    ``envelope_ref`` nor a non-authoritative display label, so a detached file
+    could not state its own authority class. That is a P11-G4 violation which no
+    amount of documentation can cure, so the profile is retired rather than
+    silently emitted. The replacement default,
+    ``b25-p11-export-csv-compat-v1``, keeps the same five columns at the same
+    positional indices and appends the authority classification.
+    """
+    if csv_schema_version in RETIRED_CSV_SCHEMA_VERSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "status": "refused",
+                "reason_code": "legacy_csv_profile_retired",
+                "retired_profile": csv_schema_version,
+                "replacement_profile": COMPAT_CSV_SCHEMA_VERSION,
+            },
+        )
+
+
 async def _projection_for_request(
     *,
     db_session: AsyncSession,
@@ -426,7 +476,7 @@ async def _run_track1_export(
     end: date,
     channels: list[str] | None,
     export_format: str,
-    csv_schema_version: str = LEGACY_CSV_SCHEMA_VERSION,
+    csv_schema_version: str = COMPAT_CSV_SCHEMA_VERSION,
 ) -> tuple[list[dict[str, object]], dict[str, object], str | bytes | None]:
     """Bound DB and physical serializer lifetime, including after cancellation."""
     permit_acquired = False
@@ -462,9 +512,11 @@ async def _run_track1_export(
             if export_format == "csv":
                 if csv_schema_version == CSV_SCHEMA_VERSION:
                     serializer = _csv_from_rows
-                elif csv_schema_version == LEGACY_CSV_SCHEMA_VERSION:
-                    serializer = _legacy_csv_from_rows
+                elif csv_schema_version == COMPAT_CSV_SCHEMA_VERSION:
+                    serializer = _compat_csv_from_rows
                 else:
+                    # Retired profiles are refused at the route boundary before
+                    # any work is admitted; reaching here is an invariant break.
                     raise ValueError("unsupported_csv_schema_version")
                 serializer_input = rows
             elif export_format == "xlsx":
@@ -541,8 +593,8 @@ async def export_revenue(
     end_date: date | None = Query(default=None),
     channels: list[str] | None = Query(default=None),
     csv_schema_version: Literal[
-        "legacy-v1", "b25-p11-export-csv-v2"
-    ] = Query(default=LEGACY_CSV_SCHEMA_VERSION),
+        "b25-p11-export-csv-compat-v1", "b25-p11-export-csv-v2", "legacy-v1"
+    ] = Query(default=COMPAT_CSV_SCHEMA_VERSION),
     x_attribution_session_id: Annotated[
         UUID | None, Header(alias="X-Attribution-Session-ID")
     ] = None,
@@ -553,6 +605,8 @@ async def export_revenue(
         normalized_format = export_format.strip().lower()
         if normalized_format not in {"csv", "xlsx", "json"}:
             raise HTTPException(status_code=400, detail="Unsupported export format.")
+        if normalized_format == "csv":
+            _assert_csv_profile_supported(csv_schema_version)
         rows, payload, serialized = await _run_track1_export(
             db_session=db_session,
             tenant_id=auth_context.tenant_id,
@@ -567,9 +621,11 @@ async def export_revenue(
             if not isinstance(serialized, str):
                 raise ValueError("csv_serialization_missing")
             body: str | bytes = serialized
-            media_type = "text/csv"
-            if csv_schema_version == CSV_SCHEMA_VERSION:
-                media_type = ENRICHED_CSV_MEDIA_TYPE
+            media_type = (
+                ENRICHED_CSV_MEDIA_TYPE
+                if csv_schema_version == CSV_SCHEMA_VERSION
+                else COMPAT_CSV_MEDIA_TYPE
+            )
             filename = "skeldir-export-revenue.csv"
         elif normalized_format == "xlsx":
             if not isinstance(serialized, bytes):
@@ -622,12 +678,13 @@ async def export_csv(
     auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
     csv_schema_version: Literal[
-        "legacy-v1", "b25-p11-export-csv-v2"
-    ] = Query(default=LEGACY_CSV_SCHEMA_VERSION),
+        "b25-p11-export-csv-compat-v1", "b25-p11-export-csv-v2", "legacy-v1"
+    ] = Query(default=COMPAT_CSV_SCHEMA_VERSION),
     x_attribution_session_id: Annotated[
         UUID | None, Header(alias="X-Attribution-Session-ID")
     ] = None,
 ):
+    _assert_csv_profile_supported(csv_schema_version)
     try:
         start, end = _resolve_date_range(start_date=None, end_date=None)
         rows, _, serialized = await _run_track1_export(
@@ -659,7 +716,7 @@ async def export_csv(
         media_type=(
             ENRICHED_CSV_MEDIA_TYPE
             if csv_schema_version == CSV_SCHEMA_VERSION
-            else "text/csv"
+            else COMPAT_CSV_MEDIA_TYPE
         ),
         headers={
             "X-Correlation-ID": str(x_correlation_id),

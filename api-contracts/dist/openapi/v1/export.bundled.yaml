@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 4.0.0
+  version: 5.0.0
   description: |
     B2.5-P11 human-authorized compatibility projections for CSV, JSON, and
     Excel. These responses are explicitly non-authoritative display data;
@@ -80,13 +80,14 @@ paths:
         - name: csv_schema_version
           in: query
           required: false
-          description: Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats.
+          description: 'Select the CSV profile. Ignored for non-CSV formats. `b25-p11-export-csv-compat-v1` (default) keeps the original five legacy columns at their exact positional indices 0-4 and appends `projection_authority` and `projection_schema_version` at indices 5-6, so positional readers are unaffected while the detached file still states its authority class. `b25-p11-export-csv-v2` is the authority-first profile. `legacy-v1` is RETIRED: it emitted a bare five-column artifact that could carry neither `envelope_ref` nor a non-authoritative display label, so a detached file could not state its own authority class (P11-G4). Requesting it returns 410.'
           schema: &ref_4
             type: string
             enum:
-              - legacy-v1
+              - b25-p11-export-csv-compat-v1
               - b25-p11-export-csv-v2
-            default: legacy-v1
+              - legacy-v1
+            default: b25-p11-export-csv-compat-v1
         - name: X-Attribution-Session-ID
           in: header
           required: false
@@ -107,13 +108,13 @@ paths:
                 type: string
               description: Attachment filename
           content:
-            text/csv:
+            text/csv; profile="https://api.skeldir.com/profiles/export-csv-compat-v1":
               schema:
                 type: string
-                description: Legacy five-column positional CSV preserved for existing consumers.
+                description: Default profile. Legacy five columns at indices 0-4 preserved byte-for-byte; authority classification appended at 5-6.
               example: |
-                date,channel,revenue,conversions,confidence
-                2025-11-25,Meta,15230.50,127,0.92
+                date,channel,revenue,conversions,confidence,projection_authority,projection_schema_version
+                2025-11-25,Meta,15230.50,127,0.92,non_authoritative_display,b25-p11-export-csv-compat-v1
             text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2":
               schema:
                 type: string
@@ -124,7 +125,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_10
+                required: &ref_12
                   - projection_authority
                   - projection_schema_version
                   - tenant_id_hash
@@ -132,7 +133,7 @@ paths:
                   - date_range
                   - rows
                 additionalProperties: false
-                properties: &ref_11
+                properties: &ref_13
                   projection_authority:
                     type: string
                     const: non_authoritative_display
@@ -164,7 +165,7 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: &ref_16
+                      required: &ref_22
                         - date
                         - channel
                         - revenue_minor
@@ -172,7 +173,7 @@ paths:
                         - conversions
                         - confidence_display
                       additionalProperties: false
-                      properties: &ref_17
+                      properties: &ref_23
                         date:
                           type: string
                           format: date
@@ -215,12 +216,12 @@ paths:
                 format: binary
         '400':
           description: Bad Request - validation failed
-          headers: &ref_12
+          headers: &ref_14
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_13
+          content: &ref_15
             application/problem+json:
               schema:
                 type: object
@@ -315,17 +316,101 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
-        '503':
-          x-skeldir-shared-error-component: true
-          description: Bounded export database or handler deadline exceeded
+        '410':
+          x-skeldir-shared-error-component: skeldir.export.ExportProfileRetired
+          description: Requested CSV profile is retired and can no longer be emitted
           content: &ref_9
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                required: &ref_14
+                required: &ref_18
                   - detail
-                properties: &ref_15
+                properties: &ref_19
+                  detail:
+                    type: object
+                    additionalProperties: false
+                    required:
+                      - status
+                      - reason_code
+                      - retired_profile
+                      - replacement_profile
+                    properties:
+                      status:
+                        type: string
+                        const: refused
+                      reason_code:
+                        type: string
+                        const: legacy_csv_profile_retired
+                      retired_profile:
+                        type: string
+                        enum:
+                          - legacy-v1
+                      replacement_profile:
+                        type: string
+                        enum:
+                          - b25-p11-export-csv-compat-v1
+              examples:
+                legacy_v1:
+                  value:
+                    detail:
+                      status: refused
+                      reason_code: legacy_csv_profile_retired
+                      retired_profile: legacy-v1
+                      replacement_profile: b25-p11-export-csv-compat-v1
+        '413':
+          x-skeldir-shared-error-component: skeldir.export.ExportLimitExceeded
+          description: Bounded export resource admission or egress budget exceeded
+          content: &ref_10
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: &ref_16
+                  - detail
+                properties: &ref_17
+                  detail:
+                    type: object
+                    additionalProperties: false
+                    required:
+                      - status
+                      - reason_code
+                    properties:
+                      status:
+                        type: string
+                        const: refused
+                      reason_code:
+                        type: string
+                        enum:
+                          - legacy_export_date_span_exceeded
+                          - legacy_export_channel_count_exceeded
+                          - legacy_export_channel_length_exceeded
+                          - legacy_export_row_admission_exceeded
+                          - legacy_export_byte_admission_exceeded
+                          - legacy_export_row_budget_exceeded
+                          - legacy_export_byte_budget_exceeded
+              examples:
+                date_span:
+                  value:
+                    detail:
+                      status: refused
+                      reason_code: legacy_export_date_span_exceeded
+                row_budget:
+                  value:
+                    detail:
+                      status: refused
+                      reason_code: legacy_export_row_budget_exceeded
+        '503':
+          x-skeldir-shared-error-component: skeldir.export.ExportDeadlineExceeded
+          description: Bounded export database or handler deadline exceeded
+          content: &ref_11
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: &ref_20
+                  - detail
+                properties: &ref_21
                   detail:
                     type: object
                     additionalProperties: false
@@ -355,7 +440,7 @@ paths:
   /api/export/csv:
     get:
       summary: Export data as CSV
-      description: Export attribution data using header-first rectangular b25-p11-export-csv-v2; authority classification survives detachment without a preamble.
+      description: Export attribution data as CSV. The default profile `b25-p11-export-csv-compat-v1` keeps the original five legacy columns at positional indices 0-4 and appends `projection_authority` and `projection_schema_version` at indices 5-6, so positional readers are unaffected and the detached file still states its authority class. Request `csv_schema_version=b25-p11-export-csv-v2` for the authority-first profile. Every emitted CSV profile is non-authoritative display data.
       operationId: exportCSV
       tags:
         - Export
@@ -383,7 +468,7 @@ paths:
         - name: csv_schema_version
           in: query
           required: false
-          description: Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats.
+          description: 'Select the CSV profile. Ignored for non-CSV formats. `b25-p11-export-csv-compat-v1` (default) keeps the original five legacy columns at their exact positional indices 0-4 and appends `projection_authority` and `projection_schema_version` at indices 5-6, so positional readers are unaffected while the detached file still states its authority class. `b25-p11-export-csv-v2` is the authority-first profile. `legacy-v1` is RETIRED: it emitted a bare five-column artifact that could carry neither `envelope_ref` nor a non-authoritative display label, so a detached file could not state its own authority class (P11-G4). Requesting it returns 410.'
           schema: *ref_4
       responses:
         '200':
@@ -398,13 +483,14 @@ paths:
                 type: string
               example: attachment; filename="skeldir-export-2025-11-26.csv"
           content:
-            text/csv:
+            text/csv; profile="https://api.skeldir.com/profiles/export-csv-compat-v1":
               schema:
                 type: string
+                description: Default profile. Legacy five columns at indices 0-4 preserved byte-for-byte; authority classification appended at 5-6.
               example: |
-                date,channel,revenue,conversions,confidence
-                2025-11-25,Meta,15230.50,127,0.92
-                2025-11-25,Google,12450.00,98,0.89
+                date,channel,revenue,conversions,confidence,projection_authority,projection_schema_version
+                2025-11-25,Meta,15230.50,127,0.92,non_authoritative_display,b25-p11-export-csv-compat-v1
+                2025-11-25,Google,12450.00,98,0.89,non_authoritative_display,b25-p11-export-csv-compat-v1
             text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2":
               schema:
                 type: string
@@ -419,10 +505,18 @@ paths:
           description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
-        '503':
-          x-skeldir-shared-error-component: true
-          description: Bounded export database or handler deadline exceeded
+        '410':
+          x-skeldir-shared-error-component: skeldir.export.ExportProfileRetired
+          description: Requested CSV profile is retired and can no longer be emitted
           content: *ref_9
+        '413':
+          x-skeldir-shared-error-component: skeldir.export.ExportLimitExceeded
+          description: Bounded export resource admission or egress budget exceeded
+          content: *ref_10
+        '503':
+          x-skeldir-shared-error-component: skeldir.export.ExportDeadlineExceeded
+          description: Bounded export database or handler deadline exceeded
+          content: *ref_11
   /api/export/json:
     get:
       summary: Export data as JSON
@@ -463,9 +557,9 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_10
+                required: *ref_12
                 additionalProperties: false
-                properties: *ref_11
+                properties: *ref_13
               example:
                 projection_authority: non_authoritative_display
                 projection_schema_version: b25-p11-display-v1
@@ -495,10 +589,14 @@ paths:
           description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '413':
+          x-skeldir-shared-error-component: skeldir.export.ExportLimitExceeded
+          description: Bounded export resource admission or egress budget exceeded
+          content: *ref_10
         '503':
-          x-skeldir-shared-error-component: true
+          x-skeldir-shared-error-component: skeldir.export.ExportDeadlineExceeded
           description: Bounded export database or handler deadline exceeded
-          content: *ref_9
+          content: *ref_11
   /api/export/excel:
     get:
       summary: Export data as Excel
@@ -545,17 +643,21 @@ paths:
           description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '413':
+          x-skeldir-shared-error-component: skeldir.export.ExportLimitExceeded
+          description: Bounded export resource admission or egress budget exceeded
+          content: *ref_10
         '503':
-          x-skeldir-shared-error-component: true
+          x-skeldir-shared-error-component: skeldir.export.ExportDeadlineExceeded
           description: Bounded export database or handler deadline exceeded
-          content: *ref_9
+          content: *ref_11
 components:
   parameters:
     CsvSchemaVersion:
       name: csv_schema_version
       in: query
       required: false
-      description: Select legacy positional CSV or the detached self-identifying v2 profile. Ignored for non-CSV formats.
+      description: 'Select the CSV profile. Ignored for non-CSV formats. `b25-p11-export-csv-compat-v1` (default) keeps the original five legacy columns at their exact positional indices 0-4 and appends `projection_authority` and `projection_schema_version` at indices 5-6, so positional readers are unaffected while the detached file still states its authority class. `b25-p11-export-csv-v2` is the authority-first profile. `legacy-v1` is RETIRED: it emitted a bare five-column artifact that could carry neither `envelope_ref` nor a non-authoritative display label, so a detached file could not state its own authority class (P11-G4). Requesting it returns 410.'
       schema: *ref_4
     CorrelationId:
       name: X-Correlation-ID
@@ -570,13 +672,22 @@ components:
       schema: *ref_3
       description: Bearer token for authentication (format - Bearer <token>)
   responses:
-    ExportDeadlineExceeded:
-      description: Bounded export database or handler deadline exceeded
+    ExportLimitExceeded:
+      x-skeldir-shared-error-component: skeldir.export.ExportLimitExceeded
+      description: Bounded export resource admission or egress budget exceeded
+      content: *ref_10
+    ExportProfileRetired:
+      x-skeldir-shared-error-component: skeldir.export.ExportProfileRetired
+      description: Requested CSV profile is retired and can no longer be emitted
       content: *ref_9
+    ExportDeadlineExceeded:
+      x-skeldir-shared-error-component: skeldir.export.ExportDeadlineExceeded
+      description: Bounded export database or handler deadline exceeded
+      content: *ref_11
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_12
-      content: *ref_13
+      headers: *ref_14
+      content: *ref_15
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_5
@@ -586,21 +697,31 @@ components:
       headers: *ref_7
       content: *ref_8
   schemas:
+    ExportLimitError:
+      type: object
+      additionalProperties: false
+      required: *ref_16
+      properties: *ref_17
+    ExportProfileRetiredError:
+      type: object
+      additionalProperties: false
+      required: *ref_18
+      properties: *ref_19
     ExportDeadlineError:
       type: object
       additionalProperties: false
-      required: *ref_14
-      properties: *ref_15
+      required: *ref_20
+      properties: *ref_21
     ExportData:
       type: object
-      required: *ref_10
+      required: *ref_12
       additionalProperties: false
-      properties: *ref_11
+      properties: *ref_13
     ExportRow:
       type: object
-      required: *ref_16
+      required: *ref_22
       additionalProperties: false
-      properties: *ref_17
+      properties: *ref_23
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions

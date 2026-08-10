@@ -91,6 +91,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p10_corrective_action.py",
     "backend/tests/trust/test_b25_p10_corrective_action_ii.py",
     "backend/tests/trust/test_b25_p10_postgres_physics.py",
+    "backend/tests/trust/test_b25_p11_error_provenance.py",
     "backend/tests/trust/test_b25_p11_export_artifact.py",
     "backend/tests/trust/test_b25_p11_export_projection.py",
     "backend/tests/trust/test_b25_p11_postgres_physics.py",

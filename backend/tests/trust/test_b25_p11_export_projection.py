@@ -26,11 +26,19 @@ import yaml
 from app.api import export as export_api
 from app.db.deps import get_db_session
 from app.security.auth import get_auth_context
+from app.api import export as export_module
 from app.api.export import (
+    COMPAT_CSV_COLUMNS,
+    COMPAT_CSV_MEDIA_TYPE,
+    COMPAT_CSV_SCHEMA_VERSION,
     CSV_COLUMNS,
     CSV_SCHEMA_VERSION,
+    ENRICHED_CSV_MEDIA_TYPE,
     LEGACY_CSV_COLUMNS,
     LEGACY_CSV_SCHEMA_VERSION,
+    NON_AUTHORITATIVE_DISPLAY,
+    RETIRED_CSV_SCHEMA_VERSIONS,
+    SUPPORTED_CSV_SCHEMA_VERSIONS,
     EXPORT_ROW_ALLOWLIST,
     LEGACY_EXPORT_MAX_BYTES,
     LEGACY_EXPORT_MAX_ROWS,
@@ -38,8 +46,8 @@ from app.api.export import (
     TRACK1_MAX_CONCURRENT_EXPORTS,
     TRACK1_MAX_SERIALIZATION_WORKING_SET_BYTES,
     XLSX_COLUMNS,
+    _compat_csv_from_rows,
     _csv_from_rows,
-    _legacy_csv_from_rows,
     _enforce_export_payload_no_leak,
     _xlsx_from_projection,
 )
@@ -166,14 +174,70 @@ def test_csv_round_trip_handles_adversarial_text_without_column_drift() -> None:
     assert rendered.endswith("\r\n")
 
 
-def test_legacy_csv_default_contract_is_positionally_unchanged() -> None:
+def test_compat_csv_default_is_positionally_unchanged_and_self_identifying() -> None:
+    """P11-G4 and positional compatibility must hold simultaneously.
+
+    Indices 0..4 remain the exact original five-column legacy contract, so any
+    consumer reading by position is unaffected. Indices 5..6 carry the authority
+    classification, so the detached file can still state that it is
+    non-authoritative without a preamble.
+    """
     _, payload = _projection(["Meta"])
     rows = payload["rows"]
     assert isinstance(rows, list)
-    records = list(csv.reader(StringIO(_legacy_csv_from_rows(rows), newline="")))
-    assert tuple(records[0]) == LEGACY_CSV_COLUMNS
-    assert records[1] == ["2026-08-08", "Meta", "125.05", "1", "0.92"]
+    records = list(csv.reader(StringIO(_compat_csv_from_rows(rows), newline="")))
+
+    # Positional compatibility: original five columns, original order, original values.
+    assert tuple(records[0][:5]) == LEGACY_CSV_COLUMNS
+    assert records[1][:5] == ["2026-08-08", "Meta", "125.05", "1", "0.92"]
+
+    # P11-G4: the artifact identifies its own authority class.
+    assert tuple(records[0]) == COMPAT_CSV_COLUMNS
+    assert records[1][5] == NON_AUTHORITATIVE_DISPLAY
+    assert records[1][6] == COMPAT_CSV_SCHEMA_VERSION
+    assert COMPAT_CSV_SCHEMA_VERSION == "b25-p11-export-csv-compat-v1"
+
+
+def test_every_active_csv_profile_satisfies_p11_g4() -> None:
+    """Universal property: no active CSV profile may emit an ambiguous file.
+
+    This is the hierarchy-aware control the second corrective cycle lacked. It
+    iterates the *supported* profile set rather than a hand-picked profile, so a
+    newly added profile that cannot self-identify fails here automatically.
+    """
+    _, payload = _projection(["Meta"])
+    rows = payload["rows"]
+    assert isinstance(rows, list)
+
+    serializers = {
+        COMPAT_CSV_SCHEMA_VERSION: _compat_csv_from_rows,
+        CSV_SCHEMA_VERSION: _csv_from_rows,
+    }
+    assert set(serializers) == set(SUPPORTED_CSV_SCHEMA_VERSIONS)
+
+    for profile, serializer in serializers.items():
+        rendered = serializer(rows)
+        # Detach the artifact from every HTTP affordance: only the bytes remain.
+        records = list(csv.reader(StringIO(rendered, newline="")))
+        header, data_rows = records[0], records[1:]
+        assert data_rows, f"{profile} produced no rows"
+        has_authority_column = NON_AUTHORITATIVE_DISPLAY in {
+            value for record in data_rows for value in record
+        }
+        has_envelope_ref = "envelope_ref" in header
+        assert has_authority_column or has_envelope_ref, (
+            f"active CSV profile {profile} emits a detached artifact that "
+            "carries neither a non-authoritative display label nor an "
+            "envelope_ref, violating P11-G4"
+        )
+
+
+def test_retired_legacy_profile_is_not_an_active_serializer() -> None:
+    """legacy-v1 must not be reachable as an emitted artifact."""
     assert LEGACY_CSV_SCHEMA_VERSION == "legacy-v1"
+    assert LEGACY_CSV_SCHEMA_VERSION in RETIRED_CSV_SCHEMA_VERSIONS
+    assert LEGACY_CSV_SCHEMA_VERSION not in SUPPORTED_CSV_SCHEMA_VERSIONS
+    assert not hasattr(export_module, "_legacy_csv_from_rows")
 
 
 def test_formula_prefixes_are_text_in_csv_and_real_xlsx() -> None:
@@ -499,3 +563,173 @@ async def test_runtime_503_matches_authoritative_openapi_schema(
     assert response.json() == {
         "detail": {"status": "refused", "reason_code": reason_code}
     }
+
+
+# ---------------------------------------------------------------------------
+# Third corrective: runtime / contract parity for every governed refusal, and
+# detached-artifact authority for the DEFAULT (no-parameter) request.
+# ---------------------------------------------------------------------------
+
+_TRACK1_CSV_ROUTES = ("/api/export/csv", "/api/export/revenue?format=csv")
+
+_GOVERNED_413_REASONS = (
+    "legacy_export_date_span_exceeded",
+    "legacy_export_channel_count_exceeded",
+    "legacy_export_channel_length_exceeded",
+    "legacy_export_row_admission_exceeded",
+    "legacy_export_byte_admission_exceeded",
+    "legacy_export_row_budget_exceeded",
+    "legacy_export_byte_budget_exceeded",
+)
+
+
+def _export_app() -> FastAPI:
+    app = FastAPI()
+    app.include_router(export_api.router, prefix="/api/export")
+
+    async def fake_auth():
+        return type("Auth", (), {"tenant_id": uuid4()})()
+
+    async def fake_db():
+        yield object()
+
+    app.dependency_overrides[get_auth_context] = fake_auth
+    app.dependency_overrides[get_db_session] = fake_db
+    return app
+
+
+def _canonical_contract() -> dict:
+    return yaml.safe_load(
+        (ROOT / "api-contracts/openapi/v1/export.yaml").read_text(encoding="utf-8")
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason_code", _GOVERNED_413_REASONS)
+async def test_runtime_413_matches_authoritative_openapi_schema(
+    monkeypatch, reason_code: str
+) -> None:
+    """Gate P11-C3-I: every deliberate 413 is representable in the contract."""
+    app = _export_app()
+
+    async def limit(**_kwargs):
+        raise export_api.LegacyExportLimitExceeded(reason_code)
+
+    monkeypatch.setattr(export_api, "_run_track1_export", limit)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/export/csv", headers={"X-Correlation-ID": str(uuid4())}
+        )
+
+    assert response.status_code == 413
+    schema = _canonical_contract()["components"]["schemas"]["ExportLimitError"]
+    Draft202012Validator(schema).validate(response.json())
+    assert response.json() == {
+        "detail": {"status": "refused", "reason_code": reason_code}
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", _TRACK1_CSV_ROUTES)
+async def test_retired_csv_profile_is_refused_with_governed_410(route: str) -> None:
+    """Gate P11-C3-A/B: the ambiguous profile is refused, never emitted."""
+    app = _export_app()
+    separator = "&" if "?" in route else "?"
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            f"{route}{separator}csv_schema_version=legacy-v1",
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+
+    assert response.status_code == 410
+    schema = _canonical_contract()["components"]["schemas"]["ExportProfileRetiredError"]
+    Draft202012Validator(schema).validate(response.json())
+    detail = response.json()["detail"]
+    assert detail["reason_code"] == "legacy_csv_profile_retired"
+    assert detail["retired_profile"] == LEGACY_CSV_SCHEMA_VERSION
+    assert detail["replacement_profile"] == COMPAT_CSV_SCHEMA_VERSION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", _TRACK1_CSV_ROUTES)
+async def test_default_request_emits_self_identifying_detached_csv(
+    monkeypatch, route: str
+) -> None:
+    """Gate P11-C3-A: the DEFAULT artifact, with the HTTP context discarded.
+
+    The request deliberately omits `csv_schema_version`. Only the response body
+    is retained -- no URL, no query parameters, no headers, no media type -- and
+    the file must still declare that it is non-authoritative.
+    """
+    app = _export_app()
+    _, payload = _projection(["Meta"])
+    rows = payload["rows"]
+
+    async def fake_export(*, export_format, csv_schema_version, **_kwargs):
+        assert (
+            csv_schema_version == COMPAT_CSV_SCHEMA_VERSION
+        ), "default profile drifted away from the compliant compat profile"
+        return rows, payload, _compat_csv_from_rows(rows)
+
+    monkeypatch.setattr(export_api, "_run_track1_export", fake_export)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(route, headers={"X-Correlation-ID": str(uuid4())})
+
+    assert response.status_code == 200
+
+    # Everything except the bytes is now discarded.
+    detached_bytes = response.content
+    records = list(csv.reader(StringIO(detached_bytes.decode("utf-8"), newline="")))
+    header, data_rows = records[0], [r for r in records[1:] if r]
+
+    assert tuple(header[:5]) == LEGACY_CSV_COLUMNS
+    assert "projection_authority" in header
+    assert data_rows
+    for record in data_rows:
+        assert (
+            NON_AUTHORITATIVE_DISPLAY in record
+        ), "default detached CSV cannot identify itself as non-authoritative"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", _TRACK1_CSV_ROUTES)
+async def test_csv_media_type_profile_matches_emitted_profile(
+    monkeypatch, route: str
+) -> None:
+    """Gate P11-C3-J: media type must name the profile actually emitted."""
+    _, payload = _projection(["Meta"])
+    rows = payload["rows"]
+
+    expected = {
+        COMPAT_CSV_SCHEMA_VERSION: (COMPAT_CSV_MEDIA_TYPE, _compat_csv_from_rows),
+        CSV_SCHEMA_VERSION: (ENRICHED_CSV_MEDIA_TYPE, _csv_from_rows),
+    }
+    assert set(expected) == set(SUPPORTED_CSV_SCHEMA_VERSIONS)
+
+    for profile, (media_type, serializer) in expected.items():
+        app = _export_app()
+
+        async def fake_export(*, export_format, csv_schema_version, **_kwargs):
+            return rows, payload, serializer(rows)
+
+        monkeypatch.setattr(export_api, "_run_track1_export", fake_export)
+        separator = "&" if "?" in route else "?"
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(
+                f"{route}{separator}csv_schema_version={profile}",
+                headers={"X-Correlation-ID": str(uuid4())},
+            )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith(media_type), (
+            f"profile {profile} emitted content-type "
+            f"{response.headers['content-type']!r}, expected {media_type!r}"
+        )

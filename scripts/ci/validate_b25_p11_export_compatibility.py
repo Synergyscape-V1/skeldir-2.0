@@ -48,6 +48,10 @@ CORRECTIVE_EVIDENCE_PATH = Path(
     "docs/forensics/B2.5-P11 Corrective Remediation Evidence Pack.md"
 )
 CSV_EVOLUTION_POLICY = Path("contracts/export/CSV_EVOLUTION.md")
+ERROR_MODEL_CHECKER = Path("scripts/contracts/check_error_model.py")
+ERROR_COMPONENT_REGISTRY = Path(
+    "api-contracts/openapi/v1/_common/error-component-registry.yaml"
+)
 P11_PROJECTION_TESTS = Path("backend/tests/trust/test_b25_p11_export_projection.py")
 P7_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202607011200_b25_p7_trust_audit_provenance.py"
@@ -178,6 +182,42 @@ def _validate_schema_and_manifest(overrides: dict[Path, str]) -> None:
         ],
         "artifact_hash_input_manifest_drift",
     )
+    registry_rows = manifest.get("export_artifact_protocol_registry") or []
+    _require(bool(registry_rows), "artifact_protocol_registry_missing")
+    registry_tuples = [
+        (row.get("artifact_schema_version"), row.get("canonicalization_version"))
+        for row in registry_rows
+    ]
+    _require(
+        len(registry_tuples) == len(set(registry_tuples)),
+        "artifact_protocol_registry_ambiguous",
+    )
+    _require(
+        ("b25-p11-export-artifact-v1", "b25-p11-artifact-framing-v1")
+        in registry_tuples,
+        "historical_artifact_protocol_unregistered",
+    )
+    _require(
+        ("b25-p11-export-artifact-v2", "b25-p11-artifact-framing-v2")
+        in registry_tuples,
+        "active_artifact_protocol_unregistered",
+    )
+    statuses = {
+        row["artifact_schema_version"]: row.get("support_status")
+        for row in registry_rows
+    }
+    _require(
+        statuses.get("b25-p11-export-artifact-v1") == "verification_only",
+        "historical_artifact_protocol_status_drift",
+    )
+    _require(
+        statuses.get("b25-p11-export-artifact-v2") == "active",
+        "active_artifact_protocol_status_drift",
+    )
+    _require(
+        manifest.get("export_artifact_schema_version") == "b25-p11-export-artifact-v2",
+        "manifest_active_artifact_version_drift",
+    )
     _require(
         manifest.get("export_artifact_signature_hash_input_fields")
         == [
@@ -282,7 +322,7 @@ def _validate_contracts(overrides: dict[Path, str]) -> None:
         _require("revenue_minor" in source, f"minor_money_missing:{path}")
         _require("confidence_display" in source, f"confidence_display_missing:{path}")
     public_contract = _parsed(Path("api-contracts/openapi/v1/export.yaml"), overrides)
-    _require(public_contract["info"]["version"] == "4.0.0", "csv_major_version_missing")
+    _require(public_contract["info"]["version"] == "5.0.0", "csv_major_version_missing")
     for path in (
         "/api/export/revenue",
         "/api/export/csv",
@@ -293,6 +333,65 @@ def _validate_contracts(overrides: dict[Path, str]) -> None:
             "503" in public_contract["paths"][path]["get"]["responses"],
             f"export_503_contract_missing:{path}",
         )
+    # --- Runtime / contract parity for governed refusals (Gate P11-C3-I) ----
+    # Every deliberate, stable, consumer-programmable refusal the runtime can
+    # emit must be representable in the authoritative contract.
+    for path in (
+        "/api/export/revenue",
+        "/api/export/csv",
+        "/api/export/json",
+        "/api/export/excel",
+    ):
+        _require(
+            "413" in public_contract["paths"][path]["get"]["responses"],
+            f"export_413_contract_missing:{path}",
+        )
+    for path in ("/api/export/revenue", "/api/export/csv"):
+        _require(
+            "410" in public_contract["paths"][path]["get"]["responses"],
+            f"export_410_contract_missing:{path}",
+        )
+    limit_reason_enum = public_contract["components"]["schemas"]["ExportLimitError"][
+        "properties"
+    ]["detail"]["properties"]["reason_code"]["enum"]
+    _require(
+        sorted(limit_reason_enum)
+        == sorted(
+            [
+                "legacy_export_date_span_exceeded",
+                "legacy_export_channel_count_exceeded",
+                "legacy_export_channel_length_exceeded",
+                "legacy_export_row_admission_exceeded",
+                "legacy_export_byte_admission_exceeded",
+                "legacy_export_row_budget_exceeded",
+                "legacy_export_byte_budget_exceeded",
+            ]
+        ),
+        "export_413_reason_contract_drift",
+    )
+    # Every reason code the runtime can raise must appear in the contract enum.
+    runtime_limit_reasons = {
+        node.args[0].value
+        for node in ast.walk(ast.parse(_text(LEGACY_EXPORT, overrides)))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "LegacyExportLimitExceeded"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    _require(
+        runtime_limit_reasons.issubset(set(limit_reason_enum)),
+        "export_413_runtime_reason_not_in_contract:"
+        f"{sorted(runtime_limit_reasons - set(limit_reason_enum))}",
+    )
+    retired_schema = public_contract["components"]["schemas"][
+        "ExportProfileRetiredError"
+    ]["properties"]["detail"]["properties"]
+    _require(
+        retired_schema["reason_code"].get("const") == "legacy_csv_profile_retired",
+        "export_410_reason_contract_drift",
+    )
     reason_enum = public_contract["components"]["schemas"]["ExportDeadlineError"][
         "properties"
     ]["detail"]["properties"]["reason_code"]["enum"]
@@ -308,7 +407,7 @@ def _validate_contracts(overrides: dict[Path, str]) -> None:
         public_contract["components"]["responses"]["ExportDeadlineExceeded"].get(
             "x-skeldir-shared-error-component"
         )
-        is True,
+        == "skeldir.export.ExportDeadlineExceeded",
         "export_503_shared_error_provenance_missing",
     )
     baseline = _parsed(Path("contracts/export/baselines/v1.0.0/export.yaml"), overrides)
@@ -321,7 +420,7 @@ def _validate_contracts(overrides: dict[Path, str]) -> None:
         "historical_csv_baseline_rewritten",
     )
     current = _parsed(Path("contracts/export/v1/export.yaml"), overrides)
-    _require(current["info"]["version"] == "3.0.0", "csv_contract_major_missing")
+    _require(current["info"]["version"] == "4.0.0", "csv_contract_major_missing")
     _require(
         'text/csv; profile="https://api.skeldir.com/profiles/export-csv-v2"'
         in current["paths"]["/api/export/revenue"]["get"]["responses"]["200"][
@@ -330,7 +429,55 @@ def _validate_contracts(overrides: dict[Path, str]) -> None:
         "enriched_csv_profile_missing",
     )
     policy = _text(CSV_EVOLUTION_POLICY, overrides)
-    _require("immutable legacy-v1 positional" in policy, "csv_evolution_policy_missing")
+    _require("P11-G4 authority honesty" in policy, "csv_evolution_policy_missing")
+
+    # --- Shared error-model provenance (Gate P11-C3-G / P11-C3-H) -----------
+    # The repository-wide checker must establish provenance mechanically. A
+    # self-asserted boolean, or any unconditional bypass, is a global
+    # regression that this phase must not reintroduce.
+    checker = _text(ERROR_MODEL_CHECKER, overrides)
+    _require(
+        "verify_declared_provenance" in checker,
+        "error_model_provenance_verification_missing",
+    )
+    _require(
+        "is True:\n        return True" not in checker,
+        "error_model_self_attested_boolean_restored",
+    )
+    _require(
+        "return True, 'self_attested'" not in checker
+        and 'return True, "self_attested"' not in checker,
+        "error_model_self_attested_boolean_restored",
+    )
+    _require(
+        "return True, 'bypassed'" not in checker
+        and 'return True, "bypassed"' not in checker,
+        "error_model_unconditional_bypass_present",
+    )
+    _require(
+        "        return False, reason" in checker,
+        "error_model_failed_declaration_not_fatal",
+    )
+    registry_doc = _parsed(ERROR_COMPONENT_REGISTRY, overrides)
+    registry_entries = registry_doc.get("components") or []
+    _require(bool(registry_entries), "error_component_registry_empty")
+    registry_ids = {row.get("component_id") for row in registry_entries}
+    for required_component in (
+        "skeldir.export.ExportDeadlineExceeded",
+        "skeldir.export.ExportLimitExceeded",
+        "skeldir.export.ExportProfileRetired",
+    ):
+        _require(
+            required_component in registry_ids,
+            f"error_component_unregistered:{required_component}",
+        )
+    for row in registry_entries:
+        if row.get("structural_rule") == "exact_fingerprint":
+            fingerprint = row.get("schema_fingerprint")
+            _require(
+                isinstance(fingerprint, str) and fingerprint.startswith("sha256:"),
+                f"error_component_fingerprint_missing:{row.get('component_id')}",
+            )
 
 
 def _validate_sources(overrides: dict[Path, str]) -> None:
@@ -409,24 +556,126 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
     _require("hashlib" not in artifact, "local_artifact_hash_authority_present")
     _require("json.dumps" not in artifact, "local_json_identity_present")
     _require(
-        'EXPORT_ARTIFACT_SIGNING_DOMAIN = b"skeldir:b25-p11:export-artifact:v1\\x00"'
+        'EXPORT_ARTIFACT_SIGNING_DOMAIN_V2 = b"skeldir:b25-p11:export-artifact:v2\\x00"'
         in artifact,
         "artifact_signing_domain_drift",
+    )
+    _require(
+        'EXPORT_ARTIFACT_SIGNING_DOMAIN_V1 = b"skeldir:b25-p11:export-artifact:v1\\x00"'
+        in artifact,
+        "historical_artifact_signing_domain_removed",
+    )
+    # Protocol identity must remain a function: one version tuple, one algorithm.
+    _require(
+        "def _artifact_identity_bytes_v1(" in artifact,
+        "historical_artifact_framing_removed",
+    )
+    _require(
+        "def _artifact_identity_bytes_v2(" in artifact,
+        "active_artifact_framing_missing",
+    )
+    _require(
+        "def resolve_export_artifact_protocol(" in artifact,
+        "artifact_protocol_dispatch_missing",
+    )
+    _require(
+        "artifact_protocol_version_unsupported" in artifact,
+        "artifact_protocol_reason_code_missing",
+    )
+    _require(
+        "issuable=False" in artifact and "issuable=True" in artifact,
+        "artifact_protocol_issuance_status_missing",
+    )
+    # Each registered protocol must actually BIND its own framing. Declaring the
+    # functions but pointing both entries at one algorithm would silently
+    # reinterpret historical artifacts while leaving the source looking correct.
+    _require(
+        "identity_bytes=_artifact_identity_bytes_v1," in artifact,
+        "historical_artifact_protocol_binding_collapsed",
+    )
+    _require(
+        "identity_bytes=_artifact_identity_bytes_v2," in artifact,
+        "active_artifact_protocol_binding_collapsed",
+    )
+    _require(
+        "signature_material=_export_artifact_signature_material_v1," in artifact,
+        "historical_signature_material_binding_collapsed",
+    )
+    _require(
+        "signature_material=_export_artifact_signature_material_v2," in artifact,
+        "active_signature_material_binding_collapsed",
+    )
+    # Cross-check the runtime protocol constants against the manifest registry.
+    # Mislabelling the new algorithm with an old version marker must fail here
+    # rather than silently producing two meanings for one version tuple.
+    artifact_constants: dict[str, str] = {}
+    for node in ast.walk(ast.parse(artifact)):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and isinstance(node.value.value, str):
+                    artifact_constants[target.id] = node.value.value
+    manifest_registry = {
+        (row.get("artifact_schema_version"), row.get("canonicalization_version"))
+        for row in (
+            _parsed(HASH_MANIFEST, overrides).get("export_artifact_protocol_registry")
+            or []
+        )
+    }
+    for schema_const, canon_const in (
+        (
+            "EXPORT_ARTIFACT_SCHEMA_VERSION_V1",
+            "EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V1",
+        ),
+        (
+            "EXPORT_ARTIFACT_SCHEMA_VERSION_V2",
+            "EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V2",
+        ),
+    ):
+        runtime_tuple = (
+            artifact_constants.get(schema_const),
+            artifact_constants.get(canon_const),
+        )
+        _require(
+            runtime_tuple in manifest_registry,
+            f"artifact_protocol_runtime_manifest_drift:{runtime_tuple}",
+        )
+    _require(
+        artifact_constants.get("EXPORT_ARTIFACT_SCHEMA_VERSION_V1")
+        != artifact_constants.get("EXPORT_ARTIFACT_SCHEMA_VERSION_V2"),
+        "artifact_protocol_version_markers_collided",
+    )
+    _require(
+        artifact_constants.get("EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V1")
+        != artifact_constants.get("EXPORT_ARTIFACT_CANONICALIZATION_VERSION_V2"),
+        "artifact_canonicalization_version_markers_collided",
     )
     _require(
         'candidate["artifact_hash"] != expected_hash' in artifact,
         "artifact_hash_verify_removed",
     )
-    identity_body = artifact.split("def _artifact_identity_bytes", 1)[1].split(
-        "def export_artifact_signature_material", 1
+    # ACTIVE (v2) identity must stay signer-independent so key rotation cannot
+    # change artifact_hash. The frozen v1 framing legitimately includes signer
+    # fields and is asserted separately below.
+    identity_body = artifact.split("def _artifact_identity_bytes_v2", 1)[1].split(
+        "def _export_artifact_signature_material_v2", 1
     )[0]
     _require("signing_key_id" not in identity_body, "signer_metadata_in_artifact_hash")
     _require(
         "signing_algorithm" not in identity_body, "signer_metadata_in_artifact_hash"
     )
-    signature_body = artifact.split("def export_artifact_signature_material", 1)[
+    # The frozen historical framing must keep its original semantics; silently
+    # rewriting it would reinterpret already-issued artifacts.
+    historical_body = artifact.split("def _artifact_identity_bytes_v1", 1)[1].split(
+        "def _export_artifact_signature_material_v1", 1
+    )[0]
+    _require(
+        '_frame(\n            "signing_key_id"' in historical_body
+        or '_frame("signing_key_id"' in historical_body,
+        "historical_artifact_framing_semantics_changed",
+    )
+    signature_body = artifact.split("def _export_artifact_signature_material_v2", 1)[
         1
-    ].split("def sign_export_artifact", 1)[0]
+    ].split("@dataclass", 1)[0]
     _require(
         '_frame("artifact_hash"' in signature_body
         and '_frame("signing_key_id"' in signature_body
@@ -468,6 +717,56 @@ def _validate_sources(overrides: dict[Path, str]) -> None:
         'LEGACY_CSV_COLUMNS = ("date", "channel", "revenue", "conversions", "confidence")'
         in legacy,
         "legacy_csv_positional_contract_drift",
+    )
+    # The default profile must preserve legacy positions AND self-identify.
+    _require(
+        "COMPAT_CSV_COLUMNS = LEGACY_CSV_COLUMNS + (" in legacy,
+        "compat_csv_positional_prefix_missing",
+    )
+    _require(
+        'COMPAT_CSV_SCHEMA_VERSION = "b25-p11-export-csv-compat-v1"' in legacy,
+        "compat_csv_profile_missing",
+    )
+    _require(
+        "csv_schema_version: str = COMPAT_CSV_SCHEMA_VERSION" in legacy,
+        "compat_csv_not_default",
+    )
+    # BOTH CSV-capable route handlers must default to the compliant profile.
+    # Asserting mere presence would let one handler drift while the other
+    # keeps the assertion satisfied, which is exactly how a noncompliant
+    # default survives alongside a compliant one.
+    _require(
+        legacy.count("] = Query(default=COMPAT_CSV_SCHEMA_VERSION),") == 2,
+        "compat_csv_not_route_default",
+    )
+    _require(
+        "] = Query(default=CSV_SCHEMA_VERSION)," not in legacy,
+        "csv_route_default_contradicts_documented_default",
+    )
+    _require(
+        "] = Query(default=LEGACY_CSV_SCHEMA_VERSION)," not in legacy,
+        "retired_csv_profile_is_route_default",
+    )
+    _require(
+        "def _assert_csv_profile_supported(" in legacy,
+        "retired_profile_guard_missing",
+    )
+    _require(
+        "legacy_csv_profile_retired" in legacy,
+        "retired_profile_reason_code_missing",
+    )
+    _require(
+        "def _legacy_csv_from_rows(" not in legacy,
+        "ambiguous_legacy_serializer_still_reachable",
+    )
+    _require(
+        "def _compat_csv_from_rows(" in legacy,
+        "compat_csv_serializer_missing",
+    )
+    _require(
+        "SUPPORTED_CSV_SCHEMA_VERSIONS = (COMPAT_CSV_SCHEMA_VERSION, CSV_SCHEMA_VERSION)"
+        in legacy,
+        "supported_csv_profile_set_drift",
     )
     _validate_csv_header_first(legacy)
     _require('",".join(' not in legacy, "manual_csv_join_present")
@@ -863,10 +1162,21 @@ def run_second_corrective_negative_controls() -> int:
         ),
         (
             "NC-C2-03",
+            # Anchored to the v2 guard, which is unique to the ACTIVE framing.
+            # `_mutated` replaces only the first occurrence, so anchoring on a
+            # line shared with the frozen v1 framing would silently mutate the
+            # historical protocol instead and the control would not fire.
             _mutated(
                 ARTIFACT,
-                '        _frame("envelope_count", str(len(envelopes)).encode("ascii")),',
-                '        _frame("signing_key_id", payload["signing_key_id"].encode("utf-8")),\n        _frame("envelope_count", str(len(envelopes)).encode("ascii")),',
+                "    if not _BASE_FIELDS.issubset(payload):\n"
+                '        raise ExportArtifactError("artifact_identity_fields_missing")\n'
+                '    envelopes = _ordered_envelopes(payload["envelopes"])\n'
+                "    pieces = [",
+                "    if not _BASE_FIELDS.issubset(payload):\n"
+                '        raise ExportArtifactError("artifact_identity_fields_missing")\n'
+                '    envelopes = _ordered_envelopes(payload["envelopes"])\n'
+                "    pieces = [\n"
+                '        _frame("signing_key_id", payload["signing_key_id"].encode("utf-8")),',
             ),
         ),
         (
@@ -913,6 +1223,127 @@ def run_second_corrective_negative_controls() -> int:
     return fired
 
 
+def run_third_corrective_negative_controls() -> int:
+    """Semantic falsifiers for the third corrective's load-bearing invariants.
+
+    Each mutation changes production enforcement so a real regression -- not a
+    parse error or a missing token -- causes the intended gate to fail.
+    """
+    public_contract_path = Path("api-contracts/openapi/v1/export.yaml")
+    controls = (
+        (
+            # NC-C3-01: the active default CSV loses its authority classification.
+            # Must fire even though the five-column positional shape is untouched.
+            "NC-C3-01",
+            _mutated(
+                LEGACY_EXPORT,
+                "COMPAT_CSV_COLUMNS = LEGACY_CSV_COLUMNS + (\n"
+                '    "projection_authority",\n'
+                '    "projection_schema_version",\n'
+                ")",
+                "COMPAT_CSV_COLUMNS = LEGACY_CSV_COLUMNS",
+            ),
+        ),
+        (
+            # NC-C3-02: a compliant opt-in profile must not mask a
+            # noncompliant default. Point the default at the retired profile.
+            "NC-C3-02",
+            _mutated(
+                LEGACY_EXPORT,
+                "csv_schema_version: str = COMPAT_CSV_SCHEMA_VERSION",
+                "csv_schema_version: str = LEGACY_CSV_SCHEMA_VERSION",
+            ),
+        ),
+        (
+            # NC-C3-03: change artifact framing without a protocol version
+            # transition by collapsing v1 onto the active algorithm.
+            "NC-C3-03",
+            _mutated(
+                ARTIFACT,
+                "    identity_bytes=_artifact_identity_bytes_v1,",
+                "    identity_bytes=_artifact_identity_bytes_v2,",
+            ),
+        ),
+        (
+            # NC-C3-04: remove the historical verification dispatch entirely.
+            "NC-C3-04",
+            _mutated(
+                ARTIFACT,
+                "def _artifact_identity_bytes_v1(payload: dict[str, Any]) -> bytes:",
+                "def _removed_historical_framing(payload: dict[str, Any]) -> bytes:",
+            ),
+        ),
+        (
+            # NC-C3-05: mislabel the new protocol as the old version.
+            "NC-C3-05",
+            _mutated(
+                ARTIFACT,
+                'EXPORT_ARTIFACT_SCHEMA_VERSION_V2 = "b25-p11-export-artifact-v2"',
+                'EXPORT_ARTIFACT_SCHEMA_VERSION_V2 = "b25-p11-export-artifact-v1"',
+            ),
+        ),
+        (
+            # NC-C3-06: restore the self-attested boolean escape hatch.
+            "NC-C3-06",
+            _mutated(
+                ERROR_MODEL_CHECKER,
+                "    if PROVENANCE_MARKER in response:",
+                "    if response.get(PROVENANCE_MARKER) is True:\n"
+                "        return True, 'self_attested'\n"
+                "    if PROVENANCE_MARKER in response:",
+            ),
+        ),
+        (
+            # NC-C3-07: remove the governed 413 from the authoritative contract
+            # while the runtime keeps emitting it.
+            "NC-C3-07",
+            _mutated(
+                public_contract_path,
+                "        '413':\n"
+                "          $ref: '#/components/responses/ExportLimitExceeded'",
+                "",
+            ),
+        ),
+        (
+            # NC-C3-08: drop one governed 413 reason code from the contract enum.
+            "NC-C3-08",
+            _mutated(
+                public_contract_path,
+                "                - legacy_export_row_budget_exceeded\n",
+                "",
+            ),
+        ),
+        (
+            # NC-C3-09: make the endpoint description contradict the default.
+            "NC-C3-09",
+            _mutated(
+                LEGACY_EXPORT,
+                "    ] = Query(default=COMPAT_CSV_SCHEMA_VERSION),",
+                "    ] = Query(default=CSV_SCHEMA_VERSION),",
+            ),
+        ),
+        (
+            # NC-C3-10: weaken the shared validator so any endpoint can bypass
+            # the inherited error-contract guarantee.
+            "NC-C3-10",
+            _mutated(
+                ERROR_MODEL_CHECKER,
+                "        return False, reason",
+                "        return True, 'bypassed'",
+            ),
+        ),
+    )
+    fired = 0
+    for name, overrides in controls:
+        try:
+            validate_core(overrides)
+        except B25P11ValidationError:
+            fired += 1
+            continue
+        raise B25P11ValidationError(f"third_corrective_negative_control_silent:{name}")
+    return fired
+
+
 def _run_pytest() -> None:
     command = [
         sys.executable,
@@ -920,6 +1351,7 @@ def _run_pytest() -> None:
         "pytest",
         "backend/tests/trust/test_b25_p11_export_projection.py",
         "backend/tests/trust/test_b25_p11_export_artifact.py",
+        "backend/tests/trust/test_b25_p11_error_provenance.py",
         "-q",
     ]
     completed = subprocess.run(command, cwd=ROOT, check=False)
@@ -940,11 +1372,18 @@ def main(argv: list[str]) -> int:
         second_corrective_negative_controls = (
             run_second_corrective_negative_controls() if args.negative_control else 0
         )
+        third_corrective_negative_controls = (
+            run_third_corrective_negative_controls() if args.negative_control else 0
+        )
         if args.negative_control:
             _require(negative_controls == 15, "negative_control_count_drift")
             _require(
                 corrective_negative_controls == 11,
                 "corrective_negative_control_count_drift",
+            )
+            _require(
+                third_corrective_negative_controls == 10,
+                "third_corrective_negative_control_count_drift",
             )
             _require(
                 second_corrective_negative_controls == 7,
@@ -972,6 +1411,10 @@ def main(argv: list[str]) -> int:
     print("shadow_paths_scanned=0")
     print(f"negative_controls_fired={negative_controls}")
     print(f"corrective_negative_controls_fired={corrective_negative_controls}")
+    print(
+        "third_corrective_negative_controls_fired="
+        f"{third_corrective_negative_controls}"
+    )
     print(
         "second_corrective_negative_controls_fired="
         f"{second_corrective_negative_controls}"

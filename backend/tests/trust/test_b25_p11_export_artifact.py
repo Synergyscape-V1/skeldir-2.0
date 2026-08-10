@@ -18,7 +18,12 @@ from httpx import ASGITransport, AsyncClient
 from app.api import trust_export
 from app.trust.canonicalization import canonicalize_signature_material
 from app.trust.export_artifact import (
+    ACTIVE_EXPORT_ARTIFACT_PROTOCOL,
+    EXPORT_ARTIFACT_PROTOCOL_V1,
+    EXPORT_ARTIFACT_PROTOCOL_V2,
+    EXPORT_ARTIFACT_PROTOCOLS,
     EXPORT_ARTIFACT_SIGNING_DOMAIN,
+    ExportArtifactError,
     build_export_artifact,
     export_artifact_signature_material,
     sign_export_artifact,
@@ -90,6 +95,156 @@ def _signed_artifact(
         generated_at=generated_at or datetime.now(timezone.utc),
     )
     return sign_export_artifact(unsigned, key_registry=registry)
+
+
+def _historical_v1_artifact(
+    registry: TrustKeyRegistry,
+    *,
+    generated_at: datetime | None = None,
+) -> dict[str, object]:
+    """Construct a genuine pre-second-corrective (protocol v1) signed artifact.
+
+    Built through the same production framing functions that originally produced
+    such artifacts, so this is a real historical artifact rather than a
+    hand-assembled approximation of one.
+    """
+    envelope = _signed_envelope(registry)
+    unsigned = build_export_artifact(
+        envelopes=[envelope],
+        tenant_id_hash=str(envelope["tenant_id_hash"]),
+        generated_at=generated_at or datetime.now(timezone.utc),
+        protocol=EXPORT_ARTIFACT_PROTOCOL_V1,
+    )
+    return sign_export_artifact(
+        unsigned, key_registry=registry, allow_historical_protocol=True
+    )
+
+
+def test_protocol_registry_maps_each_version_tuple_to_exactly_one_algorithm() -> None:
+    """Gate P11-C3-D: version identity must be a function, not an ambiguity."""
+    tuples = list(EXPORT_ARTIFACT_PROTOCOLS)
+    assert len(tuples) == len(set(tuples)), "duplicate protocol version tuple"
+
+    # The two governed protocols must be genuinely different algorithms, not
+    # aliases; otherwise the separation is cosmetic.
+    v1 = EXPORT_ARTIFACT_PROTOCOL_V1
+    v2 = EXPORT_ARTIFACT_PROTOCOL_V2
+    assert v1.schema_version != v2.schema_version
+    assert v1.canonicalization_version != v2.canonicalization_version
+    assert v1.signing_domain != v2.signing_domain
+    assert v1.identity_bytes is not v2.identity_bytes
+    assert v1.signature_material is not v2.signature_material
+
+    # Only the active protocol may be issued.
+    assert v2.issuable is True
+    assert v1.issuable is False
+    assert ACTIVE_EXPORT_ARTIFACT_PROTOCOL is v2
+
+
+def test_historical_v1_artifact_verifies_through_its_own_protocol() -> None:
+    """Gate P11-C3-E: historical artifacts verify, not silently reinterpreted."""
+    registry = _registry()
+    historical = _historical_v1_artifact(registry)
+
+    assert historical["artifact_schema_version"] == "b25-p11-export-artifact-v1"
+    assert historical["canonicalization_version"] == "b25-p11-artifact-framing-v1"
+
+    result = verify_export_artifact(historical, key_registry=registry.public_only())
+    assert result.verification_status == "verified", result.reason_code
+    assert result.reason_code is None
+
+
+def test_current_v2_artifact_verifies_and_is_distinct_from_v1() -> None:
+    registry = _registry()
+    generated_at = datetime.now(timezone.utc)
+    current = _signed_artifact(registry, generated_at=generated_at)
+    historical = _historical_v1_artifact(registry, generated_at=generated_at)
+
+    assert current["artifact_schema_version"] == "b25-p11-export-artifact-v2"
+    assert (
+        verify_export_artifact(
+            current, key_registry=registry.public_only()
+        ).verification_status
+        == "verified"
+    )
+    # Identical content under different protocols must not collide in identity.
+    assert current["artifact_hash"] != historical["artifact_hash"]
+    assert current["signature"] != historical["signature"]
+
+
+@pytest.mark.parametrize(
+    "schema_version,canonicalization_version",
+    [
+        # New bytes under an old marker.
+        ("b25-p11-export-artifact-v1", "b25-p11-artifact-framing-v2"),
+        # Old bytes under a new marker.
+        ("b25-p11-export-artifact-v2", "b25-p11-artifact-framing-v1"),
+        # Unsupported future protocol.
+        ("b25-p11-export-artifact-v3", "b25-p11-artifact-framing-v3"),
+    ],
+)
+def test_mismatched_or_unknown_protocol_tuples_report_protocol_failure(
+    schema_version: str, canonicalization_version: str
+) -> None:
+    """An unsupported protocol must never masquerade as artifact corruption."""
+    registry = _registry()
+    artifact = copy.deepcopy(_signed_artifact(registry))
+    artifact["artifact_schema_version"] = schema_version
+    artifact["canonicalization_version"] = canonicalization_version
+
+    result = verify_export_artifact(artifact, key_registry=registry.public_only())
+    assert result.verification_status == "rejected"
+    assert result.reason_code is not None
+    assert result.reason_code.startswith("artifact_protocol_version_unsupported"), (
+        "unsupported protocol tuples must be distinguishable from ordinary "
+        f"artifact corruption, got {result.reason_code!r}"
+    )
+    assert "artifact_hash_mismatch" not in result.reason_code
+
+
+def test_historical_protocol_cannot_be_issued_by_production_paths() -> None:
+    """v1 remains verifiable but must be un-issuable without the test-only flag."""
+    registry = _registry()
+    envelope = _signed_envelope(registry)
+    unsigned = build_export_artifact(
+        envelopes=[envelope],
+        tenant_id_hash=str(envelope["tenant_id_hash"]),
+        generated_at=datetime.now(timezone.utc),
+        protocol=EXPORT_ARTIFACT_PROTOCOL_V1,
+    )
+    with pytest.raises(ExportArtifactError) as excinfo:
+        sign_export_artifact(unsigned, key_registry=registry)
+    assert "artifact_protocol_not_issuable" in str(excinfo.value)
+
+
+def test_historical_v1_artifact_rejects_tamper_and_wrong_domain() -> None:
+    """Historical verification must be real verification, not a bypass."""
+    registry = _registry()
+
+    tampered = copy.deepcopy(_historical_v1_artifact(registry))
+    tampered["generated_at"] = _utc(datetime.now(timezone.utc) + timedelta(hours=1))
+    tampered_result = verify_export_artifact(
+        tampered, key_registry=registry.public_only()
+    )
+    assert tampered_result.verification_status == "rejected"
+    assert tampered_result.reason_code == "artifact_hash_mismatch"
+
+    wrong_domain = copy.deepcopy(_historical_v1_artifact(registry))
+    wrong_domain["artifact_signing_domain"] = (
+        EXPORT_ARTIFACT_PROTOCOL_V2.signing_domain_label
+    )
+    domain_result = verify_export_artifact(
+        wrong_domain, key_registry=registry.public_only()
+    )
+    assert domain_result.verification_status == "rejected"
+    assert domain_result.reason_code == "artifact_signing_domain_mismatch"
+
+    signature_tampered = copy.deepcopy(_historical_v1_artifact(registry))
+    signature_tampered["signature"] = _signed_artifact(registry)["signature"]
+    signature_result = verify_export_artifact(
+        signature_tampered, key_registry=registry.public_only()
+    )
+    assert signature_result.verification_status == "rejected"
 
 
 def test_artifact_embeds_full_signed_lineage_and_verifies_with_public_key_only() -> (
@@ -264,12 +419,18 @@ def test_key_rotation_preserves_artifact_identity_and_rebinds_signature() -> Non
     assert old_signed["signature_hash"] != new_signed["signature_hash"]
     assert old_signed["signature"] != new_signed["signature"]
     public_registry = rotated_registry.public_only()
-    assert verify_export_artifact(
-        old_signed, key_registry=public_registry
-    ).verification_status == "verified"
-    assert verify_export_artifact(
-        new_signed, key_registry=public_registry
-    ).verification_status == "verified"
+    assert (
+        verify_export_artifact(
+            old_signed, key_registry=public_registry
+        ).verification_status
+        == "verified"
+    )
+    assert (
+        verify_export_artifact(
+            new_signed, key_registry=public_registry
+        ).verification_status
+        == "verified"
+    )
 
 
 def test_artifact_identity_uses_p2_hash_authority_without_local_json_hashing() -> None:

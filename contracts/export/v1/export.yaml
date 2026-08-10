@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 3.0.0
+  version: 4.0.0
   description: B2.5-P11 non-authoritative display exports; raw tenant_id values are forbidden.
 servers:
   - url: https://api.skeldir.com
@@ -109,6 +109,10 @@ paths:
           $ref: '../../_common/v1/components.yaml#/components/responses/TooManyRequests'
         '500':
           $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
+        '410':
+          $ref: '#/components/responses/ExportProfileRetired'
+        '413':
+          $ref: '#/components/responses/ExportLimitExceeded'
         '503':
           $ref: '#/components/responses/ExportDeadlineExceeded'
 components:
@@ -119,9 +123,25 @@ components:
       required: false
       schema:
         type: string
-        enum: [legacy-v1, b25-p11-export-csv-v2]
-        default: legacy-v1
+        enum: [b25-p11-export-csv-compat-v1, b25-p11-export-csv-v2, legacy-v1]
+        default: b25-p11-export-csv-compat-v1
+      description: >-
+        `b25-p11-export-csv-compat-v1` (default) keeps the original five legacy
+        columns at indices 0-4 and appends the authority classification at 5-6.
+        `legacy-v1` is RETIRED and returns 410; it could not satisfy P11-G4.
   responses:
+    ExportLimitExceeded:
+      description: Bounded export resource admission or egress budget exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ExportLimitError'
+    ExportProfileRetired:
+      description: Requested CSV profile is retired and can no longer be emitted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ExportProfileRetiredError'
     ExportDeadlineExceeded:
       description: Bounded export database or handler deadline exceeded
       content:
@@ -129,6 +149,41 @@ components:
           schema:
             $ref: '#/components/schemas/ExportDeadlineError'
   schemas:
+    ExportLimitError:
+      type: object
+      additionalProperties: false
+      required: [detail]
+      properties:
+        detail:
+          type: object
+          additionalProperties: false
+          required: [status, reason_code]
+          properties:
+            status: {type: string, const: refused}
+            reason_code:
+              type: string
+              enum:
+                - legacy_export_date_span_exceeded
+                - legacy_export_channel_count_exceeded
+                - legacy_export_channel_length_exceeded
+                - legacy_export_row_admission_exceeded
+                - legacy_export_byte_admission_exceeded
+                - legacy_export_row_budget_exceeded
+                - legacy_export_byte_budget_exceeded
+    ExportProfileRetiredError:
+      type: object
+      additionalProperties: false
+      required: [detail]
+      properties:
+        detail:
+          type: object
+          additionalProperties: false
+          required: [status, reason_code, retired_profile, replacement_profile]
+          properties:
+            status: {type: string, const: refused}
+            reason_code: {type: string, const: legacy_csv_profile_retired}
+            retired_profile: {type: string, enum: [legacy-v1]}
+            replacement_profile: {type: string, enum: [b25-p11-export-csv-compat-v1]}
     ExportDeadlineError:
       type: object
       additionalProperties: false

@@ -1,8 +1,57 @@
 manifest_version: b25-p2-hash-domain-manifest-v1
 schema_version: trust-envelope-schema-v1
 canonicalization_version: trust-canonical-json-v1
-export_artifact_schema_version: b25-p11-export-artifact-v1
-export_artifact_canonicalization_version: b25-p11-artifact-framing-v1
+# Active issuance protocol. Historical protocols remain verifiable and are
+# enumerated in `export_artifact_protocol_registry` below.
+export_artifact_schema_version: b25-p11-export-artifact-v2
+export_artifact_canonicalization_version: b25-p11-artifact-framing-v2
+# Every artifact protocol the repository has ever issued under, so a reviewer can
+# answer "given this artifact's version tuple, which exact algorithm verifies it"
+# without reading git history. One tuple maps to exactly one algorithm.
+export_artifact_protocol_registry:
+  - artifact_schema_version: b25-p11-export-artifact-v1
+    canonicalization_version: b25-p11-artifact-framing-v1
+    signing_domain: 'skeldir:b25-p11:export-artifact:v1\0'
+    support_status: verification_only
+    superseded_by: b25-p11-export-artifact-v2
+    rationale: >-
+      Original P11 framing. Signer metadata participates in the artifact
+      identity, so re-signing identical content under a rotated key changes
+      artifact_hash. Frozen and retained so artifacts issued under these markers
+      keep exactly one interpretation and stay verifiable.
+    artifact_hash_input_fields:
+      - artifact_schema_version
+      - canonicalization_version
+      - artifact_signing_domain
+      - generated_at
+      - tenant_id_hash
+      - signing_key_id
+      - signing_algorithm
+      - envelope_count
+      - envelopes[]
+    signature_input_bytes: signing_domain || artifact_hash
+    verification_dispatch: _artifact_identity_bytes_v1
+  - artifact_schema_version: b25-p11-export-artifact-v2
+    canonicalization_version: b25-p11-artifact-framing-v2
+    signing_domain: 'skeldir:b25-p11:export-artifact:v2\0'
+    support_status: active
+    superseded_by: null
+    rationale: >-
+      Signer-independent artifact identity. Signer metadata is excluded from the
+      artifact hash and bound in the signature material instead, so key rotation
+      preserves artifact_hash while rebinding signature_hash and signature.
+    artifact_hash_input_fields:
+      - artifact_schema_version
+      - canonicalization_version
+      - artifact_signing_domain
+      - generated_at
+      - tenant_id_hash
+      - envelope_count
+      - envelopes[]
+    signature_input_bytes: >-
+      signing_domain || frame(artifact_hash) || frame(signing_key_id) ||
+      frame(signing_algorithm)
+    verification_dispatch: _artifact_identity_bytes_v2
 domains:
   semantic_truth_v1: deterministic truth and provenance fields that define the envelope's financial-trust semantics
   signature_material_v1: issuance, audience, policy, validity, and signing-key metadata signed around semantic truth
