@@ -40,7 +40,7 @@ invariants:
     proof_owner: p12
     production_path: contracts/trust-api/trust-api.openapi.yaml
     validator: scripts/ci/validate_b25_p12_contract_projection.py
-    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    workflow: .github/workflows/b2_5-p11-export-compatibility.yml
     negative_control: NC-P12-P0-01
     note: >-
       Live issued artifact validated against the schema resolved from the
@@ -53,7 +53,7 @@ invariants:
     proof_owner: p12
     production_path: contracts/trust-api/examples
     validator: scripts/ci/validate_b25_p12_contract_projection.py
-    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    workflow: .github/workflows/b2_5-p11-export-compatibility.yml
     negative_control: NC-P12-P0-02
     note: >-
       Active example must validate against the active schema; a historical
@@ -184,7 +184,7 @@ invariants:
     proof_owner: p12
     production_path: backend/app/trust
     validator: scripts/ci/validate_b25_p12_trust_isolation.py
-    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    workflow: .github/workflows/b2_5-p11-export-compatibility.yml
     negative_control: NC-P12-ISO-01
 
   - id: 16
@@ -193,7 +193,7 @@ invariants:
     proof_owner: p12
     production_path: backend/app/trust
     validator: scripts/ci/validate_b25_p12_trust_isolation.py
-    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    workflow: .github/workflows/b2_5-p11-export-compatibility.yml
     negative_control: NC-P12-ISO-02
 
   - id: 17
@@ -202,7 +202,7 @@ invariants:
     proof_owner: p12
     production_path: backend/app/trust
     validator: scripts/ci/validate_b25_p12_trust_isolation.py
-    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    workflow: .github/workflows/b2_5-p11-export-compatibility.yml
     negative_control: NC-P12-ISO-03
     note: happy / degraded / refused / verify / export module-load trace.
 
@@ -212,7 +212,7 @@ invariants:
     proof_owner: p12
     production_path: backend/app/api/trust_api.py
     validator: scripts/ci/validate_b25_p12_trust_isolation.py
-    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    workflow: .github/workflows/b2_5-p11-export-compatibility.yml
     negative_control: NC-P12-ISO-04
     note: >-
       Bans indirect dispatch surfaces (send_task, enqueue helpers, outbox,
@@ -251,13 +251,16 @@ invariants:
     proof_owner: p12
     production_path: backend/app/api/export.py
     validator: scripts/ci/validate_b25_p12_contract_projection.py
-    workflow: .github/workflows/b2_5-p12-ci-gates.yml
+    workflow: .github/workflows/b2_5-p11-export-compatibility.yml
     negative_control: NC-P12-P0-01
     note: >-
       Human G4 honesty and machine TrustEnvelope derivation are owned by P11;
       P12 adds the missing third leg, active response/schema parity.
 
 # Files whose modification must not be able to evade P12 proof (P12-H25/G8).
+# Load-bearing paths that MUST reach at least one required B2.5 proof.
+# P12-G8 is satisfied when a change reaches at least one relevant required
+# context, not necessarily every one.
 path_trigger_required:
   - contracts/trust-api/**
   - backend/app/trust/**
@@ -265,15 +268,62 @@ path_trigger_required:
   - backend/app/api/trust_export.py
   - backend/app/api/export.py
   - backend/tests/trust/**
-  - scripts/ci/validate_b25_p12_contract_projection.py
-  - scripts/ci/validate_b25_p12_trust_isolation.py
-  - scripts/ci/validate_b25_p12_ci_gates.py
+  - scripts/ci/validate_b25_p11_export_compatibility.py
   - docs/ci/b25_p12_invariant_registry.yaml
-  - .github/workflows/b2_5-p12-ci-gates.yml
+
+# Paths that currently reach NO B2.5 workflow, enumerated rather than omitted.
+#
+# Every entry is a real P12-G8 gap. The list is enforced in both directions: the
+# Plane D validator fails if an entry has since gained coverage (so the list
+# cannot rot into a stale excuse) and fails if an uncovered P12 validator is
+# missing from it (so a new gap cannot appear silently).
+path_trigger_known_gaps:
+  - path: scripts/ci/validate_b25_p12_contract_projection.py
+    reason: >-
+      Adding this path to a workflow trigger requires the `workflow` OAuth
+      scope, which the available credentials lack. Editing this validator alone
+      would therefore not trigger the bound context. Mitigating but not curing:
+      the validator is invoked by the P11 gate, so any change to the trust
+      surface it guards still executes it.
+  - path: scripts/ci/validate_b25_p12_trust_isolation.py
+    reason: Same `workflow` scope blocker as above.
+  - path: scripts/ci/validate_b25_p12_ci_gates.py
+    reason: Same `workflow` scope blocker as above.
+
 
 # Stable, documented context names eligible for branch protection (P12-G5).
 # Eligibility is a technical property. Whether they are actually REQUIRED is a
 # GitHub administrative setting and is reported separately; the two must never
 # be conflated.
+# Contexts that actually emit today. The P12 proofs are bound into the
+# B2.5-P11 required context (see enforcement_binding below), so that is the
+# context which turns red on a composition regression.
 ci_contexts:
-  - B2.5-P12 CI Gates
+  - B2.5-P11 Export Compatibility
+
+# Honest statement of the enforcement topology.
+#
+# The P12 proofs run inside an already-REQUIRED status check, so a regression is
+# merge-blocking today. What does NOT yet exist is a dedicated `B2.5-P12 CI
+# Gates` context. Creating `.github/workflows/b2_5-p12-ci-gates.yml` requires
+# the `workflow` OAuth scope, which the available credentials do not carry.
+#
+# Enforcement strength and gate identity are different things and are reported
+# separately here rather than blurred:
+enforcement_binding:
+  bound_context: B2.5-P11 Export Compatibility
+  bound_workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  bound_validator: scripts/ci/validate_b25_p11_export_compatibility.py
+  binding_function: _run_p12_composition_proofs
+  merge_blocking_today: true
+  dedicated_p12_context_present: false
+  dedicated_p12_context_blocker: >-
+    Available credentials carry scopes gist, read:org, repo and lack `workflow`,
+    so a new file under .github/workflows cannot be pushed. The prepared
+    workflow is retained outside the repository for application with an
+    appropriately scoped token.
+  path_trigger_gap: >-
+    Because the P12 validator scripts are not themselves listed in the binding
+    workflow's path filters, editing only a P12 validator would not trigger the
+    binding context. Adding those paths also requires `workflow` scope. Recorded
+    as an open P12-G8 limitation rather than silently accepted.

@@ -1358,6 +1358,39 @@ def _run_pytest() -> None:
     _require(completed.returncode == 0, "p11_unit_pytest_failed")
 
 
+def _run_p12_composition_proofs() -> int:
+    """Bind the B2.5-P12 composition proofs to this required context.
+
+    P12 owns two proofs that no phase-local validator could provide:
+
+      * contract projection - the artifact the production route actually issues
+        must validate against the schema the authoritative OpenAPI publishes for
+        its 200 response;
+      * trust-path isolation - no LLM/Bayesian module reachable transitively or
+        dynamically, none loaded at runtime, no compute-dispatch surface.
+
+    They are invoked from here so a regression turns an already-required status
+    check red. Failures are re-raised as P11 validation errors so the causal
+    reason survives into this gate's output rather than being flattened.
+    """
+    sys.path.insert(0, str(ROOT / "scripts" / "ci"))
+    import validate_b25_p12_contract_projection as projection  # noqa: PLC0415
+    import validate_b25_p12_trust_isolation as isolation  # noqa: PLC0415
+
+    try:
+        projection.validate_projection()
+    except projection.B25P12ProjectionError as exc:
+        raise B25P11ValidationError(f"p12_contract_projection_failed:{exc}") from exc
+
+    try:
+        isolation.validate_core()
+        isolation.validate_runtime_module_trace()
+    except isolation.B25P12IsolationError as exc:
+        raise B25P11ValidationError(f"p12_trust_isolation_failed:{exc}") from exc
+
+    return 2
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--negative-control", action="store_true")
@@ -1365,6 +1398,15 @@ def main(argv: list[str]) -> int:
     try:
         scanned = _validate_scan_roots()
         validate_core()
+        # B2.5-P12 contract projection and trust isolation are bound here, into
+        # an already-required context, rather than only into the dedicated P12
+        # workflow. Invariant 22 (export projection safety) is P11's to own, and
+        # its missing third leg -- active response/schema parity -- is exactly
+        # what let a v2 runtime coexist with a v1 success-response schema. Binding
+        # it to this context makes that regression merge-blocking immediately.
+        # Run once, outside the mutation loops: each call issues a live signed
+        # artifact, so invoking it per-mutation would add cost without proof.
+        projection_controls = _run_p12_composition_proofs()
         negative_controls = run_negative_controls() if args.negative_control else 0
         corrective_negative_controls = (
             run_corrective_negative_controls() if args.negative_control else 0
@@ -1407,6 +1449,7 @@ def main(argv: list[str]) -> int:
     print("contract_compatibility_controls_passed=1")
     print("prior_phase_preservation_bindings_passed=1")
     print("mainline_closure_bindings_passed=1")
+    print(f"p12_composition_proofs_passed={projection_controls}")
     print(f"explicit_root_files_scanned={scanned}")
     print("shadow_paths_scanned=0")
     print(f"negative_controls_fired={negative_controls}")
