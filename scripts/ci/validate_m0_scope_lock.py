@@ -186,6 +186,7 @@ ALLOWED_M0_PATHS = [
     "contracts/trust-api/export-artifact.v2.yaml",
     "contracts/trust-api/examples/export_artifact_signed_valid_v2.json",
     "docs/forensics/B2.5-P12 Remediation Evidence Pack.md",
+    "docs/forensics/B2.5-P13 Remediation Evidence Pack.md",
     "scripts/contracts/error_component_registry.py",
     "api-contracts/openapi/v1/_common/error-component-registry.yaml",
     ".github/workflows/b2_5-p9-machine-identity.yml",
