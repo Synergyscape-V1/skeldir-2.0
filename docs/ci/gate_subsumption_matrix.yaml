@@ -1,3 +1,48 @@
+- gate_id: validate-b25-p12-contract-projection
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
+  job: B2.5-P12 CI Gates
+  script: scripts/ci/validate_b25_p12_contract_projection.py
+  owning_phase: B2.5-P12
+  protected_invariant: B2.5-P12 contract projection proves the artifact the production machine-export route actually emits validates with zero errors against the schema resolved from the authoritative OpenAPI 200 response, that exactly one artifact protocol is active while historical protocols remain verification-only and are never published as successful issuance, and that examples are lifecycle-classified so a historical fixture cannot masquerade as active contract proof.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: No P1-P11 gate validates a live runtime response against the schema the OpenAPI publishes; that gap is exactly how a v2 runtime coexisted with a v1 success-response schema.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p12_contract_projection.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p12_contract_projection.py --negative-control
+  risk_if_removed: Runtime issuance and the published contract could silently diverge again, and consumers would generate clients from a schema the server never satisfies.
+- gate_id: validate-b25-p12-trust-isolation
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
+  job: B2.5-P12 CI Gates
+  script: scripts/ci/validate_b25_p12_trust_isolation.py
+  owning_phase: B2.5-P12
+  protected_invariant: B2.5-P12 trust-path isolation proves no LLM or Bayesian module is transitively reachable from any trust entry point, no dynamic-import mechanism exists anywhere in the trust path, no forbidden module loads at runtime across success, verification, export and refusal paths, and no compute-dispatch surface is reachable from a trust read.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P5 established builder isolation but does not walk a transitive first-party import graph from every trust entry point, ban dynamic imports, trace runtime module loading across refusal paths, or ban indirect dispatch surfaces.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p12_trust_isolation.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p12_trust_isolation.py --negative-control
+  risk_if_removed: An LLM or compute path could re-enter the deterministic trust surface through a helper import, a dynamic import, or a generic enqueue helper without any gate noticing.
+- gate_id: validate-b25-p12-ci-gates
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
+  job: B2.5-P12 CI Gates
+  script: scripts/ci/validate_b25_p12_ci_gates.py
+  owning_phase: B2.5-P12
+  protected_invariant: B2.5-P12 converts B2.5 from code into enforced system physics by proving what the machine export route actually emits validates against the schema the authoritative OpenAPI publishes for its 200 response, that exactly one artifact protocol is active while historical protocols stay verification-only, that examples are lifecycle-classified, that no LLM/Bayesian module is transitively or dynamically reachable from the trust surface, that no forbidden module loads at runtime across success/verify/export/refusal paths, that no compute-dispatch surface is reachable from a trust read, and that all 22 required B2.5 CI domains have an existing, invoked, negative-controlled proof whose execution cannot be evaded by path filters or masked by continue-on-error.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1-P11 each prove their own unit in isolation. None proves composition - that the artifact the production route emits validates against the schema the contract publishes - which is exactly how a v2 runtime coexisted with a v1 success-response schema through eleven green phase gates. None proves CI non-vacuity either.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p12_ci_gates.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p12_ci_gates.py --negative-control
+  risk_if_removed: Runtime and published contract could silently diverge again, an LLM or compute-dispatch path could re-enter the trust surface, or a load-bearing proof could be skipped, masked or path-filtered away while CI stayed green.
 - gate_id: validate-b25-p8-signing-verification
   workflow: .github/workflows/b2_5-p8-signing-verification.yml
   job: B2.5-P8 Signing Verification

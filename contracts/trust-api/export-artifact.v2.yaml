@@ -1,0 +1,82 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://schemas.skeldir.local/trust-api/export-artifact.v2.yaml
+title: B2.5-P11 Signed Match-Verdict Export Artifact (active issuance protocol v2)
+description: >-
+  Authoritative response schema for the artifact that
+  POST /api/trust/v1/exports/match-verdicts actually issues.
+
+  Protocol v2 is the ACTIVE issuance protocol. Its artifact identity is
+  signer-independent: signing_key_id and signing_algorithm are excluded from the
+  artifact hash and bound in the signature material instead, so re-signing
+  identical content under a rotated key leaves artifact_hash stable while
+  signature_hash and signature change.
+
+  Protocol v1 (export-artifact.v1.yaml) is VERIFICATION-ONLY. It remains a
+  governed schema so historical artifacts keep exactly one interpretation, but
+  production never issues it and it must not be published as a successful
+  issuance response. See export_artifact_protocol_registry in
+  hash-domain-manifest.v1.yaml for the authoritative version->algorithm mapping.
+x-skeldir-protocol-lifecycle: active_issuance
+type: object
+additionalProperties: false
+required:
+  - artifact_schema_version
+  - canonicalization_version
+  - artifact_signing_domain
+  - envelopes
+  - artifact_hash
+  - signature_hash
+  - signature
+  - signing_key_id
+  - signing_algorithm
+  - generated_at
+  - tenant_id_hash
+properties:
+  artifact_schema_version:
+    type: string
+    const: b25-p11-export-artifact-v2
+  canonicalization_version:
+    type: string
+    const: b25-p11-artifact-framing-v2
+  artifact_signing_domain:
+    type: string
+    const: "skeldir:b25-p11:export-artifact:v2\\0"
+  envelopes:
+    type: array
+    minItems: 1
+    maxItems: 2
+    items:
+      $ref: trust-envelope.v1.yaml
+  artifact_hash:
+    type: string
+    pattern: ^sha256:[0-9a-f]{64}$
+    description: >-
+      Signer-independent artifact identity under v2. Covers schema/canonicalization
+      versions, signing domain, generated_at, tenant_id_hash, envelope_count and
+      the ordered canonical envelopes; it does NOT cover signing_key_id or
+      signing_algorithm.
+  signature_hash:
+    type: string
+    pattern: ^sha256:[0-9a-f]{64}$
+    description: >-
+      SHA-256 identity of the canonical domain-separated bytes covered by the
+      artifact signature. Under v2 this material binds artifact_hash together with
+      signing_key_id and signing_algorithm; never an alias of artifact_hash or a
+      hash of signature text.
+  signature:
+    type: string
+    pattern: ^ed25519:[A-Za-z0-9_-]+$
+    minLength: 16
+    maxLength: 2048
+  signing_key_id:
+    type: string
+    pattern: ^kid:[A-Za-z0-9._:-]{8,128}$
+  signing_algorithm:
+    type: string
+    const: ed25519
+  generated_at:
+    type: string
+    pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$
+  tenant_id_hash:
+    type: string
+    pattern: ^sha256:[0-9a-f]{64}$

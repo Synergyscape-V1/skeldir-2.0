@@ -1,6 +1,18 @@
 $schema: https://json-schema.org/draft/2020-12/schema
 $id: https://schemas.skeldir.local/trust-api/export-artifact.v1.yaml
-title: B2.5-P11 Signed Match-Verdict Export Artifact
+title: B2.5-P11 Signed Match-Verdict Export Artifact (historical protocol v1, verification-only)
+description: >-
+  VERIFICATION-ONLY. Protocol v1 is the original export-artifact framing, in
+  which signing_key_id and signing_algorithm participate in the artifact hash.
+
+  Production no longer issues v1. This schema is retained so artifacts signed
+  under the original markers keep exactly one interpretation and remain
+  verifiable, and it must NOT be published as a successful issuance response.
+  The active issuance response schema is export-artifact.v2.yaml.
+
+  Authoritative version->algorithm mapping lives in
+  export_artifact_protocol_registry in hash-domain-manifest.v1.yaml.
+x-skeldir-protocol-lifecycle: verification_only
 type: object
 additionalProperties: false
 required:

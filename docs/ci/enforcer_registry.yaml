@@ -1,4 +1,73 @@
-﻿- id: validate-b25-p8-signing-verification
+﻿- id: validate-b25-p12-contract-projection
+  path: scripts/ci/validate_b25_p12_contract_projection.py
+  status: required
+  owning_phase: B2.5-P12
+  protected_invariant: B2.5-P12 contract projection proves the artifact the production machine-export route actually emits validates with zero errors against the schema resolved from the authoritative OpenAPI 200 response, that exactly one artifact protocol is active while historical protocols remain verification-only and are never published as successful issuance, and that examples are lifecycle-classified so a historical fixture cannot masquerade as active contract proof.
+  command: python scripts/ci/validate_b25_p12_contract_projection.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p12-ci-gates.yml
+  workflow_job_name: B2.5-P12 CI Gates
+  local_reproduction_command: python scripts/ci/validate_b25_p12_contract_projection.py --negative-control
+  expected_failure_meaning: The runtime issuance protocol diverged from the published success-response schema, a historical protocol was advertised as active issuance, or an example lost its lifecycle classification.
+  first_diagnostic_command: python scripts/ci/validate_b25_p12_contract_projection.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: workflow_job
+  default_execution: true
+  execution_cohort: b2-5-p12-ci-gates
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P12 Remediation Evidence Pack.md
+- id: validate-b25-p12-trust-isolation
+  path: scripts/ci/validate_b25_p12_trust_isolation.py
+  status: required
+  owning_phase: B2.5-P12
+  protected_invariant: B2.5-P12 trust-path isolation proves no LLM or Bayesian module is transitively reachable from any trust entry point, no dynamic-import mechanism exists anywhere in the trust path, no forbidden module loads at runtime across success, verification, export and refusal paths, and no compute-dispatch surface is reachable from a trust read.
+  command: python scripts/ci/validate_b25_p12_trust_isolation.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p12-ci-gates.yml
+  workflow_job_name: B2.5-P12 CI Gates
+  local_reproduction_command: python scripts/ci/validate_b25_p12_trust_isolation.py --negative-control
+  expected_failure_meaning: An LLM/Bayesian module became transitively or dynamically reachable from the trust surface, a forbidden module loaded during a runtime trust path, or a compute-dispatch surface re-entered the trust path.
+  first_diagnostic_command: python scripts/ci/validate_b25_p12_trust_isolation.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: workflow_job
+  default_execution: true
+  execution_cohort: b2-5-p12-ci-gates
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P12 Remediation Evidence Pack.md
+- id: validate-b25-p12-ci-gates
+  path: scripts/ci/validate_b25_p12_ci_gates.py
+  status: required
+  owning_phase: B2.5-P12
+  protected_invariant: B2.5-P12 converts B2.5 from code into enforced system physics by proving what the machine export route actually emits validates against the schema the authoritative OpenAPI publishes for its 200 response, that exactly one artifact protocol is active while historical protocols stay verification-only, that examples are lifecycle-classified, that no LLM/Bayesian module is transitively or dynamically reachable from the trust surface, that no forbidden module loads at runtime across success/verify/export/refusal paths, that no compute-dispatch surface is reachable from a trust read, and that all 22 required B2.5 CI domains have an existing, invoked, negative-controlled proof whose execution cannot be evaded by path filters or masked by continue-on-error.
+  command: python scripts/ci/validate_b25_p12_ci_gates.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p12-ci-gates.yml
+  workflow_job_name: B2.5-P12 CI Gates
+  local_reproduction_command: python scripts/ci/validate_b25_p12_ci_gates.py --negative-control
+  expected_failure_meaning: A required B2.5 invariant lost its proof binding, a load-bearing trust path stopped triggering P12, a P12 gate stopped requesting negative controls, a B2.5 workflow reintroduced failure masking, or the runtime issuance protocol diverged from the published success-response schema.
+  first_diagnostic_command: python scripts/ci/validate_b25_p12_contract_projection.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: workflow_job
+  default_execution: true
+  execution_cohort: b2-5-p12-ci-gates
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P12 Remediation Evidence Pack.md
+- id: validate-b25-p8-signing-verification
   path: scripts/ci/validate_b25_p8_signing_verification.py
   status: required
   owning_phase: B2.5-P8
