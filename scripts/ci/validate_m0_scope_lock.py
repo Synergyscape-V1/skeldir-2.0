@@ -177,6 +177,8 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/validate_b25_p10_trust_api_surface.py",
     "scripts/ci/validate_b25_p11_export_compatibility.py",
     "scripts/contracts/check_error_model.py",
+    "scripts/contracts/error_component_registry.py",
+    "api-contracts/openapi/v1/_common/error-component-registry.yaml",
     ".github/workflows/b2_5-p9-machine-identity.yml",
     ".github/workflows/b2_5-p10-trust-api-surface.yml",
     ".github/workflows/b2_5-p11-export-compatibility.yml",
