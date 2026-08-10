@@ -34,6 +34,14 @@
 # `scripts/contracts/error_component_registry.py` is the single implementation;
 # do not recompute fingerprints by hand.
 
+info:
+  title: Skeldir Governed Shared Error-Component Registry
+  version: 1.0.0
+  description: >-
+    Registry of shared error components whose provenance the repository-wide
+    error-model gate verifies mechanically. Versioned alongside the other
+    `_common` contract fragments.
+
 registry_version: b25-p11-error-component-registry-v1
 
 components:
