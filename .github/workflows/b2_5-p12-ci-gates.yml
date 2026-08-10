@@ -17,19 +17,12 @@ name: B2.5-P12 CI Gates
 # here makes CI red rather than silently skipping the gate.
 
 on:
+  # Deliberately NOT path-filtered. This context is a REQUIRED status check;
+  # a required check that is path-filtered never reports on a PR outside its
+  # paths, and GitHub blocks that PR forever waiting for a result that cannot
+  # arrive. The push trigger below keeps its paths, which is what Plane D
+  # reads for path-trigger integrity.
   pull_request:
-    paths:
-      - 'contracts/trust-api/**'
-      - 'backend/app/trust/**'
-      - 'backend/app/api/trust_api.py'
-      - 'backend/app/api/trust_export.py'
-      - 'backend/app/api/export.py'
-      - 'backend/tests/trust/**'
-      - 'scripts/ci/validate_b25_p12_contract_projection.py'
-      - 'scripts/ci/validate_b25_p12_trust_isolation.py'
-      - 'scripts/ci/validate_b25_p12_ci_gates.py'
-      - 'docs/ci/b25_p12_invariant_registry.yaml'
-      - '.github/workflows/b2_5-p12-ci-gates.yml'
   push:
     branches:
       - main
