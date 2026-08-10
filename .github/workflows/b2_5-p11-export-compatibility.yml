@@ -1,29 +1,12 @@
 name: B2.5-P11 Export Compatibility
 
 on:
+  # Deliberately NOT path-filtered. This context is a REQUIRED status check.
+  # A required check that is path-filtered never reports on a PR outside its
+  # paths, and GitHub blocks that PR forever waiting for a status that cannot
+  # arrive. The push trigger keeps its paths, which is what the P12 meta-layer
+  # reads for path-trigger integrity.
   pull_request:
-    paths:
-      - "alembic/versions/007_skeldir_foundation/*b25_p11*"
-      - "api-contracts/openapi/v1/export.yaml"
-      - "api-contracts/dist/openapi/v1/export.bundled.yaml"
-      - "backend/app/api/export.py"
-      - "backend/app/api/trust_export.py"
-      - "backend/app/main.py"
-      - "backend/app/config/contract_scope.yaml"
-      - "backend/app/trust/**"
-      - "backend/requirements*.txt"
-      - "backend/tests/trust/**"
-      - "backend/tests/integration/test_b14_p5_export_log_artifact_no_leak_runtime.py"
-      - "contracts/export/**"
-      - "contracts/trust-api/**"
-      - "scripts/ci/validate_b25_p11_export_compatibility.py"
-      - "scripts/ci/validate_b25_p9_machine_identity.py"
-      - "scripts/ci/validate_b25_p1_trust_drift.py"
-      - ".github/workflows/b2_5-p11-export-compatibility.yml"
-      - "Makefile"
-      - "docs/ci/**"
-      - "docs/forensics/**"
-      - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
   push:
     branches:
       - main

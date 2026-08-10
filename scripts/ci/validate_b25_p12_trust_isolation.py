@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -113,9 +115,15 @@ def _first_party_imports(source: str, module: str) -> set[str]:
                 target = f"{base}.{node.module}" if node.module else base
             else:
                 target = node.module or ""
-            if not target.startswith("app."):
+            # `from app import llm` has module == "app", so a `startswith("app.")`
+            # guard drops it and the forbidden `app.llm` dependency never enters
+            # the graph. The bare first-party package must be admitted, because
+            # its aliases are submodules. Only dotted targets are themselves
+            # dependencies; "app" alone is a namespace, not an import.
+            if target != "app" and not target.startswith("app."):
                 continue
-            imported.add(target)
+            if target.startswith("app."):
+                imported.add(target)
             for alias in node.names:
                 imported.add(f"{target}.{alias.name}")
     return imported
@@ -238,117 +246,45 @@ def validate_no_compute_dispatch(overrides: dict[Path, str] | None = None) -> in
 def validate_runtime_module_trace() -> int:
     """Domain 17: no forbidden module loads while exercising trust paths.
 
-    Covers success, refusal and verification paths rather than the happy path
-    alone, because a module can stay unimported until an error branch runs.
+    Delegated to a fresh interpreter (``_b25_p12_runtime_trace.py``) because an
+    in-process trace cannot observe import-time dependencies: it must import the
+    modules under observation before it can take a ``sys.modules`` baseline, so
+    anything pulled in at import time is already resident and gets subtracted
+    away. That defect was reproduced -- a trust module importing ``app.llm`` at
+    import time left the old trace green while the module was demonstrably
+    loaded. A subprocess makes the baseline genuinely precede every first-party
+    import, so import-time and lazy loads are both observable.
     """
-    sys.path.insert(0, str(BACKEND))
-    for name in list(sys.modules):
-        for prefix in FORBIDDEN_MODULE_PREFIXES:
-            if name == prefix or name.startswith(prefix + "."):
-                del sys.modules[name]
-
-    import hashlib  # noqa: PLC0415
-    import json  # noqa: PLC0415
-    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
-
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: PLC0415
-        Ed25519PrivateKey,
-    )
-
-    from app.trust.export_artifact import (  # noqa: PLC0415
-        build_export_artifact,
-        sign_export_artifact,
-        verify_export_artifact,
-    )
-    from app.trust.key_registry import (
-        TrustKeyRegistry,
-        TrustSigningKey,
-    )  # noqa: PLC0415
-    from app.trust.signing import sign_trust_envelope  # noqa: PLC0415
-    from app.trust.verification import verify_trust_envelope  # noqa: PLC0415
-
-    before = set(sys.modules)
-    private = Ed25519PrivateKey.from_private_bytes(
-        hashlib.sha256(b"b25-p12-runtime-trace").digest()
-    )
-    registry = TrustKeyRegistry(
-        (
-            TrustSigningKey(
-                kid="kid:b25-p12-runtime-trace",
-                algorithm="ed25519",
-                public_key=private.public_key(),
-                private_key=private,
-                state="active",
-                valid_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            ),
-        )
-    )
-
-    def _utc(value: datetime) -> str:
-        return (
-            value.astimezone(timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
-
-    issued = datetime.now(timezone.utc)
-    envelope = json.loads(
-        (
-            ROOT / "contracts/trust-api/examples/deterministic_only_verified.json"
-        ).read_text(encoding="utf-8")
-    )
-    envelope["created_at"] = _utc(issued)
-    envelope["valid_until"] = _utc(issued + timedelta(days=1))
-
-    paths_exercised = 0
-
-    # happy: sign an envelope
-    signed = sign_trust_envelope(envelope, key_registry=registry)
-    paths_exercised += 1
-
-    # verify path
-    verify_trust_envelope(signed, key_registry=registry.public_only())
-    paths_exercised += 1
-
-    # export issuance path
-    artifact = sign_export_artifact(
-        build_export_artifact(
-            envelopes=[signed],
-            tenant_id_hash=str(signed["tenant_id_hash"]),
-            generated_at=issued,
-        ),
-        key_registry=registry,
-    )
-    paths_exercised += 1
-
-    # refusal / rejection path: tampered artifact must be rejected, and the
-    # rejection branch must not pull in a forbidden module either.
-    tampered = dict(artifact)
-    tampered["generated_at"] = _utc(issued + timedelta(hours=1))
-    result = verify_export_artifact(tampered, key_registry=registry.public_only())
+    result = _run_runtime_trace()
     _require(
-        result.verification_status == "rejected", "runtime_trace_tamper_not_rejected"
+        not result.get("error"),
+        f"runtime_trace_failed:{result.get('error')}",
     )
-    paths_exercised += 1
+    loaded = result.get("forbidden_modules_loaded") or []
+    if loaded:
+        raise B25P12IsolationError(
+            f"forbidden_module_loaded_at_runtime:{','.join(loaded)}"
+        )
+    return len(result.get("executed_paths") or [])
 
-    # unsupported-protocol refusal path
-    unsupported = dict(artifact)
-    unsupported["artifact_schema_version"] = "b25-p11-export-artifact-v9"
-    unsupported["canonicalization_version"] = "b25-p11-artifact-framing-v9"
-    refused = verify_export_artifact(unsupported, key_registry=registry.public_only())
-    _require(
-        refused.verification_status == "rejected",
-        "runtime_trace_unsupported_protocol_not_rejected",
+
+def _run_runtime_trace() -> dict:
+    """Execute the trace in a clean interpreter and return its JSON report."""
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/ci/_b25_p12_runtime_trace.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
     )
-    paths_exercised += 1
-
-    newly_loaded = set(sys.modules) - before
-    for name in sorted(newly_loaded):
-        for prefix in FORBIDDEN_MODULE_PREFIXES:
-            if name == prefix or name.startswith(prefix + "."):
-                raise B25P12IsolationError(f"forbidden_module_loaded_at_runtime:{name}")
-    return paths_exercised
+    stdout = (proc.stdout or "").strip()
+    if not stdout:
+        raise B25P12IsolationError(
+            f"runtime_trace_no_output:rc={proc.returncode}:{(proc.stderr or '')[-300:]}"
+        )
+    try:
+        return json.loads(stdout.splitlines()[-1])
+    except json.JSONDecodeError as exc:
+        raise B25P12IsolationError(f"runtime_trace_bad_output:{exc}") from exc
 
 
 def validate_core(overrides: dict[Path, str] | None = None) -> dict[str, int]:
@@ -411,6 +347,66 @@ def run_negative_controls() -> int:
             fired += 1
             continue
         raise B25P12IsolationError(f"negative_control_silent:{name}")
+
+    fired += _run_iso_03_runtime_control()
+    return fired
+
+
+def _run_iso_03_runtime_control() -> int:
+    """NC-P12-ISO-03: a forbidden module actually loading at trust runtime.
+
+    This control could not previously exist. Every other isolation control is a
+    *text override* evaluated by the static analyzers, and a text override cannot
+    make a module load -- only real code on disk can. Domain 17 therefore named a
+    control (``NC-P12-ISO-03``) that had no mechanism to be implemented in, and
+    Plane D reported registry completeness anyway because it only checked that
+    the identifier string was non-empty.
+
+    The mutation is written to disk so the fresh-interpreter trace genuinely
+    imports it, then restored unconditionally. It is placed after the
+    ``__future__`` import so the module stays syntactically valid: a control that
+    fires on SyntaxError proves the file stopped parsing, not that the invariant
+    was detected.
+
+    This is a *distinct defense* from the AST scan. An AST rejection proves a
+    forbidden spelling was written; this proves a forbidden module was loaded.
+    The directive is explicit that the two are not interchangeable.
+    """
+    module = "app.trust.export_artifact"
+    path = _module_path(module)
+    _require(path is not None, f"negative_control_module_missing:{module}")
+    # Byte-exact round trip: a control that leaves the tree perturbed (even
+    # only in line endings) is a control that edits the repository it is
+    # supposed to observe.
+    original_bytes = path.read_bytes()
+    try:
+        lines = original_bytes.decode("utf-8").splitlines(True)
+        index = next(
+            (n for n, line in enumerate(lines) if line.startswith("from __future__")),
+            -1,
+        )
+        lines.insert(index + 1, "import app.llm  # NC-P12-ISO-03 runtime falsifier\n")
+        mutated = "".join(lines)
+        ast.parse(mutated)  # the mutation must be valid Python, not a crash
+        path.write_bytes(mutated.encode("utf-8"))
+
+        result = _run_runtime_trace()
+        loaded = result.get("forbidden_modules_loaded") or []
+        _require(
+            bool(loaded),
+            "negative_control_silent:NC-P12-ISO-03",
+        )
+        _require(
+            any(m == "app.llm" or m.startswith("app.llm.") for m in loaded),
+            f"negative_control_wrong_reason:NC-P12-ISO-03:observed={loaded}",
+        )
+        _require(
+            bool(result.get("executed_paths")),
+            "negative_control_did_not_execute_paths:NC-P12-ISO-03",
+        )
+    finally:
+        path.write_bytes(original_bytes)
+    return 1
     return fired
 
 
@@ -426,7 +422,12 @@ def main(argv: list[str]) -> int:
         runtime_paths = validate_runtime_module_trace()
         negative_controls = run_negative_controls() if args.negative_control else 0
         if args.negative_control:
-            _require(negative_controls == 3, "isolation_negative_control_count_drift")
+            # Four: ISO-01/02/04 are static-analysis falsifiers driven by text
+            # overrides; ISO-03 is the runtime falsifier, which requires real
+            # on-disk mutation and a fresh interpreter. The count is asserted
+            # exactly so a silently deleted control is a failure rather than a
+            # smaller number nobody reads.
+            _require(negative_controls == 4, "isolation_negative_control_count_drift")
     except B25P12IsolationError as exc:
         print(f"B25_P12_TRUST_ISOLATION_VALIDATION_FAIL:{exc}")
         return 1

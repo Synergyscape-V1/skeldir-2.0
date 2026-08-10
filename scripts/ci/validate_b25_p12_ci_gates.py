@@ -36,14 +36,14 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = Path("docs/ci/b25_p12_invariant_registry.yaml")
-# The P12 proofs are bound into the B2.5-P11 required context rather than a
-# dedicated P12 workflow. Reason recorded honestly: creating
-# `.github/workflows/b2_5-p12-ci-gates.yml` requires the `workflow` OAuth scope,
-# which the available credentials do not carry. Binding here is not a weaker
-# outcome for enforcement -- `B2.5-P11 Export Compatibility` is already a
-# required status check on protected main, so a composition regression is
-# merge-blocking today. It IS a weaker outcome for gate identity: there is no
-# separate P12 context yet. That distinction is reported, never blurred.
+# The P12 proofs run in BOTH the dedicated `B2.5-P12 CI Gates` context and,
+# retained deliberately, the `B2.5-P11 Export Compatibility` context. Both are
+# required status checks on protected main, so a composition regression is
+# merge-blocking on two independent gates rather than one. The earlier comment
+# here described a period when the dedicated workflow could not be created for
+# lack of the `workflow` OAuth scope; that is no longer true and the stale text
+# is removed rather than left to mislead a reader into thinking gate identity is
+# still missing.
 BINDING_WORKFLOW = Path(".github/workflows/b2_5-p11-export-compatibility.yml")
 BINDING_VALIDATOR = Path("scripts/ci/validate_b25_p11_export_compatibility.py")
 DEDICATED_WORKFLOW = Path(".github/workflows/b2_5-p12-ci-gates.yml")
@@ -82,6 +82,78 @@ def _yaml(path: Path, overrides: dict[Path, str] | None = None) -> Any:
     return yaml.safe_load(_text(path, overrides))
 
 
+def _resolve_negative_control(ident: object, row: dict) -> None:
+    """Prove an invariant's negative control resolves to something executable.
+
+    This check previously read::
+
+        _require(bool(row.get("negative_control")), ...)
+
+    which is satisfied by any non-empty string. Every *other* reference in this
+    loop -- validator, workflow, production_path -- is resolved against disk;
+    the control alone was checked for truthiness. Two consequences were
+    reproduced against protected main:
+
+    * fifteen of twenty-two controls were free-text prose ("p2 ordering/
+      permutation mutations"), which can never resolve because it is not the
+      name of anything;
+    * substituting the invented identifier ``NC-P12-DOES-NOT-EXIST`` left Plane D
+      passing with ``registry_completeness_controls_passed=22``.
+
+    A control is now resolved by class, and each class is verified differently
+    rather than uniformly asserted:
+
+    ``source_identifier``
+        The identifier must literally occur in the named validator's source, so
+        the registry row is bound to code rather than to a label.
+    ``validator_control_mode``
+        The named validator must expose an executable ``--negative-control``
+        mode. Granularity is mode-level: this proves the validator has firing
+        falsifiers, NOT that one control maps to one domain. The registry records
+        that limit instead of implying per-control precision it does not have.
+    ``drift_check``
+        A regeneration/diff falsifier, which has a command rather than a mode.
+    """
+    control = row.get("negative_control")
+    _require(isinstance(control, dict), f"invariant_control_not_structured:{ident}")
+    control_id = control.get("id")
+    _require(
+        isinstance(control_id, str) and control_id.startswith("NC-"),
+        f"invariant_control_missing_id:{ident}:{control_id}",
+    )
+    resolution = control.get("resolution")
+    _require(
+        resolution in {"source_identifier", "validator_control_mode", "drift_check"},
+        f"invariant_control_unknown_resolution:{ident}:{resolution}",
+    )
+    target = control.get("resolves_in")
+    _require(
+        isinstance(target, str) and (ROOT / target).exists(),
+        f"invariant_control_target_missing:{ident}:{target}",
+    )
+    source = (ROOT / target).read_text(encoding="utf-8", errors="replace")
+
+    if resolution == "source_identifier":
+        _require(
+            control_id in source,
+            f"invariant_control_not_executable:{ident}:{control_id}:absent_from:{target}",
+        )
+    elif resolution == "validator_control_mode":
+        _require(
+            "--negative-control" in source,
+            f"invariant_control_mode_missing:{ident}:{target}",
+        )
+        _require(
+            control.get("granularity") == "mode_level",
+            f"invariant_control_granularity_overclaimed:{ident}",
+        )
+    else:
+        _require(
+            bool(control.get("falsifier_command")),
+            f"invariant_control_missing_falsifier_command:{ident}",
+        )
+
+
 def validate_registry_completeness(
     overrides: dict[Path, str] | None = None,
 ) -> int:
@@ -111,9 +183,7 @@ def validate_registry_completeness(
             row.get("proof_owner") in {"p12", "inherited"},
             f"invariant_missing_proof_owner:{ident}",
         )
-        _require(
-            bool(row.get("negative_control")), f"invariant_missing_control:{ident}"
-        )
+        _resolve_negative_control(ident, row)
 
         validator = row.get("validator")
         _require(
@@ -419,8 +489,8 @@ def run_negative_controls() -> int:
             "NC-P12-CI-03",
             _mutate(
                 REGISTRY,
-                "    validator: scripts/ci/validate_b25_p10_trust_api_surface.py",
-                "    validator: scripts/ci/validate_b25_p10_does_not_exist.py",
+                "  validator: scripts/ci/validate_b25_p10_trust_api_surface.py",
+                "  validator: scripts/ci/validate_b25_p10_does_not_exist.py",
             ),
             "invariant_validator_missing_on_disk",
         ),
