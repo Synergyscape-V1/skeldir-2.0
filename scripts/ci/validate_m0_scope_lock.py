@@ -177,6 +177,7 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/validate_b25_p10_trust_api_surface.py",
     "scripts/ci/validate_b25_p11_export_compatibility.py",
     "scripts/contracts/check_error_model.py",
+    ".github/workflows/b2_5-p12-ci-gates.yml",
     "scripts/ci/validate_b25_p12_contract_projection.py",
     "scripts/ci/validate_b25_p12_trust_isolation.py",
     "scripts/ci/validate_b25_p12_ci_gates.py",

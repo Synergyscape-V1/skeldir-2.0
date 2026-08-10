@@ -358,42 +358,49 @@ def _mutate(path: Path, old: str, new: str) -> dict[Path, str]:
     return {path: source.replace(old, new, 1)}
 
 
-def _mutate_workflow_paths_remove(path: Path, target: str) -> dict[Path, str]:
-    """Structured YAML mutation: drop a trigger path from every event.
+def _mutate_workflow_paths_remove(target: str) -> dict[Path, str]:
+    """Structured YAML mutation: drop a trigger path from EVERY B2.5 workflow.
 
-    The same path legitimately appears under both ``pull_request`` and ``push``,
-    so a text anchor is ambiguous by construction. Mutating the parsed document
-    removes it from all events at once and proves the intended structure changed
-    rather than an arbitrary matching line.
+    Removing it from a single workflow is not a falsifier: several workflows
+    declare the same load-bearing paths, so coverage survives and the control
+    goes silent. That happened twice while building this gate. The invariant
+    under test is "this path reaches at least one required proof", so the
+    mutation must remove every route to it.
+
+    Mutating the parsed document rather than matching text also avoids the
+    ambiguity of a path that legitimately appears under both `pull_request` and
+    `push` (P12-H23).
     """
-    document = yaml.safe_load(_text(path))
-    triggers = document.get("on") or document.get(True) or {}
-    removed = 0
-    for event in ("pull_request", "push"):
-        spec = triggers.get(event) or {}
-        paths = spec.get("paths") or []
-        if target in paths:
-            spec["paths"] = [entry for entry in paths if entry != target]
-            removed += 1
+    overrides: dict[Path, str] = {}
+    removed_total = 0
+    for path in sorted((ROOT / ".github/workflows").glob("b2_5-*.yml")):
+        relative = path.relative_to(ROOT)
+        document = yaml.safe_load(_text(relative))
+        triggers = document.get("on") or document.get(True) or {}
+        removed_here = 0
+        for event in ("pull_request", "push"):
+            spec = triggers.get(event) or {}
+            paths = spec.get("paths") or []
+            if target in paths:
+                spec["paths"] = [entry for entry in paths if entry != target]
+                removed_here += 1
+        if removed_here:
+            overrides[relative] = yaml.safe_dump(document, sort_keys=False)
+            removed_total += removed_here
     _require(
-        removed > 0,
-        f"negative_control_path_not_present:{path.name}:{target}",
+        removed_total > 0,
+        f"negative_control_path_not_present_in_any_workflow:{target}",
     )
-    return {path: yaml.safe_dump(document, sort_keys=False)}
+    return overrides
 
 
 def run_negative_controls() -> int:
     """Semantic falsifiers for the enforcement topology itself."""
     controls: tuple[tuple[str, dict[Path, str], str], ...] = (
         (
-            # A load-bearing path loses its ONLY covering workflow. Anchored to
-            # backend/app/api/export.py because the binding workflow is its sole
-            # coverage: removing a path that several workflows also declare
-            # would leave coverage intact and the control would prove nothing.
+            # A load-bearing path loses coverage across every B2.5 workflow.
             "NC-P12-CI-01",
-            _mutate_workflow_paths_remove(
-                BINDING_WORKFLOW, "backend/app/api/export.py"
-            ),
+            _mutate_workflow_paths_remove("backend/app/api/export.py"),
             "load_bearing_path_not_triggering_p12",
         ),
         (
