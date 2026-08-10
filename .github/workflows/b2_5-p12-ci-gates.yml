@@ -112,7 +112,7 @@ jobs:
           grep -E "^path_trigger_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
           grep -E "^failure_masking_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
           grep -E "^gate_invocation_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
-          grep -E "^context_stability_controls_passed=1$" /tmp/b25_p12_gates.out
+          grep -E "^context_stability_controls_passed=2$" /tmp/b25_p12_gates.out
           grep -E "^path_trigger_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
           grep -E "^failure_masking_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
           grep -E "^ci_gate_negative_controls_fired=5$" /tmp/b25_p12_gates.out
