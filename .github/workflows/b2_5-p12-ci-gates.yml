@@ -91,7 +91,7 @@ jobs:
           grep -E "^no_llm_reachability_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_isolation.out
           grep -E "^dynamic_import_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_isolation.out
           grep -E "^compute_dispatch_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_isolation.out
-          grep -E "^runtime_trace_paths_exercised=5$" /tmp/b25_p12_isolation.out
+          grep -E "^runtime_trace_paths_exercised=7$" /tmp/b25_p12_isolation.out
           grep -E "^isolation_negative_controls_fired=4$" /tmp/b25_p12_isolation.out
 
       # The fresh-interpreter trace is also invoked directly, not only as a
@@ -109,7 +109,7 @@ jobs:
           assert not report["forbidden_modules_loaded"], (
               f"forbidden modules resident after trust paths: {report['forbidden_modules_loaded']}"
           )
-          assert len(report["executed_paths"]) == 5, report["executed_paths"]
+          assert len(report["executed_paths"]) == 7, report["executed_paths"]
           print("runtime_trace_forbidden_modules_loaded=0")
           print(f"runtime_trace_executed_paths={len(report['executed_paths'])}")
           PY
@@ -126,9 +126,9 @@ jobs:
           grep -E "^failure_masking_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
           grep -E "^gate_invocation_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
           grep -E "^context_stability_controls_passed=2$" /tmp/b25_p12_gates.out
-          grep -E "^path_trigger_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
-          grep -E "^failure_masking_controls_passed=[1-9][0-9]*$" /tmp/b25_p12_gates.out
-          grep -E "^ci_gate_negative_controls_fired=5$" /tmp/b25_p12_gates.out
+          grep -E "^inherited_binding_controls_passed=22$" /tmp/b25_p12_gates.out
+          grep -E "^detector_self_protection_controls_passed=22$" /tmp/b25_p12_gates.out
+          grep -E "^ci_gate_negative_controls_fired=7$" /tmp/b25_p12_gates.out
 
       # P12-G9: P12 enforces architecture; it must not redefine it. The inherited
       # contract/drift gates must still hold with the v2 schema in place.
