@@ -151,6 +151,36 @@ jobs:
           print("p13_manifest_integrity=ok")
           PY
 
+      # NC-P13-15: a failing P13 proof must not be able to leave this workflow
+      # green. Previously recorded as "structurally covered", which was an
+      # assertion about this file rather than a proof of it. Now checked: every
+      # counter assertion must be anchored (^...$) and pinned to a literal value.
+      # A grep like "^p13_executed_cases=[0-9]*$" would match a shrinking suite,
+      # so the gate would stay green while coverage fell.
+      - name: NC-P13-15 counter assertions are exact and cannot drift
+        run: |
+          set -o pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          workflow = Path(
+              ".github/workflows/b2_5-p13-e2e-trust-closure.yml"
+          ).read_text(encoding="utf-8")
+          asserts = re.findall(r'grep -E "([^"]*p13_[a-z_]+[^"]*)"', workflow)
+          assert asserts, "no p13 counter assertions found"
+          weak = []
+          for pattern in asserts:
+              if not (pattern.startswith("^") and pattern.endswith("$")):
+                  weak.append((pattern, "not anchored"))
+                  continue
+              value = pattern[1:-1].split("=", 1)[1] if "=" in pattern else ""
+              if not value.isdigit():
+                  weak.append((pattern, f"value {value!r} is not a literal integer"))
+          assert not weak, f"counter assertions that could drift: {weak}"
+          print(f"p13_counter_assertions_exact={len(asserts)}")
+          PY
+
       # P13-G11: failure must not be maskable, and no journey may be quietly
       # skipped. pytest reports skips and xfails in its summary line; asserting
       # their absence is the difference between "the suite ran" and "the suite
