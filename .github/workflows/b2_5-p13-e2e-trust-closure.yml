@@ -98,7 +98,7 @@ jobs:
           # reads. Both tamper counts are pinned, so neither a shrinking matrix nor
           # a blind field can pass.
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_executed_cases=14$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_executed_cases=15$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_expected=147$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_failed=147$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
@@ -107,6 +107,8 @@ jobs:
           grep -E "^p13_negative_controls_fired=14$" /tmp/b25_p13_e2e.out
           grep -E "^p13_money_columns_integer_not_null=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_route_level_denials=2$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_confidence_values_permitted=18$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_confidence_values_reachable=4$" /tmp/b25_p13_e2e.out
           grep -E "^p13_replay_denied=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_scope_denied=1$" /tmp/b25_p13_e2e.out
       # P13-G11: the suite must not silently lose a journey. An expected case
@@ -140,6 +142,7 @@ jobs:
               "P13-H15-missing-scope-denied",
               "P13-H15R-route-level-scope-denial",
               "P13-H14R-route-level-replay-denial",
+              "P13-H08-confidence-projection-gap",
           }
           missing = sorted(required - set(cases))
           assert not missing, f"required P13 journeys removed from manifest: {missing}"
@@ -149,6 +152,36 @@ jobs:
               )
           print(f"p13_expected_cases={len(cases)}")
           print("p13_manifest_integrity=ok")
+          PY
+
+      # NC-P13-15: a failing P13 proof must not be able to leave this workflow
+      # green. Previously recorded as "structurally covered", which was an
+      # assertion about this file rather than a proof of it. Now checked: every
+      # counter assertion must be anchored (^...$) and pinned to a literal value.
+      # A grep like "^p13_executed_cases=[0-9]*$" would match a shrinking suite,
+      # so the gate would stay green while coverage fell.
+      - name: NC-P13-15 counter assertions are exact and cannot drift
+        run: |
+          set -o pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          workflow = Path(
+              ".github/workflows/b2_5-p13-e2e-trust-closure.yml"
+          ).read_text(encoding="utf-8")
+          asserts = re.findall(r'grep -E "([^"]*p13_[a-z_]+[^"]*)"', workflow)
+          assert asserts, "no p13 counter assertions found"
+          weak = []
+          for pattern in asserts:
+              if not (pattern.startswith("^") and pattern.endswith("$")):
+                  weak.append((pattern, "not anchored"))
+                  continue
+              value = pattern[1:-1].split("=", 1)[1] if "=" in pattern else ""
+              if not value.isdigit():
+                  weak.append((pattern, f"value {value!r} is not a literal integer"))
+          assert not weak, f"counter assertions that could drift: {weak}"
+          print(f"p13_counter_assertions_exact={len(asserts)}")
           PY
 
       # P13-G11: failure must not be maskable, and no journey may be quietly

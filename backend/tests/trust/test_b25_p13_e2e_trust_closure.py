@@ -40,6 +40,8 @@ import os
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from pathlib import Path
+
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI
@@ -76,6 +78,7 @@ EXPECTED_CASE_IDS = (
     "P13-H15-missing-scope-denied",
     "P13-H15R-route-level-scope-denial",
     "P13-H14R-route-level-replay-denial",
+    "P13-H08-confidence-projection-gap",
 )
 
 #: Tables that a TrustEnvelope read must never mutate. Deliberately split by
@@ -112,6 +115,10 @@ LOAD_BEARING_DOMAINS = (
 )
 
 SIGNING_KID = "kid:b25-p13-e2e"
+
+#: Contract directory, used to compare published confidence states against the
+#: states the runtime can actually emit (P13-H08).
+ROOT_CONTRACTS = Path(__file__).resolve().parents[3] / "contracts" / "trust-api"
 
 
 def _signing_registry() -> TrustKeyRegistry:
@@ -1149,6 +1156,54 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
             assert secret not in replayed.text, "replay denial leaked subject data"
         executed.append("P13-H14R-route-level-replay-denial")
 
+        # ---- P13-H08: the confidence contract is wider than the runtime -------
+        # B2.5's published confidence contract defines four statuses, three
+        # authorities and seven unavailability values (six reasons plus null), including a dedicated
+        # `b24_confidence_projection` authority. The builder emits ONE constant.
+        #
+        # This is the P12-P0 defect class in a different field: the published
+        # contract promises a capability the runtime cannot deliver. It is
+        # recorded as a measured gap rather than an assertion of correctness,
+        # because closing it is a B2.4-integration change and not P13's to make.
+        #
+        # The reachable count is pinned so that when the projection is
+        # implemented this proof turns red and must be revisited, rather than
+        # silently continuing to describe a system that has changed.
+        import json as _json
+
+        schema = _json.loads(
+            (ROOT_CONTRACTS / "confidence-metadata.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime_confidence = envelope.get("confidence_metadata") or {}
+        reachable = {}
+        for field in (
+            "confidence_status",
+            "confidence_authority",
+            "diagnostics_status",
+            "unavailable_reason",
+        ):
+            permitted = schema["properties"][field].get("enum") or []
+            emitted = runtime_confidence.get(field)
+            assert emitted in permitted, (
+                f"runtime emits {field}={emitted!r}, which the contract forbids"
+            )
+            reachable[field] = len({emitted})
+            # Every other permitted value is currently unreachable.
+        total_permitted = sum(
+            len(schema["properties"][f].get("enum") or [])
+            for f in reachable
+        )
+        total_reachable = sum(reachable.values())
+        assert total_reachable == 4, (
+            f"expected exactly one reachable value per confidence field, got {reachable}"
+        )
+        assert total_permitted == 18, (
+            f"confidence contract changed shape: {total_permitted} permitted values"
+        )
+        executed.append("P13-H08-confidence-projection-gap")
+
         # ---- P13 negative controls -------------------------------------------
         # Each control constructs the violating artifact and requires the gate's
         # OWN check to reject it. A journey that passes proves nothing unless the
@@ -1398,6 +1453,8 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     print(f"p13_load_bearing_paths={len(load_bearing_paths)}")
     print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
     print(f"p13_money_columns_integer_not_null={len(money_columns)}")
+    print(f"p13_confidence_values_permitted={total_permitted}")
+    print(f"p13_confidence_values_reachable={total_reachable}")
     print(f"p13_route_level_denials=2")
     print(f"p13_replay_denied=1")
     print(f"p13_scope_denied=1")
