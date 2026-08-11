@@ -76,13 +76,23 @@ jobs:
         run: alembic upgrade head
 
       # The composition proof. Real DB, real RLS, real route, real signer.
-      - name: P13 E2E trust closure (G1 happy path, G2 wrong tenant, G9 public verification)
+      - name: P13 E2E trust closure (G1 happy, G2 wrong tenant, G3 tamper matrix, G9 public verification)
         run: |
           set -o pipefail
           python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py \
-            -q --no-header | tee /tmp/b25_p13_e2e.out
+            -q -s --no-header | tee /tmp/b25_p13_e2e.out
           grep -E "1 passed" /tmp/b25_p13_e2e.out
 
+          # Exact assertions, not ">= 1". A journey or tamper field that silently
+          # disappears must turn this gate red rather than reduce a number nobody
+          # reads. Both tamper counts are pinned, so neither a shrinking matrix nor
+          # a blind field can pass.
+          grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_executed_cases=4$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_expected=147$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_failed=147$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody
       # reads, so the manifest is asserted here as well as inside the test.
@@ -103,6 +113,7 @@ jobs:
               "P13-G1-happy-path-signed-envelope",
               "P13-G2-wrong-tenant-no-existence-leak",
               "P13-G9-public-only-verification",
+              "P13-G3-tamper-matrix-all-load-bearing-fields",
           }
           missing = sorted(required - set(cases))
           assert not missing, f"required P13 journeys removed from manifest: {missing}"
