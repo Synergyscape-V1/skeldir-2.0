@@ -65,6 +65,18 @@ EXPECTED_CASE_IDS = (
     "P13-G1-happy-path-signed-envelope",
     "P13-G2-wrong-tenant-no-existence-leak",
     "P13-G9-public-only-verification",
+    "P13-G3-tamper-matrix-all-load-bearing-fields",
+)
+
+#: Hash domains whose fields are load-bearing, i.e. covered by the semantic or
+#: signature commitment. `display_only_excluded_v1` is deliberately absent: those
+#: fields are display-only by contract, and demanding they be mutation-sensitive
+#: would assert a property the design explicitly rejects.
+LOAD_BEARING_DOMAINS = (
+    "semantic_truth_v1",
+    "signature_material_v1",
+    "derived_hash_field_v1",
+    "artifact_payload_v1",
 )
 
 SIGNING_KID = "kid:b25-p13-e2e"
@@ -304,6 +316,75 @@ async def _query(app, tenant_id: UUID, refs: list[str], nonce: str):
         )
 
 
+def _resolve_path(envelope, path):
+    """Resolve a manifest field path to (container, key) pairs in one envelope.
+
+    Array paths use `field[]`, so a single manifest path can address many
+    concrete locations. Every one is returned: tampering only the first element
+    of an array would leave the rest of the array unproven while reporting the
+    path as covered.
+    """
+    targets = []
+
+    def walk(node, parts):
+        if not parts:
+            return
+        head, rest = parts[0], parts[1:]
+        if head.endswith("[]"):
+            key = head[:-2]
+            if not isinstance(node, dict) or key not in node:
+                return
+            items = node[key]
+            if not isinstance(items, list):
+                return
+            for index, item in enumerate(items):
+                if not rest:
+                    targets.append((items, index))
+                else:
+                    walk(item, rest)
+            return
+        if not isinstance(node, dict) or head not in node:
+            return
+        if not rest:
+            targets.append((node, head))
+            return
+        walk(node[head], rest)
+
+    walk(envelope, path.split("."))
+    return targets
+
+
+def _tamper(value):
+    """Return a syntactically valid but different value of the same shape.
+
+    Type-preserving on purpose. A mutation that changes an int to a string would
+    be caught by schema validation, which proves the schema works rather than
+    that the field is cryptographically bound -- the directive is explicit that
+    cryptographic coverage must not be overstated when schema validation alone
+    caught the mutation.
+    """
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, str):
+        if value.startswith("sha256:") and len(value) > 12:
+            flipped = "1" if value[-1] != "1" else "2"
+            return value[:-1] + flipped
+        return value + "x"
+    if isinstance(value, list):
+        # NOT a reordering. B2.5-P2 canonicalizes array order, so a reversed
+        # array is canonically identical and verification correctly still
+        # passes -- reordering is not tampering under this contract. Adding a
+        # member is a genuine semantic change, so that is what is tested.
+        if value and isinstance(value[0], dict):
+            return value + [{**value[0], "b25_p13_tamper": "x"}]
+        return value + ["b25-p13-tamper"]
+    if isinstance(value, dict):
+        return {**value, "b25_p13_tamper": "x"}
+    return value
+
+
 @pytest.mark.asyncio
 async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     """G1 happy path, G2 wrong-tenant isolation, G9 public-only verification."""
@@ -442,6 +523,73 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         assert not leaked, f"wrong-tenant response leaked: {leaked}"
         executed.append("P13-G2-wrong-tenant-no-existence-leak")
 
+        # ---- G3: every load-bearing signed field is mutation-sensitive -------
+        # The expected set is derived from the hash-domain manifest rather than
+        # hand-listed. A hand-written list silently stops covering a field the
+        # moment the contract adds one, which is how a tamper suite ends up
+        # "complete" while blind.
+        import copy
+
+        from app.trust.hash_domains import _field_domains
+
+        domains = _field_domains()
+        load_bearing_paths = sorted(
+            path for path, domain in domains.items() if domain in LOAD_BEARING_DOMAINS
+        )
+        display_only_paths = sorted(
+            path
+            for path, domain in domains.items()
+            if domain == "display_only_excluded_v1"
+        )
+
+        tampered_expected = []
+        tampered_failed = []
+        failure_classes = {}
+
+        for path in load_bearing_paths:
+            targets = _resolve_path(envelope, path)
+            if not targets:
+                # Field is absent from this envelope instance. Not a blind spot:
+                # a field that is not present cannot be tampered with, and the
+                # manifest covers the union of all envelope shapes.
+                continue
+            for container, key in targets:
+                original = container[key]
+                mutated_value = _tamper(original)
+                if mutated_value == original:
+                    continue
+                tampered_expected.append(f"{path}[{key}]")
+                candidate = copy.deepcopy(envelope)
+                for c_container, c_key in _resolve_path(candidate, path):
+                    if c_key == key:
+                        c_container[c_key] = mutated_value
+                        break
+                try:
+                    result = verify_trust_envelope(
+                        candidate, key_registry=public_only
+                    )
+                    status = getattr(result, "verification_status", result)
+                    if status not in {"valid", "verified"}:
+                        tampered_failed.append(f"{path}[{key}]")
+                        failure_classes.setdefault(str(status), 0)
+                        failure_classes[str(status)] += 1
+                except Exception as exc:  # noqa: BLE001 - classification is the point
+                    tampered_failed.append(f"{path}[{key}]")
+                    label = type(exc).__name__
+                    failure_classes.setdefault(label, 0)
+                    failure_classes[label] += 1
+
+        blind = sorted(set(tampered_expected) - set(tampered_failed))
+        assert not blind, (
+            f"load-bearing fields accepted tampering (blind spots): {blind}"
+        )
+        assert len(tampered_failed) == len(tampered_expected), (
+            f"tampered_failed={len(tampered_failed)} != "
+            f"tampered_expected={len(tampered_expected)}"
+        )
+        assert tampered_expected, "tamper matrix exercised zero fields"
+        executed.append("P13-G3-tamper-matrix-all-load-bearing-fields")
+
     finally:
         # No tenant teardown. `attribution_events` is append-only at the database
         # level -- deleting a tenant cascades into it and the trigger refuses.
@@ -458,6 +606,11 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         "expected_case_ids": list(EXPECTED_CASE_IDS),
         "executed_case_ids": executed,
         "missing_case_ids": missing,
+        "tamper_fields_expected": len(tampered_expected),
+        "tamper_fields_tested": len(tampered_failed),
+        "tamper_failure_classes": failure_classes,
+        "load_bearing_paths_in_manifest": len(load_bearing_paths),
+        "display_only_paths_excluded": len(display_only_paths),
         "non_overclaim_boundary": (
             "Internal B2.5 trust closure under CI topology only. Establishes nothing "
             "about production topology, external readiness, provider ingress, or scale."
@@ -466,3 +619,15 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     (tmp_path / "b25_p13_e2e_manifest.json").write_text(
         json.dumps(artifact, indent=2), encoding="utf-8"
     )
+
+    # Emit grep-able counters. The workflow asserts these exactly, so a journey
+    # or a tamper field that silently disappears turns the gate red rather than
+    # quietly reducing a number nobody reads (P13-G11).
+    print(f"p13_expected_cases={len(EXPECTED_CASE_IDS)}")
+    print(f"p13_executed_cases={len(executed)}")
+    print(f"p13_missing_cases={len(missing)}")
+    print(f"p13_tamper_fields_expected={len(tampered_expected)}")
+    print(f"p13_tamper_fields_failed={len(tampered_failed)}")
+    print(f"p13_load_bearing_paths={len(load_bearing_paths)}")
+    print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
+    print(f"p13_tamper_failure_classes={json.dumps(failure_classes, sort_keys=True)}")
