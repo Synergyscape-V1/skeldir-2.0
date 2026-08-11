@@ -98,7 +98,7 @@ jobs:
           # reads. Both tamper counts are pinned, so neither a shrinking matrix nor
           # a blind field can pass.
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_executed_cases=14$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_executed_cases=15$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_expected=147$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_failed=147$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
@@ -107,6 +107,8 @@ jobs:
           grep -E "^p13_negative_controls_fired=14$" /tmp/b25_p13_e2e.out
           grep -E "^p13_money_columns_integer_not_null=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_route_level_denials=2$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_confidence_values_permitted=18$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_confidence_values_reachable=4$" /tmp/b25_p13_e2e.out
           grep -E "^p13_replay_denied=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_scope_denied=1$" /tmp/b25_p13_e2e.out
       # P13-G11: the suite must not silently lose a journey. An expected case
@@ -140,6 +142,7 @@ jobs:
               "P13-H15-missing-scope-denied",
               "P13-H15R-route-level-scope-denial",
               "P13-H14R-route-level-replay-denial",
+              "P13-H08-confidence-projection-gap",
           }
           missing = sorted(required - set(cases))
           assert not missing, f"required P13 journeys removed from manifest: {missing}"
