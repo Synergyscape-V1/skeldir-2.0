@@ -11,7 +11,7 @@ invariants:
   proof_owner: p12
   production_path: contracts/trust-api/trust-api.openapi.yaml
   validator: scripts/ci/validate_b25_p12_contract_projection.py
-  workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
   negative_control:
     id: NC-P12-P0-01
     resolution: source_identifier
@@ -19,19 +19,25 @@ invariants:
   note: Live issued artifact validated against the schema resolved from the published 200 response. This
     is the composition no phase owned, and its absence is exactly how the v2-runtime/v1-contract defect
     survived P11.
+  secondary_enforcement: Also invoked in-process by validate_b25_p11_export_compatibility.py inside the
+    required B2.5-P11 Export Compatibility context, so this proof is merge-blocking on two independent
+    required gates.
 - id: 2
   invariant: Example validation (lifecycle-aware)
   plane: A
   proof_owner: p12
   production_path: contracts/trust-api/examples
   validator: scripts/ci/validate_b25_p12_contract_projection.py
-  workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
   negative_control:
     id: NC-P12-P0-02
     resolution: source_identifier
     resolves_in: scripts/ci/validate_b25_p12_contract_projection.py
   note: Active example must validate against the active schema; a historical example must fail it. Without
     lifecycle classification a historical fixture silently masquerades as active contract proof (P12-H02).
+  secondary_enforcement: Also invoked in-process by validate_b25_p11_export_compatibility.py inside the
+    required B2.5-P11 Export Compatibility context, so this proof is merge-blocking on two independent
+    required gates.
 - id: 3
   invariant: Generated model drift
   plane: A
@@ -209,47 +215,59 @@ invariants:
   proof_owner: p12
   production_path: backend/app/trust
   validator: scripts/ci/validate_b25_p12_trust_isolation.py
-  workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
   negative_control:
     id: NC-P12-ISO-01
     resolution: source_identifier
     resolves_in: scripts/ci/validate_b25_p12_trust_isolation.py
+  secondary_enforcement: Also invoked in-process by validate_b25_p11_export_compatibility.py inside the
+    required B2.5-P11 Export Compatibility context, so this proof is merge-blocking on two independent
+    required gates.
 - id: 16
   invariant: Dynamic import ban in trust path
   plane: A
   proof_owner: p12
   production_path: backend/app/trust
   validator: scripts/ci/validate_b25_p12_trust_isolation.py
-  workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
   negative_control:
     id: NC-P12-ISO-02
     resolution: source_identifier
     resolves_in: scripts/ci/validate_b25_p12_trust_isolation.py
+  secondary_enforcement: Also invoked in-process by validate_b25_p11_export_compatibility.py inside the
+    required B2.5-P11 Export Compatibility context, so this proof is merge-blocking on two independent
+    required gates.
 - id: 17
   invariant: Runtime sys.modules trace across trust paths
   plane: B
   proof_owner: p12
   production_path: backend/app/trust
   validator: scripts/ci/validate_b25_p12_trust_isolation.py
-  workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
   negative_control:
     id: NC-P12-ISO-03
     resolution: source_identifier
     resolves_in: scripts/ci/validate_b25_p12_trust_isolation.py
   note: happy / degraded / refused / verify / export module-load trace.
+  secondary_enforcement: Also invoked in-process by validate_b25_p11_export_compatibility.py inside the
+    required B2.5-P11 Export Compatibility context, so this proof is merge-blocking on two independent
+    required gates.
 - id: 18
   invariant: No compute dispatch from trust reads
   plane: C
   proof_owner: p12
   production_path: backend/app/api/trust_api.py
   validator: scripts/ci/validate_b25_p12_trust_isolation.py
-  workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
   negative_control:
     id: NC-P12-ISO-04
     resolution: source_identifier
     resolves_in: scripts/ci/validate_b25_p12_trust_isolation.py
   note: Bans indirect dispatch surfaces (send_task, enqueue helpers, outbox, task-name strings), not only
     direct imports of compute implementations.
+  secondary_enforcement: Also invoked in-process by validate_b25_p11_export_compatibility.py inside the
+    required B2.5-P11 Export Compatibility context, so this proof is merge-blocking on two independent
+    required gates.
 - id: 19
   invariant: Policy authority never auto-executable
   plane: B
@@ -298,13 +316,16 @@ invariants:
   proof_owner: p12
   production_path: backend/app/api/export.py
   validator: scripts/ci/validate_b25_p12_contract_projection.py
-  workflow: .github/workflows/b2_5-p11-export-compatibility.yml
+  workflow: .github/workflows/b2_5-p12-ci-gates.yml
   negative_control:
     id: NC-P12-P0-01
     resolution: source_identifier
     resolves_in: scripts/ci/validate_b25_p12_contract_projection.py
   note: Human G4 honesty and machine TrustEnvelope derivation are owned by P11; P12 adds the missing third
     leg, active response/schema parity.
+  secondary_enforcement: Also invoked in-process by validate_b25_p11_export_compatibility.py inside the
+    required B2.5-P11 Export Compatibility context, so this proof is merge-blocking on two independent
+    required gates.
 path_trigger_required:
 - contracts/trust-api/**
 - backend/app/trust/**

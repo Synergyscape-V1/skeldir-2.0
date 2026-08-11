@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import re
 from pathlib import Path
 from typing import Any
 
@@ -214,6 +215,104 @@ def validate_registry_completeness(
     return checks
 
 
+def _invoked_scripts(workflow: str, overrides: dict[Path, str] | None = None) -> set[str]:
+    """Scripts a workflow actually invokes in its run steps.
+
+    Reading the run text is deliberate. The alternative -- trusting the registry's
+    own ``workflow`` column -- is the defect this function exists to close: the
+    column recorded where a proof was *bound* historically, not where it runs.
+    """
+    path = Path(workflow)
+    if not (ROOT / path).exists():
+        return set()
+    text = _text(path, overrides)
+    return set(re.findall(r"(?:scripts|backend/scripts)/[A-Za-z0-9_./-]+\.(?:py|sh)", text))
+
+
+def validate_inherited_proof_binding(overrides: dict[Path, str] | None = None) -> int:
+    """Every invariant's workflow must actually invoke its validator.
+
+    Registry completeness proves the validator and workflow *files exist*. That is
+    not enforcement. Reproduced at `bcee1a055`: eight of twenty-two invariants
+    named a workflow that never invoked their validator -- seven P12 domains still
+    pointed at the binding-era `b2_5-p11-export-compatibility.yml` while those
+    validators had moved to the dedicated P12 workflow. The proofs did run, one
+    hop deeper through the P11 validator, but the registry asserted an edge that
+    did not exist. "P6 passed once" is not P12 enforcement, and neither is a
+    workflow column nobody traverses.
+    """
+    registry = _yaml(REGISTRY, overrides)
+    checks = 0
+    for row in registry.get("invariants") or []:
+        ident = row.get("id")
+        validator = row.get("validator")
+        workflow = row.get("workflow")
+        _require(
+            validator in _invoked_scripts(workflow, overrides),
+            f"invariant_workflow_does_not_invoke_validator:{ident}:{workflow}:{validator}",
+        )
+        checks += 1
+    _require(
+        checks == REQUIRED_INVARIANT_COUNT,
+        f"inherited_binding_coverage_incomplete:{checks}",
+    )
+    return checks
+
+
+def validate_detector_self_protection(overrides: dict[Path, str] | None = None) -> int:
+    """A load-bearing detector must itself be covered by its workflow's triggers.
+
+    An engineer weakening a validator is a change to proof, not to production
+    code, so a path-filtered workflow that does not list the validator's own file
+    will not run it -- the weakened detector never gets a chance to notice its own
+    weakening. Reproduced: three validators were unprotected this way.
+
+    Coverage plus the ``--negative-control`` invocation proven by
+    :func:`validate_p12_gate_invocation` gives the real chain: editing a detector
+    triggers the workflow, the workflow runs the detector with its falsifiers, and
+    a neutered detector makes its own control go silent.
+    """
+    registry = _yaml(REGISTRY, overrides)
+    checks = 0
+    for row in registry.get("invariants") or []:
+        ident = row.get("id")
+        validator = row.get("validator")
+        workflow = row.get("workflow")
+        declared = _workflow_paths(workflow, overrides)
+        _require(
+            _path_covered(validator, declared),
+            f"detector_not_self_protected:{ident}:{validator}:not_triggered_by:{workflow}",
+        )
+        checks += 1
+    return checks
+
+
+def _workflow_paths(workflow: str, overrides: dict[Path, str] | None = None) -> set[str]:
+    """Trigger paths declared by ONE workflow, across pull_request and push."""
+    path = Path(workflow)
+    if not (ROOT / path).exists():
+        return set()
+    spec = yaml.safe_load(_text(path, overrides)) or {}
+    triggers = spec.get("on") or spec.get(True) or {}
+    declared: set[str] = set()
+    for event in ("pull_request", "push"):
+        if event not in triggers:
+            continue
+        event_spec = triggers.get(event) or {}
+        if not isinstance(event_spec, dict) or "paths" not in event_spec:
+            # No `paths` key means the event is not path-filtered at all, so it
+            # covers every file by construction. `branches:` alone does not
+            # filter by path -- reading a `branches`-only spec as "no coverage"
+            # would report a workflow that runs on every PR as protecting
+            # nothing. Required contexts must be unfiltered (H00-I), so this is
+            # the normal case rather than an exception.
+            declared.add("**")
+            continue
+        for entry in event_spec.get("paths") or []:
+            declared.add(entry)
+    return declared
+
+
 def _path_covered(required: str, declared: set[str]) -> bool:
     """Glob-aware coverage: `docs/ci/**` covers `docs/ci/thing.yaml`."""
     if required in declared:
@@ -238,6 +337,52 @@ def _declared_trigger_paths(overrides: dict[Path, str] | None = None) -> set[str
             for entry in spec.get("paths") or []:
                 declared.add(entry)
     return declared
+
+
+def _require_relevant_detector(
+    required: str,
+    registry: Any,
+    overrides: dict[Path, str] | None = None,
+) -> int:
+    """Prove a load-bearing path reaches the detector RESPONSIBLE for it.
+
+    The previous check flattened trigger paths from every ``b2_5-*.yml`` workflow
+    into one set, so a path counted as covered when *any* B2.5 workflow declared
+    it -- even a workflow that never runs the validator guarding that path's
+    invariant. Editing a canonicalization file could satisfy path-trigger
+    integrity by way of an unrelated broad workflow while the canonicalization
+    proof itself never ran.
+
+    Relevance is derived from the registry rather than hand-maintained in a second
+    list: a path's relevant detectors are the validators of the invariants whose
+    ``production_path`` the path matches. Coverage must come from a workflow that
+    both declares the path AND invokes those detectors.
+    """
+    relevant: set[str] = set()
+    for row in registry.get("invariants") or []:
+        production = row.get("production_path") or ""
+        if not production:
+            continue
+        if production == required or fnmatch.fnmatch(production, required):
+            validator = row.get("validator")
+            if validator:
+                relevant.add(validator)
+    if not relevant:
+        return 0
+
+    reaching: set[str] = set()
+    for workflow_path in sorted((ROOT / ".github/workflows").glob("b2_5-*.yml")):
+        rel = workflow_path.relative_to(ROOT).as_posix()
+        if not _path_covered(required, _workflow_paths(rel, overrides)):
+            continue
+        reaching |= _invoked_scripts(rel, overrides)
+
+    missing = sorted(relevant - reaching)
+    _require(
+        not missing,
+        f"load_bearing_path_reaches_no_relevant_detector:{required}:{missing}",
+    )
+    return len(relevant)
 
 
 def validate_path_trigger_integrity(
@@ -265,6 +410,7 @@ def validate_path_trigger_integrity(
             f"load_bearing_path_not_triggering_p12:{required}",
         )
         checks += 1
+        checks += _require_relevant_detector(required, registry, overrides)
 
     for gap in sorted(known_gaps):
         _require(
@@ -405,6 +551,8 @@ def validate_context_stability(overrides: dict[Path, str] | None = None) -> int:
 def validate_core(overrides: dict[Path, str] | None = None) -> dict[str, int]:
     return {
         "registry_completeness_controls": validate_registry_completeness(overrides),
+        "inherited_binding_controls": validate_inherited_proof_binding(overrides),
+        "detector_self_protection_controls": validate_detector_self_protection(overrides),
         "path_trigger_controls": validate_path_trigger_integrity(overrides),
         "failure_masking_controls": validate_no_failure_masking(overrides),
         "gate_invocation_controls": validate_p12_gate_invocation(overrides),
@@ -464,6 +612,30 @@ def _mutate_workflow_paths_remove(target: str) -> dict[Path, str]:
     return overrides
 
 
+def _mutate_p12_workflow_excluding_detector() -> dict[Path, str]:
+    """Narrow the P12 workflow's triggers so they no longer cover its own detector.
+
+    Structured YAML rather than text substitution: an unfiltered ``pull_request``
+    covers every path by construction, so a control that only stripped the push
+    path would leave the property satisfied and fire silently. Both events are
+    narrowed to a path set that deliberately omits the isolation validator.
+    """
+    spec = yaml.safe_load((ROOT / DEDICATED_WORKFLOW).read_text(encoding="utf-8"))
+    triggers = spec.get("on") or spec.get(True) or {}
+    kept = [
+        entry
+        for entry in (triggers.get("push") or {}).get("paths") or []
+        if "validate_b25_p12_trust_isolation" not in entry
+    ]
+    triggers["pull_request"] = {"paths": list(kept)}
+    triggers["push"] = {"branches": ["main"], "paths": list(kept)}
+    if True in spec:
+        spec[True] = triggers
+    else:
+        spec["on"] = triggers
+    return {DEDICATED_WORKFLOW: yaml.safe_dump(spec, sort_keys=False, width=200)}
+
+
 def run_negative_controls() -> int:
     """Semantic falsifiers for the enforcement topology itself."""
     controls: tuple[tuple[str, dict[Path, str], str], ...] = (
@@ -515,6 +687,33 @@ def run_negative_controls() -> int:
             ),
             "p12_proof_failure_not_propagated",
         ),
+        (
+            # H00-F: an invariant points at a workflow that never runs its
+            # validator. This is the shape the registry was actually in --
+            # seven P12 domains named the binding-era P11 workflow while their
+            # validators had moved to the dedicated P12 gate.
+            "NC-P12-CI-06",
+            _mutate(
+                REGISTRY,
+                "  workflow: .github/workflows/b2_5-p12-ci-gates.yml\n"
+                "  negative_control:\n"
+                "    id: NC-P12-ISO-01",
+                "  workflow: .github/workflows/b2_5-p9-machine-identity.yml\n"
+                "  negative_control:\n"
+                "    id: NC-P12-ISO-01",
+            ),
+            "invariant_workflow_does_not_invoke_validator",
+        ),
+        (
+            # H00-H: the detector stops being reachable by its own workflow's
+            # triggers, so weakening it would not run it. Both events must be
+            # narrowed: an unfiltered `pull_request` covers every file, so
+            # removing only the push path would leave the property intact and
+            # the control silent.
+            "NC-P12-CI-07",
+            _mutate_p12_workflow_excluding_detector(),
+            "detector_not_self_protected",
+        ),
     )
     fired = 0
     for name, overrides, expected in controls:
@@ -541,7 +740,11 @@ def main(argv: list[str]) -> int:
         counters = validate_core()
         negative_controls = run_negative_controls() if args.negative_control else 0
         if args.negative_control:
-            _require(negative_controls == 5, "ci_gate_negative_control_count_drift")
+            # Seven: five original, plus NC-P12-CI-06 (inherited proof binding)
+            # and NC-P12-CI-07 (detector self-protection), added when H00-F
+            # and H00-H were closed. Asserted exactly so a deleted control is
+            # a failure rather than a smaller number nobody reads.
+            _require(negative_controls == 7, "ci_gate_negative_control_count_drift")
     except B25P12CiGateError as exc:
         print(f"B25_P12_CI_GATES_VALIDATION_FAIL:{exc}")
         return 1

@@ -144,6 +144,71 @@ def main() -> int:
         return _emit(baseline, executed, error="unsupported_not_rejected")
     executed.append("unsupported_protocol_refusal")
 
+    # Builder construction paths. The five cryptographic cases above exercise
+    # signing, verification and export, but none of them runs the TrustEnvelope
+    # *construction* path -- which is where confidence, money and reason-code
+    # semantics live, and therefore where a forbidden Bayesian or LLM import is
+    # most plausible. Claiming "representative trust runtime paths" while
+    # exercising only crypto would inflate five counters into five semantics.
+    #
+    # The session is inert and raises on any access, so these paths are proven
+    # not to touch the database. That is legitimate here because the property
+    # under proof is which modules load, not database behaviour; route-level and
+    # RLS truth belong to the P13 end-to-end harness against real PostgreSQL.
+    import asyncio
+    import uuid
+
+    from app.trust.builder import (
+        TrustEnvelopeBuildRequest,
+        build_unsigned_trust_envelope,
+    )
+    from app.trust.source_adapters import MatchVerdictSource
+
+    class _InertSession:
+        async def execute(self, *args, **kwargs):
+            raise AssertionError("runtime trace builder path touched the database")
+
+        async def scalar(self, *args, **kwargs):
+            raise AssertionError("runtime trace builder path touched the database")
+
+    def _source(amount):
+        now = datetime.now(timezone.utc)
+        return MatchVerdictSource(
+            id=uuid.uuid4(),
+            tenant_id=uuid.uuid4(),
+            webhook_ingress_identity_id=None,
+            provider="stripe",
+            canonical_commerce_reference="cc-runtime-trace",
+            provider_native_event_reference="evt_runtime_trace",
+            provider_native_commerce_reference="pi_runtime_trace",
+            status="matched",
+            match_quality="exact",
+            canonical_net_verified_amount_minor=amount,
+            currency_code="USD",
+            last_transition_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def _build(amount):
+        request = TrustEnvelopeBuildRequest(
+            tenant_id=uuid.uuid4(),
+            subject_type="commerce_event",
+            subject_ref="cc-runtime-trace",
+            request_context={"audience_id": "b25-p12-runtime-trace"},
+        )
+        return await build_unsigned_trust_envelope(
+            _InertSession(), request, source=_source(amount)
+        )
+
+    asyncio.run(_build(105000))
+    executed.append("builder_normal_read")
+
+    # Money authority unavailable: the degraded construction branch, which must
+    # stay deterministic rather than reaching for a probabilistic estimate.
+    asyncio.run(_build(None))
+    executed.append("builder_degraded_money_unavailable")
+
     return _emit(baseline, executed)
 
 
