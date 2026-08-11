@@ -792,6 +792,38 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         assert getattr(float_decision, "reason_code", None), (
             "money refusal carries no reason code"
         )
+        # G6, structural half. The directive posits a legacy float-only money
+        # source reaching the route. That scenario is NOT REPRESENTABLE here:
+        # every minor-unit column on the authoritative source table is
+        # `integer NOT NULL`, so a float cannot be stored (PostgreSQL coerces at
+        # insert) and the value can never be absent. The invariant is enforced by
+        # the schema, not only by application code, which is a stronger guarantee
+        # than a fixture could demonstrate -- so it is asserted directly rather
+        # than simulated with a row the database would refuse.
+        async with engine.begin() as connection:
+            money_columns = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT column_name, data_type, is_nullable
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'b23_match_verdicts'
+                          AND column_name LIKE '%amount_minor%'
+                        """
+                    )
+                )
+            ).fetchall()
+        assert money_columns, "no minor-unit money columns found on the source table"
+        for name, data_type, nullable in money_columns:
+            assert data_type == "integer", (
+                f"money column {name} is {data_type}, not integer: a float source "
+                "would be representable"
+            )
+            assert nullable == "NO", (
+                f"money column {name} is nullable: an absent authoritative amount "
+                "would be representable"
+            )
         executed.append("P13-G6-money-source-not-authoritative")
 
         # ---- G8: the read mutates no business or compute state ---------------
@@ -1181,6 +1213,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     print(f"p13_tamper_fields_failed={len(tampered_failed)}")
     print(f"p13_load_bearing_paths={len(load_bearing_paths)}")
     print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
+    print(f"p13_money_columns_integer_not_null={len(money_columns)}")
     print(f"p13_replay_denied=1")
     print(f"p13_scope_denied=1")
     print(f"p13_negative_controls_fired={len(controls)}")
