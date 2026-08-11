@@ -347,7 +347,20 @@ async def _query(app, tenant_id: UUID, refs: list[str], nonce: str):
 
 
 def _assert_confidence_not_fabricated(envelope):
-    """G4 check. Shared by the gate and by NC-P13-04 so both exercise one path."""
+    """G4 check. Shared by the gate and by NC-P13-04 so both exercise one path.
+
+    Scope, stated precisely because it is narrower than the directive assumes.
+    `app.trust.builder._confidence_unavailable()` returns a CONSTANT dict, and the
+    builder reads no B2.4 source for match-verdict subjects: the only `bayesian`
+    references in that module are the literal values inside that constant. So the
+    envelope's confidence is unconditionally unavailable/deterministic_only.
+
+    This check therefore proves that nothing fabricates confidence where none is
+    claimed. It does NOT prove that `diagnostics_failed`, `source_snapshot_drift`
+    or `artifact_pruned` degrade truthfully through composition -- those states are
+    unreachable here, because there is no B2.4 integration on this path to
+    degrade. Seeding those fixtures would change nothing in the envelope.
+    """
     confidence = envelope.get("confidence_metadata") or {}
     assert confidence.get("confidence_status") == "unavailable", confidence
     assert confidence.get("confidence_score_basis_points") is None, confidence
@@ -358,6 +371,13 @@ def _assert_confidence_not_fabricated(envelope):
         "interval_high_basis_points",
     ):
         assert not confidence.get(key), f"fabricated interval: {key}"
+    # The authority must be declared deterministic-only rather than merely empty:
+    # an envelope that omitted confidence would also satisfy the checks above
+    # while saying nothing about where authority comes from.
+    assert confidence.get("confidence_authority") == "deterministic_only", confidence
+    assert confidence.get("bayesian_model_type") == "deterministic_only", confidence
+    assert confidence.get("bayesian_model_version") is None, confidence
+    assert confidence.get("diagnostics_status") == "not_applicable", confidence
 
 
 def _assert_no_provider_text_in_authority(envelope, hostile_strings):
