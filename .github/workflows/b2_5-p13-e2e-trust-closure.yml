@@ -88,13 +88,15 @@ jobs:
           # reads. Both tamper counts are pinned, so neither a shrinking matrix nor
           # a blind field can pass.
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_executed_cases=10$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_executed_cases=12$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_expected=147$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_failed=147$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
           grep -E "^p13_downgrade_cases_failed_closed=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_negative_controls_fired=11$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_replay_denied=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_scope_denied=1$" /tmp/b25_p13_e2e.out
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody
       # reads, so the manifest is asserted here as well as inside the test.
@@ -122,6 +124,8 @@ jobs:
               "P13-G7-schema-downgrade-fails-closed",
               "P13-G8-read-only-no-compute-dispatch",
               "P13-G10-audit-provenance-composition",
+              "P13-H14-replay-denied-atomically",
+              "P13-H15-missing-scope-denied",
           }
           missing = sorted(required - set(cases))
           assert not missing, f"required P13 journeys removed from manifest: {missing}"

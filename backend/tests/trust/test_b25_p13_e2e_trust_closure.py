@@ -72,6 +72,8 @@ EXPECTED_CASE_IDS = (
     "P13-G8-read-only-no-compute-dispatch",
     "P13-G7-schema-downgrade-fails-closed",
     "P13-G10-audit-provenance-composition",
+    "P13-H14-replay-denied-atomically",
+    "P13-H15-missing-scope-denied",
 )
 
 #: Tables that a TrustEnvelope read must never mutate. Deliberately split by
@@ -838,6 +840,64 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         _assert_audit_reconcilable(envelope, subject_urn)
         executed.append("P13-G10-audit-provenance-composition")
 
+        # ---- P13-H14: a replayed nonce is denied atomically ------------------
+        # Driven through the production _atomic_nonce_insert against the real
+        # UNIQUE(tenant_id, nonce_value) constraint. Mocking replay storage to
+        # prove replay protection would prove nothing -- the constraint IS the
+        # protection, so it is exercised rather than simulated.
+        from app.trust.machine_auth import _atomic_nonce_insert, _load_scopes
+
+        replay_nonce = f"p13-replay-{uuid4().hex}"
+        async with runtime_sessions() as replay_session:
+            await replay_session.begin()
+            await replay_session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            first = await _atomic_nonce_insert(
+                replay_session,
+                tenant_id=tenant_a,
+                agent_client_id=client_a,
+                nonce_value=replay_nonce,
+                request_identity_hash="sha256:" + "4" * 64,
+            )
+            second = await _atomic_nonce_insert(
+                replay_session,
+                tenant_id=tenant_a,
+                agent_client_id=client_a,
+                nonce_value=replay_nonce,
+                request_identity_hash="sha256:" + "4" * 64,
+            )
+            await replay_session.rollback()
+        assert first is True, f"first use of a fresh nonce was rejected: {first}"
+        assert second is False, f"replayed nonce was accepted: {second}"
+        executed.append("P13-H14-replay-denied-atomically")
+
+        # ---- P13-H15: a principal without the read scope is denied -----------
+        # A third agent client is seeded with NO scope grant. Scopes are resolved
+        # by the production _load_scopes against real agent_scope_grants rows, so
+        # the absence is a database fact rather than a constructed frozenset.
+        scopeless_client = uuid4()
+        async with engine.begin() as connection:
+            await _insert_agent_client(connection, tenant_a, scopeless_client)
+        async with runtime_sessions() as scope_session:
+            await scope_session.begin()
+            await scope_session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            granted = await _load_scopes(
+                scope_session,
+                tenant_id=tenant_a,
+                agent_client_id=scopeless_client,
+            )
+            await scope_session.rollback()
+        assert AgentScope.ENVELOPE_READ not in granted, (
+            f"unscoped client was granted envelope read: {granted}"
+        )
+        assert not granted, f"unscoped client carries unexpected grants: {granted}"
+        executed.append("P13-H15-missing-scope-denied")
+
         # ---- P13 negative controls -------------------------------------------
         # Each control constructs the violating artifact and requires the gate's
         # OWN check to reject it. A journey that passes proves nothing unless the
@@ -1043,6 +1103,8 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     print(f"p13_tamper_fields_failed={len(tampered_failed)}")
     print(f"p13_load_bearing_paths={len(load_bearing_paths)}")
     print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
+    print(f"p13_replay_denied=1")
+    print(f"p13_scope_denied=1")
     print(f"p13_negative_controls_fired={len(controls)}")
     print(f"p13_downgrade_cases_failed_closed={len(downgrade_results)}")
     print(f"p13_tamper_failure_classes={json.dumps(failure_classes, sort_keys=True)}")
