@@ -74,6 +74,8 @@ EXPECTED_CASE_IDS = (
     "P13-G10-audit-provenance-composition",
     "P13-H14-replay-denied-atomically",
     "P13-H15-missing-scope-denied",
+    "P13-H15R-route-level-scope-denial",
+    "P13-H14R-route-level-replay-denial",
 )
 
 #: Tables that a TrustEnvelope read must never mutate. Deliberately split by
@@ -132,6 +134,14 @@ def _signing_registry() -> TrustKeyRegistry:
 
 
 async def _insert_tenant(connection, tenant_id: UUID, label: str) -> None:
+    # Bind the GUC before inserting. Under a least-privilege identity the RLS
+    # policies are live and dereference current_setting('app.current_tenant_id'),
+    # which fails on an empty string. This was invisible while the harness ran as
+    # a bypass-RLS superuser -- the policies simply never applied.
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
     await connection.execute(
         text(
             """
@@ -291,6 +301,98 @@ def _caller(tenant_id: UUID, client_id: UUID, nonce: str) -> MachineCallerContex
         nonce_value=nonce,
         request_identity_hash="sha256:" + "3" * 64,
     )
+
+
+async def _issue_credential(connection, *, tenant_id: UUID, agent_client_id: UUID) -> str:
+    """Mint a real service credential and return the plaintext token.
+
+    Seeds `agent_service_credentials` the way production expects: an 8-character
+    prefix for the O(1) index lookup, and a sha256 hex digest of the full token.
+    This is what makes the route-level journeys possible without overriding the
+    authentication dependency -- the real `authenticate_machine_caller` runs,
+    including its scope check and its replay check.
+    """
+    token = f"p13tok{uuid4().hex}"
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.agent_service_credentials
+                (id, tenant_id, agent_client_id, token_prefix, token_hash,
+                 hash_algorithm, status, issued_at)
+            VALUES (:id, :tenant_id, :agent_client_id, :prefix, :hash,
+                    'sha256', 'active', now())
+            """
+        ),
+        {
+            "id": uuid4(),
+            "tenant_id": str(tenant_id),
+            "agent_client_id": str(agent_client_id),
+            "prefix": token[:8],
+            "hash": hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        },
+    )
+    return token
+
+
+async def _grant_scope(connection, *, tenant_id: UUID, agent_client_id: UUID, scope: str) -> None:
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.agent_scope_grants
+                (id, tenant_id, agent_client_id, scope_value, granted_at)
+            VALUES (:id, :tenant_id, :agent_client_id, :scope, now())
+            """
+        ),
+        {
+            "id": uuid4(),
+            "tenant_id": str(tenant_id),
+            "agent_client_id": str(agent_client_id),
+            "scope": scope,
+        },
+    )
+
+
+def _build_authenticated_app(runtime_sessions, tenant_id: UUID):
+    """Wire the real router with NO authentication override.
+
+    `require_envelope_read_tenant_context` is deliberately left in place, so the
+    request traverses the production credential lookup, scope check, replay check
+    and rate-limit check. This is the difference between proving the enforcement
+    mechanism and proving the route composes it.
+    """
+    app = FastAPI()
+    app.include_router(trust_api.router, prefix="/api")
+
+    async def session_dependency():
+        async with runtime_sessions() as session:
+            await session.begin()
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            try:
+                yield session
+                if session.in_transaction():
+                    await session.commit()
+            except Exception:
+                if session.in_transaction():
+                    await session.rollback()
+                raise
+
+    async def signing_registry() -> TrustKeyRegistry:
+        return _signing_registry()
+
+    app.dependency_overrides[trust_api.get_machine_db_session] = session_dependency
+    app.dependency_overrides[trust_api.get_runtime_signing_registry] = signing_registry
+    return app
 
 
 def _build_app(runtime_sessions, tenant_id: UUID, caller: MachineCallerContext):
@@ -801,6 +903,10 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # than a fixture could demonstrate -- so it is asserted directly rather
         # than simulated with a row the database would refuse.
         async with engine.begin() as connection:
+            await connection.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_a)},
+            )
             money_columns = (
                 await connection.execute(
                     text(
@@ -917,8 +1023,13 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         replay_nonce = f"p13-replay-{uuid4().hex}"
         async with runtime_sessions() as replay_session:
             await replay_session.begin()
+            # Session-scoped (is_local=false), not transaction-local: the
+            # production nonce helper manages its own transaction boundary, and a
+            # transaction-local GUC is discarded underneath it. Under a
+            # least-privilege identity the RLS policy on trust_request_nonces then
+            # dereferences an empty setting and the insert fails.
             await replay_session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
                 {"tenant_id": str(tenant_a)},
             )
             first = await _atomic_nonce_insert(
@@ -950,7 +1061,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         async with runtime_sessions() as scope_session:
             await scope_session.begin()
             await scope_session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
                 {"tenant_id": str(tenant_a)},
             )
             granted = await _load_scopes(
@@ -964,6 +1075,79 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         )
         assert not granted, f"unscoped client carries unexpected grants: {granted}"
         executed.append("P13-H15-missing-scope-denied")
+
+        # ---- Route-level composition of scope and replay ---------------------
+        # These two journeys use NO authentication override. The request carries a
+        # real bearer credential and traverses the production credential lookup,
+        # scope check, replay check and rate-limit check. Proving the mechanism
+        # (H14/H15 above) and proving the route composes it are different claims,
+        # and only this second form answers the directive's question.
+        async with engine.begin() as connection:
+            good_token = await _issue_credential(
+                connection, tenant_id=tenant_a, agent_client_id=client_a
+            )
+            await _grant_scope(
+                connection,
+                tenant_id=tenant_a,
+                agent_client_id=client_a,
+                scope=AgentScope.ENVELOPE_READ.value,
+            )
+            scopeless_token = await _issue_credential(
+                connection, tenant_id=tenant_a, agent_client_id=scopeless_client
+            )
+
+        auth_app = _build_authenticated_app(runtime_sessions, tenant_a)
+
+        async def _authed_query(token: str, nonce: str, refs: list[str]):
+            async with AsyncClient(
+                transport=ASGITransport(app=auth_app), base_url="http://test"
+            ) as client:
+                return await client.post(
+                    "/api/trust/v1/envelopes/query",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "X-Tenant-ID": str(tenant_a),
+                        "X-Trust-Nonce": nonce,
+                        "X-Correlation-ID": str(uuid4()),
+                        "X-Idempotency-Key": f"p13-authed-{uuid4()}",
+                    },
+                    json={"subject_types": ["match_verdict"], "subject_refs": refs},
+                )
+
+        # A scoped caller is admitted through the real auth path.
+        admitted = await _authed_query(
+            good_token, f"p13-authed-{uuid4().hex}", [subject_urn]
+        )
+        assert admitted.status_code == 200, (
+            f"real credential rejected by the route: {admitted.status_code} {admitted.text[:200]}"
+        )
+
+        # H15R: the scopeless caller is denied AT THE ROUTE, and the denial
+        # discloses nothing about the subject.
+        denied = await _authed_query(
+            scopeless_token, f"p13-authed-{uuid4().hex}", [subject_urn]
+        )
+        assert denied.status_code in {401, 403}, (
+            f"scopeless caller was not denied: {denied.status_code} {denied.text[:200]}"
+        )
+        denied_blob = denied.text
+        for secret in (reference, str(tenant_a), "evt-" + reference):
+            assert secret not in denied_blob, f"scope denial leaked {secret!r}"
+        executed.append("P13-H15R-route-level-scope-denial")
+
+        # H14R: replaying an accepted nonce through the real route is refused.
+        replay_nonce = f"p13-authed-{uuid4().hex}"
+        first_use = await _authed_query(good_token, replay_nonce, [subject_urn])
+        assert first_use.status_code == 200, (
+            f"first use of a fresh nonce failed: {first_use.status_code}"
+        )
+        replayed = await _authed_query(good_token, replay_nonce, [subject_urn])
+        assert replayed.status_code in {401, 403, 409}, (
+            f"replayed nonce was accepted by the route: {replayed.status_code}"
+        )
+        for secret in (reference, "evt-" + reference):
+            assert secret not in replayed.text, "replay denial leaked subject data"
+        executed.append("P13-H14R-route-level-replay-denial")
 
         # ---- P13 negative controls -------------------------------------------
         # Each control constructs the violating artifact and requires the gate's
@@ -1214,6 +1398,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     print(f"p13_load_bearing_paths={len(load_bearing_paths)}")
     print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
     print(f"p13_money_columns_integer_not_null={len(money_columns)}")
+    print(f"p13_route_level_denials=2")
     print(f"p13_replay_denied=1")
     print(f"p13_scope_denied=1")
     print(f"p13_negative_controls_fired={len(controls)}")

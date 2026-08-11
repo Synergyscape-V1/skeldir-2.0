@@ -43,8 +43,8 @@ jobs:
           --health-cmd pg_isready --health-interval 10s
           --health-timeout 5s --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
-      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p13_e2e
+      MIGRATION_DATABASE_URL: postgresql://migration_user:migration_user@127.0.0.1:5432/skeldir_b25_p13_e2e
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       SKELDIR_B25_P13_E2E_PROOF: "1"
       PGPASSWORD: postgres
@@ -65,15 +65,25 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Provision database
-        run: |
-          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE DATABASE skeldir_b25_p13_e2e;"
-          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_e2e -v ON_ERROR_STOP=1 \
-            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+      # Shared least-privilege boundary rather than a hand-rolled superuser
+      # database; migrations run under the migration principal. The runtime
+      # principal must NOT bypass RLS: app.trust.tenant_security refuses any
+      # connection whose role has rolbypassrls, so running as the postgres
+      # superuser silently disabled that control AND every RLS policy the G2
+      # tenant-isolation journey depends on.
+      - name: Provision least-privilege database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p13_e2e
 
-      - name: Apply migrations
-        run: alembic upgrade head
+      # Asserted, not assumed: a superuser connection would make G2 pass for
+      # the wrong reason, because RLS would never apply.
+      - name: Assert the runtime identity cannot bypass RLS
+        run: |
+          set -o pipefail
+          bypass=$(psql "$DATABASE_URL" -tAc "SELECT COALESCE((SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user), true)")
+          echo "runtime_role_bypassrls=$bypass"
+          test "$bypass" = "f"
 
       # The composition proof. Real DB, real RLS, real route, real signer.
       - name: P13 E2E trust closure (G1-G10 composition and adversarial journeys)
@@ -88,7 +98,7 @@ jobs:
           # reads. Both tamper counts are pinned, so neither a shrinking matrix nor
           # a blind field can pass.
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_executed_cases=12$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_executed_cases=14$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_expected=147$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_failed=147$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
@@ -96,6 +106,7 @@ jobs:
           grep -E "^p13_downgrade_cases_failed_closed=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_negative_controls_fired=14$" /tmp/b25_p13_e2e.out
           grep -E "^p13_money_columns_integer_not_null=6$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_route_level_denials=2$" /tmp/b25_p13_e2e.out
           grep -E "^p13_replay_denied=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_scope_denied=1$" /tmp/b25_p13_e2e.out
       # P13-G11: the suite must not silently lose a journey. An expected case
@@ -127,6 +138,8 @@ jobs:
               "P13-G10-audit-provenance-composition",
               "P13-H14-replay-denied-atomically",
               "P13-H15-missing-scope-denied",
+              "P13-H15R-route-level-scope-denial",
+              "P13-H14R-route-level-replay-denial",
           }
           missing = sorted(required - set(cases))
           assert not missing, f"required P13 journeys removed from manifest: {missing}"
