@@ -72,6 +72,10 @@ EXPECTED_CASE_IDS = (
     "P13-G8-read-only-no-compute-dispatch",
     "P13-G7-schema-downgrade-fails-closed",
     "P13-G10-audit-provenance-composition",
+    "P13-H14-replay-denied-atomically",
+    "P13-H15-missing-scope-denied",
+    "P13-H15R-route-level-scope-denial",
+    "P13-H14R-route-level-replay-denial",
 )
 
 #: Tables that a TrustEnvelope read must never mutate. Deliberately split by
@@ -130,6 +134,14 @@ def _signing_registry() -> TrustKeyRegistry:
 
 
 async def _insert_tenant(connection, tenant_id: UUID, label: str) -> None:
+    # Bind the GUC before inserting. Under a least-privilege identity the RLS
+    # policies are live and dereference current_setting('app.current_tenant_id'),
+    # which fails on an empty string. This was invisible while the harness ran as
+    # a bypass-RLS superuser -- the policies simply never applied.
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
     await connection.execute(
         text(
             """
@@ -291,6 +303,98 @@ def _caller(tenant_id: UUID, client_id: UUID, nonce: str) -> MachineCallerContex
     )
 
 
+async def _issue_credential(connection, *, tenant_id: UUID, agent_client_id: UUID) -> str:
+    """Mint a real service credential and return the plaintext token.
+
+    Seeds `agent_service_credentials` the way production expects: an 8-character
+    prefix for the O(1) index lookup, and a sha256 hex digest of the full token.
+    This is what makes the route-level journeys possible without overriding the
+    authentication dependency -- the real `authenticate_machine_caller` runs,
+    including its scope check and its replay check.
+    """
+    token = f"p13tok{uuid4().hex}"
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.agent_service_credentials
+                (id, tenant_id, agent_client_id, token_prefix, token_hash,
+                 hash_algorithm, status, issued_at)
+            VALUES (:id, :tenant_id, :agent_client_id, :prefix, :hash,
+                    'sha256', 'active', now())
+            """
+        ),
+        {
+            "id": uuid4(),
+            "tenant_id": str(tenant_id),
+            "agent_client_id": str(agent_client_id),
+            "prefix": token[:8],
+            "hash": hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        },
+    )
+    return token
+
+
+async def _grant_scope(connection, *, tenant_id: UUID, agent_client_id: UUID, scope: str) -> None:
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.agent_scope_grants
+                (id, tenant_id, agent_client_id, scope_value, granted_at)
+            VALUES (:id, :tenant_id, :agent_client_id, :scope, now())
+            """
+        ),
+        {
+            "id": uuid4(),
+            "tenant_id": str(tenant_id),
+            "agent_client_id": str(agent_client_id),
+            "scope": scope,
+        },
+    )
+
+
+def _build_authenticated_app(runtime_sessions, tenant_id: UUID):
+    """Wire the real router with NO authentication override.
+
+    `require_envelope_read_tenant_context` is deliberately left in place, so the
+    request traverses the production credential lookup, scope check, replay check
+    and rate-limit check. This is the difference between proving the enforcement
+    mechanism and proving the route composes it.
+    """
+    app = FastAPI()
+    app.include_router(trust_api.router, prefix="/api")
+
+    async def session_dependency():
+        async with runtime_sessions() as session:
+            await session.begin()
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            try:
+                yield session
+                if session.in_transaction():
+                    await session.commit()
+            except Exception:
+                if session.in_transaction():
+                    await session.rollback()
+                raise
+
+    async def signing_registry() -> TrustKeyRegistry:
+        return _signing_registry()
+
+    app.dependency_overrides[trust_api.get_machine_db_session] = session_dependency
+    app.dependency_overrides[trust_api.get_runtime_signing_registry] = signing_registry
+    return app
+
+
 def _build_app(runtime_sessions, tenant_id: UUID, caller: MachineCallerContext):
     """Wire the real router with a real tenant-bound session.
 
@@ -344,8 +448,45 @@ async def _query(app, tenant_id: UUID, refs: list[str], nonce: str):
         )
 
 
+def _assert_no_subject_existence_leak(intruder_status, absent_status, intruder_body, secrets):
+    """G2 check. Shared by the gate and by NC-P13-02.
+
+    Indistinguishability, not merely "not 200". A status-only assertion passes
+    even when the two responses differ in a way that discloses existence.
+    """
+    assert intruder_status == absent_status, (
+        f"existence leaked via status: {intruder_status} vs {absent_status}"
+    )
+    blob = json.dumps(intruder_body)
+    leaked = [token for token in secrets if token and token in blob]
+    assert not leaked, f"wrong-tenant response leaked: {leaked}"
+
+
+def _assert_no_forbidden_mutation(before_counts, after_counts):
+    """G8 check. Shared by the gate and by NC-P13-10."""
+    mutated = {
+        table: (before_counts[table], after_counts[table])
+        for table in before_counts
+        if before_counts[table] != after_counts[table]
+    }
+    assert not mutated, f"trust read mutated business/compute state: {mutated}"
+
+
 def _assert_confidence_not_fabricated(envelope):
-    """G4 check. Shared by the gate and by NC-P13-04 so both exercise one path."""
+    """G4 check. Shared by the gate and by NC-P13-04 so both exercise one path.
+
+    Scope, stated precisely because it is narrower than the directive assumes.
+    `app.trust.builder._confidence_unavailable()` returns a CONSTANT dict, and the
+    builder reads no B2.4 source for match-verdict subjects: the only `bayesian`
+    references in that module are the literal values inside that constant. So the
+    envelope's confidence is unconditionally unavailable/deterministic_only.
+
+    This check therefore proves that nothing fabricates confidence where none is
+    claimed. It does NOT prove that `diagnostics_failed`, `source_snapshot_drift`
+    or `artifact_pruned` degrade truthfully through composition -- those states are
+    unreachable here, because there is no B2.4 integration on this path to
+    degrade. Seeding those fixtures would change nothing in the envelope.
+    """
     confidence = envelope.get("confidence_metadata") or {}
     assert confidence.get("confidence_status") == "unavailable", confidence
     assert confidence.get("confidence_score_basis_points") is None, confidence
@@ -356,6 +497,13 @@ def _assert_confidence_not_fabricated(envelope):
         "interval_high_basis_points",
     ):
         assert not confidence.get(key), f"fabricated interval: {key}"
+    # The authority must be declared deterministic-only rather than merely empty:
+    # an envelope that omitted confidence would also satisfy the checks above
+    # while saying nothing about where authority comes from.
+    assert confidence.get("confidence_authority") == "deterministic_only", confidence
+    assert confidence.get("bayesian_model_type") == "deterministic_only", confidence
+    assert confidence.get("bayesian_model_version") is None, confidence
+    assert confidence.get("diagnostics_status") == "not_applicable", confidence
 
 
 def _assert_no_provider_text_in_authority(envelope, hostile_strings):
@@ -599,16 +747,12 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # real subject must look exactly like requesting one that never existed.
         # Comparing only against "not 200" would pass even if the two responses
         # differed in a way that discloses existence.
-        assert intrusion.status_code == absent.status_code, (
-            f"existence leaked via status: {intrusion.status_code} vs {absent.status_code}"
+        _assert_no_subject_existence_leak(
+            intrusion.status_code,
+            absent.status_code,
+            intrusion.json(),
+            (reference, str(tenant_a), "evt-" + reference),
         )
-        intruder_body = intrusion.json()
-        leaked = [
-            token
-            for token in (reference, str(tenant_a), "evt-" + reference)
-            if token in json.dumps(intruder_body)
-        ]
-        assert not leaked, f"wrong-tenant response leaked: {leaked}"
         executed.append("P13-G2-wrong-tenant-no-existence-leak")
 
         # ---- G3: every load-bearing signed field is mutation-sensitive -------
@@ -750,6 +894,42 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         assert getattr(float_decision, "reason_code", None), (
             "money refusal carries no reason code"
         )
+        # G6, structural half. The directive posits a legacy float-only money
+        # source reaching the route. That scenario is NOT REPRESENTABLE here:
+        # every minor-unit column on the authoritative source table is
+        # `integer NOT NULL`, so a float cannot be stored (PostgreSQL coerces at
+        # insert) and the value can never be absent. The invariant is enforced by
+        # the schema, not only by application code, which is a stronger guarantee
+        # than a fixture could demonstrate -- so it is asserted directly rather
+        # than simulated with a row the database would refuse.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            money_columns = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT column_name, data_type, is_nullable
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'b23_match_verdicts'
+                          AND column_name LIKE '%amount_minor%'
+                        """
+                    )
+                )
+            ).fetchall()
+        assert money_columns, "no minor-unit money columns found on the source table"
+        for name, data_type, nullable in money_columns:
+            assert data_type == "integer", (
+                f"money column {name} is {data_type}, not integer: a float source "
+                "would be representable"
+            )
+            assert nullable == "NO", (
+                f"money column {name} is nullable: an absent authoritative amount "
+                "would be representable"
+            )
         executed.append("P13-G6-money-source-not-authoritative")
 
         # ---- G8: the read mutates no business or compute state ---------------
@@ -781,12 +961,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         assert reread.status_code == 200, reread.text
         after_counts = await _counts()
 
-        mutated = {
-            table: (before_counts[table], after_counts[table])
-            for table in FORBIDDEN_MUTATION_TABLES
-            if before_counts[table] != after_counts[table]
-        }
-        assert not mutated, f"trust read mutated business/compute state: {mutated}"
+        _assert_no_forbidden_mutation(before_counts, after_counts)
         executed.append("P13-G8-read-only-no-compute-dispatch")
 
         # ---- G7: every downgrade and forgery case fails closed ---------------
@@ -837,6 +1012,142 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # subject identities actually used.
         _assert_audit_reconcilable(envelope, subject_urn)
         executed.append("P13-G10-audit-provenance-composition")
+
+        # ---- P13-H14: a replayed nonce is denied atomically ------------------
+        # Driven through the production _atomic_nonce_insert against the real
+        # UNIQUE(tenant_id, nonce_value) constraint. Mocking replay storage to
+        # prove replay protection would prove nothing -- the constraint IS the
+        # protection, so it is exercised rather than simulated.
+        from app.trust.machine_auth import _atomic_nonce_insert, _load_scopes
+
+        replay_nonce = f"p13-replay-{uuid4().hex}"
+        async with runtime_sessions() as replay_session:
+            await replay_session.begin()
+            # Session-scoped (is_local=false), not transaction-local: the
+            # production nonce helper manages its own transaction boundary, and a
+            # transaction-local GUC is discarded underneath it. Under a
+            # least-privilege identity the RLS policy on trust_request_nonces then
+            # dereferences an empty setting and the insert fails.
+            await replay_session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            first = await _atomic_nonce_insert(
+                replay_session,
+                tenant_id=tenant_a,
+                agent_client_id=client_a,
+                nonce_value=replay_nonce,
+                request_identity_hash="sha256:" + "4" * 64,
+            )
+            second = await _atomic_nonce_insert(
+                replay_session,
+                tenant_id=tenant_a,
+                agent_client_id=client_a,
+                nonce_value=replay_nonce,
+                request_identity_hash="sha256:" + "4" * 64,
+            )
+            await replay_session.rollback()
+        assert first is True, f"first use of a fresh nonce was rejected: {first}"
+        assert second is False, f"replayed nonce was accepted: {second}"
+        executed.append("P13-H14-replay-denied-atomically")
+
+        # ---- P13-H15: a principal without the read scope is denied -----------
+        # A third agent client is seeded with NO scope grant. Scopes are resolved
+        # by the production _load_scopes against real agent_scope_grants rows, so
+        # the absence is a database fact rather than a constructed frozenset.
+        scopeless_client = uuid4()
+        async with engine.begin() as connection:
+            await _insert_agent_client(connection, tenant_a, scopeless_client)
+        async with runtime_sessions() as scope_session:
+            await scope_session.begin()
+            await scope_session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            granted = await _load_scopes(
+                scope_session,
+                tenant_id=tenant_a,
+                agent_client_id=scopeless_client,
+            )
+            await scope_session.rollback()
+        assert AgentScope.ENVELOPE_READ not in granted, (
+            f"unscoped client was granted envelope read: {granted}"
+        )
+        assert not granted, f"unscoped client carries unexpected grants: {granted}"
+        executed.append("P13-H15-missing-scope-denied")
+
+        # ---- Route-level composition of scope and replay ---------------------
+        # These two journeys use NO authentication override. The request carries a
+        # real bearer credential and traverses the production credential lookup,
+        # scope check, replay check and rate-limit check. Proving the mechanism
+        # (H14/H15 above) and proving the route composes it are different claims,
+        # and only this second form answers the directive's question.
+        async with engine.begin() as connection:
+            good_token = await _issue_credential(
+                connection, tenant_id=tenant_a, agent_client_id=client_a
+            )
+            await _grant_scope(
+                connection,
+                tenant_id=tenant_a,
+                agent_client_id=client_a,
+                scope=AgentScope.ENVELOPE_READ.value,
+            )
+            scopeless_token = await _issue_credential(
+                connection, tenant_id=tenant_a, agent_client_id=scopeless_client
+            )
+
+        auth_app = _build_authenticated_app(runtime_sessions, tenant_a)
+
+        async def _authed_query(token: str, nonce: str, refs: list[str]):
+            async with AsyncClient(
+                transport=ASGITransport(app=auth_app), base_url="http://test"
+            ) as client:
+                return await client.post(
+                    "/api/trust/v1/envelopes/query",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "X-Tenant-ID": str(tenant_a),
+                        "X-Trust-Nonce": nonce,
+                        "X-Correlation-ID": str(uuid4()),
+                        "X-Idempotency-Key": f"p13-authed-{uuid4()}",
+                    },
+                    json={"subject_types": ["match_verdict"], "subject_refs": refs},
+                )
+
+        # A scoped caller is admitted through the real auth path.
+        admitted = await _authed_query(
+            good_token, f"p13-authed-{uuid4().hex}", [subject_urn]
+        )
+        assert admitted.status_code == 200, (
+            f"real credential rejected by the route: {admitted.status_code} {admitted.text[:200]}"
+        )
+
+        # H15R: the scopeless caller is denied AT THE ROUTE, and the denial
+        # discloses nothing about the subject.
+        denied = await _authed_query(
+            scopeless_token, f"p13-authed-{uuid4().hex}", [subject_urn]
+        )
+        assert denied.status_code in {401, 403}, (
+            f"scopeless caller was not denied: {denied.status_code} {denied.text[:200]}"
+        )
+        denied_blob = denied.text
+        for secret in (reference, str(tenant_a), "evt-" + reference):
+            assert secret not in denied_blob, f"scope denial leaked {secret!r}"
+        executed.append("P13-H15R-route-level-scope-denial")
+
+        # H14R: replaying an accepted nonce through the real route is refused.
+        replay_nonce = f"p13-authed-{uuid4().hex}"
+        first_use = await _authed_query(good_token, replay_nonce, [subject_urn])
+        assert first_use.status_code == 200, (
+            f"first use of a fresh nonce failed: {first_use.status_code}"
+        )
+        replayed = await _authed_query(good_token, replay_nonce, [subject_urn])
+        assert replayed.status_code in {401, 403, 409}, (
+            f"replayed nonce was accepted by the route: {replayed.status_code}"
+        )
+        for secret in (reference, "evt-" + reference):
+            assert secret not in replayed.text, "replay denial leaked subject data"
+        executed.append("P13-H14R-route-level-replay-denial")
 
         # ---- P13 negative controls -------------------------------------------
         # Each control constructs the violating artifact and requires the gate's
@@ -999,7 +1310,50 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
 
         _control("NC-P13-14", _case_removal_detectable, "case removal undetectable")
 
-        assert len(controls) == 11, f"negative control count drift: {sorted(controls)}"
+        # NC-P13-02: a wrong-tenant response that discloses the subject must be
+        # rejected by the gate's own indistinguishability checker. RLS itself is
+        # not disabled -- that would require weakening a production security
+        # control to test it. Instead the checker is fed a response that leaks,
+        # which proves the detector is live without degrading the database.
+        def _wrong_tenant_leak():
+            leaky_body = {"envelopes": [], "debug_subject": reference}
+            return _raises(
+                _assert_no_subject_existence_leak,
+                404,
+                404,
+                leaky_body,
+                (reference, str(tenant_a), "evt-" + reference),
+            )
+
+        _control("NC-P13-02", _wrong_tenant_leak, "wrong tenant received subject data")
+
+        # NC-P13-02b: existence disclosed through differing status alone.
+        def _wrong_tenant_status_leak():
+            return _raises(
+                _assert_no_subject_existence_leak,
+                403,
+                404,
+                {"envelopes": []},
+                (reference,),
+            )
+
+        _control(
+            "NC-P13-02b",
+            _wrong_tenant_status_leak,
+            "existence disclosed by status divergence",
+        )
+
+        # NC-P13-10: a compute dispatch during a trust read must be caught by the
+        # gate's own side-effect ledger comparison.
+        def _compute_dispatched():
+            before = dict(before_counts)
+            after = dict(after_counts)
+            after["b24_fit_dispatch_outbox"] = after["b24_fit_dispatch_outbox"] + 1
+            return _raises(_assert_no_forbidden_mutation, before, after)
+
+        _control("NC-P13-10", _compute_dispatched, "trust read dispatched compute")
+
+        assert len(controls) == 14, f"negative control count drift: {sorted(controls)}"
 
     finally:
         # No tenant teardown. `attribution_events` is append-only at the database
@@ -1043,6 +1397,10 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     print(f"p13_tamper_fields_failed={len(tampered_failed)}")
     print(f"p13_load_bearing_paths={len(load_bearing_paths)}")
     print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
+    print(f"p13_money_columns_integer_not_null={len(money_columns)}")
+    print(f"p13_route_level_denials=2")
+    print(f"p13_replay_denied=1")
+    print(f"p13_scope_denied=1")
     print(f"p13_negative_controls_fired={len(controls)}")
     print(f"p13_downgrade_cases_failed_closed={len(downgrade_results)}")
     print(f"p13_tamper_failure_classes={json.dumps(failure_classes, sort_keys=True)}")
