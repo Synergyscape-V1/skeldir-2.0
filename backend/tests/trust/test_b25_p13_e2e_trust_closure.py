@@ -346,6 +346,30 @@ async def _query(app, tenant_id: UUID, refs: list[str], nonce: str):
         )
 
 
+def _assert_no_subject_existence_leak(intruder_status, absent_status, intruder_body, secrets):
+    """G2 check. Shared by the gate and by NC-P13-02.
+
+    Indistinguishability, not merely "not 200". A status-only assertion passes
+    even when the two responses differ in a way that discloses existence.
+    """
+    assert intruder_status == absent_status, (
+        f"existence leaked via status: {intruder_status} vs {absent_status}"
+    )
+    blob = json.dumps(intruder_body)
+    leaked = [token for token in secrets if token and token in blob]
+    assert not leaked, f"wrong-tenant response leaked: {leaked}"
+
+
+def _assert_no_forbidden_mutation(before_counts, after_counts):
+    """G8 check. Shared by the gate and by NC-P13-10."""
+    mutated = {
+        table: (before_counts[table], after_counts[table])
+        for table in before_counts
+        if before_counts[table] != after_counts[table]
+    }
+    assert not mutated, f"trust read mutated business/compute state: {mutated}"
+
+
 def _assert_confidence_not_fabricated(envelope):
     """G4 check. Shared by the gate and by NC-P13-04 so both exercise one path.
 
@@ -621,16 +645,12 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # real subject must look exactly like requesting one that never existed.
         # Comparing only against "not 200" would pass even if the two responses
         # differed in a way that discloses existence.
-        assert intrusion.status_code == absent.status_code, (
-            f"existence leaked via status: {intrusion.status_code} vs {absent.status_code}"
+        _assert_no_subject_existence_leak(
+            intrusion.status_code,
+            absent.status_code,
+            intrusion.json(),
+            (reference, str(tenant_a), "evt-" + reference),
         )
-        intruder_body = intrusion.json()
-        leaked = [
-            token
-            for token in (reference, str(tenant_a), "evt-" + reference)
-            if token in json.dumps(intruder_body)
-        ]
-        assert not leaked, f"wrong-tenant response leaked: {leaked}"
         executed.append("P13-G2-wrong-tenant-no-existence-leak")
 
         # ---- G3: every load-bearing signed field is mutation-sensitive -------
@@ -803,12 +823,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         assert reread.status_code == 200, reread.text
         after_counts = await _counts()
 
-        mutated = {
-            table: (before_counts[table], after_counts[table])
-            for table in FORBIDDEN_MUTATION_TABLES
-            if before_counts[table] != after_counts[table]
-        }
-        assert not mutated, f"trust read mutated business/compute state: {mutated}"
+        _assert_no_forbidden_mutation(before_counts, after_counts)
         executed.append("P13-G8-read-only-no-compute-dispatch")
 
         # ---- G7: every downgrade and forgery case fails closed ---------------
@@ -1079,7 +1094,50 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
 
         _control("NC-P13-14", _case_removal_detectable, "case removal undetectable")
 
-        assert len(controls) == 11, f"negative control count drift: {sorted(controls)}"
+        # NC-P13-02: a wrong-tenant response that discloses the subject must be
+        # rejected by the gate's own indistinguishability checker. RLS itself is
+        # not disabled -- that would require weakening a production security
+        # control to test it. Instead the checker is fed a response that leaks,
+        # which proves the detector is live without degrading the database.
+        def _wrong_tenant_leak():
+            leaky_body = {"envelopes": [], "debug_subject": reference}
+            return _raises(
+                _assert_no_subject_existence_leak,
+                404,
+                404,
+                leaky_body,
+                (reference, str(tenant_a), "evt-" + reference),
+            )
+
+        _control("NC-P13-02", _wrong_tenant_leak, "wrong tenant received subject data")
+
+        # NC-P13-02b: existence disclosed through differing status alone.
+        def _wrong_tenant_status_leak():
+            return _raises(
+                _assert_no_subject_existence_leak,
+                403,
+                404,
+                {"envelopes": []},
+                (reference,),
+            )
+
+        _control(
+            "NC-P13-02b",
+            _wrong_tenant_status_leak,
+            "existence disclosed by status divergence",
+        )
+
+        # NC-P13-10: a compute dispatch during a trust read must be caught by the
+        # gate's own side-effect ledger comparison.
+        def _compute_dispatched():
+            before = dict(before_counts)
+            after = dict(after_counts)
+            after["b24_fit_dispatch_outbox"] = after["b24_fit_dispatch_outbox"] + 1
+            return _raises(_assert_no_forbidden_mutation, before, after)
+
+        _control("NC-P13-10", _compute_dispatched, "trust read dispatched compute")
+
+        assert len(controls) == 14, f"negative control count drift: {sorted(controls)}"
 
     finally:
         # No tenant teardown. `attribution_events` is append-only at the database

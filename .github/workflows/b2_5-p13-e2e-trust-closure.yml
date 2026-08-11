@@ -94,7 +94,7 @@ jobs:
           grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
           grep -E "^p13_downgrade_cases_failed_closed=6$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_negative_controls_fired=11$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_negative_controls_fired=14$" /tmp/b25_p13_e2e.out
           grep -E "^p13_replay_denied=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_scope_denied=1$" /tmp/b25_p13_e2e.out
       # P13-G11: the suite must not silently lose a journey. An expected case
