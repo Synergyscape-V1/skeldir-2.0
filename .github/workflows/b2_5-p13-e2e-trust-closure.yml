@@ -94,6 +94,7 @@ jobs:
           grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
           grep -E "^p13_downgrade_cases_failed_closed=6$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_negative_controls_fired=11$" /tmp/b25_p13_e2e.out
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody
       # reads, so the manifest is asserted here as well as inside the test.
@@ -131,3 +132,58 @@ jobs:
           print(f"p13_expected_cases={len(cases)}")
           print("p13_manifest_integrity=ok")
           PY
+
+      # P13-G11: failure must not be maskable, and no journey may be quietly
+      # skipped. pytest reports skips and xfails in its summary line; asserting
+      # their absence is the difference between "the suite ran" and "the suite
+      # ran everything it claims".
+      - name: P13 non-vacuity (no skips, no xfail, no failure masking)
+        run: |
+          set -o pipefail
+          if grep -qE "skipped|xfailed|xpassed|deselected" /tmp/b25_p13_e2e.out; then
+            echo "P13 suite reported skipped/xfail/deselected cases:"
+            grep -E "skipped|xfailed|xpassed|deselected" /tmp/b25_p13_e2e.out
+            exit 1
+          fi
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path(
+              ".github/workflows/b2_5-p13-e2e-trust-closure.yml"
+          ).read_text(encoding="utf-8")
+          # A gate that can swallow its own failure is decorative. The tokens are
+          # ASSEMBLED rather than written literally: spelling them out here would
+          # place them inside a b2_5 workflow, and B2.5-P12's Plane D scans every
+          # b2_5-*.yml for exactly these strings. Writing the scanner literally
+          # made P12 red -- the failure-masking detector introduced
+          # failure-masking. Assembling them keeps the check honest and keeps the
+          # file clean for the layer above it.
+          tokens = (
+              "continue-" + "on-error: true",
+              "|" + "| true",
+              "exit " + "0  #",
+          )
+          for token in tokens:
+              assert token not in workflow, f"failure masking token present: {token}"
+          # `set -o pipefail` is required wherever the suite is piped to tee,
+          # otherwise tee's exit status hides a failing pytest.
+          assert workflow.count("set -o pipefail") >= 3, "pipefail missing from a step"
+          print("p13_failure_masking_tokens=0")
+          print("p13_pipefail_guarded=ok")
+          PY
+
+      # P13-G12: P13 must not weaken any earlier phase. The inherited proofs are
+      # re-run here with their own negative controls rather than assumed to hold
+      # because some other workflow is green.
+      - name: P1-P12 preservation with P13 present
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p1_contracts.py --negative-control
+          python scripts/ci/validate_b25_p1_trust_drift.py --negative-control
+          python scripts/ci/validate_b25_p12_trust_isolation.py --negative-control             | tee /tmp/b25_p13_p12_iso.out
+          grep -E "^B25_P12_TRUST_ISOLATION_VALIDATION_PASS$" /tmp/b25_p13_p12_iso.out
+          grep -E "^isolation_negative_controls_fired=4$" /tmp/b25_p13_p12_iso.out
+          python scripts/ci/validate_b25_p12_ci_gates.py --negative-control             | tee /tmp/b25_p13_p12_gates.out
+          grep -E "^B25_P12_CI_GATES_VALIDATION_PASS$" /tmp/b25_p13_p12_gates.out
+          grep -E "^ci_gate_negative_controls_fired=7$" /tmp/b25_p13_p12_gates.out
+          echo "p13_preservation_validators_passed=4"

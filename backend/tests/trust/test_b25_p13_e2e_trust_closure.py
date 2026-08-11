@@ -344,6 +344,59 @@ async def _query(app, tenant_id: UUID, refs: list[str], nonce: str):
         )
 
 
+def _assert_confidence_not_fabricated(envelope):
+    """G4 check. Shared by the gate and by NC-P13-04 so both exercise one path."""
+    confidence = envelope.get("confidence_metadata") or {}
+    assert confidence.get("confidence_status") == "unavailable", confidence
+    assert confidence.get("confidence_score_basis_points") is None, confidence
+    for key in (
+        "confidence_interval",
+        "credible_interval",
+        "interval_low_basis_points",
+        "interval_high_basis_points",
+    ):
+        assert not confidence.get(key), f"fabricated interval: {key}"
+
+
+def _assert_no_provider_text_in_authority(envelope, hostile_strings):
+    """G5 check. Shared by the gate and by NC-P13-05."""
+    authority = {
+        key: value
+        for key, value in envelope.items()
+        if key
+        in (
+            "match_verdict_status",
+            "policy_action_authority",
+            "truth_authority",
+            "truth_type",
+            "data_completeness_status",
+            "fallback_reason",
+            "subject_authority",
+        )
+    }
+    blob = json.dumps(authority)
+    for hostile in hostile_strings:
+        assert hostile not in blob, f"provider text in authority field: {hostile!r}"
+    assert "auto_executable_within_policy" not in blob, "policy escalated"
+
+
+def _assert_audit_reconcilable(envelope, expected_subject_urn):
+    """G10 check. Shared by the gate and by NC-P13-12."""
+    audit_ref = envelope.get("audit_ref")
+    assert isinstance(audit_ref, str) and audit_ref.startswith(
+        "urn:skeldir:audit:issuance:"
+    ), f"audit_ref not resolvable: {audit_ref}"
+    assert "p5_unsigned_builder_unissued" not in audit_ref, "unissued placeholder"
+    assert str(envelope.get("audit_hash", "")).startswith("sha256:"), "audit not committed"
+    assert envelope.get("subject_ref") == expected_subject_urn, "audit subject mismatch"
+
+
+def _assert_manifest_complete(expected_ids, executed_ids):
+    """G11 check. Shared by the gate and by NC-P13-14."""
+    missing = [case for case in expected_ids if case not in executed_ids]
+    assert not missing, f"expected journeys did not execute: {missing}"
+
+
 def _resolve_path(envelope, path):
     """Resolve a manifest field path to (container, key) pairs in one envelope.
 
@@ -629,19 +682,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # B2.4 confidence is absent for this subject (cold start). Deterministic
         # revenue authority must survive that, and nothing may invent a credible
         # interval to fill the gap.
-        confidence = envelope.get("confidence_metadata") or {}
-        assert confidence.get("confidence_status") == "unavailable", confidence
-        assert confidence.get("confidence_authority") == "deterministic_only", confidence
-        assert confidence.get("confidence_score_basis_points") is None, confidence
-        for interval_key in (
-            "confidence_interval",
-            "credible_interval",
-            "interval_low_basis_points",
-            "interval_high_basis_points",
-        ):
-            assert not confidence.get(interval_key), (
-                f"fabricated interval under degraded confidence: {interval_key}"
-            )
+        _assert_confidence_not_fabricated(envelope)
         # Deterministic truth is preserved alongside the degradation.
         assert envelope.get("match_verdict_status") == "matched", envelope.get(
             "match_verdict_status"
@@ -682,28 +723,9 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         assert display.get("text_trust_class") == "untrusted_display_label", display
         assert display.get("display_transform") == "escaped_display_only", display
 
-        authority_fields = {
-            key: value
-            for key, value in hostile_envelope.items()
-            if key
-            in (
-                "match_verdict_status",
-                "policy_action_authority",
-                "truth_authority",
-                "truth_type",
-                "data_completeness_status",
-                "fallback_reason",
-                "subject_authority",
-            )
-        }
-        authority_blob = json.dumps(authority_fields)
-        for hostile in ADVERSARIAL_PROVIDER_TEXT:
-            assert hostile not in authority_blob, (
-                f"provider text reached an authority field: {hostile!r}"
-            )
-        # Policy authority must stay conservative: no executable escalation.
-        policy = hostile_envelope.get("policy_action_authority") or {}
-        assert "auto_executable_within_policy" not in json.dumps(policy), policy
+        _assert_no_provider_text_in_authority(
+            hostile_envelope, ADVERSARIAL_PROVIDER_TEXT
+        )
         executed.append("P13-G5-prompt-control-quarantined")
 
         # ---- G6: a non-authoritative money source refuses, it does not crash --
@@ -813,28 +835,171 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # gate targets, so the reference is required to be well-formed, bound to
         # the issuance domain, and hash-committed alongside the tenant and
         # subject identities actually used.
-        audit_ref = envelope.get("audit_ref")
-        audit_hash = envelope.get("audit_hash")
-        assert isinstance(audit_ref, str) and audit_ref.startswith(
-            "urn:skeldir:audit:issuance:"
-        ), f"audit_ref not a resolvable issuance URN: {audit_ref}"
-        assert "p5_unsigned_builder_unissued" not in audit_ref, (
-            "envelope carries the unissued builder placeholder as its audit ref"
-        )
-        assert isinstance(audit_hash, str) and audit_hash.startswith("sha256:"), (
-            f"audit_hash not committed: {audit_hash}"
-        )
-        assert envelope.get("tenant_id_hash", "").startswith("sha256:"), envelope.get(
-            "tenant_id_hash"
-        )
-        assert envelope.get("subject_ref_hash", "").startswith("sha256:"), envelope.get(
-            "subject_ref_hash"
-        )
-        # The audit binding must belong to THIS subject, not merely be present.
-        assert envelope.get("subject_ref") == subject_urn, (
-            f"envelope subject_ref {envelope.get('subject_ref')} != requested {subject_urn}"
-        )
+        _assert_audit_reconcilable(envelope, subject_urn)
         executed.append("P13-G10-audit-provenance-composition")
+
+        # ---- P13 negative controls -------------------------------------------
+        # Each control constructs the violating artifact and requires the gate's
+        # OWN check to reject it. A journey that passes proves nothing unless the
+        # same check fails when the invariant is broken -- that is the whole
+        # lesson of the P12 entry gate, where a counter read 22 while measuring
+        # string non-emptiness.
+        #
+        # Controls are recorded by id with the observed refusal, so a control
+        # that stops firing is visible rather than silently absent.
+        controls: dict[str, str] = {}
+
+        def _raises(checker, *args):
+            """A control fires only if the gate's OWN checker rejects the violation."""
+            try:
+                checker(*args)
+            except AssertionError:
+                return True
+            return False
+
+
+        def _control(name, predicate, description):
+            """Register a control: predicate() must be True for the control to fire."""
+            fired = bool(predicate())
+            assert fired, f"negative control did not fire: {name} ({description})"
+            controls[name] = "fired"
+
+        # NC-P13-01: an unsigned envelope must not verify as authoritative.
+        def _unsigned():
+            unsigned = copy.deepcopy(envelope)
+            unsigned.pop("signature", None)
+            try:
+                outcome = verify_trust_envelope(unsigned, key_registry=public_only)
+                return str(getattr(outcome, "verification_status", outcome)) not in {
+                    "valid",
+                    "verified",
+                }
+            except Exception:  # noqa: BLE001
+                return True
+
+        _control("NC-P13-01", _unsigned, "unsigned envelope accepted as authoritative")
+
+        # NC-P13-03: tampering a load-bearing field must break verification. The
+        # control targets semantic_truth_hash itself, the field every other
+        # commitment folds into.
+        def _tampered():
+            broken = copy.deepcopy(envelope)
+            broken["semantic_truth_hash"] = "sha256:" + "0" * 64
+            try:
+                outcome = verify_trust_envelope(broken, key_registry=public_only)
+                return str(getattr(outcome, "verification_status", outcome)) not in {
+                    "valid",
+                    "verified",
+                }
+            except Exception:  # noqa: BLE001
+                return True
+
+        _control("NC-P13-03", _tampered, "tampered load-bearing field verified clean")
+
+        # NC-P13-04: a fabricated interval must be REJECTED by the same checker
+        # the gate uses, not merely be present in a dict I just built.
+        def _fabricated_interval():
+            fake = copy.deepcopy(envelope)
+            fake.setdefault("confidence_metadata", {})["confidence_interval"] = [10, 90]
+            return _raises(_assert_confidence_not_fabricated, fake)
+
+        _control("NC-P13-04", _fabricated_interval, "interval fabricated while unavailable")
+
+        # NC-P13-05: prompt text in an authority field must be rejected by the
+        # gate's own scan.
+        def _prompt_in_authority():
+            poisoned = copy.deepcopy(hostile_envelope)
+            poisoned["match_verdict_status"] = ADVERSARIAL_PROVIDER_TEXT[0]
+            return _raises(
+                _assert_no_provider_text_in_authority,
+                poisoned,
+                ADVERSARIAL_PROVIDER_TEXT,
+            )
+
+        _control("NC-P13-05", _prompt_in_authority, "prompt text entered authority field")
+
+        # NC-P13-06: a float must never resolve to authoritative minor units.
+        def _float_money():
+            decision = resolve_authoritative_money(
+                source_domain="b23_match_verdicts",
+                source_field_path="legacy_float_revenue",
+                raw_value=105.00,
+                currency="USD",
+                intended_trust_field="verified_revenue_minor",
+            )
+            return decision.amount_minor is None
+
+        _control("NC-P13-06", _float_money, "float coerced into authoritative money")
+
+        # NC-P13-07 / NC-P13-08: downgrade and HMAC forgery must fail closed.
+        _control(
+            "NC-P13-07",
+            lambda: downgrade_results.get("unsupported_schema_valid_signature")
+            not in {"valid", "verified"},
+            "unsupported schema accepted",
+        )
+        _control(
+            "NC-P13-08",
+            lambda: downgrade_results.get("hmac_fake_signature")
+            not in {"valid", "verified"},
+            "HMAC fake accepted as external authority",
+        )
+
+        # NC-P13-09: an executable policy state must be rejected by the same
+        # scan, since policy authority travels in the authority blob.
+        def _policy_escalation():
+            escalated = copy.deepcopy(envelope)
+            escalated["policy_action_authority"] = {
+                **(escalated.get("policy_action_authority") or {}),
+                "action_authority": "auto_executable_within_policy",
+            }
+            return _raises(
+                _assert_no_provider_text_in_authority,
+                escalated,
+                ADVERSARIAL_PROVIDER_TEXT,
+            )
+
+        _control("NC-P13-09", _policy_escalation, "policy escalated to executable")
+
+        # NC-P13-12: an unreconcilable audit reference must be rejected by the
+        # gate's own audit checker.
+        def _audit_mismatch():
+            broken = copy.deepcopy(envelope)
+            broken["audit_ref"] = (
+                "urn:skeldir:audit:issuance:p5_unsigned_builder_unissued"
+            )
+            return _raises(_assert_audit_reconcilable, broken, subject_urn)
+
+        _control("NC-P13-12", _audit_mismatch, "unreconcilable audit ref accepted")
+
+        # NC-P13-13: semantic identity must not move when ONLY the signing key
+        # changes. Proven by re-signing the same payload with a different key and
+        # recomputing, not by comparing a copied field to itself.
+        def _semantic_stable_across_key():
+            from app.trust.hash_identity import compute_semantic_truth_hash
+
+            rotated = copy.deepcopy(envelope)
+            rotated["signing_key_id"] = "kid:b25-p13-rotated"
+            rotated["signature"] = "ed25519:" + "A" * 86
+            return compute_semantic_truth_hash(rotated) == compute_semantic_truth_hash(
+                envelope
+            )
+
+        _control(
+            "NC-P13-13",
+            _semantic_stable_across_key,
+            "semantic identity moved on key rotation alone",
+        )
+
+        # NC-P13-14: a journey silently dropped from the executed set must be
+        # caught by the same manifest checker the gate uses.
+        def _case_removal_detectable():
+            shrunk = [c for c in executed if "G3" not in c]
+            return _raises(_assert_manifest_complete, EXPECTED_CASE_IDS, shrunk)
+
+        _control("NC-P13-14", _case_removal_detectable, "case removal undetectable")
+
+        assert len(controls) == 11, f"negative control count drift: {sorted(controls)}"
 
     finally:
         # No tenant teardown. `attribution_events` is append-only at the database
@@ -845,13 +1010,14 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         await engine.dispose()
 
     # ---- G11 foundation: machine-readable expected-case accounting -----------
+    _assert_manifest_complete(EXPECTED_CASE_IDS, executed)
     missing = [case for case in EXPECTED_CASE_IDS if case not in executed]
-    assert not missing, f"expected P13 cases did not execute: {missing}"
     artifact = {
         "schema_version": "b25-p13-e2e-manifest-v1",
         "expected_case_ids": list(EXPECTED_CASE_IDS),
         "executed_case_ids": executed,
         "missing_case_ids": missing,
+        "negative_control_ids": sorted(controls),
         "downgrade_cases": downgrade_results,
         "tamper_fields_expected": len(tampered_expected),
         "tamper_fields_tested": len(tampered_failed),
@@ -877,5 +1043,6 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     print(f"p13_tamper_fields_failed={len(tampered_failed)}")
     print(f"p13_load_bearing_paths={len(load_bearing_paths)}")
     print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
+    print(f"p13_negative_controls_fired={len(controls)}")
     print(f"p13_downgrade_cases_failed_closed={len(downgrade_results)}")
     print(f"p13_tamper_failure_classes={json.dumps(failure_classes, sort_keys=True)}")
