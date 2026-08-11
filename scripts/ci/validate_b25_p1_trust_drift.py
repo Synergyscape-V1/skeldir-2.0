@@ -95,6 +95,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p11_export_artifact.py",
     "backend/tests/trust/test_b25_p11_export_projection.py",
     "backend/tests/trust/test_b25_p11_postgres_physics.py",
+    "backend/tests/trust/test_b25_p13_e2e_trust_closure.py",
 )
 
 

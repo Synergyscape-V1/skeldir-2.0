@@ -174,6 +174,8 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b25_p12_contract_projection.py",
     "scripts/ci/validate_b25_p12_trust_isolation.py",
     "scripts/ci/_b25_p12_runtime_trace.py",
+    "backend/tests/trust/test_b25_p13_e2e_trust_closure.py",
+    ".github/workflows/b2_5-p13-e2e-trust-closure.yml",
     "scripts/ci/validate_b25_p12_ci_gates.py",
     "docs/ci/b25_p12_invariant_registry.yaml",
     "contracts/trust-api/export-artifact.v2.yaml",

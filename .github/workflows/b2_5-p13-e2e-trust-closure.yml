@@ -1,0 +1,115 @@
+name: B2.5-P13 E2E Trust Closure
+
+# B2.5-P13 proves the trust chain COMPOSES through the real machine-facing route.
+# Every layer below already passes its own phase gate; what this context adds is
+# the composition proof -- real PostgreSQL with RLS, the actual FastAPI route,
+# the production builder and signer, and public-only verification.
+#
+# Not path-filtered on pull_request, deliberately. A required status check that
+# is path-filtered never reports on a PR outside its paths and blocks that PR
+# forever waiting for a status that cannot arrive. That defect was found in P12
+# and again across P8-P11 during P13-P0; this workflow is built without it.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/app/trust/**'
+      - 'backend/app/api/trust_api.py'
+      - 'backend/tests/trust/test_b25_p13_e2e_trust_closure.py'
+      - 'contracts/trust-api/**'
+      - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b25-p13-e2e-trust-closure:
+    name: B2.5-P13 E2E Trust Closure
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      SKELDIR_B25_P13_E2E_PROOF: "1"
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Provision database
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE skeldir_b25_p13_e2e;"
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_e2e -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      # The composition proof. Real DB, real RLS, real route, real signer.
+      - name: P13 E2E trust closure (G1 happy path, G2 wrong tenant, G9 public verification)
+        run: |
+          set -o pipefail
+          python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py \
+            -q --no-header | tee /tmp/b25_p13_e2e.out
+          grep -E "1 passed" /tmp/b25_p13_e2e.out
+
+      # P13-G11: the suite must not silently lose a journey. An expected case
+      # that disappears has to fail the gate rather than reduce a count nobody
+      # reads, so the manifest is asserted here as well as inside the test.
+      - name: P13 expected-case manifest (non-vacuity)
+        run: |
+          set -o pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          source = Path(
+              "backend/tests/trust/test_b25_p13_e2e_trust_closure.py"
+          ).read_text(encoding="utf-8")
+          block = re.search(r"EXPECTED_CASE_IDS = \((.*?)\)", source, re.S)
+          assert block, "EXPECTED_CASE_IDS manifest missing"
+          cases = re.findall(r'"([^"]+)"', block.group(1))
+          required = {
+              "P13-G1-happy-path-signed-envelope",
+              "P13-G2-wrong-tenant-no-existence-leak",
+              "P13-G9-public-only-verification",
+          }
+          missing = sorted(required - set(cases))
+          assert not missing, f"required P13 journeys removed from manifest: {missing}"
+          for case in cases:
+              assert f'executed.append("{case}")' in source, (
+                  f"case {case} is declared but never appended by the suite"
+              )
+          print(f"p13_expected_cases={len(cases)}")
+          print("p13_manifest_integrity=ok")
+          PY
