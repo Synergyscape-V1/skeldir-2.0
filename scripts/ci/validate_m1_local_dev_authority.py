@@ -256,6 +256,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/requirements-lock.txt",
     "backend/requirements-bayesian.txt",
     "backend/app/bayesian/",
+    "backend/app/confidence_projection/",
     "backend/app/trust/",
     "backend/app/api/trust_keys.py",
     "backend/app/api/trust_api.py",

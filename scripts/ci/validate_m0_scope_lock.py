@@ -288,6 +288,7 @@ ALLOWED_M0_PATHS = [
     "contracts-internal/governance/b03_phase2_required_status_checks.main.json",
     ".github/CODEOWNERS",
     "backend/app/bayesian/",
+    "backend/app/confidence_projection/",
     "backend/app/trust/",
     "backend/app/api/trust_keys.py",
     "backend/app/main.py",
