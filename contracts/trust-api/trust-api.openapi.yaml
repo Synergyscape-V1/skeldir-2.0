@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Trust API Contract Authority
-  version: 1.3.0
+  version: 1.4.0
   description: >
     B2.5 contract authority for the P10 TrustEnvelope read, bounded-query,
     authenticated-verification, and public JWKS surfaces. It does not authorize
@@ -432,9 +432,9 @@ components:
     SubjectType:
       type: string
       description: >
-        match_verdict is supported. The other values are reserved taxonomy and
-        deterministically return unsupported_subject_type; they never collapse
-        into subject_not_found.
+        match_verdict and exact-fit confidence_projection subjects are supported.
+        Other values are reserved taxonomy and deterministically return
+        unsupported_subject_type; they never collapse into subject_not_found.
       enum:
         - revenue_claim
         - match_verdict
@@ -443,11 +443,11 @@ components:
         - confidence_projection
       x-skeldir-supported-values:
         - match_verdict
+        - confidence_projection
       x-skeldir-reserved-values:
         - revenue_claim
         - attribution_result
         - reconciliation_discrepancy
-        - confidence_projection
     TrustApiError:
       type: object
       additionalProperties: false

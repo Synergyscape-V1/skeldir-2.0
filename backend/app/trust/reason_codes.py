@@ -22,6 +22,7 @@ class ReasonCode(StrEnum):
     CONFIDENCE_UNAVAILABLE = "confidence_unavailable"
     DIAGNOSTICS_FAILED = "diagnostics_failed"
     ARTIFACT_PRUNED = "artifact_pruned"
+    ARTIFACT_UNAVAILABLE = "artifact_unavailable"
     SOURCE_SNAPSHOT_STALE = "source_snapshot_stale"
     BENCHMARK_UNAVAILABLE = "benchmark_unavailable"
     POLICY_DENIED = "policy_denied"
@@ -58,6 +59,7 @@ REQUIRED_P6_REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.CONFIDENCE_UNAVAILABLE,
         ReasonCode.DIAGNOSTICS_FAILED,
         ReasonCode.ARTIFACT_PRUNED,
+        ReasonCode.ARTIFACT_UNAVAILABLE,
         ReasonCode.SOURCE_SNAPSHOT_STALE,
         ReasonCode.BENCHMARK_UNAVAILABLE,
         ReasonCode.POLICY_DENIED,
@@ -84,6 +86,7 @@ FALLBACK_REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.DIAGNOSTICS_FAILED,
         ReasonCode.SOURCE_SNAPSHOT_STALE,
         ReasonCode.ARTIFACT_PRUNED,
+        ReasonCode.ARTIFACT_UNAVAILABLE,
         ReasonCode.BENCHMARK_UNAVAILABLE,
         ReasonCode.MONEY_SOURCE_NOT_AUTHORITATIVE,
         ReasonCode.MONEY_AMOUNT_EXCEEDS_JSON_SAFE_INTEGER,
@@ -279,6 +282,14 @@ REASON_CODE_REGISTRY: dict[ReasonCode, ReasonCodeDefinition] = {
         confidence="degrade_auditably_no_artifact_backed_interval",
         fallback_applied="required",
         fallback_reason=ReasonCode.ARTIFACT_PRUNED,
+    ),
+    ReasonCode.ARTIFACT_UNAVAILABLE: _definition(
+        ReasonCode.ARTIFACT_UNAVAILABLE,
+        source_predicate="required_b24_artifact_missing_or_rejected",
+        envelope_status="degraded",
+        confidence="degrade_auditably_no_artifact_backed_interval",
+        fallback_applied="required",
+        fallback_reason=ReasonCode.ARTIFACT_UNAVAILABLE,
     ),
     ReasonCode.SOURCE_SNAPSHOT_STALE: _definition(
         ReasonCode.SOURCE_SNAPSHOT_STALE,

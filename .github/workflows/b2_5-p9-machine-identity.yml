@@ -16,6 +16,7 @@ on:
       - "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
       - "contracts/trust-api/**"
       - "backend/app/trust/**"
+      - "backend/app/confidence_projection/**"
   # Deliberately NOT path-filtered. This context is a REQUIRED status check.
   # A required check that is path-filtered never reports on a PR outside its
   # paths, and GitHub blocks that PR forever waiting for a status that cannot

@@ -6,6 +6,7 @@ on:
     paths:
       - "contracts/trust-api/**"
       - "backend/app/trust/**"
+      - "backend/app/confidence_projection/**"
       - "backend/tests/trust/**"
       - "alembic/versions/007_skeldir_foundation/202607011200_b25_p7_trust_audit_provenance.py"
       - "scripts/ci/validate_b25_p1_contracts.py"
@@ -25,6 +26,7 @@ on:
     paths:
       - "contracts/trust-api/**"
       - "backend/app/trust/**"
+      - "backend/app/confidence_projection/**"
       - "backend/tests/trust/**"
       - "alembic/versions/007_skeldir_foundation/202607011200_b25_p7_trust_audit_provenance.py"
       - "scripts/ci/validate_b25_p1_contracts.py"

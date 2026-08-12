@@ -23,17 +23,16 @@ is permissible only where the mocked dependency is not the property under proof:
 * RLS is not mocked -- it is the property in G2.
 * The builder is not mocked -- route composition is the property in G1.
 * The signer is not mocked -- signed-response verification is the property.
-* Verification uses ``public_only()`` -- consumer independence is the property
-  in G9, and reusing the signing registry would prove cryptographic code rather
-  than public verifiability.
-
-The database session dependency is overridden only to bind the tenant GUC the
-way the production ASGI middleware does; the session itself is a real
-least-privilege runtime connection.
+* Verification keys are fetched through the governed JWKS HTTP route and rebuilt
+  into a consumer registry; server signing state is never reused.
+* Authentication, scope, replay, rate limiting, database session creation and
+  transaction-local tenant GUC binding all use production dependencies without
+  overrides.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -43,17 +42,14 @@ from uuid import UUID, uuid4
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.api import trust_api
+from app.api import trust_api, trust_keys
 from app.core.secrets import get_database_url
 from app.db.dsn import to_asyncpg_postgres_dsn
-from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
-from app.trust.machine_auth import MachineCallerContext
 from app.trust.machine_identity import AgentScope
 
 pytestmark = pytest.mark.skipif(
@@ -78,7 +74,7 @@ EXPECTED_CASE_IDS = (
     "P13-H15-missing-scope-denied",
     "P13-H15R-route-level-scope-denial",
     "P13-H14R-route-level-replay-denial",
-    "P13-H08-confidence-projection-gap",
+    "P13-H08-confidence-projection-closure",
 )
 
 #: Tables that a TrustEnvelope read must never mutate. Deliberately split by
@@ -93,6 +89,8 @@ FORBIDDEN_MUTATION_TABLES = (
     "b24_fit_recovery_outbox",
     "b24_feature_authority_build_outbox",
     "b24_feature_authority_build_requests",
+    "b24_active_execution_leases",
+    "bayesian_model_fits",
     "bayesian_artifacts",
 )
 
@@ -119,25 +117,6 @@ SIGNING_KID = "kid:b25-p13-e2e"
 #: Contract directory, used to compare published confidence states against the
 #: states the runtime can actually emit (P13-H08).
 ROOT_CONTRACTS = Path(__file__).resolve().parents[3] / "contracts" / "trust-api"
-
-
-def _signing_registry() -> TrustKeyRegistry:
-    """Server-side registry: holds private material, used only for issuance."""
-    private_key = Ed25519PrivateKey.from_private_bytes(
-        hashlib.sha256(b"b25-p13-e2e-signing-key").digest()
-    )
-    return TrustKeyRegistry(
-        (
-            TrustSigningKey(
-                kid=SIGNING_KID,
-                algorithm="ed25519",
-                public_key=private_key.public_key(),
-                private_key=private_key,
-                state="active",
-                valid_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            ),
-        )
-    )
 
 
 async def _insert_tenant(connection, tenant_id: UUID, label: str) -> None:
@@ -293,24 +272,356 @@ async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
         },
     )
     verdict_id = row.scalar_one()
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.b23_revenue_events (
+                tenant_id, match_verdict_id, provider,
+                provider_native_event_reference,
+                provider_native_commerce_reference,
+                canonical_commerce_reference, event_type, currency_code,
+                event_occurred_at, captured_amount_minor, net_effect_sign,
+                is_gross_capture_correction
+            ) VALUES (
+                :tenant_id, :verdict_id, 'stripe', :capture_ref, :commerce_ref,
+                :reference, 'payment_capture', 'USD', :base, 10000, 1, false
+            )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "verdict_id": str(verdict_id),
+            "capture_ref": f"capture-{reference}",
+            "commerce_ref": f"commerce-{reference}",
+            "reference": reference,
+            "base": base,
+        },
+    )
     # Subject references are governed URNs, not raw commerce strings: the source
     # adapter parses `urn:skeldir:match_verdict:<uuid>` and returns None for
     # anything else, so a bare reference is silently a non-match.
     return f"urn:skeldir:match_verdict:{verdict_id}"
 
 
-def _caller(tenant_id: UUID, client_id: UUID, nonce: str) -> MachineCallerContext:
-    return MachineCallerContext(
-        agent_client_id=client_id,
-        tenant_id=tenant_id,
-        audience="b25-p13-e2e",
-        scopes=frozenset({AgentScope.ENVELOPE_READ, AgentScope.ENVELOPE_VERIFY}),
-        nonce_value=nonce,
-        request_identity_hash="sha256:" + "3" * 64,
+async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str]:
+    """Seed the five exact B2.4 source families required by C2-02/C2-05."""
+
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
     )
+    start = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 6, 2, tzinfo=timezone.utc)
+    cases = {
+        "available": {
+            "status": "succeeded",
+            "completeness": "complete",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "passed",
+            "diagnostic_reason": None,
+            "interval": "available",
+            "lifecycle": "active",
+        },
+        "cold_start": {
+            "status": "fallback_only",
+            "completeness": "insufficient",
+            "fallback": True,
+            "fallback_reason": "insufficient_data",
+            "diagnostic": "unavailable",
+            "diagnostic_reason": "skipped_non_sampled",
+            "interval": "not_available",
+            "lifecycle": None,
+        },
+        "diagnostics_failed": {
+            "status": "sampled_unvalidated",
+            "completeness": "complete",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "failed",
+            "diagnostic_reason": "bad_rhat",
+            "interval": "invalid",
+            "lifecycle": None,
+        },
+        "snapshot_stale": {
+            "status": "succeeded",
+            "completeness": "stale",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "passed",
+            "diagnostic_reason": None,
+            "interval": "available",
+            "lifecycle": "active",
+        },
+        "artifact_pruned": {
+            "status": "succeeded",
+            "completeness": "complete",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "passed",
+            "diagnostic_reason": None,
+            "interval": "available",
+            "lifecycle": "pruned",
+        },
+    }
+    refs: dict[str, str] = {}
+    for index, (name, case) in enumerate(cases.items(), start=1):
+        fit_id = uuid4()
+        snapshot_hash = f"{index:x}" * 64
+        lifecycle = case["lifecycle"]
+        artifact_hash = hashlib.sha256(f"p13-{name}".encode()).hexdigest()
+        artifact_ref = (
+            f"b24://artifact/{tenant_id}/{fit_id}/summary/{artifact_hash[:12]}"
+            if lifecycle is not None
+            else None
+        )
+        await connection.execute(
+            text(
+                """
+                INSERT INTO public.bayesian_model_fits (
+                    id, tenant_id, model_type, model_version,
+                    source_window_start, source_window_end, source_snapshot_hash,
+                    status, eligibility_status, data_completeness_status,
+                    fallback_applied, fallback_reason, completed_at,
+                    r_hat_max, ess_min, divergence_count, hdi_lower, hdi_upper,
+                    interval_shape, interval_element_count, interval_summary_bytes,
+                    credible_interval_status, diagnostic_status,
+                    diagnostic_failure_reason, diagnostic_policy_version,
+                    diagnostic_target_filter_version, interval_policy_version,
+                    artifact_ref, artifact_hash, created_at, updated_at
+                ) VALUES (
+                    :fit_id, :tenant_id, 'pymc_marketing_mmm', :model_version,
+                    :window_start, :window_end, :snapshot_hash,
+                    'queued', :eligibility, :completeness,
+                    :fallback, :fallback_reason, :completed_at,
+                    :r_hat, :ess, :divergences, :hdi_lower, :hdi_upper,
+                    CAST(:interval_shape AS jsonb), :interval_count, :interval_bytes,
+                    :interval_status, :diagnostic_status,
+                    :diagnostic_reason, :diagnostic_policy,
+                    :target_policy, :interval_policy,
+                    :artifact_ref, :artifact_hash, :completed_at, :completed_at
+                )
+                """
+            ),
+            {
+                "fit_id": str(fit_id),
+                "tenant_id": str(tenant_id),
+                "model_version": f"p13-{name}-v1",
+                "window_start": start,
+                "window_end": end,
+                "snapshot_hash": snapshot_hash,
+                "status": case["status"],
+                "eligibility": ("fallback_only" if case["fallback"] else "eligible"),
+                "completeness": case["completeness"],
+                "fallback": case["fallback"],
+                "fallback_reason": case["fallback_reason"],
+                "completed_at": end,
+                "r_hat": 1.0 if case["diagnostic"] == "passed" else 1.2,
+                "ess": 500 if case["diagnostic"] == "passed" else 100,
+                "divergences": 0,
+                "hdi_lower": 9700 if case["interval"] == "available" else None,
+                "hdi_upper": 10300 if case["interval"] == "available" else None,
+                "interval_shape": "[2]" if case["interval"] == "available" else "[]",
+                "interval_count": 2 if case["interval"] == "available" else None,
+                "interval_bytes": 16 if case["interval"] == "available" else None,
+                "interval_status": case["interval"],
+                "diagnostic_status": case["diagnostic"],
+                "diagnostic_reason": case["diagnostic_reason"],
+                "diagnostic_policy": "p13-diagnostics-v1",
+                "target_policy": "p13-target-v1",
+                "interval_policy": "p13-interval-v1",
+                "artifact_ref": artifact_ref,
+                "artifact_hash": artifact_hash if artifact_ref else None,
+            },
+        )
+        dispatch_id = uuid4()
+        attempt_id = uuid4()
+        generation_id = f"p13-{name}-{uuid4().hex[:12]}"
+        process_token = f"p13-worker-token-{uuid4().hex}"
+        task_name = "app.tasks.bayesian.execute_fit_intent"
+        payload_hash = hashlib.sha256(
+            f"{task_name}:{fit_id}".encode("utf-8")
+        ).hexdigest()
+        await connection.execute(
+            text(
+                """
+                SELECT public.b24_register_worker_process_authority(
+                    :generation_id, :pid, 1, :topology_fingerprint,
+                    :process_token, 3600
+                )
+                """
+            ),
+            {
+                "generation_id": generation_id,
+                "pid": 4200 + index,
+                "topology_fingerprint": hashlib.sha256(
+                    generation_id.encode("utf-8")
+                ).hexdigest(),
+                "process_token": process_token,
+            },
+        )
+        await connection.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await connection.execute(
+            text(
+                """
+                INSERT INTO public.b24_fit_dispatch_outbox (
+                    tenant_id, id, fit_id, dispatch_key, task_name, attempt_id,
+                    payload_hash, assigned_worker_generation,
+                    assignment_generation, assignment_expires_at,
+                    assignment_reason, status, next_attempt_at, next_recovery_at
+                ) VALUES (
+                    :tenant_id, :dispatch_id, :fit_id, :dispatch_key,
+                    :task_name, :attempt_id, :payload_hash, :generation_id,
+                    1, now() + interval '10 minutes', 'p13_fixture',
+                    'dispatched', now(), now() + interval '1 hour'
+                )
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "dispatch_id": str(dispatch_id),
+                "fit_id": str(fit_id),
+                "dispatch_key": f"p13:{tenant_id}:{fit_id}",
+                "task_name": task_name,
+                "attempt_id": str(attempt_id),
+                "payload_hash": payload_hash,
+                "generation_id": generation_id,
+            },
+        )
+        await connection.execute(
+            text(
+                """
+                SELECT set_config(
+                    'app.current_tenant_id',
+                    '00000000-0000-0000-0000-000000000000',
+                    true
+                )
+                """
+            )
+        )
+        claim = (
+            (
+                await connection.execute(
+                    text(
+                        """
+                    SELECT * FROM public.b24_claim_fit_dispatch(
+                        :dispatch_id, :fit_id, :task_name, :attempt_id,
+                        :payload_hash, :generation_id, :pid, :process_token,
+                        0, 900
+                    )
+                    """
+                    ),
+                    {
+                        "dispatch_id": str(dispatch_id),
+                        "fit_id": str(fit_id),
+                        "task_name": task_name,
+                        "attempt_id": str(attempt_id),
+                        "payload_hash": payload_hash,
+                        "generation_id": generation_id,
+                        "pid": 4200 + index,
+                        "process_token": process_token,
+                    },
+                )
+            )
+            .mappings()
+            .one()
+        )
+        assert claim["outcome"] == "ACQUIRED", claim
+        await connection.execute(
+            text(
+                """
+                UPDATE public.bayesian_model_fits
+                SET status = :status, updated_at = :completed_at
+                WHERE tenant_id = :tenant_id AND id = :fit_id
+                """
+            ),
+            {
+                "status": case["status"],
+                "completed_at": end,
+                "tenant_id": str(tenant_id),
+                "fit_id": str(fit_id),
+            },
+        )
+        if lifecycle is not None:
+            payload = b"{}" if lifecycle == "active" else None
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.bayesian_artifacts (
+                        id, tenant_id, fit_id, artifact_ref, artifact_hash,
+                        artifact_type, storage_backend, artifact_uri_internal,
+                        artifact_size_bytes, payload_bytes, payload_byte_count,
+                        compression, retention_class, lifecycle_status, expires_at,
+                        pruned_at, pruned_reason, pruned_metadata, created_at, updated_at
+                    ) VALUES (
+                        :id, :tenant_id, :fit_id, :artifact_ref, :artifact_hash,
+                        'summary', 'postgres', :artifact_ref,
+                        :artifact_size, :payload, :payload_count,
+                        'none', 'standard', :lifecycle, :expires_at,
+                        :pruned_at, :pruned_reason, '{}'::jsonb, :created_at, :created_at
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid4()),
+                    "tenant_id": str(tenant_id),
+                    "fit_id": str(fit_id),
+                    "artifact_ref": artifact_ref,
+                    "artifact_hash": artifact_hash,
+                    "artifact_size": len(payload or b""),
+                    "payload": payload,
+                    "payload_count": len(payload or b""),
+                    "lifecycle": lifecycle,
+                    "expires_at": end if lifecycle == "pruned" else None,
+                    "pruned_at": end if lifecycle == "pruned" else None,
+                    "pruned_reason": (
+                        "retention_expired" if lifecycle == "pruned" else None
+                    ),
+                    "created_at": end,
+                },
+            )
+        if name == "snapshot_stale":
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_active_execution_leases (
+                        tenant_id, model_type, model_version,
+                        source_window_start, source_window_end, fit_id,
+                        active_source_snapshot_hash,
+                        latest_desired_source_snapshot_hash, status,
+                        needs_refit_after_current, lease_owner, lease_acquired_at,
+                        leased_until, heartbeat_at, terminal_at, created_at, updated_at
+                    ) VALUES (
+                        :tenant_id, 'pymc_marketing_mmm', :model_version,
+                        :window_start, :window_end, :fit_id,
+                        :snapshot_hash, :desired_hash, 'succeeded', false,
+                        'p13-e2e', :completed_at, :leased_until, :completed_at,
+                        :completed_at, :completed_at, :completed_at
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "model_version": f"p13-{name}-v1",
+                    "window_start": start,
+                    "window_end": end,
+                    "fit_id": str(fit_id),
+                    "snapshot_hash": snapshot_hash,
+                    "desired_hash": "f" * 64,
+                    "completed_at": end,
+                    "leased_until": datetime(2026, 6, 3, tzinfo=timezone.utc),
+                },
+            )
+        refs[name] = f"urn:skeldir:confidence_projection:{fit_id}"
+    return refs
 
 
-async def _issue_credential(connection, *, tenant_id: UUID, agent_client_id: UUID) -> str:
+async def _issue_credential(
+    connection, *, tenant_id: UUID, agent_client_id: UUID
+) -> str:
     """Mint a real service credential and return the plaintext token.
 
     Seeds `agent_service_credentials` the way production expects: an 8-character
@@ -345,7 +656,9 @@ async def _issue_credential(connection, *, tenant_id: UUID, agent_client_id: UUI
     return token
 
 
-async def _grant_scope(connection, *, tenant_id: UUID, agent_client_id: UUID, scope: str) -> None:
+async def _grant_scope(
+    connection, *, tenant_id: UUID, agent_client_id: UUID, scope: str
+) -> None:
     await connection.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)},
@@ -367,103 +680,52 @@ async def _grant_scope(connection, *, tenant_id: UUID, agent_client_id: UUID, sc
     )
 
 
-def _build_authenticated_app(runtime_sessions, tenant_id: UUID):
-    """Wire the real router with NO authentication override.
+def _build_authenticated_app() -> FastAPI:
+    """Wire production route dependencies and the governed public JWKS route."""
 
-    `require_envelope_read_tenant_context` is deliberately left in place, so the
-    request traverses the production credential lookup, scope check, replay check
-    and rate-limit check. This is the difference between proving the enforcement
-    mechanism and proving the route composes it.
-    """
     app = FastAPI()
     app.include_router(trust_api.router, prefix="/api")
-
-    async def session_dependency():
-        async with runtime_sessions() as session:
-            await session.begin()
-            await session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-                {"tenant_id": str(tenant_id)},
-            )
-            try:
-                yield session
-                if session.in_transaction():
-                    await session.commit()
-            except Exception:
-                if session.in_transaction():
-                    await session.rollback()
-                raise
-
-    async def signing_registry() -> TrustKeyRegistry:
-        return _signing_registry()
-
-    app.dependency_overrides[trust_api.get_machine_db_session] = session_dependency
-    app.dependency_overrides[trust_api.get_runtime_signing_registry] = signing_registry
+    app.include_router(trust_keys.router, prefix="/api")
+    assert not app.dependency_overrides, "P13 app must use production dependencies"
     return app
 
 
-def _build_app(runtime_sessions, tenant_id: UUID, caller: MachineCallerContext):
-    """Wire the real router with a real tenant-bound session.
-
-    The session dependency binds ``app.current_tenant_id`` exactly as production
-    middleware does. That GUC is what RLS enforces against, so binding it here is
-    reproducing the production mechanism rather than bypassing it -- G2 fails if
-    the binding is wrong.
-    """
-    app = FastAPI()
-    app.include_router(trust_api.router, prefix="/api")
-
-    async def session_dependency():
-        async with runtime_sessions() as session:
-            await session.begin()
-            await session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-                {"tenant_id": str(tenant_id)},
-            )
-            try:
-                yield session
-            finally:
-                if session.in_transaction():
-                    await session.rollback()
-
-    async def trusted() -> MachineCallerContext:
-        return caller
-
-    async def signing_registry() -> TrustKeyRegistry:
-        return _signing_registry()
-
-    app.dependency_overrides[trust_api.get_machine_db_session] = session_dependency
-    app.dependency_overrides[trust_api.require_envelope_read_tenant_context] = trusted
-    app.dependency_overrides[trust_api.get_runtime_signing_registry] = signing_registry
-    return app
-
-
-async def _query(app, tenant_id: UUID, refs: list[str], nonce: str):
+async def _query(
+    app: FastAPI,
+    *,
+    tenant_id: UUID,
+    token: str,
+    refs: list[str],
+    nonce: str,
+    subject_types: list[str],
+):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         return await client.post(
             "/api/trust/v1/envelopes/query",
             headers={
-                "Authorization": "Bearer b25-p13-e2e-token",
+                "Authorization": f"Bearer {token}",
                 "X-Tenant-ID": str(tenant_id),
                 "X-Trust-Nonce": nonce,
                 "X-Correlation-ID": str(uuid4()),
                 "X-Idempotency-Key": f"p13-{uuid4()}",
             },
-            json={"subject_types": ["match_verdict"], "subject_refs": refs},
+            json={"subject_types": subject_types, "subject_refs": refs},
         )
 
 
-def _assert_no_subject_existence_leak(intruder_status, absent_status, intruder_body, secrets):
+def _assert_no_subject_existence_leak(
+    intruder_status, absent_status, intruder_body, secrets
+):
     """G2 check. Shared by the gate and by NC-P13-02.
 
     Indistinguishability, not merely "not 200". A status-only assertion passes
     even when the two responses differ in a way that discloses existence.
     """
-    assert intruder_status == absent_status, (
-        f"existence leaked via status: {intruder_status} vs {absent_status}"
-    )
+    assert (
+        intruder_status == absent_status
+    ), f"existence leaked via status: {intruder_status} vs {absent_status}"
     blob = json.dumps(intruder_body)
     leaked = [token for token in secrets if token and token in blob]
     assert not leaked, f"wrong-tenant response leaked: {leaked}"
@@ -479,23 +741,37 @@ def _assert_no_forbidden_mutation(before_counts, after_counts):
     assert not mutated, f"trust read mutated business/compute state: {mutated}"
 
 
-def _assert_confidence_not_fabricated(envelope):
-    """G4 check. Shared by the gate and by NC-P13-04 so both exercise one path.
+def _assert_no_dependency_overrides(app: FastAPI) -> None:
+    """The contiguous P13 journey must use the production dependency graph."""
 
-    Scope, stated precisely because it is narrower than the directive assumes.
-    `app.trust.builder._confidence_unavailable()` returns a CONSTANT dict, and the
-    builder reads no B2.4 source for match-verdict subjects: the only `bayesian`
-    references in that module are the literal values inside that constant. So the
-    envelope's confidence is unconditionally unavailable/deterministic_only.
+    assert (
+        not app.dependency_overrides
+    ), f"P13 production path has dependency overrides: {app.dependency_overrides}"
 
-    This check therefore proves that nothing fabricates confidence where none is
-    claimed. It does NOT prove that `diagnostics_failed`, `source_snapshot_drift`
-    or `artifact_pruned` degrade truthfully through composition -- those states are
-    unreachable here, because there is no B2.4 integration on this path to
-    degrade. Seeding those fixtures would change nothing in the envelope.
-    """
+
+def _assert_contiguous_wire_response(body: dict[str, object]) -> None:
+    """One admitted query must return both exact governed subject families."""
+
+    envelopes = body.get("envelopes") or []
+    assert isinstance(envelopes, list) and len(envelopes) == 2, envelopes
+    assert {item.get("subject_type") for item in envelopes} == {
+        "match_verdict",
+        "confidence_projection",
+    }
+
+
+def _assert_confidence_not_fabricated(
+    envelope,
+    expected_status=None,
+    expected_reason=None,
+):
+    """Reject invented scalar/interval claims and optionally pin source semantics."""
+
     confidence = envelope.get("confidence_metadata") or {}
-    assert confidence.get("confidence_status") == "unavailable", confidence
+    if expected_status is not None:
+        assert confidence.get("confidence_status") == expected_status, confidence
+    if expected_reason is not None:
+        assert confidence.get("unavailable_reason") == expected_reason, confidence
     assert confidence.get("confidence_score_basis_points") is None, confidence
     for key in (
         "confidence_interval",
@@ -504,13 +780,11 @@ def _assert_confidence_not_fabricated(envelope):
         "interval_high_basis_points",
     ):
         assert not confidence.get(key), f"fabricated interval: {key}"
-    # The authority must be declared deterministic-only rather than merely empty:
-    # an envelope that omitted confidence would also satisfy the checks above
-    # while saying nothing about where authority comes from.
-    assert confidence.get("confidence_authority") == "deterministic_only", confidence
-    assert confidence.get("bayesian_model_type") == "deterministic_only", confidence
-    assert confidence.get("bayesian_model_version") is None, confidence
-    assert confidence.get("diagnostics_status") == "not_applicable", confidence
+    assert confidence.get("confidence_authority") in {
+        "deterministic_only",
+        "b24_confidence_projection",
+        "explicitly_unavailable",
+    }, confidence
 
 
 def _assert_no_provider_text_in_authority(envelope, hostile_strings):
@@ -542,7 +816,9 @@ def _assert_audit_reconcilable(envelope, expected_subject_urn):
         "urn:skeldir:audit:issuance:"
     ), f"audit_ref not resolvable: {audit_ref}"
     assert "p5_unsigned_builder_unissued" not in audit_ref, "unissued placeholder"
-    assert str(envelope.get("audit_hash", "")).startswith("sha256:"), "audit not committed"
+    assert str(envelope.get("audit_hash", "")).startswith(
+        "sha256:"
+    ), "audit not committed"
     assert envelope.get("subject_ref") == expected_subject_urn, "audit subject mismatch"
 
 
@@ -622,8 +898,16 @@ def _tamper(value):
 
 
 @pytest.mark.asyncio
-async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
+async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> None:
     """G1 happy path, G2 wrong-tenant isolation, G9 public-only verification."""
+    signing_seed = (
+        base64.urlsafe_b64encode(hashlib.sha256(b"b25-p13-e2e-signing-key").digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+    monkeypatch.setenv("SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL", signing_seed)
+    monkeypatch.setenv("SKELDIR_TRUST_SIGNING_KEY_ID", SIGNING_KID)
+    monkeypatch.setenv("SKELDIR_TRUST_SIGNING_KEY_VALID_FROM", "2026-01-01T00:00:00Z")
     engine = create_async_engine(
         to_asyncpg_postgres_dsn(get_database_url()), future=True
     )
@@ -649,17 +933,51 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
             hostile_urn = await _seed_verdict(
                 connection, tenant_id=tenant_a, reference=hostile_reference
             )
+            confidence_refs = await _seed_confidence_fits(
+                connection, tenant_id=tenant_a
+            )
+            good_token = await _issue_credential(
+                connection, tenant_id=tenant_a, agent_client_id=client_a
+            )
+            intruder_token = await _issue_credential(
+                connection, tenant_id=tenant_b, agent_client_id=client_b
+            )
+            for tenant_id, client_id in (
+                (tenant_a, client_a),
+                (tenant_b, client_b),
+            ):
+                await _grant_scope(
+                    connection,
+                    tenant_id=tenant_id,
+                    agent_client_id=client_id,
+                    scope=AgentScope.ENVELOPE_READ.value,
+                )
 
         # ---- G1: authorized caller receives a verifiable signed envelope -----
-        app_a = _build_app(
-            runtime_sessions, tenant_a, _caller(tenant_a, client_a, "p13-nonce-a-0001")
+        auth_app = _build_authenticated_app()
+        _assert_no_dependency_overrides(auth_app)
+        response = await _query(
+            auth_app,
+            tenant_id=tenant_a,
+            token=good_token,
+            refs=[subject_urn, confidence_refs["available"]],
+            nonce="p13-nonce-a-0001",
+            subject_types=["match_verdict", "confidence_projection"],
         )
-        response = await _query(app_a, tenant_a, [subject_urn], "p13-nonce-a-0001")
         assert response.status_code == 200, response.text
         body = response.json()
+        _assert_contiguous_wire_response(body)
         envelopes = body.get("envelopes") or body.get("results") or []
-        assert envelopes, f"no envelope returned: {json.dumps(body)[:400]}"
-        envelope = envelopes[0]
+        assert (
+            len(envelopes) == 2
+        ), f"incomplete composed result: {json.dumps(body)[:400]}"
+        by_type = {item["subject_type"]: item for item in envelopes}
+        envelope = by_type["match_verdict"]
+        available_confidence_envelope = by_type["confidence_projection"]
+        assert (
+            available_confidence_envelope["confidence_metadata"]["confidence_status"]
+            == "available"
+        )
 
         # ---- Integer money authority (P13-G1, P13-H10) ---------------------
         # The envelope deliberately does NOT republish the revenue amount. The
@@ -687,9 +1005,9 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         )
         assert isinstance(expected_money.amount_minor, int), "money is not an int"
         assert expected_money.amount_minor == 10000, expected_money.amount_minor
-        assert expected_money.status == "accepted_authoritative_minor_units", (
-            f"money authority not accepted: {expected_money.status}"
-        )
+        assert (
+            expected_money.status == "accepted_authoritative_minor_units"
+        ), f"money authority not accepted: {expected_money.status}"
 
         # The envelope must carry a money-authority provenance entry. Its
         # source_snapshot_hash commits to the decision material -- including the
@@ -706,9 +1024,9 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
             "no money-authority provenance entry in the signed envelope; "
             f"authority tables present: {sorted({e.get('authority_table') for e in provenance})}"
         )
-        assert money_entries[0].get("source_snapshot_hash", "").startswith("sha256:"), (
-            f"money authority entry is not hash-committed: {money_entries[0]}"
-        )
+        assert (
+            money_entries[0].get("source_snapshot_hash", "").startswith("sha256:")
+        ), f"money authority entry is not hash-committed: {money_entries[0]}"
 
         # Integer discipline across the whole signed artifact: a float anywhere
         # in the envelope would mean money or a derived value round-tripped
@@ -732,22 +1050,48 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
 
         executed.append("P13-G1-happy-path-signed-envelope")
 
-        # ---- G9: verification with public-only material -----------------------
+        # ---- G9: verification with public-only material fetched over HTTP -----
+        from app.trust.jwks import assert_jwks_public_only, registry_from_public_jwks
         from app.trust.verification import verify_trust_envelope
 
-        public_only = _signing_registry().public_only()
-        verified = verify_trust_envelope(envelope, key_registry=public_only)
-        status = getattr(verified, "verification_status", verified)
-        assert status in {"valid", "verified"}, f"public-only verification: {status}"
+        async with AsyncClient(
+            transport=ASGITransport(app=auth_app), base_url="http://test"
+        ) as client:
+            jwks_response = await client.get(
+                "/api/trust/v1/keys/jwks",
+                headers={"X-Correlation-ID": str(uuid4())},
+            )
+        assert jwks_response.status_code == 200, jwks_response.text
+        jwks = jwks_response.json()
+        assert assert_jwks_public_only(jwks) >= 1
+        public_only = registry_from_public_jwks(jwks)
+        for exact_wire_envelope in envelopes:
+            verified = verify_trust_envelope(
+                exact_wire_envelope, key_registry=public_only
+            )
+            status = getattr(verified, "verification_status", verified)
+            assert status in {
+                "valid",
+                "verified",
+            }, f"public-only verification: {status}"
         executed.append("P13-G9-public-only-verification")
 
         # ---- G2: wrong tenant learns nothing about the subject ---------------
-        app_b = _build_app(
-            runtime_sessions, tenant_b, _caller(tenant_b, client_b, "p13-nonce-b-0001")
+        intrusion = await _query(
+            auth_app,
+            tenant_id=tenant_b,
+            token=intruder_token,
+            refs=[subject_urn],
+            nonce="p13-nonce-b-0001",
+            subject_types=["match_verdict"],
         )
-        intrusion = await _query(app_b, tenant_b, [subject_urn], "p13-nonce-b-0001")
         absent = await _query(
-            app_b, tenant_b, [f"p13-never-existed-{uuid4().hex[:12]}"], "p13-nonce-b-0002"
+            auth_app,
+            tenant_id=tenant_b,
+            token=intruder_token,
+            refs=[f"urn:skeldir:match_verdict:{uuid4()}"],
+            nonce="p13-nonce-b-0002",
+            subject_types=["match_verdict"],
         )
 
         # The discriminator is indistinguishability: requesting another tenant's
@@ -759,6 +1103,28 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
             absent.status_code,
             intrusion.json(),
             (reference, str(tenant_a), "evt-" + reference),
+        )
+        confidence_intrusion = await _query(
+            auth_app,
+            tenant_id=tenant_b,
+            token=intruder_token,
+            refs=[confidence_refs["available"]],
+            nonce="p13-nonce-b-confidence-0001",
+            subject_types=["confidence_projection"],
+        )
+        confidence_absent = await _query(
+            auth_app,
+            tenant_id=tenant_b,
+            token=intruder_token,
+            refs=[f"urn:skeldir:confidence_projection:{uuid4()}"],
+            nonce="p13-nonce-b-confidence-0002",
+            subject_types=["confidence_projection"],
+        )
+        _assert_no_subject_existence_leak(
+            confidence_intrusion.status_code,
+            confidence_absent.status_code,
+            confidence_intrusion.json(),
+            tuple(confidence_refs.values()) + (str(tenant_a),),
         )
         executed.append("P13-G2-wrong-tenant-no-existence-leak")
 
@@ -804,9 +1170,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
                         c_container[c_key] = mutated_value
                         break
                 try:
-                    result = verify_trust_envelope(
-                        candidate, key_registry=public_only
-                    )
+                    result = verify_trust_envelope(candidate, key_registry=public_only)
                     status = getattr(result, "verification_status", result)
                     if status not in {"valid", "verified"}:
                         tampered_failed.append(f"{path}[{key}]")
@@ -818,10 +1182,62 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
                     failure_classes.setdefault(label, 0)
                     failure_classes[label] += 1
 
+        # The match-verdict shape above cannot exercise B2.4-specific
+        # provenance. Mutate every exact snapshot/fit/diagnostic/artifact
+        # commitment in the separately returned confidence envelope.
+        for index, _entry in enumerate(
+            available_confidence_envelope["provenance_chain"]
+        ):
+            label = f"confidence.provenance_chain[{index}].source_ref_hash"
+            candidate = copy.deepcopy(available_confidence_envelope)
+            original_hash = candidate["provenance_chain"][index]["source_ref_hash"]
+            candidate["provenance_chain"][index]["source_ref_hash"] = _tamper(
+                original_hash
+            )
+            tampered_expected.append(label)
+            try:
+                result = verify_trust_envelope(candidate, key_registry=public_only)
+                status = getattr(result, "verification_status", result)
+                if status not in {"valid", "verified"}:
+                    tampered_failed.append(label)
+                    failure_classes.setdefault(str(status), 0)
+                    failure_classes[str(status)] += 1
+            except Exception as exc:  # noqa: BLE001 - refusal class is the record
+                tampered_failed.append(label)
+                failure_label = type(exc).__name__
+                failure_classes.setdefault(failure_label, 0)
+                failure_classes[failure_label] += 1
+
+        for label, path in (
+            (
+                "confidence.truth_authority.source_snapshot_hash",
+                ["truth_authority", "source_snapshot_hash"],
+            ),
+            ("confidence.artifact_hash", ["artifact_hash"]),
+        ):
+            candidate = copy.deepcopy(available_confidence_envelope)
+            node = candidate
+            for part in path[:-1]:
+                node = node[part]
+            node[path[-1]] = _tamper(node[path[-1]])
+            tampered_expected.append(label)
+            try:
+                result = verify_trust_envelope(candidate, key_registry=public_only)
+                status = getattr(result, "verification_status", result)
+                if status not in {"valid", "verified"}:
+                    tampered_failed.append(label)
+                    failure_classes.setdefault(str(status), 0)
+                    failure_classes[str(status)] += 1
+            except Exception as exc:  # noqa: BLE001 - refusal class is the record
+                tampered_failed.append(label)
+                failure_label = type(exc).__name__
+                failure_classes.setdefault(failure_label, 0)
+                failure_classes[failure_label] += 1
+
         blind = sorted(set(tampered_expected) - set(tampered_failed))
-        assert not blind, (
-            f"load-bearing fields accepted tampering (blind spots): {blind}"
-        )
+        assert (
+            not blind
+        ), f"load-bearing fields accepted tampering (blind spots): {blind}"
         assert len(tampered_failed) == len(tampered_expected), (
             f"tampered_failed={len(tampered_failed)} != "
             f"tampered_expected={len(tampered_expected)}"
@@ -829,19 +1245,68 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         assert tampered_expected, "tamper matrix exercised zero fields"
         executed.append("P13-G3-tamper-matrix-all-load-bearing-fields")
 
-        # ---- G4: degraded confidence must not fabricate an interval ----------
-        # B2.4 confidence is absent for this subject (cold start). Deterministic
-        # revenue authority must survive that, and nothing may invent a credible
-        # interval to fill the gap.
-        _assert_confidence_not_fabricated(envelope)
-        # Deterministic truth is preserved alongside the degradation.
+        # ---- G4: all five B2.4 source families compose truthfully -------------
+        confidence_envelopes = {"available": available_confidence_envelope}
+        remaining_names = [
+            "cold_start",
+            "diagnostics_failed",
+            "snapshot_stale",
+            "artifact_pruned",
+        ]
+        for offset in range(0, len(remaining_names), 2):
+            names = remaining_names[offset : offset + 2]
+            confidence_response = await _query(
+                auth_app,
+                tenant_id=tenant_a,
+                token=good_token,
+                refs=[confidence_refs[name] for name in names],
+                nonce=f"p13-confidence-{offset:04d}-{uuid4().hex}",
+                subject_types=["confidence_projection"],
+            )
+            assert confidence_response.status_code == 200, confidence_response.text
+            returned = confidence_response.json().get("envelopes") or []
+            assert len(returned) == len(names), confidence_response.text
+            for item in returned:
+                name = next(
+                    key
+                    for key, ref in confidence_refs.items()
+                    if ref == item["subject_ref"]
+                )
+                confidence_envelopes[name] = item
+
+        confidence_expectations = {
+            "available": ("available", None),
+            "cold_start": ("unavailable", "cold_start_insufficient_data"),
+            "diagnostics_failed": ("diagnostics_failed", "diagnostics_failed"),
+            "snapshot_stale": ("degraded", "source_snapshot_stale"),
+            "artifact_pruned": ("degraded", "artifact_pruned"),
+        }
+        for name, (expected_status, expected_reason) in confidence_expectations.items():
+            projected = confidence_envelopes[name]
+            _assert_confidence_not_fabricated(
+                projected,
+                expected_status,
+                expected_reason,
+            )
+            provenance_types = {
+                entry["provenance_type"]
+                for entry in projected.get("provenance_chain") or []
+            }
+            assert {
+                "b24_source_snapshot",
+                "bayesian_fit",
+                "bayesian_diagnostic",
+            }.issubset(provenance_types), (name, provenance_types)
+            assert projected["subject_ref"] == confidence_refs[name]
+
+        # Deterministic verdict truth remains a separate, sovereign subject.
         assert envelope.get("match_verdict_status") == "matched", envelope.get(
             "match_verdict_status"
         )
         assert envelope.get("truth_authority", {}).get("authority_class") == (
             "deterministic_machine_fact"
         )
-        assert envelope.get("fallback_applied") is False, "fallback silently applied"
+        assert envelope.get("fallback_applied") is False, "verdict fallback applied"
         executed.append("P13-G4-degraded-confidence-no-fabricated-interval")
 
         # ---- G5: adversarial provider text stays quarantined ------------------
@@ -849,14 +1314,12 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # untrusted_display_data. It must never appear in an authority field, and
         # the disposition must be deterministic rather than inferred.
         hostile_response = await _query(
-            _build_app(
-                runtime_sessions,
-                tenant_a,
-                _caller(tenant_a, client_a, "p13-nonce-a-0005"),
-            ),
-            tenant_a,
-            [hostile_urn],
-            "p13-nonce-a-0005",
+            auth_app,
+            tenant_id=tenant_a,
+            token=good_token,
+            refs=[hostile_urn],
+            nonce="p13-nonce-a-0005",
+            subject_types=["match_verdict"],
         )
         assert hostile_response.status_code == 200, hostile_response.text
         hostile_envelopes = hostile_response.json().get("envelopes") or []
@@ -866,9 +1329,9 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # The hostile string must actually be present somewhere, or this journey
         # proves nothing. A G5 that never introduces adversarial text asserts the
         # absence of something that was never there.
-        assert ADVERSARIAL_PROVIDER_TEXT[0] in json.dumps(hostile_envelope), (
-            "adversarial provider text never reached the envelope; G5 would be vacuous"
-        )
+        assert ADVERSARIAL_PROVIDER_TEXT[0] in json.dumps(
+            hostile_envelope
+        ), "adversarial provider text never reached the envelope; G5 would be vacuous"
 
         display = hostile_envelope.get("untrusted_display_data") or {}
         assert display.get("text_trust_class") == "untrusted_display_label", display
@@ -892,15 +1355,15 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
             currency="USD",
             intended_trust_field="verified_revenue_minor",
         )
-        assert float_decision.amount_minor is None, (
-            f"float coerced into authoritative money: {float_decision.amount_minor}"
-        )
-        assert float_decision.status != "accepted_authoritative_minor_units", (
-            float_decision.status
-        )
-        assert getattr(float_decision, "reason_code", None), (
-            "money refusal carries no reason code"
-        )
+        assert (
+            float_decision.amount_minor is None
+        ), f"float coerced into authoritative money: {float_decision.amount_minor}"
+        assert (
+            float_decision.status != "accepted_authoritative_minor_units"
+        ), float_decision.status
+        assert getattr(
+            float_decision, "reason_code", None
+        ), "money refusal carries no reason code"
         # G6, structural half. The directive posits a legacy float-only money
         # source reaching the route. That scenario is NOT REPRESENTABLE here:
         # every minor-unit column on the authoritative source table is
@@ -961,10 +1424,14 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
             return observed
 
         before_counts = await _counts()
-        app_a2 = _build_app(
-            runtime_sessions, tenant_a, _caller(tenant_a, client_a, "p13-nonce-a-0002")
+        reread = await _query(
+            auth_app,
+            tenant_id=tenant_a,
+            token=good_token,
+            refs=[subject_urn, confidence_refs["available"]],
+            nonce="p13-nonce-a-0002",
+            subject_types=["match_verdict", "confidence_projection"],
         )
-        reread = await _query(app_a2, tenant_a, [subject_urn], "p13-nonce-a-0002")
         assert reread.status_code == 200, reread.text
         after_counts = await _counts()
 
@@ -1004,9 +1471,10 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
                 outcome = verify_trust_envelope(candidate, key_registry=public_only)
                 status = str(getattr(outcome, "verification_status", outcome))
                 downgrade_results[label] = status
-                assert status not in {"valid", "verified"}, (
-                    f"downgrade case accepted: {label} -> {status}"
-                )
+                assert status not in {
+                    "valid",
+                    "verified",
+                }, f"downgrade case accepted: {label} -> {status}"
             except Exception as exc:  # noqa: BLE001 - refusal class is the record
                 downgrade_results[label] = type(exc).__name__
         assert len(downgrade_results) == len(downgrade_cases), downgrade_results
@@ -1077,9 +1545,9 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
                 agent_client_id=scopeless_client,
             )
             await scope_session.rollback()
-        assert AgentScope.ENVELOPE_READ not in granted, (
-            f"unscoped client was granted envelope read: {granted}"
-        )
+        assert (
+            AgentScope.ENVELOPE_READ not in granted
+        ), f"unscoped client was granted envelope read: {granted}"
         assert not granted, f"unscoped client carries unexpected grants: {granted}"
         executed.append("P13-H15-missing-scope-denied")
 
@@ -1090,53 +1558,32 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # (H14/H15 above) and proving the route composes it are different claims,
         # and only this second form answers the directive's question.
         async with engine.begin() as connection:
-            good_token = await _issue_credential(
-                connection, tenant_id=tenant_a, agent_client_id=client_a
-            )
-            await _grant_scope(
-                connection,
-                tenant_id=tenant_a,
-                agent_client_id=client_a,
-                scope=AgentScope.ENVELOPE_READ.value,
-            )
             scopeless_token = await _issue_credential(
                 connection, tenant_id=tenant_a, agent_client_id=scopeless_client
             )
 
-        auth_app = _build_authenticated_app(runtime_sessions, tenant_a)
-
         async def _authed_query(token: str, nonce: str, refs: list[str]):
-            async with AsyncClient(
-                transport=ASGITransport(app=auth_app), base_url="http://test"
-            ) as client:
-                return await client.post(
-                    "/api/trust/v1/envelopes/query",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "X-Tenant-ID": str(tenant_a),
-                        "X-Trust-Nonce": nonce,
-                        "X-Correlation-ID": str(uuid4()),
-                        "X-Idempotency-Key": f"p13-authed-{uuid4()}",
-                    },
-                    json={"subject_types": ["match_verdict"], "subject_refs": refs},
-                )
+            return await _query(
+                auth_app,
+                tenant_id=tenant_a,
+                token=token,
+                refs=refs,
+                nonce=nonce,
+                subject_types=["match_verdict"],
+            )
 
         # A scoped caller is admitted through the real auth path.
-        admitted = await _authed_query(
-            good_token, f"p13-authed-{uuid4().hex}", [subject_urn]
-        )
-        assert admitted.status_code == 200, (
-            f"real credential rejected by the route: {admitted.status_code} {admitted.text[:200]}"
-        )
+        assert response.status_code == 200 and len(envelopes) == 2
 
         # H15R: the scopeless caller is denied AT THE ROUTE, and the denial
         # discloses nothing about the subject.
         denied = await _authed_query(
             scopeless_token, f"p13-authed-{uuid4().hex}", [subject_urn]
         )
-        assert denied.status_code in {401, 403}, (
-            f"scopeless caller was not denied: {denied.status_code} {denied.text[:200]}"
-        )
+        assert denied.status_code in {
+            401,
+            403,
+        }, f"scopeless caller was not denied: {denied.status_code} {denied.text[:200]}"
         denied_blob = denied.text
         for secret in (reference, str(tenant_a), "evt-" + reference):
             assert secret not in denied_blob, f"scope denial leaked {secret!r}"
@@ -1145,30 +1592,20 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
         # H14R: replaying an accepted nonce through the real route is refused.
         replay_nonce = f"p13-authed-{uuid4().hex}"
         first_use = await _authed_query(good_token, replay_nonce, [subject_urn])
-        assert first_use.status_code == 200, (
-            f"first use of a fresh nonce failed: {first_use.status_code}"
-        )
+        assert (
+            first_use.status_code == 200
+        ), f"first use of a fresh nonce failed: {first_use.status_code}"
         replayed = await _authed_query(good_token, replay_nonce, [subject_urn])
-        assert replayed.status_code in {401, 403, 409}, (
-            f"replayed nonce was accepted by the route: {replayed.status_code}"
-        )
+        assert replayed.status_code in {
+            401,
+            403,
+            409,
+        }, f"replayed nonce was accepted by the route: {replayed.status_code}"
         for secret in (reference, "evt-" + reference):
             assert secret not in replayed.text, "replay denial leaked subject data"
         executed.append("P13-H14R-route-level-replay-denial")
 
-        # ---- P13-H08: the confidence contract is wider than the runtime -------
-        # B2.5's published confidence contract defines four statuses, three
-        # authorities and seven unavailability values (six reasons plus null), including a dedicated
-        # `b24_confidence_projection` authority. The builder emits ONE constant.
-        #
-        # This is the P12-P0 defect class in a different field: the published
-        # contract promises a capability the runtime cannot deliver. It is
-        # recorded as a measured gap rather than an assertion of correctness,
-        # because closing it is a B2.4-integration change and not P13's to make.
-        #
-        # The reachable count is pinned so that when the projection is
-        # implemented this proof turns red and must be revisited, rather than
-        # silently continuing to describe a system that has changed.
+        # ---- P13-H08: five B2.4 source families are runtime-reachable ---------
         import json as _json
 
         schema = _json.loads(
@@ -1176,33 +1613,37 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
                 encoding="utf-8"
             )
         )
-        runtime_confidence = envelope.get("confidence_metadata") or {}
-        reachable = {}
+        reachable: dict[str, set[object]] = {}
         for field in (
             "confidence_status",
             "confidence_authority",
             "diagnostics_status",
             "unavailable_reason",
         ):
-            permitted = schema["properties"][field].get("enum") or []
-            emitted = runtime_confidence.get(field)
-            assert emitted in permitted, (
-                f"runtime emits {field}={emitted!r}, which the contract forbids"
-            )
-            reachable[field] = len({emitted})
-            # Every other permitted value is currently unreachable.
+            permitted = set(schema["properties"][field].get("enum") or [])
+            emitted_values = {
+                projected["confidence_metadata"].get(field)
+                for projected in confidence_envelopes.values()
+            }
+            assert (
+                emitted_values <= permitted
+            ), f"runtime emits forbidden {field}: {emitted_values - permitted}"
+            reachable[field] = emitted_values
         total_permitted = sum(
-            len(schema["properties"][f].get("enum") or [])
-            for f in reachable
+            len(schema["properties"][f].get("enum") or []) for f in reachable
         )
-        total_reachable = sum(reachable.values())
-        assert total_reachable == 4, (
-            f"expected exactly one reachable value per confidence field, got {reachable}"
-        )
-        assert total_permitted == 18, (
-            f"confidence contract changed shape: {total_permitted} permitted values"
-        )
-        executed.append("P13-H08-confidence-projection-gap")
+        total_reachable = sum(len(values) for values in reachable.values())
+        assert len(confidence_envelopes) == 5, confidence_envelopes.keys()
+        assert reachable["confidence_status"] == {
+            "available",
+            "unavailable",
+            "diagnostics_failed",
+            "degraded",
+        }
+        assert (
+            total_permitted == 19
+        ), f"confidence contract changed shape: {total_permitted} permitted values"
+        executed.append("P13-H08-confidence-projection-closure")
 
         # ---- P13 negative controls -------------------------------------------
         # Each control constructs the violating artifact and requires the gate's
@@ -1222,7 +1663,6 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
             except AssertionError:
                 return True
             return False
-
 
         def _control(name, predicate, description):
             """Register a control: predicate() must be True for the control to fire."""
@@ -1269,7 +1709,9 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
             fake.setdefault("confidence_metadata", {})["confidence_interval"] = [10, 90]
             return _raises(_assert_confidence_not_fabricated, fake)
 
-        _control("NC-P13-04", _fabricated_interval, "interval fabricated while unavailable")
+        _control(
+            "NC-P13-04", _fabricated_interval, "interval fabricated while unavailable"
+        )
 
         # NC-P13-05: prompt text in an authority field must be rejected by the
         # gate's own scan.
@@ -1282,7 +1724,9 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
                 ADVERSARIAL_PROVIDER_TEXT,
             )
 
-        _control("NC-P13-05", _prompt_in_authority, "prompt text entered authority field")
+        _control(
+            "NC-P13-05", _prompt_in_authority, "prompt text entered authority field"
+        )
 
         # NC-P13-06: a float must never resolve to authoritative minor units.
         def _float_money():
@@ -1408,7 +1852,88 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
 
         _control("NC-P13-10", _compute_dispatched, "trust read dispatched compute")
 
-        assert len(controls) == 14, f"negative control count drift: {sorted(controls)}"
+        # C2-NC-02: using a different public key under the real kid must fail.
+        def _wrong_public_key():
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+                Ed25519PrivateKey,
+            )
+
+            wrong_public = (
+                Ed25519PrivateKey.generate()
+                .public_key()
+                .public_bytes(
+                    encoding=serialization.Encoding.Raw,
+                    format=serialization.PublicFormat.Raw,
+                )
+            )
+            wrong_x = base64.urlsafe_b64encode(wrong_public).rstrip(b"=").decode()
+            wrong_jwks = copy.deepcopy(jwks)
+            for key in wrong_jwks["keys"]:
+                if key["kid"] == SIGNING_KID:
+                    key["x"] = wrong_x
+            try:
+                wrong_registry = registry_from_public_jwks(wrong_jwks)
+                outcome = verify_trust_envelope(envelope, key_registry=wrong_registry)
+                return str(getattr(outcome, "verification_status", outcome)) not in {
+                    "valid",
+                    "verified",
+                }
+            except Exception:  # noqa: BLE001 - rejection is the property
+                return True
+
+        _control("C2-NC-02", _wrong_public_key, "wrong JWKS key verified response")
+
+        # C2-NC-04/C2-NC-05: fragmentation detectors reject a dependency bypass
+        # and a status-only response with no exact envelopes.
+        def _dependency_override_detected():
+            fragmented = FastAPI()
+
+            def dependency():
+                return None
+
+            fragmented.dependency_overrides[dependency] = dependency
+            return _raises(_assert_no_dependency_overrides, fragmented)
+
+        _control(
+            "C2-NC-04",
+            _dependency_override_detected,
+            "authentication/session dependency override went undetected",
+        )
+        _control(
+            "C2-NC-05",
+            lambda: _raises(_assert_contiguous_wire_response, {"envelopes": []}),
+            "status-only happy path with no envelopes accepted",
+        )
+
+        # C2-NC-07: the neutral read seam remains inside P12's transitive
+        # no-Bayesian-compute graph. Injecting a forbidden import must fire it.
+        def _forbidden_projection_import_detected():
+            import scripts.ci.validate_b25_p12_trust_isolation as isolation
+
+            projection_path = (
+                Path(__file__).resolve().parents[2]
+                / "app"
+                / "confidence_projection"
+                / "read_model.py"
+            )
+            poisoned = projection_path.read_text(encoding="utf-8")
+            poisoned += "\nfrom app.bayesian import fit_planner\n"
+            try:
+                isolation.validate_no_llm_reachability(
+                    overrides={projection_path: poisoned}
+                )
+            except isolation.B25P12IsolationError:
+                return True
+            return False
+
+        _control(
+            "C2-NC-07",
+            _forbidden_projection_import_detected,
+            "Trust confidence seam reached Bayesian compute",
+        )
+
+        assert len(controls) == 18, f"negative control count drift: {sorted(controls)}"
 
     finally:
         # No tenant teardown. `attribution_events` is append-only at the database
@@ -1455,9 +1980,10 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path) -> None:
     print(f"p13_money_columns_integer_not_null={len(money_columns)}")
     print(f"p13_confidence_values_permitted={total_permitted}")
     print(f"p13_confidence_values_reachable={total_reachable}")
-    print(f"p13_route_level_denials=2")
-    print(f"p13_replay_denied=1")
-    print(f"p13_scope_denied=1")
+    print(f"p13_confidence_source_families={len(confidence_envelopes)}")
+    print("p13_route_level_denials=2")
+    print("p13_replay_denied=1")
+    print("p13_scope_denied=1")
     print(f"p13_negative_controls_fired={len(controls)}")
     print(f"p13_downgrade_cases_failed_closed={len(downgrade_results)}")
     print(f"p13_tamper_failure_classes={json.dumps(failure_classes, sort_keys=True)}")

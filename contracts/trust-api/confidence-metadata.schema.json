@@ -63,6 +63,7 @@
         "cold_start_insufficient_data",
         "diagnostics_failed",
         "artifact_pruned",
+        "artifact_unavailable",
         "source_snapshot_stale",
         "model_not_fit",
         "not_applicable",

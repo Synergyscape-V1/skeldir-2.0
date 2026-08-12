@@ -30,11 +30,13 @@ from app.trust.refusal import (
 from app.trust.schema_versions import validate_schema_canonicalization_compatibility
 from app.trust.source_adapters import (
     SUPPORTED_P5_SUBJECT_TYPES,
+    ConfidenceProjectionSource,
     FieldSourceDecision,
     MatchVerdictSource,
     data_completeness_for_match_status,
     iter_field_source_decisions,
     normalize_match_verdict_status,
+    read_confidence_projection_source,
     read_match_verdict_source,
 )
 from app.trust.text_disposition import dispose_text_for_field
@@ -153,6 +155,322 @@ def _confidence_unavailable() -> dict[str, object]:
         "diagnostics_status": "not_applicable",
         "unavailable_reason": "not_applicable",
     }
+
+
+def _tag_b24_hash(value: str) -> str:
+    return value if value.startswith("sha256:") else f"sha256:{value}"
+
+
+def _confidence_projection_metadata(
+    source: ConfidenceProjectionSource,
+) -> tuple[dict[str, object], str, str, bool, str]:
+    """Normalize the B2.4-owned decision into the bounded B2.5 vocabulary."""
+
+    projection = source.projection
+    decision = projection.decision
+    reason = decision.confidence_bucket_reason.value
+    if decision.confidence_available:
+        return (
+            {
+                "confidence_status": "available",
+                "confidence_authority": "b24_confidence_projection",
+                # B2.4 owns interval-width buckets, not a scalar score mapping.
+                "confidence_score_basis_points": None,
+                "bayesian_model_type": "pymc_marketing_mmm",
+                "bayesian_model_version": projection.model_version,
+                "diagnostics_status": "passed",
+                "unavailable_reason": None,
+            },
+            "confidence_projection_context",
+            "complete",
+            False,
+            "none",
+        )
+
+    diagnostic_failure = projection.diagnostic_status in {"failed", "error"}
+    if diagnostic_failure:
+        status = "diagnostics_failed"
+        authority = "b24_confidence_projection"
+        model_type: str | None = "pymc_marketing_mmm"
+        model_version: str | None = projection.model_version
+        diagnostics_status = "failed"
+        unavailable_reason = "diagnostics_failed"
+        fallback_reason = "diagnostics_failed"
+    elif reason == "source_snapshot_changed":
+        status = "degraded"
+        authority = "explicitly_unavailable"
+        model_type = None
+        model_version = None
+        diagnostics_status = "unavailable"
+        unavailable_reason = "source_snapshot_stale"
+        fallback_reason = "source_snapshot_stale"
+    elif reason in {"artifact_pruned", "artifact_unavailable"}:
+        status = "degraded"
+        authority = "b24_confidence_projection"
+        model_type = "pymc_marketing_mmm"
+        model_version = projection.model_version
+        diagnostics_status = "unavailable"
+        unavailable_reason = reason
+        fallback_reason = reason
+    elif reason in {"no_fit", "insufficient_data"}:
+        status = "unavailable"
+        authority = "explicitly_unavailable"
+        model_type = None
+        model_version = None
+        diagnostics_status = "unavailable"
+        unavailable_reason = (
+            "cold_start_insufficient_data"
+            if reason == "insufficient_data"
+            else "model_not_fit"
+        )
+        fallback_reason = "confidence_unavailable"
+    else:
+        status = "unavailable"
+        authority = "explicitly_unavailable"
+        model_type = None
+        model_version = None
+        diagnostics_status = "unavailable"
+        unavailable_reason = "model_not_fit"
+        fallback_reason = "confidence_unavailable"
+
+    return (
+        {
+            "confidence_status": status,
+            "confidence_authority": authority,
+            "confidence_score_basis_points": None,
+            "bayesian_model_type": model_type,
+            "bayesian_model_version": model_version,
+            "diagnostics_status": diagnostics_status,
+            "unavailable_reason": unavailable_reason,
+        },
+        "degraded_or_unavailable_truth",
+        (
+            "degraded"
+            if status in {"degraded", "diagnostics_failed"}
+            else "insufficient_evidence"
+        ),
+        True,
+        fallback_reason,
+    )
+
+
+def _confidence_projection_payload(
+    *,
+    request: TrustEnvelopeBuildRequest,
+    source: ConfidenceProjectionSource,
+) -> dict[str, Any]:
+    projection = source.projection
+    tenant_id_hash = tenant_hash(request.tenant_id)
+    subject_ref_hash = _subject_ref_hash(request.subject_ref)
+    source_snapshot_hash = _tag_b24_hash(projection.source_snapshot_hash)
+    created_at = _context_datetime(
+        request.request_context, "created_at", projection.observed_at
+    )
+    valid_until = _context_datetime(
+        request.request_context,
+        "valid_until",
+        created_at + timedelta(hours=24),
+    )
+    audience_id = str(
+        request.request_context.get("audience_id") or "b25-p5-internal-builder"
+    )
+    (
+        confidence_metadata,
+        truth_type,
+        data_completeness_status,
+        fallback_applied,
+        fallback_reason,
+    ) = _confidence_projection_metadata(source)
+    fit_ref = f"urn:skeldir:bayesian_model_fits:{projection.fit_id}"
+    provenance_chain = [
+        {
+            "provenance_type": "b24_source_snapshot",
+            "authority_table": "b24_confidence_projection",
+            "source_ref": (
+                f"urn:skeldir:b24_source_snapshot:{projection.source_snapshot_hash}"
+            ),
+            "source_ref_hash": tagged_sha256(
+                {
+                    "model_type": projection.model_type,
+                    "model_version": projection.model_version,
+                    "source_window_start": utc_second(projection.source_window_start),
+                    "source_window_end": utc_second(projection.source_window_end),
+                    "source_snapshot_hash": projection.source_snapshot_hash,
+                }
+            ),
+            "source_snapshot_hash": source_snapshot_hash,
+            "observed_at": utc_second(projection.observed_at),
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        },
+        {
+            "provenance_type": "bayesian_fit",
+            "authority_table": "bayesian_model_fits",
+            "source_ref": fit_ref,
+            "source_ref_hash": tagged_sha256({"fit_ref": fit_ref}),
+            "source_snapshot_hash": source_snapshot_hash,
+            "observed_at": utc_second(projection.observed_at),
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        },
+        {
+            "provenance_type": "bayesian_diagnostic",
+            "authority_table": "bayesian_model_fits",
+            "source_ref": (f"urn:skeldir:bayesian_diagnostic:{projection.fit_id}"),
+            "source_ref_hash": tagged_sha256(
+                {
+                    "diagnostic_status": projection.diagnostic_status,
+                    "diagnostic_failure_reason": (projection.diagnostic_failure_reason),
+                    "confidence_bucket": (projection.decision.confidence_bucket.value),
+                    "confidence_bucket_reason": (
+                        projection.decision.confidence_bucket_reason.value
+                    ),
+                }
+            ),
+            "source_snapshot_hash": source_snapshot_hash,
+            "observed_at": utc_second(projection.observed_at),
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        },
+        {
+            "provenance_type": (
+                "bayesian_artifact"
+                if projection.artifact_ref is not None
+                else "explicit_unavailable"
+            ),
+            "authority_table": (
+                "bayesian_artifacts"
+                if projection.artifact_ref is not None
+                else "b24_confidence_projection"
+            ),
+            "source_ref": (f"urn:skeldir:bayesian_artifact:{projection.fit_id}"),
+            "source_ref_hash": tagged_sha256(
+                {
+                    "artifact_ref": projection.artifact_ref,
+                    "artifact_hash": projection.artifact_hash,
+                    "artifact_lifecycle_status": (projection.artifact_lifecycle_status),
+                }
+            ),
+            "source_snapshot_hash": source_snapshot_hash,
+            "observed_at": utc_second(projection.observed_at),
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        },
+    ]
+    artifact_available = (
+        projection.decision.confidence_available
+        and projection.artifact_ref is not None
+        and projection.artifact_hash is not None
+    )
+    artifact_ref = (
+        f"urn:skeldir:artifact:b24_{projection.fit_id}" if artifact_available else None
+    )
+    artifact_hash = (
+        _tag_b24_hash(projection.artifact_hash)
+        if artifact_available and projection.artifact_hash is not None
+        else None
+    )
+    payload: dict[str, Any] = {
+        "envelope_version": "trust-envelope-v1",
+        "schema_version": request.schema_version,
+        "canonicalization_version": request.canonicalization_version,
+        "envelope_id": _envelope_id(
+            tenant_id_hash=tenant_id_hash,
+            subject_ref=request.subject_ref,
+            schema_version=request.schema_version,
+            canonicalization_version=request.canonicalization_version,
+        ),
+        "tenant_id_hash": tenant_id_hash,
+        "audience_binding": default_audience_binding(audience_id=audience_id),
+        "subject_authority": {
+            "subject_type": "confidence_projection",
+            "subject_ref": request.subject_ref,
+            "subject_ref_hash": subject_ref_hash,
+            "source_authority_class": "confidence_metadata_projection",
+            "allowed_source_tables": [
+                "bayesian_model_fits",
+                "bayesian_artifacts",
+                "b23_match_verdicts",
+            ],
+            "mutable_workflow_subject": False,
+        },
+        "subject_type": "confidence_projection",
+        "subject_ref": request.subject_ref,
+        "subject_ref_hash": subject_ref_hash,
+        "truth_type": truth_type,
+        "truth_authority": {
+            "authority_class": (
+                "confidence_metadata_projection"
+                if projection.decision.confidence_available
+                else "refusal_or_degraded_state"
+            ),
+            "source_snapshot_hash": source_snapshot_hash,
+            "source_system": "skeldir_b24_confidence_projection",
+        },
+        "confidence_metadata": confidence_metadata,
+        "provenance_chain": provenance_chain,
+        "data_completeness_status": data_completeness_status,
+        "benchmark_metadata": unavailable_benchmark_metadata(),
+        "policy_action_authority": read_only_policy_authority(),
+        "fallback_applied": fallback_applied,
+        "fallback_reason": fallback_reason,
+        "evidence_temporal_boundary": {
+            "evidence_snapshot_at": utc_second(projection.observed_at),
+            "source_read_started_at": utc_second(created_at),
+            "source_read_completed_at": utc_second(created_at),
+            "data_freshness_seconds": 0,
+            "staleness_status": (
+                "stale_degraded" if projection.source_snapshot_mismatch else "current"
+            ),
+            "evidence_snapshot_hash": source_snapshot_hash,
+            "max_source_read_skew_ms": 0,
+            "snapshot_consistency_status": (
+                "stale_degraded"
+                if projection.source_snapshot_mismatch
+                else "consistent"
+            ),
+        },
+        "audit_ref": "urn:skeldir:audit:p5_unsigned_builder_unissued",
+        "audit_hash": tagged_sha256(
+            {
+                "p5_audit_placeholder": "not_persisted",
+                "tenant_id_hash": tenant_id_hash,
+                "subject_ref_hash": subject_ref_hash,
+            }
+        ),
+        "semantic_truth_hash": _PLACEHOLDER_SHA,
+        "artifact_ref": artifact_ref,
+        "artifact_hash": artifact_hash,
+        "signature_hash": _PLACEHOLDER_SHA,
+        "signature": _P5_SIGNATURE_PLACEHOLDER,
+        "signing_algorithm": "ed25519",
+        "signing_key_id": _P5_SIGNING_KEY_PLACEHOLDER,
+        "created_at": utc_second(created_at),
+        "valid_until": utc_second(valid_until),
+        "untrusted_display_data": {
+            "text_trust_class": "none",
+            "raw_text_sha256": None,
+            "display_text": None,
+            "display_transform": "none",
+            "text_disposition_version": "text-disposition-v1",
+        },
+    }
+    payload["semantic_truth_hash"] = compute_semantic_truth_hash(payload)
+    payload["signature_hash"] = compute_signature_hash(payload)
+    canonicalize_envelope_payload(payload)
+    return payload
 
 
 def _display_data_from_provider_text(raw_text: str) -> dict[str, object]:
@@ -335,7 +653,7 @@ async def build_unsigned_trust_envelope(
     db_session: AsyncSession,
     request: TrustEnvelopeBuildRequest,
     *,
-    source: MatchVerdictSource | None = None,
+    source: MatchVerdictSource | ConfidenceProjectionSource | None = None,
     payload_runner: Callable[..., Awaitable[dict[str, Any]]] | None = None,
 ) -> TrustEnvelopeBuildResult:
     """Build an unsigned, schema-valid TrustEnvelope payload from approved sources."""
@@ -374,18 +692,32 @@ async def build_unsigned_trust_envelope(
 
     if source is not None:
         expected_ref = f"urn:skeldir:match_verdict:{source.id}"
+        if isinstance(source, ConfidenceProjectionSource):
+            expected_ref = f"urn:skeldir:confidence_projection:{source.id}"
+        expected_type = (
+            "confidence_projection"
+            if isinstance(source, ConfidenceProjectionSource)
+            else "match_verdict"
+        )
         if (
-            request.subject_type != "match_verdict"
-            or source.tenant_id != request.tenant_id
+            source.tenant_id != request.tenant_id
+            or request.subject_type != expected_type
             or request.subject_ref.lower() != expected_ref.lower()
         ):
             raise TrustEnvelopeBuildError("prefetched_source_authority_mismatch")
     else:
-        source = await read_match_verdict_source(
-            db_session,
-            tenant_id=request.tenant_id,
-            subject_ref=request.subject_ref,
-        )
+        if request.subject_type == "match_verdict":
+            source = await read_match_verdict_source(
+                db_session,
+                tenant_id=request.tenant_id,
+                subject_ref=request.subject_ref,
+            )
+        else:
+            source = await read_confidence_projection_source(
+                db_session,
+                tenant_id=request.tenant_id,
+                subject_ref=request.subject_ref,
+            )
     if source is None:
         refusal = build_error_envelope(
             tenant_id=request.tenant_id,
@@ -401,6 +733,31 @@ async def build_unsigned_trust_envelope(
             field_source_decisions=decisions,
             money_authority_decision=None,
             read_only_observation=_read_only_observation(llm_modules=()),
+        )
+
+    if isinstance(source, ConfidenceProjectionSource):
+        if payload_runner is None:
+            payload = _confidence_projection_payload(request=request, source=source)
+        else:
+            payload = await payload_runner(
+                _confidence_projection_payload,
+                request=request,
+                source=source,
+            )
+        after_modules = set(sys.modules)
+        llm_modules = _loaded_llm_modules(before_modules, after_modules)
+        if llm_modules:
+            raise TrustEnvelopeBuildError(
+                f"p5_builder_loaded_forbidden_llm_modules:{','.join(llm_modules)}"
+            )
+        return TrustEnvelopeBuildResult(
+            status="success",
+            unsigned_payload=payload,
+            refusal_payload=None,
+            reason_code=None,
+            field_source_decisions=decisions,
+            money_authority_decision=None,
+            read_only_observation=_read_only_observation(llm_modules=llm_modules),
         )
 
     money_decision = _money_decision_for_match_verdict(source)

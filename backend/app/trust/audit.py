@@ -34,7 +34,7 @@ from app.trust.provenance import replace_audit_provenance_entries
 from app.trust.reason_codes import ReasonCode
 from app.trust.reason_truth_matrix import assert_reason_known
 from app.trust.refusal import tenant_hash, utc_second
-from app.trust.source_adapters import MatchVerdictSource
+from app.trust.source_adapters import ConfidenceProjectionSource, MatchVerdictSource
 
 
 AuditEventType = Literal["issuance", "refusal", "scope_denial", "replay"]
@@ -524,7 +524,7 @@ async def build_unsigned_trust_envelope_with_audit(
     idempotency_key: str,
     audit_session_factory: AuditSessionFactory | None = None,
     access_log_only: bool = False,
-    source: MatchVerdictSource | None = None,
+    source: MatchVerdictSource | ConfidenceProjectionSource | None = None,
     cpu_runner: AuditCpuRunner | None = None,
 ) -> TrustEnvelopeAuditResult:
     """Build through P5, persist P7 audit, and attach audit refs to the payload."""

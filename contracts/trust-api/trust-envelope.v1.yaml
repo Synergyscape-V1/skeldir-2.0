@@ -188,6 +188,7 @@ properties:
     - diagnostics_failed
     - source_snapshot_stale
     - artifact_pruned
+    - artifact_unavailable
     - benchmark_unavailable
     - policy_denied
     - policy_engine_not_available

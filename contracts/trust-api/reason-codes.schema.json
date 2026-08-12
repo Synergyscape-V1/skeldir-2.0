@@ -29,6 +29,7 @@
         "confidence_unavailable",
         "diagnostics_failed",
         "artifact_pruned",
+        "artifact_unavailable",
         "source_snapshot_stale",
         "benchmark_unavailable",
         "policy_denied",

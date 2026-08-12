@@ -9,9 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BAYESIAN_PACKAGE = Path("backend/app/bayesian")
+CONFIDENCE_PROJECTION_PACKAGE = Path("backend/app/confidence_projection")
 API_PROJECTION = BAYESIAN_PACKAGE / "api_projection.py"
 CONFIDENCE_METADATA = BAYESIAN_PACKAGE / "confidence_metadata.py"
-CONFIDENCE_POLICY = BAYESIAN_PACKAGE / "confidence_policy.py"
+CONFIDENCE_POLICY = CONFIDENCE_PROJECTION_PACKAGE / "policy.py"
+CONFIDENCE_POLICY_FACADE = BAYESIAN_PACKAGE / "confidence_policy.py"
 P10_TESTS = Path("backend/tests/test_b24_p10_projection.py")
 FRONTEND = Path("frontend")
 API_DIR = Path("backend/app/api")
@@ -43,7 +45,9 @@ def _require(condition: bool, message: str) -> None:
 def _frontend_text() -> str:
     parts: list[str] = []
     for path in (ROOT / FRONTEND).rglob("*"):
-        if any(part in {"node_modules", "dist", "build", ".next"} for part in path.parts):
+        if any(
+            part in {"node_modules", "dist", "build", ".next"} for part in path.parts
+        ):
             continue
         if path.is_file() and path.suffix in {".ts", ".tsx", ".js", ".jsx"}:
             if path.name.lower() == "nul":
@@ -56,10 +60,18 @@ def validate_projection_modules(
     api_text: str | None = None,
     metadata_text: str | None = None,
     policy_text: str | None = None,
+    policy_facade_text: str | None = None,
 ) -> None:
     api = api_text if api_text is not None else _read(API_PROJECTION)
-    metadata = metadata_text if metadata_text is not None else _read(CONFIDENCE_METADATA)
+    metadata = (
+        metadata_text if metadata_text is not None else _read(CONFIDENCE_METADATA)
+    )
     policy = policy_text if policy_text is not None else _read(CONFIDENCE_POLICY)
+    policy_facade = (
+        policy_facade_text
+        if policy_facade_text is not None
+        else _read(CONFIDENCE_POLICY_FACADE)
+    )
 
     for token in (
         "build_b24_confidence_projection_query",
@@ -130,6 +142,13 @@ def validate_projection_modules(
         "DIVERGENCE",
     ):
         _require(token in policy, f"P10 policy missing: {token}")
+    for token in (
+        "app.confidence_projection.policy",
+        "classify_confidence",
+        "CONFIDENCE_POLICY_VERSION",
+        "CONFIDENCE_SEMANTICS_VERSION",
+    ):
+        _require(token in policy_facade, f"P10 policy facade missing: {token}")
 
 
 def validate_boundary_scans(frontend_text: str | None = None) -> None:
@@ -204,6 +223,7 @@ def run_negative_controls() -> None:
     api = _read(API_PROJECTION)
     metadata = _read(CONFIDENCE_METADATA)
     policy = _read(CONFIDENCE_POLICY)
+    policy_facade = _read(CONFIDENCE_POLICY_FACADE)
     tests = _read(P10_TESTS)
     workflow = _read(WORKFLOW)
     makefile = _read(MAKEFILE)
@@ -212,72 +232,128 @@ def run_negative_controls() -> None:
     controls = (
         (
             "left_join_removed",
-            lambda: validate_projection_modules(api_text=api.replace("LEFT OUTER JOIN latest_matching_fit", "INNER JOIN latest_matching_fit")),
+            lambda: validate_projection_modules(
+                api_text=api.replace(
+                    "LEFT OUTER JOIN latest_matching_fit",
+                    "INNER JOIN latest_matching_fit",
+                )
+            ),
             "LEFT OUTER JOIN latest_matching_fit",
         ),
         (
             "where_collapse_added",
-            lambda: validate_projection_modules(api_text=api + "\nWHERE fit.status = 'succeeded'\n"),
+            lambda: validate_projection_modules(
+                api_text=api + "\nWHERE fit.status = 'succeeded'\n"
+            ),
             "WHERE-collapse",
         ),
         (
             "compute_trigger_added",
-            lambda: validate_projection_modules(api_text=api + "\nfrom app.bayesian.fit_planner import plan_fit\n"),
+            lambda: validate_projection_modules(
+                api_text=api + "\nfrom app.bayesian.fit_planner import plan_fit\n"
+            ),
             "fit_planner",
         ),
         (
             "celery_enqueue_added",
-            lambda: validate_projection_modules(api_text=api + "\nsession.app.send_task('x')\n"),
+            lambda: validate_projection_modules(
+                api_text=api + "\nsession.app.send_task('x')\n"
+            ),
             "send_task",
         ),
         (
             "sampler_import_added",
-            lambda: validate_projection_modules(api_text=api + "\nfrom app.bayesian import sampler_child\n"),
+            lambda: validate_projection_modules(
+                api_text=api + "\nfrom app.bayesian import sampler_child\n"
+            ),
             "sampler",
         ),
         (
             "llm_import_added",
-            lambda: validate_projection_modules(api_text=api + "\nfrom app.llm import provider_boundary\n"),
+            lambda: validate_projection_modules(
+                api_text=api + "\nfrom app.llm import provider_boundary\n"
+            ),
             "app.llm",
         ),
         (
             "bucket_field_removed",
-            lambda: validate_projection_modules(metadata_text=metadata.replace("confidence_bucket_reason", "confidence_reason_removed")),
+            lambda: validate_projection_modules(
+                metadata_text=metadata.replace(
+                    "confidence_bucket_reason", "confidence_reason_removed"
+                )
+            ),
             "confidence_bucket_reason",
         ),
         (
             "policy_version_removed",
-            lambda: validate_projection_modules(policy_text=policy.replace("CONFIDENCE_POLICY_VERSION", "CONFIDENCE_VERSION_REMOVED")),
+            lambda: validate_projection_modules(
+                policy_text=policy.replace(
+                    "CONFIDENCE_POLICY_VERSION", "CONFIDENCE_VERSION_REMOVED"
+                )
+            ),
             "CONFIDENCE_POLICY_VERSION",
         ),
         (
+            "policy_facade_detached",
+            lambda: validate_projection_modules(
+                policy_facade_text=policy_facade.replace(
+                    "app.confidence_projection.policy",
+                    "app.confidence_projection.detached_policy",
+                )
+            ),
+            "policy facade",
+        ),
+        (
             "frontend_threshold_added",
-            lambda: validate_boundary_scans(frontend_text="const confidenceBucket = intervalWidth < 0.1 ? 'high' : 'low';"),
+            lambda: validate_boundary_scans(
+                frontend_text="const confidenceBucket = intervalWidth < 0.1 ? 'high' : 'low';"
+            ),
             "frontend",
         ),
         (
             "no_fit_test_removed",
-            lambda: validate_tests_and_ci(tests_text=tests.replace("test_b24_p10_no_fit_preserves_deterministic_revenue", "test_removed")),
+            lambda: validate_tests_and_ci(
+                tests_text=tests.replace(
+                    "test_b24_p10_no_fit_preserves_deterministic_revenue",
+                    "test_removed",
+                )
+            ),
             "no_fit",
         ),
         (
             "workflow_context_removed",
-            lambda: validate_tests_and_ci(workflow_text=workflow.replace("B2.4-P10 Read-Only Projection Proof", "B2.4-P10 Missing Proof")),
+            lambda: validate_tests_and_ci(
+                workflow_text=workflow.replace(
+                    "B2.4-P10 Read-Only Projection Proof", "B2.4-P10 Missing Proof"
+                )
+            ),
             "workflow",
         ),
         (
             "make_target_removed",
-            lambda: validate_tests_and_ci(makefile_text=makefile.replace("validate-b24-p10-projection", "validate-b24-p10-removed")),
+            lambda: validate_tests_and_ci(
+                makefile_text=makefile.replace(
+                    "validate-b24-p10-projection", "validate-b24-p10-removed"
+                )
+            ),
             "Makefile",
         ),
         (
             "registry_removed",
-            lambda: validate_tests_and_ci(registry_text=registry.replace("validate-b24-p10-projection", "validate-b24-p10-removed")),
+            lambda: validate_tests_and_ci(
+                registry_text=registry.replace(
+                    "validate-b24-p10-projection", "validate-b24-p10-removed"
+                )
+            ),
             "registry",
         ),
         (
             "required_status_removed",
-            lambda: validate_tests_and_ci(required_status_text=required_status.replace("B2.4-P10 Read-Only Projection Proof", "B2.4-P10 Missing Proof")),
+            lambda: validate_tests_and_ci(
+                required_status_text=required_status.replace(
+                    "B2.4-P10 Read-Only Projection Proof", "B2.4-P10 Missing Proof"
+                )
+            ),
             "required status",
         ),
     )

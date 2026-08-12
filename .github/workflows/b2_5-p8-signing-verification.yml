@@ -6,6 +6,7 @@ on:
     paths:
       - "contracts/trust-api/**"
       - "backend/app/trust/**"
+      - "backend/app/confidence_projection/**"
       - "backend/app/api/trust_keys.py"
       - "backend/app/main.py"
       - "backend/tests/trust/**"

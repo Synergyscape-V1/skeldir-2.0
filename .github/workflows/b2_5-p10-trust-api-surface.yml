@@ -15,6 +15,7 @@ on:
       - "backend/app/main.py"
       - "backend/app/config/contract_scope.yaml"
       - "backend/app/trust/**"
+      - "backend/app/confidence_projection/**"
       - "backend/tests/trust/**"
       - "contracts/trust-api/**"
       - "scripts/ci/validate_b25_p10_trust_api_surface.py"
