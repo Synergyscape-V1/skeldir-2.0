@@ -6,6 +6,7 @@ on:
     paths:
       - "contracts/trust-api/**"
       - "backend/app/trust/**"
+      - "backend/app/confidence_projection/**"
       - "backend/tests/trust/**"
       - "scripts/ci/validate_b25_p1_contracts.py"
       - "scripts/ci/validate_b25_p1_trust_drift.py"
@@ -20,6 +21,7 @@ on:
     paths:
       - "contracts/trust-api/**"
       - "backend/app/trust/**"
+      - "backend/app/confidence_projection/**"
       - "backend/tests/trust/**"
       - "scripts/ci/validate_b25_p1_contracts.py"
       - "scripts/ci/validate_b25_p1_trust_drift.py"

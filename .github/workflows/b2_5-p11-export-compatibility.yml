@@ -19,6 +19,7 @@ on:
       - "backend/app/main.py"
       - "backend/app/config/contract_scope.yaml"
       - "backend/app/trust/**"
+      - "backend/app/confidence_projection/**"
       - "backend/requirements*.txt"
       - "backend/tests/trust/**"
       - "backend/tests/integration/test_b14_p5_export_log_artifact_no_leak_runtime.py"

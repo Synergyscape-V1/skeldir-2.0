@@ -11,11 +11,20 @@ from app.trust.builder import (
     TrustEnvelopeBuildRequest,
     build_unsigned_trust_envelope,
 )
+from app.confidence_projection.policy import (
+    ConfidenceBucket,
+    ConfidenceBucketReason,
+    ConfidencePolicyDecision,
+)
+from app.confidence_projection.read_model import B24ConfidenceProjectionRead
 from app.trust.benchmark_defaults import unavailable_benchmark_metadata
 from app.trust.canonicalization import canonicalize_envelope_payload
 from app.trust.money_source_adapter import AuthoritativeMoneyMinor
 from app.trust.policy_defaults import read_only_policy_authority
-from app.trust.source_adapters import iter_field_source_decisions
+from app.trust.source_adapters import (
+    ConfidenceProjectionSource,
+    iter_field_source_decisions,
+)
 
 
 class _FakeMappings:
@@ -99,6 +108,68 @@ def _request(tenant_id: UUID, verdict_id: UUID) -> TrustEnvelopeBuildRequest:
     )
 
 
+def _confidence_source(
+    *,
+    tenant_id: UUID,
+    fit_id: UUID,
+    reason: ConfidenceBucketReason,
+    available: bool = False,
+) -> ConfidenceProjectionSource:
+    now = datetime(2026, 6, 29, 17, 0, 0, tzinfo=timezone.utc)
+    diagnostics_failed = reason is ConfidenceBucketReason.BAD_RHAT
+    pruned = reason is ConfidenceBucketReason.ARTIFACT_PRUNED
+    cold_start = reason is ConfidenceBucketReason.INSUFFICIENT_DATA
+    stale = reason is ConfidenceBucketReason.SOURCE_SNAPSHOT_CHANGED
+    return ConfidenceProjectionSource(
+        projection=B24ConfidenceProjectionRead(
+            tenant_id=tenant_id,
+            fit_id=fit_id,
+            model_type="pymc_marketing_mmm",
+            model_version="b24-test-v1",
+            source_window_start=now,
+            source_window_end=datetime(2026, 6, 30, 17, 0, 0, tzinfo=timezone.utc),
+            source_snapshot_hash="a" * 64,
+            fit_status="fallback_only" if cold_start else "succeeded",
+            data_completeness_status=("insufficient" if cold_start else "complete"),
+            fallback_applied=cold_start,
+            fallback_reason="insufficient_data" if cold_start else None,
+            diagnostic_status="failed" if diagnostics_failed else "passed",
+            diagnostic_failure_reason="bad_rhat" if diagnostics_failed else None,
+            artifact_ref=None if cold_start else "b24/internal/artifact",
+            artifact_hash=None if cold_start else "b" * 64,
+            artifact_lifecycle_status="pruned" if pruned else "active",
+            observed_at=now,
+            deterministic_revenue_minor=100_000,
+            deterministic_row_count=3,
+            match_verdict_count=1,
+            source_snapshot_mismatch=stale,
+            decision=ConfidencePolicyDecision(
+                confidence_available=available,
+                confidence_bucket=(
+                    ConfidenceBucket.HIGH if available else ConfidenceBucket.UNAVAILABLE
+                ),
+                confidence_bucket_reason=reason,
+            ),
+        )
+    )
+
+
+def _confidence_request(
+    tenant_id: UUID,
+    fit_id: UUID,
+) -> TrustEnvelopeBuildRequest:
+    return TrustEnvelopeBuildRequest(
+        tenant_id=tenant_id,
+        subject_type="confidence_projection",
+        subject_ref=f"urn:skeldir:confidence_projection:{fit_id}",
+        request_context={
+            "created_at": datetime(2026, 6, 29, 17, 0, 1, tzinfo=timezone.utc),
+            "valid_until": datetime(2026, 6, 30, 17, 0, 1, tzinfo=timezone.utc),
+            "audience_id": "p5-test-agent",
+        },
+    )
+
+
 def _poison_default_projection(value: dict[str, object]) -> None:
     value["injected_tenant_id"] = "tenant-contamination-negative-control"
     value["injected_provider"] = "provider-contamination-negative-control"
@@ -140,6 +211,82 @@ async def test_builder_emits_unsigned_schema_valid_canonical_match_verdict_paylo
     assert str(tenant_id) not in str(payload)
     assert session.write_attempts == 0
     assert result.read_only_observation.source_writes == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reason", "available", "expected_status", "expected_unavailable_reason"),
+    (
+        (ConfidenceBucketReason.NARROW_INTERVAL, True, "available", None),
+        (
+            ConfidenceBucketReason.INSUFFICIENT_DATA,
+            False,
+            "unavailable",
+            "cold_start_insufficient_data",
+        ),
+        (
+            ConfidenceBucketReason.BAD_RHAT,
+            False,
+            "diagnostics_failed",
+            "diagnostics_failed",
+        ),
+        (
+            ConfidenceBucketReason.SOURCE_SNAPSHOT_CHANGED,
+            False,
+            "degraded",
+            "source_snapshot_stale",
+        ),
+        (
+            ConfidenceBucketReason.ARTIFACT_PRUNED,
+            False,
+            "degraded",
+            "artifact_pruned",
+        ),
+    ),
+)
+async def test_confidence_projection_maps_five_source_families_without_inference(
+    reason: ConfidenceBucketReason,
+    available: bool,
+    expected_status: str,
+    expected_unavailable_reason: str | None,
+) -> None:
+    tenant_id = uuid4()
+    fit_id = uuid4()
+    source = _confidence_source(
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        reason=reason,
+        available=available,
+    )
+
+    result = await build_unsigned_trust_envelope(
+        FakeReadOnlySession(None),
+        _confidence_request(tenant_id, fit_id),
+        source=source,
+    )
+
+    assert result.status == "success"
+    assert result.money_authority_decision is None
+    payload = result.unsigned_payload
+    assert payload is not None
+    canonicalize_envelope_payload(payload)
+    assert payload["subject_type"] == "confidence_projection"
+    assert payload["confidence_metadata"]["confidence_status"] == expected_status
+    assert (
+        payload["confidence_metadata"]["unavailable_reason"]
+        == expected_unavailable_reason
+    )
+    provenance_types = [
+        entry["provenance_type"] for entry in payload["provenance_chain"]
+    ]
+    assert provenance_types[:3] == [
+        "b24_source_snapshot",
+        "bayesian_fit",
+        "bayesian_diagnostic",
+    ]
+    assert provenance_types[3] in {"bayesian_artifact", "explicit_unavailable"}
+    assert payload["confidence_metadata"]["confidence_score_basis_points"] is None
+    assert str(tenant_id) not in str(payload)
 
 
 @pytest.mark.asyncio

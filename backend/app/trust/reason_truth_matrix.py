@@ -138,9 +138,7 @@ def _decision_from_definition(definition: ReasonCodeDefinition) -> ReasonTruthDe
 def require_reason_code(value: object) -> ReasonCode:
     """Require an internal ReasonCode enum member before matrix evaluation."""
     if not isinstance(value, ReasonCode):
-        raise ReasonTruthMatrixError(
-            f"reason_code_not_enum:{type(value).__name__}"
-        )
+        raise ReasonTruthMatrixError(f"reason_code_not_enum:{type(value).__name__}")
     return value
 
 
@@ -161,16 +159,14 @@ def _validate_fallback(
     if "fallback_applied" in payload:
         applied = payload["fallback_applied"]
         if definition.fallback_applied == "required" and applied is not True:
-            raise ReasonTruthMatrixError(
-                f"fallback_required:{definition.code.value}"
-            )
+            raise ReasonTruthMatrixError(f"fallback_required:{definition.code.value}")
         if definition.fallback_applied == "forbidden" and applied is not False:
-            raise ReasonTruthMatrixError(
-                f"fallback_forbidden:{definition.code.value}"
-            )
+            raise ReasonTruthMatrixError(f"fallback_forbidden:{definition.code.value}")
     if "fallback_reason" in payload:
         expected = definition.fallback_reason
-        expected_value = expected.value if isinstance(expected, ReasonCode) else expected
+        expected_value = (
+            expected.value if isinstance(expected, ReasonCode) else expected
+        )
         actual = payload["fallback_reason"]
         if expected_value is not None and actual != expected_value:
             raise ReasonTruthMatrixError(
@@ -217,7 +213,7 @@ def _validate_reason_specific_contradictions(
         _reject_success_semantics(code, payload)
     elif code == ReasonCode.SIGNATURE_ALGORITHM_UNSUPPORTED:
         _reject_valid_signature_behavior(code, payload)
-    elif code == ReasonCode.ARTIFACT_PRUNED:
+    elif code in {ReasonCode.ARTIFACT_PRUNED, ReasonCode.ARTIFACT_UNAVAILABLE}:
         _reject_artifact_claims(code, payload)
     elif code == ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE:
         _reject_money_fields(code, payload)
@@ -241,7 +237,9 @@ def _reject_fake_confidence(code: ReasonCode, payload: dict[str, Any]) -> None:
         raise ReasonTruthMatrixError(f"confidence_unavailable_fake_score:{code}")
 
 
-def _reject_verified_current_snapshot(code: ReasonCode, payload: dict[str, Any]) -> None:
+def _reject_verified_current_snapshot(
+    code: ReasonCode, payload: dict[str, Any]
+) -> None:
     temporal = _metadata(payload, "evidence_temporal_boundary")
     if temporal.get("staleness_status") == "current":
         raise ReasonTruthMatrixError(f"source_snapshot_stale_marked_current:{code}")
@@ -252,7 +250,9 @@ def _reject_verified_current_snapshot(code: ReasonCode, payload: dict[str, Any])
 def _reject_money_fields(code: ReasonCode, payload: dict[str, Any]) -> None:
     for field in MONEY_FIELDS:
         if field in payload and payload[field] is not None:
-            raise ReasonTruthMatrixError(f"money_not_authoritative_field_present:{field}:{code}")
+            raise ReasonTruthMatrixError(
+                f"money_not_authoritative_field_present:{field}:{code}"
+            )
 
 
 def _reject_action_policy(code: ReasonCode, payload: dict[str, Any]) -> None:
@@ -305,7 +305,10 @@ def _reject_provider_text_authority(code: ReasonCode, payload: dict[str, Any]) -
 
 
 def _reject_success_semantics(code: ReasonCode, payload: dict[str, Any]) -> None:
-    if payload.get("envelope_status") == "success" or payload.get("status") == "success":
+    if (
+        payload.get("envelope_status") == "success"
+        or payload.get("status") == "success"
+    ):
         raise ReasonTruthMatrixError(f"unsupported_version_success_semantics:{code}")
     if payload.get("truth_type") in {
         "deterministic_revenue_verification",
@@ -322,7 +325,10 @@ def _reject_valid_signature_behavior(code: ReasonCode, payload: dict[str, Any]) 
 
 
 def _reject_artifact_claims(code: ReasonCode, payload: dict[str, Any]) -> None:
-    if payload.get("artifact_ref") is not None or payload.get("artifact_hash") is not None:
+    if (
+        payload.get("artifact_ref") is not None
+        or payload.get("artifact_hash") is not None
+    ):
         raise ReasonTruthMatrixError(f"artifact_pruned_artifact_present:{code}")
 
 

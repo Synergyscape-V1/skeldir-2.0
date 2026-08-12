@@ -270,9 +270,26 @@ def validate_corrective_controls(sources: dict[Path, str]) -> int:
         )
     _require("_in_created_at_range" not in route, "issuance_time_filter_regression")
 
+    capability_block = route.split("SUPPORTED_TRUST_SUBJECT_TYPES = frozenset(", 1)[
+        1
+    ].split("RESERVED_TRUST_SUBJECT_TYPES", 1)[0]
+    declared_capabilities = {
+        token
+        for token in (
+            "TrustSubjectType.MATCH_VERDICT",
+            "TrustSubjectType.CONFIDENCE_PROJECTION",
+            "TrustSubjectType.REVENUE_CLAIM",
+            "TrustSubjectType.ATTRIBUTION_RESULT",
+            "TrustSubjectType.RECONCILIATION_DISCREPANCY",
+        )
+        if token in capability_block
+    }
     _require(
-        "SUPPORTED_TRUST_SUBJECT_TYPES = frozenset({TrustSubjectType.MATCH_VERDICT})"
-        in route,
+        declared_capabilities
+        == {
+            "TrustSubjectType.MATCH_VERDICT",
+            "TrustSubjectType.CONFIDENCE_PROJECTION",
+        },
         "subject_capability_parity_not_exact",
     )
     _require(
@@ -686,8 +703,11 @@ def validate_negative_controls(sources: dict[Path, str]) -> int:
         (
             mutation(
                 ROUTE_PATH,
-                "frozenset({TrustSubjectType.MATCH_VERDICT})",
-                "frozenset({TrustSubjectType.MATCH_VERDICT, TrustSubjectType.REVENUE_CLAIM})",
+                "TrustSubjectType.CONFIDENCE_PROJECTION}",
+                (
+                    "TrustSubjectType.CONFIDENCE_PROJECTION, "
+                    "TrustSubjectType.REVENUE_CLAIM}"
+                ),
             ),
             "NC-P10-02",
         ),

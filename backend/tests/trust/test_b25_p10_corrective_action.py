@@ -184,7 +184,14 @@ async def _fake_session_dependency():
 def test_contract_adapter_parity_and_reserved_taxonomy_are_explicit() -> None:
     supported = {value.value for value in trust_api.SUPPORTED_TRUST_SUBJECT_TYPES}
     reserved = {value.value for value in trust_api.RESERVED_TRUST_SUBJECT_TYPES}
-    assert supported == SUPPORTED_P5_SUBJECT_TYPES == {"match_verdict"}
+    assert (
+        supported
+        == SUPPORTED_P5_SUBJECT_TYPES
+        == {
+            "match_verdict",
+            "confidence_projection",
+        }
+    )
     assert supported.isdisjoint(reserved)
     assert supported | reserved == {value.value for value in trust_api.TrustSubjectType}
 

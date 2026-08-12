@@ -13,6 +13,11 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.confidence_projection.read_model import (
+    B24ConfidenceProjectionRead,
+    read_b24_confidence_projection_for_fit,
+)
+
 
 SourceClass = Literal[
     "authoritative_source",
@@ -31,11 +36,15 @@ AuthorityClass = Literal[
     "p3_text_disposition",
     "p4_money_authority",
     "p5_unsigned_placeholder",
+    "confidence_metadata_projection",
 ]
 
-SUPPORTED_P5_SUBJECT_TYPES = frozenset({"match_verdict"})
+SUPPORTED_P5_SUBJECT_TYPES = frozenset({"match_verdict", "confidence_projection"})
 _MATCH_VERDICT_REF_RE = re.compile(
     r"^urn:skeldir:match_verdict:(?P<verdict_id>[0-9a-fA-F-]{36})$"
+)
+_CONFIDENCE_PROJECTION_REF_RE = re.compile(
+    r"^urn:skeldir:confidence_projection:(?P<fit_id>[0-9a-fA-F-]{36})$"
 )
 
 
@@ -72,6 +81,21 @@ class MatchVerdictSource:
     last_transition_at: datetime
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class ConfidenceProjectionSource:
+    """Exact fit-scoped B2.4 projection; never an implicit verdict annotation."""
+
+    projection: B24ConfidenceProjectionRead
+
+    @property
+    def id(self) -> UUID:
+        return self.projection.fit_id
+
+    @property
+    def tenant_id(self) -> UUID:
+        return self.projection.tenant_id
 
 
 TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY: dict[str, FieldSourceDecision] = {
@@ -155,9 +179,9 @@ TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY: dict[str, FieldSourceDecision] = {
     ),
     "confidence_metadata": FieldSourceDecision(
         "confidence_metadata",
-        "explicit_unavailable",
-        "explicitly_unavailable",
-        "b24_confidence_projection_unavailable_for_match_verdict",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "app.confidence_projection.read_model",
     ),
     "provenance_chain": FieldSourceDecision(
         "provenance_chain",
@@ -299,6 +323,15 @@ def parse_match_verdict_subject_ref(subject_ref: str) -> UUID | None:
     return UUID(match.group("verdict_id"))
 
 
+def parse_confidence_projection_subject_ref(subject_ref: str) -> UUID | None:
+    """Return the exact B2.4 fit UUID embedded in a projection subject URN."""
+
+    match = _CONFIDENCE_PROJECTION_REF_RE.fullmatch(str(subject_ref or ""))
+    if match is None:
+        return None
+    return UUID(match.group("fit_id"))
+
+
 def normalize_match_verdict_status(source_status: str) -> str:
     """Map internal B2.3 lifecycle states to TrustEnvelope status enums."""
     status = str(source_status or "").strip().lower()
@@ -391,6 +424,27 @@ async def read_match_verdict_source(
     if row is None:
         return None
     return match_verdict_source_from_mapping(row)
+
+
+async def read_confidence_projection_source(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    subject_ref: str,
+) -> ConfidenceProjectionSource | None:
+    """Read an exact tenant-bound B2.4 fit through the neutral projection seam."""
+
+    fit_id = parse_confidence_projection_subject_ref(subject_ref)
+    if fit_id is None:
+        return None
+    projection = await read_b24_confidence_projection_for_fit(
+        session,
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+    )
+    if projection is None:
+        return None
+    return ConfidenceProjectionSource(projection=projection)
 
 
 async def query_match_verdict_sources(

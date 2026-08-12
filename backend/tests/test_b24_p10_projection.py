@@ -141,10 +141,26 @@ def test_b24_p10_backend_policy_classifies_interval_width(
 @pytest.mark.parametrize(
     ("overrides", "reason"),
     [
-        ({"diagnostic_status": "failed", "diagnostic_failure_reason": "bad_rhat"}, "bad_rhat"),
-        ({"diagnostic_status": "failed", "diagnostic_failure_reason": "low_ess"}, "low_ess"),
-        ({"diagnostic_status": "failed", "diagnostic_failure_reason": "divergence"}, "divergence"),
-        ({"fit_status": "timeout", "fallback_applied": True, "fallback_reason": "timeout"}, "timeout"),
+        (
+            {"diagnostic_status": "failed", "diagnostic_failure_reason": "bad_rhat"},
+            "bad_rhat",
+        ),
+        (
+            {"diagnostic_status": "failed", "diagnostic_failure_reason": "low_ess"},
+            "low_ess",
+        ),
+        (
+            {"diagnostic_status": "failed", "diagnostic_failure_reason": "divergence"},
+            "divergence",
+        ),
+        (
+            {
+                "fit_status": "timeout",
+                "fallback_applied": True,
+                "fallback_reason": "timeout",
+            },
+            "timeout",
+        ),
         (
             {
                 "fit_status": "failed",
@@ -162,6 +178,7 @@ def test_b24_p10_backend_policy_classifies_interval_width(
             "input_too_large",
         ),
         ({"source_snapshot_mismatch": True}, "source_snapshot_changed"),
+        ({"artifact_lifecycle_status": "pruned"}, "artifact_pruned"),
         ({"artifact_ref": None, "artifact_hash": None}, "artifact_unavailable"),
     ],
 )

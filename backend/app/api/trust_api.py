@@ -46,9 +46,12 @@ from app.trust.runtime_keys import (
 from app.trust.signing import sign_trust_envelope
 from app.trust.source_adapters import (
     SUPPORTED_P5_SUBJECT_TYPES,
+    ConfidenceProjectionSource,
     MatchVerdictSource,
+    parse_confidence_projection_subject_ref,
     parse_match_verdict_subject_ref,
     query_match_verdict_sources,
+    read_confidence_projection_source,
 )
 from app.trust.tenant_security import assert_authenticated_tenant_context
 from app.trust.verification import verify_trust_envelope
@@ -110,7 +113,9 @@ class TrustSubjectType(str, Enum):
     CONFIDENCE_PROJECTION = "confidence_projection"
 
 
-SUPPORTED_TRUST_SUBJECT_TYPES = frozenset({TrustSubjectType.MATCH_VERDICT})
+SUPPORTED_TRUST_SUBJECT_TYPES = frozenset(
+    {TrustSubjectType.MATCH_VERDICT, TrustSubjectType.CONFIDENCE_PROJECTION}
+)
 RESERVED_TRUST_SUBJECT_TYPES = (
     frozenset(TrustSubjectType) - SUPPORTED_TRUST_SUBJECT_TYPES
 )
@@ -498,7 +503,7 @@ async def _issue_signed_envelope(
     idempotency_key: str,
     key_registry: TrustKeyRegistry,
     issued_at: datetime,
-    source: MatchVerdictSource | None = None,
+    source: MatchVerdictSource | ConfidenceProjectionSource | None = None,
 ) -> dict[str, Any] | None:
     build_request = TrustEnvelopeBuildRequest(
         tenant_id=caller.tenant_id,
@@ -677,20 +682,55 @@ async def _query_trust_envelopes_with_capacity(
         row_limit=len(page_refs),
     )
     sources_by_id = {source.id: source for source in sources}
+    requested_types = set(query.subject_types)
     issued_at = now
     envelopes: list[dict[str, Any]] = []
     try:
         for page_offset, subject_ref in enumerate(page_refs):
             verdict_id = parse_match_verdict_subject_ref(subject_ref)
-            source = sources_by_id.get(verdict_id) if verdict_id is not None else None
-            if source is None:
+            projection_fit_id = parse_confidence_projection_subject_ref(subject_ref)
+            source: MatchVerdictSource | ConfidenceProjectionSource | None = (
+                sources_by_id.get(verdict_id) if verdict_id is not None else None
+            )
+            if (
+                verdict_id is not None
+                and TrustSubjectType.MATCH_VERDICT in requested_types
+                and source is not None
+            ):
+                subject_type = TrustSubjectType.MATCH_VERDICT.value
+                canonical_subject_ref = f"urn:skeldir:match_verdict:{source.id}"
+            elif (
+                projection_fit_id is not None
+                and TrustSubjectType.CONFIDENCE_PROJECTION in requested_types
+            ):
+                source = await read_confidence_projection_source(
+                    session,
+                    tenant_id=caller.tenant_id,
+                    subject_ref=subject_ref,
+                )
+                if source is None:
+                    continue
+                observed_at = source.projection.observed_at
+                if (
+                    query.created_at_after is not None
+                    and observed_at < query.created_at_after
+                ) or (
+                    query.created_at_before is not None
+                    and observed_at > query.created_at_before
+                ):
+                    continue
+                subject_type = TrustSubjectType.CONFIDENCE_PROJECTION.value
+                canonical_subject_ref = (
+                    f"urn:skeldir:confidence_projection:{projection_fit_id}"
+                )
+            else:
                 continue
             global_position = start_position + page_offset
             envelope = await _issue_signed_envelope(
                 session=session,
                 caller=caller,
-                subject_type=TrustSubjectType.MATCH_VERDICT.value,
-                subject_ref=f"urn:skeldir:match_verdict:{source.id}",
+                subject_type=subject_type,
+                subject_ref=canonical_subject_ref,
                 idempotency_key=(
                     f"{idempotency_key}:query:{binding_hash.removeprefix('sha256:')}:"
                     f"{global_position}"
