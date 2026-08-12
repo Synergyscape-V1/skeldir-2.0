@@ -1,3 +1,18 @@
+- gate_id: b25-p13-e2e-trust-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: backend/tests/trust/test_b25_p13_e2e_trust_closure.py
+  owning_phase: B2.5-P13
+  protected_invariant: B2.5-P13 composes one real machine credential through production authentication, scope, atomic replay, rate limiting, tenant-RLS session binding, exact deterministic and B2.4 confidence source reads, audit, Ed25519 signing, exact wire serialization, governed JWKS retrieval, and public-only verification while five confidence source families remain truthful and Trust cannot dispatch compute or mutate B2.3/B2.4 authority state.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1-P12 prove individual contracts, deterministic mechanics, public verification, machine identity, bounded API behavior, exports, contract projection, isolation, and CI non-vacuity, but none proves their complete composition with exact persisted B2.4 confidence states through one production request and independently fetched public key material.
+  negative_control_preserved_by: SKELDIR_B25_P13_E2E_PROOF=1 python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py -q -s --no-header
+  local_reproduction_command: SKELDIR_B25_P13_E2E_PROOF=1 python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py -q -s --no-header
+  risk_if_removed: The Trust API could retain individually green components while its real authenticated signed path fragments, B2.4 confidence is misclassified or detached from its exact source, tenant isolation fails, a private signing key leaks into verification, or an upstream authority mutation occurs during a read.
 - gate_id: validate-b25-p12-contract-projection
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates
