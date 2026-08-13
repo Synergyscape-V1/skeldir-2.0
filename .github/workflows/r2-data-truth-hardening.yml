@@ -272,10 +272,13 @@ jobs:
               allocation_deferred_blocks.append(match.group(0).strip() + "\n")
               reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
 
-          allocation_trigger_marker = "-- Name: attribution_allocations trg_check_allocation_sum; Type: TRIGGER; Schema: public; Owner: -"
-          marker_index = reordered.find(allocation_trigger_marker)
-          if marker_index == -1:
+          allocation_trigger_pattern = re.compile(
+              r"(?m)^CREATE TRIGGER trg_check_allocation_sum\b"
+          )
+          trigger_match = allocation_trigger_pattern.search(reordered)
+          if trigger_match is None:
               raise SystemExit("unable to locate allocation trigger insertion point in canonical schema")
+          marker_index = trigger_match.start()
           reordered = (
               reordered[:marker_index].rstrip()
               + "\n\n"
