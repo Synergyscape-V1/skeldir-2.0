@@ -56,6 +56,7 @@ from app.bayesian.sampler_supervisor import (
     run_supervised_sampler,
     synthetic_blocking_child_command,
 )
+from app.bayesian.source_snapshot import P6SourceObservedInput
 from app.bayesian.temp_workspace import create_workspace_lease
 from app.bayesian.tenant_context import (
     assert_bound_tenant,
@@ -1337,6 +1338,24 @@ async def test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction(
         "interval_element_count": 1,
         "interval_summary_bytes": 32,
     }
+    observed_input = P6SourceObservedInput(
+        tenant_id=tenant_a,
+        model_type=B24_P6_MODEL_TYPE,
+        model_version=B24_P6_MODEL_VERSION,
+        source_window_start=START,
+        source_window_end=END,
+        source_snapshot_hash=source_hash,
+        observed_signal=[0.15],
+        observed_signal_version="b24-p6-source-observed-v1",
+        streamed_chunk_count=1,
+        streamed_source_row_count=1,
+        source_amount_minor_total=100,
+        deterministic_revenue_minor=100,
+        deterministic_revenue_row_count=1,
+        deterministic_match_verdict_count=1,
+        deterministic_currency_count=1,
+        resource_policy_version="b24-p4-resource-policy-v1",
+    )
     try:
         with sync_engine.begin() as conn:
             lease = _claim_test_dispatch_lease(
@@ -1371,6 +1390,7 @@ async def test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction(
                 runtime_seconds=1,
                 result_summary=result_summary,
                 result_hash="d" * 64,
+                observed_input=observed_input,
             )
             assert_bound_tenant(conn, tenant_id=tenant_a)
 
