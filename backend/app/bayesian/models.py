@@ -140,6 +140,24 @@ class BayesianModelFit(Base, TenantMixin):
     confidence_policy_version: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+    confidence_semantics_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    confidence_deterministic_revenue_minor: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    confidence_deterministic_row_count: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    confidence_match_verdict_count: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    confidence_currency_count: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    confidence_classified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     artifact_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     artifact_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
@@ -297,6 +315,18 @@ class BayesianModelFit(Base, TenantMixin):
         CheckConstraint(
             "confidence_bucket IS NULL OR confidence_bucket IN ('unavailable', 'low', 'medium', 'high', 'fallback', 'needs_review')",
             name="ck_bayesian_model_fits_confidence_bucket",
+        ),
+        CheckConstraint(
+            "confidence_deterministic_row_count IS NULL OR confidence_deterministic_row_count >= 0",
+            name="ck_bayesian_model_fits_confidence_row_count_nonnegative",
+        ),
+        CheckConstraint(
+            "confidence_match_verdict_count IS NULL OR confidence_match_verdict_count >= 0",
+            name="ck_bayesian_model_fits_confidence_verdict_count_nonnegative",
+        ),
+        CheckConstraint(
+            "confidence_currency_count IS NULL OR confidence_currency_count >= 0",
+            name="ck_bayesian_model_fits_confidence_currency_count_nonnegative",
         ),
         CheckConstraint(
             "artifact_ref IS NULL OR artifact_ref ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'",
@@ -729,6 +759,15 @@ class B24DirtyEvent(Base, TenantMixin):
             postgresql_where=text(
                 "status IN ('authority_waiting', 'authority_retry_ready')"
             ),
+        ),
+        Index(
+            "idx_b24_dirty_events_confidence_freshness",
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            text("observed_at DESC"),
         ),
     )
 

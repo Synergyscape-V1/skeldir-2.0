@@ -13,14 +13,51 @@ from app.bayesian.api_projection import (
 )
 from app.bayesian.confidence_policy import (
     CONFIDENCE_POLICY_VERSION,
+    CONFIDENCE_SEMANTICS_VERSION,
     ConfidenceBucket,
     ConfidenceBucketReason,
     classify_confidence,
+    persisted_confidence_decision,
 )
 
 
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "scripts/ci/validate_b24_p10_projection.py"
+
+
+def test_b24_p10_persisted_classification_is_version_and_semantics_bound() -> None:
+    valid = persisted_confidence_decision(
+        confidence_bucket="high",
+        confidence_bucket_reason="narrow_interval",
+        confidence_policy_version=CONFIDENCE_POLICY_VERSION,
+        confidence_semantics_version=CONFIDENCE_SEMANTICS_VERSION,
+    )
+    assert valid.confidence_available is True
+    assert valid.confidence_bucket is ConfidenceBucket.HIGH
+
+    stale_semantics = persisted_confidence_decision(
+        confidence_bucket="high",
+        confidence_bucket_reason="narrow_interval",
+        confidence_policy_version=CONFIDENCE_POLICY_VERSION,
+        confidence_semantics_version="mutated-semantics",
+    )
+    assert stale_semantics.confidence_available is False
+    assert stale_semantics.confidence_bucket_reason is (
+        ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID
+    )
+
+
+def test_b24_p10_multi_currency_is_typed_unavailable() -> None:
+    decision = classify_confidence(
+        {
+            **_base_row(),
+            "currency_count": 2,
+        }
+    )
+    assert decision.confidence_available is False
+    assert decision.confidence_bucket_reason is (
+        ConfidenceBucketReason.MULTI_CURRENCY_UNSUPPORTED
+    )
 
 
 def _load_validator():

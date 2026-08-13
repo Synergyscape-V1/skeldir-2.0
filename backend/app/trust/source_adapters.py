@@ -17,6 +17,7 @@ from app.confidence_projection.read_model import (
     B24ConfidenceProjectionRead,
     read_b24_confidence_projection_for_fit,
 )
+from app.trust.subject_authority import subject_authority_definition
 
 
 SourceClass = Literal[
@@ -306,12 +307,132 @@ TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY: dict[str, FieldSourceDecision] = {
     ),
 }
 
+_CONFIDENCE_FIELD_SOURCE_OVERRIDES: dict[str, FieldSourceDecision] = {
+    "subject_authority": FieldSourceDecision(
+        "subject_authority",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "app.trust.subject_authority:confidence_projection",
+    ),
+    "subject_type": FieldSourceDecision(
+        "subject_type",
+        "authoritative_source",
+        "deterministic_machine_fact",
+        "build_request.subject_type",
+    ),
+    "subject_ref": FieldSourceDecision(
+        "subject_ref",
+        "authoritative_source",
+        "deterministic_machine_fact",
+        "build_request.subject_ref",
+    ),
+    "truth_type": FieldSourceDecision(
+        "truth_type",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_model_fits.confidence_bucket",
+    ),
+    "truth_authority": FieldSourceDecision(
+        "truth_authority",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_model_fits.source_snapshot_hash",
+    ),
+    "match_verdict_status": FieldSourceDecision(
+        "match_verdict_status",
+        "explicit_unavailable",
+        "explicitly_unavailable",
+        "confidence_projection_subject_has_no_match_verdict_status",
+    ),
+    "confidence_metadata": FieldSourceDecision(
+        "confidence_metadata",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "app.confidence_projection.read_model",
+    ),
+    "provenance_chain": FieldSourceDecision(
+        "provenance_chain",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_model_fits+bayesian_artifacts+b24_dirty_events",
+    ),
+    "data_completeness_status": FieldSourceDecision(
+        "data_completeness_status",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_model_fits.data_completeness_status",
+    ),
+    "fallback_applied": FieldSourceDecision(
+        "fallback_applied",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_model_fits.confidence_bucket_reason",
+    ),
+    "fallback_reason": FieldSourceDecision(
+        "fallback_reason",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_model_fits.confidence_bucket_reason",
+    ),
+    "evidence_temporal_boundary": FieldSourceDecision(
+        "evidence_temporal_boundary",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_model_fits+b24_dirty_events",
+    ),
+    "artifact_ref": FieldSourceDecision(
+        "artifact_ref",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_artifacts.artifact_ref",
+    ),
+    "artifact_hash": FieldSourceDecision(
+        "artifact_hash",
+        "derived_from_prior_phase_adapter",
+        "confidence_metadata_projection",
+        "bayesian_artifacts.artifact_hash",
+    ),
+    "created_at": FieldSourceDecision(
+        "created_at",
+        "authoritative_source",
+        "deterministic_machine_fact",
+        "build_request.request_context.created_at",
+    ),
+    "untrusted_display_data": FieldSourceDecision(
+        "untrusted_display_data",
+        "explicit_unavailable",
+        "explicitly_unavailable",
+        "confidence_projection_has_no_provider_text",
+    ),
+    "verified_revenue_minor": FieldSourceDecision(
+        "verified_revenue_minor",
+        "explicit_unavailable",
+        "explicitly_unavailable",
+        "confidence_projection_does_not_publish_financial_truth",
+    ),
+}
 
-def iter_field_source_decisions() -> tuple[FieldSourceDecision, ...]:
-    """Return deterministic P5 field-source decisions."""
+TRUST_ENVELOPE_FIELD_SOURCE_REGISTRIES: dict[
+    str, dict[str, FieldSourceDecision]
+] = {
+    "match_verdict": TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY,
+    "confidence_projection": {
+        **TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY,
+        **_CONFIDENCE_FIELD_SOURCE_OVERRIDES,
+    },
+}
+
+
+def iter_field_source_decisions(
+    subject_type: str = "match_verdict",
+) -> tuple[FieldSourceDecision, ...]:
+    """Return deterministic subject-conditioned P5 field-source decisions."""
+
+    subject_authority_definition(subject_type)
+    registry = TRUST_ENVELOPE_FIELD_SOURCE_REGISTRIES[subject_type]
     return tuple(
-        TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY[key]
-        for key in sorted(TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY)
+        registry[key]
+        for key in sorted(registry)
     )
 
 

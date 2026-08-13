@@ -66,6 +66,10 @@ class P6SourceObservedInput:
     streamed_chunk_count: int
     streamed_source_row_count: int
     source_amount_minor_total: int
+    deterministic_revenue_minor: int
+    deterministic_revenue_row_count: int
+    deterministic_match_verdict_count: int
+    deterministic_currency_count: int
     resource_policy_version: str
 
     def metadata(self) -> dict[str, object]:
@@ -74,6 +78,10 @@ class P6SourceObservedInput:
             "streamed_chunk_count": self.streamed_chunk_count,
             "streamed_source_row_count": self.streamed_source_row_count,
             "source_amount_minor_total": self.source_amount_minor_total,
+            "deterministic_revenue_minor": self.deterministic_revenue_minor,
+            "deterministic_revenue_row_count": self.deterministic_revenue_row_count,
+            "deterministic_match_verdict_count": self.deterministic_match_verdict_count,
+            "deterministic_currency_count": self.deterministic_currency_count,
             "resource_policy_version": self.resource_policy_version,
         }
 
@@ -382,20 +390,27 @@ async def stream_source_chunks(
         yield canonical_json_bytes({"chunk_type": "source_end", "source": source_name})
 
 
+def _integer_payload_value(payload: dict[str, object], field: str) -> int:
+    value = payload.get(field)
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return 0
+    return int(value)
+
+
 def _p6_amount_minor(payload: dict[str, object]) -> int:
     source_name = str(payload.get("source_table_discriminator", ""))
     if source_name == "attribution_events":
-        return int(payload.get("revenue_cents") or 0)
+        return _integer_payload_value(payload, "revenue_cents")
     if source_name == "attribution_allocations":
-        return int(payload.get("allocated_revenue_cents") or 0)
+        return _integer_payload_value(payload, "allocated_revenue_cents")
     if source_name == "b23_match_verdicts":
-        return int(payload.get("canonical_net_verified_amount_minor") or 0)
+        return _integer_payload_value(payload, "canonical_net_verified_amount_minor")
     if source_name == "b23_revenue_events":
         return (
-            int(payload.get("captured_amount_minor") or 0)
-            + int(payload.get("refund_amount_minor") or 0)
-            + int(payload.get("chargeback_amount_minor") or 0)
-            + int(payload.get("reversal_amount_minor") or 0)
+            _integer_payload_value(payload, "captured_amount_minor")
+            + _integer_payload_value(payload, "refund_amount_minor")
+            + _integer_payload_value(payload, "chargeback_amount_minor")
+            + _integer_payload_value(payload, "reversal_amount_minor")
         )
     return 0
 
@@ -413,6 +428,24 @@ def _bounded_signal_from_source_rows(
         round(row_signal, 6),
         round(mean_signal, 6),
     ]
+
+
+def _b23_deterministic_net_minor(payload: dict[str, object]) -> int:
+    """Return B2.3's sovereign signed net amount for one revenue event."""
+
+    captured = _integer_payload_value(payload, "captured_amount_minor")
+    if _integer_payload_value(payload, "net_effect_sign") >= 0:
+        return captured
+    adjustment = (
+        payload.get("refund_amount_minor")
+        or payload.get("chargeback_amount_minor")
+        or payload.get("reversal_amount_minor")
+        or payload.get("captured_amount_minor")
+        or 0
+    )
+    if isinstance(adjustment, bool) or not isinstance(adjustment, (int, str)):
+        return 0
+    return -int(adjustment)
 
 
 def load_p6_observed_input_from_source_snapshot_sync(
@@ -505,6 +538,10 @@ def load_p6_observed_input_from_source_snapshot_sync(
     chunk_count = 1
     source_row_count = 0
     amount_minor_total = 0
+    deterministic_revenue_minor = 0
+    deterministic_revenue_row_count = 0
+    deterministic_match_verdict_ids: set[str] = set()
+    deterministic_currencies: set[str] = set()
     params = {
         "tenant_id": str(tenant_id),
         "window_start": source_window_start,
@@ -533,6 +570,17 @@ def load_p6_observed_input_from_source_snapshot_sync(
                 chunk_count += 1
                 source_row_count += 1
                 amount_minor_total += _p6_amount_minor(payload)
+                if source_name == "b23_revenue_events":
+                    deterministic_revenue_minor += _b23_deterministic_net_minor(
+                        payload
+                    )
+                    deterministic_revenue_row_count += 1
+                    match_verdict_id = str(payload.get("match_verdict_id") or "")
+                    if match_verdict_id:
+                        deterministic_match_verdict_ids.add(match_verdict_id)
+                    currency = str(payload.get("currency_code") or "").strip().upper()
+                    if currency:
+                        deterministic_currencies.add(currency)
         hasher.update(
             canonical_json_bytes({"chunk_type": "source_end", "source": source_name})
         )
@@ -559,6 +607,10 @@ def load_p6_observed_input_from_source_snapshot_sync(
         streamed_chunk_count=chunk_count,
         streamed_source_row_count=source_row_count,
         source_amount_minor_total=amount_minor_total,
+        deterministic_revenue_minor=deterministic_revenue_minor,
+        deterministic_revenue_row_count=deterministic_revenue_row_count,
+        deterministic_match_verdict_count=len(deterministic_match_verdict_ids),
+        deterministic_currency_count=len(deterministic_currencies),
         resource_policy_version=resource_decision.input_profile.policy_version,
     )
 

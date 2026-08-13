@@ -48,7 +48,9 @@
         "enum": [
           "b23_match_verdicts",
           "b23_revenue_events",
+          "b24_dirty_events",
           "webhook_ingress_identities",
+          "attribution_events",
           "attribution_allocations",
           "bayesian_model_fits",
           "bayesian_artifacts"

@@ -23,9 +23,13 @@ allowed_subject_types:
   confidence_projection:
     source_authority_class: confidence_metadata_projection
     allowed_source_tables:
-      - bayesian_model_fits
-      - bayesian_artifacts
+      - attribution_allocations
+      - attribution_events
       - b23_match_verdicts
+      - b23_revenue_events
+      - b24_dirty_events
+      - bayesian_artifacts
+      - bayesian_model_fits
 forbidden_subject_types:
   - exception_record
   - ticket

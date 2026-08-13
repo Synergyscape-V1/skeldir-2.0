@@ -66,6 +66,8 @@
         "artifact_unavailable",
         "source_snapshot_stale",
         "model_not_fit",
+        "confidence_unavailable",
+        "unsupported_financial_context",
         "not_applicable",
         null
       ]

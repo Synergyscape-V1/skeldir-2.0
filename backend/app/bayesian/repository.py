@@ -11,9 +11,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bayesian.enums import FallbackReason as BayesianFallbackReason
 from app.bayesian.exceptions import BayesianFitNotFoundError
 from app.bayesian.models import BayesianModelFit
-from app.bayesian.resource_bounds import B24_RESOURCE_POLICY_VERSION
 from app.bayesian.resource_profile import B24ResourceDecision
 from app.bayesian.source_snapshot import SourceSnapshotResult
+from app.confidence_projection.policy import (
+    ConfidencePolicyDecision,
+    classify_confidence,
+)
+
+
+def _fallback_confidence(reason: str) -> ConfidencePolicyDecision:
+    return classify_confidence(
+        {
+            "deterministic_revenue_minor": 0,
+            "currency_count": 0,
+            "fit_id": "persisted-fallback",
+            "fit_status": "fallback_only",
+            "fallback_applied": True,
+            "fallback_reason": reason,
+        }
+    )
 
 
 class BayesianFitRepository:
@@ -71,6 +87,7 @@ class BayesianFitRepository:
         if snapshot.preflight.fallback_reason is None:
             raise ValueError("fallback snapshot requires fallback_reason")
         check_time = checked_at or snapshot.preflight.last_eligibility_check_at
+        confidence = _fallback_confidence(snapshot.preflight.fallback_reason.value)
         result = await self._session.execute(
             text(
                 """
@@ -97,6 +114,11 @@ class BayesianFitRepository:
                     divergence_count,
                     artifact_ref,
                     artifact_hash,
+                    confidence_bucket,
+                    confidence_bucket_reason,
+                    confidence_policy_version,
+                    confidence_semantics_version,
+                    confidence_classified_at,
                     max_runtime_seconds,
                     max_samples,
                     max_cores
@@ -124,6 +146,11 @@ class BayesianFitRepository:
                     NULL,
                     NULL,
                     NULL,
+                    :confidence_bucket,
+                    :confidence_bucket_reason,
+                    :confidence_policy_version,
+                    :confidence_semantics_version,
+                    :confidence_classified_at,
                     0,
                     0,
                     0
@@ -153,6 +180,11 @@ class BayesianFitRepository:
                     divergence_count = NULL,
                     artifact_ref = NULL,
                     artifact_hash = NULL,
+                    confidence_bucket = EXCLUDED.confidence_bucket,
+                    confidence_bucket_reason = EXCLUDED.confidence_bucket_reason,
+                    confidence_policy_version = EXCLUDED.confidence_policy_version,
+                    confidence_semantics_version = EXCLUDED.confidence_semantics_version,
+                    confidence_classified_at = EXCLUDED.confidence_classified_at,
                     updated_at = now()
                 RETURNING id
                 """
@@ -166,6 +198,11 @@ class BayesianFitRepository:
                 "source_snapshot_hash": snapshot.source_snapshot_hash,
                 "fallback_reason": snapshot.preflight.fallback_reason.value,
                 "last_eligibility_check_at": check_time,
+                "confidence_bucket": confidence.confidence_bucket.value,
+                "confidence_bucket_reason": confidence.confidence_bucket_reason.value,
+                "confidence_policy_version": confidence.confidence_policy_version,
+                "confidence_semantics_version": confidence.confidence_semantics_version,
+                "confidence_classified_at": check_time,
             },
         )
         return result.scalar_one()
@@ -182,6 +219,7 @@ class BayesianFitRepository:
         if resource_decision.failure_reason is None:
             raise ValueError("resource fallback requires failure_reason")
         check_time = checked_at or resource_decision.computed_at
+        confidence = _fallback_confidence(resource_decision.failure_reason.value)
         result = await self._session.execute(
             text(
                 """
@@ -211,6 +249,8 @@ class BayesianFitRepository:
                     confidence_bucket,
                     confidence_bucket_reason,
                     confidence_policy_version,
+                    confidence_semantics_version,
+                    confidence_classified_at,
                     max_runtime_seconds,
                     max_samples,
                     max_cores
@@ -238,9 +278,11 @@ class BayesianFitRepository:
                     NULL,
                     NULL,
                     NULL,
-                    'fallback',
+                    :confidence_bucket,
                     :confidence_bucket_reason,
                     :confidence_policy_version,
+                    :confidence_semantics_version,
+                    :confidence_classified_at,
                     0,
                     0,
                     0
@@ -270,9 +312,11 @@ class BayesianFitRepository:
                     divergence_count = NULL,
                     artifact_ref = NULL,
                     artifact_hash = NULL,
-                    confidence_bucket = 'fallback',
+                    confidence_bucket = EXCLUDED.confidence_bucket,
                     confidence_bucket_reason = EXCLUDED.confidence_bucket_reason,
                     confidence_policy_version = EXCLUDED.confidence_policy_version,
+                    confidence_semantics_version = EXCLUDED.confidence_semantics_version,
+                    confidence_classified_at = EXCLUDED.confidence_classified_at,
                     updated_at = now()
                 RETURNING id
                 """
@@ -286,13 +330,11 @@ class BayesianFitRepository:
                 "source_snapshot_hash": snapshot.source_snapshot_hash,
                 "fallback_reason": resource_decision.failure_reason.value,
                 "last_eligibility_check_at": check_time,
-                "confidence_bucket_reason": (
-                    f"b24_p4:{resource_decision.failure_reason.value}:"
-                    f"rows={resource_decision.input_profile.source_row_count}:"
-                    f"cells={resource_decision.design_envelope.estimated_design_matrix_cells}:"
-                    f"nodes={resource_decision.graph_envelope.estimated_symbolic_nodes}"
-                )[:255],
-                "confidence_policy_version": resource_decision.input_profile.policy_version,
+                "confidence_bucket": confidence.confidence_bucket.value,
+                "confidence_bucket_reason": confidence.confidence_bucket_reason.value,
+                "confidence_policy_version": confidence.confidence_policy_version,
+                "confidence_semantics_version": confidence.confidence_semantics_version,
+                "confidence_classified_at": check_time,
             },
         )
         return result.scalar_one()
@@ -307,7 +349,9 @@ class BayesianFitRepository:
     ) -> UUID:
         """Persist fail-closed P4 authority fallback without dispatch or compute."""
 
+        del detail  # Operational detail remains in planner telemetry, not reason truth.
         check_time = checked_at or datetime.now(timezone.utc)
+        confidence = _fallback_confidence(fallback_reason.value)
         result = await self._session.execute(
             text(
                 """
@@ -337,6 +381,8 @@ class BayesianFitRepository:
                     confidence_bucket,
                     confidence_bucket_reason,
                     confidence_policy_version,
+                    confidence_semantics_version,
+                    confidence_classified_at,
                     max_runtime_seconds,
                     max_samples,
                     max_cores
@@ -364,9 +410,11 @@ class BayesianFitRepository:
                     NULL,
                     NULL,
                     NULL,
-                    'fallback',
+                    :confidence_bucket,
                     :confidence_bucket_reason,
                     :confidence_policy_version,
+                    :confidence_semantics_version,
+                    :confidence_classified_at,
                     0,
                     0,
                     0
@@ -396,9 +444,11 @@ class BayesianFitRepository:
                     divergence_count = NULL,
                     artifact_ref = NULL,
                     artifact_hash = NULL,
-                    confidence_bucket = 'fallback',
+                    confidence_bucket = EXCLUDED.confidence_bucket,
                     confidence_bucket_reason = EXCLUDED.confidence_bucket_reason,
                     confidence_policy_version = EXCLUDED.confidence_policy_version,
+                    confidence_semantics_version = EXCLUDED.confidence_semantics_version,
+                    confidence_classified_at = EXCLUDED.confidence_classified_at,
                     updated_at = now()
                 RETURNING id
                 """
@@ -412,10 +462,11 @@ class BayesianFitRepository:
                 "source_snapshot_hash": snapshot.source_snapshot_hash,
                 "fallback_reason": fallback_reason.value,
                 "last_eligibility_check_at": check_time,
-                "confidence_bucket_reason": (
-                    f"b24_p4_feature_authority:{fallback_reason.value}:{detail}"
-                )[:255],
-                "confidence_policy_version": B24_RESOURCE_POLICY_VERSION,
+                "confidence_bucket": confidence.confidence_bucket.value,
+                "confidence_bucket_reason": confidence.confidence_bucket_reason.value,
+                "confidence_policy_version": confidence.confidence_policy_version,
+                "confidence_semantics_version": confidence.confidence_semantics_version,
+                "confidence_classified_at": check_time,
             },
         )
         return result.scalar_one()

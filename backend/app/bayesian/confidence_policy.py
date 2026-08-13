@@ -10,6 +10,7 @@ from app.confidence_projection.policy import (
     ConfidencePolicyDecision,
     ConfidencePolicyInput,
     classify_confidence,
+    persisted_confidence_decision,
 )
 
 __all__ = (
@@ -22,4 +23,5 @@ __all__ = (
     "ConfidencePolicyDecision",
     "ConfidencePolicyInput",
     "classify_confidence",
+    "persisted_confidence_decision",
 )

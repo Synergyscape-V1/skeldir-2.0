@@ -18,10 +18,16 @@ on:
     paths:
       - 'backend/app/trust/**'
       - 'backend/app/confidence_projection/**'
+      - 'backend/app/bayesian/fit_execution.py'
+      - 'backend/app/bayesian/models.py'
+      - 'backend/app/bayesian/repository.py'
+      - 'backend/app/bayesian/source_snapshot.py'
       - 'backend/app/api/trust_api.py'
       - 'backend/app/api/trust_keys.py'
       - 'backend/tests/trust/test_b25_p13_e2e_trust_closure.py'
+      - 'alembic/versions/007_skeldir_foundation/**'
       - 'contracts/trust-api/**'
+      - 'scripts/ci/validate_b25_p13_confidence_truth.py'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
 
@@ -101,19 +107,29 @@ jobs:
           # a blind field can pass.
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
           grep -E "^p13_executed_cases=15$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_expected=155$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_failed=155$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_expected=156$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_failed=156$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
           grep -E "^p13_downgrade_cases_failed_closed=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_negative_controls_fired=18$" /tmp/b25_p13_e2e.out
           grep -E "^p13_money_columns_integer_not_null=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_route_level_denials=2$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_confidence_values_permitted=19$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_confidence_values_reachable=14$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_confidence_source_families=5$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_confidence_semantic_truth_cases=9$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_confidence_governed_source_tables=7$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_confidence_physical_read_tables=3$" /tmp/b25_p13_e2e.out
           grep -E "^p13_replay_denied=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_scope_denied=1$" /tmp/b25_p13_e2e.out
+
+      - name: P13 C3 confidence authority and semantic falsifiers
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p13_confidence_truth.py --negative-control \
+            | tee /tmp/b25_p13_confidence_truth.out
+          grep -E "^B25_P13_CONFIDENCE_TRUTH_VALIDATION_PASS$" \
+            /tmp/b25_p13_confidence_truth.out
+          grep -E "^confidence_truth_negative_controls_fired=12$" \
+            /tmp/b25_p13_confidence_truth.out
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody
       # reads, so the manifest is asserted here as well as inside the test.
