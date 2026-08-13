@@ -98,6 +98,9 @@ PROHIBITED_PHASE_PATTERNS = (
 )
 
 ALLOWED_B24_P5_RUNTIME_MARKER_PATHS = {
+    # Trust only serializes the governed producer model identifier as metadata;
+    # it does not import or execute the Bayesian runtime.
+    "backend/app/trust/builder.py",
     "backend/app/bayesian/runtime_policy.py",
     "backend/app/bayesian/runtime_probe.py",
     "backend/app/bayesian/runtime_identity.py",
@@ -423,7 +426,6 @@ def check_b24_guard(result: Result) -> None:
         not implementation_violations,
         ", ".join(implementation_violations),
     )
-    readiness = read("docs/testing_b24_persistence_readiness.md")
     entry_gate = read("docs/testing_b24_persistence_entry_gate.md")
     result.add(
         "B2.4 absent substrate is explicitly blocked",
