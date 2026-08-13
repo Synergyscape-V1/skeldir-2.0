@@ -67,14 +67,14 @@ def downgrade() -> None:
         """
         DROP INDEX IF EXISTS public.idx_b24_dirty_events_confidence_freshness;
         ALTER TABLE public.bayesian_model_fits
-            DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_confidence_currency_count_nonnegative,
-            DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_confidence_verdict_count_nonnegative,
-            DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_confidence_row_count_nonnegative,
-            DROP COLUMN IF EXISTS confidence_classified_at,
-            DROP COLUMN IF EXISTS confidence_currency_count,
-            DROP COLUMN IF EXISTS confidence_match_verdict_count,
-            DROP COLUMN IF EXISTS confidence_deterministic_row_count,
-            DROP COLUMN IF EXISTS confidence_deterministic_revenue_minor,
-            DROP COLUMN IF EXISTS confidence_semantics_version;
+            DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_confidence_currency_count_nonnegative, -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
+            DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_confidence_verdict_count_nonnegative, -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
+            DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_confidence_row_count_nonnegative, -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
+            DROP COLUMN IF EXISTS confidence_classified_at, -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
+            DROP COLUMN IF EXISTS confidence_currency_count, -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
+            DROP COLUMN IF EXISTS confidence_match_verdict_count, -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
+            DROP COLUMN IF EXISTS confidence_deterministic_row_count, -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
+            DROP COLUMN IF EXISTS confidence_deterministic_revenue_minor, -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
+            DROP COLUMN IF EXISTS confidence_semantics_version; -- # CI:DESTRUCTIVE_OK - Downgrade rollback; see ADR-016.
         """
     )

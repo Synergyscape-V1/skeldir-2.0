@@ -158,6 +158,7 @@ ALLOWED_M0_PATHS = [
     "docs/testing_parallel_isolation.md",
     "docs/b2_4/",
     "docs/b2_7/",
+    "docs/database/ADR-016-b25-p13-confidence-truth-downgrade.md",
     "docs/llm/",
     "M2 Remediation Evidence Pack.md",
     "Makefile",

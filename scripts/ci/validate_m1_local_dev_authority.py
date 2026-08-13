@@ -183,6 +183,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "contracts/trust-api/examples/export_artifact_signed_valid_v2.json",
     "docs/forensics/B2.5-P12 Remediation Evidence Pack.md",
     "docs/forensics/B2.5-P13 Remediation Evidence Pack.md",
+    "docs/database/ADR-016-b25-p13-confidence-truth-downgrade.md",
     "alembic/versions/007_skeldir_foundation/202608131200_b25_p13_confidence_truth_closure.py",
     "scripts/contracts/error_component_registry.py",
     "api-contracts/openapi/v1/_common/error-component-registry.yaml",
