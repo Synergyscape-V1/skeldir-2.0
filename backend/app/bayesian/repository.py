@@ -13,7 +13,7 @@ from app.bayesian.exceptions import BayesianFitNotFoundError
 from app.bayesian.models import BayesianModelFit
 from app.bayesian.resource_profile import B24ResourceDecision
 from app.bayesian.source_snapshot import SourceSnapshotResult
-from app.confidence_projection.policy import (
+from app.bayesian.confidence_policy import (
     ConfidencePolicyDecision,
     classify_confidence,
 )
