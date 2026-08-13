@@ -185,6 +185,8 @@ properties:
     enum:
     - none
     - confidence_unavailable
+    - confidence_authority_indeterminate
+    - unsupported_financial_context
     - diagnostics_failed
     - source_snapshot_stale
     - artifact_pruned

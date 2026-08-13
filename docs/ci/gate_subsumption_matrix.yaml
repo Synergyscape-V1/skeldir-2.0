@@ -13,6 +13,21 @@
   negative_control_preserved_by: SKELDIR_B25_P13_E2E_PROOF=1 python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py -q -s --no-header
   local_reproduction_command: SKELDIR_B25_P13_E2E_PROOF=1 python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py -q -s --no-header
   risk_if_removed: The Trust API could retain individually green components while its real authenticated signed path fragments, B2.4 confidence is misclassified or detached from its exact source, tenant isolation fails, a private signing key leaks into verification, or an upstream authority mutation occurs during a read.
+- gate_id: validate-b25-p13-confidence-truth
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_confidence_truth.py
+  owning_phase: B2.5-P13-C3
+  protected_invariant: Confidence-projection authority, persisted B2.4 classification, durable freshness lineage, exact artifact lifecycle, multi-currency refusal, physical read graph, contract, builder, boundedness and workflow triggers remain mutually consistent and non-vacuously falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: The P13 runtime composition harness exercises concrete journeys, but it does not structurally bind every authority registry and contract enum to the exact physical SQL graph or prove each forbidden semantic mutation makes the validator fail.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_confidence_truth.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p13_confidence_truth.py --negative-control
+  risk_if_removed: A source table, field authority, freshness signal, lifecycle fallback, classifier call site, read bound, or CI trigger could drift while the finite runtime fixtures remained green.
 - gate_id: validate-b25-p12-contract-projection
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates

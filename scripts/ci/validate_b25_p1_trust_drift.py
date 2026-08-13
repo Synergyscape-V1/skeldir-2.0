@@ -59,6 +59,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/verification.py",
     "backend/app/trust/jwks.py",
     "backend/app/trust/source_adapters.py",
+    "backend/app/trust/subject_authority.py",
     "backend/app/trust/text_disposition.py",
     "backend/app/trust/text_safety_registry.py",
     "backend/app/api/trust_keys.py",

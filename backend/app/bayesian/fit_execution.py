@@ -54,6 +54,7 @@ from app.bayesian.tenant_context import (
     bind_transaction_local_tenant,
     current_tenant_guc,
 )
+from app.confidence_projection.policy import classify_confidence
 
 
 TERMINAL_OR_POST_SAMPLE_STATUSES = {
@@ -165,6 +166,16 @@ def _mark_fit_failure(
         fit_id=fit_id,
         dispatch_lease=dispatch_lease,
     )
+    confidence = classify_confidence(
+        {
+            "deterministic_revenue_minor": 0,
+            "currency_count": 0,
+            "fit_id": str(fit_id),
+            "fit_status": status.value,
+            "fallback_applied": True,
+            "fallback_reason": fallback_reason.value,
+        }
+    )
     conn.execute(
         text(
             """
@@ -179,6 +190,11 @@ def _mark_fit_failure(
                 hdi_upper = NULL,
                 interval_shape = '[]'::jsonb,
                 interval_element_count = 0,
+                confidence_bucket = :confidence_bucket,
+                confidence_bucket_reason = :confidence_bucket_reason,
+                confidence_policy_version = :confidence_policy_version,
+                confidence_semantics_version = :confidence_semantics_version,
+                confidence_classified_at = now(),
                 runtime_seconds = COALESCE(:runtime_seconds, runtime_seconds),
                 completed_at = now(),
                 updated_at = now()
@@ -197,6 +213,10 @@ def _mark_fit_failure(
             "fit_id": str(fit_id),
             "status": status.value,
             "fallback_reason": fallback_reason.value,
+            "confidence_bucket": confidence.confidence_bucket.value,
+            "confidence_bucket_reason": confidence.confidence_bucket_reason.value,
+            "confidence_policy_version": confidence.confidence_policy_version,
+            "confidence_semantics_version": confidence.confidence_semantics_version,
             "runtime_seconds": runtime_seconds,
         },
     )
@@ -217,6 +237,19 @@ def _mark_fit_diagnostic_error(
         fit_id=fit_id,
         dispatch_lease=dispatch_lease,
     )
+    confidence = classify_confidence(
+        {
+            "deterministic_revenue_minor": 0,
+            "currency_count": 0,
+            "fit_id": str(fit_id),
+            "fit_status": "failed",
+            "diagnostic_status": "error",
+            "credible_interval_status": "not_available",
+            "fallback_applied": True,
+            "fallback_reason": "no_convergence",
+            "diagnostic_failure_reason": diagnostic_failure_reason,
+        }
+    )
     conn.execute(
         text(
             """
@@ -231,6 +264,11 @@ def _mark_fit_diagnostic_error(
                 hdi_upper = NULL,
                 interval_shape = '[]'::jsonb,
                 interval_element_count = 0,
+                confidence_bucket = :confidence_bucket,
+                confidence_bucket_reason = :confidence_bucket_reason,
+                confidence_policy_version = :confidence_policy_version,
+                confidence_semantics_version = :confidence_semantics_version,
+                confidence_classified_at = now(),
                 runtime_seconds = COALESCE(:runtime_seconds, runtime_seconds),
                 completed_at = now(),
                 diagnostics_computed_at = COALESCE(diagnostics_computed_at, now()),
@@ -249,6 +287,10 @@ def _mark_fit_diagnostic_error(
             "tenant_id": str(tenant_id),
             "fit_id": str(fit_id),
             "diagnostic_failure_reason": diagnostic_failure_reason,
+            "confidence_bucket": confidence.confidence_bucket.value,
+            "confidence_bucket_reason": confidence.confidence_bucket_reason.value,
+            "confidence_policy_version": confidence.confidence_policy_version,
+            "confidence_semantics_version": confidence.confidence_semantics_version,
             "runtime_seconds": runtime_seconds,
         },
     )
@@ -385,6 +427,7 @@ def _persist_result_summary(
     runtime_seconds: int,
     result_summary: dict[str, object],
     result_hash: str,
+    observed_input: P6SourceObservedInput,
     dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
     _set_execution_context(
@@ -402,6 +445,16 @@ def _persist_result_summary(
         retention_class="standard",
     )
     if artifact.get("rejected") is True:
+        confidence = classify_confidence(
+            {
+                "deterministic_revenue_minor": observed_input.deterministic_revenue_minor,
+                "currency_count": observed_input.deterministic_currency_count,
+                "fit_id": str(fit_id),
+                "fit_status": "failed",
+                "fallback_applied": True,
+                "fallback_reason": "storage_quota_exceeded",
+            }
+        )
         conn.execute(
             text(
                 """
@@ -411,6 +464,15 @@ def _persist_result_summary(
                     fallback_reason = 'storage_quota_exceeded',
                     credible_interval_status = 'not_available',
                     diagnostic_status = 'unavailable',
+                    confidence_bucket = :confidence_bucket,
+                    confidence_bucket_reason = :confidence_bucket_reason,
+                    confidence_policy_version = :confidence_policy_version,
+                    confidence_semantics_version = :confidence_semantics_version,
+                    confidence_deterministic_revenue_minor = :deterministic_revenue_minor,
+                    confidence_deterministic_row_count = :deterministic_row_count,
+                    confidence_match_verdict_count = :match_verdict_count,
+                    confidence_currency_count = :currency_count,
+                    confidence_classified_at = now(),
                     runtime_seconds = :runtime_seconds,
                     last_fit_at = now(),
                     completed_at = now(),
@@ -426,6 +488,14 @@ def _persist_result_summary(
                 "fit_id": str(fit_id),
                 "source_snapshot_hash": source_snapshot_hash,
                 "runtime_seconds": runtime_seconds,
+                "confidence_bucket": confidence.confidence_bucket.value,
+                "confidence_bucket_reason": confidence.confidence_bucket_reason.value,
+                "confidence_policy_version": confidence.confidence_policy_version,
+                "confidence_semantics_version": confidence.confidence_semantics_version,
+                "deterministic_revenue_minor": observed_input.deterministic_revenue_minor,
+                "deterministic_row_count": observed_input.deterministic_revenue_row_count,
+                "match_verdict_count": observed_input.deterministic_match_verdict_count,
+                "currency_count": observed_input.deterministic_currency_count,
             },
         )
         return
@@ -473,6 +543,24 @@ def _persist_result_summary(
     fallback_reason = (
         None if interval_available else FallbackReason.NO_CONVERGENCE.value
     )
+    confidence = classify_confidence(
+        {
+            "deterministic_revenue_minor": observed_input.deterministic_revenue_minor,
+            "currency_count": observed_input.deterministic_currency_count,
+            "fit_id": str(fit_id),
+            "fit_status": "succeeded",
+            "diagnostic_status": diagnostic_status,
+            "credible_interval_status": credible_interval_status,
+            "fallback_applied": not interval_available,
+            "fallback_reason": fallback_reason,
+            "diagnostic_failure_reason": diagnostic_failure_reason,
+            "hdi_lower": result_summary.get("hdi_lower"),
+            "hdi_upper": result_summary.get("hdi_upper"),
+            "artifact_ref": artifact_ref,
+            "artifact_hash": artifact_hash,
+            "artifact_lifecycle_status": "active",
+        }
+    )
     conn.execute(
         text(
             """
@@ -498,6 +586,15 @@ def _persist_result_summary(
                 interval_shape = CAST(:interval_shape AS jsonb),
                 interval_element_count = :interval_element_count,
                 interval_summary_bytes = :interval_summary_bytes,
+                confidence_bucket = :confidence_bucket,
+                confidence_bucket_reason = :confidence_bucket_reason,
+                confidence_policy_version = :confidence_policy_version,
+                confidence_semantics_version = :confidence_semantics_version,
+                confidence_deterministic_revenue_minor = :deterministic_revenue_minor,
+                confidence_deterministic_row_count = :deterministic_row_count,
+                confidence_match_verdict_count = :match_verdict_count,
+                confidence_currency_count = :currency_count,
+                confidence_classified_at = now(),
                 artifact_ref = :artifact_ref,
                 artifact_hash = :artifact_hash,
                 last_fit_at = now(),
@@ -536,6 +633,14 @@ def _persist_result_summary(
             "interval_shape": json.dumps(result_summary.get("interval_shape", [])),
             "interval_element_count": int(result_summary["interval_element_count"]),
             "interval_summary_bytes": int(result_summary["interval_summary_bytes"]),
+            "confidence_bucket": confidence.confidence_bucket.value,
+            "confidence_bucket_reason": confidence.confidence_bucket_reason.value,
+            "confidence_policy_version": confidence.confidence_policy_version,
+            "confidence_semantics_version": confidence.confidence_semantics_version,
+            "deterministic_revenue_minor": observed_input.deterministic_revenue_minor,
+            "deterministic_row_count": observed_input.deterministic_revenue_row_count,
+            "match_verdict_count": observed_input.deterministic_match_verdict_count,
+            "currency_count": observed_input.deterministic_currency_count,
             "artifact_ref": artifact_ref,
             "artifact_hash": artifact_hash,
         },
@@ -841,6 +946,7 @@ def execute_fit_intent_sync(
                 runtime_seconds=runtime_seconds,
                 result_summary=result_summary,
                 result_hash=result_hash,
+                observed_input=observed_input,
                 dispatch_lease=dispatch_lease,
             )
             if dispatch_lease is not None:

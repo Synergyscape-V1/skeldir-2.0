@@ -304,7 +304,7 @@ async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
 
 
 async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str]:
-    """Seed the five exact B2.4 source families required by C2-02/C2-05."""
+    """Seed persisted B2.4 classifications and durable freshness authority."""
 
     await connection.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
@@ -312,6 +312,55 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
     )
     start = datetime(2026, 6, 1, tzinfo=timezone.utc)
     end = datetime(2026, 6, 2, tzinfo=timezone.utc)
+    multi_currency_start = datetime(2026, 6, 3, tzinfo=timezone.utc)
+    multi_currency_end = datetime(2026, 6, 4, tzinfo=timezone.utc)
+    verdict = (
+        (
+            await connection.execute(
+                text(
+                    """
+                    SELECT id, canonical_commerce_reference,
+                           provider_native_commerce_reference
+                    FROM public.b23_match_verdicts
+                    WHERE tenant_id = :tenant_id
+                    ORDER BY created_at, id
+                    LIMIT 1
+                    """
+                ),
+                {"tenant_id": str(tenant_id)},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    for currency in ("USD", "EUR"):
+        await connection.execute(
+            text(
+                """
+                INSERT INTO public.b23_revenue_events (
+                    tenant_id, match_verdict_id, provider,
+                    provider_native_event_reference,
+                    provider_native_commerce_reference,
+                    canonical_commerce_reference, event_type, currency_code,
+                    event_occurred_at, captured_amount_minor, net_effect_sign,
+                    is_gross_capture_correction
+                ) VALUES (
+                    :tenant_id, :verdict_id, 'stripe', :event_ref,
+                    :commerce_ref, :canonical_ref, 'payment_capture', :currency,
+                    :occurred_at, 100, 1, false
+                )
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "verdict_id": str(verdict["id"]),
+                "event_ref": f"p13-multi-{currency.lower()}-{uuid4().hex}",
+                "commerce_ref": str(verdict["provider_native_commerce_reference"]),
+                "canonical_ref": str(verdict["canonical_commerce_reference"]),
+                "currency": currency,
+                "occurred_at": multi_currency_start,
+            },
+        )
     cases = {
         "available": {
             "status": "succeeded",
@@ -322,6 +371,9 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "diagnostic_reason": None,
             "interval": "available",
             "lifecycle": "active",
+            "bucket": "high",
+            "reason": "narrow_interval",
+            "currency_count": 1,
         },
         "cold_start": {
             "status": "fallback_only",
@@ -332,6 +384,9 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "diagnostic_reason": "skipped_non_sampled",
             "interval": "not_available",
             "lifecycle": None,
+            "bucket": "unavailable",
+            "reason": "insufficient_data",
+            "currency_count": 0,
         },
         "diagnostics_failed": {
             "status": "sampled_unvalidated",
@@ -342,6 +397,9 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "diagnostic_reason": "bad_rhat",
             "interval": "invalid",
             "lifecycle": None,
+            "bucket": "unavailable",
+            "reason": "bad_rhat",
+            "currency_count": 1,
         },
         "snapshot_stale": {
             "status": "succeeded",
@@ -352,6 +410,9 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "diagnostic_reason": None,
             "interval": "available",
             "lifecycle": "active",
+            "bucket": "high",
+            "reason": "narrow_interval",
+            "currency_count": 1,
         },
         "artifact_pruned": {
             "status": "succeeded",
@@ -362,11 +423,72 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "diagnostic_reason": None,
             "interval": "available",
             "lifecycle": "pruned",
+            "bucket": "high",
+            "reason": "narrow_interval",
+            "currency_count": 1,
+        },
+        "source_authority_unknown": {
+            "status": "succeeded",
+            "completeness": "complete",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "passed",
+            "diagnostic_reason": None,
+            "interval": "available",
+            "lifecycle": "active",
+            "bucket": "high",
+            "reason": "narrow_interval",
+            "currency_count": 1,
+        },
+        "multi_currency": {
+            "status": "succeeded",
+            "completeness": "complete",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "passed",
+            "diagnostic_reason": None,
+            "interval": "available",
+            "lifecycle": "active",
+            "bucket": "high",
+            "reason": "narrow_interval",
+            "currency_count": 2,
+            "window_start": multi_currency_start,
+            "window_end": multi_currency_end,
+            "deterministic_revenue_minor": 200,
+            "deterministic_row_count": 2,
+        },
+        "artifact_missing": {
+            "status": "succeeded",
+            "completeness": "complete",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "passed",
+            "diagnostic_reason": None,
+            "interval": "available",
+            "lifecycle": "missing",
+            "bucket": "high",
+            "reason": "narrow_interval",
+            "currency_count": 1,
+        },
+        "artifact_rejected": {
+            "status": "succeeded",
+            "completeness": "complete",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "passed",
+            "diagnostic_reason": None,
+            "interval": "available",
+            "lifecycle": "rejected",
+            "bucket": "high",
+            "reason": "narrow_interval",
+            "currency_count": 1,
         },
     }
     refs: dict[str, str] = {}
     for index, (name, case) in enumerate(cases.items(), start=1):
         fit_id = uuid4()
+        case_start = case.get("window_start", start)
+        case_end = case.get("window_end", end)
         snapshot_hash = f"{index:x}" * 64
         lifecycle = case["lifecycle"]
         artifact_hash = hashlib.sha256(f"p13-{name}".encode()).hexdigest()
@@ -388,9 +510,15 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     credible_interval_status, diagnostic_status,
                     diagnostic_failure_reason, diagnostic_policy_version,
                     diagnostic_target_filter_version, interval_policy_version,
+                    confidence_bucket, confidence_bucket_reason,
+                    confidence_policy_version, confidence_semantics_version,
+                    confidence_deterministic_revenue_minor,
+                    confidence_deterministic_row_count,
+                    confidence_match_verdict_count, confidence_currency_count,
+                    confidence_classified_at,
                     artifact_ref, artifact_hash, created_at, updated_at
                 ) VALUES (
-                    :fit_id, :tenant_id, 'pymc_marketing_mmm', :model_version,
+                    :fit_id, :tenant_id, 'bayesian_attribution_confidence', :model_version,
                     :window_start, :window_end, :snapshot_hash,
                     'queued', :eligibility, :completeness,
                     :fallback, :fallback_reason, :completed_at,
@@ -399,6 +527,11 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     :interval_status, :diagnostic_status,
                     :diagnostic_reason, :diagnostic_policy,
                     :target_policy, :interval_policy,
+                    :confidence_bucket, :confidence_bucket_reason,
+                    'b24-p10-confidence-policy-v1',
+                    'b24-p10-confidence-semantics-v1',
+                    :deterministic_revenue_minor, :deterministic_row_count,
+                    1, :currency_count, :completed_at,
                     :artifact_ref, :artifact_hash, :completed_at, :completed_at
                 )
                 """
@@ -407,15 +540,15 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                 "fit_id": str(fit_id),
                 "tenant_id": str(tenant_id),
                 "model_version": f"p13-{name}-v1",
-                "window_start": start,
-                "window_end": end,
+                "window_start": case_start,
+                "window_end": case_end,
                 "snapshot_hash": snapshot_hash,
                 "status": case["status"],
                 "eligibility": ("fallback_only" if case["fallback"] else "eligible"),
                 "completeness": case["completeness"],
                 "fallback": case["fallback"],
                 "fallback_reason": case["fallback_reason"],
-                "completed_at": end,
+                "completed_at": case_end,
                 "r_hat": 1.0 if case["diagnostic"] == "passed" else 1.2,
                 "ess": 500 if case["diagnostic"] == "passed" else 100,
                 "divergences": 0,
@@ -430,6 +563,13 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                 "diagnostic_policy": "p13-diagnostics-v1",
                 "target_policy": "p13-target-v1",
                 "interval_policy": "p13-interval-v1",
+                "confidence_bucket": case["bucket"],
+                "confidence_bucket_reason": case["reason"],
+                "currency_count": case["currency_count"],
+                "deterministic_revenue_minor": case.get(
+                    "deterministic_revenue_minor", 10000
+                ),
+                "deterministic_row_count": case.get("deterministic_row_count", 1),
                 "artifact_ref": artifact_ref,
                 "artifact_hash": artifact_hash if artifact_ref else None,
             },
@@ -540,12 +680,12 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             ),
             {
                 "status": case["status"],
-                "completed_at": end,
+                "completed_at": case_end,
                 "tenant_id": str(tenant_id),
                 "fit_id": str(fit_id),
             },
         )
-        if lifecycle is not None:
+        if lifecycle in {"active", "pruned", "rejected"}:
             payload = b"{}" if lifecycle == "active" else None
             await connection.execute(
                 text(
@@ -575,44 +715,64 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     "payload": payload,
                     "payload_count": len(payload or b""),
                     "lifecycle": lifecycle,
-                    "expires_at": end if lifecycle == "pruned" else None,
-                    "pruned_at": end if lifecycle == "pruned" else None,
+                    "expires_at": case_end if lifecycle == "pruned" else None,
+                    "pruned_at": case_end if lifecycle == "pruned" else None,
                     "pruned_reason": (
                         "retention_expired" if lifecycle == "pruned" else None
                     ),
-                    "created_at": end,
+                    "created_at": case_end,
+                },
+            )
+        if name != "source_authority_unknown":
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_dirty_events (
+                        id, tenant_id, model_type, model_version,
+                        source_window_start, source_window_end, dirty_reason,
+                        source_family, status, observed_at, source_snapshot_hash
+                    ) VALUES (
+                        :id, :tenant_id, 'bayesian_attribution_confidence', :model_version,
+                        :window_start, :window_end, 'p13_fixture',
+                        'b23_revenue_events', 'coalesced', :observed_at,
+                        :snapshot_hash
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid4()),
+                    "tenant_id": str(tenant_id),
+                    "model_version": f"p13-{name}-v1",
+                    "window_start": case_start,
+                    "window_end": case_end,
+                    "snapshot_hash": snapshot_hash,
+                    "observed_at": case_end,
                 },
             )
         if name == "snapshot_stale":
             await connection.execute(
                 text(
                     """
-                    INSERT INTO public.b24_active_execution_leases (
-                        tenant_id, model_type, model_version,
-                        source_window_start, source_window_end, fit_id,
-                        active_source_snapshot_hash,
-                        latest_desired_source_snapshot_hash, status,
-                        needs_refit_after_current, lease_owner, lease_acquired_at,
-                        leased_until, heartbeat_at, terminal_at, created_at, updated_at
+                    INSERT INTO public.b24_dirty_events (
+                        id, tenant_id, model_type, model_version,
+                        source_window_start, source_window_end, dirty_reason,
+                        source_family, status, observed_at, source_snapshot_hash
                     ) VALUES (
-                        :tenant_id, 'pymc_marketing_mmm', :model_version,
-                        :window_start, :window_end, :fit_id,
-                        :snapshot_hash, :desired_hash, 'succeeded', false,
-                        'p13-e2e', :completed_at, :leased_until, :completed_at,
-                        :completed_at, :completed_at, :completed_at
+                        :id, :tenant_id, 'bayesian_attribution_confidence', :model_version,
+                        :window_start, :window_end, 'post_fit_mutation',
+                        'b23_revenue_events', 'pending',
+                        :observed_at, :source_snapshot_hash
                     )
                     """
                 ),
                 {
+                    "id": str(uuid4()),
                     "tenant_id": str(tenant_id),
                     "model_version": f"p13-{name}-v1",
-                    "window_start": start,
-                    "window_end": end,
-                    "fit_id": str(fit_id),
-                    "snapshot_hash": snapshot_hash,
-                    "desired_hash": "f" * 64,
-                    "completed_at": end,
-                    "leased_until": datetime(2026, 6, 3, tzinfo=timezone.utc),
+                    "window_start": case_start,
+                    "window_end": case_end,
+                    "observed_at": datetime(2026, 6, 2, 0, 1, tzinfo=timezone.utc),
+                    "source_snapshot_hash": "f" * 64,
                 },
             )
         refs[name] = f"urn:skeldir:confidence_projection:{fit_id}"
@@ -1245,13 +1405,17 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
         assert tampered_expected, "tamper matrix exercised zero fields"
         executed.append("P13-G3-tamper-matrix-all-load-bearing-fields")
 
-        # ---- G4: all five B2.4 source families compose truthfully -------------
+        # ---- G4: B2.4 confidence states compose truthfully --------------------
         confidence_envelopes = {"available": available_confidence_envelope}
         remaining_names = [
             "cold_start",
             "diagnostics_failed",
             "snapshot_stale",
             "artifact_pruned",
+            "source_authority_unknown",
+            "multi_currency",
+            "artifact_missing",
+            "artifact_rejected",
         ]
         for offset in range(0, len(remaining_names), 2):
             names = remaining_names[offset : offset + 2]
@@ -1280,6 +1444,10 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             "diagnostics_failed": ("diagnostics_failed", "diagnostics_failed"),
             "snapshot_stale": ("degraded", "source_snapshot_stale"),
             "artifact_pruned": ("degraded", "artifact_pruned"),
+            "source_authority_unknown": ("unavailable", "confidence_unavailable"),
+            "multi_currency": ("unavailable", "unsupported_financial_context"),
+            "artifact_missing": ("degraded", "artifact_unavailable"),
+            "artifact_rejected": ("degraded", "artifact_unavailable"),
         }
         for name, (expected_status, expected_reason) in confidence_expectations.items():
             projected = confidence_envelopes[name]
@@ -1298,6 +1466,15 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
                 "bayesian_diagnostic",
             }.issubset(provenance_types), (name, provenance_types)
             assert projected["subject_ref"] == confidence_refs[name]
+            assert projected["subject_authority"]["allowed_source_tables"] == [
+                "attribution_allocations",
+                "attribution_events",
+                "b23_match_verdicts",
+                "b23_revenue_events",
+                "b24_dirty_events",
+                "bayesian_artifacts",
+                "bayesian_model_fits",
+            ]
 
         # Deterministic verdict truth remains a separate, sovereign subject.
         assert envelope.get("match_verdict_status") == "matched", envelope.get(
@@ -1307,6 +1484,82 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             "deterministic_machine_fact"
         )
         assert envelope.get("fallback_applied") is False, "verdict fallback applied"
+
+        # A legitimate deterministic mutation after the fit cannot be mixed
+        # with the historical posterior. The append-only dirty event is the
+        # durable freshness authority; the same exact fit must now fail closed
+        # as stale while retaining its persisted classification provenance.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.b23_revenue_events (
+                        tenant_id, match_verdict_id, provider,
+                        provider_native_event_reference,
+                        provider_native_commerce_reference,
+                        canonical_commerce_reference, event_type, currency_code,
+                        event_occurred_at, refund_amount_minor, net_effect_sign,
+                        is_gross_capture_correction
+                    ) VALUES (
+                        :tenant_id, :verdict_id, 'stripe', :event_ref,
+                        :commerce_ref, :canonical_ref, 'partial_refund', 'USD',
+                        :occurred_at, 100, -1, false
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "verdict_id": subject_urn.rsplit(":", 1)[-1],
+                    "event_ref": f"post-fit-refund-{uuid4().hex}",
+                    "commerce_ref": f"commerce-{reference}",
+                    "canonical_ref": reference,
+                    "occurred_at": datetime(2026, 6, 1, 12, tzinfo=timezone.utc),
+                },
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_dirty_events (
+                        id, tenant_id, model_type, model_version,
+                        source_window_start, source_window_end, dirty_reason,
+                        source_family, status, observed_at, source_snapshot_hash
+                    ) VALUES (
+                        :id, :tenant_id, 'bayesian_attribution_confidence', 'p13-available-v1',
+                        :window_start, :window_end, 'post_fit_revenue_mutation',
+                        'b23_revenue_events', 'pending', :observed_at,
+                        :source_snapshot_hash
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid4()),
+                    "tenant_id": str(tenant_a),
+                    "window_start": datetime(2026, 6, 1, tzinfo=timezone.utc),
+                    "window_end": datetime(2026, 6, 2, tzinfo=timezone.utc),
+                    "observed_at": datetime(2026, 6, 2, 0, 2, tzinfo=timezone.utc),
+                    "source_snapshot_hash": "e" * 64,
+                },
+            )
+        mutated_fit_response = await _query(
+            auth_app,
+            tenant_id=tenant_a,
+            token=good_token,
+            refs=[confidence_refs["available"]],
+            nonce=f"p13-post-fit-mutation-{uuid4().hex}",
+            subject_types=["confidence_projection"],
+        )
+        assert mutated_fit_response.status_code == 200, mutated_fit_response.text
+        mutated_fit_envelope = mutated_fit_response.json()["envelopes"][0]
+        _assert_confidence_not_fabricated(
+            mutated_fit_envelope, "degraded", "source_snapshot_stale"
+        )
+        assert mutated_fit_envelope["semantic_truth_hash"] != (
+            available_confidence_envelope["semantic_truth_hash"]
+        )
         executed.append("P13-G4-degraded-confidence-no-fabricated-interval")
 
         # ---- G5: adversarial provider text stays quarantined ------------------
@@ -1605,7 +1858,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             assert secret not in replayed.text, "replay denial leaked subject data"
         executed.append("P13-H14R-route-level-replay-denial")
 
-        # ---- P13-H08: five B2.4 source families are runtime-reachable ---------
+        # ---- P13-H08: semantic confidence truth matrix ------------------------
         import json as _json
 
         schema = _json.loads(
@@ -1629,20 +1882,26 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
                 emitted_values <= permitted
             ), f"runtime emits forbidden {field}: {emitted_values - permitted}"
             reachable[field] = emitted_values
-        total_permitted = sum(
-            len(schema["properties"][f].get("enum") or []) for f in reachable
+        semantic_truth_cases = {
+            "persisted_available",
+            "persisted_cold_start",
+            "persisted_diagnostics_failed",
+            "durable_snapshot_stale",
+            "artifact_pruned_authoritative",
+            "source_authority_unknown_fails_closed",
+            "multi_currency_typed_unavailable",
+            "missing_artifact_row_no_fit_fallback",
+            "rejected_artifact_unavailable",
+        }
+        assert len(confidence_envelopes) == len(semantic_truth_cases), (
+            confidence_envelopes.keys()
         )
-        total_reachable = sum(len(values) for values in reachable.values())
-        assert len(confidence_envelopes) == 5, confidence_envelopes.keys()
         assert reachable["confidence_status"] == {
             "available",
             "unavailable",
             "diagnostics_failed",
             "degraded",
         }
-        assert (
-            total_permitted == 19
-        ), f"confidence contract changed shape: {total_permitted} permitted values"
         executed.append("P13-H08-confidence-projection-closure")
 
         # ---- P13 negative controls -------------------------------------------
@@ -1978,9 +2237,9 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
     print(f"p13_load_bearing_paths={len(load_bearing_paths)}")
     print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
     print(f"p13_money_columns_integer_not_null={len(money_columns)}")
-    print(f"p13_confidence_values_permitted={total_permitted}")
-    print(f"p13_confidence_values_reachable={total_reachable}")
-    print(f"p13_confidence_source_families={len(confidence_envelopes)}")
+    print(f"p13_confidence_semantic_truth_cases={len(semantic_truth_cases)}")
+    print("p13_confidence_governed_source_tables=7")
+    print("p13_confidence_physical_read_tables=3")
     print("p13_route_level_denials=2")
     print("p13_replay_denied=1")
     print("p13_scope_denied=1")

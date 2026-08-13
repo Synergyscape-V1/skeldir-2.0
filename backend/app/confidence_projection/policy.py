@@ -41,6 +41,10 @@ class ConfidenceBucketReason(StrEnum):
     ARTIFACT_PRUNED = "artifact_pruned"
     ARTIFACT_QUOTA_EXCEEDED = "artifact_quota_exceeded"
     SOURCE_SNAPSHOT_CHANGED = "source_snapshot_changed"
+    SOURCE_AUTHORITY_UNKNOWN = "source_authority_unknown"
+    MULTI_CURRENCY_UNSUPPORTED = "multi_currency_unsupported"
+    PERSISTED_CLASSIFICATION_MISSING = "persisted_classification_missing"
+    PERSISTED_CLASSIFICATION_INVALID = "persisted_classification_invalid"
     REFIT_LOCKED = "refit_locked"
     UNSUPPORTED_MODEL_TYPE = "unsupported_model_type"
     BAYESIAN_NOT_IMPLEMENTED = "bayesian_not_implemented"
@@ -62,6 +66,7 @@ class ConfidencePolicyInput:
     """Persisted fit and deterministic context used for classification."""
 
     deterministic_revenue_minor: int
+    currency_count: int
     fit_id: str | None
     fit_status: str | None
     diagnostics_status: str | None
@@ -151,6 +156,7 @@ def _coerce_policy_input(
         return value
     return ConfidencePolicyInput(
         deterministic_revenue_minor=int(value.get("deterministic_revenue_minor") or 0),
+        currency_count=int(value.get("currency_count") or 0),
         fit_id=_nullable_str(value.get("fit_id")),
         fit_status=_nullable_str(value.get("fit_status") or value.get("status")),
         diagnostics_status=_nullable_str(value.get("diagnostic_status")),
@@ -175,6 +181,8 @@ def classify_confidence(
     data = _coerce_policy_input(value)
     if data.source_snapshot_mismatch:
         return _unavailable(ConfidenceBucketReason.SOURCE_SNAPSHOT_CHANGED)
+    if data.currency_count > 1:
+        return _unavailable(ConfidenceBucketReason.MULTI_CURRENCY_UNSUPPORTED)
     if data.fit_id is None:
         return _unavailable(ConfidenceBucketReason.NO_FIT)
     if data.fallback_applied:
@@ -238,4 +246,42 @@ def classify_confidence(
         confidence_available=True,
         confidence_bucket=ConfidenceBucket.LOW,
         confidence_bucket_reason=ConfidenceBucketReason.WIDE_INTERVAL,
+    )
+
+
+def persisted_confidence_decision(
+    *,
+    confidence_bucket: str | None,
+    confidence_bucket_reason: str | None,
+    confidence_policy_version: str | None,
+    confidence_semantics_version: str | None,
+) -> ConfidencePolicyDecision:
+    """Validate and project a B2.4-persisted classification without recomputing it."""
+
+    if not confidence_bucket or not confidence_bucket_reason:
+        return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_MISSING)
+    try:
+        bucket = ConfidenceBucket(confidence_bucket)
+        reason = ConfidenceBucketReason(confidence_bucket_reason)
+    except ValueError:
+        return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
+
+    available_reasons = {
+        ConfidenceBucketReason.NARROW_INTERVAL,
+        ConfidenceBucketReason.MODERATE_INTERVAL,
+        ConfidenceBucketReason.WIDE_INTERVAL,
+    }
+    if (bucket is ConfidenceBucket.UNAVAILABLE) == (reason in available_reasons):
+        return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
+    if (
+        confidence_policy_version != CONFIDENCE_POLICY_VERSION
+        or confidence_semantics_version != CONFIDENCE_SEMANTICS_VERSION
+    ):
+        return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
+    return ConfidencePolicyDecision(
+        confidence_available=bucket is not ConfidenceBucket.UNAVAILABLE,
+        confidence_bucket=bucket,
+        confidence_bucket_reason=reason,
+        confidence_policy_version=confidence_policy_version,
+        confidence_semantics_version=confidence_semantics_version,
     )

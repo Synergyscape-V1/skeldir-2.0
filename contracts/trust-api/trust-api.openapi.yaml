@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Skeldir Trust API Contract Authority
-  version: 1.4.0
+  version: 1.5.0
   description: >
     B2.5 contract authority for the P10 TrustEnvelope read, bounded-query,
     authenticated-verification, and public JWKS surfaces. It does not authorize

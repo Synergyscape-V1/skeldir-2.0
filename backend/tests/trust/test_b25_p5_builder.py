@@ -124,7 +124,7 @@ def _confidence_source(
         projection=B24ConfidenceProjectionRead(
             tenant_id=tenant_id,
             fit_id=fit_id,
-            model_type="pymc_marketing_mmm",
+            model_type="bayesian_attribution_confidence",
             model_version="b24-test-v1",
             source_window_start=now,
             source_window_end=datetime(2026, 6, 30, 17, 0, 0, tzinfo=timezone.utc),
@@ -142,7 +142,12 @@ def _confidence_source(
             deterministic_revenue_minor=100_000,
             deterministic_row_count=3,
             match_verdict_count=1,
-            source_snapshot_mismatch=stale,
+            currency_count=1,
+            confidence_classified_at=now,
+            snapshot_freshness="stale" if stale else "current",
+            has_snapshot_lineage=True,
+            has_later_dirty_evidence=stale,
+            has_newer_fit=False,
             decision=ConfidencePolicyDecision(
                 confidence_available=available,
                 confidence_bucket=(
@@ -244,7 +249,7 @@ async def test_builder_emits_unsigned_schema_valid_canonical_match_verdict_paylo
         ),
     ),
 )
-async def test_confidence_projection_maps_five_source_families_without_inference(
+async def test_confidence_projection_maps_semantic_states_without_inference(
     reason: ConfidenceBucketReason,
     available: bool,
     expected_status: str,
@@ -284,7 +289,8 @@ async def test_confidence_projection_maps_five_source_families_without_inference
         "bayesian_fit",
         "bayesian_diagnostic",
     ]
-    assert provenance_types[3] in {"bayesian_artifact", "explicit_unavailable"}
+    assert provenance_types[3] == "b24_snapshot_freshness"
+    assert provenance_types[4] in {"bayesian_artifact", "explicit_unavailable"}
     assert payload["confidence_metadata"]["confidence_score_basis_points"] is None
     assert str(tenant_id) not in str(payload)
 
@@ -402,6 +408,26 @@ def test_field_source_registry_covers_contract_required_surface() -> None:
     }:
         assert required in decisions
         assert decisions[required].source_class
+
+
+def test_field_source_registry_is_subject_conditioned_without_match_drift() -> None:
+    match = {
+        decision.field_name: decision
+        for decision in iter_field_source_decisions("match_verdict")
+    }
+    confidence = {
+        decision.field_name: decision
+        for decision in iter_field_source_decisions("confidence_projection")
+    }
+    assert match["truth_authority"].authority_class == "deterministic_machine_fact"
+    assert match["truth_authority"].source_path == "b23_match_verdicts"
+    assert confidence["truth_authority"].authority_class == (
+        "confidence_metadata_projection"
+    )
+    assert confidence["truth_authority"].source_path == (
+        "bayesian_model_fits.source_snapshot_hash"
+    )
+    assert "b24_dirty_events" in confidence["provenance_chain"].source_path
 
 
 @pytest.mark.asyncio

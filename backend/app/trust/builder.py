@@ -40,6 +40,7 @@ from app.trust.source_adapters import (
     read_match_verdict_source,
 )
 from app.trust.text_disposition import dispose_text_for_field
+from app.trust.subject_authority import subject_authority_definition
 
 
 BuildStatus = Literal["success", "refused", "degraded"]
@@ -204,6 +205,22 @@ def _confidence_projection_metadata(
         diagnostics_status = "unavailable"
         unavailable_reason = "source_snapshot_stale"
         fallback_reason = "source_snapshot_stale"
+    elif reason == "source_authority_unknown":
+        status = "unavailable"
+        authority = "explicitly_unavailable"
+        model_type = None
+        model_version = None
+        diagnostics_status = "unavailable"
+        unavailable_reason = "confidence_unavailable"
+        fallback_reason = "confidence_authority_indeterminate"
+    elif reason == "multi_currency_unsupported":
+        status = "unavailable"
+        authority = "explicitly_unavailable"
+        model_type = None
+        model_version = None
+        diagnostics_status = "unavailable"
+        unavailable_reason = "unsupported_financial_context"
+        fallback_reason = "unsupported_financial_context"
     elif reason in {"artifact_pruned", "artifact_unavailable"}:
         status = "degraded"
         authority = "b24_confidence_projection"
@@ -230,7 +247,7 @@ def _confidence_projection_metadata(
         model_type = None
         model_version = None
         diagnostics_status = "unavailable"
-        unavailable_reason = "model_not_fit"
+        unavailable_reason = "confidence_unavailable"
         fallback_reason = "confidence_unavailable"
 
     return (
@@ -331,6 +348,47 @@ def _confidence_projection_payload(
                     "confidence_bucket_reason": (
                         projection.decision.confidence_bucket_reason.value
                     ),
+                    "confidence_policy_version": (
+                        projection.decision.confidence_policy_version
+                    ),
+                    "confidence_semantics_version": (
+                        projection.decision.confidence_semantics_version
+                    ),
+                    "deterministic_revenue_minor": (
+                        projection.deterministic_revenue_minor
+                    ),
+                    "deterministic_row_count": projection.deterministic_row_count,
+                    "match_verdict_count": projection.match_verdict_count,
+                    "currency_count": projection.currency_count,
+                    "confidence_classified_at": (
+                        utc_second(projection.confidence_classified_at)
+                        if projection.confidence_classified_at is not None
+                        else None
+                    ),
+                }
+            ),
+            "source_snapshot_hash": source_snapshot_hash,
+            "observed_at": utc_second(projection.observed_at),
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        },
+        {
+            "provenance_type": "b24_snapshot_freshness",
+            "authority_table": "b24_dirty_events",
+            "source_ref": (
+                f"urn:skeldir:b24_snapshot_freshness:{projection.fit_id}"
+            ),
+            "source_ref_hash": tagged_sha256(
+                {
+                    "snapshot_freshness": projection.snapshot_freshness,
+                    "has_snapshot_lineage": projection.has_snapshot_lineage,
+                    "has_later_dirty_evidence": (
+                        projection.has_later_dirty_evidence
+                    ),
+                    "has_newer_fit": projection.has_newer_fit,
                 }
             ),
             "source_snapshot_hash": source_snapshot_hash,
@@ -382,6 +440,20 @@ def _confidence_projection_payload(
         if artifact_available and projection.artifact_hash is not None
         else None
     )
+    authority = subject_authority_definition("confidence_projection")
+    freshness_seconds = max(
+        0,
+        min(31536000, int((created_at - projection.observed_at).total_seconds())),
+    )
+    if projection.snapshot_freshness == "current":
+        staleness_status = "current"
+        consistency_status = "consistent"
+    elif projection.snapshot_freshness == "stale":
+        staleness_status = "stale_degraded"
+        consistency_status = "stale_degraded"
+    else:
+        staleness_status = "unavailable"
+        consistency_status = "unavailable"
     payload: dict[str, Any] = {
         "envelope_version": "trust-envelope-v1",
         "schema_version": request.schema_version,
@@ -398,12 +470,8 @@ def _confidence_projection_payload(
             "subject_type": "confidence_projection",
             "subject_ref": request.subject_ref,
             "subject_ref_hash": subject_ref_hash,
-            "source_authority_class": "confidence_metadata_projection",
-            "allowed_source_tables": [
-                "bayesian_model_fits",
-                "bayesian_artifacts",
-                "b23_match_verdicts",
-            ],
+            "source_authority_class": authority.source_authority_class,
+            "allowed_source_tables": list(authority.governed_source_tables),
             "mutable_workflow_subject": False,
         },
         "subject_type": "confidence_projection",
@@ -430,17 +498,11 @@ def _confidence_projection_payload(
             "evidence_snapshot_at": utc_second(projection.observed_at),
             "source_read_started_at": utc_second(created_at),
             "source_read_completed_at": utc_second(created_at),
-            "data_freshness_seconds": 0,
-            "staleness_status": (
-                "stale_degraded" if projection.source_snapshot_mismatch else "current"
-            ),
+            "data_freshness_seconds": freshness_seconds,
+            "staleness_status": staleness_status,
             "evidence_snapshot_hash": source_snapshot_hash,
             "max_source_read_skew_ms": 0,
-            "snapshot_consistency_status": (
-                "stale_degraded"
-                if projection.source_snapshot_mismatch
-                else "consistent"
-            ),
+            "snapshot_consistency_status": consistency_status,
         },
         "audit_ref": "urn:skeldir:audit:p5_unsigned_builder_unissued",
         "audit_hash": tagged_sha256(
@@ -529,6 +591,7 @@ def _match_verdict_payload(
         request.request_context.get("audience_id") or "b25-p5-internal-builder"
     )
     display_data = _display_data_from_provider_text(source.canonical_commerce_reference)
+    authority = subject_authority_definition("match_verdict")
     payload: dict[str, Any] = {
         "envelope_version": "trust-envelope-v1",
         "schema_version": request.schema_version,
@@ -545,8 +608,8 @@ def _match_verdict_payload(
             "subject_type": "match_verdict",
             "subject_ref": request.subject_ref,
             "subject_ref_hash": subject_ref_hash,
-            "source_authority_class": "deterministic_machine_fact",
-            "allowed_source_tables": ["b23_match_verdicts", "b23_revenue_events"],
+            "source_authority_class": authority.source_authority_class,
+            "allowed_source_tables": list(authority.governed_source_tables),
             "mutable_workflow_subject": False,
         },
         "subject_type": "match_verdict",
@@ -660,7 +723,12 @@ async def build_unsigned_trust_envelope(
     import sys
 
     before_modules = set(sys.modules)
-    decisions = iter_field_source_decisions()
+    decision_subject = (
+        request.subject_type
+        if request.subject_type in SUPPORTED_P5_SUBJECT_TYPES
+        else "match_verdict"
+    )
+    decisions = iter_field_source_decisions(decision_subject)
     validate_schema_canonicalization_compatibility(
         request.schema_version, request.canonicalization_version
     )
