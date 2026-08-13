@@ -226,6 +226,33 @@ jobs:
                   ),
               ),
           ]
+          # pg_dump emits these B2.4 routines before their referenced tables.
+          # SQL/PLpgSQL body validation therefore cannot create them in dump
+          # order on a fresh database. Keep dependency order explicit and place
+          # them after tables but before their first trigger consumer.
+          b24_function_names = (
+              "b24_sha256_text",
+              "b24_current_dispatch_fence_valid",
+              "b24_enforce_dispatch_fence",
+              "b24_claim_fit_dispatch",
+              "b24_complete_fit_dispatch",
+              "b24_create_fit_recovery_wakeups",
+              "b24_fail_fit_dispatch_recoverable",
+              "b24_fail_fit_dispatch_terminal",
+              "b24_mark_fit_dispatch_running",
+              "b24_next_active_worker_generation",
+              "b24_register_worker_process_authority",
+          )
+          b24_function_patterns = [
+              (
+                  name,
+                  re.compile(
+                      rf"\n?CREATE FUNCTION public\.{re.escape(name)}\(.*?\n\s*\$(?:_)?\$;\n",
+                      re.DOTALL,
+                  ),
+              )
+              for name in b24_function_names
+          ]
           allocation_function_patterns = [
               (
                   "check_allocation_sum",
@@ -264,6 +291,13 @@ jobs:
                   raise SystemExit(f"unable to locate {label} function block in canonical schema")
               deferred_blocks.append(match.group(0).strip() + "\n")
               reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
+          b24_deferred_blocks = []
+          for label, pattern in b24_function_patterns:
+              match = pattern.search(reordered)
+              if not match:
+                  raise SystemExit(f"unable to locate {label} function block in canonical schema")
+              b24_deferred_blocks.append(match.group(0).strip() + "\n")
+              reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
           allocation_deferred_blocks = []
           for label, pattern in allocation_function_patterns:
               match = pattern.search(reordered)
@@ -271,6 +305,21 @@ jobs:
                   raise SystemExit(f"unable to locate {label} function block in canonical schema")
               allocation_deferred_blocks.append(match.group(0).strip() + "\n")
               reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
+
+          b24_trigger_pattern = re.compile(
+              r"(?m)^CREATE TRIGGER trg_b24_dispatch_fence_artifacts\b"
+          )
+          b24_trigger_match = b24_trigger_pattern.search(reordered)
+          if b24_trigger_match is None:
+              raise SystemExit("unable to locate B2.4 trigger insertion point in canonical schema")
+          b24_marker_index = b24_trigger_match.start()
+          reordered = (
+              reordered[:b24_marker_index].rstrip()
+              + "\n\n"
+              + "\n".join(b24_deferred_blocks)
+              + "\n"
+              + reordered[b24_marker_index:]
+          )
 
           allocation_trigger_pattern = re.compile(
               r"(?m)^CREATE TRIGGER trg_check_allocation_sum\b"
