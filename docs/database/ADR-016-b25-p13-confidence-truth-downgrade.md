@@ -1,6 +1,6 @@
 # ADR-016: B2.5-P13 Confidence Truth Downgrade
 
-Status: accepted  
+Status: accepted
 Date: 2026-08-13
 
 ## Context
