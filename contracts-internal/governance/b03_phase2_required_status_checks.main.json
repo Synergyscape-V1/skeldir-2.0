@@ -1,9 +1,9 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.15.0",
+  "contract_version": "1.16.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
-  "strict_required": true,
+  "strict_required": false,
   "exact_match": true,
   "required_contexts": [
     "B0.7 P2 Runtime Proof (LLM + Redaction)",
@@ -107,5 +107,11 @@
       "CI Physics Guard"
     ],
     "rationale": "Checkout Code becomes merge-blocking because the throughput topology removed its needs: edges. It previously gated 66 jobs and blocked merges implicitly by starving downstream contexts; those edges transferred no data and serialised the graph. The job and its assertions (adjudicated-SHA check, evidence placement) are unchanged - only the enforcement mechanism moved from an ordering constraint to an explicit required status check, which is what actually blocks a merge. CI Physics Guard makes the topology self-enforcing: it fails the build if a workflow drops its concurrency group, its merge_group trigger, its dependency cache, or reintroduces a fan-out barrier that transfers no data."
+  },
+  "merge_queue": {
+    "status": "enforced",
+    "enforced_at_phase": "CI-Topology-Physics",
+    "strict_superseded_by": "merge_queue",
+    "rationale": "strict (require branches up to date) is retired because a merge queue supersedes it and is strictly stronger. strict only guaranteed the branch was up to date at some moment before merging; the merge commit itself is created at merge time and was tested by nothing, so the exact SHA landing on protected/main had no regression matrix attached to it. The merge queue validates the speculative merge commit - the object that becomes main - against all required contexts before it lands. GitHub also disables strict when a merge queue is active, so the two cannot both be set. Every required context is produced by a workflow that fires on merge_group, verified by validate_ci_physics.py, so no queue entry can wait on a status that never arrives."
   }
 }

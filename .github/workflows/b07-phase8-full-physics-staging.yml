@@ -19,7 +19,7 @@ concurrency:
   # Was `github.ref` + unconditional cancel, which shared one group across every
   # push to main and could cancel a main-branch audit run mid-proof. run_id is
   # unique per run, so push and merge_group runs are now never cancelled.
-  group: b07-phase8-full-physics-${{ github.event.pull_request.number || github.run_id }}
+  group: b07-phase8-full-physics-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

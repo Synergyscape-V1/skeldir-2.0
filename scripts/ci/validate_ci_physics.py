@@ -98,6 +98,24 @@ def check_workflow(path: Path) -> list[str]:
                     f"cancel a push or merge_group run. Gate it on "
                     f"github.event_name == 'pull_request'."
                 )
+            # A workflow that can cancel must key its group on the event too.
+            # pull_request and pull_request_target both fire for the same PR and
+            # yield the same pull_request.number, so without the event in the group
+            # the two runs share it and cancel each other. That cancelled three
+            # required contexts on PR #653, and a cancelled required context blocks
+            # the merge exactly like a failing one.
+            group = str(conc.get("group", ""))
+            if (
+                cip.lower() != "false"
+                and "github.event_name" not in group
+                and reason is None
+            ):
+                fails.append(
+                    f"{path.name}: concurrency group `{group}` does not include "
+                    f"`github.event_name`, but the workflow can cancel in progress. "
+                    f"pull_request and pull_request_target fire for the same PR and "
+                    f"would share this group, cancelling each other."
+                )
 
     # --- rule: merge_group -------------------------------------------------
     if on_pr and "merge_group" not in trig and exempt(src, "merge_group") is None:
@@ -180,13 +198,76 @@ def check_workflow(path: Path) -> list[str]:
     return fails
 
 
+CONTRACT = Path("contracts-internal/governance/b03_phase2_required_status_checks.main.json")
+
+
+def check_merge_queue_coverage(files: list[Path]) -> list[str]:
+    """Every required context must be produced by a workflow that fires on merge_group.
+
+    A merge queue only merges once every required context reports against the
+    speculative merge commit. A required context whose workflow does not fire on
+    merge_group can never report there, so the entry sits in the queue until it
+    times out - and the symptom reads as "the queue is broken", not "that workflow
+    is missing a trigger". The repository has already been bitten by this shape of
+    defect: b2_5-p13-e2e-trust-closure.yml records a path-filtered required check
+    blocking PRs forever, found in P12 and again across P8-P11.
+
+    Rule 2 checks this per workflow; this checks the set of contexts the branch is
+    actually protected by, read from the in-repo contract so it works offline and
+    on a PR-scoped token.
+    """
+    import json
+
+    if not CONTRACT.exists():
+        return []
+    try:
+        contexts = json.loads(CONTRACT.read_text(encoding="utf-8")).get("required_contexts", [])
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    index: dict[str, dict] = {}
+    for path in files:
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError:
+            continue
+        if not isinstance(doc, dict):
+            continue
+        names = {str(doc["name"])} if doc.get("name") else set()
+        for jid, body in (doc.get("jobs") or {}).items():
+            names.add(str(jid))
+            if isinstance(body, dict) and body.get("name"):
+                names.add(str(body["name"]))
+        index[path.name] = {"names": names, "mg": "merge_group" in triggers(doc)}
+
+    fails: list[str] = []
+    for ctx in contexts:
+        owners = [n for n, d in index.items() if ctx in d["names"]]
+        if not owners:
+            # Matrix-expanded names like "Phase Gates (B0.3)" never appear literally.
+            stem = ctx.split(" (")[0]
+            owners = [n for n, d in index.items() if stem in d["names"]]
+        if not owners:
+            fails.append(
+                f"required context `{ctx}` is produced by no workflow. It can never report, "
+                f"so it blocks every PR and every merge-queue entry indefinitely."
+            )
+        elif not any(index[n]["mg"] for n in owners):
+            fails.append(
+                f"required context `{ctx}` is produced by {', '.join(owners)}, which does not "
+                f"fire on merge_group. The merge queue would wait for a status that can never "
+                f"arrive. Add `merge_group:` to that workflow."
+            )
+    return fails
+
+
 def main() -> int:
     files = sorted(WORKFLOWS.glob("*.yml")) + sorted(WORKFLOWS.glob("*.yaml"))
     if not files:
         print("no workflow files found", file=sys.stderr)
         return 1
 
-    all_fails: list[str] = []
+    all_fails: list[str] = check_merge_queue_coverage(files)
     for path in files:
         fails = check_workflow(path)
         all_fails.extend(fails)

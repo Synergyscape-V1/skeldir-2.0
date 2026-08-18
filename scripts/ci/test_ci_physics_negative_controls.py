@@ -26,7 +26,7 @@ on:
   merge_group:
   pull_request:
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   a:
@@ -61,7 +61,11 @@ def build(tmp: Path, content: str, contract: str | None = None) -> Path:
         shutil.rmtree(tmp / "contracts-internal")
     if contract is not None:
         gov.mkdir(parents=True)
-        (gov / "pin.json").write_text(contract, encoding="utf-8")
+        # The required-contexts rule looks this file up by name; the pinned-edge
+        # rule rglobs every JSON, so one file serves both fixtures.
+        (gov / "b03_phase2_required_status_checks.main.json").write_text(
+            contract, encoding="utf-8"
+        )
     return tmp
 
 
@@ -69,7 +73,7 @@ def build(tmp: Path, content: str, contract: str | None = None) -> Path:
 
 NO_CONCURRENCY = CONFORMING.replace(
     """concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 """,
     "",
@@ -81,6 +85,14 @@ UNCONDITIONAL_CANCEL = CONFORMING.replace(
 )
 
 NO_MERGE_GROUP = CONFORMING.replace("  merge_group:\n", "")
+
+# pull_request and pull_request_target both fire for the same PR and yield the
+# same pull_request.number. Without github.event_name in the group they share it
+# and cancel each other - which cancelled three required contexts on PR #653, and
+# a cancelled required context blocks the merge exactly like a failing one.
+GROUP_WITHOUT_EVENT = CONFORMING.replace(
+    "${{ github.workflow }}-${{ github.event_name }}-", "${{ github.workflow }}-"
+)
 
 # A job that installs dependencies but caches nothing burns the shared budget.
 NO_CACHE = CONFORMING.replace("          cache: 'pip'\n", "")
@@ -98,7 +110,7 @@ on:
   merge_group:
   pull_request:
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   gate:
@@ -186,7 +198,23 @@ CONTROLS: list[tuple[str, str, bool, str]] = [
     ("fan-out barrier with no dataflow", FANOUT_BARRIER, False, "transfers no data"),
     ("same fan-out, but declares outputs", FANOUT_WITH_OUTPUTS, True, ""),
     ("violation with an in-file exemption", EXEMPTED, True, ""),
+    (
+        "concurrency group missing github.event_name",
+        GROUP_WITHOUT_EVENT,
+        False,
+        "does not include",
+    ),
 ]
+
+
+# A required context whose workflow does not fire on merge_group can never
+# report against the speculative merge commit, so the queue entry waits until it
+# times out. The symptom reads as "the queue is broken", not "that workflow is
+# missing a trigger", which is why this is checked explicitly.
+QUEUE_CTX_CONTRACT = json.dumps({"required_contexts": ["Example"]})
+
+# Same contract, but the workflow producing the context has no merge_group.
+NO_MG_BUT_REQUIRED = NO_MERGE_GROUP
 
 
 # (label, content, expect_pass, needle, contract-or-None)
@@ -204,6 +232,20 @@ EXTRA_CONTROLS: list[tuple[str, str, bool, str, str | None]] = [
         True,
         "",
         PIN_CONTRACT,
+    ),
+    (
+        "required context whose workflow cannot report to the merge queue",
+        NO_MG_BUT_REQUIRED,
+        False,
+        "can never arrive",
+        QUEUE_CTX_CONTRACT,
+    ),
+    (
+        "same context, once its workflow fires on merge_group",
+        CONFORMING,
+        True,
+        "",
+        QUEUE_CTX_CONTRACT,
     ),
 ]
 
