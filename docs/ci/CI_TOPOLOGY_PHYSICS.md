@@ -2,7 +2,7 @@
 
 **Audience:** any agent or engineer who adds a workflow, adds a phase, or changes `.github/workflows/`.
 **Enforced by:** `.github/workflows/ci-physics-guard.yml` → `scripts/ci/validate_ci_physics.py`
-**Non-vacuity:** `scripts/ci/test_ci_physics_negative_controls.py` (12 controls)
+**Non-vacuity:** `scripts/ci/test_ci_physics_negative_controls.py` (14 controls)
 
 If you only read one section, read [§5 Adding a phase](#5-adding-a-phase).
 
@@ -188,6 +188,24 @@ The first attempt at this topology stripped those contracted edges and was
 caught by `enforce_b15_p7_ci_adjudication_closure` and
 `enforce_b21_p6_full_chain_closure` in CI. That is the machinery working:
 performance analysis does not get to overrule an audit contract.
+
+### Rule 5 — merge-queue coverage
+
+**Every context in the required-status-checks contract must be produced by a
+workflow that fires on `merge_group`.**
+
+Rule 2 checks this one workflow at a time. This checks the *set* of contexts the
+branch is actually protected by, read from
+`contracts-internal/governance/b03_phase2_required_status_checks.main.json` so it
+works offline and on a PR-scoped token.
+
+The failure mode it prevents is nasty because it misattributes: a required
+context whose workflow cannot report against the speculative merge commit leaves
+the queue entry waiting until it times out, and the symptom reads as "the merge
+queue is broken" rather than "that workflow is missing a trigger". The repository
+has been bitten by the same shape before — `b2_5-p13-e2e-trust-closure.yml`
+records a path-filtered required check blocking PRs forever, found in P12 and
+again across P8-P11.
 
 ## 5. Adding a phase
 
