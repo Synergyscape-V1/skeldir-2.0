@@ -3265,7 +3265,7 @@
   path: scripts/ci/test_ci_physics_negative_controls.py
   status: required
   owning_phase: CI-Topology-Physics
-  protected_invariant: 'The CI physics guard is non-vacuous: ten synthetic workflow trees prove it rejects
+  protected_invariant: 'The CI physics guard is non-vacuous: twelve synthetic workflow trees prove it rejects
     each violation for the stated reason and accepts the conforming and exempted cases, including a newly
     added B3 phase workflow enforced with no edit to the guard.'
   command: python scripts/ci/test_ci_physics_negative_controls.py

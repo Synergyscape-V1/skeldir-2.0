@@ -29,6 +29,51 @@ APPLY = "--apply" in sys.argv
 BARRIERS = ("checkout", "validate-contracts")
 
 
+def contract_pinned_jobs(jobs: dict) -> set[str]:
+    """Job ids whose `needs:` some governance artefact pins.
+
+    The repository states this invariant in two different shapes, and a topology
+    change has to honour both:
+
+      1. JSON, as ``required_ci_job.needs`` (B1.5-P7).
+      2. A literal ``needs: [...]`` token asserted inside an enforcer script
+         (B2.1-P6, B2.2-P5, B2.2-P6).
+
+    Shape 2 is matched by resolving the token's dependency list back to the job
+    that declares it, so this keeps working if a job is renamed.
+    """
+    import json
+
+    pinned: set[str] = set()
+
+    for path in sorted(Path("contracts-internal").rglob("*.json")):
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if isinstance(doc, dict):
+            job = doc.get("required_ci_job")
+            if isinstance(job, dict) and job.get("job_id") and job.get("needs"):
+                pinned.add(str(job["job_id"]))
+
+    token_re = re.compile(r'"(needs: \[[^"]*)"((?:\s*\n\s*"[^"]*")*)', re.M)
+    for path in sorted(Path("scripts/ci").glob("enforce_*.py")):
+        src = path.read_text(encoding="utf-8", errors="replace")
+        for m in token_re.finditer(src):
+            token = m.group(1) + "".join(re.findall(r'"([^"]*)"', m.group(2) or ""))
+            if "]" not in token:
+                continue
+            deps = {d.strip() for d in token[token.index("[") + 1 : token.index("]")].split(",") if d.strip()}
+            for jid, body in jobs.items():
+                cur = body.get("needs") or []
+                if isinstance(cur, str):
+                    cur = [cur]
+                # The job whose non-barrier deps match the pinned token.
+                if deps - set(BARRIERS) == set(cur) - set(BARRIERS) and deps - set(BARRIERS):
+                    pinned.add(jid)
+    return pinned
+
+
 def job_owner_map(lines: list[str]) -> list[tuple[int, str]]:
     return [
         (i, m.group(1))
@@ -58,7 +103,17 @@ def main() -> int:
         if any(f"needs.{b}." in line for b in BARRIERS):
             if (own := owner_of(starts, i)) is not None:
                 keep.add(own)
-    print(f"data-consuming jobs (edges preserved): {sorted(keep)}\n")
+    print(f"data-consuming jobs (edges preserved): {sorted(keep)}")
+
+    # A governance contract may pin a job's needs for audit reasons that have
+    # nothing to do with dataflow. B1.5-P7 does exactly this, and its enforcer
+    # failed the build when these edges were stripped - correctly. Contracted
+    # ordering outranks the throughput argument, and reading it from the
+    # contracts keeps that true as phases add their own.
+    contracted = contract_pinned_jobs()
+    if contracted:
+        print(f"contract-pinned jobs (edges preserved): {sorted(contracted)}\n")
+    keep |= contracted
 
     out: list[str] = []
     removed = 0

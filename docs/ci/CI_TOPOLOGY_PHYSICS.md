@@ -2,7 +2,7 @@
 
 **Audience:** any agent or engineer who adds a workflow, adds a phase, or changes `.github/workflows/`.
 **Enforced by:** `.github/workflows/ci-physics-guard.yml` → `scripts/ci/validate_ci_physics.py`
-**Non-vacuity:** `scripts/ci/test_ci_physics_negative_controls.py` (9 controls)
+**Non-vacuity:** `scripts/ci/test_ci_physics_negative_controls.py` (12 controls)
 
 If you only read one section, read [§5 Adding a phase](#5-adding-a-phase).
 
@@ -69,16 +69,18 @@ tier 2: 40 jobs   (behind validate-)    tier 2:   4 jobs
 tier 3:  5 jobs
 tier 4:  1 job
 
-max fan-in: 66 dependents               max fan-in: 3 dependents
+max fan-in: 66 dependents               max fan-in: 5 dependents
 ```
 
 `checkout` and `validate-contracts` **still exist and are still required status
-checks**. Only the ordering constraint was removed. The three jobs that
-genuinely read `needs.<job>.result` kept their edges.
+checks**. Only the ordering constraint was removed, and only where nothing
+depended on it: the jobs that read `needs.<job>.result`, and the jobs whose
+`needs:` a governance contract pins, all kept their edges (see rule 4).
 
-Nothing was removed, skipped, or made optional. All 73 required contexts remain
-required, and the merge queue now runs them against the exact merge commit —
-which is *stronger* than what came before (see §4).
+Nothing was removed, skipped, or made optional. All 75 required contexts remain
+required — `Checkout Code` and `CI Physics Guard` were **added** to that set, the
+first because removing its edges meant its assertions had to block merges
+explicitly rather than by starving downstream contexts.
 
 ## 4. The four rules
 
@@ -167,6 +169,25 @@ dispatch round trip on *every* path, for every PR, forever.
 **If you want fail-fast, use a required status check, not a `needs:` edge.** A
 required check blocks the merge, which is what you actually wanted. A `needs:`
 edge blocks the *schedule*, which is not.
+
+**Contracted edges are exempt, automatically.** A phase may pin a job's `needs:`
+for audit reasons that have nothing to do with dataflow, and that outranks the
+throughput argument. The rule discounts any job whose `needs:` a governance
+artefact pins, in either shape the repository uses:
+
+  1. JSON, as `required_ci_job.needs` - B1.5-P7 does this.
+  2. A literal `needs: [...]` token asserted inside `scripts/ci/enforce_*.py` -
+     B2.1-P6, B2.2-P5 and B2.2-P6 do this.
+
+This matters because without it two governance rules would contradict each
+other: a future phase pinning one more edge would push a hub past the fan-out
+threshold, and this guard would demand the removal of an edge another gate
+demands be present. Both directions are covered by negative controls.
+
+The first attempt at this topology stripped those contracted edges and was
+caught by `enforce_b15_p7_ci_adjudication_closure` and
+`enforce_b21_p6_full_chain_closure` in CI. That is the machinery working:
+performance analysis does not get to overrule an audit contract.
 
 ## 5. Adding a phase
 

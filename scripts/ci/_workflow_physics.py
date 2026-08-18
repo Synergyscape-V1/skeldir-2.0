@@ -84,3 +84,66 @@ def job_installs(lines: list[str], start: int, end: int, tool: str) -> bool:
     """True when the job body contains a step that installs `tool` dependencies."""
     body = "\n".join(lines[start:end])
     return bool(INSTALL_PATTERNS[tool].search(body))
+
+
+BARRIER_HINTS = ("checkout", "validate-contracts")
+
+
+def contract_pinned_jobs(jobs: dict | None = None) -> set[str]:
+    """Job ids whose `needs:` a governance artefact pins.
+
+    A phase may contract an ordering edge for audit reasons that have nothing to
+    do with dataflow, and that outranks the throughput argument. The fan-out rule
+    discounts these so the two never contradict each other: without it, a future
+    phase pinning one more edge would push a hub past the threshold and the guard
+    would demand the removal of an edge another gate demands be present.
+
+    Two shapes are recognised, because the repository uses both:
+      1. JSON ``required_ci_job.job_id`` with a ``needs`` list.
+      2. A literal ``needs: [...]`` token asserted inside an enforcer script.
+    """
+    import json
+    from pathlib import Path
+
+    pinned: set[str] = set()
+
+    contracts = Path("contracts-internal")
+    if contracts.is_dir():
+        for path in sorted(contracts.rglob("*.json")):
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if isinstance(doc, dict):
+                job = doc.get("required_ci_job")
+                if isinstance(job, dict) and job.get("job_id") and job.get("needs"):
+                    pinned.add(str(job["job_id"]))
+
+    ci_scripts = Path("scripts/ci")
+    if ci_scripts.is_dir() and jobs:
+        token_re = re.compile(r'"(needs: \[[^"]*)"((?:\s*\n\s*"[^"]*")*)', re.M)
+        for path in sorted(ci_scripts.glob("enforce_*.py")):
+            src = path.read_text(encoding="utf-8", errors="replace")
+            for m in token_re.finditer(src):
+                token = m.group(1) + "".join(re.findall(r'"([^"]*)"', m.group(2) or ""))
+                if "]" not in token:
+                    continue
+                deps = {
+                    d.strip()
+                    for d in token[token.index("[") + 1 : token.index("]")].split(",")
+                    if d.strip()
+                }
+                core = deps - set(BARRIER_HINTS)
+                if not core:
+                    continue
+                # Resolve the token back to the job that declares those deps, so a
+                # rename does not silently drop the pin.
+                for jid, body in jobs.items():
+                    if not isinstance(body, dict):
+                        continue
+                    cur = body.get("needs") or []
+                    if isinstance(cur, str):
+                        cur = [cur]
+                    if core == set(cur) - set(BARRIER_HINTS):
+                        pinned.add(jid)
+    return pinned

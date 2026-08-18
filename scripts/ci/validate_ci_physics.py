@@ -29,7 +29,13 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _workflow_physics import CACHE_KEY, job_installs, job_spans, owning_job  # noqa: E402
+from _workflow_physics import (  # noqa: E402
+    CACHE_KEY,
+    contract_pinned_jobs,
+    job_installs,
+    job_spans,
+    owning_job,
+)
 
 WORKFLOWS = Path(".github/workflows")
 VERBOSE = "--verbose" in sys.argv
@@ -141,9 +147,15 @@ def check_workflow(path: Path) -> list[str]:
     # --- rule: fanout ------------------------------------------------------
     if exempt(src, "fanout") is None:
         jobs = doc.get("jobs") or {}
+        # An edge a governance contract pins is not a throughput decision, so it
+        # must not count toward the fan-out budget. Without this, a future phase
+        # pinning one more edge would push a hub past the threshold and this rule
+        # would demand the removal of an edge another gate demands be present -
+        # two governance rules in direct contradiction.
+        pinned = contract_pinned_jobs(jobs)
         fanin: dict[str, int] = {}
-        for body in jobs.values():
-            if not isinstance(body, dict):
+        for jid, body in jobs.items():
+            if not isinstance(body, dict) or jid in pinned:
                 continue
             for dep in norm_needs(body):
                 fanin[dep] = fanin.get(dep, 0) + 1

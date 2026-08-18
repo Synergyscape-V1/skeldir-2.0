@@ -10,6 +10,7 @@ Run:  python scripts/ci/test_ci_physics_negative_controls.py
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -49,12 +50,18 @@ def run_guard(tree: Path) -> tuple[int, str]:
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def build(tmp: Path, content: str) -> Path:
+def build(tmp: Path, content: str, contract: str | None = None) -> Path:
     wf = tmp / ".github" / "workflows"
     if wf.exists():
         shutil.rmtree(wf)
     wf.mkdir(parents=True)
     (wf / "example.yml").write_text(content, encoding="utf-8")
+    gov = tmp / "contracts-internal" / "governance"
+    if gov.exists():
+        shutil.rmtree(tmp / "contracts-internal")
+    if contract is not None:
+        gov.mkdir(parents=True)
+        (gov / "pin.json").write_text(contract, encoding="utf-8")
     return tmp
 
 
@@ -147,6 +154,16 @@ jobs:
       - run: pytest backend/tests/b3/test_p0.py
 """
 
+# A governance contract may pin a job's needs for audit reasons unrelated to
+# dataflow (B1.5-P7 does). The fan-out rule must discount those, or it would
+# demand the removal of an edge another gate demands be present.
+PIN_CONTRACT = json.dumps(
+    {
+        "contract_id": "example.pin",
+        "required_ci_job": {"job_id": "leaf0", "job_name": "leaf0", "needs": ["gate"]},
+    }
+)
+
 CONTROLS: list[tuple[str, str, bool, str]] = [
     # (label, workflow content, expect_pass, substring expected in output when failing)
     ("conforming baseline", CONFORMING, True, ""),
@@ -169,6 +186,25 @@ CONTROLS: list[tuple[str, str, bool, str]] = [
     ("fan-out barrier with no dataflow", FANOUT_BARRIER, False, "transfers no data"),
     ("same fan-out, but declares outputs", FANOUT_WITH_OUTPUTS, True, ""),
     ("violation with an in-file exemption", EXEMPTED, True, ""),
+]
+
+
+# (label, content, expect_pass, needle, contract-or-None)
+EXTRA_CONTROLS: list[tuple[str, str, bool, str, str | None]] = [
+    (
+        "fan-out barrier stays rejected when nothing pins it",
+        FANOUT_BARRIER,
+        False,
+        "transfers no data",
+        None,
+    ),
+    (
+        "same barrier is accepted once a contract pins the edge",
+        FANOUT_BARRIER,
+        True,
+        "",
+        PIN_CONTRACT,
+    ),
 ]
 
 
@@ -195,7 +231,25 @@ def main() -> int:
             verb = "accepts" if expect_pass else "rejects"
             print(f"  ok  guard {verb}: {label}")
 
-    print(f"\nnegative controls: {len(CONTROLS) - len(failures)}/{len(CONTROLS)} passed")
+        for label, content, expect_pass, needle, contract in EXTRA_CONTROLS:
+            build(tmp, content, contract)
+            code, out = run_guard(tmp)
+            passed = code == 0
+            if passed != expect_pass:
+                failures.append(
+                    f"{label}: expected guard to {'PASS' if expect_pass else 'FAIL'}, "
+                    f"but it {'passed' if passed else 'failed'}\n{out}"
+                )
+                continue
+            if not expect_pass and needle and needle not in out:
+                failures.append(
+                    f"{label}: failed but the message did not mention {needle!r}\n{out}"
+                )
+                continue
+            print(f"  ok  guard {'accepts' if expect_pass else 'rejects'}: {label}")
+
+    total = len(CONTROLS) + len(EXTRA_CONTROLS)
+    print(f"\nnegative controls: {total - len(failures)}/{total} passed")
     if failures:
         print("\nNON-VACUITY BROKEN - the guard is not enforcing what it claims:\n")
         for f in failures:
