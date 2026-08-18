@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.14.0",
+  "contract_version": "1.15.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -78,7 +78,9 @@
     "B1.7 P4 Mixed Workload Benchmark",
     "m0-maintainability-scope-lock",
     "validate-ops-runbooks",
-    "runtime-ops-proofs"
+    "runtime-ops-proofs",
+    "Checkout Code",
+    "CI Physics Guard"
   ],
   "hardware_enforcement": {
     "status": "enforced",
@@ -96,5 +98,14 @@
     "required_for_p7_closure": true,
     "rationale": "B1.4-P7 enforces live branch-protection hardware required contexts for the full terminal privacy proof plane."
   },
-  "future_required_context_declarations": []
+  "future_required_context_declarations": [],
+  "b25_ci_topology": {
+    "status": "enforced",
+    "enforced_at_phase": "CI-Topology-Physics",
+    "added_contexts": [
+      "Checkout Code",
+      "CI Physics Guard"
+    ],
+    "rationale": "Checkout Code becomes merge-blocking because the throughput topology removed its needs: edges. It previously gated 66 jobs and blocked merges implicitly by starving downstream contexts; those edges transferred no data and serialised the graph. The job and its assertions (adjudicated-SHA check, evidence placement) are unchanged - only the enforcement mechanism moved from an ordering constraint to an explicit required status check, which is what actually blocks a merge. CI Physics Guard makes the topology self-enforcing: it fails the build if a workflow drops its concurrency group, its merge_group trigger, its dependency cache, or reintroduces a fan-out barrier that transfers no data."
+  }
 }

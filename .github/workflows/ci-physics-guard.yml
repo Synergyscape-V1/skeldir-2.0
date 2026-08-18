@@ -1,0 +1,51 @@
+name: CI Physics Guard
+
+# Enforces the throughput topology described in docs/ci/CI_TOPOLOGY_PHYSICS.md.
+#
+# The topology only stays true if something checks it. Without this workflow a
+# future phase can silently reintroduce the pathology that was removed - an
+# uncancelled run holding slots for an abandoned commit, an uncached toolchain,
+# or a fan-out barrier that reserialises the graph - and CI stays green while
+# throughput rots.
+#
+# The rules are structural properties of the YAML, so a new phase inherits them
+# by existing. Registering a new phase means adding its workflow; nothing here
+# needs editing.
+
+on:
+  merge_group:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci-physics:
+    name: CI Physics Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate workflow topology
+        run: python scripts/ci/validate_ci_physics.py --verbose
+
+      - name: Prove the guard is non-vacuous
+        run: python scripts/ci/test_ci_physics_negative_controls.py

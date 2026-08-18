@@ -16,8 +16,11 @@ on:
         default: ubuntu-8core
 
 concurrency:
-  group: b07-phase8-full-physics-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Was `github.ref` + unconditional cancel, which shared one group across every
+  # push to main and could cancel a main-branch audit run mid-proof. run_id is
+  # unique per run, so push and merge_group runs are now never cancelled.
+  group: b07-phase8-full-physics-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   b07_phase8_full_physics:
@@ -45,6 +48,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: 'pip'
 
       - name: Install dependencies
         run: |

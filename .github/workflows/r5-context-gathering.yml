@@ -8,6 +8,13 @@ name: "R5: Context Gathering"
 on:
   workflow_dispatch:
 
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   r5-context-gathering:
     runs-on: ubuntu-22.04
