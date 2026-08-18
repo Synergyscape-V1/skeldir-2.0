@@ -158,6 +158,15 @@ class BayesianModelFit(Base, TenantMixin):
     confidence_classified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    confidence_evidence_snapshot_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    source_read_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_read_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     artifact_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     artifact_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
@@ -327,6 +336,71 @@ class BayesianModelFit(Base, TenantMixin):
         CheckConstraint(
             "confidence_currency_count IS NULL OR confidence_currency_count >= 0",
             name="ck_bayesian_model_fits_confidence_currency_count_nonnegative",
+        ),
+        CheckConstraint(
+            "confidence_evidence_snapshot_hash IS NULL OR "
+            "confidence_evidence_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_bayesian_model_fits_confidence_evidence_hash_sha256",
+        ),
+        CheckConstraint(
+            "(source_read_started_at IS NULL AND source_read_completed_at IS NULL) "
+            "OR (source_read_started_at IS NOT NULL "
+            "AND source_read_completed_at IS NOT NULL "
+            "AND source_read_completed_at >= source_read_started_at)",
+            name="ck_bayesian_model_fits_source_read_pair_order",
+        ),
+        CheckConstraint(
+            "(confidence_evidence_snapshot_hash IS NULL "
+            "AND confidence_deterministic_revenue_minor IS NULL "
+            "AND confidence_deterministic_row_count IS NULL "
+            "AND confidence_match_verdict_count IS NULL "
+            "AND confidence_currency_count IS NULL) "
+            "OR (confidence_evidence_snapshot_hash IS NOT NULL "
+            "AND confidence_deterministic_revenue_minor IS NOT NULL "
+            "AND confidence_deterministic_row_count IS NOT NULL "
+            "AND confidence_match_verdict_count IS NOT NULL "
+            "AND confidence_currency_count IS NOT NULL "
+            "AND confidence_evidence_snapshot_hash = source_snapshot_hash)",
+            name="ck_bayesian_model_fits_confidence_evidence_tuple",
+        ),
+        CheckConstraint(
+            "(confidence_bucket IS NULL AND confidence_bucket_reason IS NULL "
+            "AND confidence_policy_version IS NULL "
+            "AND confidence_semantics_version IS NULL "
+            "AND confidence_classified_at IS NULL) "
+            "OR (confidence_bucket IS NOT NULL "
+            "AND confidence_bucket_reason IS NOT NULL "
+            "AND confidence_policy_version = 'b24-p10-confidence-policy-v1' "
+            "AND confidence_semantics_version = 'b24-p10-confidence-semantics-v1' "
+            "AND confidence_classified_at IS NOT NULL)",
+            name="ck_bayesian_model_fits_confidence_classification_state",
+        ),
+        CheckConstraint(
+            "confidence_bucket NOT IN ('low', 'medium', 'high') OR ("
+            "status = 'succeeded' "
+            "AND data_completeness_status = 'complete' "
+            "AND fallback_applied = false "
+            "AND diagnostic_status = 'passed' "
+            "AND credible_interval_status = 'available' "
+            "AND artifact_ref IS NOT NULL AND artifact_hash IS NOT NULL "
+            "AND confidence_evidence_snapshot_hash = source_snapshot_hash "
+            "AND confidence_deterministic_revenue_minor IS NOT NULL "
+            "AND confidence_deterministic_row_count IS NOT NULL "
+            "AND confidence_match_verdict_count IS NOT NULL "
+            "AND confidence_currency_count IS NOT NULL "
+            "AND confidence_currency_count <= 1 "
+            "AND confidence_classified_at IS NOT NULL "
+            "AND confidence_classified_at >= source_read_completed_at "
+            "AND source_read_started_at IS NOT NULL "
+            "AND source_read_completed_at IS NOT NULL "
+            "AND source_read_completed_at >= source_read_started_at "
+            "AND ((confidence_bucket = 'high' "
+            "AND confidence_bucket_reason = 'narrow_interval') "
+            "OR (confidence_bucket = 'medium' "
+            "AND confidence_bucket_reason = 'moderate_interval') "
+            "OR (confidence_bucket = 'low' "
+            "AND confidence_bucket_reason = 'wide_interval')))",
+            name="ck_bayesian_model_fits_available_confidence_complete",
         ),
         CheckConstraint(
             "artifact_ref IS NULL OR artifact_ref ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'",

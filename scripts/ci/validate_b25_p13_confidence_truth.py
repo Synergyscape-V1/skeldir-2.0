@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,6 +31,12 @@ from app.confidence_projection.policy import (  # noqa: E402
     ConfidencePolicyDecision,
     classify_confidence,
 )
+from app.confidence_projection.read_model import (  # noqa: E402
+    _EXACT_FIT_PROJECTION_SQL,
+)
+from app.confidence_projection.sql_authority import (  # noqa: E402
+    executable_public_relations,
+)
 from app.trust.builder import _confidence_projection_metadata  # noqa: E402
 from app.trust.source_adapters import (  # noqa: E402
     TRUST_ENVELOPE_FIELD_SOURCE_REGISTRIES,
@@ -49,6 +54,9 @@ B24_WORKFLOW = ROOT / ".github/workflows/b2_4-gate-dry-run.yml"
 
 REQUIRED_P13_TRIGGER_PATHS = (
     "backend/app/bayesian/fit_execution.py",
+    "backend/app/bayesian/fit_claim.py",
+    "backend/app/bayesian/runtime_state.py",
+    "backend/app/bayesian/e2e_harness.py",
     "backend/app/bayesian/models.py",
     "backend/app/bayesian/repository.py",
     "backend/app/bayesian/source_snapshot.py",
@@ -57,6 +65,7 @@ REQUIRED_P13_TRIGGER_PATHS = (
     "alembic/versions/007_skeldir_foundation/**",
     "contracts/trust-api/**",
     "scripts/ci/validate_b25_p13_confidence_truth.py",
+    "scripts/ci/validate_b25_p13_c4_closure.py",
 )
 
 
@@ -80,6 +89,7 @@ def validate_source_authority(
     registry: dict[str, Any] | None = None,
     definitions: dict[str, Any] | None = None,
     read_source: str | None = None,
+    read_sql: str | None = None,
 ) -> int:
     """Bind governed declarations to the actual direct SQL read graph."""
 
@@ -104,24 +114,26 @@ def validate_source_authority(
         )
 
     source = read_source if read_source is not None else READ_MODEL.read_text("utf-8")
-    physical = tuple(sorted(set(re.findall(r"public\.([a-z0-9_]+)", source))))
-    expected = tuple(
-        sorted(definitions["confidence_projection"].physical_read_tables)
-    )
+    sql = read_sql if read_sql is not None else str(_EXACT_FIT_PROJECTION_SQL)
+    physical = tuple(sorted(executable_public_relations(sql)))
+    expected = tuple(sorted(definitions["confidence_projection"].physical_read_tables))
     _require(physical == expected, f"physical_read_graph_drift:{physical}!={expected}")
-    for forbidden in (
-        "public.b23_revenue_events",
-        "public.b24_active_execution_leases",
-        "classify_confidence",
-    ):
-        _require(forbidden not in source, f"late_or_live_confidence_dependency:{forbidden}")
-    _require("persisted_confidence_decision" in source, "persisted_classifier_seam_missing")
     _require(
-        re.search(
-            r"if not bool\(mapping\.get\(\"has_snapshot_lineage\"\)\):\s+return \"unknown\"",
-            source,
-        )
-        is not None,
+        "classify_confidence" not in source,
+        "late_or_live_confidence_dependency:classify_confidence",
+    )
+    _require(
+        "assert_executable_read_authority(" in source,
+        "runtime_executable_authority_fence_missing",
+    )
+    _require(
+        "persisted_confidence_decision" in source, "persisted_classifier_seam_missing"
+    )
+    _require(
+        'not bool(mapping.get("has_snapshot_lineage"))' in source
+        and 'mapping.get("source_read_started_at")' in source
+        and 'mapping.get("source_read_completed_at")' in source
+        and 'return "unknown"' in source,
         "missing_freshness_authority_not_unknown",
     )
     return len(expected)
@@ -133,7 +145,10 @@ def validate_subject_conditioned_fields(
     """Require distinct truthful field authority for both supported subjects."""
 
     registries = registries or TRUST_ENVELOPE_FIELD_SOURCE_REGISTRIES
-    _require(set(registries) == {"match_verdict", "confidence_projection"}, "field_registry_subject_set_drift")
+    _require(
+        set(registries) == {"match_verdict", "confidence_projection"},
+        "field_registry_subject_set_drift",
+    )
     match = registries["match_verdict"]
     confidence = registries["confidence_projection"]
     _require(set(match) == set(confidence), "field_registry_surface_drift")
@@ -262,7 +277,9 @@ def validate_ci_topology(workflow: str | None = None) -> int:
         "validate_b25_p13_confidence_truth.py --negative-control" in source,
         "confidence_truth_validator_not_invoked",
     )
-    _require("p13_confidence_values_reachable" not in source, "rejected_enum_metric_survives")
+    _require(
+        "p13_confidence_values_reachable" not in source, "rejected_enum_metric_survives"
+    )
     b24 = B24_WORKFLOW.read_text("utf-8")
     _require("pull_request:" in b24, "b24_classifier_consumer_not_pr_bound")
     _require("validate-b24-p10-projection" in b24, "b24_p10_classifier_proof_missing")
@@ -273,9 +290,17 @@ def validate_builder_authority(source: str | None = None) -> int:
     """Prevent hand-maintained source lists from re-entering signed payloads."""
 
     source = source if source is not None else BUILDER.read_text("utf-8")
-    _require(source.count("subject_authority_definition(") >= 2, "canonical_authority_builder_not_used")
-    _require("list(authority.governed_source_tables)" in source, "builder_governed_sources_not_derived")
-    _require("\"allowed_source_tables\": [" not in source, "hand_maintained_builder_sources")
+    _require(
+        source.count("subject_authority_definition(") >= 2,
+        "canonical_authority_builder_not_used",
+    )
+    _require(
+        "list(authority.governed_source_tables)" in source,
+        "builder_governed_sources_not_derived",
+    )
+    _require(
+        '"allowed_source_tables": [' not in source, "hand_maintained_builder_sources"
+    )
     return 3
 
 
@@ -293,18 +318,42 @@ def run_negative_controls() -> int:
     controls = 0
 
     read = READ_MODEL.read_text("utf-8")
-    _expect_failure("NC-C3-01", lambda: validate_source_authority(read_source=read.replace("FROM public.bayesian_artifacts", "FROM public.hidden_confidence_source hidden JOIN public.bayesian_artifacts")))
+    read_sql = str(_EXACT_FIT_PROJECTION_SQL)
+    _expect_failure(
+        "NC-C3-01",
+        lambda: validate_source_authority(
+            read_sql=read_sql.replace(
+                "FROM public.bayesian_artifacts",
+                "FROM public.hidden_confidence_source hidden JOIN public.bayesian_artifacts",
+            )
+        ),
+    )
     controls += 1
 
     poisoned_fields = copy.deepcopy(TRUST_ENVELOPE_FIELD_SOURCE_REGISTRIES)
     poisoned_fields["confidence_projection"] = poisoned_fields["match_verdict"]
-    _expect_failure("NC-C3-02", lambda: validate_subject_conditioned_fields(poisoned_fields))
+    _expect_failure(
+        "NC-C3-02", lambda: validate_subject_conditioned_fields(poisoned_fields)
+    )
     controls += 1
 
     # NC-C3-03/04: fail-open freshness and live recomputation are both rejected.
-    _expect_failure("NC-C3-03", lambda: validate_source_authority(read_source=read.replace('return "unknown"', 'return "current"')))
+    _expect_failure(
+        "NC-C3-03",
+        lambda: validate_source_authority(
+            read_source=read.replace('return "unknown"', 'return "current"')
+        ),
+    )
     controls += 1
-    _expect_failure("NC-C3-04", lambda: validate_source_authority(read_source=read + "\n# public.b23_revenue_events\n"))
+    _expect_failure(
+        "NC-C3-04",
+        lambda: validate_source_authority(
+            read_sql=(
+                read_sql
+                + "\nJOIN public.b23_revenue_events forbidden_live_dependency ON false\n"
+            )
+        ),
+    )
     controls += 1
 
     multi_currency = classify_confidence(
@@ -346,19 +395,44 @@ def run_negative_controls() -> int:
         governed_source_tables=confidence.governed_source_tables + ("tenant_b_fit",),
         physical_read_tables=confidence.physical_read_tables,
     )
-    _expect_failure("NC-C3-08", lambda: validate_source_authority(definitions=poisoned_definitions))
+    _expect_failure(
+        "NC-C3-08", lambda: validate_source_authority(definitions=poisoned_definitions)
+    )
     controls += 1
 
-    _expect_failure("NC-C3-09", lambda: validate_source_authority(read_source=read + "\nclassify_confidence(mapping)\n"))
+    _expect_failure(
+        "NC-C3-09",
+        lambda: validate_source_authority(
+            read_source=read + "\nclassify_confidence(mapping)\n"
+        ),
+    )
     controls += 1
 
     workflow = P13_WORKFLOW.read_text("utf-8")
-    _expect_failure("NC-C3-10", lambda: validate_ci_topology(workflow.replace("backend/app/confidence_projection/**", "backend/app/confidence_projection/read_model.py")))
+    _expect_failure(
+        "NC-C3-10",
+        lambda: validate_ci_topology(
+            workflow.replace(
+                "backend/app/confidence_projection/**",
+                "backend/app/confidence_projection/read_model.py",
+            )
+        ),
+    )
     controls += 1
 
-    _expect_failure("NC-C3-11", lambda: validate_bounded_read(read_source=read.replace("fit.id = :fit_id", "fit.model_type = :model_type")))
+    _expect_failure(
+        "NC-C3-11",
+        lambda: validate_bounded_read(
+            read_source=read.replace("fit.id = :fit_id", "fit.model_type = :model_type")
+        ),
+    )
     controls += 1
-    _expect_failure("NC-C3-12", lambda: validate_bounded_read(read_source=read + "\nSELECT COUNT(*) FROM public.b24_dirty_events\n"))
+    _expect_failure(
+        "NC-C3-12",
+        lambda: validate_bounded_read(
+            read_source=read + "\nSELECT COUNT(*) FROM public.b24_dirty_events\n"
+        ),
+    )
     controls += 1
     return controls
 

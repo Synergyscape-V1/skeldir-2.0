@@ -2777,6 +2777,9 @@ CREATE TABLE public.bayesian_model_fits (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -2867,6 +2870,9 @@ CREATE TABLE public.bayesian_model_fits_p00 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -2957,6 +2963,9 @@ CREATE TABLE public.bayesian_model_fits_p01 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3047,6 +3056,9 @@ CREATE TABLE public.bayesian_model_fits_p02 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3137,6 +3149,9 @@ CREATE TABLE public.bayesian_model_fits_p03 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3227,6 +3242,9 @@ CREATE TABLE public.bayesian_model_fits_p04 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3317,6 +3335,9 @@ CREATE TABLE public.bayesian_model_fits_p05 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3407,6 +3428,9 @@ CREATE TABLE public.bayesian_model_fits_p06 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3497,6 +3521,9 @@ CREATE TABLE public.bayesian_model_fits_p07 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3587,6 +3614,9 @@ CREATE TABLE public.bayesian_model_fits_p08 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3677,6 +3707,9 @@ CREATE TABLE public.bayesian_model_fits_p09 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3767,6 +3800,9 @@ CREATE TABLE public.bayesian_model_fits_p10 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3857,6 +3893,9 @@ CREATE TABLE public.bayesian_model_fits_p11 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3947,6 +3986,9 @@ CREATE TABLE public.bayesian_model_fits_p12 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4037,6 +4079,9 @@ CREATE TABLE public.bayesian_model_fits_p13 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4127,6 +4172,9 @@ CREATE TABLE public.bayesian_model_fits_p14 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4217,6 +4265,9 @@ CREATE TABLE public.bayesian_model_fits_p15 (
     confidence_match_verdict_count bigint,
     confidence_currency_count integer,
     confidence_classified_at timestamp with time zone,
+    confidence_evidence_snapshot_hash character varying(64),
+    source_read_started_at timestamp with time zone,
+    source_read_completed_at timestamp with time zone,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -5745,6 +5796,22 @@ ALTER TABLE ONLY public.channel_taxonomy
 
 ALTER TABLE public.b23_match_verdicts
     ADD CONSTRAINT ck_b23_match_verdicts_matched_requires_attribution_event CHECK ((((status)::text <> ALL ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) OR (attribution_event_id IS NOT NULL))) NOT VALID;
+
+ALTER TABLE public.bayesian_model_fits
+    ADD CONSTRAINT ck_bayesian_model_fits_available_confidence_complete CHECK ((((confidence_bucket)::text <> ALL ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying])::text[])) OR (((status)::text = 'succeeded'::text) AND ((data_completeness_status)::text = 'complete'::text) AND (fallback_applied = false) AND ((diagnostic_status)::text = 'passed'::text) AND ((credible_interval_status)::text = 'available'::text) AND (artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND (confidence_currency_count <= 1) AND (confidence_classified_at IS NOT NULL) AND (confidence_classified_at >= source_read_completed_at) AND (source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at) AND ((((confidence_bucket)::text = 'high'::text) AND ((confidence_bucket_reason)::text = 'narrow_interval'::text)) OR (((confidence_bucket)::text = 'medium'::text) AND ((confidence_bucket_reason)::text = 'moderate_interval'::text)) OR (((confidence_bucket)::text = 'low'::text) AND ((confidence_bucket_reason)::text = 'wide_interval'::text)))))) NOT VALID;
+
+ALTER TABLE public.bayesian_model_fits
+    ADD CONSTRAINT ck_bayesian_model_fits_confidence_classification_state CHECK ((((confidence_bucket IS NULL) AND (confidence_bucket_reason IS NULL) AND (confidence_policy_version IS NULL) AND (confidence_semantics_version IS NULL) AND (confidence_classified_at IS NULL)) OR ((confidence_bucket IS NOT NULL) AND (confidence_bucket_reason IS NOT NULL) AND ((confidence_policy_version)::text = 'b24-p10-confidence-policy-v1'::text) AND ((confidence_semantics_version)::text = 'b24-p10-confidence-semantics-v1'::text) AND (confidence_classified_at IS NOT NULL)))) NOT VALID;
+
+ALTER TABLE public.bayesian_model_fits
+    ADD CONSTRAINT ck_bayesian_model_fits_confidence_evidence_hash_sha256 CHECK (((confidence_evidence_snapshot_hash IS NULL) OR ((confidence_evidence_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))) NOT VALID;
+
+ALTER TABLE public.bayesian_model_fits
+    ADD CONSTRAINT ck_bayesian_model_fits_confidence_evidence_tuple CHECK ((((confidence_evidence_snapshot_hash IS NULL) AND (confidence_deterministic_revenue_minor IS NULL) AND (confidence_deterministic_row_count IS NULL) AND (confidence_match_verdict_count IS NULL) AND (confidence_currency_count IS NULL)) OR ((confidence_evidence_snapshot_hash IS NOT NULL) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text)))) NOT VALID;
+
+ALTER TABLE public.bayesian_model_fits
+    ADD CONSTRAINT ck_bayesian_model_fits_source_read_pair_order CHECK ((((source_read_started_at IS NULL) AND (source_read_completed_at IS NULL)) OR ((source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at)))) NOT VALID;
+
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_pkey PRIMARY KEY (id);

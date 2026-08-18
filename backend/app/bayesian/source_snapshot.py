@@ -24,7 +24,6 @@ from app.bayesian.exceptions import BayesianTenantContextError
 from app.bayesian.input_contract import (
     ALLOWED_SOURCE_READ_MODELS,
     ELIGIBILITY_POLICY_VERSION,
-    REQUIRED_TENANT_GUC,
     SENTINEL_PREFIX,
     SOURCE_CONTRACT_VERSION,
     SOURCE_STREAM_MAX_ROW_BUFFER,
@@ -46,6 +45,8 @@ class SourceSnapshotResult:
     source_snapshot_hash: str
     preflight: EligibilityPreflightResult
     streamed_chunk_count: int
+    source_read_started_at: datetime | None = None
+    source_read_completed_at: datetime | None = None
     sentinel_material: str | None = None
 
     @property
@@ -571,9 +572,7 @@ def load_p6_observed_input_from_source_snapshot_sync(
                 source_row_count += 1
                 amount_minor_total += _p6_amount_minor(payload)
                 if source_name == "b23_revenue_events":
-                    deterministic_revenue_minor += _b23_deterministic_net_minor(
-                        payload
-                    )
+                    deterministic_revenue_minor += _b23_deterministic_net_minor(payload)
                     deterministic_revenue_row_count += 1
                     match_verdict_id = str(payload.get("match_verdict_id") or "")
                     if match_verdict_id:
@@ -630,10 +629,18 @@ async def compute_source_snapshot_hash(
         await session.execute(
             text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         )
-        await session.execute(
-            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-            {"guc_name": REQUIRED_TENANT_GUC, "tenant_id": str(tenant_id)},
-        )
+        source_read_started_at = (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        clock_timestamp() AS source_read_started_at,
+                        set_config('app.current_tenant_id', :tenant_id, true)
+                    """
+                ),
+                {"tenant_id": str(tenant_id)},
+            )
+        ).scalar_one()
         await _assert_tenant_guc(session, tenant_id)
         preflight = await run_eligibility_preflight(
             session,
@@ -646,6 +653,9 @@ async def compute_source_snapshot_hash(
         if not preflight.is_eligible:
             assert preflight.fallback_reason is not None
             material = sentinel_material_for(preflight.fallback_reason)
+            source_read_completed_at = (
+                await session.execute(text("SELECT clock_timestamp()"))
+            ).scalar_one()
             return SourceSnapshotResult(
                 tenant_id=tenant_id,
                 model_type=model_type,
@@ -657,6 +667,8 @@ async def compute_source_snapshot_hash(
                 ).hexdigest(),
                 preflight=preflight,
                 streamed_chunk_count=0,
+                source_read_started_at=source_read_started_at,
+                source_read_completed_at=source_read_completed_at,
                 sentinel_material=material,
             )
 
@@ -679,6 +691,9 @@ async def compute_source_snapshot_hash(
         ):
             hasher.update(canonical_chunk)
             chunk_count += 1
+        source_read_completed_at = (
+            await session.execute(text("SELECT clock_timestamp()"))
+        ).scalar_one()
         return SourceSnapshotResult(
             tenant_id=tenant_id,
             model_type=model_type,
@@ -688,4 +703,6 @@ async def compute_source_snapshot_hash(
             source_snapshot_hash=hasher.hexdigest(),
             preflight=preflight,
             streamed_chunk_count=chunk_count,
+            source_read_started_at=source_read_started_at,
+            source_read_completed_at=source_read_completed_at,
         )

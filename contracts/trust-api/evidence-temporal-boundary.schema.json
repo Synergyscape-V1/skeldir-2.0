@@ -16,16 +16,25 @@
   ],
   "properties": {
     "evidence_snapshot_at": {
-      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+      "anyOf": [
+        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"},
+        {"type": "null"}
+      ]
     },
     "source_read_started_at": {
-      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+      "anyOf": [
+        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"},
+        {"type": "null"}
+      ]
     },
     "source_read_completed_at": {
-      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+      "anyOf": [
+        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"},
+        {"type": "null"}
+      ]
     },
     "data_freshness_seconds": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "minimum": 0,
       "maximum": 31536000
     },
@@ -41,7 +50,7 @@
       "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
     },
     "max_source_read_skew_ms": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "minimum": 0,
       "maximum": 86400000
     },
@@ -53,5 +62,32 @@
         "unavailable"
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "snapshot_consistency_status": {
+            "enum": ["consistent", "stale_degraded"]
+          }
+        },
+        "required": ["snapshot_consistency_status"]
+      },
+      "then": {
+        "properties": {
+          "evidence_snapshot_at": {
+            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+          },
+          "source_read_started_at": {
+            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+          },
+          "source_read_completed_at": {
+            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+          },
+          "data_freshness_seconds": {"type": "integer"},
+          "max_source_read_skew_ms": {"type": "integer"}
+        }
+      }
+    }
+  ]
 }

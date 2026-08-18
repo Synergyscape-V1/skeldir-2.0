@@ -44,6 +44,29 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Remediation Evidence Pack.md
+- id: validate-b25-p13-c4-closure
+  path: scripts/ci/validate_b25_p13_c4_closure.py
+  status: required
+  owning_phase: B2.5-P13-C4
+  protected_invariant: B2.5-P13-C4 binds available confidence to a complete frozen evidence tuple, exact source snapshot, valid state machine, truthful source-read interval, executable SQL authority graph, failed-refit freshness lineage, and signed temporal hash domain with ten semantic negative controls.
+  command: python scripts/ci/validate_b25_p13_c4_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c4_closure.py --negative-control
+  expected_failure_meaning: A confidence producer, database constraint, persisted consumer, temporal claim, freshness lineage, executable SQL dependency, or signed temporal hash domain no longer agrees with the C4 authority model; or a semantic negative control stopped firing.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c4_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_step
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Remediation Evidence Pack.md
 - id: validate-b25-p12-contract-projection
   path: scripts/ci/validate_b25_p12_contract_projection.py
   status: required
