@@ -1,11 +1,19 @@
 name: Empirical Validation - Directive Compliance
 
 on:
+  merge_group:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:  # Manual trigger for on-demand validation
+
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   POSTGRES_USER: skeldir
@@ -32,11 +40,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
       
       - name: Create evidence registry structure
         run: |
@@ -101,6 +111,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Download Phase 0 artifacts
         uses: actions/download-artifact@v4
@@ -225,11 +236,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
       
       - name: Download previous artifacts
         uses: actions/download-artifact@v4
@@ -362,6 +375,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Download previous artifacts
         uses: actions/download-artifact@v4
@@ -470,6 +484,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Download previous artifacts
         uses: actions/download-artifact@v4

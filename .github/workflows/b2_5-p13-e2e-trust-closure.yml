@@ -11,6 +11,7 @@ name: B2.5-P13 E2E Trust Closure
 # and again across P8-P11 during P13-P0; this workflow is built without it.
 
 on:
+  merge_group:
   pull_request:
   push:
     branches:
@@ -34,6 +35,13 @@ on:
       - 'scripts/ci/validate_b25_p13_c4_closure.py'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
+
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -70,6 +78,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: 'pip'
 
       - name: Install dependencies
         run: |

@@ -1,11 +1,19 @@
 name: B0.5.4.1 View Registry Gates
 
 on:
+  merge_group:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
+
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   b0541-gates:
@@ -22,6 +30,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: 'pip'
 
       - name: Install backend dependencies
         run: |
