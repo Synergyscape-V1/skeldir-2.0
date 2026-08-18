@@ -28,6 +28,21 @@
   negative_control_preserved_by: python scripts/ci/validate_b25_p13_confidence_truth.py --negative-control
   local_reproduction_command: python scripts/ci/validate_b25_p13_confidence_truth.py --negative-control
   risk_if_removed: A source table, field authority, freshness signal, lifecycle fallback, classifier call site, read bound, or CI trigger could drift while the finite runtime fixtures remained green.
+- gate_id: validate-b25-p13-c4-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_c4_closure.py
+  owning_phase: B2.5-P13-C4
+  protected_invariant: Available confidence is physically complete and snapshot-bound, historical uncertainty fails closed, source-read temporal claims are literal, freshness includes failed refits, executable SQL equals the declared read graph, and temporal fields remain hash-bound.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: The runtime P13 journey proves concrete database and envelope behavior, while C3 proves the broader confidence vocabulary; neither independently inventories every writer or falsifies database completeness, historical compatibility, temporal semantics, executable SQL dependencies, and failed-refit lineage as one closure system.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c4_closure.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c4_closure.py --negative-control
+  risk_if_removed: A partial available-confidence tuple, invented historical timestamp, comment-only authority token, untracked SQL join, or failed-refit freshness hole could recur while finite positive E2E fixtures remained green.
 - gate_id: validate-b25-p12-contract-projection
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates
