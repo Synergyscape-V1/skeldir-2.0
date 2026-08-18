@@ -9,10 +9,14 @@ on:
   workflow_dispatch:
 
 concurrency:
+  # Keyed on event_name as well as PR number: a workflow that declares both
+  # pull_request and pull_request_target fires twice for the same PR, and without
+  # the event in the group the two runs share it and cancel each other - which
+  # cancelled three required contexts on PR #653 before this was fixed.
   # PR events: one live run per workflow per PR - a new push supersedes the old.
   # push / merge_group: run_id is unique, so those runs are never cancelled
   # and never queued. The audit proof on an exact SHA always runs to completion.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:

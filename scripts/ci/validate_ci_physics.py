@@ -98,6 +98,24 @@ def check_workflow(path: Path) -> list[str]:
                     f"cancel a push or merge_group run. Gate it on "
                     f"github.event_name == 'pull_request'."
                 )
+            # A workflow that can cancel must key its group on the event too.
+            # pull_request and pull_request_target both fire for the same PR and
+            # yield the same pull_request.number, so without the event in the group
+            # the two runs share it and cancel each other. That cancelled three
+            # required contexts on PR #653, and a cancelled required context blocks
+            # the merge exactly like a failing one.
+            group = str(conc.get("group", ""))
+            if (
+                cip.lower() != "false"
+                and "github.event_name" not in group
+                and reason is None
+            ):
+                fails.append(
+                    f"{path.name}: concurrency group `{group}` does not include "
+                    f"`github.event_name`, but the workflow can cancel in progress. "
+                    f"pull_request and pull_request_target fire for the same PR and "
+                    f"would share this group, cancelling each other."
+                )
 
     # --- rule: merge_group -------------------------------------------------
     if on_pr and "merge_group" not in trig and exempt(src, "merge_group") is None:

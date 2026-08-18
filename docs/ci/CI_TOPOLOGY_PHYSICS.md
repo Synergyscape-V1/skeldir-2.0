@@ -2,7 +2,7 @@
 
 **Audience:** any agent or engineer who adds a workflow, adds a phase, or changes `.github/workflows/`.
 **Enforced by:** `.github/workflows/ci-physics-guard.yml` → `scripts/ci/validate_ci_physics.py`
-**Non-vacuity:** `scripts/ci/test_ci_physics_negative_controls.py` (14 controls)
+**Non-vacuity:** `scripts/ci/test_ci_physics_negative_controls.py` (15 controls)
 
 If you only read one section, read [§5 Adding a phase](#5-adding-a-phase).
 
@@ -93,9 +93,17 @@ Every workflow with a `pull_request` trigger carries:
 
 ```yaml
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ```
+
+**Why `github.event_name` is in the group.** Four workflows declare both
+`pull_request` and `pull_request_target`. Both fire for the same PR and yield the
+same `pull_request.number`, so without the event in the group the two runs share
+it and **cancel each other**. On PR #653 that cancelled five contexts, three of
+them required — and a cancelled required context blocks the merge exactly like a
+failing one, while looking like an infrastructure glitch rather than a bug. The
+guard rejects any cancelling workflow whose group omits the event.
 
 **Why the group falls back to `run_id`, not `github.ref`.** On a PR event the
 group is per-workflow-per-PR, so a new push supersedes the previous run. On

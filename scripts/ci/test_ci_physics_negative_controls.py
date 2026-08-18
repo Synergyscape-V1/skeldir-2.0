@@ -26,7 +26,7 @@ on:
   merge_group:
   pull_request:
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   a:
@@ -73,7 +73,7 @@ def build(tmp: Path, content: str, contract: str | None = None) -> Path:
 
 NO_CONCURRENCY = CONFORMING.replace(
     """concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 """,
     "",
@@ -85,6 +85,14 @@ UNCONDITIONAL_CANCEL = CONFORMING.replace(
 )
 
 NO_MERGE_GROUP = CONFORMING.replace("  merge_group:\n", "")
+
+# pull_request and pull_request_target both fire for the same PR and yield the
+# same pull_request.number. Without github.event_name in the group they share it
+# and cancel each other - which cancelled three required contexts on PR #653, and
+# a cancelled required context blocks the merge exactly like a failing one.
+GROUP_WITHOUT_EVENT = CONFORMING.replace(
+    "${{ github.workflow }}-${{ github.event_name }}-", "${{ github.workflow }}-"
+)
 
 # A job that installs dependencies but caches nothing burns the shared budget.
 NO_CACHE = CONFORMING.replace("          cache: 'pip'\n", "")
@@ -102,7 +110,7 @@ on:
   merge_group:
   pull_request:
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   gate:
@@ -190,6 +198,12 @@ CONTROLS: list[tuple[str, str, bool, str]] = [
     ("fan-out barrier with no dataflow", FANOUT_BARRIER, False, "transfers no data"),
     ("same fan-out, but declares outputs", FANOUT_WITH_OUTPUTS, True, ""),
     ("violation with an in-file exemption", EXEMPTED, True, ""),
+    (
+        "concurrency group missing github.event_name",
+        GROUP_WITHOUT_EVENT,
+        False,
+        "does not include",
+    ),
 ]
 
 
