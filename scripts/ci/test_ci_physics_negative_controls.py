@@ -35,6 +35,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+      - run: pip install -r requirements.txt
 """
 
 
@@ -74,7 +75,15 @@ UNCONDITIONAL_CANCEL = CONFORMING.replace(
 
 NO_MERGE_GROUP = CONFORMING.replace("  merge_group:\n", "")
 
+# A job that installs dependencies but caches nothing burns the shared budget.
 NO_CACHE = CONFORMING.replace("          cache: 'pip'\n", "")
+
+# The inverse, and the failure that turned a green job red on PR #651: a cache
+# key on a job that installs nothing. setup-*'s post-run save step fails outright
+# because the cache directory was never created.
+CACHE_WITHOUT_INSTALL = CONFORMING.replace(
+    "      - run: pip install -r requirements.txt\n", ""
+)
 
 FANOUT_BARRIER = """\
 name: Example
@@ -150,7 +159,13 @@ CONTROLS: list[tuple[str, str, bool, str]] = [
     ("missing concurrency block", NO_CONCURRENCY, False, "no `concurrency:` block"),
     ("unconditional cancel-in-progress", UNCONDITIONAL_CANCEL, False, "unconditional"),
     ("missing merge_group trigger", NO_MERGE_GROUP, False, "not on merge_group"),
-    ("uncached setup-python", NO_CACHE, False, "without `cache:"),
+    ("setup-python that installs but does not cache", NO_CACHE, False, "no `cache:"),
+    (
+        "cache key on a job that installs nothing",
+        CACHE_WITHOUT_INSTALL,
+        False,
+        "post-run cache-save step fails",
+    ),
     ("fan-out barrier with no dataflow", FANOUT_BARRIER, False, "transfers no data"),
     ("same fan-out, but declares outputs", FANOUT_WITH_OUTPUTS, True, ""),
     ("violation with an in-file exemption", EXEMPTED, True, ""),

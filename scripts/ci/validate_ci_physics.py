@@ -28,6 +28,9 @@ from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _workflow_physics import CACHE_KEY, job_installs, job_spans, owning_job  # noqa: E402
+
 WORKFLOWS = Path(".github/workflows")
 VERBOSE = "--verbose" in sys.argv
 
@@ -99,18 +102,41 @@ def check_workflow(path: Path) -> list[str]:
         )
 
     # --- rule: cache -------------------------------------------------------
+    # Only jobs that actually install dependencies need a cache key. Adding one
+    # to a job that installs nothing makes setup-*'s post-run cache-save step
+    # fail, because the cache directory was never created.
     if exempt(src, "cache") is None:
-        for tool, key in (("python", "pip"), ("node", "npm")):
-            pattern = re.compile(
-                rf"uses:\s*actions/setup-{tool}@v\d+\s*\n(?P<body>(?:[ \t]+\S.*\n|[ \t]*\n)*)"
-            )
-            for m in pattern.finditer(src):
-                if "cache:" not in m.group("body"):
-                    line = src[: m.start()].count("\n") + 1
-                    fails.append(
-                        f"{path.name}:{line}: setup-{tool} without `cache: '{key}'`. "
-                        f"Uncached installs burn the shared runner budget."
-                    )
+        lines = src.split("\n")
+        spans = job_spans(lines)
+        for i, line in enumerate(lines):
+            m = re.match(r"^\s*-?\s*uses:\s*actions/setup-(python|node)@v\d+\s*$", line)
+            if not m:
+                continue
+            tool = m.group(1)
+            own = owning_job(spans, i)
+            if own is None:
+                continue
+            jid, start, end = own
+            installs = job_installs(lines, start, end, tool)
+            # The step's own `with:` block, bounded by the next step.
+            block: list[str] = []
+            for j in range(i + 1, min(i + 14, len(lines))):
+                if re.match(r"^\s*-\s+\S", lines[j]):
+                    break
+                block.append(lines[j])
+            has_cache = any(re.match(r"^\s*cache:", b) for b in block)
+            if installs and not has_cache:
+                fails.append(
+                    f"{path.name}:{i + 1}: job `{jid}` installs {tool} dependencies but "
+                    f"setup-{tool} has no `cache: '{CACHE_KEY[tool]}'`. Uncached installs "
+                    f"burn the shared runner budget."
+                )
+            elif not installs and has_cache:
+                fails.append(
+                    f"{path.name}:{i + 1}: job `{jid}` installs no {tool} dependencies but "
+                    f"setup-{tool} sets `cache:`. The post-run cache-save step fails when "
+                    f"the cache directory was never created. Remove the key."
+                )
 
     # --- rule: fanout ------------------------------------------------------
     if exempt(src, "fanout") is None:

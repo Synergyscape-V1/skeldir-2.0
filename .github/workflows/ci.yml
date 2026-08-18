@@ -55,7 +55,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Enforce Postgres-only dependencies
         run: |
@@ -527,7 +526,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install backend test dependencies
         run: |
@@ -3999,7 +3997,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip'
 
       - name: Generate and validate EG-5 proof pack
         env:

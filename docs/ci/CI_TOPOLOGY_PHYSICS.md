@@ -129,12 +129,29 @@ property than the audit contract requires. The merge queue validates the
 
 ### Rule 3 — cache
 
-Every `actions/setup-python` carries `cache: 'pip'`; every `actions/setup-node`
-carries `cache: 'npm'`. Cache keys are derived from lockfile hashes by the
-official actions, so a changed lockfile is a cache miss and no assertion changes.
+A setup step carries a cache key **if and only if its job actually installs
+dependencies**: `actions/setup-python` gets `cache: 'pip'`, `actions/setup-node`
+gets `cache: 'npm'`. Cache keys are derived from lockfile hashes by the official
+actions, so a changed lockfile is a cache miss and no assertion changes.
 
 40% of all CPU was setup. Because CPU meets the cap, that waste converted
 directly into queue time for every other phase.
+
+**Both directions are enforced, and the second one is not obvious.** Adding a
+cache key to a job that installs nothing makes the *post-run* cache-save step
+fail:
+
+```
+##[error]Cache folder path is retrieved for pip but doesn't exist on disk:
+/home/runner/.cache/pip. This likely indicates that there are no dependencies
+to cache.
+```
+
+The first attempt at this topology applied `cache:` blanketly and turned
+`validate-ops-runbooks` red — a job whose only step is `make
+validate-ops-runbooks`, which installs nothing. Ten such keys were pruned. The
+"does this job install?" test lives in `scripts/ci/_workflow_physics.py` and is
+shared by the applier and the guard, so the two cannot disagree.
 
 ### Rule 4 — fanout
 

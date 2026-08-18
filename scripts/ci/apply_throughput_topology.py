@@ -25,6 +25,9 @@ from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _workflow_physics import CACHE_KEY, job_installs, job_spans, owning_job  # noqa: E402
+
 WORKFLOWS = Path(".github/workflows")
 APPLY = "--apply" in sys.argv
 
@@ -68,12 +71,17 @@ def add_merge_group(src: str) -> tuple[str, bool]:
 
 
 def add_cache(src: str) -> tuple[str, int]:
-    """Append a cache key to every setup-python / setup-node that lacks one."""
+    """Append a cache key to setup-python / setup-node in jobs that install deps.
+
+    Only jobs that install anything get a key: setup-*'s post-run cache-save
+    step fails outright when the cache directory was never created.
+    """
     if exempt(src, "cache"):
         return src, 0
     added = 0
     out: list[str] = []
     lines = src.split("\n")
+    spans = job_spans(lines)
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -83,6 +91,10 @@ def add_cache(src: str) -> tuple[str, int]:
             i += 1
             continue
         tool = m.group(2)
+        own = owning_job(spans, i)
+        if own is None or not job_installs(lines, own[1], own[2], tool):
+            i += 1
+            continue
         # Consume the adjacent `with:` block, if any, tracking its indentation.
         j = i + 1
         with_indent = None
@@ -112,7 +124,7 @@ def add_cache(src: str) -> tuple[str, int]:
         while body and not body[-1].strip():
             body.pop()
             j -= 1
-        body.append(f"{with_indent}  cache: '{'pip' if tool == 'python' else 'npm'}'")
+        body.append(f"{with_indent}  cache: '{CACHE_KEY[tool]}'")
         out.extend(body)
         added += 1
         i = j
