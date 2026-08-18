@@ -23,6 +23,13 @@ on:
       - 'scripts/r2/**'
       - '.github/workflows/r2-data-truth-hardening.yml'
 
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   POSTGRES_USER: skeldir_r2_test
   POSTGRES_PASSWORD: skeldir_r2_test_password

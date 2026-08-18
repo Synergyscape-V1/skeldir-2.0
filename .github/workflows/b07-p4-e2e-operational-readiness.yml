@@ -1,11 +1,19 @@
 name: b07-p4-e2e-operational-readiness
 
 on:
+  merge_group:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   b07_p4_closure_pack:
@@ -31,6 +39,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: 'pip'
 
       - name: Install dependencies
         run: |

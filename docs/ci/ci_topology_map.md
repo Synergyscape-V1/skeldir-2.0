@@ -95,6 +95,8 @@
 - `m0-maintainability-scope-lock`
 - `validate-ops-runbooks`
 - `runtime-ops-proofs`
+- `Checkout Code`
+- `CI Physics Guard`
 
 ## Jobs That Call scripts/ci Enforcers
 

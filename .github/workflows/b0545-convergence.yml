@@ -1,6 +1,7 @@
 name: b0545-convergence
 
 on:
+  merge_group:
   pull_request:
     paths:
       - ".github/workflows/b0545-convergence.yml"
@@ -8,6 +9,13 @@ on:
       - "alembic/**"
       - "scripts/**"
   workflow_dispatch:
+
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   b0545-convergence:
@@ -47,6 +55,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: 'pip'
 
       - name: Install dependencies
         run: |

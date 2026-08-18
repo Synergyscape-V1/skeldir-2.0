@@ -1,6 +1,7 @@
 name: b11-p4-db-provider-ci-audit-adjudication
 
 on:
+  merge_group:
   pull_request:
     branches: [main]
   pull_request_target:
@@ -8,6 +9,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -55,6 +63,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: 'pip'
 
       - name: Install backend deps
         run: |

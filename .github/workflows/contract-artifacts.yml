@@ -5,6 +5,7 @@ name: Contract Artifacts CI
 # Sequence: Bundling -> Integrity -> Provider -> Docs
 
 on:
+  merge_group:
   workflow_dispatch:
   push:
     branches:
@@ -28,6 +29,13 @@ on:
       - 'backend/app/schemas/**/*.py'
       - 'scripts/contracts/**'
       - '.github/workflows/contract-artifacts.yml'
+
+concurrency:
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Job 1: Bundle and validate contracts
@@ -82,11 +90,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
       
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Download bundled artifacts
         uses: actions/download-artifact@v4
@@ -144,6 +154,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Download bundled artifacts
         uses: actions/download-artifact@v4
@@ -183,6 +194,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Install Node dependencies
         run: |
