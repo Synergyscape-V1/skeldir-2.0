@@ -19,6 +19,9 @@ on:
       - 'backend/app/trust/**'
       - 'backend/app/confidence_projection/**'
       - 'backend/app/bayesian/fit_execution.py'
+      - 'backend/app/bayesian/fit_claim.py'
+      - 'backend/app/bayesian/runtime_state.py'
+      - 'backend/app/bayesian/e2e_harness.py'
       - 'backend/app/bayesian/models.py'
       - 'backend/app/bayesian/repository.py'
       - 'backend/app/bayesian/source_snapshot.py'
@@ -28,6 +31,7 @@ on:
       - 'alembic/versions/007_skeldir_foundation/**'
       - 'contracts/trust-api/**'
       - 'scripts/ci/validate_b25_p13_confidence_truth.py'
+      - 'scripts/ci/validate_b25_p13_c4_closure.py'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
 
@@ -115,11 +119,15 @@ jobs:
           grep -E "^p13_negative_controls_fired=18$" /tmp/b25_p13_e2e.out
           grep -E "^p13_money_columns_integer_not_null=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_route_level_denials=2$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_confidence_semantic_truth_cases=9$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_confidence_semantic_truth_cases=10$" /tmp/b25_p13_e2e.out
           grep -E "^p13_confidence_governed_source_tables=7$" /tmp/b25_p13_e2e.out
           grep -E "^p13_confidence_physical_read_tables=3$" /tmp/b25_p13_e2e.out
           grep -E "^p13_replay_denied=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_scope_denied=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c4_db_invalid_available_rejected=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c4_db_invalid_state_mutations_rejected=5$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c4_authority_transaction_rollback=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c4_temporal_e2e=1$" /tmp/b25_p13_e2e.out
 
       - name: P13 C3 confidence authority and semantic falsifiers
         run: |
@@ -130,6 +138,18 @@ jobs:
             /tmp/b25_p13_confidence_truth.out
           grep -E "^confidence_truth_negative_controls_fired=12$" \
             /tmp/b25_p13_confidence_truth.out
+
+      - name: P13 C4 state, temporal, freshness, and executable-authority closure
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p13_c4_closure.py --negative-control \
+            | tee /tmp/b25_p13_c4_closure.out
+          grep -E "^B25_P13_C4_CLOSURE_VALIDATION_PASS$" \
+            /tmp/b25_p13_c4_closure.out
+          grep -E "^p13_c4_negative_controls_fired=10$" \
+            /tmp/b25_p13_c4_closure.out
+          grep -E "^p13_c4_executable_dependency_controls=1$" \
+            /tmp/b25_p13_c4_closure.out
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody
       # reads, so the manifest is asserted here as well as inside the test.

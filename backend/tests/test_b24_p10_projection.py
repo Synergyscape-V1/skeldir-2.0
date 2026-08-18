@@ -26,11 +26,27 @@ VALIDATOR = ROOT / "scripts/ci/validate_b24_p10_projection.py"
 
 
 def test_b24_p10_persisted_classification_is_version_and_semantics_bound() -> None:
+    classified_at = datetime.now(timezone.utc)
+    source_hash = "a" * 64
     valid = persisted_confidence_decision(
         confidence_bucket="high",
         confidence_bucket_reason="narrow_interval",
         confidence_policy_version=CONFIDENCE_POLICY_VERSION,
         confidence_semantics_version=CONFIDENCE_SEMANTICS_VERSION,
+        deterministic_revenue_minor=10_000,
+        deterministic_row_count=2,
+        match_verdict_count=2,
+        currency_count=1,
+        confidence_classified_at=classified_at,
+        confidence_evidence_snapshot_hash=source_hash,
+        source_snapshot_hash=source_hash,
+        source_read_started_at=classified_at,
+        source_read_completed_at=classified_at,
+        fit_status="succeeded",
+        data_completeness_status="complete",
+        fallback_applied=False,
+        diagnostic_status="passed",
+        credible_interval_status="available",
     )
     assert valid.confidence_available is True
     assert valid.confidence_bucket is ConfidenceBucket.HIGH

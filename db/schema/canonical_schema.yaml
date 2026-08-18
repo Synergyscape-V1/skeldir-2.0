@@ -749,6 +749,9 @@ tables:
       confidence_match_verdict_count: {type: BIGINT, nullable: true}
       confidence_currency_count: {type: INTEGER, nullable: true}
       confidence_classified_at: {type: TIMESTAMPTZ, nullable: true}
+      confidence_evidence_snapshot_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
+      source_read_started_at: {type: TIMESTAMPTZ, nullable: true}
+      source_read_completed_at: {type: TIMESTAMPTZ, nullable: true}
       artifact_ref: {type: VARCHAR(255), nullable: true}
       artifact_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
       created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
@@ -760,6 +763,11 @@ tables:
       - {name: ck_bayesian_model_fits_confidence_row_count_nonnegative, type: CHECK, definition: "confidence_deterministic_row_count is null or confidence_deterministic_row_count >= 0"}
       - {name: ck_bayesian_model_fits_confidence_verdict_count_nonnegative, type: CHECK, definition: "confidence_match_verdict_count is null or confidence_match_verdict_count >= 0"}
       - {name: ck_bayesian_model_fits_confidence_currency_count_nonnegative, type: CHECK, definition: "confidence_currency_count is null or confidence_currency_count >= 0"}
+      - {name: ck_bayesian_model_fits_confidence_evidence_hash_sha256, type: CHECK, definition: "confidence_evidence_snapshot_hash is null or matches ^[a-f0-9]{64}$", validation: "NOT VALID for historical compatibility; enforced on new and updated rows"}
+      - {name: ck_bayesian_model_fits_source_read_pair_order, type: CHECK, definition: "source read timestamps are both null or both present with started <= completed", validation: "NOT VALID for historical compatibility; enforced on new and updated rows"}
+      - {name: ck_bayesian_model_fits_confidence_evidence_tuple, type: CHECK, definition: "frozen confidence evidence is wholly absent or wholly present and bound to source_snapshot_hash", validation: "NOT VALID for historical compatibility; enforced on new and updated rows"}
+      - {name: ck_bayesian_model_fits_confidence_classification_state, type: CHECK, definition: "classification is wholly absent or reason/version/classified_at complete under current policy and semantics", validation: "NOT VALID for historical compatibility; enforced on new and updated rows"}
+      - {name: ck_bayesian_model_fits_available_confidence_complete, type: CHECK, definition: "low/medium/high requires succeeded complete non-fallback state, passed available diagnostics, artifact references, complete snapshot-bound evidence, <=1 currency, classification after source read, ordered source-read interval, and exact bucket/reason pairing", validation: "NOT VALID for historical compatibility; enforced on new and updated rows"}
       - {name: bayesian_model_fits_pkey, type: PRIMARY KEY, columns: [tenant_id, id]}
       - {name: uq_bayesian_model_fits_tenant_model_window_snapshot, type: UNIQUE, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash]}
     indexes:

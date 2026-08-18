@@ -9,6 +9,7 @@ facade over this module so B2.4 and B2.5 cannot drift into separate classifiers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
@@ -255,6 +256,20 @@ def persisted_confidence_decision(
     confidence_bucket_reason: str | None,
     confidence_policy_version: str | None,
     confidence_semantics_version: str | None,
+    deterministic_revenue_minor: object = None,
+    deterministic_row_count: object = None,
+    match_verdict_count: object = None,
+    currency_count: object = None,
+    confidence_classified_at: object = None,
+    confidence_evidence_snapshot_hash: str | None = None,
+    source_snapshot_hash: str | None = None,
+    source_read_started_at: object = None,
+    source_read_completed_at: object = None,
+    fit_status: str | None = None,
+    data_completeness_status: str | None = None,
+    fallback_applied: bool | None = None,
+    diagnostic_status: str | None = None,
+    credible_interval_status: str | None = None,
 ) -> ConfidencePolicyDecision:
     """Validate and project a B2.4-persisted classification without recomputing it."""
 
@@ -266,18 +281,59 @@ def persisted_confidence_decision(
     except ValueError:
         return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
 
-    available_reasons = {
-        ConfidenceBucketReason.NARROW_INTERVAL,
-        ConfidenceBucketReason.MODERATE_INTERVAL,
-        ConfidenceBucketReason.WIDE_INTERVAL,
+    available_pairs = {
+        ConfidenceBucket.HIGH: ConfidenceBucketReason.NARROW_INTERVAL,
+        ConfidenceBucket.MEDIUM: ConfidenceBucketReason.MODERATE_INTERVAL,
+        ConfidenceBucket.LOW: ConfidenceBucketReason.WIDE_INTERVAL,
     }
-    if (bucket is ConfidenceBucket.UNAVAILABLE) == (reason in available_reasons):
+    if bucket is ConfidenceBucket.UNAVAILABLE:
+        if reason in set(available_pairs.values()):
+            return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
+    elif available_pairs.get(bucket) is not reason:
         return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
     if (
         confidence_policy_version != CONFIDENCE_POLICY_VERSION
         or confidence_semantics_version != CONFIDENCE_SEMANTICS_VERSION
     ):
         return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
+    if bucket is not ConfidenceBucket.UNAVAILABLE:
+        integer_evidence = (
+            deterministic_revenue_minor,
+            deterministic_row_count,
+            match_verdict_count,
+            currency_count,
+        )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in integer_evidence
+        ):
+            return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
+        assert isinstance(deterministic_revenue_minor, int)
+        assert isinstance(deterministic_row_count, int)
+        assert isinstance(match_verdict_count, int)
+        assert isinstance(currency_count, int)
+        if (
+            deterministic_row_count < 0
+            or match_verdict_count < 0
+            or currency_count < 0
+            or currency_count > 1
+        ):
+            return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
+        if (
+            not isinstance(confidence_classified_at, datetime)
+            or not confidence_evidence_snapshot_hash
+            or confidence_evidence_snapshot_hash != source_snapshot_hash
+            or not isinstance(source_read_started_at, datetime)
+            or not isinstance(source_read_completed_at, datetime)
+            or source_read_completed_at < source_read_started_at
+            or confidence_classified_at < source_read_completed_at
+            or fit_status != "succeeded"
+            or data_completeness_status != "complete"
+            or fallback_applied is not False
+            or diagnostic_status != "passed"
+            or credible_interval_status != "available"
+        ):
+            return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
     return ConfidencePolicyDecision(
         confidence_available=bucket is not ConfidenceBucket.UNAVAILABLE,
         confidence_bucket=bucket,

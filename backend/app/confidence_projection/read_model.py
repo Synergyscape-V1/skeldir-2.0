@@ -18,6 +18,7 @@ from app.confidence_projection.policy import (
     ConfidencePolicyDecision,
     persisted_confidence_decision,
 )
+from app.confidence_projection.sql_authority import assert_executable_read_authority
 from app.trust.subject_authority import subject_authority_definition
 
 
@@ -50,11 +51,15 @@ class B24ConfidenceProjectionRead:
     artifact_hash: str | None
     artifact_lifecycle_status: str | None
     observed_at: datetime
+    evidence_snapshot_at: datetime | None
+    source_read_started_at: datetime | None
+    source_read_completed_at: datetime | None
     deterministic_revenue_minor: int | None
     deterministic_row_count: int | None
     match_verdict_count: int | None
     currency_count: int | None
     confidence_classified_at: datetime | None
+    confidence_evidence_snapshot_hash: str | None
     snapshot_freshness: SnapshotFreshness
     has_snapshot_lineage: bool
     has_later_dirty_evidence: bool
@@ -91,6 +96,7 @@ _EXACT_FIT_PROJECTION_SQL = text(
             fit.updated_at,
             fit.diagnostic_status,
             fit.diagnostic_failure_reason,
+            fit.credible_interval_status,
             fit.confidence_bucket,
             fit.confidence_bucket_reason,
             fit.confidence_policy_version,
@@ -100,6 +106,9 @@ _EXACT_FIT_PROJECTION_SQL = text(
             fit.confidence_match_verdict_count,
             fit.confidence_currency_count,
             fit.confidence_classified_at,
+            fit.confidence_evidence_snapshot_hash,
+            fit.source_read_started_at,
+            fit.source_read_completed_at,
             fit.artifact_ref AS fit_artifact_ref,
             fit.artifact_hash AS fit_artifact_hash
         FROM public.bayesian_model_fits fit
@@ -153,7 +162,10 @@ _EXACT_FIT_PROJECTION_SQL = text(
                   AND dirty.model_version = requested_fit.model_version
                   AND dirty.source_window_start = requested_fit.source_window_start
                   AND dirty.source_window_end = requested_fit.source_window_end
-                  AND dirty.observed_at > requested_fit.created_at
+                  AND dirty.observed_at > COALESCE(
+                      requested_fit.source_read_started_at,
+                      requested_fit.created_at
+                  )
                   AND dirty.source_snapshot_hash IS DISTINCT FROM requested_fit.source_snapshot_hash
             ) AS has_later_dirty_evidence,
             EXISTS (
@@ -166,7 +178,6 @@ _EXACT_FIT_PROJECTION_SQL = text(
                   AND newer_fit.source_window_end = requested_fit.source_window_end
                   AND newer_fit.source_snapshot_hash <> requested_fit.source_snapshot_hash
                   AND newer_fit.created_at > requested_fit.created_at
-                  AND newer_fit.status IN ('queued', 'running', 'succeeded')
             ) AS has_newer_fit
         FROM requested_fit
     )
@@ -199,7 +210,11 @@ def _unavailable(reason: ConfidenceBucketReason) -> ConfidencePolicyDecision:
 
 
 def _snapshot_freshness(mapping: dict[str, object]) -> SnapshotFreshness:
-    if not bool(mapping.get("has_snapshot_lineage")):
+    if (
+        not bool(mapping.get("has_snapshot_lineage"))
+        or not isinstance(mapping.get("source_read_started_at"), datetime)
+        or not isinstance(mapping.get("source_read_completed_at"), datetime)
+    ):
         return "unknown"
     if bool(mapping.get("has_later_dirty_evidence")) or bool(
         mapping.get("has_newer_fit")
@@ -217,14 +232,6 @@ def _projection_decision(
         return _unavailable(ConfidenceBucketReason.SOURCE_SNAPSHOT_CHANGED)
     if str(mapping.get("model_type") or "") not in SUPPORTED_CONFIDENCE_MODEL_TYPES:
         return _unavailable(ConfidenceBucketReason.UNSUPPORTED_MODEL_TYPE)
-    currency_count = mapping.get("confidence_currency_count")
-    if currency_count is not None and (
-        isinstance(currency_count, bool) or not isinstance(currency_count, int)
-    ):
-        return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
-    if isinstance(currency_count, int) and currency_count > 1:
-        return _unavailable(ConfidenceBucketReason.MULTI_CURRENCY_UNSUPPORTED)
-
     persisted = persisted_confidence_decision(
         confidence_bucket=(
             str(mapping["confidence_bucket"])
@@ -246,14 +253,60 @@ def _projection_decision(
             if mapping.get("confidence_semantics_version") is not None
             else None
         ),
+        deterministic_revenue_minor=mapping.get(
+            "confidence_deterministic_revenue_minor"
+        ),
+        deterministic_row_count=mapping.get("confidence_deterministic_row_count"),
+        match_verdict_count=mapping.get("confidence_match_verdict_count"),
+        currency_count=mapping.get("confidence_currency_count"),
+        confidence_classified_at=mapping.get("confidence_classified_at"),
+        confidence_evidence_snapshot_hash=(
+            str(mapping["confidence_evidence_snapshot_hash"])
+            if mapping.get("confidence_evidence_snapshot_hash") is not None
+            else None
+        ),
+        source_snapshot_hash=(
+            str(mapping["source_snapshot_hash"])
+            if mapping.get("source_snapshot_hash") is not None
+            else None
+        ),
+        source_read_started_at=mapping.get("source_read_started_at"),
+        source_read_completed_at=mapping.get("source_read_completed_at"),
+        fit_status=(
+            str(mapping["fit_status"])
+            if mapping.get("fit_status") is not None
+            else None
+        ),
+        data_completeness_status=(
+            str(mapping["data_completeness_status"])
+            if mapping.get("data_completeness_status") is not None
+            else None
+        ),
+        fallback_applied=(
+            bool(mapping["fallback_applied"])
+            if isinstance(mapping.get("fallback_applied"), bool)
+            else None
+        ),
+        diagnostic_status=(
+            str(mapping["diagnostic_status"])
+            if mapping.get("diagnostic_status") is not None
+            else None
+        ),
+        credible_interval_status=(
+            str(mapping["credible_interval_status"])
+            if mapping.get("credible_interval_status") is not None
+            else None
+        ),
     )
     if not persisted.confidence_available:
         return persisted
     lifecycle = mapping.get("artifact_lifecycle_status")
     if lifecycle == "pruned":
         return _unavailable(ConfidenceBucketReason.ARTIFACT_PRUNED)
-    if lifecycle != "active" or not mapping.get("artifact_ref") or not mapping.get(
-        "artifact_hash"
+    if (
+        lifecycle != "active"
+        or not mapping.get("artifact_ref")
+        or not mapping.get("artifact_hash")
     ):
         return _unavailable(ConfidenceBucketReason.ARTIFACT_UNAVAILABLE)
     return persisted
@@ -267,6 +320,10 @@ async def read_b24_confidence_projection_for_fit(
 ) -> B24ConfidenceProjectionRead | None:
     """Project one exact fit without live-source aggregation or reclassification."""
 
+    assert_executable_read_authority(
+        str(_EXACT_FIT_PROJECTION_SQL),
+        expected_tables=CONFIDENCE_PROJECTION_PHYSICAL_READ_TABLES,
+    )
     result = await session.execute(
         _EXACT_FIT_PROJECTION_SQL,
         {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
@@ -327,6 +384,9 @@ async def read_b24_confidence_projection_for_fit(
             else None
         ),
         observed_at=observed_at,
+        evidence_snapshot_at=mapping.get("source_read_started_at"),
+        source_read_started_at=mapping.get("source_read_started_at"),
+        source_read_completed_at=mapping.get("source_read_completed_at"),
         deterministic_revenue_minor=_nullable_int(
             "confidence_deterministic_revenue_minor"
         ),
@@ -334,6 +394,11 @@ async def read_b24_confidence_projection_for_fit(
         match_verdict_count=_nullable_int("confidence_match_verdict_count"),
         currency_count=_nullable_int("confidence_currency_count"),
         confidence_classified_at=mapping.get("confidence_classified_at"),
+        confidence_evidence_snapshot_hash=(
+            str(mapping["confidence_evidence_snapshot_hash"])
+            if mapping.get("confidence_evidence_snapshot_hash") is not None
+            else None
+        ),
         snapshot_freshness=freshness,
         has_snapshot_lineage=bool(mapping.get("has_snapshot_lineage")),
         has_later_dirty_evidence=bool(mapping.get("has_later_dirty_evidence")),

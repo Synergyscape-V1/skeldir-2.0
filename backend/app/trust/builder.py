@@ -280,6 +280,15 @@ def _confidence_projection_payload(
     tenant_id_hash = tenant_hash(request.tenant_id)
     subject_ref_hash = _subject_ref_hash(request.subject_ref)
     source_snapshot_hash = _tag_b24_hash(projection.source_snapshot_hash)
+    evidence_snapshot_at = projection.evidence_snapshot_at
+    source_read_started_at = projection.source_read_started_at
+    source_read_completed_at = projection.source_read_completed_at
+    temporal_authority_available = (
+        evidence_snapshot_at is not None
+        and source_read_started_at is not None
+        and source_read_completed_at is not None
+        and source_read_completed_at >= source_read_started_at
+    )
     created_at = _context_datetime(
         request.request_context, "created_at", projection.observed_at
     )
@@ -298,11 +307,34 @@ def _confidence_projection_payload(
         fallback_applied,
         fallback_reason,
     ) = _confidence_projection_metadata(source)
+    if (
+        not temporal_authority_available
+        and confidence_metadata["confidence_status"] == "available"
+    ):
+        confidence_metadata = {
+            **confidence_metadata,
+            "confidence_status": "unavailable",
+            "confidence_authority": "explicitly_unavailable",
+            "diagnostics_status": "unavailable",
+            "unavailable_reason": "confidence_unavailable",
+        }
+        truth_type = "degraded_or_unavailable_truth"
+        data_completeness_status = "insufficient_evidence"
+        fallback_applied = True
+        fallback_reason = "confidence_unavailable"
     fit_ref = f"urn:skeldir:bayesian_model_fits:{projection.fit_id}"
     provenance_chain = [
         {
-            "provenance_type": "b24_source_snapshot",
-            "authority_table": "b24_confidence_projection",
+            "provenance_type": (
+                "b24_source_snapshot"
+                if temporal_authority_available
+                else "explicit_unavailable"
+            ),
+            "authority_table": (
+                "b24_confidence_projection"
+                if temporal_authority_available
+                else "bayesian_model_fits"
+            ),
             "source_ref": (
                 f"urn:skeldir:b24_source_snapshot:{projection.source_snapshot_hash}"
             ),
@@ -313,10 +345,20 @@ def _confidence_projection_payload(
                     "source_window_start": utc_second(projection.source_window_start),
                     "source_window_end": utc_second(projection.source_window_end),
                     "source_snapshot_hash": projection.source_snapshot_hash,
+                    "source_read_started_at": (
+                        utc_second(source_read_started_at)
+                        if source_read_started_at is not None
+                        else None
+                    ),
+                    "source_read_completed_at": (
+                        utc_second(source_read_completed_at)
+                        if source_read_completed_at is not None
+                        else None
+                    ),
                 }
             ),
             "source_snapshot_hash": source_snapshot_hash,
-            "observed_at": utc_second(projection.observed_at),
+            "observed_at": utc_second(evidence_snapshot_at or projection.observed_at),
             "display_metadata": {
                 "text_trust_class": "none",
                 "raw_text_sha256": None,
@@ -365,6 +407,9 @@ def _confidence_projection_payload(
                         if projection.confidence_classified_at is not None
                         else None
                     ),
+                    "confidence_evidence_snapshot_hash": (
+                        projection.confidence_evidence_snapshot_hash
+                    ),
                 }
             ),
             "source_snapshot_hash": source_snapshot_hash,
@@ -378,16 +423,12 @@ def _confidence_projection_payload(
         {
             "provenance_type": "b24_snapshot_freshness",
             "authority_table": "b24_dirty_events",
-            "source_ref": (
-                f"urn:skeldir:b24_snapshot_freshness:{projection.fit_id}"
-            ),
+            "source_ref": (f"urn:skeldir:b24_snapshot_freshness:{projection.fit_id}"),
             "source_ref_hash": tagged_sha256(
                 {
                     "snapshot_freshness": projection.snapshot_freshness,
                     "has_snapshot_lineage": projection.has_snapshot_lineage,
-                    "has_later_dirty_evidence": (
-                        projection.has_later_dirty_evidence
-                    ),
+                    "has_later_dirty_evidence": (projection.has_later_dirty_evidence),
                     "has_newer_fit": projection.has_newer_fit,
                 }
             ),
@@ -428,7 +469,7 @@ def _confidence_projection_payload(
         },
     ]
     artifact_available = (
-        projection.decision.confidence_available
+        confidence_metadata["confidence_status"] == "available"
         and projection.artifact_ref is not None
         and projection.artifact_hash is not None
     )
@@ -441,11 +482,31 @@ def _confidence_projection_payload(
         else None
     )
     authority = subject_authority_definition("confidence_projection")
-    freshness_seconds = max(
-        0,
-        min(31536000, int((created_at - projection.observed_at).total_seconds())),
+    freshness_seconds = (
+        max(
+            0,
+            min(31536000, int((created_at - evidence_snapshot_at).total_seconds())),
+        )
+        if temporal_authority_available and evidence_snapshot_at is not None
+        else None
     )
-    if projection.snapshot_freshness == "current":
+    source_read_skew_ms = (
+        max(
+            0,
+            min(
+                86400000,
+                int(
+                    (source_read_completed_at - source_read_started_at).total_seconds()
+                    * 1000
+                ),
+            ),
+        )
+        if temporal_authority_available
+        and source_read_started_at is not None
+        and source_read_completed_at is not None
+        else None
+    )
+    if projection.snapshot_freshness == "current" and temporal_authority_available:
         staleness_status = "current"
         consistency_status = "consistent"
     elif projection.snapshot_freshness == "stale":
@@ -481,7 +542,7 @@ def _confidence_projection_payload(
         "truth_authority": {
             "authority_class": (
                 "confidence_metadata_projection"
-                if projection.decision.confidence_available
+                if confidence_metadata["confidence_status"] == "available"
                 else "refusal_or_degraded_state"
             ),
             "source_snapshot_hash": source_snapshot_hash,
@@ -495,13 +556,25 @@ def _confidence_projection_payload(
         "fallback_applied": fallback_applied,
         "fallback_reason": fallback_reason,
         "evidence_temporal_boundary": {
-            "evidence_snapshot_at": utc_second(projection.observed_at),
-            "source_read_started_at": utc_second(created_at),
-            "source_read_completed_at": utc_second(created_at),
+            "evidence_snapshot_at": (
+                utc_second(evidence_snapshot_at)
+                if evidence_snapshot_at is not None
+                else None
+            ),
+            "source_read_started_at": (
+                utc_second(source_read_started_at)
+                if source_read_started_at is not None
+                else None
+            ),
+            "source_read_completed_at": (
+                utc_second(source_read_completed_at)
+                if source_read_completed_at is not None
+                else None
+            ),
             "data_freshness_seconds": freshness_seconds,
             "staleness_status": staleness_status,
             "evidence_snapshot_hash": source_snapshot_hash,
-            "max_source_read_skew_ms": 0,
+            "max_source_read_skew_ms": source_read_skew_ms,
             "snapshot_consistency_status": consistency_status,
         },
         "audit_ref": "urn:skeldir:audit:p5_unsigned_builder_unissued",

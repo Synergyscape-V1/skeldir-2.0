@@ -36,7 +36,7 @@ import base64
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from pathlib import Path
@@ -45,6 +45,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api import trust_api, trust_keys
@@ -374,6 +375,9 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "bucket": "high",
             "reason": "narrow_interval",
             "currency_count": 1,
+            "source_read_started_at": end + timedelta(minutes=1),
+            "source_read_completed_at": end + timedelta(minutes=2),
+            "recorded_at": end + timedelta(minutes=12),
         },
         "cold_start": {
             "status": "fallback_only",
@@ -403,7 +407,7 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
         },
         "snapshot_stale": {
             "status": "succeeded",
-            "completeness": "stale",
+            "completeness": "complete",
             "fallback": False,
             "fallback_reason": None,
             "diagnostic": "passed",
@@ -449,8 +453,8 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "diagnostic_reason": None,
             "interval": "available",
             "lifecycle": "active",
-            "bucket": "high",
-            "reason": "narrow_interval",
+            "bucket": "unavailable",
+            "reason": "multi_currency_unsupported",
             "currency_count": 2,
             "window_start": multi_currency_start,
             "window_end": multi_currency_end,
@@ -469,6 +473,36 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "bucket": "high",
             "reason": "narrow_interval",
             "currency_count": 1,
+        },
+        "failed_refit_base": {
+            "status": "succeeded",
+            "completeness": "complete",
+            "fallback": False,
+            "fallback_reason": None,
+            "diagnostic": "passed",
+            "diagnostic_reason": None,
+            "interval": "available",
+            "lifecycle": "active",
+            "bucket": "high",
+            "reason": "narrow_interval",
+            "currency_count": 1,
+            "model_version": "p13-failed-refit-lineage-v1",
+        },
+        "newer_failed_refit": {
+            "status": "failed",
+            "completeness": "complete",
+            "fallback": True,
+            "fallback_reason": "worker_failure",
+            "diagnostic": "unavailable",
+            "diagnostic_reason": "skipped_non_sampled",
+            "interval": "not_available",
+            "lifecycle": None,
+            "bucket": "unavailable",
+            "reason": "worker_failure",
+            "currency_count": 1,
+            "model_version": "p13-failed-refit-lineage-v1",
+            "recorded_at": end + timedelta(minutes=10),
+            "emit_dirty": False,
         },
         "artifact_rejected": {
             "status": "succeeded",
@@ -489,6 +523,10 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
         fit_id = uuid4()
         case_start = case.get("window_start", start)
         case_end = case.get("window_end", end)
+        case_model_version = case.get("model_version", f"p13-{name}-v1")
+        recorded_at = case.get("recorded_at", case_end)
+        source_read_started_at = case.get("source_read_started_at", recorded_at)
+        source_read_completed_at = case.get("source_read_completed_at", recorded_at)
         snapshot_hash = f"{index:x}" * 64
         lifecycle = case["lifecycle"]
         artifact_hash = hashlib.sha256(f"p13-{name}".encode()).hexdigest()
@@ -516,6 +554,8 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     confidence_deterministic_row_count,
                     confidence_match_verdict_count, confidence_currency_count,
                     confidence_classified_at,
+                    confidence_evidence_snapshot_hash,
+                    source_read_started_at, source_read_completed_at,
                     artifact_ref, artifact_hash, created_at, updated_at
                 ) VALUES (
                     :fit_id, :tenant_id, 'bayesian_attribution_confidence', :model_version,
@@ -527,11 +567,12 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     :interval_status, :diagnostic_status,
                     :diagnostic_reason, :diagnostic_policy,
                     :target_policy, :interval_policy,
-                    :confidence_bucket, :confidence_bucket_reason,
-                    'b24-p10-confidence-policy-v1',
-                    'b24-p10-confidence-semantics-v1',
-                    :deterministic_revenue_minor, :deterministic_row_count,
-                    1, :currency_count, :completed_at,
+                    NULL, NULL,
+                    NULL, NULL,
+                    NULL, NULL,
+                    NULL, NULL, NULL,
+                    NULL,
+                    :source_read_started_at, :source_read_completed_at,
                     :artifact_ref, :artifact_hash, :completed_at, :completed_at
                 )
                 """
@@ -539,7 +580,7 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             {
                 "fit_id": str(fit_id),
                 "tenant_id": str(tenant_id),
-                "model_version": f"p13-{name}-v1",
+                "model_version": case_model_version,
                 "window_start": case_start,
                 "window_end": case_end,
                 "snapshot_hash": snapshot_hash,
@@ -548,7 +589,9 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                 "completeness": case["completeness"],
                 "fallback": case["fallback"],
                 "fallback_reason": case["fallback_reason"],
-                "completed_at": case_end,
+                "completed_at": recorded_at,
+                "source_read_started_at": source_read_started_at,
+                "source_read_completed_at": source_read_completed_at,
                 "r_hat": 1.0 if case["diagnostic"] == "passed" else 1.2,
                 "ess": 500 if case["diagnostic"] == "passed" else 100,
                 "divergences": 0,
@@ -674,15 +717,34 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             text(
                 """
                 UPDATE public.bayesian_model_fits
-                SET status = :status, updated_at = :completed_at
+                SET status = :status,
+                    confidence_bucket = :confidence_bucket,
+                    confidence_bucket_reason = :confidence_bucket_reason,
+                    confidence_policy_version = 'b24-p10-confidence-policy-v1',
+                    confidence_semantics_version = 'b24-p10-confidence-semantics-v1',
+                    confidence_deterministic_revenue_minor = :deterministic_revenue_minor,
+                    confidence_deterministic_row_count = :deterministic_row_count,
+                    confidence_match_verdict_count = 1,
+                    confidence_currency_count = :currency_count,
+                    confidence_classified_at = :completed_at,
+                    confidence_evidence_snapshot_hash = :snapshot_hash,
+                    updated_at = :completed_at
                 WHERE tenant_id = :tenant_id AND id = :fit_id
                 """
             ),
             {
                 "status": case["status"],
-                "completed_at": case_end,
+                "completed_at": recorded_at,
                 "tenant_id": str(tenant_id),
                 "fit_id": str(fit_id),
+                "confidence_bucket": case["bucket"],
+                "confidence_bucket_reason": case["reason"],
+                "deterministic_revenue_minor": case.get(
+                    "deterministic_revenue_minor", 10000
+                ),
+                "deterministic_row_count": case.get("deterministic_row_count", 1),
+                "currency_count": case["currency_count"],
+                "snapshot_hash": snapshot_hash,
             },
         )
         if lifecycle in {"active", "pruned", "rejected"}:
@@ -723,7 +785,7 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     "created_at": case_end,
                 },
             )
-        if name != "source_authority_unknown":
+        if name != "source_authority_unknown" and case.get("emit_dirty", True):
             await connection.execute(
                 text(
                     """
@@ -742,11 +804,11 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                 {
                     "id": str(uuid4()),
                     "tenant_id": str(tenant_id),
-                    "model_version": f"p13-{name}-v1",
+                    "model_version": case_model_version,
                     "window_start": case_start,
                     "window_end": case_end,
                     "snapshot_hash": snapshot_hash,
-                    "observed_at": case_end,
+                    "observed_at": recorded_at,
                 },
             )
         if name == "snapshot_stale":
@@ -776,6 +838,112 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                 },
             )
         refs[name] = f"urn:skeldir:confidence_projection:{fit_id}"
+
+    # C4-A / NC-C4-01: the last dispatch claim is still the transaction-local
+    # write capability, so this is the real runtime-role transition Nicholas
+    # used. The new database state machine must reject the incomplete available
+    # state independently of every Python producer and reader.
+    last_fit_id = UUID(refs["artifact_rejected"].rsplit(":", 1)[-1])
+    rollback_artifact_hash = hashlib.sha256(b"p13-c4-atomic-rollback").hexdigest()
+    rollback_artifact_ref = (
+        f"b24://artifact/{tenant_id}/{last_fit_id}/diagnostics/"
+        f"{rollback_artifact_hash[:12]}"
+    )
+    with pytest.raises(
+        IntegrityError,
+        match="ck_bayesian_model_fits_available_confidence_complete",
+    ):
+        async with connection.begin_nested():
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.bayesian_artifacts (
+                        id, tenant_id, fit_id, artifact_ref, artifact_hash,
+                        artifact_type, storage_backend, artifact_uri_internal,
+                        artifact_size_bytes, payload_bytes, payload_byte_count,
+                        compression, retention_class, lifecycle_status,
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :tenant_id, :fit_id, :artifact_ref, :artifact_hash,
+                        'diagnostics', 'postgres', :artifact_ref,
+                        2, :payload, 2,
+                        'none', 'standard', 'active', now(), now()
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid4()),
+                    "tenant_id": str(tenant_id),
+                    "fit_id": str(last_fit_id),
+                    "artifact_ref": rollback_artifact_ref,
+                    "artifact_hash": rollback_artifact_hash,
+                    "payload": b"{}",
+                },
+            )
+            await connection.execute(
+                text(
+                    """
+                    UPDATE public.bayesian_model_fits
+                    SET confidence_deterministic_revenue_minor = NULL,
+                        confidence_deterministic_row_count = NULL,
+                        confidence_match_verdict_count = NULL,
+                        confidence_currency_count = NULL,
+                        confidence_evidence_snapshot_hash = NULL
+                    WHERE tenant_id = :tenant_id AND id = :fit_id
+                    """
+                ),
+                {"tenant_id": str(tenant_id), "fit_id": str(last_fit_id)},
+            )
+    rolled_back_artifact_count = await connection.scalar(
+        text(
+            """
+            SELECT count(*)
+            FROM public.bayesian_artifacts
+            WHERE tenant_id = :tenant_id AND artifact_ref = :artifact_ref
+            """
+        ),
+        {"tenant_id": str(tenant_id), "artifact_ref": rollback_artifact_ref},
+    )
+    assert rolled_back_artifact_count == 0
+    invalid_state_mutations = (
+        (
+            "UPDATE public.bayesian_model_fits "
+            "SET confidence_classified_at = NULL "
+            "WHERE tenant_id = :tenant_id AND id = :fit_id",
+            "ck_bayesian_model_fits_confidence_classification_state",
+        ),
+        (
+            "UPDATE public.bayesian_model_fits "
+            "SET confidence_evidence_snapshot_hash = repeat('0', 64) "
+            "WHERE tenant_id = :tenant_id AND id = :fit_id",
+            "ck_bayesian_model_fits_confidence_evidence_tuple",
+        ),
+        (
+            "UPDATE public.bayesian_model_fits "
+            "SET source_read_started_at = source_read_completed_at + interval '1 second' "
+            "WHERE tenant_id = :tenant_id AND id = :fit_id",
+            "ck_bayesian_model_fits_source_read_pair_order",
+        ),
+        (
+            "UPDATE public.bayesian_model_fits "
+            "SET confidence_bucket_reason = 'wide_interval' "
+            "WHERE tenant_id = :tenant_id AND id = :fit_id",
+            "ck_bayesian_model_fits_available_confidence_complete",
+        ),
+    )
+    for statement, constraint_name in invalid_state_mutations:
+        with pytest.raises(
+            IntegrityError,
+            match=(
+                f"({constraint_name}|"
+                "ck_bayesian_model_fits_available_confidence_complete)"
+            ),
+        ):
+            async with connection.begin_nested():
+                await connection.execute(
+                    text(statement),
+                    {"tenant_id": str(tenant_id), "fit_id": str(last_fit_id)},
+                )
     return refs
 
 
@@ -1138,6 +1306,12 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             available_confidence_envelope["confidence_metadata"]["confidence_status"]
             == "available"
         )
+        temporal = available_confidence_envelope["evidence_temporal_boundary"]
+        assert temporal["evidence_snapshot_at"] == "2026-06-02T00:01:00Z"
+        assert temporal["source_read_started_at"] == "2026-06-02T00:01:00Z"
+        assert temporal["source_read_completed_at"] == "2026-06-02T00:02:00Z"
+        assert temporal["max_source_read_skew_ms"] == 60_000
+        assert temporal["data_freshness_seconds"] >= 11 * 60
 
         # ---- Integer money authority (P13-G1, P13-H10) ---------------------
         # The envelope deliberately does NOT republish the revenue amount. The
@@ -1415,6 +1589,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             "source_authority_unknown",
             "multi_currency",
             "artifact_missing",
+            "failed_refit_base",
             "artifact_rejected",
         ]
         for offset in range(0, len(remaining_names), 2):
@@ -1447,6 +1622,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             "source_authority_unknown": ("unavailable", "confidence_unavailable"),
             "multi_currency": ("unavailable", "unsupported_financial_context"),
             "artifact_missing": ("degraded", "artifact_unavailable"),
+            "failed_refit_base": ("degraded", "source_snapshot_stale"),
             "artifact_rejected": ("degraded", "artifact_unavailable"),
         }
         for name, (expected_status, expected_reason) in confidence_expectations.items():
@@ -1891,11 +2067,12 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             "source_authority_unknown_fails_closed",
             "multi_currency_typed_unavailable",
             "missing_artifact_row_no_fit_fallback",
+            "newer_failed_refit_stales_prior_snapshot",
             "rejected_artifact_unavailable",
         }
-        assert len(confidence_envelopes) == len(semantic_truth_cases), (
-            confidence_envelopes.keys()
-        )
+        assert len(confidence_envelopes) == len(
+            semantic_truth_cases
+        ), confidence_envelopes.keys()
         assert reachable["confidence_status"] == {
             "available",
             "unavailable",
@@ -2243,6 +2420,10 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
     print("p13_route_level_denials=2")
     print("p13_replay_denied=1")
     print("p13_scope_denied=1")
+    print("p13_c4_db_invalid_available_rejected=1")
+    print("p13_c4_db_invalid_state_mutations_rejected=5")
+    print("p13_c4_authority_transaction_rollback=1")
+    print("p13_c4_temporal_e2e=1")
     print(f"p13_negative_controls_fired={len(controls)}")
     print(f"p13_downgrade_cases_failed_closed={len(downgrade_results)}")
     print(f"p13_tamper_failure_classes={json.dumps(failure_classes, sort_keys=True)}")

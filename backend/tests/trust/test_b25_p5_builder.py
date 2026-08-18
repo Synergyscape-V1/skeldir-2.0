@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -139,11 +140,15 @@ def _confidence_source(
             artifact_hash=None if cold_start else "b" * 64,
             artifact_lifecycle_status="pruned" if pruned else "active",
             observed_at=now,
+            evidence_snapshot_at=now,
+            source_read_started_at=now,
+            source_read_completed_at=now,
             deterministic_revenue_minor=100_000,
             deterministic_row_count=3,
             match_verdict_count=1,
             currency_count=1,
             confidence_classified_at=now,
+            confidence_evidence_snapshot_hash="a" * 64,
             snapshot_freshness="stale" if stale else "current",
             has_snapshot_lineage=True,
             has_later_dirty_evidence=stale,
@@ -293,6 +298,88 @@ async def test_confidence_projection_maps_semantic_states_without_inference(
     assert provenance_types[4] in {"bayesian_artifact", "explicit_unavailable"}
     assert payload["confidence_metadata"]["confidence_score_basis_points"] is None
     assert str(tenant_id) not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_confidence_temporal_boundary_uses_true_snapshot_epoch_not_fit_completion() -> (
+    None
+):
+    tenant_id, fit_id = uuid4(), uuid4()
+    source = _confidence_source(
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        reason=ConfidenceBucketReason.NARROW_INTERVAL,
+        available=True,
+    )
+    snapshot_started = datetime(2026, 6, 29, 12, 0, 0, tzinfo=timezone.utc)
+    snapshot_completed = snapshot_started + timedelta(seconds=2)
+    fit_completed = snapshot_started + timedelta(hours=4)
+    created_at = snapshot_started + timedelta(hours=5, seconds=1)
+    source = ConfidenceProjectionSource(
+        projection=replace(
+            source.projection,
+            observed_at=fit_completed,
+            evidence_snapshot_at=snapshot_started,
+            source_read_started_at=snapshot_started,
+            source_read_completed_at=snapshot_completed,
+        )
+    )
+    request = TrustEnvelopeBuildRequest(
+        tenant_id=tenant_id,
+        subject_type="confidence_projection",
+        subject_ref=f"urn:skeldir:confidence_projection:{fit_id}",
+        request_context={
+            "created_at": created_at,
+            "valid_until": created_at + timedelta(hours=24),
+            "audience_id": "p13-c4-temporal-test",
+        },
+    )
+
+    result = await build_unsigned_trust_envelope(
+        FakeReadOnlySession(None), request, source=source
+    )
+
+    boundary = result.unsigned_payload["evidence_temporal_boundary"]
+    assert boundary["evidence_snapshot_at"] == "2026-06-29T12:00:00Z"
+    assert boundary["source_read_started_at"] == "2026-06-29T12:00:00Z"
+    assert boundary["source_read_completed_at"] == "2026-06-29T12:00:02Z"
+    assert boundary["max_source_read_skew_ms"] == 2_000
+    assert boundary["data_freshness_seconds"] == 18_001
+
+
+@pytest.mark.asyncio
+async def test_historical_unknown_temporal_authority_is_null_and_unavailable() -> None:
+    tenant_id, fit_id = uuid4(), uuid4()
+    source = _confidence_source(
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        reason=ConfidenceBucketReason.NARROW_INTERVAL,
+        available=True,
+    )
+    source = ConfidenceProjectionSource(
+        projection=replace(
+            source.projection,
+            evidence_snapshot_at=None,
+            source_read_started_at=None,
+            source_read_completed_at=None,
+        )
+    )
+
+    result = await build_unsigned_trust_envelope(
+        FakeReadOnlySession(None),
+        _confidence_request(tenant_id, fit_id),
+        source=source,
+    )
+
+    payload = result.unsigned_payload
+    assert payload["confidence_metadata"]["confidence_status"] == "unavailable"
+    boundary = payload["evidence_temporal_boundary"]
+    assert boundary["snapshot_consistency_status"] == "unavailable"
+    assert boundary["evidence_snapshot_at"] is None
+    assert boundary["source_read_started_at"] is None
+    assert boundary["source_read_completed_at"] is None
+    assert boundary["data_freshness_seconds"] is None
+    canonicalize_envelope_payload(payload)
 
 
 @pytest.mark.asyncio

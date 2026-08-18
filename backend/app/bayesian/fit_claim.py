@@ -96,6 +96,8 @@ async def claim_fit_for_snapshot(
         "source_window_start": _utc(snapshot.source_window_start),
         "source_window_end": _utc(snapshot.source_window_end),
         "source_snapshot_hash": snapshot.source_snapshot_hash,
+        "source_read_started_at": snapshot.source_read_started_at,
+        "source_read_completed_at": snapshot.source_read_completed_at,
         "claim_owner": claim_owner,
         "leased_until": leased_until,
     }
@@ -308,6 +310,8 @@ async def claim_fit_for_snapshot(
                             source_window_start,
                             source_window_end,
                             source_snapshot_hash,
+                            source_read_started_at,
+                            source_read_completed_at,
                             status,
                             eligibility_status,
                             data_completeness_status,
@@ -325,6 +329,8 @@ async def claim_fit_for_snapshot(
                             :source_window_start,
                             :source_window_end,
                             :source_snapshot_hash,
+                            :source_read_started_at,
+                            :source_read_completed_at,
                             'queued',
                             'eligible',
                             'complete',
@@ -354,6 +360,8 @@ async def claim_fit_for_snapshot(
                             data_completeness_status = 'complete',
                             fallback_applied = false,
                             fallback_reason = NULL,
+                            source_read_started_at = EXCLUDED.source_read_started_at,
+                            source_read_completed_at = EXCLUDED.source_read_completed_at,
                             last_eligibility_check_at = now(),
                             updated_at = now()
                         RETURNING id
