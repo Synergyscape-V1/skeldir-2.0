@@ -25,7 +25,7 @@ from pathlib import Path
 
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ci"))
 from _workflow_physics import CACHE_KEY, job_installs, job_spans, owning_job  # noqa: E402
 
 WORKFLOWS = Path(".github/workflows")

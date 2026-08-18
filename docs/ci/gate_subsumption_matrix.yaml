@@ -3,88 +3,129 @@
   job: B2.5-P13 E2E Trust Closure
   script: backend/tests/trust/test_b25_p13_e2e_trust_closure.py
   owning_phase: B2.5-P13
-  protected_invariant: B2.5-P13 composes one real machine credential through production authentication, scope, atomic replay, rate limiting, tenant-RLS session binding, exact deterministic and B2.4 confidence source reads, audit, Ed25519 signing, exact wire serialization, governed JWKS retrieval, and public-only verification while five confidence source families remain truthful and Trust cannot dispatch compute or mutate B2.3/B2.4 authority state.
+  protected_invariant: B2.5-P13 composes one real machine credential through production authentication,
+    scope, atomic replay, rate limiting, tenant-RLS session binding, exact deterministic and B2.4 confidence
+    source reads, audit, Ed25519 signing, exact wire serialization, governed JWKS retrieval, and public-only
+    verification while five confidence source families remain truthful and Trust cannot dispatch compute
+    or mutate B2.3/B2.4 authority state.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   decision: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1-P12 prove individual contracts, deterministic mechanics, public verification, machine identity, bounded API behavior, exports, contract projection, isolation, and CI non-vacuity, but none proves their complete composition with exact persisted B2.4 confidence states through one production request and independently fetched public key material.
-  negative_control_preserved_by: SKELDIR_B25_P13_E2E_PROOF=1 python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py -q -s --no-header
-  local_reproduction_command: SKELDIR_B25_P13_E2E_PROOF=1 python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py -q -s --no-header
-  risk_if_removed: The Trust API could retain individually green components while its real authenticated signed path fragments, B2.4 confidence is misclassified or detached from its exact source, tenant isolation fails, a private signing key leaks into verification, or an upstream authority mutation occurs during a read.
+  subsumption_evidence: P1-P12 prove individual contracts, deterministic mechanics, public verification,
+    machine identity, bounded API behavior, exports, contract projection, isolation, and CI non-vacuity,
+    but none proves their complete composition with exact persisted B2.4 confidence states through one
+    production request and independently fetched public key material.
+  negative_control_preserved_by: SKELDIR_B25_P13_E2E_PROOF=1 python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py
+    -q -s --no-header
+  local_reproduction_command: SKELDIR_B25_P13_E2E_PROOF=1 python -m pytest backend/tests/trust/test_b25_p13_e2e_trust_closure.py
+    -q -s --no-header
+  risk_if_removed: The Trust API could retain individually green components while its real authenticated
+    signed path fragments, B2.4 confidence is misclassified or detached from its exact source, tenant
+    isolation fails, a private signing key leaks into verification, or an upstream authority mutation
+    occurs during a read.
 - gate_id: validate-b25-p13-confidence-truth
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 E2E Trust Closure
   script: scripts/ci/validate_b25_p13_confidence_truth.py
   owning_phase: B2.5-P13-C3
-  protected_invariant: Confidence-projection authority, persisted B2.4 classification, durable freshness lineage, exact artifact lifecycle, multi-currency refusal, physical read graph, contract, builder, boundedness and workflow triggers remain mutually consistent and non-vacuously falsifiable.
+  protected_invariant: Confidence-projection authority, persisted B2.4 classification, durable freshness
+    lineage, exact artifact lifecycle, multi-currency refusal, physical read graph, contract, builder,
+    boundedness and workflow triggers remain mutually consistent and non-vacuously falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   decision: keep_required
   subsuming_gate: ''
-  subsumption_evidence: The P13 runtime composition harness exercises concrete journeys, but it does not structurally bind every authority registry and contract enum to the exact physical SQL graph or prove each forbidden semantic mutation makes the validator fail.
+  subsumption_evidence: The P13 runtime composition harness exercises concrete journeys, but it does not
+    structurally bind every authority registry and contract enum to the exact physical SQL graph or prove
+    each forbidden semantic mutation makes the validator fail.
   negative_control_preserved_by: python scripts/ci/validate_b25_p13_confidence_truth.py --negative-control
   local_reproduction_command: python scripts/ci/validate_b25_p13_confidence_truth.py --negative-control
-  risk_if_removed: A source table, field authority, freshness signal, lifecycle fallback, classifier call site, read bound, or CI trigger could drift while the finite runtime fixtures remained green.
+  risk_if_removed: A source table, field authority, freshness signal, lifecycle fallback, classifier call
+    site, read bound, or CI trigger could drift while the finite runtime fixtures remained green.
 - gate_id: validate-b25-p13-c4-closure
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 E2E Trust Closure
   script: scripts/ci/validate_b25_p13_c4_closure.py
   owning_phase: B2.5-P13-C4
-  protected_invariant: Available confidence is physically complete and snapshot-bound, historical uncertainty fails closed, source-read temporal claims are literal, freshness includes failed refits, executable SQL equals the declared read graph, and temporal fields remain hash-bound.
+  protected_invariant: Available confidence is physically complete and snapshot-bound, historical uncertainty
+    fails closed, source-read temporal claims are literal, freshness includes failed refits, executable
+    SQL equals the declared read graph, and temporal fields remain hash-bound.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   decision: keep_required
   subsuming_gate: ''
-  subsumption_evidence: The runtime P13 journey proves concrete database and envelope behavior, while C3 proves the broader confidence vocabulary; neither independently inventories every writer or falsifies database completeness, historical compatibility, temporal semantics, executable SQL dependencies, and failed-refit lineage as one closure system.
+  subsumption_evidence: The runtime P13 journey proves concrete database and envelope behavior, while
+    C3 proves the broader confidence vocabulary; neither independently inventories every writer or falsifies
+    database completeness, historical compatibility, temporal semantics, executable SQL dependencies,
+    and failed-refit lineage as one closure system.
   negative_control_preserved_by: python scripts/ci/validate_b25_p13_c4_closure.py --negative-control
   local_reproduction_command: python scripts/ci/validate_b25_p13_c4_closure.py --negative-control
-  risk_if_removed: A partial available-confidence tuple, invented historical timestamp, comment-only authority token, untracked SQL join, or failed-refit freshness hole could recur while finite positive E2E fixtures remained green.
+  risk_if_removed: A partial available-confidence tuple, invented historical timestamp, comment-only authority
+    token, untracked SQL join, or failed-refit freshness hole could recur while finite positive E2E fixtures
+    remained green.
 - gate_id: validate-b25-p12-contract-projection
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates
   script: scripts/ci/validate_b25_p12_contract_projection.py
   owning_phase: B2.5-P12
-  protected_invariant: B2.5-P12 contract projection proves the artifact the production machine-export route actually emits validates with zero errors against the schema resolved from the authoritative OpenAPI 200 response, that exactly one artifact protocol is active while historical protocols remain verification-only and are never published as successful issuance, and that examples are lifecycle-classified so a historical fixture cannot masquerade as active contract proof.
+  protected_invariant: B2.5-P12 contract projection proves the artifact the production machine-export
+    route actually emits validates with zero errors against the schema resolved from the authoritative
+    OpenAPI 200 response, that exactly one artifact protocol is active while historical protocols remain
+    verification-only and are never published as successful issuance, and that examples are lifecycle-classified
+    so a historical fixture cannot masquerade as active contract proof.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   decision: keep_required
   subsuming_gate: ''
-  subsumption_evidence: No P1-P11 gate validates a live runtime response against the schema the OpenAPI publishes; that gap is exactly how a v2 runtime coexisted with a v1 success-response schema.
+  subsumption_evidence: No P1-P11 gate validates a live runtime response against the schema the OpenAPI
+    publishes; that gap is exactly how a v2 runtime coexisted with a v1 success-response schema.
   negative_control_preserved_by: python scripts/ci/validate_b25_p12_contract_projection.py --negative-control
   local_reproduction_command: python scripts/ci/validate_b25_p12_contract_projection.py --negative-control
-  risk_if_removed: Runtime issuance and the published contract could silently diverge again, and consumers would generate clients from a schema the server never satisfies.
+  risk_if_removed: Runtime issuance and the published contract could silently diverge again, and consumers
+    would generate clients from a schema the server never satisfies.
 - gate_id: validate-b25-p12-trust-isolation
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates
   script: scripts/ci/validate_b25_p12_trust_isolation.py
   owning_phase: B2.5-P12
-  protected_invariant: B2.5-P12 trust-path isolation proves no LLM or Bayesian module is transitively reachable from any trust entry point, no dynamic-import mechanism exists anywhere in the trust path, no forbidden module loads at runtime across success, verification, export and refusal paths, and no compute-dispatch surface is reachable from a trust read.
+  protected_invariant: B2.5-P12 trust-path isolation proves no LLM or Bayesian module is transitively
+    reachable from any trust entry point, no dynamic-import mechanism exists anywhere in the trust path,
+    no forbidden module loads at runtime across success, verification, export and refusal paths, and no
+    compute-dispatch surface is reachable from a trust read.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   decision: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P5 established builder isolation but does not walk a transitive first-party import graph from every trust entry point, ban dynamic imports, trace runtime module loading across refusal paths, or ban indirect dispatch surfaces.
+  subsumption_evidence: P5 established builder isolation but does not walk a transitive first-party import
+    graph from every trust entry point, ban dynamic imports, trace runtime module loading across refusal
+    paths, or ban indirect dispatch surfaces.
   negative_control_preserved_by: python scripts/ci/validate_b25_p12_trust_isolation.py --negative-control
   local_reproduction_command: python scripts/ci/validate_b25_p12_trust_isolation.py --negative-control
-  risk_if_removed: An LLM or compute path could re-enter the deterministic trust surface through a helper import, a dynamic import, or a generic enqueue helper without any gate noticing.
+  risk_if_removed: An LLM or compute path could re-enter the deterministic trust surface through a helper
+    import, a dynamic import, or a generic enqueue helper without any gate noticing.
 - gate_id: b25-p12-runtime-module-trace
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates
   script: scripts/ci/_b25_p12_runtime_trace.py
   owning_phase: B2.5-P12
-  protected_invariant: B2.5-P12 domain 17 runtime isolation executed in a fresh interpreter so the sys.modules baseline precedes every first-party import. This makes import-time forbidden dependencies observable; the prior in-process trace captured its baseline after importing the modules under observation and could only detect lazy imports.
+  protected_invariant: B2.5-P12 domain 17 runtime isolation executed in a fresh interpreter so the sys.modules
+    baseline precedes every first-party import. This makes import-time forbidden dependencies observable;
+    the prior in-process trace captured its baseline after importing the modules under observation and
+    could only detect lazy imports.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   decision: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'Not subsumed. It is invoked twice by design: directly as a named workflow step, and as a subprocess of validate_b25_p12_trust_isolation.py, whose NC-P12-ISO-03 control mutates a trust module on disk and requires this trace to report the forbidden load.'
+  subsumption_evidence: 'Not subsumed. It is invoked twice by design: directly as a named workflow step,
+    and as a subprocess of validate_b25_p12_trust_isolation.py, whose NC-P12-ISO-03 control mutates a
+    trust module on disk and requires this trace to report the forbidden load.'
   negative_control_preserved_by: NC-P12-ISO-03 in scripts/ci/validate_b25_p12_trust_isolation.py
   local_reproduction_command: ''
   risk_if_removed: ''
@@ -93,327 +134,475 @@
   job: B2.5-P12 CI Gates
   script: scripts/ci/validate_b25_p12_ci_gates.py
   owning_phase: B2.5-P12
-  protected_invariant: B2.5-P12 converts B2.5 from code into enforced system physics by proving what the machine export route actually emits validates against the schema the authoritative OpenAPI publishes for its 200 response, that exactly one artifact protocol is active while historical protocols stay verification-only, that examples are lifecycle-classified, that no LLM/Bayesian module is transitively or dynamically reachable from the trust surface, that no forbidden module loads at runtime across success/verify/export/refusal paths, that no compute-dispatch surface is reachable from a trust read, and that all 22 required B2.5 CI domains have an existing, invoked, negative-controlled proof whose execution cannot be evaded by path filters or masked by continue-on-error.
+  protected_invariant: B2.5-P12 converts B2.5 from code into enforced system physics by proving what the
+    machine export route actually emits validates against the schema the authoritative OpenAPI publishes
+    for its 200 response, that exactly one artifact protocol is active while historical protocols stay
+    verification-only, that examples are lifecycle-classified, that no LLM/Bayesian module is transitively
+    or dynamically reachable from the trust surface, that no forbidden module loads at runtime across
+    success/verify/export/refusal paths, that no compute-dispatch surface is reachable from a trust read,
+    and that all 22 required B2.5 CI domains have an existing, invoked, negative-controlled proof whose
+    execution cannot be evaded by path filters or masked by continue-on-error.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   decision: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1-P11 each prove their own unit in isolation. None proves composition - that the artifact the production route emits validates against the schema the contract publishes - which is exactly how a v2 runtime coexisted with a v1 success-response schema through eleven green phase gates. None proves CI non-vacuity either.
+  subsumption_evidence: P1-P11 each prove their own unit in isolation. None proves composition - that
+    the artifact the production route emits validates against the schema the contract publishes - which
+    is exactly how a v2 runtime coexisted with a v1 success-response schema through eleven green phase
+    gates. None proves CI non-vacuity either.
   negative_control_preserved_by: python scripts/ci/validate_b25_p12_ci_gates.py --negative-control
   local_reproduction_command: python scripts/ci/validate_b25_p12_ci_gates.py --negative-control
-  risk_if_removed: Runtime and published contract could silently diverge again, an LLM or compute-dispatch path could re-enter the trust surface, or a load-bearing proof could be skipped, masked or path-filtered away while CI stayed green.
+  risk_if_removed: Runtime and published contract could silently diverge again, an LLM or compute-dispatch
+    path could re-enter the trust surface, or a load-bearing proof could be skipped, masked or path-filtered
+    away while CI stayed green.
 - gate_id: validate-b25-p8-signing-verification
   workflow: .github/workflows/b2_5-p8-signing-verification.yml
   job: B2.5-P8 Signing Verification
   script: scripts/ci/validate_b25_p8_signing_verification.py
   owning_phase: B2.5-P8
-  protected_invariant: B2.5-P8 signs canonical TrustEnvelope signature material with envelope-specific Ed25519 keys, verifies through public-only JWKS/key material, rejects HMAC/JWT confusion and schema/canonicalization/signature downgrade, binds financial/policy/provenance/audit/version/timestamp/artifact fields, enforces envelope/key temporal semantics, preserves semantic truth across key rotation, verifies historical verification-authorized keys, rejects revoked/expired/unknown keys, publishes public-only JWKS, and blocks P9/P10/P11+ scope creep.
+  protected_invariant: B2.5-P8 signs canonical TrustEnvelope signature material with envelope-specific
+    Ed25519 keys, verifies through public-only JWKS/key material, rejects HMAC/JWT confusion and schema/canonicalization/signature
+    downgrade, binds financial/policy/provenance/audit/version/timestamp/artifact fields, enforces envelope/key
+    temporal semantics, preserves semantic truth across key rotation, verifies historical verification-authorized
+    keys, rejects revoked/expired/unknown keys, publishes public-only JWKS, and blocks P9/P10/P11+ scope
+    creep.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, P5 validates read-only envelope assembly, P6 validates reason semantics, and P7 validates provenance/audit persistence, but none proves asymmetric Ed25519 signing, public-only verification/JWKS behavior, HMAC/JWT confusion rejection, key rotation and historical verification semantics, revoked/expired/unknown key rejection, private-key exposure controls, or P8-specific schema/canonicalization/signature downgrade rejection.
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates
+    text disposition, P4 validates money authority, P5 validates read-only envelope assembly, P6 validates
+    reason semantics, and P7 validates provenance/audit persistence, but none proves asymmetric Ed25519
+    signing, public-only verification/JWKS behavior, HMAC/JWT confusion rejection, key rotation and historical
+    verification semantics, revoked/expired/unknown key rejection, private-key exposure controls, or P8-specific
+    schema/canonicalization/signature downgrade rejection.
   negative_control_preserved_by: python scripts/ci/validate_b25_p8_signing_verification.py --negative-control
   local_reproduction_command: make validate-b25-p8-signing-verification
-  risk_if_removed: Future TrustEnvelope work could accept symmetric or JWT-shaped signatures, verify with private material, leak signing keys in JWKS, omit policy/provenance/audit/version/artifact fields from signature coverage, accept unsupported schema/canonicalization/signature versions, break historical verification after rotation, trust revoked keys, or silently introduce agent/auth/route/export/MCP/action scope before the owning phases.
+  risk_if_removed: Future TrustEnvelope work could accept symmetric or JWT-shaped signatures, verify with
+    private material, leak signing keys in JWKS, omit policy/provenance/audit/version/artifact fields
+    from signature coverage, accept unsupported schema/canonicalization/signature versions, break historical
+    verification after rotation, trust revoked keys, or silently introduce agent/auth/route/export/MCP/action
+    scope before the owning phases.
   decision: keep_required
 - gate_id: validate-b25-p7-provenance-audit
   workflow: .github/workflows/b2_5-p7-provenance-audit.yml
   job: B2.5-P7 Provenance Audit
   script: scripts/ci/validate_b25_p7_provenance_audit.py
   owning_phase: B2.5-P7
-  protected_invariant: B2.5-P7 persists canonical provenance/audit identities through tenant-scoped Postgres audit tables with RLS/FORCE RLS, independent audit transaction durability across caller rollback/serialization-return failure, independent PostgreSQL rollback witness observation, explicit-created-at chronological determinism, static sentinel timestamp rejection, created_at source-authority validation, idempotent retry safety, audit ref/hash attachment, source-registry totality, refusal/scope-denial evidence suppression, no-LLM/no-dispatch scope, and no signing/routes/auth/export/MCP/action authority.
+  protected_invariant: B2.5-P7 persists canonical provenance/audit identities through tenant-scoped Postgres
+    audit tables with RLS/FORCE RLS, independent audit transaction durability across caller rollback/serialization-return
+    failure, independent PostgreSQL rollback witness observation, explicit-created-at chronological determinism,
+    static sentinel timestamp rejection, created_at source-authority validation, idempotent retry safety,
+    audit ref/hash attachment, source-registry totality, refusal/scope-denial evidence suppression, no-LLM/no-dispatch
+    scope, and no signing/routes/auth/export/MCP/action authority.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, P5 validates the read-only builder, and P6 validates reason semantics, but none proves Postgres-backed independent audit transaction durability, non-audit rollback witness observation, rollback-coupling rejection, RLS/FORCE-RLS policy, explicit-created-at clock containment, static sentinel timestamp rejection, created_at source authority, idempotent audit rows, audit ref/hash attachment, replay/scope-denial rows, or P7-specific later-phase exclusions.
-  negative_control_preserved_by: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control --skip-prior-phase-subprocesses
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates
+    text disposition, P4 validates money authority, P5 validates the read-only builder, and P6 validates
+    reason semantics, but none proves Postgres-backed independent audit transaction durability, non-audit
+    rollback witness observation, rollback-coupling rejection, RLS/FORCE-RLS policy, explicit-created-at
+    clock containment, static sentinel timestamp rejection, created_at source authority, idempotent audit
+    rows, audit ref/hash attachment, replay/scope-denial rows, or P7-specific later-phase exclusions.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p7_provenance_audit.py --negative-control
+    --skip-prior-phase-subprocesses
   local_reproduction_command: make validate-b25-p7-provenance-audit
-  risk_if_removed: Future Trust API work could lose source provenance totality, persist weakly isolated or rollback-coupled audit rows, claim rollback without an independent PostgreSQL witness, use live clock defaults or static sentinel timestamp fallbacks in audit identity, accept non-authoritative created_at values, duplicate on retry, leak subject evidence on scope denial, attach unstable audit identity, or silently introduce signing/routes/auth/export/MCP behavior without a merge-blocking signal.
+  risk_if_removed: Future Trust API work could lose source provenance totality, persist weakly isolated
+    or rollback-coupled audit rows, claim rollback without an independent PostgreSQL witness, use live
+    clock defaults or static sentinel timestamp fallbacks in audit identity, accept non-authoritative
+    created_at values, duplicate on retry, leak subject evidence on scope denial, attach unstable audit
+    identity, or silently introduce signing/routes/auth/export/MCP behavior without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b25-p6-reason-truth-matrix
   workflow: .github/workflows/b2_5-p6-reason-truth-matrix.yml
   job: B2.5-P6 Reason Truth Matrix
   script: scripts/ci/validate_b25_p6_reason_truth_matrix.py
   owning_phase: B2.5-P6
-  protected_invariant: B2.5-P6 reason truth matrix centralizes refusal, degraded, and unavailable semantics with enum-backed source predicates, field behavior, contradiction rejection, honest confidence/benchmark/money/policy handling, version reason semantics, deferred signature/audit behavior, and no-LLM/no-dispatch/read-only scope.
+  protected_invariant: B2.5-P6 reason truth matrix centralizes refusal, degraded, and unavailable semantics
+    with enum-backed source predicates, field behavior, contradiction rejection, honest confidence/benchmark/money/policy
+    handling, version reason semantics, deferred signature/audit behavior, and no-LLM/no-dispatch/read-only
+    scope.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, and P5 validates builder assembly, but none proves a complete cross-field reason-code truth matrix or its non-vacuous contradiction/future-phase boundary controls.
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates
+    text disposition, P4 validates money authority, and P5 validates builder assembly, but none proves
+    a complete cross-field reason-code truth matrix or its non-vacuous contradiction/future-phase boundary
+    controls.
   negative_control_preserved_by: python scripts/ci/validate_b25_p6_reason_truth_matrix.py --negative-control
   local_reproduction_command: make validate-b25-p6-reason-truth-matrix
-  risk_if_removed: Future TrustEnvelope builder/API work could emit ambiguous refusal/degraded states, fake confidence or benchmark values, free-form fallback reasons, money contradictions, policy escalation, provider-text authority leaks, unsupported-version success semantics, or premature signature/audit claims without a merge-blocking signal.
+  risk_if_removed: Future TrustEnvelope builder/API work could emit ambiguous refusal/degraded states,
+    fake confidence or benchmark values, free-form fallback reasons, money contradictions, policy escalation,
+    provider-text authority leaks, unsupported-version success semantics, or premature signature/audit
+    claims without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b25-p5-builder
   workflow: .github/workflows/b2_5-p5-builder.yml
   job: B2.5-P5 Trust Builder
   script: scripts/ci/validate_b25_p5_builder.py
   owning_phase: B2.5-P5
-  protected_invariant: B2.5-P5 unsigned read-only TrustEnvelope builder assembles schema-valid, canonicalizable payloads from approved sources while preserving tenant isolation, no raw tenant IDs, no mutation, no compute dispatch, no LLM/dynamic import path, P3 text disposition, P4 money authority, unavailable confidence/benchmark honesty, conservative policy defaults, and P5 scope boundaries.
+  protected_invariant: B2.5-P5 unsigned read-only TrustEnvelope builder assembles schema-valid, canonicalizable
+    payloads from approved sources while preserving tenant isolation, no raw tenant IDs, no mutation,
+    no compute dispatch, no LLM/dynamic import path, P3 text disposition, P4 money authority, unavailable
+    confidence/benchmark honesty, conservative policy defaults, and P5 scope boundaries.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, and P4 validates money authority, but none validates the read-only builder's source registry totality, tenant-bound source read, wrong-tenant refusal, payload assembly, runtime no-LLM trace, no-compute/no-mutation behavior, or P5-specific scope boundary.
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates
+    text disposition, and P4 validates money authority, but none validates the read-only builder's source
+    registry totality, tenant-bound source read, wrong-tenant refusal, payload assembly, runtime no-LLM
+    trace, no-compute/no-mutation behavior, or P5-specific scope boundary.
   negative_control_preserved_by: python scripts/ci/validate_b25_p5_builder.py --negative-control
   local_reproduction_command: make validate-b25-p5-builder
-  risk_if_removed: Future Trust API work could launder false authority through a builder that reads wrong sources, leaks raw tenant IDs, mutates state, dispatches compute, imports LLM code, bypasses P3/P4, fabricates unavailable metadata, or overclaims P6+ behavior without a merge-blocking signal.
+  risk_if_removed: Future Trust API work could launder false authority through a builder that reads wrong
+    sources, leaks raw tenant IDs, mutates state, dispatches compute, imports LLM code, bypasses P3/P4,
+    fabricates unavailable metadata, or overclaims P6+ behavior without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b25-p4-money-authority
   workflow: .github/workflows/b2_5-p4-money-authority.yml
   job: B2.5-P4 Money Authority
   script: scripts/ci/validate_b25_p4_money_authority.py
   owning_phase: B2.5-P4
-  protected_invariant: B2.5-P4 money authority is a pure deterministic adapter over TrustEnvelope money fields, approved integer minor-unit sources, exact provider decimal-string conversion by currency exponent, typed refusal/degraded states for non-authoritative money, and later-phase scope exclusion.
+  protected_invariant: B2.5-P4 money authority is a pure deterministic adapter over TrustEnvelope money
+    fields, approved integer minor-unit sources, exact provider decimal-string conversion by currency
+    exponent, typed refusal/degraded states for non-authoritative money, and later-phase scope exclusion.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates TrustEnvelope contract shape, P2 validates canonical/hash identity, and P3 validates text disposition, but none validates money-source authority totality, legacy DTO/export/budget float refusal, exact Decimal-from-string minor-unit conversion, currency exponent fail-closed behavior, field-specific negative/zero policy, typed money authority result shape, or P4-specific scope exclusion.
+  subsumption_evidence: P1 validates TrustEnvelope contract shape, P2 validates canonical/hash identity,
+    and P3 validates text disposition, but none validates money-source authority totality, legacy DTO/export/budget
+    float refusal, exact Decimal-from-string minor-unit conversion, currency exponent fail-closed behavior,
+    field-specific negative/zero policy, typed money authority result shape, or P4-specific scope exclusion.
   negative_control_preserved_by: python scripts/ci/validate_b25_p4_money_authority.py --negative-control
   local_reproduction_command: make validate-b25-p4-money-authority
-  risk_if_removed: Future TrustEnvelope builder/API work could launder dashboard/export/budget floats or provider decimal ambiguity into authoritative money, silently round sub-minor values, accept unknown currencies, crash on legacy float-only state, or bypass P2 numeric controls without a merge-blocking signal.
+  risk_if_removed: Future TrustEnvelope builder/API work could launder dashboard/export/budget floats
+    or provider decimal ambiguity into authoritative money, silently round sub-minor values, accept unknown
+    currencies, crash on legacy float-only state, or bypass P2 numeric controls without a merge-blocking
+    signal.
   decision: keep_required
 - gate_id: validate-b25-p3-text-disposition
   workflow: .github/workflows/b2_5-p3-text-disposition.yml
   job: B2.5-P3 Text Disposition
   script: scripts/ci/validate_b25_p3_text_disposition.py
   owning_phase: B2.5-P3
-  protected_invariant: B2.5-P3 text disposition is a pure deterministic boundary over TrustEnvelope string authority, finite syntactic risk classification, safe display projection, keyed opaque provider-reference pseudonymization, NUL/control/bidi desync prevention, P1/P2 preservation, and later-phase scope exclusion.
+  protected_invariant: B2.5-P3 text disposition is a pure deterministic boundary over TrustEnvelope string
+    authority, finite syntactic risk classification, safe display projection, keyed opaque provider-reference
+    pseudonymization, NUL/control/bidi desync prevention, P1/P2 preservation, and later-phase scope exclusion.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates contract authority and P2 validates canonical/hash identity, but neither validates total text field trust taxonomy, total disposition matrix, provider-text machine-authority rejection, keyed opaque reference HMAC semantics, unsafe text quarantine metadata, anti-hardcoding controls, or P3-specific scope exclusion.
+  subsumption_evidence: P1 validates contract authority and P2 validates canonical/hash identity, but
+    neither validates total text field trust taxonomy, total disposition matrix, provider-text machine-authority
+    rejection, keyed opaque reference HMAC semantics, unsafe text quarantine metadata, anti-hardcoding
+    controls, or P3-specific scope exclusion.
   negative_control_preserved_by: python scripts/ci/validate_b25_p3_text_disposition.py --negative-control
   local_reproduction_command: make validate-b25-p3-text-disposition
-  risk_if_removed: Future TrustEnvelope builder/API work could accept provider-controlled strings as authority, leak raw unsafe text into machine-readable output, create enumerable provider-reference hashes, or destabilize canonical/hash behavior without a merge-blocking signal.
+  risk_if_removed: Future TrustEnvelope builder/API work could accept provider-controlled strings as authority,
+    leak raw unsafe text into machine-readable output, create enumerable provider-reference hashes, or
+    destabilize canonical/hash behavior without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b25-p2-canonicalization
   workflow: .github/workflows/b2_5-p2-canonicalization.yml
   job: B2.5-P2 Canonicalization
   script: scripts/ci/validate_b25_p2_canonicalization.py
   owning_phase: B2.5-P2
-  protected_invariant: B2.5-P2 canonical TrustEnvelope identity is standards-bound, byte-stable, manifest-classified, version-governed, serializer-boundary protected, and scope-limited to canonicalization/hash identity.
+  protected_invariant: B2.5-P2 canonical TrustEnvelope identity is standards-bound, byte-stable, manifest-classified,
+    version-governed, serializer-boundary protected, and scope-limited to canonicalization/hash identity.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates TrustEnvelope shape but does not validate canonical bytes, semantic/artifact/signature hash-domain separation, provenance-order stability, fixed hash output encoding, null-vs-missing bytes, array-ordering coverage, unsafe serializer controls, or P2 scope guardrails.
+  subsumption_evidence: P1 validates TrustEnvelope shape but does not validate canonical bytes, semantic/artifact/signature
+    hash-domain separation, provenance-order stability, fixed hash output encoding, null-vs-missing bytes,
+    array-ordering coverage, unsafe serializer controls, or P2 scope guardrails.
   negative_control_preserved_by: python scripts/ci/validate_b25_p2_canonicalization.py --negative-control
   local_reproduction_command: make validate-b25-p2-canonicalization
-  risk_if_removed: Future signing, verification, replay, cache identity, audit reconstruction, and agent-readable trust surfaces could consume nondeterministic or serializer-dependent TrustEnvelope bytes without a merge-blocking signal.
+  risk_if_removed: Future signing, verification, replay, cache identity, audit reconstruction, and agent-readable
+    trust surfaces could consume nondeterministic or serializer-dependent TrustEnvelope bytes without
+    a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b25-p1-contracts
   workflow: .github/workflows/b2_5-p1-contracts.yml
   job: B2.5-P1 Contract Authority
   script: scripts/ci/validate_b25_p1_contracts.py
   owning_phase: B2.5-P1
-  protected_invariant: B2.5-P1 contract-only TrustEnvelope authority is strict, versioned, subject-conditioned, audience-bound, subject-authority-bound, evidence-time-bound, validity-window-bounded, JSON-safe, provider-text-isolated, recursively closed, type-strict, signing-allowlisted, and adversarially validated.
+  protected_invariant: B2.5-P1 contract-only TrustEnvelope authority is strict, versioned, subject-conditioned,
+    audience-bound, subject-authority-bound, evidence-time-bound, validity-window-bounded, JSON-safe,
+    provider-text-isolated, recursively closed, type-strict, signing-allowlisted, and adversarially validated.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: No B2.4 or existing contract gate validates the new TrustEnvelope contract pack, B2.5 examples, subject-conditioned required/prohibited field semantics, schema downgrade rejection, raw identifier exclusion, recursive closure, bounded validity, or typed B2.5 negative-control families.
+  subsumption_evidence: No B2.4 or existing contract gate validates the new TrustEnvelope contract pack,
+    B2.5 examples, subject-conditioned required/prohibited field semantics, schema downgrade rejection,
+    raw identifier exclusion, recursive closure, bounded validity, or typed B2.5 negative-control families.
   negative_control_preserved_by: python scripts/ci/validate_b25_p1_contracts.py --negative-control
   local_reproduction_command: make validate-b25-p1-contracts
-  risk_if_removed: Future B2.5 runtime work could emit malformed, audience-portable, mutable-workflow, raw-identifier-bearing, fabricated-money, offset-timestamp, far-future-valid, provider-text-authoritative, type-confused, sibling-field-injected, or schema-downgraded TrustEnvelopes without a merge-blocking signal.
+  risk_if_removed: Future B2.5 runtime work could emit malformed, audience-portable, mutable-workflow,
+    raw-identifier-bearing, fabricated-money, offset-timestamp, far-future-valid, provider-text-authoritative,
+    type-confused, sibling-field-injected, or schema-downgraded TrustEnvelopes without a merge-blocking
+    signal.
   decision: keep_required
 - gate_id: validate-b25-p1-trust-drift
   workflow: .github/workflows/b2_5-p1-contracts.yml
   job: B2.5-P1 Contract Authority
   script: scripts/ci/validate_b25_p1_trust_drift.py
   owning_phase: B2.5-P1
-  protected_invariant: B2.5-P1 has no authorized runtime TrustEnvelope model; backend hand-written trust/envelope models are blocked until a generated-model phase is explicitly authorized.
+  protected_invariant: B2.5-P1 has no authorized runtime TrustEnvelope model; backend hand-written trust/envelope
+    models are blocked until a generated-model phase is explicitly authorized.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Existing database schema drift and contract validators do not detect application-model TrustEnvelope drift or unauthorized backend trust model paths.
+  subsumption_evidence: Existing database schema drift and contract validators do not detect application-model
+    TrustEnvelope drift or unauthorized backend trust model paths.
   negative_control_preserved_by: python scripts/ci/validate_b25_p1_trust_drift.py --negative-control
   local_reproduction_command: make validate-b25-p1-trust-drift
-  risk_if_removed: Future developers could add divergent hand-written backend TrustEnvelope models without contract-generation or schema-diff enforcement.
+  risk_if_removed: Future developers could add divergent hand-written backend TrustEnvelope models without
+    contract-generation or schema-diff enforcement.
   decision: keep_required
 - gate_id: validate-b24-p1-authority-schema
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/validate_b24_p1_authority_schema.py
   owning_phase: B2.4-P1
-  protected_invariant: B2.4-P1 Bayesian authority schema, RLS/GUC isolation, hash constraints, tenant indexes, evolvable state checks, no-router boundary, and no-LLM/no-PyMC runtime boundary remain machine-falsifiable.
+  protected_invariant: B2.4-P1 Bayesian authority schema, RLS/GUC isolation, hash constraints, tenant
+    indexes, evolvable state checks, no-router boundary, and no-LLM/no-PyMC runtime boundary remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 is the first authorized implementation gate; M5/M6/M7 readiness gates do not validate concrete fit/artifact persistence, constraints, indexes, RLS, or Alembic transaction-safety.
+  subsumption_evidence: P1 is the first authorized implementation gate; M5/M6/M7 readiness gates do not
+    validate concrete fit/artifact persistence, constraints, indexes, RLS, or Alembic transaction-safety.
   negative_control_preserved_by: python scripts/ci/validate_b24_p1_authority_schema.py --negative-control
   local_reproduction_command: make validate-b24-p1-authority-schema
-  risk_if_removed: B2.4 could regress to malformed persistence, weak RLS, unconstrained hashes/states, missing access paths, or forbidden runtime/API coupling without a merge-blocking signal.
+  risk_if_removed: B2.4 could regress to malformed persistence, weak RLS, unconstrained hashes/states,
+    missing access paths, or forbidden runtime/API coupling without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b24-p2-source-snapshot
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/validate_b24_p2_source_snapshot.py
   owning_phase: B2.4-P2
-  protected_invariant: B2.4-P2 deterministic input contract, aggregate eligibility preflight, sparse-privacy suppression, repeatable-read source snapshot, total canonical ordering, sentinel hashing, streaming SHA-256 discipline, no-PII source boundary, and no-P3/P4/P5 scope remain machine-falsifiable.
+  protected_invariant: B2.4-P2 deterministic input contract, aggregate eligibility preflight, sparse-privacy
+    suppression, repeatable-read source snapshot, total canonical ordering, sentinel hashing, streaming
+    SHA-256 discipline, no-PII source boundary, and no-P3/P4/P5 scope remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P2 introduces source snapshot authority semantics that P1 and M5/M6/M7 do not validate: eligibility-before-streaming, single repeatable-read snapshot, total ordering, sparse sentinel hashing, and streaming canonical hash discipline.'
+  subsumption_evidence: 'P2 introduces source snapshot authority semantics that P1 and M5/M6/M7 do not
+    validate: eligibility-before-streaming, single repeatable-read snapshot, total ordering, sparse sentinel
+    hashing, and streaming canonical hash discipline.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p2_source_snapshot.py --negative-control
   local_reproduction_command: make validate-b24-p2-source-snapshot
-  risk_if_removed: B2.4 could hash identity-bearing, sparse, unordered, split-snapshot, or fully materialized source manifests without a merge-blocking signal.
+  risk_if_removed: B2.4 could hash identity-bearing, sparse, unordered, split-snapshot, or fully materialized
+    source manifests without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b24-p3-fit-planning
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/validate_b24_p3_fit_planning.py
   owning_phase: B2.4-P3
-  protected_invariant: B2.4-P3 dirty-event capture, debounce planning, hash-independent active execution lease, atomic fit claim, transactional dispatch outbox, fit-id-only payload, duplicate delivery idempotency, source query-plan fallback indexes, and no-P4/P5/P6 scope remain machine-falsifiable.
+  protected_invariant: B2.4-P3 dirty-event capture, debounce planning, hash-independent active execution
+    lease, atomic fit claim, transactional dispatch outbox, fit-id-only payload, duplicate delivery idempotency,
+    source query-plan fallback indexes, and no-P4/P5/P6 scope remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P3 introduces orchestration-safety semantics that P1/P2 do not validate: hot-path dirty-only emission, debounced candidate leasing, active execution uniqueness independent of source hash, claim plus outbox atomicity, dispatch recovery, and fit-id-only broker payloads.'
+  subsumption_evidence: 'P3 introduces orchestration-safety semantics that P1/P2 do not validate: hot-path
+    dirty-only emission, debounced candidate leasing, active execution uniqueness independent of source
+    hash, claim plus outbox atomicity, dispatch recovery, and fit-id-only broker payloads.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p3_fit_planning.py --negative-control
   local_reproduction_command: make validate-b24-p3-fit-planning
-  risk_if_removed: B2.4 could regress to hot-path snapshot generation, compute stampedes, unsafe DB-then-broker dual writes, or source-data queue payloads without a merge-blocking signal.
+  risk_if_removed: B2.4 could regress to hot-path snapshot generation, compute stampedes, unsafe DB-then-broker
+    dual writes, or source-data queue payloads without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b24-p4-resource-bounds
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/validate_b24_p4_resource_bounds.py
   owning_phase: B2.4-P4
-  protected_invariant: B2.4-P4 preflight lease ordering, deterministic resource/cardinality/memory/graph envelopes, bounded source-profile query strategy, pre-dispatch rejection, durable fallback taxonomy, and no-P5/P6 runtime behavior remain machine-falsifiable.
+  protected_invariant: B2.4-P4 preflight lease ordering, deterministic resource/cardinality/memory/graph
+    envelopes, bounded source-profile query strategy, pre-dispatch rejection, durable fallback taxonomy,
+    and no-P5/P6 runtime behavior remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P4 introduces resource-safety semantics that P1/P2/P3 do not validate: cheap preflight leasing before source snapshot/profile work, arithmetic-only input memory envelopes, formula-only symbolic graph envelopes, bounded profiler query discipline, pre-dispatch rejection, and durable resource/graph fallback without sampler/artifact behavior.'
+  subsumption_evidence: 'P4 introduces resource-safety semantics that P1/P2/P3 do not validate: cheap
+    preflight leasing before source snapshot/profile work, arithmetic-only input memory envelopes, formula-only
+    symbolic graph envelopes, bounded profiler query discipline, pre-dispatch rejection, and durable resource/graph
+    fallback without sampler/artifact behavior.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p4_resource_bounds.py --negative-control
   local_reproduction_command: make validate-b24-p4-resource-bounds
-  risk_if_removed: B2.4 could regress to duplicate planner DB work, unbounded cardinality profiling, allocation-backed memory proofs, PyMC/PyTensor dry-runs, oversized dispatch, or non-durable resource fallback without a merge-blocking signal.
+  risk_if_removed: B2.4 could regress to duplicate planner DB work, unbounded cardinality profiling, allocation-backed
+    memory proofs, PyMC/PyTensor dry-runs, oversized dispatch, or non-durable resource fallback without
+    a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b24-p5-runtime-harness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/validate_b24_p5_runtime_harness.py
   owning_phase: B2.4-P5
-  protected_invariant: B2.4-P5 Bayesian worker dependency lane, runtime parity image, PyTensor compile proof, tiny PyMC benchmark, native thread caps, compiledir isolation, process-group kill semantics, durable timeout fallback, stale-running recovery, and boundary non-regression remain machine-falsifiable.
+  protected_invariant: B2.4-P5 Bayesian worker dependency lane, runtime parity image, PyTensor compile
+    proof, tiny PyMC benchmark, native thread caps, compiledir isolation, process-group kill semantics,
+    durable timeout fallback, stale-running recovery, and boundary non-regression remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P5 introduces native-runtime physics that P1-P4 intentionally exclude: PyMC/PyTensor/ArViZ dependency authority, compiler/backend viability, numerical thread budgets, PyTensor compiledir isolation, process-group kill behavior, durable timeout persistence, stale-running repair, and runtime-image parity.'
+  subsumption_evidence: 'P5 introduces native-runtime physics that P1-P4 intentionally exclude: PyMC/PyTensor/ArViZ
+    dependency authority, compiler/backend viability, numerical thread budgets, PyTensor compiledir isolation,
+    process-group kill behavior, durable timeout persistence, stale-running repair, and runtime-image
+    parity.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p5_runtime_harness.py --negative-control
   local_reproduction_command: make validate-b24-p5-runtime-harness
-  risk_if_removed: B2.4 could pass schema/source/planning/resource gates while the Bayesian worker runtime cannot import, compile, sample, bound threads, kill native compute, repair stale fits, or preserve internal-only boundaries.
+  risk_if_removed: B2.4 could pass schema/source/planning/resource gates while the Bayesian worker runtime
+    cannot import, compile, sample, bound threads, kill native compute, repair stale fits, or preserve
+    internal-only boundaries.
   decision: keep_required
 - gate_id: validate-b24-p6-real-fit-worker
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run / B2.4-P6 Real Fit Worker Proof
   script: scripts/ci/validate_b24_p6_real_fit_worker.py
   owning_phase: B2.4-P6
-  protected_invariant: B2.4-P6 fit-id-only parent execution, explicit RLS tenant-resolution capability, frozen P2/P4 source replay, source-derived observed input, and child-only PyMC execution remain machine-falsifiable.
+  protected_invariant: B2.4-P6 fit-id-only parent execution, explicit RLS tenant-resolution capability,
+    frozen P2/P4 source replay, source-derived observed input, and child-only PyMC execution remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P6 is not subsumed by P1-P5: it is the first gate that proves the parent worker consumes a committed fit row and source snapshot, replays the frozen source authority under Postgres RLS, and physically launches the DB-airgapped PyMC child with source-derived observations instead of synthetic hash bytes.'
+  subsumption_evidence: 'P6 is not subsumed by P1-P5: it is the first gate that proves the parent worker
+    consumes a committed fit row and source snapshot, replays the frozen source authority under Postgres
+    RLS, and physically launches the DB-airgapped PyMC child with source-derived observations instead
+    of synthetic hash bytes.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
   local_reproduction_command: make validate-b24-p6-real-fit-worker
-  risk_if_removed: B2.4 could retain native runtime safety while silently feeding PyMC synthetic snapshot-hash observations, bypassing P2/P4 authority, or losing protected-main evidence that real fit execution works under runtime DB identity.
+  risk_if_removed: B2.4 could retain native runtime safety while silently feeding PyMC synthetic snapshot-hash
+    observations, bypassing P2/P4 authority, or losing protected-main evidence that real fit execution
+    works under runtime DB identity.
   decision: keep_required
 - gate_id: validate-b24-p7-diagnostics
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run / B2.4-P7 Diagnostic Semantics Proof
   script: scripts/ci/validate_b24_p7_diagnostics.py
   owning_phase: B2.4-P7
-  protected_invariant: B2.4-P7 diagnostic validity, governed target scope, finite-value gates, strict zero-divergence conditionality, bounded interval payloads, child-contained ArviZ execution, and diagnostic/execution lifecycle separation remain machine-falsifiable.
+  protected_invariant: B2.4-P7 diagnostic validity, governed target scope, finite-value gates, strict
+    zero-divergence conditionality, bounded interval payloads, child-contained ArviZ execution, and diagnostic/execution
+    lifecycle separation remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P7 is not subsumed by P5 or P6: P5 proves native runtime containment and kill semantics, while P6 proves source-authorized sampling. P7 is the first gate that adjudicates whether sampled output is statistically interval- admissible and proves failed diagnostics cannot expose confidence.'
+  subsumption_evidence: 'P7 is not subsumed by P5 or P6: P5 proves native runtime containment and kill
+    semantics, while P6 proves source-authorized sampling. P7 is the first gate that adjudicates whether
+    sampled output is statistically interval- admissible and proves failed diagnostics cannot expose confidence.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
   local_reproduction_command: make validate-b24-p7-diagnostics
-  risk_if_removed: B2.4 could successfully sample while returning credible intervals for bad R-hat, low ESS, divergences, nonfinite diagnostics, ungoverned variables, or oversized interval payloads without a merge-blocking signal.
+  risk_if_removed: B2.4 could successfully sample while returning credible intervals for bad R-hat, low
+    ESS, divergences, nonfinite diagnostics, ungoverned variables, or oversized interval payloads without
+    a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-b24-p8-artifact-lifecycle
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run / B2.4-P8 Artifact Lifecycle Proof
   script: scripts/ci/validate_b24_p8_artifact_lifecycle.py
   owning_phase: B2.4-P8
-  protected_invariant: B2.4-P8 Postgres-native small-artifact persistence, lifecycle, retention, tenant quota, hash integrity, pruning auditability, and public/cloud/LLM non-exposure remain machine-falsifiable.
+  protected_invariant: B2.4-P8 Postgres-native small-artifact persistence, lifecycle, retention, tenant
+    quota, hash integrity, pruning auditability, and public/cloud/LLM non-exposure remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P8 is not subsumed by P1 or P7: P1 created artifact authority rows and P7 blocked ungoverned trace persistence, but P8 is the first gate that proves governed artifact writes, stored-byte hash semantics, tenant quota accounting, retention pruning, and storage-physics prohibitions.'
+  subsumption_evidence: 'P8 is not subsumed by P1 or P7: P1 created artifact authority rows and P7 blocked
+    ungoverned trace persistence, but P8 is the first gate that proves governed artifact writes, stored-byte
+    hash semantics, tenant quota accounting, retention pruning, and storage-physics prohibitions.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
   local_reproduction_command: make validate-b24-p8-artifact-lifecycle
-  risk_if_removed: B2.4 could retain diagnostics while persisting unbounded traces, cloud/local artifacts, hash-ambiguous payloads, quota-racy rows, or destructive pruning without a merge-blocking signal.
+  risk_if_removed: B2.4 could retain diagnostics while persisting unbounded traces, cloud/local artifacts,
+    hash-ambiguous payloads, quota-racy rows, or destructive pruning without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/validate_m7_b24_readiness.py
   owning_phase: M7
-  protected_invariant: M7 final B2.4 readiness verdict, H01-H15 hypothesis adjudication, M7-A through M7-M gate statuses, final debt classification, no-feature-contamination scan, and B2.4 authorization remain machine-readable and non-narrative.
+  protected_invariant: M7 final B2.4 readiness verdict, H01-H15 hypothesis adjudication, M7-A through
+    M7-M gate statuses, final debt classification, no-feature-contamination scan, and B2.4 authorization
+    remain machine-readable and non-narrative.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: M7 is the first gate that adjudicates the complete pre-B2.4 maintainability chain across M0-M6 closure, clean-clone authority, migration authority, test topology, append-only isolation, CI insertion safety, ops readiness, B2.4 substrate design, LLM boundary, feature contamination, and debt classification.
+  subsumption_evidence: M7 is the first gate that adjudicates the complete pre-B2.4 maintainability chain
+    across M0-M6 closure, clean-clone authority, migration authority, test topology, append-only isolation,
+    CI insertion safety, ops readiness, B2.4 substrate design, LLM boundary, feature contamination, and
+    debt classification.
   negative_control_preserved_by: python scripts/ci/validate_m7_b24_readiness.py --negative-control
   local_reproduction_command: make validate-m7-b24-readiness
-  risk_if_removed: B2.4 could start from narrative readiness claims without a machine-readable final verdict or bounded debt register.
+  risk_if_removed: B2.4 could start from narrative readiness claims without a machine-readable final verdict
+    or bounded debt register.
   decision: keep_required
 - gate_id: validate-m6-llm-boundary
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/validate_m6_llm_boundary.py
   owning_phase: M6
-  protected_invariant: M6 LLM provider-boundary decision, B2.4 no-LLM guardrail, B2.7 decomposition precondition, provider SDK import policy, and truth-path LLM exclusion remain complete and machine-falsifiable.
+  protected_invariant: M6 LLM provider-boundary decision, B2.4 no-LLM guardrail, B2.7 decomposition precondition,
+    provider SDK import policy, and truth-path LLM exclusion remain complete and machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: M6 protects B2.4 from silently expanding the LLM provider boundary; no M5 or prior governance gate checks B2.4 touchpoint classification, Path B invalidation, B2.7 decomposition precondition, provider SDK location policy, and forbidden truth-path LLM imports together.
+  subsumption_evidence: M6 protects B2.4 from silently expanding the LLM provider boundary; no M5 or prior
+    governance gate checks B2.4 touchpoint classification, Path B invalidation, B2.7 decomposition precondition,
+    provider SDK location policy, and forbidden truth-path LLM imports together.
   negative_control_preserved_by: python scripts/ci/validate_m6_llm_boundary.py --negative-control
   local_reproduction_command: make validate-m6-llm-boundary
-  risk_if_removed: B2.4 Bayesian diagnostics, Trust API paths, MCP trust tools, or envelope-generation paths could import LLM provider modules or provider SDKs without machine-falsifiable failure.
+  risk_if_removed: B2.4 Bayesian diagnostics, Trust API paths, MCP trust tools, or envelope-generation
+    paths could import LLM provider modules or provider SDKs without machine-falsifiable failure.
   decision: keep_required
 - gate_id: validate-m5-b24-readiness-design
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/validate_m5_b24_readiness_design.py
   owning_phase: M5
-  protected_invariant: M5 B2.4 readiness design artifacts, internal confidence metadata schema, cold-start fallback doctrine, dependency no-install rule, and static non-implementation boundary remain complete and machine-falsifiable.
+  protected_invariant: M5 B2.4 readiness design artifacts, internal confidence metadata schema, cold-start
+    fallback doctrine, dependency no-install rule, and static non-implementation boundary remain complete
+    and machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: M5 introduces a new design-substrate authority surface for B2.4; no M0-M4 validator checks B2.4 module home, diagnostic protocol, artifact persistence doctrine, dependency decision, fallback doctrine, internal confidence schema, and M5 non-implementation contamination together.
+  subsumption_evidence: M5 introduces a new design-substrate authority surface for B2.4; no M0-M4 validator
+    checks B2.4 module home, diagnostic protocol, artifact persistence doctrine, dependency decision,
+    fallback doctrine, internal confidence schema, and M5 non-implementation contamination together.
   negative_control_preserved_by: python scripts/ci/validate_m5_b24_readiness_design.py --negative-control
   local_reproduction_command: make validate-m5-b24-readiness
-  risk_if_removed: B2.4 implementation could begin without machine-falsifiable module, persistence, fallback, dependency, confidence, and CI insertion contracts.
+  risk_if_removed: B2.4 implementation could begin without machine-falsifiable module, persistence, fallback,
+    dependency, confidence, and CI insertion contracts.
   decision: keep_required
 - gate_id: validate-m4-ops-runbooks
   workflow: .github/workflows/m4-operational-runbooks.yml
   job: validate-ops-runbooks
   script: scripts/ci/validate_m4_ops_runbooks.py
   owning_phase: M4
-  protected_invariant: M4 operational runbooks, command metadata, fixture references, queue/task/table references, and replay-safety doctrine remain aligned with source and runtime surfaces.
+  protected_invariant: M4 operational runbooks, command metadata, fixture references, queue/task/table
+    references, and replay-safety doctrine remain aligned with source and runtime surfaces.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: M4 introduces a new operational-runbook authority surface; no earlier M0-M3 validator checks command metadata, fixture-backed ops probes, or webhook replay safety doctrine.
+  subsumption_evidence: M4 introduces a new operational-runbook authority surface; no earlier M0-M3 validator
+    checks command metadata, fixture-backed ops probes, or webhook replay safety doctrine.
   negative_control_preserved_by: python scripts/ci/validate_m4_ops_runbooks.py
   local_reproduction_command: python scripts/ci/validate_m4_ops_runbooks.py
   risk_if_removed: Loss of drift enforcement for successor-safe operational diagnostics and replay safety.
@@ -423,12 +612,14 @@
   job: not_executed
   script: scripts/ci/enforce_b17_p0_explanation_surface_lock.py
   owning_phase: B17-P0
-  protected_invariant: Utility support script enforce_b17_p0_explanation_surface_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b17_p0_explanation_surface_lock; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b17_p0_explanation_surface_lock.py
   local_reproduction_command: python scripts/ci/enforce_b17_p0_explanation_surface_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -438,12 +629,14 @@
   job: not_executed
   script: scripts/ci/enforce_b21_p0_authority_convergence.py
   owning_phase: B21-P0
-  protected_invariant: Utility support script enforce_b21_p0_authority_convergence; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b21_p0_authority_convergence; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b21_p0_authority_convergence.py
   local_reproduction_command: python scripts/ci/enforce_b21_p0_authority_convergence.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -453,12 +646,14 @@
   job: not_executed
   script: scripts/ci/enforce_b21_p1_semantic_replay_lock.py
   owning_phase: B21-P1
-  protected_invariant: Utility support script enforce_b21_p1_semantic_replay_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b21_p1_semantic_replay_lock; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b21_p1_semantic_replay_lock.py
   local_reproduction_command: python scripts/ci/enforce_b21_p1_semantic_replay_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -468,12 +663,14 @@
   job: not_executed
   script: scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
   owning_phase: B21-P2
-  protected_invariant: Utility support script enforce_b21_p2_strategy_kernel_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b21_p2_strategy_kernel_lock; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
   local_reproduction_command: python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -483,12 +680,14 @@
   job: not_executed
   script: scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
   owning_phase: B21-P3
-  protected_invariant: Utility support script enforce_b21_p3_persistence_read_surface_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b21_p3_persistence_read_surface_lock; not a default
+    adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
   local_reproduction_command: python scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -498,12 +697,14 @@
   job: not_executed
   script: scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
   owning_phase: B21-P4
-  protected_invariant: Utility support script enforce_b21_p4_queue_isolation_semantics_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b21_p4_queue_isolation_semantics_lock; not a default
+    adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
   local_reproduction_command: python scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -513,12 +714,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
   owning_phase: B21-P5
-  protected_invariant: B21-P5 invariant enforced by enforce_b21_p5_nonvacuous_adjudication; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B21-P5 invariant enforced by enforce_b21_p5_nonvacuous_adjudication; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
   local_reproduction_command: python scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -528,12 +731,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b21_p6_full_chain_closure.py
   owning_phase: B21-P6
-  protected_invariant: B21-P6 invariant enforced by enforce_b21_p6_full_chain_closure; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B21-P6 invariant enforced by enforce_b21_p6_full_chain_closure; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b21_p6_full_chain_closure.py
   local_reproduction_command: python scripts/ci/enforce_b21_p6_full_chain_closure.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -543,12 +748,14 @@
   job: not_executed
   script: scripts/ci/enforce_b17_p4_strategy_closure.py
   owning_phase: B17-P4
-  protected_invariant: Utility support script enforce_b17_p4_strategy_closure; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b17_p4_strategy_closure; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b17_p4_strategy_closure.py
   local_reproduction_command: python scripts/ci/enforce_b17_p4_strategy_closure.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -558,12 +765,14 @@
   job: not_executed
   script: scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
   owning_phase: B17-P5
-  protected_invariant: Utility support script enforce_b17_p5_merge_blocking_adjudication; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b17_p5_merge_blocking_adjudication; not a default
+    adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
   local_reproduction_command: python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -573,12 +782,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b17_p6_adjudication_plane.py
   owning_phase: B17-P6
-  protected_invariant: B17-P6 invariant enforced by enforce_b17_p6_adjudication_plane; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B17-P6 invariant enforced by enforce_b17_p6_adjudication_plane; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b17_p6_adjudication_plane.py
   local_reproduction_command: python scripts/ci/enforce_b17_p6_adjudication_plane.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -588,12 +799,14 @@
   job: not_executed
   script: scripts/ci/enforce_b22_p0_webhook_surface_lock.py
   owning_phase: B22-P0
-  protected_invariant: Utility support script enforce_b22_p0_webhook_surface_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b22_p0_webhook_surface_lock; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b22_p0_webhook_surface_lock.py
   local_reproduction_command: python scripts/ci/enforce_b22_p0_webhook_surface_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -603,12 +816,14 @@
   job: not_executed
   script: scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
   owning_phase: B22-P1
-  protected_invariant: Utility support script enforce_b22_p1_authenticity_semantics_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b22_p1_authenticity_semantics_lock; not a default
+    adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
   local_reproduction_command: python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -618,12 +833,14 @@
   job: not_executed
   script: scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
   owning_phase: B22-P2
-  protected_invariant: Utility support script enforce_b22_p2_post_auth_privacy_boundary; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b22_p2_post_auth_privacy_boundary; not a default
+    adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
   local_reproduction_command: python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -633,12 +850,14 @@
   job: not_executed
   script: scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
   owning_phase: B22-P3
-  protected_invariant: Utility support script enforce_b22_p3_canonical_commerce_identity_envelope; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b22_p3_canonical_commerce_identity_envelope; not
+    a default adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
   local_reproduction_command: python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -648,12 +867,14 @@
   job: not_executed
   script: scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
   owning_phase: B22-P4
-  protected_invariant: Utility support script enforce_b22_p4_idempotent_ack_orchestration; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b22_p4_idempotent_ack_orchestration; not a default
+    adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
   local_reproduction_command: python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -663,12 +884,14 @@
   job: not_executed
   script: scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
   owning_phase: B22-P5
-  protected_invariant: Utility support script enforce_b22_p5_performance_negative_control_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b22_p5_performance_negative_control_lock; not a
+    default adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
   local_reproduction_command: python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -678,12 +901,14 @@
   job: not_executed
   script: scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
   owning_phase: B23-P0
-  protected_invariant: Utility support script enforce_b23_p0_typed_boundary_source_alignment; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b23_p0_typed_boundary_source_alignment; not a default
+    adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
   local_reproduction_command: python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -693,12 +918,14 @@
   job: not_executed
   script: scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
   owning_phase: B23-P0
-  protected_invariant: Utility support script enforce_b23_p0_semantic_authority_freeze; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b23_p0_semantic_authority_freeze; not a default
+    adjudication gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
   local_reproduction_command: python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -708,12 +935,14 @@
   job: not_executed
   script: scripts/ci/enforce_b23_pre_p1_spec_gate.py
   owning_phase: B23
-  protected_invariant: Utility support script enforce_b23_pre_p1_spec_gate; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b23_pre_p1_spec_gate; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_pre_p1_spec_gate.py
   local_reproduction_command: python scripts/ci/enforce_b23_pre_p1_spec_gate.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -723,12 +952,14 @@
   job: not_executed
   script: scripts/ci/enforce_b23_p1_schema_authority_lock.py
   owning_phase: B23-P1
-  protected_invariant: Utility support script enforce_b23_p1_schema_authority_lock; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b23_p1_schema_authority_lock; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_p1_schema_authority_lock.py
   local_reproduction_command: python scripts/ci/enforce_b23_p1_schema_authority_lock.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -738,12 +969,14 @@
   job: see workflow_references
   script: scripts/ci/verify_b23_p1_migration_reversibility.py
   owning_phase: B23-P1
-  protected_invariant: B23-P1 invariant enforced by verify_b23_p1_migration_reversibility; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B23-P1 invariant enforced by verify_b23_p1_migration_reversibility; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/verify_b23_p1_migration_reversibility.py
   local_reproduction_command: python scripts/ci/verify_b23_p1_migration_reversibility.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -753,12 +986,14 @@
   job: not_executed
   script: scripts/ci/enforce_b23_p2_match_engine_kernel.py
   owning_phase: B23-P2
-  protected_invariant: Utility support script enforce_b23_p2_match_engine_kernel; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b23_p2_match_engine_kernel; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_p2_match_engine_kernel.py
   local_reproduction_command: python scripts/ci/enforce_b23_p2_match_engine_kernel.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -768,12 +1003,14 @@
   job: not_executed
   script: scripts/ci/enforce_b23_p3_verdict_persistence.py
   owning_phase: B23-P3
-  protected_invariant: Utility support script enforce_b23_p3_verdict_persistence; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b23_p3_verdict_persistence; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_p3_verdict_persistence.py
   local_reproduction_command: python scripts/ci/enforce_b23_p3_verdict_persistence.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -783,12 +1020,14 @@
   job: not_executed
   script: scripts/ci/enforce_b23_p4_queue_performance.py
   owning_phase: B23-P4
-  protected_invariant: Utility support script enforce_b23_p4_queue_performance; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b23_p4_queue_performance; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific failure mode.
+  subsumption_evidence: Required contract-governance cohort gate; no stronger gate reproduces its script-specific
+    failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_p4_queue_performance.py
   local_reproduction_command: python scripts/ci/enforce_b23_p4_queue_performance.py
   risk_if_removed: Loss of required Contract Semantic Drift Gate invariant coverage.
@@ -798,12 +1037,14 @@
   job: see workflow_references
   script: scripts/ci/assert_b15_p7_playwright_execution.py
   owning_phase: B15-P7
-  protected_invariant: B15-P7 invariant enforced by assert_b15_p7_playwright_execution; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P7 invariant enforced by assert_b15_p7_playwright_execution; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/assert_b15_p7_playwright_execution.py
   local_reproduction_command: python scripts/ci/assert_b15_p7_playwright_execution.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -813,12 +1054,14 @@
   job: see workflow_references
   script: scripts/ci/b055_evidence_bundle.py
   owning_phase: B055
-  protected_invariant: B055 invariant enforced by b055_evidence_bundle; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B055 invariant enforced by b055_evidence_bundle; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/b055_evidence_bundle.py
   local_reproduction_command: python scripts/ci/b055_evidence_bundle.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -828,12 +1071,14 @@
   job: see workflow_references
   script: scripts/ci/b15_p7_phase_closure_gate.py
   owning_phase: B15-P7
-  protected_invariant: B15-P7 invariant enforced by b15_p7_phase_closure_gate; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P7 invariant enforced by b15_p7_phase_closure_gate; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/b15_p7_phase_closure_gate.py
   local_reproduction_command: python scripts/ci/b15_p7_phase_closure_gate.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -843,12 +1088,14 @@
   job: see workflow_references
   script: scripts/ci/capture_b13_p11_branch_protection_evidence.py
   owning_phase: B13-P11
-  protected_invariant: B13-P11 invariant enforced by capture_b13_p11_branch_protection_evidence; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P11 invariant enforced by capture_b13_p11_branch_protection_evidence; keeps
+    its documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/capture_b13_p11_branch_protection_evidence.py
   local_reproduction_command: python scripts/ci/capture_b13_p11_branch_protection_evidence.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -858,12 +1105,14 @@
   job: see workflow_references
   script: scripts/ci/capture_b14_p7_branch_protection_evidence.py
   owning_phase: B14-P7
-  protected_invariant: B14-P7 invariant enforced by capture_b14_p7_branch_protection_evidence; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P7 invariant enforced by capture_b14_p7_branch_protection_evidence; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/capture_b14_p7_branch_protection_evidence.py
   local_reproduction_command: python scripts/ci/capture_b14_p7_branch_protection_evidence.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -873,12 +1122,14 @@
   job: see workflow_references
   script: scripts/ci/eg5_cache_validation.py
   owning_phase: CI-GOVERNANCE
-  protected_invariant: CI-GOVERNANCE invariant enforced by eg5_cache_validation; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: CI-GOVERNANCE invariant enforced by eg5_cache_validation; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/eg5_cache_validation.py
   local_reproduction_command: python scripts/ci/eg5_cache_validation.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -888,12 +1139,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p0_codeowners.py
   owning_phase: B13-P0
-  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_codeowners; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_codeowners; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p0_codeowners.py
   local_reproduction_command: python scripts/ci/enforce_b13_p0_codeowners.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -903,12 +1156,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p0_evidence_pack.py
   owning_phase: B13-P0
-  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_evidence_pack; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_evidence_pack; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p0_evidence_pack.py
   local_reproduction_command: python scripts/ci/enforce_b13_p0_evidence_pack.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -918,12 +1173,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p0_scope_truth.py
   owning_phase: B13-P0
-  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_scope_truth; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_scope_truth; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p0_scope_truth.py
   local_reproduction_command: python scripts/ci/enforce_b13_p0_scope_truth.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -933,12 +1190,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p1_contract_authority.py
   owning_phase: B13-P1
-  protected_invariant: B13-P1 invariant enforced by enforce_b13_p1_contract_authority; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P1 invariant enforced by enforce_b13_p1_contract_authority; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p1_contract_authority.py
   local_reproduction_command: python scripts/ci/enforce_b13_p1_contract_authority.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -948,12 +1207,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p10_provider_tranche_proofs.py
   owning_phase: B13-P10
-  protected_invariant: B13-P10 invariant enforced by enforce_b13_p10_provider_tranche_proofs; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P10 invariant enforced by enforce_b13_p10_provider_tranche_proofs; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p10_provider_tranche_proofs.py
   local_reproduction_command: python scripts/ci/enforce_b13_p10_provider_tranche_proofs.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -963,12 +1224,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p11_e2e_system_proofs.py
   owning_phase: B13-P11
-  protected_invariant: B13-P11 invariant enforced by enforce_b13_p11_e2e_system_proofs; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P11 invariant enforced by enforce_b13_p11_e2e_system_proofs; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p11_e2e_system_proofs.py
   local_reproduction_command: python scripts/ci/enforce_b13_p11_e2e_system_proofs.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -978,12 +1241,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p2_evidence_pack.py
   owning_phase: B13-P2
-  protected_invariant: B13-P2 invariant enforced by enforce_b13_p2_evidence_pack; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P2 invariant enforced by enforce_b13_p2_evidence_pack; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p2_evidence_pack.py
   local_reproduction_command: python scripts/ci/enforce_b13_p2_evidence_pack.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -993,12 +1258,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p2_handshake_state.py
   owning_phase: B13-P2
-  protected_invariant: B13-P2 invariant enforced by enforce_b13_p2_handshake_state; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P2 invariant enforced by enforce_b13_p2_handshake_state; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p2_handshake_state.py
   local_reproduction_command: python scripts/ci/enforce_b13_p2_handshake_state.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1008,12 +1275,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p3_durable_lifecycle.py
   owning_phase: B13-P3
-  protected_invariant: B13-P3 invariant enforced by enforce_b13_p3_durable_lifecycle; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P3 invariant enforced by enforce_b13_p3_durable_lifecycle; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p3_durable_lifecycle.py
   local_reproduction_command: python scripts/ci/enforce_b13_p3_durable_lifecycle.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1023,12 +1292,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p4_boundary_hardening.py
   owning_phase: B13-P4
-  protected_invariant: B13-P4 invariant enforced by enforce_b13_p4_boundary_hardening; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P4 invariant enforced by enforce_b13_p4_boundary_hardening; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p4_boundary_hardening.py
   local_reproduction_command: python scripts/ci/enforce_b13_p4_boundary_hardening.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1038,12 +1309,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p5_adapter_layer.py
   owning_phase: B13-P5
-  protected_invariant: B13-P5 invariant enforced by enforce_b13_p5_adapter_layer; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P5 invariant enforced by enforce_b13_p5_adapter_layer; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p5_adapter_layer.py
   local_reproduction_command: python scripts/ci/enforce_b13_p5_adapter_layer.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1053,12 +1326,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p6_runtime_lifecycle.py
   owning_phase: B13-P6
-  protected_invariant: B13-P6 invariant enforced by enforce_b13_p6_runtime_lifecycle; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P6 invariant enforced by enforce_b13_p6_runtime_lifecycle; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p6_runtime_lifecycle.py
   local_reproduction_command: python scripts/ci/enforce_b13_p6_runtime_lifecycle.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1068,12 +1343,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p7_refresh_orchestration.py
   owning_phase: B13-P7
-  protected_invariant: B13-P7 invariant enforced by enforce_b13_p7_refresh_orchestration; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P7 invariant enforced by enforce_b13_p7_refresh_orchestration; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p7_refresh_orchestration.py
   local_reproduction_command: python scripts/ci/enforce_b13_p7_refresh_orchestration.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1083,12 +1360,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p8_failure_baseline.py
   owning_phase: B13-P8
-  protected_invariant: B13-P8 invariant enforced by enforce_b13_p8_failure_baseline; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P8 invariant enforced by enforce_b13_p8_failure_baseline; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p8_failure_baseline.py
   local_reproduction_command: python scripts/ci/enforce_b13_p8_failure_baseline.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1098,12 +1377,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b13_p9_core_substrate_closure.py
   owning_phase: B13-P9
-  protected_invariant: B13-P9 invariant enforced by enforce_b13_p9_core_substrate_closure; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B13-P9 invariant enforced by enforce_b13_p9_core_substrate_closure; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b13_p9_core_substrate_closure.py
   local_reproduction_command: python scripts/ci/enforce_b13_p9_core_substrate_closure.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1113,12 +1394,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b14_p0_privacy_authority.py
   owning_phase: B14-P0
-  protected_invariant: B14-P0 invariant enforced by enforce_b14_p0_privacy_authority; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P0 invariant enforced by enforce_b14_p0_privacy_authority; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b14_p0_privacy_authority.py
   local_reproduction_command: python scripts/ci/enforce_b14_p0_privacy_authority.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1128,12 +1411,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b14_p1_ingress_privacy.py
   owning_phase: B14-P1
-  protected_invariant: B14-P1 invariant enforced by enforce_b14_p1_ingress_privacy; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P1 invariant enforced by enforce_b14_p1_ingress_privacy; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b14_p1_ingress_privacy.py
   local_reproduction_command: python scripts/ci/enforce_b14_p1_ingress_privacy.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1143,12 +1428,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b14_p2_session_authority.py
   owning_phase: B14-P2
-  protected_invariant: B14-P2 invariant enforced by enforce_b14_p2_session_authority; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P2 invariant enforced by enforce_b14_p2_session_authority; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b14_p2_session_authority.py
   local_reproduction_command: python scripts/ci/enforce_b14_p2_session_authority.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1158,12 +1445,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b14_p3_attribution_locality.py
   owning_phase: B14-P3
-  protected_invariant: B14-P3 invariant enforced by enforce_b14_p3_attribution_locality; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P3 invariant enforced by enforce_b14_p3_attribution_locality; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b14_p3_attribution_locality.py
   local_reproduction_command: python scripts/ci/enforce_b14_p3_attribution_locality.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1173,12 +1462,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b14_p4_retention_deletion.py
   owning_phase: B14-P4
-  protected_invariant: B14-P4 invariant enforced by enforce_b14_p4_retention_deletion; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P4 invariant enforced by enforce_b14_p4_retention_deletion; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b14_p4_retention_deletion.py
   local_reproduction_command: python scripts/ci/enforce_b14_p4_retention_deletion.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1188,12 +1479,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py
   owning_phase: B14-P5
-  protected_invariant: B14-P5 invariant enforced by enforce_b14_p5_export_log_artifact_no_leak; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P5 invariant enforced by enforce_b14_p5_export_log_artifact_no_leak; keeps
+    its documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py
   local_reproduction_command: python scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1203,12 +1496,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b14_p6_proof_plane_binding.py
   owning_phase: B14-P6
-  protected_invariant: B14-P6 invariant enforced by enforce_b14_p6_proof_plane_binding; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P6 invariant enforced by enforce_b14_p6_proof_plane_binding; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b14_p6_proof_plane_binding.py
   local_reproduction_command: python scripts/ci/enforce_b14_p6_proof_plane_binding.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1218,12 +1513,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py
   owning_phase: B14-P7
-  protected_invariant: B14-P7 invariant enforced by enforce_b14_p7_e2e_privacy_system_proofs; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P7 invariant enforced by enforce_b14_p7_e2e_privacy_system_proofs; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py
   local_reproduction_command: python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1233,12 +1530,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b15_p0_authority_scope_invariants.py
   owning_phase: B15-P0
-  protected_invariant: B15-P0 invariant enforced by enforce_b15_p0_authority_scope_invariants; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P0 invariant enforced by enforce_b15_p0_authority_scope_invariants; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b15_p0_authority_scope_invariants.py
   local_reproduction_command: python scripts/ci/enforce_b15_p0_authority_scope_invariants.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1248,12 +1547,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b15_p1_lifecycle_authority.py
   owning_phase: B15-P1
-  protected_invariant: B15-P1 invariant enforced by enforce_b15_p1_lifecycle_authority; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P1 invariant enforced by enforce_b15_p1_lifecycle_authority; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b15_p1_lifecycle_authority.py
   local_reproduction_command: python scripts/ci/enforce_b15_p1_lifecycle_authority.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1263,12 +1564,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b15_p3_runtime_route_binding.py
   owning_phase: B15-P3
-  protected_invariant: B15-P3 invariant enforced by enforce_b15_p3_runtime_route_binding; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P3 invariant enforced by enforce_b15_p3_runtime_route_binding; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b15_p3_runtime_route_binding.py
   local_reproduction_command: python scripts/ci/enforce_b15_p3_runtime_route_binding.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1278,12 +1581,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b15_p4_mock_sdk_boundary.py
   owning_phase: B15-P4
-  protected_invariant: B15-P4 invariant enforced by enforce_b15_p4_mock_sdk_boundary; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P4 invariant enforced by enforce_b15_p4_mock_sdk_boundary; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py
   local_reproduction_command: python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1293,12 +1598,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b15_p5_frontend_control_grammar.py
   owning_phase: B15-P5
-  protected_invariant: B15-P5 invariant enforced by enforce_b15_p5_frontend_control_grammar; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P5 invariant enforced by enforce_b15_p5_frontend_control_grammar; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b15_p5_frontend_control_grammar.py
   local_reproduction_command: python scripts/ci/enforce_b15_p5_frontend_control_grammar.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1308,12 +1615,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b15_p6_anti_cyborg_governance.py
   owning_phase: B15-P6
-  protected_invariant: B15-P6 invariant enforced by enforce_b15_p6_anti_cyborg_governance; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P6 invariant enforced by enforce_b15_p6_anti_cyborg_governance; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b15_p6_anti_cyborg_governance.py
   local_reproduction_command: python scripts/ci/enforce_b15_p6_anti_cyborg_governance.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1323,12 +1632,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b15_p7_ci_adjudication_closure.py
   owning_phase: B15-P7
-  protected_invariant: B15-P7 invariant enforced by enforce_b15_p7_ci_adjudication_closure; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P7 invariant enforced by enforce_b15_p7_ci_adjudication_closure; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b15_p7_ci_adjudication_closure.py
   local_reproduction_command: python scripts/ci/enforce_b15_p7_ci_adjudication_closure.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1338,12 +1649,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b16_p1_provider_boundary_domain_sql.py
   owning_phase: B16-P1
-  protected_invariant: B16-P1 invariant enforced by enforce_b16_p1_provider_boundary_domain_sql; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B16-P1 invariant enforced by enforce_b16_p1_provider_boundary_domain_sql; keeps
+    its documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b16_p1_provider_boundary_domain_sql.py
   local_reproduction_command: python scripts/ci/enforce_b16_p1_provider_boundary_domain_sql.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1353,12 +1666,14 @@
   job: not_executed
   script: scripts/ci/enforce_b16_p7_operational_closure.py
   owning_phase: B16-P7
-  protected_invariant: Utility support script enforce_b16_p7_operational_closure; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_b16_p7_operational_closure; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: utility
   default_execution: false
   candidate_action: utility_only
   subsuming_gate: ''
-  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default execution.
+  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default
+    execution.
   negative_control_preserved_by: not_applicable_utility_only
   local_reproduction_command: python scripts/ci/enforce_b16_p7_operational_closure.py
   risk_if_removed: No CI adjudication loss while unreferenced.
@@ -1368,12 +1683,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b17_p6_benchmark_adjudication.py
   owning_phase: B17-P6
-  protected_invariant: B17-P6 invariant enforced by enforce_b17_p6_benchmark_adjudication; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B17-P6 invariant enforced by enforce_b17_p6_benchmark_adjudication; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b17_p6_benchmark_adjudication.py
   local_reproduction_command: python scripts/ci/enforce_b17_p6_benchmark_adjudication.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1383,12 +1700,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b21_p4_benchmark_adjudication.py
   owning_phase: B21-P4
-  protected_invariant: B21-P4 invariant enforced by enforce_b21_p4_benchmark_adjudication; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B21-P4 invariant enforced by enforce_b21_p4_benchmark_adjudication; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b21_p4_benchmark_adjudication.py
   local_reproduction_command: python scripts/ci/enforce_b21_p4_benchmark_adjudication.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1398,12 +1717,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py
   owning_phase: B22-P5
-  protected_invariant: B22-P5 invariant enforced by enforce_b22_p5_webhook_benchmark_adjudication; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B22-P5 invariant enforced by enforce_b22_p5_webhook_benchmark_adjudication; keeps
+    its documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py
   local_reproduction_command: python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1413,12 +1734,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b22_p6_merge_blocking_closure.py
   owning_phase: B22-P6
-  protected_invariant: B22-P6 invariant enforced by enforce_b22_p6_merge_blocking_closure; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B22-P6 invariant enforced by enforce_b22_p6_merge_blocking_closure; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b22_p6_merge_blocking_closure.py
   local_reproduction_command: python scripts/ci/enforce_b22_p6_merge_blocking_closure.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1428,12 +1751,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b23_p5_composite_proof.py
   owning_phase: B23-P5
-  protected_invariant: B23-P5 invariant enforced by enforce_b23_p5_composite_proof; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B23-P5 invariant enforced by enforce_b23_p5_composite_proof; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_p5_composite_proof.py
   local_reproduction_command: python scripts/ci/enforce_b23_p5_composite_proof.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1443,12 +1768,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_b23_p6_end_to_end_closure.py
   owning_phase: B23-P6
-  protected_invariant: B23-P6 invariant enforced by enforce_b23_p6_end_to_end_closure; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B23-P6 invariant enforced by enforce_b23_p6_end_to_end_closure; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_b23_p6_end_to_end_closure.py
   local_reproduction_command: python scripts/ci/enforce_b23_p6_end_to_end_closure.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1458,12 +1785,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_branch_protection_integrity.py
   owning_phase: CI-GOVERNANCE
-  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_branch_protection_integrity; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_branch_protection_integrity; keeps
+    its documented negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_branch_protection_integrity.py
   local_reproduction_command: python scripts/ci/enforce_branch_protection_integrity.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1473,12 +1802,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_forensics_index.py
   owning_phase: CI-GOVERNANCE
-  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_forensics_index; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_forensics_index; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_forensics_index.py
   local_reproduction_command: python scripts/ci/enforce_forensics_index.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1488,12 +1819,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_llm_api_call_single_write_path.py
   owning_phase: LLM-GOVERNANCE
-  protected_invariant: LLM-GOVERNANCE invariant enforced by enforce_llm_api_call_single_write_path; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: LLM-GOVERNANCE invariant enforced by enforce_llm_api_call_single_write_path; keeps
+    its documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_llm_api_call_single_write_path.py
   local_reproduction_command: python scripts/ci/enforce_llm_api_call_single_write_path.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1503,12 +1836,14 @@
   job: not_executed
   script: scripts/ci/enforce_llm_provider_boundary.py
   owning_phase: LLM-GOVERNANCE
-  protected_invariant: Utility support script enforce_llm_provider_boundary; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script enforce_llm_provider_boundary; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: utility
   default_execution: false
   candidate_action: utility_only
   subsuming_gate: ''
-  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default execution.
+  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default
+    execution.
   negative_control_preserved_by: not_applicable_utility_only
   local_reproduction_command: python scripts/ci/enforce_llm_provider_boundary.py
   risk_if_removed: No CI adjudication loss while unreferenced.
@@ -1518,12 +1853,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_no_worker_http_server.py
   owning_phase: CI-GOVERNANCE
-  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_no_worker_http_server; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_no_worker_http_server; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_no_worker_http_server.py
   local_reproduction_command: python scripts/ci/enforce_no_worker_http_server.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1533,12 +1870,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_postgres_only.py
   owning_phase: CI-GOVERNANCE
-  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_postgres_only; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_postgres_only; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_postgres_only.py
   local_reproduction_command: python scripts/ci/enforce_postgres_only.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1548,12 +1887,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_required_status_checks.py
   owning_phase: CI-GOVERNANCE
-  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_required_status_checks; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_required_status_checks; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_required_status_checks.py
   local_reproduction_command: python scripts/ci/enforce_required_status_checks.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1563,12 +1904,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_runtime_determinism.py
   owning_phase: RUNTIME-GOVERNANCE
-  protected_invariant: RUNTIME-GOVERNANCE invariant enforced by enforce_runtime_determinism; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: RUNTIME-GOVERNANCE invariant enforced by enforce_runtime_determinism; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_runtime_determinism.py
   local_reproduction_command: python scripts/ci/enforce_runtime_determinism.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1578,12 +1921,14 @@
   job: see workflow_references
   script: scripts/ci/enforce_runtime_hermeticity.py
   owning_phase: RUNTIME-GOVERNANCE
-  protected_invariant: RUNTIME-GOVERNANCE invariant enforced by enforce_runtime_hermeticity; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: RUNTIME-GOVERNANCE invariant enforced by enforce_runtime_hermeticity; keeps its
+    documented negative-control and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/enforce_runtime_hermeticity.py
   local_reproduction_command: python scripts/ci/enforce_runtime_hermeticity.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1593,12 +1938,14 @@
   job: see workflow_references
   script: scripts/ci/health_worker_probe.py
   owning_phase: CI-GOVERNANCE
-  protected_invariant: CI-GOVERNANCE invariant enforced by health_worker_probe; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: CI-GOVERNANCE invariant enforced by health_worker_probe; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/health_worker_probe.py
   local_reproduction_command: python scripts/ci/health_worker_probe.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1608,12 +1955,14 @@
   job: see workflow_references
   script: scripts/ci/llm_contract_db_parity.py
   owning_phase: LLM-GOVERNANCE
-  protected_invariant: LLM-GOVERNANCE invariant enforced by llm_contract_db_parity; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: LLM-GOVERNANCE invariant enforced by llm_contract_db_parity; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/llm_contract_db_parity.py
   local_reproduction_command: python scripts/ci/llm_contract_db_parity.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1623,12 +1972,14 @@
   job: see workflow_references
   script: .github/workflows/b2_4-gate-dry-run.yml
   owning_phase: M3/B2.4-INSERTION
-  protected_invariant: B2.4 can attach a metadata-only gate through an isolated workflow without expanding ci.yml, mutating M0/M1/M2, or installing statistical runtime dependencies.
+  protected_invariant: B2.4 can attach a metadata-only gate through an isolated workflow without expanding
+    ci.yml, mutating M0/M1/M2, or installing statistical runtime dependencies.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: make ci-b24-gate-dry-run
   local_reproduction_command: make ci-b24-gate-dry-run
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1638,12 +1989,14 @@
   job: not_executed
   script: scripts/ci/phase2_schema_closure_gate.py
   owning_phase: CI-GOVERNANCE
-  protected_invariant: Utility support script phase2_schema_closure_gate; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script phase2_schema_closure_gate; not a default adjudication gate
+    unless called by a registered workflow.
   current_status: utility
   default_execution: false
   candidate_action: utility_only
   subsuming_gate: ''
-  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default execution.
+  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default
+    execution.
   negative_control_preserved_by: not_applicable_utility_only
   local_reproduction_command: python scripts/ci/phase2_schema_closure_gate.py
   risk_if_removed: No CI adjudication loss while unreferenced.
@@ -1653,12 +2006,14 @@
   job: see workflow_references
   script: scripts/ci/prepare_b15_p7_browser_runtime.py
   owning_phase: B15-P7
-  protected_invariant: B15-P7 invariant enforced by prepare_b15_p7_browser_runtime; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B15-P7 invariant enforced by prepare_b15_p7_browser_runtime; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/prepare_b15_p7_browser_runtime.py
   local_reproduction_command: python scripts/ci/prepare_b15_p7_browser_runtime.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1673,7 +2028,8 @@
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: M3 governance tool is consumed by CI command surface; no stronger gate subsumes its drift/failure-summary role.
+  subsumption_evidence: M3 governance tool is consumed by CI command surface; no stronger gate subsumes
+    its drift/failure-summary role.
   negative_control_preserved_by: python scripts/ci/run_ci_governance_cohort.py
   local_reproduction_command: python scripts/ci/run_ci_governance_cohort.py
   risk_if_removed: Registry drift or opaque cohort execution could pass undetected.
@@ -1683,12 +2039,14 @@
   job: see workflow_references
   script: scripts/ci/scan_b14_p5_artifacts.py
   owning_phase: B14-P5
-  protected_invariant: B14-P5 invariant enforced by scan_b14_p5_artifacts; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P5 invariant enforced by scan_b14_p5_artifacts; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/scan_b14_p5_artifacts.py
   local_reproduction_command: python scripts/ci/scan_b14_p5_artifacts.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1698,12 +2056,14 @@
   job: see workflow_references
   script: scripts/ci/scan_b14_p7_artifacts.py
   owning_phase: B14-P7
-  protected_invariant: B14-P7 invariant enforced by scan_b14_p7_artifacts; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: B14-P7 invariant enforced by scan_b14_p7_artifacts; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/scan_b14_p7_artifacts.py
   local_reproduction_command: python scripts/ci/scan_b14_p7_artifacts.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1713,12 +2073,14 @@
   job: not_executed
   script: scripts/ci/validate_b23_pre_p1_spec_contract.py
   owning_phase: B23
-  protected_invariant: Utility support script validate_b23_pre_p1_spec_contract; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script validate_b23_pre_p1_spec_contract; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: utility
   default_execution: false
   candidate_action: utility_only
   subsuming_gate: ''
-  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default execution.
+  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default
+    execution.
   negative_control_preserved_by: not_applicable_utility_only
   local_reproduction_command: python scripts/ci/validate_b23_pre_p1_spec_contract.py
   risk_if_removed: No CI adjudication loss while unreferenced.
@@ -1728,12 +2090,14 @@
   job: not_executed
   script: scripts/ci/validate_llm_write_contract.py
   owning_phase: LLM-GOVERNANCE
-  protected_invariant: Utility support script validate_llm_write_contract; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script validate_llm_write_contract; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: utility
   default_execution: false
   candidate_action: utility_only
   subsuming_gate: ''
-  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default execution.
+  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default
+    execution.
   negative_control_preserved_by: not_applicable_utility_only
   local_reproduction_command: python scripts/ci/validate_llm_write_contract.py
   risk_if_removed: No CI adjudication loss while unreferenced.
@@ -1743,12 +2107,14 @@
   job: see workflow_references
   script: scripts/ci/validate_m0_scope_lock.py
   owning_phase: M0
-  protected_invariant: M0 invariant enforced by validate_m0_scope_lock; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: M0 invariant enforced by validate_m0_scope_lock; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/validate_m0_scope_lock.py
   local_reproduction_command: python scripts/ci/validate_m0_scope_lock.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1758,12 +2124,14 @@
   job: see workflow_references
   script: scripts/ci/validate_m1_local_dev_authority.py
   owning_phase: M1
-  protected_invariant: M1 invariant enforced by validate_m1_local_dev_authority; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: M1 invariant enforced by validate_m1_local_dev_authority; keeps its documented
+    negative-control and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/validate_m1_local_dev_authority.py
   local_reproduction_command: python scripts/ci/validate_m1_local_dev_authority.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1773,12 +2141,14 @@
   job: see workflow_references
   script: scripts/ci/validate_m2_test_feedback_loop.py
   owning_phase: M2
-  protected_invariant: M2 invariant enforced by validate_m2_test_feedback_loop; keeps its documented negative-control and proof surface visible in CI.
+  protected_invariant: M2 invariant enforced by validate_m2_test_feedback_loop; keeps its documented negative-control
+    and proof surface visible in CI.
   current_status: active
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate reproduces its failure mode.
+  subsumption_evidence: Required or active gate preserves a unique invariant; no stronger registered gate
+    reproduces its failure mode.
   negative_control_preserved_by: python scripts/ci/validate_m2_test_feedback_loop.py
   local_reproduction_command: python scripts/ci/validate_m2_test_feedback_loop.py
   risk_if_removed: Loss of branch-protected or active invariant coverage.
@@ -1793,7 +2163,8 @@
   default_execution: true
   candidate_action: keep_active_unique_invariant
   subsuming_gate: ''
-  subsumption_evidence: M3 governance tool is consumed by CI command surface; no stronger gate subsumes its drift/failure-summary role.
+  subsumption_evidence: M3 governance tool is consumed by CI command surface; no stronger gate subsumes
+    its drift/failure-summary role.
   negative_control_preserved_by: python scripts/ci/validate_m3_ci_governance.py
   local_reproduction_command: python scripts/ci/validate_m3_ci_governance.py
   risk_if_removed: Registry drift or opaque cohort execution could pass undetected.
@@ -1803,12 +2174,14 @@
   job: not_executed
   script: scripts/ci/verify_b23_p5_branch_protection.py
   owning_phase: B23-P5
-  protected_invariant: Utility support script verify_b23_p5_branch_protection; not a default adjudication gate unless called by a registered workflow.
+  protected_invariant: Utility support script verify_b23_p5_branch_protection; not a default adjudication
+    gate unless called by a registered workflow.
   current_status: utility
   default_execution: false
   candidate_action: utility_only
   subsuming_gate: ''
-  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default execution.
+  subsumption_evidence: No default adjudication role; classified as utility-only and excluded from default
+    execution.
   negative_control_preserved_by: not_applicable_utility_only
   local_reproduction_command: python scripts/ci/verify_b23_p5_branch_protection.py
   risk_if_removed: No CI adjudication loss while unreferenced.
@@ -1818,163 +2191,276 @@
   job: B2.4-P9 Worker Tenant Hygiene Proof
   script: scripts/ci/validate_b24_p9_worker_tenant_hygiene.py
   owning_phase: B2.4-P9
-  protected_invariant: B2.4-P9 worker tenant hygiene, topology-attested direct PostgreSQL or fail-closed unknown/proxy/pooler topology, transaction-local GUC, clean pool return, scoped workspace/compiledir, tenant-bound artifacts, parent env immutability, cleanup, and log payload airgap remain falsifiable.
+  protected_invariant: B2.4-P9 worker tenant hygiene, topology-attested direct PostgreSQL or fail-closed
+    unknown/proxy/pooler topology, transaction-local GUC, clean pool return, scoped workspace/compiledir,
+    tenant-bound artifacts, parent env immutability, cleanup, and log payload airgap remain falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required P9 gate preserves a unique worker process-boundary invariant not covered by P5 runtime containment or P8 artifact lifecycle.
+  subsumption_evidence: Required P9 gate preserves a unique worker process-boundary invariant not covered
+    by P5 runtime containment or P8 artifact lifecycle.
   negative_control_preserved_by: python scripts/ci/validate_b24_p9_worker_tenant_hygiene.py --negative-control
   local_reproduction_command: make validate-b24-p9-worker-tenant-hygiene
-  risk_if_removed: Loss of merge-blocking proof for cross-tenant worker hygiene and failure-path residue controls.
+  risk_if_removed: Loss of merge-blocking proof for cross-tenant worker hygiene and failure-path residue
+    controls.
   decision: keep_required
 - gate_id: validate-b24-p10-projection
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4-P10 Read-Only Projection Proof
   script: scripts/ci/validate_b24_p10_projection.py
   owning_phase: B2.4-P10
-  protected_invariant: B2.4-P10 read-only confidence projection remains deterministic-left, backend-owned, payload-free, no-fit preserving, non-computing, non-public, and frontend-threshold-free.
+  protected_invariant: B2.4-P10 read-only confidence projection remains deterministic-left, backend-owned,
+    payload-free, no-fit preserving, non-computing, non-public, and frontend-threshold-free.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: Required P10 gate preserves a unique projection-boundary invariant not covered by P7 diagnostics, P8 artifact lifecycle, or P9 worker tenant hygiene.
+  subsumption_evidence: Required P10 gate preserves a unique projection-boundary invariant not covered
+    by P7 diagnostics, P8 artifact lifecycle, or P9 worker tenant hygiene.
   negative_control_preserved_by: python scripts/ci/validate_b24_p10_projection.py --negative-control
   local_reproduction_command: make validate-b24-p10-projection
-  risk_if_removed: Loss of merge-blocking proof that confidence output cannot collapse deterministic revenue, leak authority/payload fields, trigger Bayesian compute, or move threshold ownership into frontend code.
+  risk_if_removed: Loss of merge-blocking proof that confidence output cannot collapse deterministic revenue,
+    leak authority/payload fields, trigger Bayesian compute, or move threshold ownership into frontend
+    code.
   decision: keep_required
 - gate_id: validate-b24-p11-ci-gates
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4-P11 CI Gates and Negative Control Harness
   script: scripts/ci/validate_b24_p11_ci_gates.py
   owning_phase: B2.4-P11
-  protected_invariant: B2.4-P11 CI gate coverage, required-status alignment, workflow/Makefile/registry consistency, negative-control non-vacuity, structured evidence emission, and non-overclaim boundaries remain machine-falsifiable.
+  protected_invariant: B2.4-P11 CI gate coverage, required-status alignment, workflow/Makefile/registry
+    consistency, negative-control non-vacuity, structured evidence emission, and non-overclaim boundaries
+    remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P11 is not subsumed by P1-P10 because it verifies the gate system itself: phase coverage, workflow job names, Makefile targets, registry entries, required statuses, structured evidence, and negative-control normalization.'
+  subsumption_evidence: 'P11 is not subsumed by P1-P10 because it verifies the gate system itself: phase
+    coverage, workflow job names, Makefile targets, registry entries, required statuses, structured evidence,
+    and negative-control normalization.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p11_ci_gates.py --negative-control
   local_reproduction_command: make validate-b24-p11-ci-gates
-  risk_if_removed: Loss of merge-blocking proof that B2.4 CI cannot silently omit, skip, unregister, downgrade, or overclaim P1-P10 proof jobs.
+  risk_if_removed: Loss of merge-blocking proof that B2.4 CI cannot silently omit, skip, unregister, downgrade,
+    or overclaim P1-P10 proof jobs.
   decision: keep_required
 - gate_id: validate-b24-p12-internal-e2e
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4-P12 Internal E2E Proof Harness
   script: scripts/ci/validate_b24_p12_internal_e2e.py
   owning_phase: B2.4-P12
-  protected_invariant: B2.4-P12 internal composition proof, committed visibility, real worker subprocess boundary, representative worker resource telemetry, state-driven async coordination, sealed payloads, artifact lifecycle, tenant hygiene, projection read-only semantics, and non-overclaim boundary remain machine-falsifiable.
+  protected_invariant: B2.4-P12 internal composition proof, committed visibility, real worker subprocess
+    boundary, representative worker resource telemetry, state-driven async coordination, sealed payloads,
+    artifact lifecycle, tenant hygiene, projection read-only semantics, and non-overclaim boundary remain
+    machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: 'P12 is not subsumed by P1-P11 because it validates cross-boundary composition over already accepted surfaces: committed DB visibility, worker/subprocess evidence, artifact/diagnostic/projection interactions, sealed serialization, and internal/local/CI-only claim discipline.'
+  subsumption_evidence: 'P12 is not subsumed by P1-P11 because it validates cross-boundary composition
+    over already accepted surfaces: committed DB visibility, worker/subprocess evidence, artifact/diagnostic/projection
+    interactions, sealed serialization, and internal/local/CI-only claim discipline.'
   negative_control_preserved_by: python scripts/ci/validate_b24_p12_internal_e2e.py --negative-control
   local_reproduction_command: make validate-b24-p12-internal-e2e
-  risk_if_removed: Loss of final internal E2E composition proof; component gates could remain green while transaction visibility, async coordination, projection payload sealing, or cross-tenant lifecycle behavior regresses.
+  risk_if_removed: Loss of final internal E2E composition proof; component gates could remain green while
+    transaction visibility, async coordination, projection payload sealing, or cross-tenant lifecycle
+    behavior regresses.
   decision: keep_required
 - gate_id: validate-b24-p11-execution-artifacts
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4-P11 CI Gates and Negative Control Harness
   script: scripts/ci/validate_b24_p11_execution_artifacts.py
   owning_phase: B2.4-P11
-  protected_invariant: B2.4-P11 execution artifacts remain machine-parseable and fail closed on missing, zero, skipped, xfailed, failed, or renamed required proof cases.
+  protected_invariant: B2.4-P11 execution artifacts remain machine-parseable and fail closed on missing,
+    zero, skipped, xfailed, failed, or renamed required proof cases.
   current_status: utility
   default_execution: true
   candidate_action: keep_utility
   subsuming_gate: validate-b24-p11-ci-gates
-  subsumption_evidence: The execution-artifact parser is the physical execution sub-gate used by the P11 required context, not a standalone required context.
-  negative_control_preserved_by: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control --negative-control-only
+  subsumption_evidence: The execution-artifact parser is the physical execution sub-gate used by the P11
+    required context, not a standalone required context.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p11_execution_artifacts.py --negative-control
+    --negative-control-only
   local_reproduction_command: make validate-b24-p11-execution-artifacts
-  risk_if_removed: Loss of proof that required B2.4 jobs physically executed expected cases without skip, xfail, xpass, missing-case, or zero-test vacuity.
+  risk_if_removed: Loss of proof that required B2.4 jobs physically executed expected cases without skip,
+    xfail, xpass, missing-case, or zero-test vacuity.
   decision: keep_utility
 - gate_id: validate-b24-p11-workflow-vacuity
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4-P11 CI Gates and Negative Control Harness
   script: scripts/ci/validate_b24_p11_workflow_vacuity.py
   owning_phase: B2.4-P11
-  protected_invariant: Required B2.4 workflow jobs cannot be path-filtered, conditionally bypassed, duplicated, or dummy-satisfied.
+  protected_invariant: Required B2.4 workflow jobs cannot be path-filtered, conditionally bypassed, duplicated,
+    or dummy-satisfied.
   current_status: utility
   default_execution: true
   candidate_action: keep_utility
   subsuming_gate: validate-b24-p11-ci-gates
-  subsumption_evidence: The workflow-vacuity scanner is the path-filter and dummy-job sub-gate used by the P11 required context, not a standalone required context.
+  subsumption_evidence: The workflow-vacuity scanner is the path-filter and dummy-job sub-gate used by
+    the P11 required context, not a standalone required context.
   negative_control_preserved_by: python scripts/ci/validate_b24_p11_workflow_vacuity.py --negative-control
   local_reproduction_command: make validate-b24-p11-workflow-vacuity
-  risk_if_removed: Loss of proof that B2.4 required contexts cannot be satisfied by path-filtered, conditionally bypassed, or dummy jobs.
+  risk_if_removed: Loss of proof that B2.4 required contexts cannot be satisfied by path-filtered, conditionally
+    bypassed, or dummy jobs.
   decision: keep_utility
 - gate_id: validate-live-branch-protection
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4-P11 CI Gates and Negative Control Harness
   script: scripts/ci/validate_live_branch_protection.py
   owning_phase: B2.4-P11
-  protected_invariant: Live GitHub branch protection and ruleset required contexts exactly match the local required-status contract and fail closed on unreadable state.
+  protected_invariant: Live GitHub branch protection and ruleset required contexts exactly match the local
+    required-status contract and fail closed on unreadable state.
   current_status: utility
   default_execution: true
   candidate_action: keep_utility
   subsuming_gate: validate-b24-p11-ci-gates
-  subsumption_evidence: The live branch-protection validator is the external enforcement sub-gate used by the P11 required context, not a standalone required context.
+  subsumption_evidence: The live branch-protection validator is the external enforcement sub-gate used
+    by the P11 required context, not a standalone required context.
   negative_control_preserved_by: python scripts/ci/validate_live_branch_protection.py --negative-control
   local_reproduction_command: make validate-b24-p11-live-branch-protection
-  risk_if_removed: Loss of continuous proof that live GitHub protected-branch enforcement matches the repository required-status contract.
+  risk_if_removed: Loss of continuous proof that live GitHub protected-branch enforcement matches the
+    repository required-status contract.
   decision: keep_utility
 - gate_id: write-b24-p11-command-junit
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
   script: scripts/ci/write_b24_p11_command_junit.py
   owning_phase: B2.4-P11
-  protected_invariant: Non-pytest B2.4 proof command sequences produce JUnit-compatible attestations only after their command steps succeed.
+  protected_invariant: Non-pytest B2.4 proof command sequences produce JUnit-compatible attestations only
+    after their command steps succeed.
   current_status: utility
   default_execution: true
   candidate_action: keep_utility
   subsuming_gate: validate-b24-p11-ci-gates
-  subsumption_evidence: The writer is a helper for command proof attestation consumed by the P11 execution-artifact parser, not an independent proof gate.
+  subsumption_evidence: The writer is a helper for command proof attestation consumed by the P11 execution-artifact
+    parser, not an independent proof gate.
   negative_control_preserved_by: python scripts/ci/write_b24_p11_command_junit.py --help
   local_reproduction_command: python scripts/ci/write_b24_p11_command_junit.py --help
-  risk_if_removed: Loss of equivalent machine-readable execution artifacts for non-pytest B2.4 proof command jobs.
+  risk_if_removed: Loss of equivalent machine-readable execution artifacts for non-pytest B2.4 proof command
+    jobs.
   decision: keep_utility
 - gate_id: validate-b25-p9-machine-identity
   workflow: .github/workflows/b2_5-p9-machine-identity.yml
   job: B2.5-P9 Machine Identity
   script: scripts/ci/validate_b25_p9_machine_identity.py
   owning_phase: B2.5-P9
-  protected_invariant: B2.5-P9 machine-caller identity and access boundary remains tenant-scoped under FORCE ROW LEVEL SECURITY, CSPRNG-generated tokens hashed at rest, constant-time verified, replay-safe, denial-audited, unable to issue reserved B5.2 action scopes, and free of route/export/MCP/action authority inside the P9 credential modules while P10 mounts its separately governed read surface.
+  protected_invariant: B2.5-P9 machine-caller identity and access boundary remains tenant-scoped under
+    FORCE ROW LEVEL SECURITY, CSPRNG-generated tokens hashed at rest, constant-time verified, replay-safe,
+    denial-audited, unable to issue reserved B5.2 action scopes, and free of route/export/MCP/action authority
+    inside the P9 credential modules while P10 mounts its separately governed read surface.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates text disposition, P4 validates money authority, P5 validates the read-only builder, P6 validates reason semantics, P7 validates provenance/audit persistence with autonomous-session durability, and P8 validates asymmetric Ed25519 signing and JWKS verification, but none proves tenant-scoped machine-caller identity tables, CSPRNG token generation with SHA-256 at-rest hashing and O(1) prefix lookup, constant-time hmac.compare_digest verification, atomic UNIQUE(tenant_id, nonce_value) replay protection without TOCTOU races, denial-audit survival of FastAPI exception rollback through the P7 seam, reserved B5.2 action-scope rejection at the DB level via CHECK + trigger, Design Partner Mode scope boundary, or P9-specific uuid4/random/bcrypt/argon2/LLM AST bans in the trust credential path.
+  subsumption_evidence: P1 validates contract shape, P2 validates canonical/hash identity, P3 validates
+    text disposition, P4 validates money authority, P5 validates the read-only builder, P6 validates reason
+    semantics, P7 validates provenance/audit persistence with autonomous-session durability, and P8 validates
+    asymmetric Ed25519 signing and JWKS verification, but none proves tenant-scoped machine-caller identity
+    tables, CSPRNG token generation with SHA-256 at-rest hashing and O(1) prefix lookup, constant-time
+    hmac.compare_digest verification, atomic UNIQUE(tenant_id, nonce_value) replay protection without
+    TOCTOU races, denial-audit survival of FastAPI exception rollback through the P7 seam, reserved B5.2
+    action-scope rejection at the DB level via CHECK + trigger, Design Partner Mode scope boundary, or
+    P9-specific uuid4/random/bcrypt/argon2/LLM AST bans in the trust credential path.
   negative_control_preserved_by: python scripts/ci/validate_b25_p9_machine_identity.py --negative-control
   local_reproduction_command: make validate-b25-p9-machine-identity
-  risk_if_removed: Future Trust API work could accept human JWT/RBAC for machine callers, store weak machine credentials, use non-CSPRNG entropy, rely on TOCTOU replay checks, vaporize denial audit on rollback, issue reserved action scopes, leak credential timing oracles, or place route/export/MCP/action authority inside the P9 credential modules.
+  risk_if_removed: Future Trust API work could accept human JWT/RBAC for machine callers, store weak machine
+    credentials, use non-CSPRNG entropy, rely on TOCTOU replay checks, vaporize denial audit on rollback,
+    issue reserved action scopes, leak credential timing oracles, or place route/export/MCP/action authority
+    inside the P9 credential modules.
   decision: keep_required
 - gate_id: validate-b25-p10-trust-api-surface
   workflow: .github/workflows/b2_5-p10-trust-api-surface.yml
   job: B2.5-P10 Trust API Surface
   script: scripts/ci/validate_b25_p10_trust_api_surface.py
   owning_phase: B2.5-P10
-  protected_invariant: B2.5-P10 exposes only authenticated, tenant-scoped, bounded, read-only TrustEnvelope GET/query/verify operations; composes P5/P7/P8/P9 authority; rate-limits atomically; authenticates before verification; publishes public-only keys; blocks raw tenant IDs, float money, mutation, compute, LLM/task imports, policy elevation, and schema downgrade; and remains merge-blocking.
+  protected_invariant: B2.5-P10 exposes only authenticated, tenant-scoped, bounded, read-only TrustEnvelope
+    GET/query/verify operations; composes P5/P7/P8/P9 authority; rate-limits atomically; authenticates
+    before verification; publishes public-only keys; blocks raw tenant IDs, float money, mutation, compute,
+    LLM/task imports, policy elevation, and schema downgrade; and remains merge-blocking.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1-P9 individually prove contract, canonicalization, text, money, builder, truth matrix, audit, signing, and machine-identity invariants, but none proves their mounted external composition, bounded query semantics, authenticate-before-verify oracle closure, deterministic atomic API rate limiting, runtime secret-backed key publication, or P10-specific no-compute and response privacy boundaries.
+  subsumption_evidence: P1-P9 individually prove contract, canonicalization, text, money, builder, truth
+    matrix, audit, signing, and machine-identity invariants, but none proves their mounted external composition,
+    bounded query semantics, authenticate-before-verify oracle closure, deterministic atomic API rate
+    limiting, runtime secret-backed key publication, or P10-specific no-compute and response privacy boundaries.
   negative_control_preserved_by: python scripts/ci/validate_b25_p10_trust_api_surface.py --negative-control
   local_reproduction_command: make validate-b25-p10-trust-api-surface
-  risk_if_removed: The Trust API could silently become unauthenticated, unbounded, replay/rate-limit unsafe, oracle-exposing, mutation-capable, compute-triggering, privacy-leaking, cryptographically undiscoverable, contract-divergent, or non-blocking on protected main.
+  risk_if_removed: The Trust API could silently become unauthenticated, unbounded, replay/rate-limit unsafe,
+    oracle-exposing, mutation-capable, compute-triggering, privacy-leaking, cryptographically undiscoverable,
+    contract-divergent, or non-blocking on protected main.
   decision: keep_required
 - gate_id: validate-b25-p11-export-compatibility
   workflow: .github/workflows/b2_5-p11-export-compatibility.yml
   job: B2.5-P11 Export Compatibility
   script: scripts/ci/validate_b25_p11_export_compatibility.py
   owning_phase: B2.5-P11
-  protected_invariant: Legacy CSV/JSON/XLSX remain bounded non-authoritative display projections, while the machine export path is match-verdict-only, embeds full signed envelopes, uses distinct canonical artifact identity/signing, stays tenant-safe and read-only, and preserves P1-P10.
+  protected_invariant: Legacy CSV/JSON/XLSX remain bounded non-authoritative display projections, while
+    the machine export path is match-verdict-only, embeds full signed envelopes, uses distinct canonical
+    artifact identity/signing, stays tenant-safe and read-only, and preserves P1-P10.
   current_status: required
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: P1-P10 establish envelope contracts, canonical identity, text/money authority, building, refusal semantics, audit, signing, machine identity, and bounded read APIs; none proves export formats cannot remain or become a parallel financial-truth authority.
+  subsumption_evidence: P1-P10 establish envelope contracts, canonical identity, text/money authority,
+    building, refusal semantics, audit, signing, machine identity, and bounded read APIs; none proves
+    export formats cannot remain or become a parallel financial-truth authority.
   negative_control_preserved_by: python scripts/ci/validate_b25_p11_export_compatibility.py --negative-control
   local_reproduction_command: make validate-b25-p11-export-compatibility
-  risk_if_removed: Human exports could leak raw tenant IDs, floats, malformed or formula-active files, and machine exports could aggregate legacy attribution data, omit full signed lineage, weaken bounds, activate reserved subject types, or bypass protected-main proof.
+  risk_if_removed: Human exports could leak raw tenant IDs, floats, malformed or formula-active files,
+    and machine exports could aggregate legacy attribution data, omit full signed lineage, weaken bounds,
+    activate reserved subject types, or bypass protected-main proof.
   decision: keep_required
+- gate_id: validate-ci-physics
+  workflow: .github/workflows/ci-physics-guard.yml
+  job: CI Physics Guard
+  script: scripts/ci/validate_ci_physics.py
+  owning_phase: CI-Topology-Physics
+  protected_invariant: 'CI throughput stays sub-linear in concurrent PRs: every pull_request workflow
+    carries a concurrency group that supersedes only superseded PR runs, declares merge_group so the merge
+    queue proves the exact merge commit, caches dependencies exactly where a job installs them, and never
+    reintroduces a fan-out barrier that orders jobs without transferring data.'
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: No existing gate constrains workflow topology. The phase gates prove what the
+    code does; none prevents a workflow from serialising the graph or letting abandoned commits hold runner
+    slots.
+  negative_control_preserved_by: python scripts/ci/test_ci_physics_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_ci_physics.py --verbose
+  risk_if_removed: CI throughput silently reverts to cost linear in concurrent PRs while every gate stays
+    green, which is how the 4x wall-clock inflation went unnoticed.
+  decision: keep_required
+- gate_id: ci-physics-negative-controls
+  workflow: .github/workflows/ci-physics-guard.yml
+  job: CI Physics Guard
+  script: scripts/ci/test_ci_physics_negative_controls.py
+  owning_phase: CI-Topology-Physics
+  protected_invariant: The CI physics guard fails when a protected property is violated, and only then.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: validate-ci-physics
+  subsumption_evidence: The guard cannot prove its own non-vacuity; this harness is the negative control
+    for it, matching the repository standard for every merge-blocking gate.
+  negative_control_preserved_by: python scripts/ci/test_ci_physics_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_ci_physics_negative_controls.py
+  risk_if_removed: A physics rule could be weakened into a no-op and the guard would still report green.
+  decision: keep_required
+- gate_id: workflow-physics-shared-helpers
+  workflow: .github/workflows/ci-physics-guard.yml
+  job: CI Physics Guard
+  script: scripts/ci/_workflow_physics.py
+  owning_phase: CI-Topology-Physics
+  protected_invariant: One shared definition of job-level dependency installation for applier and guard.
+  current_status: utility
+  default_execution: true
+  candidate_action: keep_utility
+  subsuming_gate: validate-ci-physics
+  subsumption_evidence: A shared helper module imported by the guard, not a standalone required context.
+  negative_control_preserved_by: python scripts/ci/test_ci_physics_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_ci_physics.py --verbose
+  risk_if_removed: Applier and guard could drift, demanding a cache key the applier refuses to add.
+  decision: keep_utility
