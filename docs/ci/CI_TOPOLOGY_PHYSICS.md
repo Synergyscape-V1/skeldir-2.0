@@ -125,8 +125,22 @@ merge. The proof on an exact SHA always runs to completion.
 
 Every workflow with a `pull_request` trigger also declares `merge_group:`.
 
-Without it, the merge queue would not run that workflow against the merge
-commit, and a required context would never report — blocking the queue forever.
+**Status: the merge queue is not currently enabled.** It was enabled on
+18 Aug 2026 and reverted the same day. A queue requires `strict: false`, and four
+independent audit gates across three phases assert `strict: true` against the
+live branch-protection API — `enforce_b13_p11_e2e_system_proofs.py`,
+`validate_live_branch_protection.py` (B2.4-P11),
+`enforce_b14_p7_e2e_privacy_system_proofs.py` and
+`capture_b14_p7_branch_protection_evidence.py`. Setting `strict: false` turned
+B1.3-P11 and B2.4-P11 red on `main`. Reconciling that means amending three
+phases' closure proofs, which belongs to those phases rather than to a
+throughput change.
+
+The triggers are kept because they are harmless without a queue and are the
+precondition for enabling one later. Rule 5 keeps the coverage honest meanwhile.
+
+Without them, a queue would not run that workflow against the merge commit, and
+a required context would never report — blocking the queue forever.
 
 **This closes a real audit gap.** Previously `main` was protected with 73
 required contexts and `strict: true`, and PRs landed as merge commits. Required
