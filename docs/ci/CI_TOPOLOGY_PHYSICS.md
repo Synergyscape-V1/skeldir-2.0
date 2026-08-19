@@ -125,19 +125,22 @@ merge. The proof on an exact SHA always runs to completion.
 
 Every workflow with a `pull_request` trigger also declares `merge_group:`.
 
-**Status: the merge queue is not currently enabled.** It was enabled on
-18 Aug 2026 and reverted the same day. A queue requires `strict: false`, and four
-independent audit gates across three phases assert `strict: true` against the
-live branch-protection API — `enforce_b13_p11_e2e_system_proofs.py`,
-`validate_live_branch_protection.py` (B2.4-P11),
-`enforce_b14_p7_e2e_privacy_system_proofs.py` and
-`capture_b14_p7_branch_protection_evidence.py`. Setting `strict: false` turned
-B1.3-P11 and B2.4-P11 red on `main`. Reconciling that means amending three
-phases' closure proofs, which belongs to those phases rather than to a
-throughput change.
+**A merge queue is enabled on `main`**, validating the speculative merge commit —
+the object that actually becomes `main` — against all 75 required contexts before
+it lands.
 
-The triggers are kept because they are harmless without a queue and are the
-precondition for enabling one later. Rule 5 keeps the coverage honest meanwhile.
+**`strict: true` is retained alongside it.** A first attempt set `strict: false`
+on the assumption that a queue requires it. That assumption was wrong, was never
+tested before acting on it, and it turned B1.3-P11 and B2.4-P11 red on `main`,
+because four gates across three phases assert `strict` against the live API:
+`enforce_b13_p11_e2e_system_proofs.py`, `validate_live_branch_protection.py`,
+`enforce_b14_p7_e2e_privacy_system_proofs.py` and
+`capture_b14_p7_branch_protection_evidence.py`. A queue ruleset and `strict: true`
+coexist; all four were verified passing with the queue active.
+
+The lesson is worth keeping: **test the constraint before designing around it.**
+The expensive path here was assuming an incompatibility rather than spending one
+API call to check.
 
 Without them, a queue would not run that workflow against the merge commit, and
 a required context would never report — blocking the queue forever.
