@@ -265,6 +265,32 @@ One exemption exists today: `r0-preflight-validation.yml` uses
 `cancel-in-progress: false` because R0 runs must never be cancelled for
 determinism. That was already correct and was left untouched.
 
+### Rule 2b — the queue must batch
+
+A merge group validates **every PR it contains with one set of `merge_group`
+runs**. Batching N pull requests therefore costs *one* matrix, not N. This is the
+mechanism that makes convoy cost sub-linear in concurrent PRs — the whole point
+of the exercise — and it is entirely a matter of queue configuration:
+
+```
+max_entries_to_build            1     one speculative commit at a time
+min_entries_to_merge            5     accumulate before building
+max_entries_to_merge           10     up to ten land together
+min_entries_to_merge_wait_min   5     a lone PR waits no longer than this
+```
+
+**The queue shipped with `min_entries_to_merge: 1`, which batches nothing.** Each
+entry merged as soon as it was ready, so a 6-PR convoy cost six matrices — about
+1,560 CPU-minutes and a ~78 minute floor against 20 slots. That looked like a
+capacity ceiling that could only be bought out of. It was a configuration
+mistake. Batched, the same convoy is one ~260 CPU-minute matrix with a ~13
+minute floor.
+
+The lesson generalises past this repository: **a merge queue that does not batch
+is just a slower merge button.** If you ever raise `max_entries_to_build` for
+faster feedback, you are trading the sub-linear property for parallel speculation
+and paying one matrix per speculative entry — measure before you do it.
+
 ## 6. Expected throughput
 
 Measured against the observed 58.2-minute baseline:
