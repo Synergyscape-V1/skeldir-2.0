@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.17.0",
+  "contract_version": "1.18.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -109,15 +109,20 @@
     "rationale": "Checkout Code becomes merge-blocking because the throughput topology removed its needs: edges. It previously gated 66 jobs and blocked merges implicitly by starving downstream contexts; those edges transferred no data and serialised the graph. The job and its assertions (adjudicated-SHA check, evidence placement) are unchanged - only the enforcement mechanism moved from an ordering constraint to an explicit required status check, which is what actually blocks a merge. CI Physics Guard makes the topology self-enforcing: it fails the build if a workflow drops its concurrency group, its merge_group trigger, its dependency cache, or reintroduces a fan-out barrier that transfers no data."
   },
   "merge_queue": {
-    "status": "blocked",
-    "blocked_at_phase": "CI-Topology-Physics",
-    "attempted": "2026-08-18",
-    "rationale": "A merge queue was enabled and then reverted the same day. It requires strict=false, because GitHub disables 'require branches up to date' while a queue is active. But four independent audit gates across three phases assert strict=true against the live branch-protection API: enforce_b13_p11_e2e_system_proofs.py, validate_live_branch_protection.py (B2.4-P11), enforce_b14_p7_e2e_privacy_system_proofs.py and capture_b14_p7_branch_protection_evidence.py. Setting strict=false turned B1.3-P11 and B2.4-P11 red on main. Reconciling this means amending three phases' closure proofs, which is a governance decision that belongs to those phases, not to a throughput change. strict=true is restored and the queue ruleset deleted.",
-    "unresolved_audit_gap": "The gap that motivated the queue is still open: required contexts are evaluated against the PR head SHA, PRs land as merge commits, and that merge commit is created at merge time - so the exact SHA on protected/main has no regression matrix attached to it. strict=true guarantees only that the branch was up to date at some moment before merging.",
-    "reconciliation_options": [
-      "Amend the four strict assertions to accept 'strict=true OR merge queue active', with sign-off from B1.3, B1.4 and B2.4.",
-      "Keep strict=true and accept that the merge commit itself remains untested.",
-      "Adopt a squash or rebase merge method, where the landed SHA can be made identical to a tested one."
+    "status": "enforced",
+    "enforced_at_phase": "CI-Topology-Physics",
+    "branch": "main",
+    "merge_method": "MERGE",
+    "grouping_strategy": "ALLGREEN",
+    "strict_retained": true,
+    "rationale": "The merge queue validates the speculative merge commit - the object that actually becomes main - against all 75 required contexts before it lands. This closes a real audit gap: required contexts are evaluated against the PR head SHA while PRs land as merge commits, so the exact SHA on protected/main previously had no regression matrix attached to it.",
+    "strict_note": "strict=true is RETAINED. An earlier attempt on the same day set strict=false on the assumption that a merge queue requires it; that assumption was wrong and it turned B1.3-P11 and B2.4-P11 red on main. A queue ruleset and strict=true coexist. All four gates that assert strict against the live API were verified passing with the queue active: enforce_b13_p11_e2e_system_proofs, validate_live_branch_protection (B2.4-P11), enforce_b14_p7_e2e_privacy_system_proofs and capture_b14_p7_branch_protection_evidence.",
+    "verified": [
+      "capture_b13_p11_branch_protection_evidence: authority_mode=live_branch_protection_api live_strict=true contexts=75",
+      "capture_b14_p7_branch_protection_evidence: live_strict=true",
+      "validate_live_branch_protection --mode main: B24_P11_LIVE_BRANCH_PROTECTION_VALIDATION_PASS",
+      "enforce_required_status_checks: passed",
+      "all 75 required contexts produced by a workflow firing on merge_group (physics guard rule 5)"
     ]
   }
 }
