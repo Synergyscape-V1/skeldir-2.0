@@ -50,7 +50,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api import trust_api, trust_keys
-from app.core.secrets import get_database_url
+from app.core.secrets import get_database_url, get_migration_database_url
 from app.db.dsn import to_asyncpg_postgres_dsn
 from app.trust.machine_identity import AgentScope
 
@@ -1345,13 +1345,15 @@ async def _project_grandfathered_temporal_fit(
 
 
 def _migration_database_url() -> str:
-    """The owner DSN CI already provides, used only to seed legacy-shaped rows."""
+    """The owner DSN CI already provides, used only to seed legacy-shaped rows.
 
-    url = os.getenv("MIGRATION_DATABASE_URL")
-    if url:
-        return url
-    runtime = get_database_url()
-    return runtime.replace("app_user:app_user", "migration_owner:migration_owner", 1)
+    Read through the governed secrets accessor rather than os.getenv: B1.1-P4's
+    DSN-authority scan forbids raw environment reads of a database DSN anywhere
+    under backend/ or scripts/, and it is right to -- a test that reaches around
+    the accessor is a test that would keep passing if the accessor broke.
+    """
+
+    return get_migration_database_url()
 
 
 async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str]:
