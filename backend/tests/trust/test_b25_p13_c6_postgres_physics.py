@@ -128,6 +128,22 @@ def test_c6_worker_authority_is_not_reachable_from_tenant_runtime() -> None:
                 )
             )
             assert function_owner == "app_worker"
+            wakeup_rls = conn.execute(
+                text(
+                    "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                    "WHERE oid = 'public.b24_fit_planner_wakeups'::regclass"
+                )
+            ).one()
+            assert tuple(wakeup_rls) == (True, True)
+            planner_owners = conn.execute(
+                text(
+                    "SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid IN ("
+                    "'public.b24_due_fit_planner_tenants(text,integer)'::regprocedure,"
+                    "'public.b24_complete_fit_planner_wakeup(uuid,text,bigint,boolean)'"
+                    "::regprocedure)"
+                )
+            ).scalars()
+            assert set(planner_owners) == {"app_worker"}
             assert _has_execute(conn, register_sig)
             assert _has_execute(conn, claim_sig)
             assert _has_execute(conn, planner_sig)

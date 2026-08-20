@@ -167,6 +167,7 @@ def upgrade() -> None:
         "GRANT SELECT, INSERT, UPDATE, DELETE ON public.kombu_message TO app_worker",
         "GRANT SELECT, INSERT, UPDATE, DELETE ON public.celery_taskmeta TO app_worker",
         "GRANT SELECT, INSERT, UPDATE, DELETE ON public.celery_tasksetmeta TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE ON public.worker_failed_jobs TO app_worker",
         "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_worker",
     ):
         _grant_worker(worker_grant)
@@ -223,6 +224,13 @@ def upgrade() -> None:
                     AND lease_expires_at IS NOT NULL)
             )
         );
+        ALTER TABLE public.b24_fit_planner_wakeups ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE public.b24_fit_planner_wakeups FORCE ROW LEVEL SECURITY;
+        CREATE POLICY b24_fit_planner_wakeups_worker_only
+            ON public.b24_fit_planner_wakeups
+            FOR ALL TO PUBLIC
+            USING (current_user = 'app_worker')
+            WITH CHECK (current_user = 'app_worker');
 
         CREATE OR REPLACE FUNCTION public.b24_signal_fit_planner_wakeup()
         RETURNS trigger
@@ -371,6 +379,21 @@ def upgrade() -> None:
         REVOKE ALL ON FUNCTION public.b24_complete_fit_planner_wakeup(
             uuid, text, bigint, boolean
         ) FROM PUBLIC, app_user, app_rw, app_ro;
+
+        DO $$
+        BEGIN
+            IF to_regrole('app_worker') IS NOT NULL THEN
+                EXECUTE 'GRANT CREATE ON SCHEMA public TO app_worker';
+                EXECUTE 'ALTER FUNCTION '
+                        'public.b24_due_fit_planner_tenants(text, integer) '
+                        'OWNER TO app_worker';
+                EXECUTE 'ALTER FUNCTION '
+                        'public.b24_complete_fit_planner_wakeup('
+                        'uuid, text, bigint, boolean) OWNER TO app_worker';
+                EXECUTE 'REVOKE CREATE ON SCHEMA public FROM app_worker';
+            END IF;
+        END
+        $$;
         """
     )
     _grant_worker(

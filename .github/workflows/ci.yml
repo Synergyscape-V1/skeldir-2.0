@@ -1143,6 +1143,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p6
       RUNTIME_SYNC_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
+      B21_P4_BAYESIAN_WORKER_DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b21_p6
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
       EXPECTED_RUNTIME_DB_USER: app_user
@@ -4426,7 +4427,7 @@ jobs:
         run: |
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${RUNTIME_USER};"
-          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${RUNTIME_USER}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_dirty_events, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${RUNTIME_USER}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${RUNTIME_USER}; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM ${RUNTIME_USER};"
 
       - name: Enforce llm_api_calls single write path
         run: |
@@ -4819,8 +4820,8 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
-      SKELDIR_CELERY_WORKER_ROLE: bayesian
-      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+      SKELDIR_CELERY_WORKER_ROLE: non_bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
@@ -4908,6 +4909,8 @@ jobs:
             echo "[B055] Alembic upgrade head"
             alembic upgrade head
           } | tee "$B055_EVIDENCE_DIR/LOGS/migrations.log"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO app_user; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM app_user; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM app_user; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM app_user;"
 
       - name: Phase 0 DB authority - required deterministic schema drift gate
         env:
@@ -4925,7 +4928,7 @@ jobs:
       - name: Start Celery worker
         env:
           PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
-          DATABASE_URL: postgresql+asyncpg://app_worker:app_worker@127.0.0.1:5432/skeldir_validation
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_validation
         run: |
           cd backend
           export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
@@ -5201,7 +5204,8 @@ jobs:
       # Dual-URL strategy constructed from single credential source
       DATABASE_URL_SYNC: postgresql://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
       DATABASE_URL_ASYNC: postgresql+asyncpg://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
-      MIGRATION_DATABASE_URL: postgresql://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_validation
+      B0533_WORKER_USER: app_worker
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -5258,12 +5262,14 @@ jobs:
           psql -h localhost -U postgres -c "DROP ROLE IF EXISTS app_user;" || true
           psql -h localhost -U postgres -c "DROP ROLE IF EXISTS app_rw;" || true
           psql -h localhost -U postgres -c "DROP ROLE IF EXISTS app_ro;" || true
+          psql -h localhost -U postgres -c "DROP ROLE IF EXISTS ${B0533_WORKER_USER};" || true
 
           # Create roles with explicit LOGIN and password from shell env vars
           # Use shell variable (not GitHub expression) to ensure proper interpolation
           psql -h localhost -U postgres -c "CREATE ROLE ${{ env.APP_USER }} WITH LOGIN PASSWORD '$APP_USER_PASSWORD';"
           psql -h localhost -U postgres -c "CREATE ROLE app_rw WITH LOGIN PASSWORD 'app_rw';"
           psql -h localhost -U postgres -c "CREATE ROLE app_ro WITH LOGIN PASSWORD 'app_ro';"
+          psql -h localhost -U postgres -c "CREATE ROLE ${B0533_WORKER_USER} WITH LOGIN PASSWORD 'app_worker';"
 
           echo "✓ Roles created with deterministic credentials (shell env interpolation)"
 
@@ -5281,9 +5287,11 @@ jobs:
 
           # Grant privileges
           psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${{ env.DB_NAME }} TO ${{ env.APP_USER }};"
+          psql -h localhost -U postgres -c "GRANT CONNECT ON DATABASE ${{ env.DB_NAME }} TO ${B0533_WORKER_USER};"
           psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "GRANT ALL ON SCHEMA public TO ${{ env.APP_USER }};"
           psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "GRANT ALL ON SCHEMA public TO app_rw;"
           psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "GRANT USAGE ON SCHEMA public TO app_ro;"
+          psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "GRANT USAGE ON SCHEMA public TO ${B0533_WORKER_USER};"
 
           # Set tenant context
           psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "ALTER DATABASE ${{ env.DB_NAME }} SET app.current_tenant_id = '00000000-0000-0000-0000-000000000000';"
@@ -5310,6 +5318,8 @@ jobs:
           echo "DATABASE_URL (sync): postgresql://app_user:***@127.0.0.1:5432/skeldir_validation"
           alembic upgrade 202511131121
           alembic upgrade skeldir_foundation@head
+          PGPASSWORD=postgres psql -h localhost -U postgres -d "${{ env.DB_NAME }}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${{ env.APP_USER }}; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${{ env.APP_USER }};"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d "${{ env.DB_NAME }}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${{ env.APP_USER }}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${{ env.APP_USER }}; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM ${{ env.APP_USER }};"
           echo "✓ Migrations complete (skeldir_foundation@head reached)"
 
       - name: R5-4 / Gate G4 - Verify schema with canonical DSN

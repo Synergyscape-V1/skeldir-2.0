@@ -175,11 +175,30 @@ def validate_worker_authority(
         "planner_signal_owner_missing_bounded_wakeup_table_authority",
     )
     for witness in (
+        "ALTER TABLE public.b24_fit_planner_wakeups ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE public.b24_fit_planner_wakeups FORCE ROW LEVEL SECURITY",
+        "CREATE POLICY b24_fit_planner_wakeups_worker_only",
+        "USING (current_user = 'app_worker')",
+        "public.b24_due_fit_planner_tenants(text, integer) '",
+        "public.b24_complete_fit_planner_wakeup('",
+    ):
+        _require(witness in body, f"planner_wakeup_rls_or_owner_missing:{witness}")
+    for witness in (
         "B21_P4_BAYESIAN_WORKER_DATABASE_URL:",
         "B07_P5_BAYESIAN_WORKER_DATABASE_URL:",
+        "B0533_WORKER_USER: app_worker",
         "CREATE USER app_worker WITH PASSWORD 'app_worker'",
     ):
         _require(witness in ci_workflow, f"aggregate_ci_worker_authority_missing:{witness}")
+    _require(
+        ci_workflow.count("B21_P4_BAYESIAN_WORKER_DATABASE_URL:") >= 2,
+        "b21_p4_and_p6_worker_authority_not_composed",
+    )
+    _require(
+        "GRANT SELECT, INSERT, UPDATE ON public.worker_failed_jobs TO app_worker"
+        in body,
+        "worker_dlq_authority_missing",
+    )
     for witness in (
         'role == "deterministic"',
         'role == "bayesian"',

@@ -300,6 +300,8 @@ def test_b07_p2_runtime_llm_chain_with_redaction():
     env["CELERY_RESULT_BACKEND"] = f"db+{config.runtime_sync_url}"
     env.setdefault("ENVIRONMENT", "test")
     env["SKELDIR_TEST_TASKS"] = "1"
+    env["SKELDIR_CELERY_WORKER_ROLE"] = "non_bayesian"
+    env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "0"
 
     worker_log = config.artifact_dir / "worker.log"
     proof_snapshot = config.artifact_dir / "runtime_db_probe.json"
