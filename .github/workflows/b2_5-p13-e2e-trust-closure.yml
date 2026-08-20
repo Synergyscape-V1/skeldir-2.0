@@ -70,7 +70,11 @@ jobs:
           --health-timeout 5s --health-retries 5
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p13_e2e
-      MIGRATION_DATABASE_URL: postgresql://migration_user:migration_user@127.0.0.1:5432/skeldir_b25_p13_e2e
+      # migration_owner, not migration_user: that is the role
+      # setup-postgres-ci actually provisions. The old value named a role that
+      # never existed and went unnoticed because nothing in the job read this
+      # variable until C5's legacy-row seeding did.
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       SKELDIR_B25_P13_E2E_PROOF: "1"
       PGPASSWORD: postgres
