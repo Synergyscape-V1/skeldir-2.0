@@ -49,6 +49,8 @@ DEV_REQUIREMENTS = ROOT / "backend/requirements-dev.txt"
 PHASE8_RUNNER = ROOT / "scripts/phase8/run_phase8_closure_pack.py"
 PHASE8_P5 = ROOT / "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py"
 CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
+B057_P3_WORKFLOW = ROOT / ".github/workflows/b057-p3-webhook-ingestion-least-privilege.yml"
+B057_P5_WORKFLOW = ROOT / ".github/workflows/b057-p5-full-chain.yml"
 B21_BENCHMARK = ROOT / "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py"
 B21_ADJUDICATOR = ROOT / "scripts/ci/enforce_b21_p4_benchmark_adjudication.py"
 DEPENDENCIES = ROOT / ("contracts/trust-api/confidence-projection-dependencies.v1.yaml")
@@ -106,6 +108,10 @@ def validate_worker_authority(
     phase8_runner = _read(PHASE8_RUNNER)
     phase8_p5 = _read(PHASE8_P5)
     ci_workflow = _read(CI_WORKFLOW)
+    legacy_ingestion_workflows = (
+        _read(B057_P3_WORKFLOW),
+        _read(B057_P5_WORKFLOW),
+    )
     b21_benchmark = _read(B21_BENCHMARK)
     b21_adjudicator = _read(B21_ADJUDICATOR)
     _require("worker_user: str" in prep, "worker_login_not_provisioned")
@@ -194,6 +200,16 @@ def validate_worker_authority(
         ci_workflow.count("B21_P4_BAYESIAN_WORKER_DATABASE_URL:") >= 2,
         "b21_p4_and_p6_worker_authority_not_composed",
     )
+    for legacy_flow in legacy_ingestion_workflows:
+        for witness in (
+            "CREATE USER app_worker WITH PASSWORD 'app_worker'",
+            "GRANT app_worker TO ${MIGRATION_USER}",
+            "GRANT CONNECT ON DATABASE ${DB_NAME} TO app_worker",
+        ):
+            _require(
+                witness in legacy_flow,
+                f"legacy_ingestion_worker_authority_missing:{witness}",
+            )
     _require(
         "GRANT SELECT, INSERT, UPDATE ON public.worker_failed_jobs TO app_worker"
         in body,

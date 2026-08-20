@@ -2116,6 +2116,8 @@ CREATE TABLE public.b24_fit_planner_wakeups (
     CONSTRAINT b24_fit_planner_wakeups_wakeup_revision_check CHECK ((wakeup_revision > 0))
 );
 
+ALTER TABLE ONLY public.b24_fit_planner_wakeups FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.b24_fit_recovery_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     dispatch_id uuid NOT NULL,
@@ -8019,6 +8021,10 @@ ALTER TABLE public.b24_feature_authority_build_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.b24_feature_authority_build_requests ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b24_fit_dispatch_outbox ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.b24_fit_planner_wakeups ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY b24_fit_planner_wakeups_worker_only ON public.b24_fit_planner_wakeups USING ((CURRENT_USER = 'app_worker'::name)) WITH CHECK ((CURRENT_USER = 'app_worker'::name));
 
 ALTER TABLE public.b24_fit_recovery_outbox ENABLE ROW LEVEL SECURITY;
 
