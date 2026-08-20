@@ -121,6 +121,7 @@ def validate_worker_authority(
         "SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine",
+        "SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime",
     ):
         _require(
             topology_witness in flow,
