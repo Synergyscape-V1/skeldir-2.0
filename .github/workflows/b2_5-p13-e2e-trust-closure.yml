@@ -221,8 +221,8 @@ jobs:
           python scripts/ci/validate_b25_p13_c6_closure.py --negative-control \
             | tee /tmp/b25_p13_c6_closure.out
           grep -E "^B25_P13_C6_CLOSURE_VALIDATION_PASS$" /tmp/b25_p13_c6_closure.out
-          grep -E "^c6_invariant_groups_passed=11$" /tmp/b25_p13_c6_closure.out
-          grep -E "^c6_negative_controls_fired=12$" /tmp/b25_p13_c6_closure.out
+          grep -E "^c6_invariant_groups_passed=12$" /tmp/b25_p13_c6_closure.out
+          grep -E "^c6_negative_controls_fired=13$" /tmp/b25_p13_c6_closure.out
 
       - name: P13 C6 PostgreSQL authority and production-planner physics
         env:
@@ -241,7 +241,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c6_postgres_physics.py \
             -q -s --no-header | tee /tmp/b25_p13_c6_physics.out
-          grep -E "2 passed" /tmp/b25_p13_c6_physics.out
+          grep -E "3 passed" /tmp/b25_p13_c6_physics.out
 
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody

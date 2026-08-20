@@ -120,14 +120,20 @@ def test_c6_worker_authority_is_not_reachable_from_tenant_runtime() -> None:
                     "'public.b24_fit_planner_wakeups', 'INSERT')"
                 )
             )
-            function_owner = conn.scalar(
+            trigger_function = conn.execute(
                 text(
-                    "SELECT pg_get_userbyid(proowner) "
-                    "FROM pg_proc WHERE oid = "
-                    "'public.b24_signal_fit_planner_wakeup()'::regprocedure"
+                    "SELECT proc.proname, pg_get_userbyid(proc.proowner) "
+                    "FROM pg_trigger trigger "
+                    "JOIN pg_proc proc ON proc.oid = trigger.tgfoid "
+                    "WHERE trigger.tgrelid = "
+                    "'public.b24_dirty_events'::regclass "
+                    "AND trigger.tgname = 'trg_b24_signal_fit_planner_wakeup'"
                 )
+            ).one()
+            assert tuple(trigger_function) == (
+                "b24_signal_fit_planner_wakeup_coalesced",
+                "app_worker",
             )
-            assert function_owner == "app_worker"
             wakeup_rls = conn.execute(
                 text(
                     "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
@@ -161,6 +167,133 @@ def test_c6_worker_authority_is_not_reachable_from_tenant_runtime() -> None:
             )
     finally:
         app_engine.dispose()
+        worker_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_c6_pending_wakeup_coalesces_and_leased_wakeup_is_invalidated() -> None:
+    """Pending signals avoid hot-row writes; leased signals remain replay-safe."""
+
+    tenant_id = uuid4()
+    suffix = uuid4().hex[:8]
+    worker_engine = _sync_engine(get_database_url())
+    app_engine = create_async_engine(
+        to_asyncpg_postgres_dsn(_app_url()), future=True, pool_pre_ping=True
+    )
+
+    async def append_signal(source_event_id: str, observed_at: datetime) -> None:
+        async with app_engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                {"tenant": str(tenant_id)},
+            )
+            await append_dirty_event(
+                conn,
+                tenant_id=tenant_id,
+                source_window_start=START,
+                source_window_end=END,
+                dirty_reason="b25_p13_c6_wakeup_coalescing",
+                source_family="attribution_events",
+                source_event_id=source_event_id,
+                observed_at=observed_at,
+            )
+
+    try:
+        with worker_engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.tenants (
+                        id, name, api_key_hash, notification_email
+                    ) VALUES (:tenant, :name, :api_hash, :email)
+                    """
+                ),
+                {
+                    "tenant": str(tenant_id),
+                    "name": f"P13 C6 coalescing {suffix}",
+                    "api_hash": f"p13-c6-coalescing-{suffix}",
+                    "email": f"p13-c6-coalescing-{suffix}@example.invalid",
+                },
+            )
+
+        first_observed = START - timedelta(days=30)
+        await append_signal("pending-1", first_observed)
+        await append_signal("pending-2", first_observed + timedelta(seconds=1))
+
+        with worker_engine.begin() as conn:
+            pending = conn.execute(
+                text(
+                    """
+                    SELECT wakeup_revision, status, lease_owner, observed_at
+                    FROM public.b24_fit_planner_wakeups
+                    WHERE tenant_id = :tenant
+                    """
+                ),
+                {"tenant": str(tenant_id)},
+            ).one()
+            assert pending.wakeup_revision == 1
+            assert pending.status == "pending"
+            assert pending.lease_owner is None
+            assert pending.observed_at == first_observed
+
+            leased = conn.execute(
+                text(
+                    "SELECT tenant_id, wakeup_revision FROM "
+                    "public.b24_due_fit_planner_tenants(:owner, 100)"
+                ),
+                {"owner": f"coalescing-{suffix}"},
+            ).all()
+            assert (tenant_id, 1) in {
+                (UUID(str(row.tenant_id)), int(row.wakeup_revision)) for row in leased
+            }
+
+        await append_signal(
+            "leased-invalidation", first_observed + timedelta(seconds=2)
+        )
+
+        with worker_engine.begin() as conn:
+            invalidated = conn.execute(
+                text(
+                    """
+                    SELECT wakeup_revision, status, lease_owner, lease_expires_at
+                    FROM public.b24_fit_planner_wakeups
+                    WHERE tenant_id = :tenant
+                    """
+                ),
+                {"tenant": str(tenant_id)},
+            ).one()
+            assert tuple(invalidated) == (2, "pending", None, None)
+            stale_ack = conn.scalar(
+                text(
+                    "SELECT public.b24_complete_fit_planner_wakeup("
+                    ":tenant, :owner, 1, true)"
+                ),
+                {"tenant": str(tenant_id), "owner": f"coalescing-{suffix}"},
+            )
+            assert stale_ack is False
+
+        await append_signal("pending-3", first_observed + timedelta(seconds=3))
+        with worker_engine.begin() as conn:
+            assert (
+                conn.scalar(
+                    text(
+                        "SELECT wakeup_revision FROM public.b24_fit_planner_wakeups "
+                        "WHERE tenant_id = :tenant"
+                    ),
+                    {"tenant": str(tenant_id)},
+                )
+                == 2
+            )
+    finally:
+        with worker_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM public.b24_fit_planner_wakeups "
+                    "WHERE tenant_id = :tenant"
+                ),
+                {"tenant": str(tenant_id)},
+            )
+        await app_engine.dispose()
         worker_engine.dispose()
 
 

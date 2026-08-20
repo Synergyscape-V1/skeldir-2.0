@@ -729,6 +729,37 @@ CREATE FUNCTION public.b24_signal_fit_planner_wakeup() RETURNS trigger
         END
         $$;
 
+CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    IF NEW.status IN ('pending', 'authority_retry_ready')
+       AND (
+            TG_OP = 'INSERT'
+            OR OLD.status IS DISTINCT FROM NEW.status
+       ) THEN
+        INSERT INTO public.b24_fit_planner_wakeups (
+            tenant_id, observed_at
+        ) VALUES (NEW.tenant_id, NEW.observed_at)
+        ON CONFLICT (tenant_id) DO NOTHING;
+
+        IF NOT FOUND THEN
+            UPDATE public.b24_fit_planner_wakeups
+            SET wakeup_revision = wakeup_revision + 1,
+                status = 'pending',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                observed_at = LEAST(observed_at, NEW.observed_at),
+                updated_at = now()
+            WHERE tenant_id = NEW.tenant_id
+              AND status = 'leased';
+        END IF;
+    END IF;
+    RETURN NEW;
+END
+$$;
+
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -7621,7 +7652,7 @@ CREATE TRIGGER trg_b24_dispatch_fence_fits BEFORE INSERT OR DELETE OR UPDATE ON 
 
 CREATE TRIGGER trg_b24_evidence_temporal_plausibility BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_evidence_temporal_plausibility();
 
-CREATE TRIGGER trg_b24_signal_fit_planner_wakeup AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup();
+CREATE TRIGGER trg_b24_signal_fit_planner_wakeup AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced();
 
 CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_terminal_fit_truth();
 
