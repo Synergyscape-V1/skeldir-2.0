@@ -707,27 +707,32 @@ CREATE FUNCTION public.b24_signal_fit_planner_wakeup() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-        BEGIN
-            IF NEW.status IN ('pending', 'authority_retry_ready')
-               AND (
-                    TG_OP = 'INSERT'
-                    OR OLD.status IS DISTINCT FROM NEW.status
-               ) THEN
-                INSERT INTO public.b24_fit_planner_wakeups (
-                    tenant_id, observed_at
-                ) VALUES (NEW.tenant_id, NEW.observed_at)
-                ON CONFLICT (tenant_id) DO UPDATE
-                SET wakeup_revision =
-                        b24_fit_planner_wakeups.wakeup_revision + 1,
-                    observed_at = LEAST(
-                        b24_fit_planner_wakeups.observed_at,
-                        EXCLUDED.observed_at
-                    ),
-                    updated_at = now();
-            END IF;
-            RETURN NEW;
-        END
-        $$;
+BEGIN
+    IF NEW.status IN ('pending', 'authority_retry_ready')
+       AND (
+            TG_OP = 'INSERT'
+            OR OLD.status IS DISTINCT FROM NEW.status
+       ) THEN
+        INSERT INTO public.b24_fit_planner_wakeups (
+            tenant_id, observed_at
+        ) VALUES (NEW.tenant_id, NEW.observed_at)
+        ON CONFLICT (tenant_id) DO NOTHING;
+
+        IF NOT FOUND THEN
+            UPDATE public.b24_fit_planner_wakeups
+            SET wakeup_revision = wakeup_revision + 1,
+                status = 'pending',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                observed_at = LEAST(observed_at, NEW.observed_at),
+                updated_at = now()
+            WHERE tenant_id = NEW.tenant_id
+              AND status = 'leased';
+        END IF;
+    END IF;
+    RETURN NEW;
+END
+$$;
 
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
     LANGUAGE plpgsql

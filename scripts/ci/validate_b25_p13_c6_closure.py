@@ -29,6 +29,10 @@ MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202608201200_b25_p13_c6_authority_orchestration_contract.py"
 )
+WAKEUP_COALESCING_MIGRATION = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202608202300_b25_p13_c6_wakeup_coalescing.py"
+)
 C5_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202608191200_b25_p13_c5_terminal_truth_temporal_plausibility.py"
@@ -50,7 +54,9 @@ PHASE8_RUNNER = ROOT / "scripts/phase8/run_phase8_closure_pack.py"
 PHASE8_P5 = ROOT / "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py"
 CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 PHASE2_SCHEMA_GATE = ROOT / "scripts/ci/phase2_schema_closure_gate.py"
-B057_P3_WORKFLOW = ROOT / ".github/workflows/b057-p3-webhook-ingestion-least-privilege.yml"
+B057_P3_WORKFLOW = (
+    ROOT / ".github/workflows/b057-p3-webhook-ingestion-least-privilege.yml"
+)
 B057_P5_WORKFLOW = ROOT / ".github/workflows/b057-p5-full-chain.yml"
 B21_BENCHMARK = ROOT / "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py"
 B21_ADJUDICATOR = ROOT / "scripts/ci/enforce_b21_p4_benchmark_adjudication.py"
@@ -167,7 +173,9 @@ def validate_worker_authority(
         '"B07_P5_EXPECTED_WORKER_DB_USER", "app_worker"',
         'env["DATABASE_URL"] = worker_async_url',
     ):
-        _require(witness in phase8_p5, f"phase8_worker_identity_proof_missing:{witness}")
+        _require(
+            witness in phase8_p5, f"phase8_worker_identity_proof_missing:{witness}"
+        )
     _require(
         "OWNER TO app_worker" in body,
         "planner_signal_definer_not_owned_by_dedicated_worker",
@@ -198,7 +206,9 @@ def validate_worker_authority(
         "B057_P6_WORKER_USER: app_worker",
         "CREATE USER app_worker WITH PASSWORD 'app_worker'",
     ):
-        _require(witness in ci_workflow, f"aggregate_ci_worker_authority_missing:{witness}")
+        _require(
+            witness in ci_workflow, f"aggregate_ci_worker_authority_missing:{witness}"
+        )
     _require(
         ci_workflow.count("B21_P4_BAYESIAN_WORKER_DATABASE_URL:") >= 2,
         "b21_p4_and_p6_worker_authority_not_composed",
@@ -214,8 +224,7 @@ def validate_worker_authority(
                 f"legacy_ingestion_worker_authority_missing:{witness}",
             )
     _require(
-        "EXECUTE 'GRANT USAGE ON SCHEMA public TO app_worker'"
-        in phase2_schema_gate,
+        "EXECUTE 'GRANT USAGE ON SCHEMA public TO app_worker'" in phase2_schema_gate,
         "phase2_schema_reset_drops_worker_usage",
     )
     _require(
@@ -332,6 +341,34 @@ def validate_planner_reachability(
         "runtime_proof_has_no_production_source_stimulus",
     )
     return 8
+
+
+def validate_wakeup_coalescing(
+    migration: str | None = None,
+    physics: str | None = None,
+) -> int:
+    """Pending wakeups coalesce while leased wakeups remain revision-safe."""
+
+    body = migration if migration is not None else _read(WAKEUP_COALESCING_MIGRATION)
+    test = physics if physics is not None else _read(PHYSICS)
+    for witness in (
+        "ON CONFLICT (tenant_id) DO NOTHING",
+        "IF NOT FOUND THEN",
+        "wakeup_revision = wakeup_revision + 1",
+        "status = 'pending'",
+        "lease_owner = NULL",
+        "lease_expires_at = NULL",
+        "AND status = 'leased'",
+    ):
+        _require(witness in body, f"planner_wakeup_coalescing_missing:{witness}")
+    for witness in (
+        "test_c6_pending_wakeup_coalesces_and_leased_wakeup_is_invalidated",
+        "assert pending.wakeup_revision == 1",
+        'assert tuple(invalidated) == (2, "pending", None, None)',
+        "assert stale_ack is False",
+    ):
+        _require(witness in test, f"planner_wakeup_coalescing_proof_missing:{witness}")
+    return 11
 
 
 def validate_reuse_state_machine(
@@ -606,6 +643,7 @@ VALIDATORS: tuple[Callable[[], int], ...] = (
     validate_worker_authority,
     validate_terminal_dependencies,
     validate_planner_reachability,
+    validate_wakeup_coalescing,
     validate_reuse_state_machine,
     validate_lifecycle_taxonomy,
     validate_temporal_policy,
@@ -630,6 +668,7 @@ def run_negative_controls() -> list[str]:
     fit_claim = _read(FIT_CLAIM)
     beat = _read(BEAT)
     suite = _read(P13)
+    coalescing = _read(WAKEUP_COALESCING_MIGRATION)
     controls: list[str] = []
     controls.append(
         _must_fail(
@@ -736,6 +775,16 @@ def run_negative_controls() -> list[str]:
     )
     controls.append(
         _must_fail("NC-C6-12", lambda: validate_counter_integrity(suite=poisoned))
+    )
+    controls.append(
+        _must_fail(
+            "NC-C6-13",
+            lambda: validate_wakeup_coalescing(
+                migration=coalescing.replace(
+                    "AND status = 'leased'", "AND status = 'pending'", 1
+                )
+            ),
+        )
     )
     return controls
 
