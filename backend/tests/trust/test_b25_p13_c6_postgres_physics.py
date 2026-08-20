@@ -325,8 +325,40 @@ async def test_c6_real_stimulus_reaches_registered_planner_and_one_dispatch() ->
     # task consumption and registers the process generation in PostgreSQL.
     signals.worker_init.send(sender="b25-p13-c6-proof")
     assert getattr(plan_due_fit_intents, "name", None) == FIT_PLANNER_TASK_NAME
-    result = plan_due_fit_intents.run(tenant_batch_size=1, candidate_limit=1)
-    assert result == {
+    # This proof shares the workflow database with the full P13 composition
+    # suite, which deliberately leaves an older pending dirty-event wakeup as
+    # evidence. Exercise the real global scheduler until this stimulus is the
+    # one delivered; never assume an otherwise-empty planner ledger.
+    target_result = None
+    for _ in range(25):
+        result = plan_due_fit_intents.run(tenant_batch_size=1, candidate_limit=1)
+        async with get_session(tenant_id) as delivery_session:
+            target_dispatches = int(
+                (
+                    await delivery_session.scalar(
+                        text(
+                            """
+                            SELECT count(*)
+                            FROM public.bayesian_model_fits fit
+                            JOIN public.b24_fit_dispatch_outbox outbox
+                              ON outbox.tenant_id = fit.tenant_id
+                             AND outbox.fit_id = fit.id
+                            WHERE fit.tenant_id = :tenant
+                              AND fit.source_snapshot_hash = :snapshot
+                            """
+                        ),
+                        {
+                            "tenant": str(tenant_id),
+                            "snapshot": snapshot.source_snapshot_hash,
+                        },
+                    )
+                )
+                or 0
+            )
+        if target_dispatches == 1:
+            target_result = result
+            break
+    assert target_result == {
         "status": "completed",
         "tenant_count": 1,
         "planned_count": 1,
