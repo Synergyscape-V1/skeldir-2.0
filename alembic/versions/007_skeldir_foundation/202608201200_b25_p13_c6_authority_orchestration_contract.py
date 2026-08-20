@@ -89,26 +89,41 @@ def _terminal_status_sql() -> str:
     return ", ".join(f"'{status}'" for status in TERMINAL_FIT_STATUSES)
 
 
+def _grant_worker(statement: str) -> None:
+    """Apply a worker grant only when deployment provisioning created the role."""
+
+    escaped = statement.replace("'", "''")
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF to_regrole('app_worker') IS NOT NULL THEN
+                EXECUTE '{escaped}';
+            END IF;
+        END
+        $$;
+        """
+    )
+
+
 def upgrade() -> None:
-    # The deployment provisioner creates a LOGIN worker before migration. A
-    # NOLOGIN cluster role is created as a safe compatibility floor for legacy
-    # migration-only environments: it cannot execute work, but it lets grants
-    # remain explicit instead of falling back to app_user. Environments whose
-    # migration authority lacks CREATEROLE still fail closed and must provision
-    # the dedicated login first.
+    # The deployment provisioner creates the LOGIN worker before migration.
+    # Legacy migration-only jobs intentionally have no CREATEROLE capability;
+    # when no worker exists, grants remain absent rather than falling back to an
+    # application identity. Reverse inheritance is rejected whenever the
+    # provisioned role is present.
     op.execute(
         """
         DO $$
         BEGIN
-            IF to_regrole('app_worker') IS NULL THEN
-                EXECUTE 'CREATE ROLE app_worker NOLOGIN NOBYPASSRLS';
-            END IF;
-            IF pg_has_role('app_user', 'app_worker', 'MEMBER') THEN
-                RAISE EXCEPTION 'b25_p13_c6_app_user_must_not_inherit_worker';
-            END IF;
-            IF pg_has_role('app_ro', 'app_worker', 'MEMBER')
-               OR pg_has_role('app_rw', 'app_worker', 'MEMBER') THEN
-                RAISE EXCEPTION 'b25_p13_c6_shared_role_must_not_inherit_worker';
+            IF to_regrole('app_worker') IS NOT NULL THEN
+                IF pg_has_role('app_user', 'app_worker', 'MEMBER') THEN
+                    RAISE EXCEPTION 'b25_p13_c6_app_user_must_not_inherit_worker';
+                END IF;
+                IF pg_has_role('app_ro', 'app_worker', 'MEMBER')
+                   OR pg_has_role('app_rw', 'app_worker', 'MEMBER') THEN
+                    RAISE EXCEPTION 'b25_p13_c6_shared_role_must_not_inherit_worker';
+                END IF;
             END IF;
         END
         $$;
@@ -120,7 +135,7 @@ def upgrade() -> None:
             f"REVOKE ALL ON FUNCTION {function_signature} "
             "FROM PUBLIC, app_user, app_rw, app_ro"
         )
-        op.execute(f"GRANT EXECUTE ON FUNCTION {function_signature} TO app_worker")
+        _grant_worker(f"GRANT EXECUTE ON FUNCTION {function_signature} TO app_worker")
 
     # Web/read identities retain SELECT and dirty-event INSERT authority only.
     # The planner and compute worker use the dedicated login.
@@ -135,23 +150,26 @@ def upgrade() -> None:
         REVOKE INSERT, UPDATE, DELETE ON public.b24_active_execution_leases
             FROM app_user, app_rw, app_ro;
 
-        GRANT SELECT, INSERT, UPDATE ON public.bayesian_model_fits TO app_worker;
-        GRANT SELECT, INSERT, UPDATE ON public.bayesian_artifacts TO app_worker;
-        GRANT SELECT, INSERT, UPDATE ON public.b24_fit_dispatch_outbox TO app_worker;
-        GRANT SELECT, INSERT, UPDATE ON public.b24_fit_recovery_outbox TO app_worker;
-        GRANT SELECT, INSERT, UPDATE, DELETE ON public.b24_active_execution_leases TO app_worker;
-        GRANT SELECT, INSERT, UPDATE ON public.b24_dirty_events TO app_worker;
-        GRANT SELECT, INSERT, UPDATE ON public.b24_feature_authority_build_requests TO app_worker;
-        GRANT SELECT, INSERT, UPDATE ON public.b24_feature_authority_build_outbox TO app_worker;
-        -- The dedicated worker also owns its Postgres-backed Celery transport
-        -- and result path. These are queue mechanics, never tenant truth.
-        GRANT SELECT, INSERT, UPDATE, DELETE ON public.kombu_queue TO app_worker;
-        GRANT SELECT, INSERT, UPDATE, DELETE ON public.kombu_message TO app_worker;
-        GRANT SELECT, INSERT, UPDATE, DELETE ON public.celery_taskmeta TO app_worker;
-        GRANT SELECT, INSERT, UPDATE, DELETE ON public.celery_tasksetmeta TO app_worker;
-        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_worker;
         """
     )
+    for worker_grant in (
+        "GRANT SELECT, INSERT, UPDATE ON public.bayesian_model_fits TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE ON public.bayesian_artifacts TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE ON public.b24_fit_dispatch_outbox TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE ON public.b24_fit_recovery_outbox TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON public.b24_active_execution_leases TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE ON public.b24_dirty_events TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE ON public.b24_feature_authority_build_requests TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE ON public.b24_feature_authority_build_outbox TO app_worker",
+        # The worker owns its Postgres-backed Celery transport and result path;
+        # these relations are queue mechanics, never tenant truth.
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON public.kombu_queue TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON public.kombu_message TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON public.celery_taskmeta TO app_worker",
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON public.celery_tasksetmeta TO app_worker",
+        "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_worker",
+    ):
+        _grant_worker(worker_grant)
 
     # Successor-safe terminal truth: all fields on which the Trust confidence
     # projection depends are frozen, including identity and source window.
@@ -205,8 +223,6 @@ def upgrade() -> None:
                     AND lease_expires_at IS NOT NULL)
             )
         );
-        REVOKE ALL ON public.b24_fit_planner_wakeups
-            FROM PUBLIC, app_user, app_rw, app_ro, app_worker;
 
         CREATE OR REPLACE FUNCTION public.b24_signal_fit_planner_wakeup()
         RETURNS trigger
@@ -235,12 +251,12 @@ def upgrade() -> None:
             RETURN NEW;
         END
         $$;
-        REVOKE ALL ON FUNCTION public.b24_signal_fit_planner_wakeup()
-            FROM PUBLIC, app_user, app_rw, app_ro, app_worker;
 
         CREATE TRIGGER trg_b24_signal_fit_planner_wakeup
         AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events
         FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup();
+        REVOKE ALL ON FUNCTION public.b24_signal_fit_planner_wakeup()
+            FROM PUBLIC, app_user, app_rw, app_ro;
 
         INSERT INTO public.b24_fit_planner_wakeups (tenant_id, observed_at)
         SELECT tenant_id, min(observed_at)
@@ -253,6 +269,8 @@ def upgrade() -> None:
            )
         GROUP BY tenant_id
         ON CONFLICT (tenant_id) DO NOTHING;
+        REVOKE ALL ON public.b24_fit_planner_wakeups
+            FROM PUBLIC, app_user, app_rw, app_ro;
 
         CREATE OR REPLACE FUNCTION public.b24_due_fit_planner_tenants(
             p_lease_owner text,
@@ -295,8 +313,6 @@ def upgrade() -> None:
         $$;
         REVOKE ALL ON FUNCTION public.b24_due_fit_planner_tenants(text, integer)
             FROM PUBLIC, app_user, app_rw, app_ro;
-        GRANT EXECUTE ON FUNCTION public.b24_due_fit_planner_tenants(text, integer)
-            TO app_worker;
 
         CREATE OR REPLACE FUNCTION public.b24_complete_fit_planner_wakeup(
             p_tenant_id uuid,
@@ -344,10 +360,16 @@ def upgrade() -> None:
         REVOKE ALL ON FUNCTION public.b24_complete_fit_planner_wakeup(
             uuid, text, bigint, boolean
         ) FROM PUBLIC, app_user, app_rw, app_ro;
-        GRANT EXECUTE ON FUNCTION public.b24_complete_fit_planner_wakeup(
-            uuid, text, bigint, boolean
-        ) TO app_worker;
         """
+    )
+    _grant_worker(
+        "GRANT EXECUTE ON FUNCTION "
+        "public.b24_due_fit_planner_tenants(text, integer) TO app_worker"
+    )
+    _grant_worker(
+        "GRANT EXECUTE ON FUNCTION "
+        "public.b24_complete_fit_planner_wakeup(uuid, text, bigint, boolean) "
+        "TO app_worker"
     )
 
 
