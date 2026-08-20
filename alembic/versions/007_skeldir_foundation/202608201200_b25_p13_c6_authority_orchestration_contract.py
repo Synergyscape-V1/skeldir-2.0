@@ -90,14 +90,18 @@ def _terminal_status_sql() -> str:
 
 
 def upgrade() -> None:
-    # Role creation is deployment authority, not migration authority. Failing
-    # here prevents a release from silently retaining the shared API identity.
+    # The deployment provisioner creates a LOGIN worker before migration. A
+    # NOLOGIN cluster role is created as a safe compatibility floor for legacy
+    # migration-only environments: it cannot execute work, but it lets grants
+    # remain explicit instead of falling back to app_user. Environments whose
+    # migration authority lacks CREATEROLE still fail closed and must provision
+    # the dedicated login first.
     op.execute(
         """
         DO $$
         BEGIN
             IF to_regrole('app_worker') IS NULL THEN
-                RAISE EXCEPTION 'b25_p13_c6_app_worker_role_required';
+                EXECUTE 'CREATE ROLE app_worker NOLOGIN NOBYPASSRLS';
             END IF;
             IF pg_has_role('app_user', 'app_worker', 'MEMBER') THEN
                 RAISE EXCEPTION 'b25_p13_c6_app_user_must_not_inherit_worker';

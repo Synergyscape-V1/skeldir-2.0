@@ -96,6 +96,10 @@ def validate_worker_authority(
     test = physics if physics is not None else _read(PHYSICS)
     _require("worker_user: str" in prep, "worker_login_not_provisioned")
     _require(
+        "CREATE ROLE app_worker NOLOGIN NOBYPASSRLS" in body,
+        "legacy_migration_floor_does_not_create_isolated_nologin_worker",
+    )
+    _require(
         "worker_user" in prep and "app_rw_role" in prep and "app_ro_role" in prep,
         "worker_membership_topology_not_explicit",
     )
