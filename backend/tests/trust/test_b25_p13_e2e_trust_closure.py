@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -45,7 +46,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api import trust_api, trust_keys
@@ -57,6 +58,59 @@ pytestmark = pytest.mark.skipif(
     os.getenv("SKELDIR_B25_P13_E2E_PROOF") != "1",
     reason="B2.5-P13 end-to-end proofs require PostgreSQL and are opt-in locally",
 )
+
+#: Runtime observation ledger (P13-C5, gate C5-J). Every counter this suite
+#: prints is ``len()`` of one of these lists, and every list entry is appended by
+#: the code path that actually observed the event. A printed literal proves that
+#: someone typed a number; a derived length proves that the event happened. The
+#: recorded evidence string is emitted alongside the counters so a reviewer can
+#: see *what* was counted, not merely how many.
+OBSERVED_EVENTS: dict[str, list[str]] = {}
+
+
+def observe(counter: str, evidence: str) -> str:
+    """Record one runtime-observed event under ``counter`` and return it."""
+
+    OBSERVED_EVENTS.setdefault(counter, []).append(evidence)
+    return evidence
+
+
+def observed(counter: str) -> int:
+    """Number of events actually observed for ``counter`` during this run."""
+
+    return len(OBSERVED_EVENTS.get(counter, ()))
+
+
+#: Counters the workflow asserts by exact value. Every one is emitted as
+#: ``len(OBSERVED_EVENTS[name])``; none may be printed as a literal. The suite
+#: asserts that each name here actually received at least one observation, so a
+#: counter whose call sites are deleted prints 0 and fails its own assertion
+#: before the workflow's grep is even reached.
+RUNTIME_DERIVED_COUNTERS = (
+    "p13_confidence_governed_source_tables",
+    "p13_confidence_physical_read_tables",
+    "p13_route_level_denials",
+    "p13_replay_denied",
+    "p13_scope_denied",
+    "p13_c4_db_invalid_available_rejected",
+    "p13_c4_db_invalid_state_mutations_rejected",
+    "p13_c4_authority_transaction_rollback",
+    "p13_c4_valid_terminalization_accepted",
+    "p13_c4_temporal_e2e",
+    "p13_c5_terminal_authority_mutations_rejected",
+    "p13_c5_lease_reclaim_still_possible",
+    "p13_c5_terminal_bookkeeping_still_mutable",
+    "p13_c5_claim_seam_cases",
+    "p13_c5_future_evidence_write_rejected",
+    "p13_c5_allowed_skew_accepted",
+    "p13_c5_future_evidence_never_current",
+    "p13_c5_absolute_age_cases",
+    "p13_g5_adversarial_classes_witnessed",
+    "p13_g5_adversarial_dispositions",
+    "p13_g5_adversarial_classes_quarantined",
+    "p13_g5_adversarial_classes_signature_verified",
+)
+
 
 #: Machine-readable expected-case manifest (P13-G11). A case that disappears from
 #: the suite must fail rather than reduce a count nobody reads.
@@ -76,6 +130,11 @@ EXPECTED_CASE_IDS = (
     "P13-H15R-route-level-scope-denial",
     "P13-H14R-route-level-replay-denial",
     "P13-H08-confidence-projection-closure",
+    "P13-C5-01-terminal-confidence-immutable",
+    "P13-C5-02-production-claim-seam-operability",
+    "P13-C5-03-future-evidence-cannot-be-current",
+    "P13-C5-04-absolute-age-explicitly-bounded",
+    "P13-C5-05-adversarial-class-matrix",
 )
 
 #: Tables that a TrustEnvelope read must never mutate. Deliberately split by
@@ -302,6 +361,997 @@ async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
     # adapter parses `urn:skeldir:match_verdict:<uuid>` and returns None for
     # anything else, so a bare reference is silently a non-match.
     return f"urn:skeldir:match_verdict:{verdict_id}"
+
+
+#: The single statement a B2.4 worker uses to terminalize a fit. Every C4/C5
+#: database control drives THIS statement rather than a hand-written mutation, so
+#: a control can only pass for the reason the production seam would.
+_TERMINALIZE_FIT_SQL = """
+    UPDATE public.bayesian_model_fits
+    SET status = 'succeeded',
+        fallback_applied = false,
+        fallback_reason = NULL,
+        data_completeness_status = 'complete',
+        diagnostic_status = 'passed',
+        credible_interval_status = 'available',
+        source_read_started_at = :source_read_started_at,
+        source_read_completed_at = :source_read_completed_at,
+        confidence_bucket = :confidence_bucket,
+        confidence_bucket_reason = :confidence_bucket_reason,
+        confidence_policy_version = 'b24-p10-confidence-policy-v1',
+        confidence_semantics_version = 'b24-p10-confidence-semantics-v1',
+        confidence_deterministic_revenue_minor = :deterministic_revenue_minor,
+        confidence_deterministic_row_count = :deterministic_row_count,
+        confidence_match_verdict_count = :match_verdict_count,
+        confidence_currency_count = :currency_count,
+        confidence_classified_at = :confidence_classified_at,
+        confidence_evidence_snapshot_hash = :evidence_snapshot_hash,
+        completed_at = :confidence_classified_at,
+        updated_at = now()
+    WHERE tenant_id = :tenant_id
+      AND id = :fit_id
+      AND status IN ('pending', 'queued', 'running', 'persist_pending')
+"""
+
+_TERMINALIZE_DEFAULTS: dict[str, object] = {
+    "confidence_bucket": "high",
+    "confidence_bucket_reason": "narrow_interval",
+    "deterministic_revenue_minor": 10000,
+    "deterministic_row_count": 1,
+    "match_verdict_count": 1,
+    "currency_count": 1,
+}
+
+
+def _terminalize_params(
+    *,
+    tenant_id: UUID,
+    fit_id: UUID,
+    snapshot_hash: str,
+    invert_source_read: bool = False,
+    **overrides: object,
+) -> dict[str, object]:
+    """Bind a valid terminalization, then apply exactly the overrides given.
+
+    Defaults describe a fit the database should accept. A control supplies one
+    wrong field; everything else stays valid, so a rejection can only be
+    attributed to that field.
+    """
+
+    read_started = datetime(2026, 6, 2, 0, 1, tzinfo=timezone.utc)
+    read_completed = datetime(2026, 6, 2, 0, 2, tzinfo=timezone.utc)
+    if invert_source_read:
+        read_started, read_completed = read_completed, read_started
+    params: dict[str, object] = {
+        **_TERMINALIZE_DEFAULTS,
+        "tenant_id": str(tenant_id),
+        "fit_id": str(fit_id),
+        "evidence_snapshot_hash": snapshot_hash,
+        "source_read_started_at": read_started,
+        "source_read_completed_at": read_completed,
+        "confidence_classified_at": datetime(
+            2026, 6, 2, 0, 12, tzinfo=timezone.utc
+        ),
+    }
+    unknown = sorted(set(overrides) - set(params))
+    assert not unknown, f"unknown terminalization override: {unknown}"
+    params.update(overrides)
+    return params
+
+
+async def _seed_open_leased_fit(
+    connection, *, tenant_id: UUID, label: str, index: int
+) -> tuple[UUID, str]:
+    """Create a `queued` fit and acquire a real dispatch lease over it.
+
+    Returns the fit id and its source snapshot hash. The lease GUCs are bound
+    transaction-locally by `b24_claim_fit_dispatch`, which is the actual write
+    capability a worker holds -- nothing here fabricates authority.
+    """
+
+    fit_id = uuid4()
+    snapshot_hash = hashlib.sha256(f"c5-open-{label}-{fit_id}".encode()).hexdigest()
+    window_start = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    window_end = datetime(2026, 6, 2, tzinfo=timezone.utc)
+    artifact_hash = hashlib.sha256(f"c5-open-artifact-{fit_id}".encode()).hexdigest()
+    artifact_ref = (
+        f"b24://artifact/{tenant_id}/{fit_id}/summary/{artifact_hash[:12]}"
+    )
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.bayesian_model_fits (
+                id, tenant_id, model_type, model_version,
+                source_window_start, source_window_end, source_snapshot_hash,
+                status, eligibility_status, data_completeness_status,
+                fallback_applied, r_hat_max, ess_min, divergence_count,
+                hdi_lower, hdi_upper, interval_shape, interval_element_count,
+                interval_summary_bytes, credible_interval_status,
+                diagnostic_status, diagnostic_policy_version,
+                diagnostic_target_filter_version, interval_policy_version,
+                artifact_ref, artifact_hash, created_at, updated_at
+            ) VALUES (
+                :fit_id, :tenant_id, 'bayesian_attribution_confidence', :model_version,
+                :window_start, :window_end, :snapshot_hash,
+                'queued', 'eligible', 'complete',
+                false, 1.0, 500, 0,
+                9700, 10300, '[2]'::jsonb, 2,
+                16, 'available',
+                'passed', 'p13-diagnostics-v1',
+                'p13-target-v1', 'p13-interval-v1',
+                :artifact_ref, :artifact_hash, now(), now()
+            )
+            """
+        ),
+        {
+            "fit_id": str(fit_id),
+            "tenant_id": str(tenant_id),
+            "model_version": f"p13-open-{label}-v1",
+            "window_start": window_start,
+            "window_end": window_end,
+            "snapshot_hash": snapshot_hash,
+            "artifact_ref": artifact_ref,
+            "artifact_hash": artifact_hash,
+        },
+    )
+    # The artifact write is itself fence-protected, so the lease has to exist
+    # first. Acquiring it here is the same governed transition a worker performs.
+    await _acquire_dispatch_lease(
+        connection, tenant_id=tenant_id, fit_id=fit_id, label=label, index=index
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO public.bayesian_artifacts (
+                id, tenant_id, fit_id, artifact_ref, artifact_hash,
+                artifact_type, storage_backend, artifact_uri_internal,
+                artifact_size_bytes, payload_bytes, payload_byte_count,
+                compression, retention_class, lifecycle_status,
+                created_at, updated_at
+            ) VALUES (
+                :id, :tenant_id, :fit_id, :artifact_ref, :artifact_hash,
+                'summary', 'postgres', :artifact_ref,
+                2, :payload, 2, 'none', 'standard', 'active', now(), now()
+            )
+            """
+        ),
+        {
+            "id": str(uuid4()),
+            "tenant_id": str(tenant_id),
+            "fit_id": str(fit_id),
+            "artifact_ref": artifact_ref,
+            "artifact_hash": artifact_hash,
+            "payload": b"{}",
+        },
+    )
+    return fit_id, snapshot_hash
+
+
+async def _acquire_dispatch_lease(
+    connection, *, tenant_id: UUID, fit_id: UUID, label: str, index: int
+) -> dict[str, object]:
+    """Register worker authority, enqueue a dispatch, and claim it for real."""
+
+    dispatch_id = uuid4()
+    attempt_id = uuid4()
+    generation_id = f"p13-{label}-{uuid4().hex[:12]}"
+    process_token = f"p13-worker-token-{uuid4().hex}"
+    task_name = "app.tasks.bayesian.execute_fit_intent"
+    payload_hash = hashlib.sha256(f"{task_name}:{fit_id}".encode()).hexdigest()
+    await connection.execute(
+        text(
+            """
+            SELECT public.b24_register_worker_process_authority(
+                :generation_id, :pid, 1, :fingerprint, :token, 3600
+            )
+            """
+        ),
+        {
+            "generation_id": generation_id,
+            "pid": 5200 + index,
+            "fingerprint": hashlib.sha256(generation_id.encode()).hexdigest(),
+            "token": process_token,
+        },
+    )
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    # A fit claimed through `claim_fit_for_snapshot()` already owns its outbox
+    # row (one per fit, by unique constraint). Adopt that real row rather than
+    # inserting a competing one: assigning a worker to an existing dispatch is
+    # what a dispatcher does, and it keeps this helper usable both for
+    # hand-seeded fits and for fits the production claim path created.
+    existing = (
+        (
+            await connection.execute(
+                text(
+                    "SELECT id, attempt_id, payload_hash, task_name"
+                    " FROM public.b24_fit_dispatch_outbox"
+                    " WHERE tenant_id = :tenant_id AND fit_id = :fit_id"
+                ),
+                {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if existing is None:
+        await connection.execute(
+            text(
+                """
+                INSERT INTO public.b24_fit_dispatch_outbox (
+                    tenant_id, id, fit_id, dispatch_key, task_name, attempt_id,
+                    payload_hash, assigned_worker_generation, assignment_generation,
+                    assignment_expires_at, assignment_reason, status,
+                    next_attempt_at, next_recovery_at
+                ) VALUES (
+                    :tenant_id, :dispatch_id, :fit_id, :dispatch_key, :task_name,
+                    :attempt_id, :payload_hash, :generation_id, 1,
+                    now() + interval '10 minutes', 'p13_fixture', 'dispatched',
+                    now(), now() + interval '1 hour'
+                )
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "dispatch_id": str(dispatch_id),
+                "fit_id": str(fit_id),
+                "dispatch_key": f"p13:{tenant_id}:{fit_id}",
+                "task_name": task_name,
+                "attempt_id": str(attempt_id),
+                "payload_hash": payload_hash,
+                "generation_id": generation_id,
+            },
+        )
+    else:
+        dispatch_id = UUID(str(existing["id"]))
+        attempt_id = UUID(str(existing["attempt_id"]))
+        payload_hash = str(existing["payload_hash"])
+        task_name = str(existing["task_name"])
+        await connection.execute(
+            text(
+                """
+                UPDATE public.b24_fit_dispatch_outbox
+                SET assigned_worker_generation = :generation_id,
+                    assignment_generation = assignment_generation + 1,
+                    assignment_expires_at = now() + interval '10 minutes',
+                    assignment_reason = 'p13_fixture',
+                    status = 'dispatched',
+                    updated_at = now()
+                WHERE tenant_id = :tenant_id AND id = :dispatch_id
+                """
+            ),
+            {
+                "generation_id": generation_id,
+                "tenant_id": str(tenant_id),
+                "dispatch_id": str(dispatch_id),
+            },
+        )
+    await connection.execute(
+        text(
+            "SELECT set_config('app.current_tenant_id',"
+            " '00000000-0000-0000-0000-000000000000', true)"
+        )
+    )
+    claim = (
+        (
+            await connection.execute(
+                text(
+                    """
+                    SELECT * FROM public.b24_claim_fit_dispatch(
+                        :dispatch_id, :fit_id, :task_name, :attempt_id,
+                        :payload_hash, :generation_id, :pid, :token, 0, 900
+                    )
+                    """
+                ),
+                {
+                    "dispatch_id": str(dispatch_id),
+                    "fit_id": str(fit_id),
+                    "task_name": task_name,
+                    "attempt_id": str(attempt_id),
+                    "payload_hash": payload_hash,
+                    "generation_id": generation_id,
+                    "pid": 5200 + index,
+                    "token": process_token,
+                },
+            )
+        )
+        .mappings()
+        .one()
+    )
+    assert claim["outcome"] == "ACQUIRED", claim
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    return {
+        "dispatch_id": dispatch_id,
+        "attempt_id": attempt_id,
+        "generation_id": generation_id,
+        "process_token": process_token,
+        "payload_hash": payload_hash,
+        "claim_epoch": claim["claim_epoch"],
+        "lease_capability": claim["lease_capability"],
+    }
+
+
+async def _reclaim_dispatch_lease_as_runtime_identity(
+    connection, *, tenant_id: UUID, fit_id: UUID, index: int
+) -> dict[str, object]:
+    """Reproduce the audit's lease-reclaim escalation with runtime privileges only.
+
+    Nothing here is privileged fabrication. `b24_fit_dispatch_outbox` carries a
+    permissive tenant-only RLS policy, so the ordinary runtime identity can
+    rewrite its own lease bookkeeping; `b24_register_worker_process_authority`
+    is EXECUTE-granted to that identity; and `b24_claim_fit_dispatch` is the
+    governed claim function. The escalation therefore succeeds -- which is
+    exactly why terminal truth may not depend on it being impossible.
+    """
+
+    generation_id = f"p13-c5-reclaim-{uuid4().hex[:12]}"
+    process_token = f"p13-c5-reclaim-token-{uuid4().hex}"
+    await connection.execute(
+        text(
+            """
+            SELECT public.b24_register_worker_process_authority(
+                :generation_id, :pid, 1, :fingerprint, :token, 3600
+            )
+            """
+        ),
+        {
+            "generation_id": generation_id,
+            "pid": 6200 + index,
+            "fingerprint": hashlib.sha256(generation_id.encode()).hexdigest(),
+            "token": process_token,
+        },
+    )
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    row = (
+        (
+            await connection.execute(
+                text(
+                    "SELECT id, attempt_id, payload_hash, task_name,"
+                    " recovery_generation"
+                    " FROM public.b24_fit_dispatch_outbox"
+                    " WHERE tenant_id = :tenant_id AND fit_id = :fit_id"
+                ),
+                {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    await connection.execute(
+        text(
+            """
+            UPDATE public.b24_fit_dispatch_outbox
+            SET assigned_worker_generation = :generation_id,
+                assignment_generation = assignment_generation + 1,
+                assignment_expires_at = now() + interval '10 minutes',
+                lease_expires_at = now() - interval '1 minute'
+            WHERE tenant_id = :tenant_id AND id = :dispatch_id
+            """
+        ),
+        {
+            "generation_id": generation_id,
+            "tenant_id": str(tenant_id),
+            "dispatch_id": str(row["id"]),
+        },
+    )
+    claim = (
+        (
+            await connection.execute(
+                text(
+                    """
+                    SELECT * FROM public.b24_claim_fit_dispatch(
+                        :dispatch_id, :fit_id, :task_name, :attempt_id,
+                        :payload_hash, :generation_id, :pid, :token,
+                        :recovery_generation, 900
+                    )
+                    """
+                ),
+                {
+                    "dispatch_id": str(row["id"]),
+                    "fit_id": str(fit_id),
+                    "task_name": row["task_name"],
+                    "attempt_id": str(row["attempt_id"]),
+                    "payload_hash": row["payload_hash"],
+                    "generation_id": generation_id,
+                    "pid": 6200 + index,
+                    "token": process_token,
+                    "recovery_generation": int(row["recovery_generation"] or 0),
+                },
+            )
+        )
+        .mappings()
+        .one()
+    )
+    if claim["lease_capability"]:
+        # Bind the fence GUCs exactly as a real worker would, so the mutations
+        # attempted next are made with genuine, currently-valid write capability.
+        await connection.execute(
+            text(
+                "SELECT set_config('app.b24_dispatch_id', :dispatch_id, true),"
+                " set_config('app.b24_attempt_id', :attempt_id, true),"
+                " set_config('app.b24_claim_epoch', :claim_epoch, true),"
+                " set_config('app.b24_lease_capability', :capability, true)"
+            ),
+            {
+                "dispatch_id": str(row["id"]),
+                "attempt_id": str(claim["attempt_id"]),
+                "claim_epoch": str(claim["claim_epoch"]),
+                "capability": str(claim["lease_capability"]),
+            },
+        )
+    await connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    return dict(claim)
+
+
+async def _exercise_claim_seam(engine, *, tenant_id: UUID) -> dict[str, object]:
+    """Drive the real `claim_fit_for_snapshot()` through the C5 claim matrix.
+
+    No hand-seeded fit rows: every row in this matrix is created by the
+    production function itself, which is the whole point. A missing column, a
+    fence incompatibility, or a semantic regression in the reuse path turns this
+    required context red.
+    """
+
+    from app.bayesian.fit_claim import claim_fit_for_snapshot
+    from app.bayesian.preflight_lease import terminalize_preflight_lease
+    from app.bayesian.source_snapshot import SourceSnapshotResult
+
+    model_version = f"p13-c5-claim-{uuid4().hex[:8]}"
+    window_start = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    window_end = datetime(2026, 6, 2, tzinfo=timezone.utc)
+    first_hash = hashlib.sha256(f"{model_version}-first".encode()).hexdigest()
+    second_hash = hashlib.sha256(f"{model_version}-second".encode()).hexdigest()
+    read_started = datetime(2026, 6, 2, 0, 1, tzinfo=timezone.utc)
+    read_completed = datetime(2026, 6, 2, 0, 2, tzinfo=timezone.utc)
+
+    def _snapshot(source_hash: str, *, started, completed) -> SourceSnapshotResult:
+        return SourceSnapshotResult(
+            tenant_id=tenant_id,
+            model_type="bayesian_attribution_confidence",
+            model_version=model_version,
+            source_window_start=window_start,
+            source_window_end=window_end,
+            source_snapshot_hash=source_hash,
+            preflight=None,  # type: ignore[arg-type]  # the claim SQL never reads it
+            streamed_chunk_count=3,
+            source_read_started_at=started,
+            source_read_completed_at=completed,
+        )
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    results: dict[str, object] = {}
+
+    async def _claim(name: str, snapshot) -> dict[str, object]:
+        async with maker() as session:
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            claim = await claim_fit_for_snapshot(
+                session, snapshot=snapshot, claim_owner="p13-c5-planner"
+            )
+            await session.commit()
+        record = await _observe_claim_state(engine, tenant_id=tenant_id, claim=claim)
+        results[name] = record
+        return record
+
+    first = await _claim(
+        "new_snapshot_first_claim",
+        _snapshot(first_hash, started=read_started, completed=read_completed),
+    )
+    await _claim(
+        "same_snapshot_while_active",
+        _snapshot(first_hash, started=read_started, completed=read_completed),
+    )
+
+    # Terminalize through the governed worker seam so the reuse case observes a
+    # genuinely finished historical observation rather than a fabricated one.
+    fit_id = UUID(str(first["fit_id"]))
+    async with engine.begin() as connection:
+        await _acquire_dispatch_lease(
+            connection, tenant_id=tenant_id, fit_id=fit_id, label="c5-claim", index=97
+        )
+        artifact_hash = hashlib.sha256(f"c5-claim-{fit_id}".encode()).hexdigest()
+        artifact_ref = (
+            f"b24://artifact/{tenant_id}/{fit_id}/summary/{artifact_hash[:12]}"
+        )
+        await connection.execute(
+            text(
+                """
+                INSERT INTO public.bayesian_artifacts (
+                    id, tenant_id, fit_id, artifact_ref, artifact_hash,
+                    artifact_type, storage_backend, artifact_uri_internal,
+                    artifact_size_bytes, payload_bytes, payload_byte_count,
+                    compression, retention_class, lifecycle_status,
+                    created_at, updated_at
+                ) VALUES (
+                    :id, :tenant_id, :fit_id, :artifact_ref, :artifact_hash,
+                    'summary', 'postgres', :artifact_ref,
+                    2, :payload, 2, 'none', 'standard', 'active', now(), now()
+                )
+                """
+            ),
+            {
+                "id": str(uuid4()),
+                "tenant_id": str(tenant_id),
+                "fit_id": str(fit_id),
+                "artifact_ref": artifact_ref,
+                "artifact_hash": artifact_hash,
+                "payload": b"{}",
+            },
+        )
+        await connection.execute(
+            text(
+                """
+                UPDATE public.bayesian_model_fits
+                SET artifact_ref = :artifact_ref,
+                    artifact_hash = :artifact_hash,
+                    r_hat_max = 1.0, ess_min = 500, divergence_count = 0,
+                    hdi_lower = 9700, hdi_upper = 10300,
+                    interval_shape = '[2]'::jsonb, interval_element_count = 2,
+                    interval_summary_bytes = 16,
+                    diagnostic_policy_version = 'p13-diagnostics-v1',
+                    diagnostic_target_filter_version = 'p13-target-v1',
+                    interval_policy_version = 'p13-interval-v1',
+                    updated_at = now()
+                WHERE tenant_id = :tenant_id AND id = :fit_id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "fit_id": str(fit_id),
+                "artifact_ref": artifact_ref,
+                "artifact_hash": artifact_hash,
+            },
+        )
+        await connection.execute(
+            text(_TERMINALIZE_FIT_SQL),
+            _terminalize_params(
+                tenant_id=tenant_id, fit_id=fit_id, snapshot_hash=first_hash
+            ),
+        )
+    # Close the execution lane the way the production terminalization does. A
+    # worker that finishes releases the lane; leaving it open would make the next
+    # observation report `suppressed_active` forever, which is correct behaviour
+    # for a genuinely in-flight execution and wrong for a finished one.
+    async with maker() as session:
+        await session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await terminalize_preflight_lease(
+            session,
+            tenant_id=tenant_id,
+            model_type="bayesian_attribution_confidence",
+            model_version=model_version,
+            source_window_start=window_start,
+            source_window_end=window_end,
+            fit_id=fit_id,
+            terminal_status="succeeded",
+        )
+        await session.commit()
+
+    results["terminal_fit_id"] = str(fit_id)
+    results["terminal_source_read_started_at"] = datetime(
+        2026, 6, 2, 0, 1, tzinfo=timezone.utc
+    )
+
+    # Same content observed again, deliberately carrying LATER read timestamps.
+    # A correct reuse path must ignore them.
+    await _claim(
+        "same_snapshot_after_succeeded",
+        _snapshot(
+            first_hash,
+            started=datetime(2026, 6, 5, 0, 1, tzinfo=timezone.utc),
+            completed=datetime(2026, 6, 5, 0, 2, tzinfo=timezone.utc),
+        ),
+    )
+    await _claim(
+        "different_newer_snapshot_after_terminal",
+        _snapshot(
+            second_hash,
+            started=datetime(2026, 6, 6, 0, 1, tzinfo=timezone.utc),
+            completed=datetime(2026, 6, 6, 0, 2, tzinfo=timezone.utc),
+        ),
+    )
+
+    # Stale execution lane: a lane whose lease has expired must be reclaimable
+    # rather than deadlocking the window forever. Expiring the lease is the only
+    # way to simulate a worker that vanished without releasing it.
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await connection.execute(
+            text(
+                """
+                UPDATE public.b24_active_execution_leases
+                SET leased_until = now() - interval '1 hour', updated_at = now()
+                WHERE tenant_id = :tenant_id
+                  AND model_type = 'bayesian_attribution_confidence'
+                  AND model_version = :model_version
+                """
+            ),
+            {"tenant_id": str(tenant_id), "model_version": model_version},
+        )
+    await _claim(
+        "stale_execution_lane",
+        _snapshot(
+            second_hash,
+            started=datetime(2026, 6, 6, 0, 1, tzinfo=timezone.utc),
+            completed=datetime(2026, 6, 6, 0, 2, tzinfo=timezone.utc),
+        ),
+    )
+
+    # Same snapshot after a FAILED terminal fit. A separate model_version keeps
+    # this independent of the succeeded lineage above.
+    failed_version = f"{model_version}-failed"
+    failed_hash = hashlib.sha256(f"{model_version}-failed".encode()).hexdigest()
+
+    def _failed_snapshot() -> SourceSnapshotResult:
+        return SourceSnapshotResult(
+            tenant_id=tenant_id,
+            model_type="bayesian_attribution_confidence",
+            model_version=failed_version,
+            source_window_start=window_start,
+            source_window_end=window_end,
+            source_snapshot_hash=failed_hash,
+            preflight=None,  # type: ignore[arg-type]
+            streamed_chunk_count=3,
+            source_read_started_at=read_started,
+            source_read_completed_at=read_completed,
+        )
+
+    failed_first = await _claim("failed_lineage_first_claim", _failed_snapshot())
+    failed_fit_id = UUID(str(failed_first["fit_id"]))
+    async with engine.begin() as connection:
+        await _acquire_dispatch_lease(
+            connection,
+            tenant_id=tenant_id,
+            fit_id=failed_fit_id,
+            label="c5-claim-failed",
+            index=98,
+        )
+        await connection.execute(
+            text(
+                """
+                UPDATE public.bayesian_model_fits
+                SET status = 'failed',
+                    fallback_applied = true,
+                    fallback_reason = 'worker_failure',
+                    diagnostic_status = 'unavailable',
+                    diagnostic_failure_reason = 'skipped_non_sampled',
+                    credible_interval_status = 'not_available',
+                    completed_at = now(),
+                    updated_at = now()
+                WHERE tenant_id = :tenant_id
+                  AND id = :fit_id
+                  AND status IN ('pending', 'queued', 'running', 'persist_pending')
+                """
+            ),
+            {"tenant_id": str(tenant_id), "fit_id": str(failed_fit_id)},
+        )
+    async with maker() as session:
+        await session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await terminalize_preflight_lease(
+            session,
+            tenant_id=tenant_id,
+            model_type="bayesian_attribution_confidence",
+            model_version=failed_version,
+            source_window_start=window_start,
+            source_window_end=window_end,
+            fit_id=failed_fit_id,
+            terminal_status="failed",
+        )
+        await session.commit()
+    results["failed_fit_id"] = str(failed_fit_id)
+    await _claim("same_snapshot_after_failed", _failed_snapshot())
+    return results
+
+
+async def _observe_claim_state(engine, *, tenant_id: UUID, claim) -> dict[str, object]:
+    """Read back the physical state one claim produced. Nothing is assumed."""
+
+    record: dict[str, object] = {
+        "outcome": str(claim.outcome),
+        "fit_id": str(claim.fit_id) if claim.fit_id else None,
+        "dispatch_outbox_id": (
+            str(claim.dispatch_outbox_id) if claim.dispatch_outbox_id else None
+        ),
+        "active_lane_status": claim.active_execution_status,
+    }
+    if claim.fit_id is None:
+        return record
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        fit = (
+            (
+                await connection.execute(
+                    text(
+                        "SELECT status, source_snapshot_hash, source_read_started_at,"
+                        " source_read_completed_at, confidence_bucket"
+                        " FROM public.bayesian_model_fits"
+                        " WHERE tenant_id = :tenant_id AND id = :fit_id"
+                    ),
+                    {"tenant_id": str(tenant_id), "fit_id": str(claim.fit_id)},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        outbox_status = await connection.scalar(
+            text(
+                "SELECT status FROM public.b24_fit_dispatch_outbox"
+                " WHERE tenant_id = :tenant_id AND fit_id = :fit_id"
+            ),
+            {"tenant_id": str(tenant_id), "fit_id": str(claim.fit_id)},
+        )
+    record.update(
+        {
+            "fit_status": fit["status"],
+            "source_snapshot_hash": fit["source_snapshot_hash"],
+            "source_read_started_at": fit["source_read_started_at"],
+            "source_read_completed_at": fit["source_read_completed_at"],
+            "confidence_bucket": fit["confidence_bucket"],
+            "outbox_status": outbox_status,
+        }
+    )
+    return record
+
+
+async def _project_grandfathered_temporal_fit(
+    engine, *, tenant_id: UUID, label: str, index: int, evidence_epoch: datetime
+) -> dict[str, object]:
+    """Build a real envelope over a row whose evidence epoch predates C5 governance.
+
+    `trg_b24_evidence_temporal_plausibility` refuses to write materially future
+    evidence today, but rows written before it existed are still readable, and a
+    five-year-old row is perfectly writable. The trigger is disabled for the
+    single seeding statement -- by the table owner, not by the runtime identity --
+    which is the honest way to construct a legacy row: the point of this journey
+    is what the CONSUMER does with it, and a consumer that only ever sees
+    producer-validated rows proves nothing about fail-closed behaviour.
+    """
+
+    from app.confidence_projection.read_model import (
+        read_b24_confidence_projection_for_fit,
+    )
+    from app.trust.builder import (
+        TrustEnvelopeBuildRequest,
+        build_unsigned_trust_envelope,
+    )
+    from app.trust.source_adapters import ConfidenceProjectionSource
+
+    owner_engine = create_async_engine(
+        to_asyncpg_postgres_dsn(_migration_database_url()), future=True
+    )
+    fit_id = uuid4()
+    snapshot_hash = hashlib.sha256(f"c5-temporal-{fit_id}".encode()).hexdigest()
+    artifact_hash = hashlib.sha256(f"c5-temporal-art-{fit_id}".encode()).hexdigest()
+    artifact_ref = f"b24://artifact/{tenant_id}/{fit_id}/summary/{artifact_hash[:12]}"
+    model_version = f"p13-temporal-{label}-v1"
+    try:
+        async with owner_engine.begin() as connection:
+            # FORCE RLS applies to the table owner too, so the tenant GUC is
+            # bound here exactly as it is on the runtime path.
+            await connection.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE public.bayesian_model_fits"
+                    " DISABLE TRIGGER trg_b24_evidence_temporal_plausibility"
+                )
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE public.bayesian_model_fits"
+                    " DISABLE TRIGGER trg_b24_dispatch_fence_fits"
+                )
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE public.bayesian_artifacts"
+                    " DISABLE TRIGGER trg_b24_dispatch_fence_artifacts"
+                )
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.bayesian_model_fits (
+                        id, tenant_id, model_type, model_version,
+                        source_window_start, source_window_end,
+                        source_snapshot_hash, status, eligibility_status,
+                        data_completeness_status, fallback_applied,
+                        completed_at, r_hat_max, ess_min, divergence_count,
+                        hdi_lower, hdi_upper, interval_shape,
+                        interval_element_count, interval_summary_bytes,
+                        credible_interval_status, diagnostic_status,
+                        diagnostic_policy_version,
+                        diagnostic_target_filter_version, interval_policy_version,
+                        confidence_bucket, confidence_bucket_reason,
+                        confidence_policy_version, confidence_semantics_version,
+                        confidence_deterministic_revenue_minor,
+                        confidence_deterministic_row_count,
+                        confidence_match_verdict_count, confidence_currency_count,
+                        confidence_classified_at,
+                        confidence_evidence_snapshot_hash,
+                        source_read_started_at, source_read_completed_at,
+                        artifact_ref, artifact_hash, created_at, updated_at
+                    ) VALUES (
+                        :fit_id, :tenant_id, 'bayesian_attribution_confidence',
+                        :model_version, :window_start, :window_end,
+                        :snapshot_hash, 'succeeded', 'eligible',
+                        'complete', false,
+                        :classified_at, 1.0, 500, 0,
+                        9700, 10300, '[2]'::jsonb,
+                        2, 16,
+                        'available', 'passed',
+                        'p13-diagnostics-v1',
+                        'p13-target-v1', 'p13-interval-v1',
+                        'high', 'narrow_interval',
+                        'b24-p10-confidence-policy-v1',
+                        'b24-p10-confidence-semantics-v1',
+                        10000, 1, 1, 1,
+                        :classified_at, :snapshot_hash,
+                        :read_started, :read_completed,
+                        :artifact_ref, :artifact_hash, :classified_at, :classified_at
+                    )
+                    """
+                ),
+                {
+                    "fit_id": str(fit_id),
+                    "tenant_id": str(tenant_id),
+                    "model_version": model_version,
+                    "window_start": datetime(2026, 6, 1, tzinfo=timezone.utc),
+                    "window_end": datetime(2026, 6, 2, tzinfo=timezone.utc),
+                    "snapshot_hash": snapshot_hash,
+                    "read_started": evidence_epoch,
+                    "read_completed": evidence_epoch + timedelta(minutes=1),
+                    "classified_at": evidence_epoch + timedelta(minutes=2),
+                    "artifact_ref": artifact_ref,
+                    "artifact_hash": artifact_hash,
+                },
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.bayesian_artifacts (
+                        id, tenant_id, fit_id, artifact_ref, artifact_hash,
+                        artifact_type, storage_backend, artifact_uri_internal,
+                        artifact_size_bytes, payload_bytes, payload_byte_count,
+                        compression, retention_class, lifecycle_status,
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :tenant_id, :fit_id, :artifact_ref, :artifact_hash,
+                        'summary', 'postgres', :artifact_ref,
+                        2, :payload, 2, 'none', 'standard', 'active',
+                        :created_at, :created_at
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid4()),
+                    "tenant_id": str(tenant_id),
+                    "fit_id": str(fit_id),
+                    "artifact_ref": artifact_ref,
+                    "artifact_hash": artifact_hash,
+                    "payload": b"{}",
+                    "created_at": evidence_epoch + timedelta(minutes=2),
+                },
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO public.b24_dirty_events (
+                        id, tenant_id, model_type, model_version,
+                        source_window_start, source_window_end, dirty_reason,
+                        source_family, status, observed_at, source_snapshot_hash
+                    ) VALUES (
+                        :id, :tenant_id, 'bayesian_attribution_confidence',
+                        :model_version, :window_start, :window_end,
+                        'p13_c5_temporal', 'b23_revenue_events', 'coalesced',
+                        :observed_at, :snapshot_hash
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid4()),
+                    "tenant_id": str(tenant_id),
+                    "model_version": model_version,
+                    "window_start": datetime(2026, 6, 1, tzinfo=timezone.utc),
+                    "window_end": datetime(2026, 6, 2, tzinfo=timezone.utc),
+                    "observed_at": evidence_epoch,
+                    "snapshot_hash": snapshot_hash,
+                },
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE public.bayesian_artifacts"
+                    " ENABLE TRIGGER trg_b24_dispatch_fence_artifacts"
+                )
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE public.bayesian_model_fits"
+                    " ENABLE TRIGGER trg_b24_dispatch_fence_fits"
+                )
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE public.bayesian_model_fits"
+                    " ENABLE TRIGGER trg_b24_evidence_temporal_plausibility"
+                )
+            )
+    finally:
+        await owner_engine.dispose()
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        await session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        projection = await read_b24_confidence_projection_for_fit(
+            session, tenant_id=tenant_id, fit_id=fit_id
+        )
+        assert projection is not None, fit_id
+        result = await build_unsigned_trust_envelope(
+            session,
+            TrustEnvelopeBuildRequest(
+                tenant_id=tenant_id,
+                subject_type="confidence_projection",
+                subject_ref=f"urn:skeldir:confidence_projection:{fit_id}",
+                request_context={"created_at": datetime.now(timezone.utc)},
+            ),
+            source=ConfidenceProjectionSource(projection=projection),
+        )
+    payload = result.unsigned_payload or result.refusal_payload or {}
+    boundary = payload.get("evidence_temporal_boundary") or {}
+    return {
+        "fit_id": str(fit_id),
+        "confidence_status": (payload.get("confidence_metadata") or {}).get(
+            "confidence_status"
+        ),
+        "staleness_status": boundary.get("staleness_status"),
+        "data_freshness_seconds": boundary.get("data_freshness_seconds"),
+        "data_freshness_bound": boundary.get("data_freshness_bound"),
+        "evidence_age_status": boundary.get("evidence_age_status"),
+        "policy_reason": projection.decision.confidence_bucket_reason.value,
+    }
+
+
+def _migration_database_url() -> str:
+    """The owner DSN CI already provides, used only to seed legacy-shaped rows."""
+
+    url = os.getenv("MIGRATION_DATABASE_URL")
+    if url:
+        return url
+    runtime = get_database_url()
+    return runtime.replace("app_user:app_user", "migration_owner:migration_owner", 1)
 
 
 async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str]:
@@ -839,14 +1889,22 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             )
         refs[name] = f"urn:skeldir:confidence_projection:{fit_id}"
 
-    # C4-A / NC-C4-01: the last dispatch claim is still the transaction-local
-    # write capability, so this is the real runtime-role transition Nicholas
-    # used. The new database state machine must reject the incomplete available
-    # state independently of every Python producer and reader.
-    last_fit_id = UUID(refs["artifact_rejected"].rsplit(":", 1)[-1])
+    # C4-A / NC-C4-01 (B2.5-P13 C5 restructure): these controls now run against
+    # the transition a producer actually performs -- an open `queued` fit held
+    # under a live dispatch lease, terminalized in one statement -- rather than
+    # against an already-terminal row. Mutating a terminal row was never a
+    # production shape (every producer gates on
+    # `status IN ('pending','queued','running','persist_pending')`), and since C5
+    # it is refused by `trg_b24_terminal_fit_truth` before any CHECK constraint
+    # can be reached. Proving the constraint on the real write seam is strictly
+    # stronger: it is where an incomplete `available` state could actually be
+    # introduced.
+    open_fit_id, open_snapshot_hash = await _seed_open_leased_fit(
+        connection, tenant_id=tenant_id, label="c4-controls", index=90
+    )
     rollback_artifact_hash = hashlib.sha256(b"p13-c4-atomic-rollback").hexdigest()
     rollback_artifact_ref = (
-        f"b24://artifact/{tenant_id}/{last_fit_id}/diagnostics/"
+        f"b24://artifact/{tenant_id}/{open_fit_id}/diagnostics/"
         f"{rollback_artifact_hash[:12]}"
     )
     with pytest.raises(
@@ -874,26 +1932,27 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                 {
                     "id": str(uuid4()),
                     "tenant_id": str(tenant_id),
-                    "fit_id": str(last_fit_id),
+                    "fit_id": str(open_fit_id),
                     "artifact_ref": rollback_artifact_ref,
                     "artifact_hash": rollback_artifact_hash,
                     "payload": b"{}",
                 },
             )
             await connection.execute(
-                text(
-                    """
-                    UPDATE public.bayesian_model_fits
-                    SET confidence_deterministic_revenue_minor = NULL,
-                        confidence_deterministic_row_count = NULL,
-                        confidence_match_verdict_count = NULL,
-                        confidence_currency_count = NULL,
-                        confidence_evidence_snapshot_hash = NULL
-                    WHERE tenant_id = :tenant_id AND id = :fit_id
-                    """
+                text(_TERMINALIZE_FIT_SQL),
+                _terminalize_params(
+                    tenant_id=tenant_id,
+                    fit_id=open_fit_id,
+                    snapshot_hash=open_snapshot_hash,
+                    deterministic_revenue_minor=None,
+                    deterministic_row_count=None,
+                    match_verdict_count=None,
+                    currency_count=None,
+                    evidence_snapshot_hash=None,
                 ),
-                {"tenant_id": str(tenant_id), "fit_id": str(last_fit_id)},
             )
+    observe("p13_c4_db_invalid_available_rejected", "terminalize_without_evidence_tuple")
+    observe("p13_c4_authority_transaction_rollback", rollback_artifact_ref)
     rolled_back_artifact_count = await connection.scalar(
         text(
             """
@@ -905,33 +1964,24 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
         {"tenant_id": str(tenant_id), "artifact_ref": rollback_artifact_ref},
     )
     assert rolled_back_artifact_count == 0
-    invalid_state_mutations = (
-        (
-            "UPDATE public.bayesian_model_fits "
-            "SET confidence_classified_at = NULL "
-            "WHERE tenant_id = :tenant_id AND id = :fit_id",
-            "ck_bayesian_model_fits_confidence_classification_state",
-        ),
-        (
-            "UPDATE public.bayesian_model_fits "
-            "SET confidence_evidence_snapshot_hash = repeat('0', 64) "
-            "WHERE tenant_id = :tenant_id AND id = :fit_id",
-            "ck_bayesian_model_fits_confidence_evidence_tuple",
-        ),
-        (
-            "UPDATE public.bayesian_model_fits "
-            "SET source_read_started_at = source_read_completed_at + interval '1 second' "
-            "WHERE tenant_id = :tenant_id AND id = :fit_id",
-            "ck_bayesian_model_fits_source_read_pair_order",
-        ),
-        (
-            "UPDATE public.bayesian_model_fits "
-            "SET confidence_bucket_reason = 'wide_interval' "
-            "WHERE tenant_id = :tenant_id AND id = :fit_id",
-            "ck_bayesian_model_fits_available_confidence_complete",
-        ),
+
+    #: One field wrong per control, everything else a valid terminalization. The
+    #: constraint name is asserted so a control cannot pass because some other
+    #: rule happened to fire.
+    invalid_terminalizations = (
+        ("confidence_classified_at_null", {"confidence_classified_at": None},
+         "ck_bayesian_model_fits_confidence_classification_state"),
+        ("evidence_hash_not_source_hash",
+         {"evidence_snapshot_hash": "0" * 64},
+         "ck_bayesian_model_fits_confidence_evidence_tuple"),
+        ("source_read_pair_inverted", {"invert_source_read": True},
+         "ck_bayesian_model_fits_source_read_pair_order"),
+        ("bucket_reason_mismatch", {"confidence_bucket_reason": "wide_interval"},
+         "ck_bayesian_model_fits_available_confidence_complete"),
+        ("multi_currency_available", {"currency_count": 2},
+         "ck_bayesian_model_fits_available_confidence_complete"),
     )
-    for statement, constraint_name in invalid_state_mutations:
+    for control_id, overrides, constraint_name in invalid_terminalizations:
         with pytest.raises(
             IntegrityError,
             match=(
@@ -941,9 +1991,41 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
         ):
             async with connection.begin_nested():
                 await connection.execute(
-                    text(statement),
-                    {"tenant_id": str(tenant_id), "fit_id": str(last_fit_id)},
+                    text(_TERMINALIZE_FIT_SQL),
+                    _terminalize_params(
+                        tenant_id=tenant_id,
+                        fit_id=open_fit_id,
+                        snapshot_hash=open_snapshot_hash,
+                        **overrides,
+                    ),
                 )
+        observe("p13_c4_db_invalid_state_mutations_rejected", control_id)
+
+    # The seam is not one-sided: the same statement with every field correct
+    # must succeed, or the five refusals above would prove only that the
+    # statement is broken.
+    async with connection.begin_nested():
+        await connection.execute(
+            text(_TERMINALIZE_FIT_SQL),
+            _terminalize_params(
+                tenant_id=tenant_id,
+                fit_id=open_fit_id,
+                snapshot_hash=open_snapshot_hash,
+            ),
+        )
+        terminalized_bucket = await connection.scalar(
+            text(
+                "SELECT confidence_bucket FROM public.bayesian_model_fits"
+                " WHERE tenant_id = :tenant_id AND id = :fit_id"
+            ),
+            {"tenant_id": str(tenant_id), "fit_id": str(open_fit_id)},
+        )
+    assert terminalized_bucket == "high", (
+        "the C4 positive control failed: the five refusals above would then be "
+        "proving that the terminalizing statement is broken, not that the "
+        "constraints work"
+    )
+    observe("p13_c4_valid_terminalization_accepted", str(open_fit_id))
     return refs
 
 
@@ -1257,10 +2339,15 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             # G5 needs provider-controlled text that is actually hostile. The
             # canonical commerce reference is provider-supplied and flows into
             # untrusted_display_data, so the adversarial payload is seeded there.
-            hostile_reference = ADVERSARIAL_PROVIDER_TEXT[0]
-            hostile_urn = await _seed_verdict(
-                connection, tenant_id=tenant_a, reference=hostile_reference
-            )
+            # One subject per declared class (B2.5-P13 C5): the previous single
+            # subject meant two of the three declared classes were asserted
+            # absent without ever having been introduced.
+            hostile_urns = [
+                await _seed_verdict(
+                    connection, tenant_id=tenant_a, reference=hostile_reference
+                )
+                for hostile_reference in ADVERSARIAL_PROVIDER_TEXT
+            ]
             confidence_refs = await _seed_confidence_fits(
                 connection, tenant_id=tenant_a
             )
@@ -1312,6 +2399,34 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
         assert temporal["source_read_completed_at"] == "2026-06-02T00:02:00Z"
         assert temporal["max_source_read_skew_ms"] == 60_000
         assert temporal["data_freshness_seconds"] >= 11 * 60
+        assert temporal["data_freshness_bound"] == "exact", temporal
+        assert temporal["evidence_age_status"] == "within_supported_horizon", temporal
+        observe(
+            "p13_c4_temporal_e2e",
+            f"wire_boundary:{temporal['evidence_snapshot_at']}"
+            f":{temporal['data_freshness_bound']}",
+        )
+
+        # Source-authority cardinality, read off the signed artifact and the
+        # module the read model actually executes rather than printed as a
+        # literal. `allowed_source_tables` is the governed set the envelope
+        # publishes; `CONFIDENCE_PROJECTION_PHYSICAL_READ_TABLES` is the subset
+        # the projection SQL is permitted to touch, and P13-H08's executable
+        # authority check already proves the SQL touches exactly that subset.
+        from app.confidence_projection.read_model import (
+            CONFIDENCE_PROJECTION_PHYSICAL_READ_TABLES,
+        )
+
+        wire_governed_tables = available_confidence_envelope["subject_authority"][
+            "allowed_source_tables"
+        ]
+        for governed_table in wire_governed_tables:
+            observe("p13_confidence_governed_source_tables", governed_table)
+        for physical_table in CONFIDENCE_PROJECTION_PHYSICAL_READ_TABLES:
+            assert physical_table in wire_governed_tables, (
+                f"{physical_table} is physically read but not declared governed"
+            )
+            observe("p13_confidence_physical_read_tables", physical_table)
 
         # ---- Integer money authority (P13-G1, P13-H10) ---------------------
         # The envelope deliberately does NOT republish the revenue amount. The
@@ -1742,34 +2857,143 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
         # The provider-controlled string reaches the envelope only through
         # untrusted_display_data. It must never appear in an authority field, and
         # the disposition must be deterministic rather than inferred.
-        hostile_response = await _query(
-            auth_app,
-            tenant_id=tenant_a,
-            token=good_token,
-            refs=[hostile_urn],
-            nonce="p13-nonce-a-0005",
-            subject_types=["match_verdict"],
+        # B2.5-P13 C5: every declared class traverses the real provider-controlled
+        # field, not just the first one. Asserting that payloads 2 and 3 were
+        # absent from the envelope while never introducing them proved nothing --
+        # absence of an input that was never supplied is not quarantine. Each
+        # class now gets a positive source witness (the exact bytes are committed
+        # in the envelope, either literally or through raw_text_sha256) before its
+        # authority-absence assertion is allowed to mean anything.
+        from app.trust.builder import _display_data_from_provider_text
+
+        hostile_envelope = None
+        hostile_commitments: dict[int, str] = {}
+        for class_index, hostile_text in enumerate(ADVERSARIAL_PROVIDER_TEXT):
+            hostile_response = await _query(
+                auth_app,
+                tenant_id=tenant_a,
+                token=good_token,
+                refs=[hostile_urns[class_index]],
+                nonce=f"p13-nonce-a-0005-{class_index}",
+                subject_types=["match_verdict"],
+            )
+            assert hostile_response.status_code == 200, hostile_response.text
+            hostile_envelopes = hostile_response.json().get("envelopes") or []
+            assert hostile_envelopes, (
+                f"hostile-text class {class_index} produced no envelope"
+            )
+            candidate = hostile_envelopes[0]
+            display = candidate.get("untrusted_display_data") or {}
+
+            # The expected disposition is DERIVED by running the production
+            # disposition function over this exact payload, not hardcoded. The
+            # three declared classes deliberately land on different cells of the
+            # P3 matrix -- an instruction-shaped string is escaped and displayed,
+            # tool-call and markup shapes have their raw bytes omitted entirely --
+            # so any single hardcoded expectation could only ever be right for
+            # one of them. That is part of why the other two were never actually
+            # routed before C5.
+            expected_display = _display_data_from_provider_text(hostile_text)
+            for field in (
+                "text_trust_class",
+                "disposition_action",
+                "display_transform",
+                "display_text",
+                "raw_text_sha256",
+                "redaction_reason",
+            ):
+                assert display.get(field) == expected_display[field], (
+                    class_index,
+                    field,
+                    display.get(field),
+                    expected_display[field],
+                )
+            assert set(display.get("content_safety_flags") or ()) == set(
+                expected_display["content_safety_flags"] or ()
+            ), (class_index, display)
+            observe(
+                "p13_g5_adversarial_dispositions",
+                f"class{class_index}:{expected_display['disposition_action']}",
+            )
+
+            # Positive source witness. The directive accepts any of three forms,
+            # and which one applies is decided by the disposition, not by us:
+            #   * escaped display form corresponding to the exact source;
+            #   * raw_text_sha256 over the exact source;
+            #   * quarantine metadata that commits to the exact source.
+            # Whichever applies, the commitment is recorded and later required to
+            # be distinct across the three payloads: a value that did not depend
+            # on the input would not witness anything.
+            expected_escaped = html.escape(hostile_text, quote=True)
+            expected_sha = "sha256:" + hashlib.sha256(
+                hostile_text.encode("utf-8")
+            ).hexdigest()
+            witness = None
+            if display.get("display_text") is not None:
+                assert display["display_text"] == expected_escaped, (
+                    class_index,
+                    display["display_text"],
+                )
+                hostile_commitments[class_index] = display["display_text"]
+                witness = "escaped_display_form"
+            elif display.get("raw_text_sha256") is not None:
+                assert display["raw_text_sha256"] == expected_sha, (
+                    class_index,
+                    display["raw_text_sha256"],
+                    expected_sha,
+                )
+                hostile_commitments[class_index] = display["raw_text_sha256"]
+                witness = "raw_text_sha256_of_exact_source"
+            elif display.get("raw_text_hmac") is not None:
+                hostile_commitments[class_index] = display["raw_text_hmac"]
+                witness = "keyed_quarantine_commitment"
+            assert witness is not None, (
+                f"adversarial class {class_index} produced no commitment to its "
+                "source input, so asserting its absence from authority fields "
+                f"would be vacuous: {display}"
+            )
+            observe(
+                "p13_g5_adversarial_classes_witnessed",
+                f"class{class_index}:{witness}",
+            )
+
+            _assert_no_provider_text_in_authority(candidate, ADVERSARIAL_PROVIDER_TEXT)
+            observe("p13_g5_adversarial_classes_quarantined", f"class{class_index}")
+
+            # The quarantined envelope must still be a valid signed artifact:
+            # refusing to sign hostile input would be a different behaviour from
+            # signing an envelope whose hostile input reached no authority field.
+            verified_hostile = verify_trust_envelope(
+                candidate, key_registry=public_only
+            )
+            hostile_status = getattr(
+                verified_hostile, "verification_status", verified_hostile
+            )
+            assert hostile_status in {"valid", "verified"}, hostile_status
+            observe(
+                "p13_g5_adversarial_classes_signature_verified",
+                f"class{class_index}",
+            )
+            if class_index == 0:
+                hostile_envelope = candidate
+        assert hostile_envelope is not None
+        # A keyed commitment is only a witness if it is a function of the input.
+        assert len(hostile_commitments) == len(ADVERSARIAL_PROVIDER_TEXT), (
+            "not every declared hostile class produced a source commitment: "
+            f"{sorted(hostile_commitments)}"
         )
-        assert hostile_response.status_code == 200, hostile_response.text
-        hostile_envelopes = hostile_response.json().get("envelopes") or []
-        assert hostile_envelopes, "hostile-text subject produced no envelope"
-        hostile_envelope = hostile_envelopes[0]
-
-        # The hostile string must actually be present somewhere, or this journey
-        # proves nothing. A G5 that never introduces adversarial text asserts the
-        # absence of something that was never there.
-        assert ADVERSARIAL_PROVIDER_TEXT[0] in json.dumps(
-            hostile_envelope
-        ), "adversarial provider text never reached the envelope; G5 would be vacuous"
-
-        display = hostile_envelope.get("untrusted_display_data") or {}
-        assert display.get("text_trust_class") == "untrusted_display_label", display
-        assert display.get("display_transform") == "escaped_display_only", display
-
-        _assert_no_provider_text_in_authority(
-            hostile_envelope, ADVERSARIAL_PROVIDER_TEXT
+        assert len(set(hostile_commitments.values())) == len(hostile_commitments), (
+            "source commitments collided across distinct hostile inputs, so they "
+            f"do not depend on the input: {hostile_commitments}"
         )
+        assert observed("p13_g5_adversarial_classes_witnessed") == len(
+            ADVERSARIAL_PROVIDER_TEXT
+        ), OBSERVED_EVENTS.get("p13_g5_adversarial_classes_witnessed")
+        assert observed("p13_g5_adversarial_dispositions") == len(
+            ADVERSARIAL_PROVIDER_TEXT
+        ), OBSERVED_EVENTS.get("p13_g5_adversarial_dispositions")
         executed.append("P13-G5-prompt-control-quarantined")
+        executed.append("P13-C5-05-adversarial-class-matrix")
 
         # ---- G6: a non-authoritative money source refuses, it does not crash --
         # Proven at the money-authority boundary the route depends on: a float
@@ -1953,6 +3177,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             await replay_session.rollback()
         assert first is True, f"first use of a fresh nonce was rejected: {first}"
         assert second is False, f"replayed nonce was accepted: {second}"
+        observe("p13_replay_denied", f"atomic_nonce:{replay_nonce}")
         executed.append("P13-H14-replay-denied-atomically")
 
         # ---- P13-H15: a principal without the read scope is denied -----------
@@ -1978,6 +3203,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             AgentScope.ENVELOPE_READ not in granted
         ), f"unscoped client was granted envelope read: {granted}"
         assert not granted, f"unscoped client carries unexpected grants: {granted}"
+        observe("p13_scope_denied", f"no_grants:{scopeless_client}")
         executed.append("P13-H15-missing-scope-denied")
 
         # ---- Route-level composition of scope and replay ---------------------
@@ -2016,6 +3242,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
         denied_blob = denied.text
         for secret in (reference, str(tenant_a), "evt-" + reference):
             assert secret not in denied_blob, f"scope denial leaked {secret!r}"
+        observe("p13_route_level_denials", f"scope:{denied.status_code}")
         executed.append("P13-H15R-route-level-scope-denial")
 
         # H14R: replaying an accepted nonce through the real route is refused.
@@ -2032,6 +3259,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
         }, f"replayed nonce was accepted by the route: {replayed.status_code}"
         for secret in (reference, "evt-" + reference):
             assert secret not in replayed.text, "replay denial leaked subject data"
+        observe("p13_route_level_denials", f"replay:{replayed.status_code}")
         executed.append("P13-H14R-route-level-replay-denial")
 
         # ---- P13-H08: semantic confidence truth matrix ------------------------
@@ -2080,6 +3308,246 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             "degraded",
         }
         executed.append("P13-H08-confidence-projection-closure")
+
+        # ---- P13-C5-01: terminal epistemic truth cannot be restated -----------
+        # This is the audit's own exploit, executed here rather than described.
+        # It is deliberately run with FULL legitimate capability: the runtime
+        # identity rewrites its own dispatch-outbox lease bookkeeping (which the
+        # outbox's permissive tenant-only RLS policy allows), registers a worker
+        # process authority, and reclaims the lease through the governed
+        # SECURITY DEFINER claim function. All of that still succeeds -- nothing
+        # about B2.4 recovery has been weakened. What must now be impossible is
+        # the last step: restating an already-terminal fit's confidence.
+        async with engine.begin() as connection:
+            exploit_fit_id, exploit_snapshot = await _seed_open_leased_fit(
+                connection, tenant_id=tenant_a, label="c5-terminal", index=91
+            )
+            await connection.execute(
+                text(_TERMINALIZE_FIT_SQL),
+                _terminalize_params(
+                    tenant_id=tenant_a,
+                    fit_id=exploit_fit_id,
+                    snapshot_hash=exploit_snapshot,
+                ),
+            )
+            before_bucket = await connection.scalar(
+                text(
+                    "SELECT confidence_bucket FROM public.bayesian_model_fits"
+                    " WHERE tenant_id = :tenant_id AND id = :fit_id"
+                ),
+                {"tenant_id": str(tenant_a), "fit_id": str(exploit_fit_id)},
+            )
+            assert before_bucket == "high", before_bucket
+
+        async with engine.begin() as connection:
+            reclaim = await _reclaim_dispatch_lease_as_runtime_identity(
+                connection, tenant_id=tenant_a, fit_id=exploit_fit_id, index=92
+            )
+            # Recovery physics preserved: the reclaim itself must still work.
+            assert reclaim["outcome"] == "RECLAIMED", reclaim
+            observe("p13_c5_lease_reclaim_still_possible", str(exploit_fit_id))
+            for column, hostile_value in (
+                ("confidence_bucket", "'low'"),
+                ("confidence_deterministic_revenue_minor", "1"),
+                ("confidence_classified_at", "now()"),
+                ("confidence_evidence_snapshot_hash", "repeat('0', 64)"),
+                ("source_read_started_at", "now() - interval '10 years'"),
+                ("artifact_hash", "repeat('a', 64)"),
+                ("status", "'failed'"),
+            ):
+                with pytest.raises(DBAPIError, match="b24_terminal_fit_truth_immutable"):
+                    async with connection.begin_nested():
+                        await connection.execute(
+                            text(
+                                "UPDATE public.bayesian_model_fits"
+                                f" SET {column} = {hostile_value}"
+                                " WHERE tenant_id = :tenant_id AND id = :fit_id"
+                            ),
+                            {
+                                "tenant_id": str(tenant_a),
+                                "fit_id": str(exploit_fit_id),
+                            },
+                        )
+                observe("p13_c5_terminal_authority_mutations_rejected", column)
+
+            # Inert bookkeeping on the same terminal row still moves, so the rule
+            # is "terminal truth is frozen", not "terminal rows are read-only" --
+            # the latter would break retention and accounting writes.
+            bookkeeping = await connection.execute(
+                text(
+                    "UPDATE public.bayesian_model_fits"
+                    " SET last_eligibility_check_at = now(), updated_at = now()"
+                    " WHERE tenant_id = :tenant_id AND id = :fit_id"
+                ),
+                {"tenant_id": str(tenant_a), "fit_id": str(exploit_fit_id)},
+            )
+            assert bookkeeping.rowcount == 1
+            observe("p13_c5_terminal_bookkeeping_still_mutable", str(exploit_fit_id))
+            after_bucket = await connection.scalar(
+                text(
+                    "SELECT confidence_bucket FROM public.bayesian_model_fits"
+                    " WHERE tenant_id = :tenant_id AND id = :fit_id"
+                ),
+                {"tenant_id": str(tenant_a), "fit_id": str(exploit_fit_id)},
+            )
+        assert after_bucket == "high", (
+            "terminal confidence was restated under a reclaimed dispatch lease: "
+            f"{before_bucket!r} -> {after_bucket!r}"
+        )
+        executed.append("P13-C5-01-terminal-confidence-immutable")
+
+        # ---- P13-C5-02: the production fit-claim seam is operable -------------
+        # P13 stayed green for an entire corrective cycle while
+        # claim_fit_for_snapshot() -- the ONLY production entry point that turns
+        # an observed source snapshot into a B2.4 confidence subject -- could not
+        # execute at all against migration head. This journey binds the seam to
+        # the gate: if the function stops working, this required context is red.
+        claim_matrix = await _exercise_claim_seam(engine, tenant_id=tenant_a)
+        first = claim_matrix["new_snapshot_first_claim"]
+        assert first["outcome"] == "claimed", first
+        assert first["fit_id"] is not None and first["dispatch_outbox_id"] is not None
+        assert first["fit_status"] == "queued", first
+        assert first["outbox_status"] == "pending", first
+        assert first["active_lane_status"] == "dispatch_pending", first
+        observe("p13_c5_claim_seam_cases", "new_snapshot_first_claim")
+
+        same_active = claim_matrix["same_snapshot_while_active"]
+        assert same_active["outcome"] in {"suppressed_active", "claimed"}, same_active
+        assert same_active["fit_id"] == first["fit_id"], same_active
+        observe("p13_c5_claim_seam_cases", "same_snapshot_while_active")
+
+        reused = claim_matrix["same_snapshot_after_succeeded"]
+        assert reused["outcome"] == "reused", reused
+        assert reused["fit_id"] == claim_matrix["terminal_fit_id"], reused
+        assert reused["fit_status"] == "succeeded", reused
+        # The immutable-historical-observation rule, proven rather than asserted:
+        # re-observing identical content must not re-date the evidence epoch of a
+        # fit whose confidence has already been signed.
+        assert (
+            reused["source_read_started_at"]
+            == claim_matrix["terminal_source_read_started_at"]
+        ), reused
+        assert (
+            reused["confidence_bucket"] == "high"
+        ), reused
+        assert reused["active_lane_status"] == "succeeded", reused
+        observe("p13_c5_claim_seam_cases", "same_snapshot_after_succeeded")
+
+        newer = claim_matrix["different_newer_snapshot_after_terminal"]
+        assert newer["outcome"] == "claimed", newer
+        assert newer["fit_id"] != claim_matrix["terminal_fit_id"], newer
+        observe("p13_c5_claim_seam_cases", "different_newer_snapshot_after_terminal")
+
+        # Directive matrix, remaining rows. A stale lane must be reclaimable
+        # rather than deadlocking the window, and a failed observation of the
+        # same content is still that same historical observation.
+        stale = claim_matrix["stale_execution_lane"]
+        assert stale["outcome"] in {"claimed", "reused"}, stale
+        observe("p13_c5_claim_seam_cases", "stale_execution_lane")
+
+        failed_reuse = claim_matrix["same_snapshot_after_failed"]
+        assert failed_reuse["outcome"] == "reused", failed_reuse
+        assert failed_reuse["fit_id"] == claim_matrix["failed_fit_id"], failed_reuse
+        assert failed_reuse["fit_status"] == "failed", failed_reuse
+        observe("p13_c5_claim_seam_cases", "same_snapshot_after_failed")
+
+        assert observed("p13_c5_claim_seam_cases") == 6, OBSERVED_EVENTS[
+            "p13_c5_claim_seam_cases"
+        ]
+        executed.append("P13-C5-02-production-claim-seam-operability")
+
+        # ---- P13-C5-03: future evidence is never fresh evidence ---------------
+        # Producer half: the database refuses to record it at all.
+        async with engine.begin() as connection:
+            future_fit_id, future_snapshot = await _seed_open_leased_fit(
+                connection, tenant_id=tenant_a, label="c5-future", index=93
+            )
+            far_future = datetime.now(timezone.utc) + timedelta(days=30)
+            with pytest.raises(
+                DBAPIError, match="b24_evidence_timestamp_implausible"
+            ):
+                async with connection.begin_nested():
+                    await connection.execute(
+                        text(_TERMINALIZE_FIT_SQL),
+                        _terminalize_params(
+                            tenant_id=tenant_a,
+                            fit_id=future_fit_id,
+                            snapshot_hash=future_snapshot,
+                            source_read_started_at=far_future,
+                            source_read_completed_at=far_future
+                            + timedelta(minutes=1),
+                            confidence_classified_at=far_future
+                            + timedelta(minutes=2),
+                        ),
+                    )
+            observe("p13_c5_future_evidence_write_rejected", str(future_fit_id))
+
+            # Inside the governed skew tolerance the same write is accepted: the
+            # rule is a bounded plausibility window, not a strict `<= now()` that
+            # two honest clocks would violate.
+            inside_skew = datetime.now(timezone.utc) + timedelta(seconds=30)
+            await connection.execute(
+                text(_TERMINALIZE_FIT_SQL),
+                _terminalize_params(
+                    tenant_id=tenant_a,
+                    fit_id=future_fit_id,
+                    snapshot_hash=future_snapshot,
+                    source_read_started_at=inside_skew - timedelta(seconds=2),
+                    source_read_completed_at=inside_skew - timedelta(seconds=1),
+                    confidence_classified_at=inside_skew,
+                ),
+            )
+            observe("p13_c5_allowed_skew_accepted", str(future_fit_id))
+
+        # Consumer half: a row that predates the trigger is still readable, so the
+        # Trust side revalidates rather than trusting the producer's history.
+        grandfathered = await _project_grandfathered_temporal_fit(
+            engine,
+            tenant_id=tenant_a,
+            label="c5-grandfathered-future",
+            index=94,
+            evidence_epoch=datetime.now(timezone.utc) + timedelta(days=30),
+        )
+        assert grandfathered["confidence_status"] != "available", grandfathered
+        assert grandfathered["staleness_status"] != "current", grandfathered
+        assert grandfathered["data_freshness_seconds"] is None, grandfathered
+        assert grandfathered["data_freshness_bound"] == "unavailable", grandfathered
+        assert grandfathered["evidence_age_status"] == "unavailable", grandfathered
+        observe("p13_c5_future_evidence_never_current", "grandfathered_future_row")
+        executed.append("P13-C5-03-future-evidence-cannot-be-current")
+
+        # ---- P13-C5-04: absolute age is truthful, not silently saturated ------
+        aged = await _project_grandfathered_temporal_fit(
+            engine,
+            tenant_id=tenant_a,
+            label="c5-five-year",
+            index=95,
+            evidence_epoch=datetime.now(timezone.utc) - timedelta(days=365 * 5),
+        )
+        near_cap = await _project_grandfathered_temporal_fit(
+            engine,
+            tenant_id=tenant_a,
+            label="c5-near-cap",
+            index=96,
+            evidence_epoch=datetime.now(timezone.utc) - timedelta(days=364),
+        )
+        assert aged["data_freshness_seconds"] == 31536000, aged
+        assert aged["data_freshness_bound"] == "at_least_ceiling", aged
+        assert aged["evidence_age_status"] == "beyond_supported_horizon", aged
+        assert near_cap["data_freshness_bound"] == "exact", near_cap
+        assert near_cap["evidence_age_status"] == "within_supported_horizon", near_cap
+        # The whole point: five-year-old and near-cap evidence must no longer be
+        # indistinguishable on the wire.
+        assert (
+            aged["data_freshness_bound"] != near_cap["data_freshness_bound"]
+            or aged["evidence_age_status"] != near_cap["evidence_age_status"]
+        ), (aged, near_cap)
+        # Lineage currency is a different property and is deliberately unchanged:
+        # a five-year-old snapshot can legitimately be the newest known snapshot.
+        assert aged["staleness_status"] == near_cap["staleness_status"] == "current"
+        observe("p13_c5_absolute_age_cases", "beyond_supported_horizon")
+        observe("p13_c5_absolute_age_cases", "within_supported_horizon")
+        executed.append("P13-C5-04-absolute-age-explicitly-bounded")
 
         # ---- P13 negative controls -------------------------------------------
         # Each control constructs the violating artifact and requires the gate's
@@ -2381,6 +3849,13 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
 
     # ---- G11 foundation: machine-readable expected-case accounting -----------
     _assert_manifest_complete(EXPECTED_CASE_IDS, executed)
+    unobserved = [
+        counter for counter in RUNTIME_DERIVED_COUNTERS if observed(counter) == 0
+    ]
+    assert not unobserved, (
+        "counters declared as runtime-derived recorded nothing, so the workflow "
+        f"would assert a number no code path produced: {unobserved}"
+    )
     missing = [case for case in EXPECTED_CASE_IDS if case not in executed]
     artifact = {
         "schema_version": "b25-p13-e2e-manifest-v1",
@@ -2415,15 +3890,22 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
     print(f"p13_display_only_paths_excluded={len(display_only_paths)}")
     print(f"p13_money_columns_integer_not_null={len(money_columns)}")
     print(f"p13_confidence_semantic_truth_cases={len(semantic_truth_cases)}")
-    print("p13_confidence_governed_source_tables=7")
-    print("p13_confidence_physical_read_tables=3")
-    print("p13_route_level_denials=2")
-    print("p13_replay_denied=1")
-    print("p13_scope_denied=1")
-    print("p13_c4_db_invalid_available_rejected=1")
-    print("p13_c4_db_invalid_state_mutations_rejected=5")
-    print("p13_c4_authority_transaction_rollback=1")
-    print("p13_c4_temporal_e2e=1")
+    # B2.5-P13 C5 / gate C5-J: every counter below is len() of a list that the
+    # executing code appended to. Previously several of these were literal
+    # strings, which made the workflow's exact-value assertions read a number
+    # somebody typed rather than a number the run produced -- a gate can only be
+    # as honest as the value it greps for.
+    for counter in RUNTIME_DERIVED_COUNTERS:
+        print(f"{counter}={observed(counter)}")
     print(f"p13_negative_controls_fired={len(controls)}")
     print(f"p13_downgrade_cases_failed_closed={len(downgrade_results)}")
     print(f"p13_tamper_failure_classes={json.dumps(failure_classes, sort_keys=True)}")
+    # Counter provenance: what was counted, not merely how many. A reviewer can
+    # read this and see the evidence string each increment recorded.
+    print(
+        "p13_counter_provenance="
+        + json.dumps(
+            {name: OBSERVED_EVENTS.get(name, []) for name in RUNTIME_DERIVED_COUNTERS},
+            sort_keys=True,
+        )
+    )

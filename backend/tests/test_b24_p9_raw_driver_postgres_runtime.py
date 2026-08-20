@@ -875,10 +875,15 @@ async def test_b24_p9_directive_xvi_raw_psycopg_runtime_role_rejects_hostile_sql
 
         with conn.cursor() as cur:
             _bind_raw_lease(cur, lease)
+            # B2.5-P13 C5: the fence now governs authority-bearing fit columns
+            # rather than every column, so the probe writes one a worker actually
+            # writes. The invariant under test -- a revoked lease cannot alter
+            # fit state through the raw driver either -- is unchanged.
             with pytest.raises(psycopg2.Error, match="b24_dispatch_fence_rejected"):
                 _execute(
                     cur,
-                    "UPDATE public.bayesian_model_fits SET updated_at = now() WHERE id = %s",
+                    "UPDATE public.bayesian_model_fits SET status = 'running', "
+                    "updated_at = now() WHERE id = %s",
                     (str(fit_id),),
                 )
         conn.rollback()

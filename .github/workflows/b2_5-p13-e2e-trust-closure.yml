@@ -33,6 +33,8 @@ on:
       - 'contracts/trust-api/**'
       - 'scripts/ci/validate_b25_p13_confidence_truth.py'
       - 'scripts/ci/validate_b25_p13_c4_closure.py'
+      - 'scripts/ci/validate_b25_p13_c5_closure.py'
+      - 'db/schema/canonical_schema.sql'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
 
@@ -123,10 +125,10 @@ jobs:
           # reads. Both tamper counts are pinned, so neither a shrinking matrix nor
           # a blind field can pass.
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_executed_cases=15$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_expected=156$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_failed=156$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_load_bearing_paths=83$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_executed_cases=20$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_expected=158$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_load_bearing_paths=85$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
           grep -E "^p13_downgrade_cases_failed_closed=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_negative_controls_fired=18$" /tmp/b25_p13_e2e.out
@@ -141,6 +143,23 @@ jobs:
           grep -E "^p13_c4_db_invalid_state_mutations_rejected=5$" /tmp/b25_p13_e2e.out
           grep -E "^p13_c4_authority_transaction_rollback=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_c4_temporal_e2e=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c4_valid_terminalization_accepted=1$" /tmp/b25_p13_e2e.out
+
+          # B2.5-P13 C5. Each of these is len() of a list the run appended
+          # to, and p13_counter_provenance prints what was counted, so a
+          # reviewer can check the number against the events behind it.
+          grep -E "^p13_c5_terminal_authority_mutations_rejected=7$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_lease_reclaim_still_possible=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_terminal_bookkeeping_still_mutable=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_claim_seam_cases=6$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_future_evidence_write_rejected=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_allowed_skew_accepted=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_future_evidence_never_current=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_absolute_age_cases=2$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_g5_adversarial_classes_witnessed=3$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_g5_adversarial_dispositions=3$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_g5_adversarial_classes_quarantined=3$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_g5_adversarial_classes_signature_verified=3$" /tmp/b25_p13_e2e.out
 
       - name: P13 C3 confidence authority and semantic falsifiers
         run: |
@@ -163,6 +182,24 @@ jobs:
             /tmp/b25_p13_c4_closure.out
           grep -E "^p13_c4_executable_dependency_controls=1$" \
             /tmp/b25_p13_c4_closure.out
+          grep -E "^p13_c4_historical_rows_fail_closed=1$" \
+            /tmp/b25_p13_c4_closure.out
+      # P13 C5: lifecycle, temporal and proof-system closure. This step is
+      # where a behavioural invariant guarded only by a source check is caught:
+      # the control registry requires every such control to name a causal proof,
+      # and the gate verifies that proof still exists.
+      - name: P13 C5 lifecycle, temporal, and proof-system closure
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p13_c5_closure.py --negative-control \
+            | tee /tmp/b25_p13_c5_closure.out
+          grep -E "^B25_P13_C5_CLOSURE_VALIDATION_PASS$" /tmp/b25_p13_c5_closure.out
+          grep -E "^p13_c5_negative_controls_fired=10$" /tmp/b25_p13_c5_closure.out
+          grep -E "^p13_c5_controls_classified=33$" /tmp/b25_p13_c5_closure.out
+          grep -E "^p13_c5_behavioral_invariants=25$" /tmp/b25_p13_c5_closure.out
+          grep -E "^p13_c5_causal_controls=18$" /tmp/b25_p13_c5_closure.out
+          grep -E "^p13_c5_behavioral_backstops=9$" /tmp/b25_p13_c5_closure.out
+
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody
       # reads, so the manifest is asserted here as well as inside the test.
@@ -195,6 +232,11 @@ jobs:
               "P13-H15R-route-level-scope-denial",
               "P13-H14R-route-level-replay-denial",
               "P13-H08-confidence-projection-closure",
+              "P13-C5-01-terminal-confidence-immutable",
+              "P13-C5-02-production-claim-seam-operability",
+              "P13-C5-03-future-evidence-cannot-be-current",
+              "P13-C5-04-absolute-age-explicitly-bounded",
+              "P13-C5-05-adversarial-class-matrix",
           }
           missing = sorted(required - set(cases))
           assert not missing, f"required P13 journeys removed from manifest: {missing}"

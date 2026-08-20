@@ -122,7 +122,9 @@ field_domains:
   - {field_path: envelope_id, domain: signature_material_v1}
   - {field_path: envelope_version, domain: semantic_truth_v1}
   - {field_path: evidence_temporal_boundary, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.data_freshness_bound, domain: semantic_truth_v1}
   - {field_path: evidence_temporal_boundary.data_freshness_seconds, domain: semantic_truth_v1}
+  - {field_path: evidence_temporal_boundary.evidence_age_status, domain: semantic_truth_v1}
   - {field_path: evidence_temporal_boundary.evidence_snapshot_at, domain: semantic_truth_v1}
   - {field_path: evidence_temporal_boundary.evidence_snapshot_hash, domain: semantic_truth_v1}
   - {field_path: evidence_temporal_boundary.max_source_read_skew_ms, domain: semantic_truth_v1}

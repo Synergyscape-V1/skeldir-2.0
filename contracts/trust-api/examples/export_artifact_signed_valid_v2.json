@@ -41,7 +41,9 @@
       "envelope_id": "env_11111111111111111111111111111111",
       "envelope_version": "trust-envelope-v1",
       "evidence_temporal_boundary": {
+        "data_freshness_bound": "exact",
         "data_freshness_seconds": 1,
+        "evidence_age_status": "within_supported_horizon",
         "evidence_snapshot_at": "2026-06-24T10:00:00Z",
         "evidence_snapshot_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "max_source_read_skew_ms": 1000,

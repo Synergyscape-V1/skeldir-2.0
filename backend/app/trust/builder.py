@@ -10,6 +10,10 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.confidence_projection.policy import (
+    EVIDENCE_FRESHNESS_CEILING_SECONDS,
+    evidence_timestamp_is_plausible,
+)
 from app.trust.benchmark_defaults import unavailable_benchmark_metadata
 from app.trust.canonicalization import canonicalize_envelope_payload
 from app.trust.hash_identity import compute_semantic_truth_hash, compute_signature_hash
@@ -283,15 +287,30 @@ def _confidence_projection_payload(
     evidence_snapshot_at = projection.evidence_snapshot_at
     source_read_started_at = projection.source_read_started_at
     source_read_completed_at = projection.source_read_completed_at
-    temporal_authority_available = (
+    created_at = _context_datetime(
+        request.request_context, "created_at", projection.observed_at
+    )
+    # Relative chronology is necessary but not sufficient. Evidence that claims
+    # to have been read after the envelope was issued is not zero seconds old --
+    # it is not evidence. The tolerance is the one governed skew allowance shared
+    # with the database producer, so "slightly ahead because two clocks differ"
+    # and "dated thirty days into the future" are answered by one rule.
+    temporal_chronology_ordered = (
         evidence_snapshot_at is not None
         and source_read_started_at is not None
         and source_read_completed_at is not None
         and source_read_completed_at >= source_read_started_at
     )
-    created_at = _context_datetime(
-        request.request_context, "created_at", projection.observed_at
+    temporal_plausible = all(
+        evidence_timestamp_is_plausible(stamp, authoritative_now=created_at)
+        for stamp in (
+            evidence_snapshot_at,
+            source_read_started_at,
+            source_read_completed_at,
+            projection.confidence_classified_at,
+        )
     )
+    temporal_authority_available = temporal_chronology_ordered and temporal_plausible
     valid_until = _context_datetime(
         request.request_context,
         "valid_until",
@@ -482,14 +501,31 @@ def _confidence_projection_payload(
         else None
     )
     authority = subject_authority_definition("confidence_projection")
-    freshness_seconds = (
-        max(
-            0,
-            min(31536000, int((created_at - evidence_snapshot_at).total_seconds())),
-        )
+    # `data_freshness_seconds` is bounded by the wire contract, so for evidence
+    # older than the ceiling the number alone is a lie by omission: a five-year-old
+    # snapshot and a 364-day-old one rendered identically. The number keeps its
+    # bound; `data_freshness_bound` says whether it is the exact age or a floor,
+    # and `evidence_age_status` classifies absolute age independently of lineage.
+    raw_age_seconds = (
+        int((created_at - evidence_snapshot_at).total_seconds())
         if temporal_authority_available and evidence_snapshot_at is not None
         else None
     )
+    if raw_age_seconds is None:
+        freshness_seconds: int | None = None
+        freshness_bound = "unavailable"
+        evidence_age_status = "unavailable"
+    elif raw_age_seconds > EVIDENCE_FRESHNESS_CEILING_SECONDS:
+        freshness_seconds = EVIDENCE_FRESHNESS_CEILING_SECONDS
+        freshness_bound = "at_least_ceiling"
+        evidence_age_status = "beyond_supported_horizon"
+    else:
+        # A small negative age is clock skew inside the governed tolerance --
+        # materially future evidence never reaches this branch, because
+        # `temporal_authority_available` is already false for it.
+        freshness_seconds = max(0, raw_age_seconds)
+        freshness_bound = "exact"
+        evidence_age_status = "within_supported_horizon"
     source_read_skew_ms = (
         max(
             0,
@@ -572,6 +608,8 @@ def _confidence_projection_payload(
                 else None
             ),
             "data_freshness_seconds": freshness_seconds,
+            "data_freshness_bound": freshness_bound,
+            "evidence_age_status": evidence_age_status,
             "staleness_status": staleness_status,
             "evidence_snapshot_hash": source_snapshot_hash,
             "max_source_read_skew_ms": source_read_skew_ms,
@@ -712,6 +750,8 @@ def _match_verdict_payload(
             "source_read_started_at": utc_second(created_at),
             "source_read_completed_at": utc_second(created_at),
             "data_freshness_seconds": 0,
+            "data_freshness_bound": "exact",
+            "evidence_age_status": "within_supported_horizon",
             "staleness_status": "current",
             "evidence_snapshot_hash": source_snapshot_hash,
             "max_source_read_skew_ms": 0,
