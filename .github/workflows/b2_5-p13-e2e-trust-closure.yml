@@ -230,6 +230,9 @@ jobs:
           SKELDIR_CELERY_WORKER_ROLE: bayesian
           SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
           SKELDIR_B25_P13_C6_DB_PROOF: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
           PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c6-prometheus
         run: |
           set -o pipefail

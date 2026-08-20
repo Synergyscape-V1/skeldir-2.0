@@ -44,6 +44,7 @@ VERIFICATION = ROOT / "backend/app/trust/verification.py"
 P13 = ROOT / "backend/tests/trust/test_b25_p13_e2e_trust_closure.py"
 PHYSICS = ROOT / "backend/tests/trust/test_b25_p13_c6_postgres_physics.py"
 WORKFLOW = ROOT / ".github/workflows/b2_5-p13-e2e-trust-closure.yml"
+DOCKERFILE = ROOT / "backend/Dockerfile"
 DEPENDENCIES = ROOT / ("contracts/trust-api/confidence-projection-dependencies.v1.yaml")
 LIFECYCLE = ROOT / "contracts/bayesian/lifecycle-taxonomy.v1.yaml"
 TEMPORAL_POLICY = ROOT / "contracts/trust-api/temporal-policy.v1.yaml"
@@ -94,6 +95,7 @@ def validate_worker_authority(
     body = migration if migration is not None else _read(MIGRATION)
     prep = provisioner if provisioner is not None else _read(PROVISIONER)
     test = physics if physics is not None else _read(PHYSICS)
+    flow = _read(WORKFLOW)
     _require("worker_user: str" in prep, "worker_login_not_provisioned")
     _require(
         "IF to_regrole('app_worker') IS NOT NULL THEN" in body,
@@ -115,6 +117,15 @@ def validate_worker_authority(
         "FROM PUBLIC, app_user, app_rw, app_ro" in body,
         "shared_roles_not_revoked_from_worker_functions",
     )
+    for topology_witness in (
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15",
+        "SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine",
+    ):
+        _require(
+            topology_witness in flow,
+            f"c6_worker_topology_attestation_missing:{topology_witness}",
+        )
     for table in (
         "bayesian_model_fits",
         "bayesian_artifacts",
@@ -295,6 +306,7 @@ def validate_temporal_policy(
     governed = policy if policy is not None else _yaml(TEMPORAL_POLICY)
     app = app_source if app_source is not None else _read(POLICY)
     db = db_source if db_source is not None else _read(C5_MIGRATION)
+    dockerfile = _read(DOCKERFILE)
     skew = int(governed["evidence_future_skew_tolerance_seconds"])
     ceiling = int(governed["evidence_freshness_ceiling_seconds"])
     _require(skew > 0 and skew <= 3600, "temporal_skew_out_of_bounds")
@@ -302,6 +314,10 @@ def validate_temporal_policy(
     _require(
         '_temporal_policy()["evidence_future_skew_tolerance_seconds"]' in app,
         "application_skew_not_registry_derived",
+    )
+    _require(
+        "COPY contracts/trust-api /app/contracts/trust-api" in dockerfile,
+        "runtime_image_omits_governed_temporal_policy",
     )
     match = re.search(r"EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS\s*=\s*(\d+)", db)
     _require(match is not None and int(match.group(1)) == skew, "database_skew_drift")
