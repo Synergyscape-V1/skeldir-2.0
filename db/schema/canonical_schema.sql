@@ -446,7 +446,8 @@ CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
                OR NEW.confidence_currency_count IS DISTINCT FROM OLD.confidence_currency_count
                OR NEW.max_runtime_seconds IS DISTINCT FROM OLD.max_runtime_seconds
                OR NEW.max_samples IS DISTINCT FROM OLD.max_samples
-               OR NEW.max_cores IS DISTINCT FROM OLD.max_cores THEN
+               OR NEW.max_cores IS DISTINCT FROM OLD.max_cores
+               OR NEW.updated_at IS DISTINCT FROM OLD.updated_at THEN
                 RAISE EXCEPTION 'b24_terminal_fit_truth_immutable';
             END IF;
             RETURN NEW;

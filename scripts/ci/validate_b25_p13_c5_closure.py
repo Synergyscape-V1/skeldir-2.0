@@ -534,6 +534,18 @@ def validate_terminal_truth_enforcement(migration: str | None = None) -> int:
             f'"{column}",' in text,
             f"authority_column_not_frozen_after_terminalization:{column}",
         )
+    # Rule B must freeze strictly more than Rule A gates. `updated_at` is the
+    # difference and it is load-bearing: `observed_at` is derived from
+    # `completed_at or updated_at` and published as signed provenance.
+    _require(
+        "TERMINAL_FROZEN_COLUMNS" in text
+        and 'LEASE_GATED_AUTHORITY_COLUMNS + ("updated_at",)' in text,
+        "terminal_freeze_set_is_not_wider_than_the_lease_gated_set",
+    )
+    _require(
+        "_terminal_freeze_predicate()" in text,
+        "terminal_truth_trigger_does_not_use_the_terminal_freeze_set",
+    )
     _require(
         "trg_b24_evidence_temporal_plausibility" in text,
         "temporal_plausibility_trigger_absent",
@@ -922,6 +934,14 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         "property is exactly what must not be silently editable.",
     ),
     ControlClassification(
+        "NC-C5-12", STATIC, SOURCE, f"{C5}::validate_terminal_truth_enforcement",
+        "Whether the terminal freeze covers more than the lease-gated set is a "
+        "property of the migration text. The runtime half is NC-C5-01, which now "
+        "drives an updated_at rewrite on a terminal fit under a reclaimed lease "
+        "and observes the refusal against a real database.",
+        behavioral_backstop=f"{E2E}::P13-C5-01-terminal-confidence-immutable",
+    ),
+    ControlClassification(
         "NC-C5-11", STATIC, SOURCE, f"{C5}::validate_counters_are_runtime_derived",
         "Whether a counter is a printed literal is a property of the source "
         "text, so a source check is the correct and complete instrument. The "
@@ -1126,6 +1146,19 @@ def run_negative_controls() -> int:
     )
     _expect_failure(
         "NC-C5-08", lambda: validate_freshness_semantics_are_hash_bound(unbound)
+    )
+    controls += 1
+
+    # NC-C5-12: the terminal freeze narrows to exactly the lease-gated set,
+    # letting `updated_at` -- and therefore signed provenance timestamps -- move
+    # on a finished fit.
+    narrowed = C5_MIGRATION.read_text("utf-8").replace(
+        'TERMINAL_FROZEN_COLUMNS = LEASE_GATED_AUTHORITY_COLUMNS + ("updated_at",)',
+        "TERMINAL_FROZEN_COLUMNS = LEASE_GATED_AUTHORITY_COLUMNS",
+        1,
+    )
+    _expect_failure(
+        "NC-C5-12", lambda: validate_terminal_truth_enforcement(narrowed)
     )
     controls += 1
 

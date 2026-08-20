@@ -17,10 +17,13 @@ Rule A (authority fence, pre-existing, now precisely scoped)
     not a dispatch worker and never holds a lease.
 
 Rule B (terminal epistemic immutability, new)
-    Once a fit reaches a terminal status, no authority-bearing column may change
-    again -- with a lease, with a reclaimed lease, or as table owner. A fit's
-    terminal truth is a historical observation; restating it would silently
-    change what an already-issued, already-signed TrustEnvelope asserted.
+    Once a fit reaches a terminal status, nothing it publishes may change again
+    -- with a lease, with a reclaimed lease, or as table owner. A fit's terminal
+    truth is a historical observation; restating it would silently change what an
+    already-issued, already-signed TrustEnvelope asserted. Rule B freezes every
+    Rule A column *plus* ``updated_at``, which is not authority the planner needs
+    a lease for on an open fit but is reachable from the signed wire through
+    ``observed_at``.
 
 Rule B is what closes the reproduced C5 exploit: a least-privilege runtime
 identity could rewrite its own dispatch-outbox lease bookkeeping (the outbox's
@@ -66,8 +69,9 @@ TERMINAL_FIT_STATUSES = (
 )
 
 #: Authority-bearing columns. A change to any of these is a change to what the
-#: fit *asserts*, as opposed to how it is scheduled or accounted for.
-AUTHORITY_FIT_COLUMNS = (
+#: fit *asserts*, as opposed to how it is scheduled or accounted for. Rule A
+#: gates exactly these on holding a live dispatch lease.
+LEASE_GATED_AUTHORITY_COLUMNS = (
     "status",
     "source_snapshot_hash",
     "source_read_started_at",
@@ -119,17 +123,45 @@ AUTHORITY_FIT_COLUMNS = (
     "max_cores",
 )
 
+#: Rule B freezes strictly more than Rule A gates, because the two rules answer
+#: different questions. Rule A asks "may this caller change what the fit
+#: asserts"; Rule B asks "is this observation still open at all", and a finished
+#: observation does not change in any respect.
+#:
+#: `updated_at` is the whole difference, and it is not cosmetic. The read model
+#: computes `observed_at` as `completed_at or updated_at`; `completed_at` is
+#: nullable even for available confidence; and `observed_at` is published as five
+#: `provenance_chain[].observed_at` values that the hash manifest registers as
+#: machine authority and the signature commits to. Leaving it mutable after
+#: terminalization would let a tenant-scoped writer holding no dispatch lease
+#: shift signed provenance timestamps on a finished fit -- a smaller lie than
+#: rewriting a confidence bucket, but the same kind of lie.
+#:
+#: It stays out of Rule A because the B2.4 planner legitimately touches it on an
+#: OPEN fit and holds no lease; gating it there would re-break the claim path.
+TERMINAL_FROZEN_COLUMNS = LEASE_GATED_AUTHORITY_COLUMNS + ("updated_at",)
+
 #: Bounded clock-skew tolerance between the database clock and any producer's
 #: clock. Mirrored by ``app.confidence_projection.policy`` and asserted equal by
 #: the C5 CI gate, so the two can never drift into two different policies.
 EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS = 120
 
 
-def _authority_change_predicate(prefix_old: str = "OLD", prefix_new: str = "NEW") -> str:
+def _change_predicate(
+    columns: tuple[str, ...], prefix_old: str = "OLD", prefix_new: str = "NEW"
+) -> str:
     return "\n               OR ".join(
         f"{prefix_new}.{column} IS DISTINCT FROM {prefix_old}.{column}"
-        for column in AUTHORITY_FIT_COLUMNS
+        for column in columns
     )
+
+
+def _authority_change_predicate(prefix_old: str = "OLD", prefix_new: str = "NEW") -> str:
+    return _change_predicate(LEASE_GATED_AUTHORITY_COLUMNS, prefix_old, prefix_new)
+
+
+def _terminal_freeze_predicate(prefix_old: str = "OLD", prefix_new: str = "NEW") -> str:
+    return _change_predicate(TERMINAL_FROZEN_COLUMNS, prefix_old, prefix_new)
 
 
 def _sql_status_list() -> str:
@@ -182,7 +214,7 @@ def upgrade() -> None:
             IF NOT public.b24_fit_status_is_terminal(OLD.status) THEN
                 RETURN NEW;
             END IF;
-            IF {_authority_change_predicate()} THEN
+            IF {_terminal_freeze_predicate()} THEN
                 RAISE EXCEPTION 'b24_terminal_fit_truth_immutable';
             END IF;
             RETURN NEW;

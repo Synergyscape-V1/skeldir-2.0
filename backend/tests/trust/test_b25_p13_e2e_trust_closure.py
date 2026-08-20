@@ -950,6 +950,18 @@ async def _exercise_claim_seam(engine, *, tenant_id: UUID) -> dict[str, object]:
     results["terminal_source_read_started_at"] = datetime(
         2026, 6, 2, 0, 1, tzinfo=timezone.utc
     )
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tenant_id)},
+        )
+        results["terminal_updated_at"] = await connection.scalar(
+            text(
+                "SELECT updated_at FROM public.bayesian_model_fits"
+                " WHERE tenant_id = :t AND id = :f"
+            ),
+            {"t": str(tenant_id), "f": str(fit_id)},
+        )
 
     # Same content observed again, deliberately carrying LATER read timestamps.
     # A correct reuse path must ignore them.
@@ -1091,7 +1103,7 @@ async def _observe_claim_state(engine, *, tenant_id: UUID, claim) -> dict[str, o
                 await connection.execute(
                     text(
                         "SELECT status, source_snapshot_hash, source_read_started_at,"
-                        " source_read_completed_at, confidence_bucket"
+                        " source_read_completed_at, confidence_bucket, updated_at"
                         " FROM public.bayesian_model_fits"
                         " WHERE tenant_id = :tenant_id AND id = :fit_id"
                     ),
@@ -1115,6 +1127,7 @@ async def _observe_claim_state(engine, *, tenant_id: UUID, claim) -> dict[str, o
             "source_read_started_at": fit["source_read_started_at"],
             "source_read_completed_at": fit["source_read_completed_at"],
             "confidence_bucket": fit["confidence_bucket"],
+            "updated_at": fit["updated_at"],
             "outbox_status": outbox_status,
         }
     )
@@ -3356,6 +3369,13 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
                 ("source_read_started_at", "now() - interval '10 years'"),
                 ("artifact_hash", "repeat('a', 64)"),
                 ("status", "'failed'"),
+                # `updated_at` is not authority the planner needs a lease for on
+                # an OPEN fit, but on a terminal one it is reachable from the
+                # signed wire: the read model derives `observed_at` from
+                # `completed_at or updated_at`, `completed_at` is nullable even
+                # for available confidence, and `observed_at` is published as
+                # five machine-authority provenance timestamps.
+                ("updated_at", "now() + interval '1 hour'"),
             ):
                 with pytest.raises(DBAPIError, match="b24_terminal_fit_truth_immutable"):
                     async with connection.begin_nested():
@@ -3378,7 +3398,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             bookkeeping = await connection.execute(
                 text(
                     "UPDATE public.bayesian_model_fits"
-                    " SET last_eligibility_check_at = now(), updated_at = now()"
+                    " SET last_eligibility_check_at = now()"
                     " WHERE tenant_id = :tenant_id AND id = :fit_id"
                 ),
                 {"tenant_id": str(tenant_a), "fit_id": str(exploit_fit_id)},
@@ -3432,6 +3452,12 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
         assert (
             reused["confidence_bucket"] == "high"
         ), reused
+        assert reused["updated_at"] == claim_matrix["terminal_updated_at"], (
+            "same-snapshot reuse re-dated a finished observation: `observed_at` "
+            "is derived from `completed_at or updated_at` and is published as "
+            "signed provenance",
+            reused,
+        )
         assert reused["active_lane_status"] == "succeeded", reused
         observe("p13_c5_claim_seam_cases", "same_snapshot_after_succeeded")
 

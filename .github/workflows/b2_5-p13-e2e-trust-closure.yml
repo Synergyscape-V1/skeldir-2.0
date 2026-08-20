@@ -152,7 +152,7 @@ jobs:
           # B2.5-P13 C5. Each of these is len() of a list the run appended
           # to, and p13_counter_provenance prints what was counted, so a
           # reviewer can check the number against the events behind it.
-          grep -E "^p13_c5_terminal_authority_mutations_rejected=7$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_terminal_authority_mutations_rejected=8$" /tmp/b25_p13_e2e.out
           grep -E "^p13_c5_lease_reclaim_still_possible=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_c5_terminal_bookkeeping_still_mutable=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_c5_claim_seam_cases=6$" /tmp/b25_p13_e2e.out
@@ -198,11 +198,11 @@ jobs:
           python scripts/ci/validate_b25_p13_c5_closure.py --negative-control \
             | tee /tmp/b25_p13_c5_closure.out
           grep -E "^B25_P13_C5_CLOSURE_VALIDATION_PASS$" /tmp/b25_p13_c5_closure.out
-          grep -E "^p13_c5_negative_controls_fired=10$" /tmp/b25_p13_c5_closure.out
-          grep -E "^p13_c5_controls_classified=33$" /tmp/b25_p13_c5_closure.out
+          grep -E "^p13_c5_negative_controls_fired=11$" /tmp/b25_p13_c5_closure.out
+          grep -E "^p13_c5_controls_classified=34$" /tmp/b25_p13_c5_closure.out
           grep -E "^p13_c5_behavioral_invariants=25$" /tmp/b25_p13_c5_closure.out
           grep -E "^p13_c5_causal_controls=18$" /tmp/b25_p13_c5_closure.out
-          grep -E "^p13_c5_behavioral_backstops=9$" /tmp/b25_p13_c5_closure.out
+          grep -E "^p13_c5_behavioral_backstops=10$" /tmp/b25_p13_c5_closure.out
 
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody

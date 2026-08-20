@@ -439,7 +439,20 @@ async def claim_fit_for_snapshot(
                                 ELSE EXCLUDED.source_read_completed_at
                             END,
                             last_eligibility_check_at = now(),
-                            updated_at = now()
+                            -- `updated_at` is frozen once the fit is terminal:
+                            -- the read model derives `observed_at` from
+                            -- `completed_at or updated_at` and publishes it as
+                            -- signed provenance, so advancing it would re-date a
+                            -- finished observation. Nothing about the row changed
+                            -- anyway -- only that we looked at it again, which is
+                            -- what `last_eligibility_check_at` records.
+                            updated_at = CASE
+                                WHEN public.b24_fit_status_is_terminal(
+                                    bayesian_model_fits.status
+                                )
+                                    THEN bayesian_model_fits.updated_at
+                                ELSE now()
+                            END
                         RETURNING id, status
                     ),
                     dispatchable_outbox AS (
