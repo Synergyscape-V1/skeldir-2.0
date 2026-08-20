@@ -193,6 +193,7 @@ def validate_worker_authority(
         "B21_P4_BAYESIAN_WORKER_DATABASE_URL:",
         "B07_P5_BAYESIAN_WORKER_DATABASE_URL:",
         "B0533_WORKER_USER: app_worker",
+        "B057_P6_WORKER_USER: app_worker",
         "CREATE USER app_worker WITH PASSWORD 'app_worker'",
     ):
         _require(witness in ci_workflow, f"aggregate_ci_worker_authority_missing:{witness}")
