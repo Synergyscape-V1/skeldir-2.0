@@ -67,6 +67,32 @@
   risk_if_removed: A partial available-confidence tuple, invented historical timestamp, comment-only authority
     token, untracked SQL join, or failed-refit freshness hole could recur while finite positive E2E fixtures
     remained green.
+- gate_id: validate-b25-p13-c5-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_c5_closure.py
+  owning_phase: B2.5-P13-C5
+  protected_invariant: Terminal fit truth is immutable under any dispatch authority, producer and consumer
+    enforce one governed evidence skew tolerance, the production claim path supplies every dispatch column
+    the canonical schema requires, same-snapshot reuse preserves terminal evidence, freshness saturation
+    and absolute age carry explicit signed wire semantics, the B2.4 claim seam stays causally bound to the
+    P13 proof graph, and every C3/C4/C5 negative control is classified with a verified causal backstop.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C3 proves the confidence vocabulary and C4 proves evidence completeness, but neither
+    can observe lifecycle mutability, claim-path operability against migration head, or whether a negative
+    control that guards runtime behavior actually executes anything. The P13 runtime journeys prove the
+    database behaviour on concrete fixtures; only this gate proves the proof system itself is not vacuous
+    and that the producer and consumer temporal policies have not drifted apart.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c5_closure.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c5_closure.py --negative-control
+  risk_if_removed: Terminal confidence could become silently restatable, a future NOT NULL dispatch column
+    could break every first claim while P13 stayed green, materially future evidence could render as current,
+    absolute age could be understated without explicit semantics, or a behavioural invariant could quietly
+    regress to a source-text check while its counter kept printing a number nobody derived.
 - gate_id: validate-b25-p12-contract-projection
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates

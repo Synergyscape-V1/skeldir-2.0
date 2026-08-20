@@ -112,6 +112,8 @@ _MACHINE_AUTHORITY_ENUM_FIELDS = frozenset(
         "data_completeness_status",
         "deterministic_verification_status",
         "discrepancy_class",
+        "evidence_temporal_boundary.data_freshness_bound",
+        "evidence_temporal_boundary.evidence_age_status",
         "evidence_temporal_boundary.snapshot_consistency_status",
         "evidence_temporal_boundary.staleness_status",
         "fallback_reason",

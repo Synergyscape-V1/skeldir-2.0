@@ -84,6 +84,38 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Remediation Evidence Pack.md
+- id: validate-b25-p13-c5-closure
+  path: scripts/ci/validate_b25_p13_c5_closure.py
+  status: required
+  owning_phase: B2.5-P13-C5
+  protected_invariant: B2.5-P13-C5 binds terminal fit truth immutability, producer/consumer agreement on
+    one governed evidence skew tolerance, schema-derived dispatch-column completeness for the production
+    claim path, same-snapshot reuse that preserves terminal evidence, explicit freshness saturation and
+    absolute-age semantics on the signed wire, causal binding of the B2.4 claim seam into the P13 proof
+    graph, and a complete STATIC/BEHAVIORAL classification of every C3/C4/C5 negative control in which a
+    behavioural invariant guarded by a source check must name a verified causal backstop.
+  command: python scripts/ci/validate_b25_p13_c5_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c5_closure.py --negative-control
+  expected_failure_meaning: Terminal fit truth became mutable again, the producer and consumer skew
+    tolerances drifted apart, the claim path stopped supplying a column the canonical schema requires,
+    same-snapshot reuse began restating terminal evidence, freshness saturation or absolute age lost its
+    explicit wire semantics, the claim seam left the required proof graph, a runtime counter reverted to a
+    printed literal, or a negative control lost its classification or its causal backstop.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c5_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_step
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation V Report.md
 - id: validate-b25-p12-contract-projection
   path: scripts/ci/validate_b25_p12_contract_projection.py
   status: required

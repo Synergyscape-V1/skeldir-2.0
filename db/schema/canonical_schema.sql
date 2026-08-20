@@ -291,8 +291,55 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
 
             IF TG_OP = 'UPDATE' THEN
                 IF TG_ARGV[0] = 'fit' THEN
-                    IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR NEW.id IS DISTINCT FROM OLD.id THEN
+                    IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+                       OR NEW.id IS DISTINCT FROM OLD.id THEN
                         RAISE EXCEPTION 'b24_dispatch_immutable_fit_authority';
+                    END IF;
+
+                    IF NOT (NEW.status IS DISTINCT FROM OLD.status
+               OR NEW.source_snapshot_hash IS DISTINCT FROM OLD.source_snapshot_hash
+               OR NEW.source_read_started_at IS DISTINCT FROM OLD.source_read_started_at
+               OR NEW.source_read_completed_at IS DISTINCT FROM OLD.source_read_completed_at
+               OR NEW.data_completeness_status IS DISTINCT FROM OLD.data_completeness_status
+               OR NEW.fallback_applied IS DISTINCT FROM OLD.fallback_applied
+               OR NEW.fallback_reason IS DISTINCT FROM OLD.fallback_reason
+               OR NEW.diagnostic_status IS DISTINCT FROM OLD.diagnostic_status
+               OR NEW.diagnostic_failure_reason IS DISTINCT FROM OLD.diagnostic_failure_reason
+               OR NEW.diagnostic_policy_version IS DISTINCT FROM OLD.diagnostic_policy_version
+               OR NEW.diagnostic_target_filter_version IS DISTINCT FROM OLD.diagnostic_target_filter_version
+               OR NEW.diagnostics_computed_at IS DISTINCT FROM OLD.diagnostics_computed_at
+               OR NEW.credible_interval_status IS DISTINCT FROM OLD.credible_interval_status
+               OR NEW.interval_policy_version IS DISTINCT FROM OLD.interval_policy_version
+               OR NEW.interval_shape IS DISTINCT FROM OLD.interval_shape
+               OR NEW.interval_element_count IS DISTINCT FROM OLD.interval_element_count
+               OR NEW.interval_summary_bytes IS DISTINCT FROM OLD.interval_summary_bytes
+               OR NEW.hdi_lower IS DISTINCT FROM OLD.hdi_lower
+               OR NEW.hdi_upper IS DISTINCT FROM OLD.hdi_upper
+               OR NEW.r_hat_max IS DISTINCT FROM OLD.r_hat_max
+               OR NEW.ess_min IS DISTINCT FROM OLD.ess_min
+               OR NEW.divergence_count IS DISTINCT FROM OLD.divergence_count
+               OR NEW.n_chains IS DISTINCT FROM OLD.n_chains
+               OR NEW.n_samples_actual IS DISTINCT FROM OLD.n_samples_actual
+               OR NEW.runtime_seconds IS DISTINCT FROM OLD.runtime_seconds
+               OR NEW.sampling_started_at IS DISTINCT FROM OLD.sampling_started_at
+               OR NEW.last_fit_at IS DISTINCT FROM OLD.last_fit_at
+               OR NEW.completed_at IS DISTINCT FROM OLD.completed_at
+               OR NEW.artifact_ref IS DISTINCT FROM OLD.artifact_ref
+               OR NEW.artifact_hash IS DISTINCT FROM OLD.artifact_hash
+               OR NEW.confidence_bucket IS DISTINCT FROM OLD.confidence_bucket
+               OR NEW.confidence_bucket_reason IS DISTINCT FROM OLD.confidence_bucket_reason
+               OR NEW.confidence_policy_version IS DISTINCT FROM OLD.confidence_policy_version
+               OR NEW.confidence_semantics_version IS DISTINCT FROM OLD.confidence_semantics_version
+               OR NEW.confidence_classified_at IS DISTINCT FROM OLD.confidence_classified_at
+               OR NEW.confidence_evidence_snapshot_hash IS DISTINCT FROM OLD.confidence_evidence_snapshot_hash
+               OR NEW.confidence_deterministic_revenue_minor IS DISTINCT FROM OLD.confidence_deterministic_revenue_minor
+               OR NEW.confidence_deterministic_row_count IS DISTINCT FROM OLD.confidence_deterministic_row_count
+               OR NEW.confidence_match_verdict_count IS DISTINCT FROM OLD.confidence_match_verdict_count
+               OR NEW.confidence_currency_count IS DISTINCT FROM OLD.confidence_currency_count
+               OR NEW.max_runtime_seconds IS DISTINCT FROM OLD.max_runtime_seconds
+               OR NEW.max_samples IS DISTINCT FROM OLD.max_samples
+               OR NEW.max_cores IS DISTINCT FROM OLD.max_cores) THEN
+                        RETURN NEW;
                     END IF;
                 ELSIF TG_ARGV[0] = 'artifact' THEN
                     IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
@@ -323,6 +370,94 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
             END IF;
             RETURN NEW;
         END
+        $$;
+
+CREATE FUNCTION public.b24_enforce_evidence_temporal_plausibility() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        DECLARE
+            v_horizon timestamptz;
+        BEGIN
+            v_horizon := now() + make_interval(
+                secs => public.b24_evidence_future_skew_tolerance_seconds()
+            );
+            IF NEW.source_read_started_at IS NOT NULL
+               AND NEW.source_read_started_at > v_horizon THEN
+                RAISE EXCEPTION 'b24_evidence_timestamp_implausible';
+            END IF;
+            IF NEW.source_read_completed_at IS NOT NULL
+               AND NEW.source_read_completed_at > v_horizon THEN
+                RAISE EXCEPTION 'b24_evidence_timestamp_implausible';
+            END IF;
+            IF NEW.confidence_classified_at IS NOT NULL
+               AND NEW.confidence_classified_at > v_horizon THEN
+                RAISE EXCEPTION 'b24_evidence_timestamp_implausible';
+            END IF;
+            RETURN NEW;
+        END
+        $$;
+
+CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        BEGIN
+            IF NOT public.b24_fit_status_is_terminal(OLD.status) THEN
+                RETURN NEW;
+            END IF;
+            IF NEW.status IS DISTINCT FROM OLD.status
+               OR NEW.source_snapshot_hash IS DISTINCT FROM OLD.source_snapshot_hash
+               OR NEW.source_read_started_at IS DISTINCT FROM OLD.source_read_started_at
+               OR NEW.source_read_completed_at IS DISTINCT FROM OLD.source_read_completed_at
+               OR NEW.data_completeness_status IS DISTINCT FROM OLD.data_completeness_status
+               OR NEW.fallback_applied IS DISTINCT FROM OLD.fallback_applied
+               OR NEW.fallback_reason IS DISTINCT FROM OLD.fallback_reason
+               OR NEW.diagnostic_status IS DISTINCT FROM OLD.diagnostic_status
+               OR NEW.diagnostic_failure_reason IS DISTINCT FROM OLD.diagnostic_failure_reason
+               OR NEW.diagnostic_policy_version IS DISTINCT FROM OLD.diagnostic_policy_version
+               OR NEW.diagnostic_target_filter_version IS DISTINCT FROM OLD.diagnostic_target_filter_version
+               OR NEW.diagnostics_computed_at IS DISTINCT FROM OLD.diagnostics_computed_at
+               OR NEW.credible_interval_status IS DISTINCT FROM OLD.credible_interval_status
+               OR NEW.interval_policy_version IS DISTINCT FROM OLD.interval_policy_version
+               OR NEW.interval_shape IS DISTINCT FROM OLD.interval_shape
+               OR NEW.interval_element_count IS DISTINCT FROM OLD.interval_element_count
+               OR NEW.interval_summary_bytes IS DISTINCT FROM OLD.interval_summary_bytes
+               OR NEW.hdi_lower IS DISTINCT FROM OLD.hdi_lower
+               OR NEW.hdi_upper IS DISTINCT FROM OLD.hdi_upper
+               OR NEW.r_hat_max IS DISTINCT FROM OLD.r_hat_max
+               OR NEW.ess_min IS DISTINCT FROM OLD.ess_min
+               OR NEW.divergence_count IS DISTINCT FROM OLD.divergence_count
+               OR NEW.n_chains IS DISTINCT FROM OLD.n_chains
+               OR NEW.n_samples_actual IS DISTINCT FROM OLD.n_samples_actual
+               OR NEW.runtime_seconds IS DISTINCT FROM OLD.runtime_seconds
+               OR NEW.sampling_started_at IS DISTINCT FROM OLD.sampling_started_at
+               OR NEW.last_fit_at IS DISTINCT FROM OLD.last_fit_at
+               OR NEW.completed_at IS DISTINCT FROM OLD.completed_at
+               OR NEW.artifact_ref IS DISTINCT FROM OLD.artifact_ref
+               OR NEW.artifact_hash IS DISTINCT FROM OLD.artifact_hash
+               OR NEW.confidence_bucket IS DISTINCT FROM OLD.confidence_bucket
+               OR NEW.confidence_bucket_reason IS DISTINCT FROM OLD.confidence_bucket_reason
+               OR NEW.confidence_policy_version IS DISTINCT FROM OLD.confidence_policy_version
+               OR NEW.confidence_semantics_version IS DISTINCT FROM OLD.confidence_semantics_version
+               OR NEW.confidence_classified_at IS DISTINCT FROM OLD.confidence_classified_at
+               OR NEW.confidence_evidence_snapshot_hash IS DISTINCT FROM OLD.confidence_evidence_snapshot_hash
+               OR NEW.confidence_deterministic_revenue_minor IS DISTINCT FROM OLD.confidence_deterministic_revenue_minor
+               OR NEW.confidence_deterministic_row_count IS DISTINCT FROM OLD.confidence_deterministic_row_count
+               OR NEW.confidence_match_verdict_count IS DISTINCT FROM OLD.confidence_match_verdict_count
+               OR NEW.confidence_currency_count IS DISTINCT FROM OLD.confidence_currency_count
+               OR NEW.max_runtime_seconds IS DISTINCT FROM OLD.max_runtime_seconds
+               OR NEW.max_samples IS DISTINCT FROM OLD.max_samples
+               OR NEW.max_cores IS DISTINCT FROM OLD.max_cores
+               OR NEW.updated_at IS DISTINCT FROM OLD.updated_at THEN
+                RAISE EXCEPTION 'b24_terminal_fit_truth_immutable';
+            END IF;
+            RETURN NEW;
+        END
+        $$;
+
+CREATE FUNCTION public.b24_evidence_future_skew_tolerance_seconds() RETURNS integer
+    LANGUAGE sql IMMUTABLE
+    AS $$
+            SELECT 120
         $$;
 
 CREATE FUNCTION public.b24_fail_fit_dispatch_recoverable(p_reason text) RETURNS text
@@ -414,6 +549,12 @@ CREATE FUNCTION public.b24_fail_fit_dispatch_terminal(p_reason text) RETURNS voi
                 RAISE EXCEPTION 'b24_dispatch_failure_fence_rejected';
             END IF;
         END
+        $$;
+
+CREATE FUNCTION public.b24_fit_status_is_terminal(p_status text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    AS $$
+            SELECT p_status IN ('succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled')
         $$;
 
 CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
@@ -7383,6 +7524,10 @@ CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities AFTER INSERT OR 
 CREATE TRIGGER trg_b24_dispatch_fence_artifacts BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('artifact');
 
 CREATE TRIGGER trg_b24_dispatch_fence_fits BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('fit');
+
+CREATE TRIGGER trg_b24_evidence_temporal_plausibility BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_evidence_temporal_plausibility();
+
+CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_terminal_fit_truth();
 
 CREATE TRIGGER trg_bind_session_authority_from_event BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_bind_session_authority_from_event();
 

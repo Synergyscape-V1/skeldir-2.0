@@ -1,11 +1,11 @@
 {
   "canonicalization_profile": "RFC8785-JCS-Skeldir-v1",
-  "expected_canonical_byte_length": 3906,
-  "expected_canonical_sha256": "sha256:3cb964c81f7798f0c3455f9d09a24c2fcc46d21406cbeece1541360b2c53a0ba",
+  "expected_canonical_byte_length": 3986,
+  "expected_canonical_sha256": "sha256:6638c817c297339abf75c3de1150983c6d65962e9054105d8fb5a4c2555f96ed",
   "expected_canonical_utf8_contains": [
-    "\"semantic_unicode_probe\":\"Café-東京\""
+    "\"semantic_unicode_probe\":\"Caf\u00e9-\u6771\u4eac\""
   ],
-  "expected_semantic_truth_hash": "sha256:6268b78300b0ca7aeb0484694753679c9a177bd00a6d973fbbb556d494a0ef8c",
+  "expected_semantic_truth_hash": "sha256:ce74886a5c934b3ade18c13ecadf452f0e7cdc54d8987f76f2f00b07ca344bf4",
   "semantic_hash_bearing_field_path": "semantic_unicode_probe",
   "source_fixture": "revenue_claim_semantic_unicode_valid.json"
 }

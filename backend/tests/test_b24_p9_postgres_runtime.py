@@ -2183,18 +2183,46 @@ async def test_b24_p9_directive_xiv_failure_ack_revokes_stale_authority(
         with sync_engine.begin() as conn:
             _set_tenant_context(conn, tenant_a)
             bind_dispatch_write_context_sync(conn, lease=lease)
+            # B2.5-P13 C5 re-scoped the fence from "any fit UPDATE" to "any
+            # AUTHORITY-bearing fit UPDATE", because the B2.4-P2/P3 planner owns
+            # fit creation and scheduling bookkeeping and never holds a dispatch
+            # lease -- which is why claim_fit_for_snapshot() could not execute at
+            # all. The property this test exists to prove is unchanged and is now
+            # probed with a column a worker actually writes: a revoked lease
+            # cannot alter fit state.
             with pytest.raises(DBAPIError, match="b24_dispatch_fence_rejected"):
                 conn.execute(
                     text(
                         """
                         UPDATE public.bayesian_model_fits
-                        SET updated_at = now()
+                        SET status = 'running',
+                            updated_at = now()
                         WHERE tenant_id = :tenant_id
                           AND id = :fit_id
                         """
                     ),
                     {"tenant_id": str(tenant_a), "fit_id": str(fit_id)},
                 )
+
+        # The complement, asserted rather than assumed: the relaxation is
+        # bookkeeping-only. `updated_at` and `last_eligibility_check_at` are not
+        # read by the Trust projection and do not bound compute, so a write that
+        # touches nothing else is not an authority write.
+        with sync_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_a)
+            bookkeeping = conn.execute(
+                text(
+                    """
+                    UPDATE public.bayesian_model_fits
+                    SET last_eligibility_check_at = now(),
+                        updated_at = now()
+                    WHERE tenant_id = :tenant_id
+                      AND id = :fit_id
+                    """
+                ),
+                {"tenant_id": str(tenant_a), "fit_id": str(fit_id)},
+            )
+            assert bookkeeping.rowcount == 1
 
         with sync_engine.begin() as conn:
             assert (

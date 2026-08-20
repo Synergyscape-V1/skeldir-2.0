@@ -49,6 +49,16 @@ class B25P13C4ClosureError(RuntimeError):
     """A C4 invariant or negative control did not hold."""
 
 
+#: Runtime observation ledger (B2.5-P13 C5, gate C5-J). The two counters below
+#: used to be printed as literals, which made the workflow's exact-value
+#: assertions read a number somebody typed rather than one the run produced.
+_OBSERVED: dict[str, list[str]] = {}
+
+
+def _observe(counter: str, evidence: str) -> None:
+    _OBSERVED.setdefault(counter, []).append(evidence)
+
+
 def _require(condition: bool, reason: str) -> None:
     if not condition:
         raise B25P13C4ClosureError(reason)
@@ -103,6 +113,11 @@ def validate_historical_behavior(mapping: dict[str, object] | None = None) -> in
         is ConfidenceBucketReason.SOURCE_AUTHORITY_UNKNOWN,
         "historical_incomplete_confidence_fabricated",
     )
+    if mapping is None:
+        _observe(
+            "p13_c4_historical_rows_fail_closed",
+            f"{freshness}:{decision.confidence_bucket_reason.value}",
+        )
     return 2
 
 
@@ -230,6 +245,8 @@ def validate_executable_authority(sql: str | None = None) -> int:
         )
     except ConfidenceProjectionAuthorityError as exc:
         raise B25P13C4ClosureError(str(exc)) from exc
+    if sql is None:
+        _observe("p13_c4_executable_dependency_controls", ",".join(sorted(actual)))
     return len(actual)
 
 
@@ -372,8 +389,14 @@ def main() -> int:
     print("B25_P13_C4_CLOSURE_VALIDATION_PASS")
     print(f"p13_c4_checks_passed={checks}")
     print(f"p13_c4_negative_controls_fired={controls}")
-    print("p13_c4_executable_dependency_controls=1")
-    print("p13_c4_historical_rows_fail_closed=1")
+    for counter in (
+        "p13_c4_executable_dependency_controls",
+        "p13_c4_historical_rows_fail_closed",
+    ):
+        observations = _OBSERVED.get(counter, [])
+        assert observations, f"counter recorded nothing: {counter}"
+        print(f"{counter}={len(observations)}")
+    print(f"p13_c4_counter_provenance={_OBSERVED}")
     return 0
 
 

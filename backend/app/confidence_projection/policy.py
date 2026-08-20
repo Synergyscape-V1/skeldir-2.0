@@ -9,13 +9,49 @@ facade over this module so B2.4 and B2.5 cannot drift into separate classifiers.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any
 
 
 CONFIDENCE_POLICY_VERSION = "b24-p10-confidence-policy-v1"
 CONFIDENCE_SEMANTICS_VERSION = "b24-p10-confidence-semantics-v1"
+
+#: Single owner of the allowable future-skew tolerance between the clock that
+#: stamped a piece of evidence and the clock that reads it. The database mirrors
+#: this exact number in ``public.b24_evidence_future_skew_tolerance_seconds()``
+#: and the B2.5-P13 C5 CI gate asserts the two are equal, so producer and
+#: consumer can never end up enforcing two different temporal policies.
+#:
+#: A bounded tolerance rather than a strict ``<= now()`` because the database
+#: clock and the API clock are genuinely different clocks; a few seconds of skew
+#: is a fact of deployment, thirty days is a defect.
+EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS = 120
+
+#: The largest age the wire contract can represent in ``data_freshness_seconds``.
+#: Evidence older than this is not misreported as exactly this old -- see
+#: ``data_freshness_bound`` in the evidence temporal boundary.
+EVIDENCE_FRESHNESS_CEILING_SECONDS = 31536000
+
+
+def evidence_timestamp_is_plausible(
+    value: object, *, authoritative_now: datetime | None = None
+) -> bool:
+    """True when ``value`` is not materially in the future of the reading clock.
+
+    ``None`` is plausible: absent evidence is handled by completeness rules, not
+    by temporal rules. A non-datetime is not.
+    """
+
+    if value is None:
+        return True
+    if not isinstance(value, datetime):
+        return False
+    now = authoritative_now or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    horizon = now + timedelta(seconds=EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS)
+    return value <= horizon
 
 
 class ConfidenceBucket(StrEnum):
@@ -48,6 +84,7 @@ class ConfidenceBucketReason(StrEnum):
     PERSISTED_CLASSIFICATION_INVALID = "persisted_classification_invalid"
     REFIT_LOCKED = "refit_locked"
     UNSUPPORTED_MODEL_TYPE = "unsupported_model_type"
+    EVIDENCE_TIMESTAMP_IMPLAUSIBLE = "evidence_timestamp_implausible"
     BAYESIAN_NOT_IMPLEMENTED = "bayesian_not_implemented"
 
 
@@ -270,9 +307,26 @@ def persisted_confidence_decision(
     fallback_applied: bool | None = None,
     diagnostic_status: str | None = None,
     credible_interval_status: str | None = None,
+    authoritative_now: datetime | None = None,
 ) -> ConfidencePolicyDecision:
     """Validate and project a B2.4-persisted classification without recomputing it."""
 
+    # Absolute temporal plausibility is checked before anything else, and for
+    # every row rather than only for available ones. The C4 constraints proved
+    # relative chronology (start <= end <= classified); a fit dated thirty days
+    # ahead satisfies all of it. `trg_b24_evidence_temporal_plausibility` blocks
+    # such a row being written today, but rows written before that trigger
+    # existed are still readable, so the consumer revalidates rather than
+    # trusting that the producer was always governed.
+    for stamp in (
+        source_read_started_at,
+        source_read_completed_at,
+        confidence_classified_at,
+    ):
+        if stamp is not None and not evidence_timestamp_is_plausible(
+            stamp, authoritative_now=authoritative_now
+        ):
+            return _unavailable(ConfidenceBucketReason.EVIDENCE_TIMESTAMP_IMPLAUSIBLE)
     if not confidence_bucket or not confidence_bucket_reason:
         return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_MISSING)
     try:

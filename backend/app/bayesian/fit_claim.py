@@ -85,6 +85,23 @@ async def claim_fit_for_snapshot(
     Historical fit identity includes ``source_snapshot_hash``. The active
     execution lease key intentionally excludes it, so a newer hash cannot create
     concurrent expensive work for the same tenant/model/window.
+
+    Same-snapshot re-observation semantics (B2.5-P13 C5)
+    ---------------------------------------------------
+    A fit UUID names one historical observation of one exact source content, so
+    ``confidence_projection:<fit_uuid>`` is immutable once it terminalizes:
+
+    * unseen content  -> ``CLAIMED``, new fit, new dispatch, compute scheduled;
+    * seen, still in flight -> ``SUPPRESSED_ACTIVE`` or ``CLAIMED`` on the
+      existing fit, evidence timestamps refreshed because no terminal truth and
+      therefore no issued envelope can exist yet;
+    * seen and terminal -> ``REUSED``: the same fit UUID, the original evidence
+      epoch, the original confidence, no recompute, and the execution lane closed
+      rather than held open for work that will never run;
+    * newer content already dominant -> ``SOURCE_SNAPSHOT_SUPERSEDED``.
+
+    No branch raises: an integrity or fence error here would mean the planner
+    cannot observe its own source at all.
     """
 
     now = datetime.now(timezone.utc)
@@ -296,6 +313,21 @@ async def claim_fit_for_snapshot(
                                   'profile_timeout',
                                   'profile_failed',
                                   'fallback_only',
+                                  -- 'succeeded' belongs here with the other
+                                  -- terminal lane states. Omitting it meant a
+                                  -- lane that had finished but whose lease had
+                                  -- not yet expired matched no branch at all:
+                                  -- not dominant (same hash), not suppressible
+                                  -- (not an active status), not claimable. The
+                                  -- statement then returned zero rows and the
+                                  -- caller raised NoResultFound on an entirely
+                                  -- ordinary sequence -- observing the same
+                                  -- source content twice. A newer hash is still
+                                  -- held off by `newer_dominant_snapshot`, which
+                                  -- is evaluated first and already treats a
+                                  -- live succeeded lane as dominant, so one
+                                  -- active expensive execution is unaffected.
+                                  'succeeded',
                                   'failed',
                                   'cancelled',
                                   'stale_recovered'
@@ -350,21 +382,78 @@ async def claim_fit_for_snapshot(
                             source_window_end,
                             source_snapshot_hash
                         )
+                        -- Same-snapshot re-observation is the SAME historical
+                        -- observation, not a new one: the conflict target is
+                        -- keyed on the exact source content. Once that
+                        -- observation is terminal its evidence epoch is the
+                        -- epoch that actually produced the persisted truth, and
+                        -- a signed `confidence_projection:<fit_uuid>` envelope
+                        -- may already assert it. Refreshing the timestamps would
+                        -- silently re-date issued evidence, so every
+                        -- authority-bearing column is preserved verbatim on a
+                        -- terminal row; only scheduling bookkeeping moves.
+                        -- `trg_b24_terminal_fit_truth` enforces the same rule
+                        -- independently, so this SQL cannot drift away from it.
                         DO UPDATE SET
                             status = CASE
-                                WHEN bayesian_model_fits.status IN ('succeeded', 'failed', 'cancelled')
+                                WHEN public.b24_fit_status_is_terminal(
+                                    bayesian_model_fits.status
+                                )
                                     THEN bayesian_model_fits.status
                                 ELSE 'queued'
                             END,
                             eligibility_status = 'eligible',
-                            data_completeness_status = 'complete',
-                            fallback_applied = false,
-                            fallback_reason = NULL,
-                            source_read_started_at = EXCLUDED.source_read_started_at,
-                            source_read_completed_at = EXCLUDED.source_read_completed_at,
+                            data_completeness_status = CASE
+                                WHEN public.b24_fit_status_is_terminal(
+                                    bayesian_model_fits.status
+                                )
+                                    THEN bayesian_model_fits.data_completeness_status
+                                ELSE 'complete'
+                            END,
+                            fallback_applied = CASE
+                                WHEN public.b24_fit_status_is_terminal(
+                                    bayesian_model_fits.status
+                                )
+                                    THEN bayesian_model_fits.fallback_applied
+                                ELSE false
+                            END,
+                            fallback_reason = CASE
+                                WHEN public.b24_fit_status_is_terminal(
+                                    bayesian_model_fits.status
+                                )
+                                    THEN bayesian_model_fits.fallback_reason
+                                ELSE NULL
+                            END,
+                            source_read_started_at = CASE
+                                WHEN public.b24_fit_status_is_terminal(
+                                    bayesian_model_fits.status
+                                )
+                                    THEN bayesian_model_fits.source_read_started_at
+                                ELSE EXCLUDED.source_read_started_at
+                            END,
+                            source_read_completed_at = CASE
+                                WHEN public.b24_fit_status_is_terminal(
+                                    bayesian_model_fits.status
+                                )
+                                    THEN bayesian_model_fits.source_read_completed_at
+                                ELSE EXCLUDED.source_read_completed_at
+                            END,
                             last_eligibility_check_at = now(),
-                            updated_at = now()
-                        RETURNING id
+                            -- `updated_at` is frozen once the fit is terminal:
+                            -- the read model derives `observed_at` from
+                            -- `completed_at or updated_at` and publishes it as
+                            -- signed provenance, so advancing it would re-date a
+                            -- finished observation. Nothing about the row changed
+                            -- anyway -- only that we looked at it again, which is
+                            -- what `last_eligibility_check_at` records.
+                            updated_at = CASE
+                                WHEN public.b24_fit_status_is_terminal(
+                                    bayesian_model_fits.status
+                                )
+                                    THEN bayesian_model_fits.updated_at
+                                ELSE now()
+                            END
+                        RETURNING id, status
                     ),
                     dispatchable_outbox AS (
                         INSERT INTO public.b24_fit_dispatch_outbox (
@@ -377,6 +466,7 @@ async def claim_fit_for_snapshot(
                             status,
                             attempt_count,
                             next_attempt_at,
+                            next_recovery_at,
                             created_at,
                             updated_at
                         )
@@ -389,6 +479,11 @@ async def claim_fit_for_snapshot(
                             public.b24_sha256_text('app.tasks.bayesian.execute_fit_intent:' || id::text),
                             'pending',
                             0,
+                            now(),
+                            -- NOT NULL with no default since B2.4-P9 Directive
+                            -- IX. Omitting it made every first claim raise
+                            -- NotNullViolationError, which no test reached
+                            -- because none exercised this function live.
                             now(),
                             now(),
                             now()
@@ -451,19 +546,41 @@ async def claim_fit_for_snapshot(
                         RETURNING id, fit_id
                     ),
                     activated_execution_lane AS (
+                        -- A reused terminal fit has no work left to run, so the
+                        -- lane must NOT hold the one-active-execution lease open
+                        -- for it; that would suppress a genuinely newer snapshot
+                        -- for the whole lease window with nothing executing.
                         UPDATE public.b24_active_execution_leases lease
                         SET fit_id = outbox.fit_id,
-                            status = 'dispatch_pending',
+                            status = CASE
+                                WHEN public.b24_fit_status_is_terminal(fit.status)
+                                    THEN CASE fit.status
+                                        WHEN 'succeeded' THEN 'succeeded'
+                                        WHEN 'cancelled' THEN 'cancelled'
+                                        WHEN 'fallback_only' THEN 'fallback_only'
+                                        ELSE 'failed'
+                                    END
+                                ELSE 'dispatch_pending'
+                            END,
                             active_source_snapshot_hash = :source_snapshot_hash,
                             latest_desired_source_snapshot_hash = :source_snapshot_hash,
                             needs_refit_after_current = false,
                             lease_owner = :claim_owner,
                             lease_acquired_at = now(),
-                            leased_until = :leased_until,
+                            leased_until = CASE
+                                WHEN public.b24_fit_status_is_terminal(fit.status)
+                                    THEN now()
+                                ELSE :leased_until
+                            END,
                             heartbeat_at = now(),
-                            terminal_at = NULL,
+                            terminal_at = CASE
+                                WHEN public.b24_fit_status_is_terminal(fit.status)
+                                    THEN now()
+                                ELSE NULL
+                            END,
                             updated_at = now()
                         FROM dispatchable_outbox outbox
+                        JOIN claimed_fit fit ON fit.id = outbox.fit_id
                         WHERE lease.tenant_id = :tenant_id
                           AND lease.model_type = :model_type
                           AND lease.model_version = :model_version
@@ -498,7 +615,15 @@ async def claim_fit_for_snapshot(
                     FROM suppressed_active
                     UNION ALL
                     SELECT
-                        'claimed' AS outcome,
+                        -- A fresh INSERT is always 'queued', so a terminal
+                        -- status here can only mean the conflict path matched an
+                        -- already-finished observation of this exact source
+                        -- content: reuse, not a new claim.
+                        CASE
+                            WHEN public.b24_fit_status_is_terminal(fit.status)
+                                THEN 'reused'
+                            ELSE 'claimed'
+                        END AS outcome,
                         lane.fit_id,
                         outbox.id AS dispatch_outbox_id,
                         lane.status AS active_execution_status,
@@ -508,6 +633,8 @@ async def claim_fit_for_snapshot(
                     FROM activated_execution_lane lane
                     JOIN dispatchable_outbox outbox
                       ON outbox.fit_id = lane.fit_id
+                    JOIN claimed_fit fit
+                      ON fit.id = lane.fit_id
                     LIMIT 1
                     """
                 ),
