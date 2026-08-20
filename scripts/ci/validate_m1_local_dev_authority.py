@@ -22,6 +22,7 @@ REQUIRED_FILES = [
     "README.md",
     "backend/README.md",
     "backend/Dockerfile",
+    "backend/requirements-dev.txt",
     ".env.example",
     ".env.local.example",
     "docker-compose.local.yml",

@@ -213,6 +213,7 @@ ALLOWED_M0_PATHS = [
     "api-contracts/dist/openapi/v1/export.bundled.yaml",
     "backend/app/api/export.py",
     "backend/app/api/trust_export.py",
+    "backend/requirements-dev.txt",
     "backend/requirements-lock.txt",
     "contracts/export/v1/export.yaml",
     "contracts/export/baselines/v1.0.0/export.yaml",

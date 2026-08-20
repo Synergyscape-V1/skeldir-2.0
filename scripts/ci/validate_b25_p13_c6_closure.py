@@ -45,6 +45,7 @@ P13 = ROOT / "backend/tests/trust/test_b25_p13_e2e_trust_closure.py"
 PHYSICS = ROOT / "backend/tests/trust/test_b25_p13_c6_postgres_physics.py"
 WORKFLOW = ROOT / ".github/workflows/b2_5-p13-e2e-trust-closure.yml"
 DOCKERFILE = ROOT / "backend/Dockerfile"
+DEV_REQUIREMENTS = ROOT / "backend/requirements-dev.txt"
 DEPENDENCIES = ROOT / ("contracts/trust-api/confidence-projection-dependencies.v1.yaml")
 LIFECYCLE = ROOT / "contracts/bayesian/lifecycle-taxonomy.v1.yaml"
 TEMPORAL_POLICY = ROOT / "contracts/trust-api/temporal-policy.v1.yaml"
@@ -96,6 +97,7 @@ def validate_worker_authority(
     prep = provisioner if provisioner is not None else _read(PROVISIONER)
     test = physics if physics is not None else _read(PHYSICS)
     flow = _read(WORKFLOW)
+    dev_requirements = _read(DEV_REQUIREMENTS)
     _require("worker_user: str" in prep, "worker_login_not_provisioned")
     _require(
         "IF to_regrole('app_worker') IS NOT NULL THEN" in body,
@@ -127,6 +129,10 @@ def validate_worker_authority(
             topology_witness in flow,
             f"c6_worker_topology_attestation_missing:{topology_witness}",
         )
+    _require(
+        "jsonschema-rs>=0.49.8,<0.50.0" in dev_requirements,
+        "contract_test_jsonschema_rs_compatibility_unbounded",
+    )
     for table in (
         "bayesian_model_fits",
         "bayesian_artifacts",
