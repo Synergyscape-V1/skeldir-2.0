@@ -236,6 +236,12 @@ def _reset_public_schema(migration_url: str) -> None:
             cur.execute("GRANT USAGE, CREATE ON SCHEMA public TO app_user")
             cur.execute("GRANT USAGE ON SCHEMA public TO app_rw")
             cur.execute("GRANT USAGE ON SCHEMA public TO app_ro")
+            cur.execute(
+                "DO $$ BEGIN "
+                "IF to_regrole('app_worker') IS NOT NULL THEN "
+                "EXECUTE 'GRANT USAGE ON SCHEMA public TO app_worker'; "
+                "END IF; END $$"
+            )
 
 
 def _run_runtime_probe(runtime_url: str, env: dict[str, str], log_dir: Path) -> None:

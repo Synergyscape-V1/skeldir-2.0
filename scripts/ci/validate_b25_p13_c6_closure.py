@@ -49,6 +49,7 @@ DEV_REQUIREMENTS = ROOT / "backend/requirements-dev.txt"
 PHASE8_RUNNER = ROOT / "scripts/phase8/run_phase8_closure_pack.py"
 PHASE8_P5 = ROOT / "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py"
 CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
+PHASE2_SCHEMA_GATE = ROOT / "scripts/ci/phase2_schema_closure_gate.py"
 B057_P3_WORKFLOW = ROOT / ".github/workflows/b057-p3-webhook-ingestion-least-privilege.yml"
 B057_P5_WORKFLOW = ROOT / ".github/workflows/b057-p5-full-chain.yml"
 B21_BENCHMARK = ROOT / "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py"
@@ -108,6 +109,7 @@ def validate_worker_authority(
     phase8_runner = _read(PHASE8_RUNNER)
     phase8_p5 = _read(PHASE8_P5)
     ci_workflow = _read(CI_WORKFLOW)
+    phase2_schema_gate = _read(PHASE2_SCHEMA_GATE)
     legacy_ingestion_workflows = (
         _read(B057_P3_WORKFLOW),
         _read(B057_P5_WORKFLOW),
@@ -211,6 +213,11 @@ def validate_worker_authority(
                 witness in legacy_flow,
                 f"legacy_ingestion_worker_authority_missing:{witness}",
             )
+    _require(
+        "EXECUTE 'GRANT USAGE ON SCHEMA public TO app_worker'"
+        in phase2_schema_gate,
+        "phase2_schema_reset_drops_worker_usage",
+    )
     _require(
         "GRANT SELECT, INSERT, UPDATE ON public.worker_failed_jobs TO app_worker"
         in body,
