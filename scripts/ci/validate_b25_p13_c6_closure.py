@@ -46,6 +46,8 @@ PHYSICS = ROOT / "backend/tests/trust/test_b25_p13_c6_postgres_physics.py"
 WORKFLOW = ROOT / ".github/workflows/b2_5-p13-e2e-trust-closure.yml"
 DOCKERFILE = ROOT / "backend/Dockerfile"
 DEV_REQUIREMENTS = ROOT / "backend/requirements-dev.txt"
+PHASE8_RUNNER = ROOT / "scripts/phase8/run_phase8_closure_pack.py"
+PHASE8_P5 = ROOT / "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py"
 DEPENDENCIES = ROOT / ("contracts/trust-api/confidence-projection-dependencies.v1.yaml")
 LIFECYCLE = ROOT / "contracts/bayesian/lifecycle-taxonomy.v1.yaml"
 TEMPORAL_POLICY = ROOT / "contracts/trust-api/temporal-policy.v1.yaml"
@@ -98,6 +100,8 @@ def validate_worker_authority(
     test = physics if physics is not None else _read(PHYSICS)
     flow = _read(WORKFLOW)
     dev_requirements = _read(DEV_REQUIREMENTS)
+    phase8_runner = _read(PHASE8_RUNNER)
+    phase8_p5 = _read(PHASE8_P5)
     _require("worker_user: str" in prep, "worker_login_not_provisioned")
     _require(
         "IF to_regrole('app_worker') IS NOT NULL THEN" in body,
@@ -133,6 +137,18 @@ def validate_worker_authority(
         "jsonschema-rs>=0.49.8,<0.50.0" in dev_requirements,
         "contract_test_jsonschema_rs_compatibility_unbounded",
     )
+    for witness in (
+        "CREATE USER app_worker WITH PASSWORD 'app_worker'",
+        '"B07_P5_BAYESIAN_WORKER_DATABASE_URL": cfg.worker_sync_dsn',
+        '"B07_P5_EXPECTED_WORKER_DB_USER": "app_worker"',
+    ):
+        _require(witness in phase8_runner, f"phase8_worker_authority_missing:{witness}")
+    for witness in (
+        '"B07_P5_BAYESIAN_WORKER_DATABASE_URL", cfg.runtime_sync_url',
+        '"B07_P5_EXPECTED_WORKER_DB_USER", "app_worker"',
+        'env["DATABASE_URL"] = worker_async_url',
+    ):
+        _require(witness in phase8_p5, f"phase8_worker_identity_proof_missing:{witness}")
     for table in (
         "bayesian_model_fits",
         "bayesian_artifacts",

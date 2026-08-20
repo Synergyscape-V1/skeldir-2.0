@@ -169,10 +169,14 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
     assert PRODUCTION_BAYESIAN_SOFT_TIME_LIMIT_S == 270
     assert PRODUCTION_BAYESIAN_TIME_LIMIT_S == 300
 
-    runtime_identity = _runtime_identity_snapshot(cfg.runtime_sync_url)
-    expected_runtime_user = os.getenv("RUNTIME_USER", "app_user")
-    assert runtime_identity["current_user"] == expected_runtime_user
-    assert runtime_identity["rolsuper"] is False
+    worker_sync_url = os.getenv(
+        "B07_P5_BAYESIAN_WORKER_DATABASE_URL", cfg.runtime_sync_url
+    )
+    worker_async_url = _runtime_async_db_url(worker_sync_url)
+    worker_identity = _runtime_identity_snapshot(worker_sync_url)
+    expected_worker_user = os.getenv("B07_P5_EXPECTED_WORKER_DB_USER", "app_worker")
+    assert worker_identity["current_user"] == expected_worker_user
+    assert worker_identity["rolsuper"] is False
 
     artifact_dir = cfg.artifact_dir
     worker_log = artifact_dir / "p5_bayesian_worker.log"
@@ -182,7 +186,7 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
         artifact.unlink(missing_ok=True)
 
     env = os.environ.copy()
-    env["DATABASE_URL"] = cfg.runtime_async_url
+    env["DATABASE_URL"] = worker_async_url
     env["CELERY_BROKER_URL"] = f"sqla+{cfg.runtime_sync_url}"
     env["CELERY_RESULT_BACKEND"] = f"db+{cfg.runtime_sync_url}"
     env["BAYESIAN_TASK_SOFT_TIME_LIMIT_S"] = "4"
@@ -282,7 +286,7 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
                         "time_limit_s": PRODUCTION_BAYESIAN_TIME_LIMIT_S,
                     },
                     "runtime_test_limits": {"soft_time_limit_s": 4, "time_limit_s": 5},
-                    "runtime_identity": runtime_identity,
+                    "runtime_identity": worker_identity,
                     "runaway_task_id": run_task_id,
                     "runaway_elapsed_s": elapsed_s,
                     "runaway_error_class": run_error_class,

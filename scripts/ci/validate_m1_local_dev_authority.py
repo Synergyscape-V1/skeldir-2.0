@@ -410,6 +410,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/migrations/ci_topology/apply_throughput_topology.py",
     "scripts/migrations/ci_topology/dissolve_barrier_edges.py",
     "scripts/migrations/ci_topology/prune_unused_cache_keys.py",
+    "scripts/phase8/run_phase8_closure_pack.py",
     # Relocated to scripts/migrations/ci_topology/; the deletions still appear in the
     # diff against the baseline, so the former paths stay listed.
     "scripts/ci/apply_throughput_topology.py",

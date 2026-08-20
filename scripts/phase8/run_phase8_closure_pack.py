@@ -28,6 +28,7 @@ class _Phase8Config:
     logs_dir: Path
     runtime_sync_dsn: str
     runtime_async_dsn: str
+    worker_sync_dsn: str
     migration_dsn: str
     compose_runtime_async_dsn: str
     compose_runtime_sync_dsn: str
@@ -310,6 +311,7 @@ def _default_config(*, artifact_dir: Path, ci_subset: bool, full_physics: bool) 
 
     runtime_sync = f"postgresql://{runtime_user}:{runtime_pass}@{db_host}:5432/{db_name}"
     runtime_async = f"postgresql+asyncpg://{runtime_user}:{runtime_pass}@{db_host}:5432/{db_name}"
+    worker_sync = f"postgresql://app_worker:app_worker@{db_host}:5432/{db_name}"
     migration = f"postgresql://{admin_user}:{admin_pass}@{db_host}:5432/{db_name}"
     compose_runtime_async = (
         f"postgresql+asyncpg://{runtime_user}:{runtime_pass}@{db_compose_host}:5432/{db_name}"
@@ -322,6 +324,7 @@ def _default_config(*, artifact_dir: Path, ci_subset: bool, full_physics: bool) 
         logs_dir=artifact_dir / "logs",
         runtime_sync_dsn=runtime_sync,
         runtime_async_dsn=runtime_async,
+        worker_sync_dsn=worker_sync,
         migration_dsn=migration,
         compose_runtime_async_dsn=compose_runtime_async,
         compose_runtime_sync_dsn=compose_runtime_sync,
@@ -361,6 +364,8 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "EXPECTED_RUNTIME_DB_USER": os.getenv("PHASE8_RUNTIME_DB_USER", "app_user"),
             "RUNTIME_USER": os.getenv("PHASE8_RUNTIME_DB_USER", "app_user"),
             "B07_P2_RUNTIME_DATABASE_URL": cfg.runtime_sync_dsn,
+            "B07_P5_BAYESIAN_WORKER_DATABASE_URL": cfg.worker_sync_dsn,
+            "B07_P5_EXPECTED_WORKER_DB_USER": "app_worker",
             "B07_P4_RUNTIME_DATABASE_URL": cfg.runtime_sync_dsn,
             "B07_P2_ARTIFACT_DIR": str(cfg.artifact_dir),
             "B07_P4_ARTIFACT_DIR": str(cfg.artifact_dir),
@@ -664,12 +669,18 @@ def _provision_runtime_identity(cfg: _Phase8Config) -> None:
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
             CREATE USER app_user WITH PASSWORD 'app_user';
           END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+            CREATE USER app_worker WITH PASSWORD 'app_worker';
+          END IF;
         END$$;
         ALTER USER app_user WITH PASSWORD 'app_user';
+        ALTER USER app_worker WITH PASSWORD 'app_worker';
         GRANT app_rw TO app_user;
         GRANT app_ro TO app_user;
         GRANT CONNECT ON DATABASE {db_name} TO app_user;
+        GRANT CONNECT ON DATABASE {db_name} TO app_worker;
         GRANT USAGE ON SCHEMA public TO app_user;
+        GRANT USAGE ON SCHEMA public TO app_worker;
         """,
     )
 
