@@ -120,14 +120,20 @@ def test_c6_worker_authority_is_not_reachable_from_tenant_runtime() -> None:
                     "'public.b24_fit_planner_wakeups', 'INSERT')"
                 )
             )
-            function_owner = conn.scalar(
+            trigger_function = conn.execute(
                 text(
-                    "SELECT pg_get_userbyid(proowner) "
-                    "FROM pg_proc WHERE oid = "
-                    "'public.b24_signal_fit_planner_wakeup()'::regprocedure"
+                    "SELECT proc.proname, pg_get_userbyid(proc.proowner) "
+                    "FROM pg_trigger trigger "
+                    "JOIN pg_proc proc ON proc.oid = trigger.tgfoid "
+                    "WHERE trigger.tgrelid = "
+                    "'public.b24_dirty_events'::regclass "
+                    "AND trigger.tgname = 'trg_b24_signal_fit_planner_wakeup'"
                 )
+            ).one()
+            assert tuple(trigger_function) == (
+                "b24_signal_fit_planner_wakeup_coalesced",
+                "app_worker",
             )
-            assert function_owner == "app_worker"
             wakeup_rls = conn.execute(
                 text(
                     "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "

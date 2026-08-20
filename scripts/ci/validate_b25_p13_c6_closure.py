@@ -352,6 +352,7 @@ def validate_wakeup_coalescing(
     body = migration if migration is not None else _read(WAKEUP_COALESCING_MIGRATION)
     test = physics if physics is not None else _read(PHYSICS)
     for witness in (
+        "CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced()",
         "ON CONFLICT (tenant_id) DO NOTHING",
         "IF NOT FOUND THEN",
         "wakeup_revision = wakeup_revision + 1",
@@ -368,7 +369,7 @@ def validate_wakeup_coalescing(
         "assert stale_ack is False",
     ):
         _require(witness in test, f"planner_wakeup_coalescing_proof_missing:{witness}")
-    return 11
+    return 12
 
 
 def validate_reuse_state_machine(

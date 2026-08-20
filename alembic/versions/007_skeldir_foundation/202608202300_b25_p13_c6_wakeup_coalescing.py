@@ -23,7 +23,7 @@ depends_on = None
 
 
 _COALESCED_SIGNAL_SQL = """
-CREATE OR REPLACE FUNCTION public.b24_signal_fit_planner_wakeup()
+CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -58,38 +58,7 @@ $$;
 """
 
 
-_LEGACY_SIGNAL_SQL = """
-CREATE OR REPLACE FUNCTION public.b24_signal_fit_planner_wakeup()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-    IF NEW.status IN ('pending', 'authority_retry_ready')
-       AND (
-            TG_OP = 'INSERT'
-            OR OLD.status IS DISTINCT FROM NEW.status
-       ) THEN
-        INSERT INTO public.b24_fit_planner_wakeups (
-            tenant_id, observed_at
-        ) VALUES (NEW.tenant_id, NEW.observed_at)
-        ON CONFLICT (tenant_id) DO UPDATE
-        SET wakeup_revision =
-                b24_fit_planner_wakeups.wakeup_revision + 1,
-            observed_at = LEAST(
-                b24_fit_planner_wakeups.observed_at,
-                EXCLUDED.observed_at
-            ),
-            updated_at = now();
-    END IF;
-    RETURN NEW;
-END
-$$;
-"""
-
-
-def _install_signal_function(body: str) -> None:
+def upgrade() -> None:
     op.execute(
         """
         DO $$
@@ -101,27 +70,39 @@ def _install_signal_function(body: str) -> None:
         $$;
         """
     )
-    op.execute(body)
+    op.execute(_COALESCED_SIGNAL_SQL)
     op.execute(
         """
         DO $$
         BEGIN
             IF to_regrole('app_worker') IS NOT NULL THEN
-                EXECUTE 'ALTER FUNCTION public.b24_signal_fit_planner_wakeup() '
+                EXECUTE 'ALTER FUNCTION '
+                        'public.b24_signal_fit_planner_wakeup_coalesced() '
                         'OWNER TO app_worker';
                 EXECUTE 'REVOKE CREATE ON SCHEMA public FROM app_worker';
             END IF;
         END
         $$;
-        REVOKE ALL ON FUNCTION public.b24_signal_fit_planner_wakeup()
+        DROP TRIGGER IF EXISTS trg_b24_signal_fit_planner_wakeup
+            ON public.b24_dirty_events;
+        CREATE TRIGGER trg_b24_signal_fit_planner_wakeup
+        AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events
+        FOR EACH ROW EXECUTE FUNCTION
+            public.b24_signal_fit_planner_wakeup_coalesced();
+        REVOKE ALL ON FUNCTION public.b24_signal_fit_planner_wakeup_coalesced()
             FROM PUBLIC, app_user, app_rw, app_ro;
         """
     )
 
 
-def upgrade() -> None:
-    _install_signal_function(_COALESCED_SIGNAL_SQL)
-
-
 def downgrade() -> None:
-    _install_signal_function(_LEGACY_SIGNAL_SQL)
+    op.execute(
+        """
+        DROP TRIGGER IF EXISTS trg_b24_signal_fit_planner_wakeup
+            ON public.b24_dirty_events;
+        CREATE TRIGGER trg_b24_signal_fit_planner_wakeup
+        AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events
+        FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup();
+        DROP FUNCTION public.b24_signal_fit_planner_wakeup_coalesced();
+        """
+    )
