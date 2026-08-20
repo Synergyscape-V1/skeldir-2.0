@@ -106,6 +106,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "README.md",
     "backend/README.md",
     "backend/Dockerfile",
+    "backend/requirements-dev.txt",
     "backend/app/db/session.py",
     "backend/app/tasks/enqueue.py",
     "backend/app/tasks/observability_test.py",
