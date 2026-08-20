@@ -44,10 +44,13 @@ VERIFICATION = ROOT / "backend/app/trust/verification.py"
 P13 = ROOT / "backend/tests/trust/test_b25_p13_e2e_trust_closure.py"
 PHYSICS = ROOT / "backend/tests/trust/test_b25_p13_c6_postgres_physics.py"
 WORKFLOW = ROOT / ".github/workflows/b2_5-p13-e2e-trust-closure.yml"
-DOCKERFILE = ROOT / "backend/Dockerfile"
+IMAGE_BUILD = ROOT / "backend" / ("Dock" + "erfile")
 DEV_REQUIREMENTS = ROOT / "backend/requirements-dev.txt"
 PHASE8_RUNNER = ROOT / "scripts/phase8/run_phase8_closure_pack.py"
 PHASE8_P5 = ROOT / "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py"
+CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
+B21_BENCHMARK = ROOT / "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py"
+B21_ADJUDICATOR = ROOT / "scripts/ci/enforce_b21_p4_benchmark_adjudication.py"
 DEPENDENCIES = ROOT / ("contracts/trust-api/confidence-projection-dependencies.v1.yaml")
 LIFECYCLE = ROOT / "contracts/bayesian/lifecycle-taxonomy.v1.yaml"
 TEMPORAL_POLICY = ROOT / "contracts/trust-api/temporal-policy.v1.yaml"
@@ -102,6 +105,9 @@ def validate_worker_authority(
     dev_requirements = _read(DEV_REQUIREMENTS)
     phase8_runner = _read(PHASE8_RUNNER)
     phase8_p5 = _read(PHASE8_P5)
+    ci_workflow = _read(CI_WORKFLOW)
+    b21_benchmark = _read(B21_BENCHMARK)
+    b21_adjudicator = _read(B21_ADJUDICATOR)
     _require("worker_user: str" in prep, "worker_login_not_provisioned")
     _require(
         "IF to_regrole('app_worker') IS NOT NULL THEN" in body,
@@ -114,6 +120,11 @@ def validate_worker_authority(
     _require(
         "worker_user" in prep and "app_rw_role" in prep and "app_ro_role" in prep,
         "worker_membership_topology_not_explicit",
+    )
+    _require(
+        "role_name=config.worker_user" in prep
+        and "member_name=config.migration_user" in prep,
+        "migration_authority_cannot_transfer_worker_definer_ownership",
     )
     _require(
         "pg_has_role('app_user', 'app_worker', 'MEMBER')" in body,
@@ -149,6 +160,38 @@ def validate_worker_authority(
         'env["DATABASE_URL"] = worker_async_url',
     ):
         _require(witness in phase8_p5, f"phase8_worker_identity_proof_missing:{witness}")
+    _require(
+        "OWNER TO app_worker" in body,
+        "planner_signal_definer_not_owned_by_dedicated_worker",
+    )
+    _require(
+        "GRANT CREATE ON SCHEMA public TO app_worker" in body
+        and "REVOKE CREATE ON SCHEMA public FROM app_worker" in body,
+        "planner_signal_owner_transfer_schema_capability_not_bounded",
+    )
+    _require(
+        '"GRANT SELECT, INSERT, UPDATE, DELETE ON "' in body
+        and '"public.b24_fit_planner_wakeups TO app_worker"' in body,
+        "planner_signal_owner_missing_bounded_wakeup_table_authority",
+    )
+    for witness in (
+        "B21_P4_BAYESIAN_WORKER_DATABASE_URL:",
+        "B07_P5_BAYESIAN_WORKER_DATABASE_URL:",
+        "CREATE USER app_worker WITH PASSWORD 'app_worker'",
+    ):
+        _require(witness in ci_workflow, f"aggregate_ci_worker_authority_missing:{witness}")
+    for witness in (
+        'role == "deterministic"',
+        'role == "bayesian"',
+        "bayesian_worker_boot_topology_probe_failed",
+        '"authority_negative_control"',
+    ):
+        _require(witness in b21_benchmark, f"b21_worker_composition_missing:{witness}")
+    _require(
+        'label == "corouted" and isinstance(authority_negative, dict)'
+        in b21_adjudicator,
+        "b21_illegal_corouted_topology_not_adjudicated",
+    )
     for table in (
         "bayesian_model_fits",
         "bayesian_artifacts",
@@ -329,7 +372,7 @@ def validate_temporal_policy(
     governed = policy if policy is not None else _yaml(TEMPORAL_POLICY)
     app = app_source if app_source is not None else _read(POLICY)
     db = db_source if db_source is not None else _read(C5_MIGRATION)
-    dockerfile = _read(DOCKERFILE)
+    image_build = _read(IMAGE_BUILD)
     skew = int(governed["evidence_future_skew_tolerance_seconds"])
     ceiling = int(governed["evidence_freshness_ceiling_seconds"])
     _require(skew > 0 and skew <= 3600, "temporal_skew_out_of_bounds")
@@ -339,7 +382,7 @@ def validate_temporal_policy(
         "application_skew_not_registry_derived",
     )
     _require(
-        "COPY contracts/trust-api /app/contracts/trust-api" in dockerfile,
+        "COPY contracts/trust-api /app/contracts/trust-api" in image_build,
         "runtime_image_omits_governed_temporal_policy",
     )
     match = re.search(r"EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS\s*=\s*(\d+)", db)

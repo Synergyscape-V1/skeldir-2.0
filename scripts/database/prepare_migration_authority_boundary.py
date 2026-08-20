@@ -151,6 +151,11 @@ def _prepare_authority_surface(config: AuthorityConfig) -> None:
             )
             _ensure_role_membership(
                 cursor,
+                role_name=config.worker_user,
+                member_name=config.migration_user,
+            )
+            _ensure_role_membership(
+                cursor,
                 role_name=config.app_rw_role,
                 member_name=config.runtime_user,
             )

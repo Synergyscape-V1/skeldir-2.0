@@ -61,6 +61,21 @@ def _base_payload(*, topology_mode: str, elapsed_seconds: float) -> dict[str, An
     }
 
 
+def _c6_authority_rejection_payload() -> dict[str, Any]:
+    return {
+        "schema_version": "b21_p4_queue_isolation_benchmark.v1",
+        "mode": "measure",
+        "topology_mode": "corouted_shared_worker",
+        "contention_mode": "real",
+        "event_count": 10000,
+        "authority_negative_control": {
+            "rejected": True,
+            "reason": "bayesian_worker_boot_topology_probe_failed",
+            "worker_database_identity": "app_user",
+        },
+    }
+
+
 def _write(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -81,6 +96,40 @@ def test_b21_p4_benchmark_adjudication_passes_with_valid_payloads(
     )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
     assert "result=PASS" in result.stdout
+
+
+def test_b21_p4_benchmark_adjudication_accepts_c6_shared_worker_rejection(
+    tmp_path: Path,
+) -> None:
+    isolated = tmp_path / "isolated.json"
+    corouted = tmp_path / "corouted.rejected.json"
+    _write(isolated, _base_payload(topology_mode="isolated", elapsed_seconds=4.1))
+    _write(corouted, _c6_authority_rejection_payload())
+
+    result = _run_enforcer(
+        "--isolated-file", str(isolated), "--corouted-file", str(corouted)
+    )
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr
+    assert "result=PASS" in result.stdout
+
+
+def test_b21_p4_benchmark_adjudication_rejects_noncausal_shared_worker_control(
+    tmp_path: Path,
+) -> None:
+    isolated = tmp_path / "isolated.json"
+    corouted = tmp_path / "corouted.noncausal.json"
+    payload = _c6_authority_rejection_payload()
+    payload["authority_negative_control"]["reason"] = "generic_worker_failure"
+    _write(isolated, _base_payload(topology_mode="isolated", elapsed_seconds=4.1))
+    _write(corouted, payload)
+
+    result = _run_enforcer(
+        "--isolated-file", str(isolated), "--corouted-file", str(corouted)
+    )
+    assert result.returncode != 0
+    assert "corouted_rejection_not_c6_authority_guard" in (
+        result.stdout + result.stderr
+    )
 
 
 def test_b21_p4_benchmark_adjudication_fails_when_isolated_sla_regresses(

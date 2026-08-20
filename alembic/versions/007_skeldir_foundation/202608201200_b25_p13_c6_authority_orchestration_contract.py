@@ -252,6 +252,17 @@ def upgrade() -> None:
         END
         $$;
 
+        DO $$
+        BEGIN
+            IF to_regrole('app_worker') IS NOT NULL THEN
+                EXECUTE 'GRANT CREATE ON SCHEMA public TO app_worker';
+                EXECUTE 'ALTER FUNCTION public.b24_signal_fit_planner_wakeup() '
+                        'OWNER TO app_worker';
+                EXECUTE 'REVOKE CREATE ON SCHEMA public FROM app_worker';
+            END IF;
+        END
+        $$;
+
         CREATE TRIGGER trg_b24_signal_fit_planner_wakeup
         AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events
         FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup();
@@ -363,6 +374,10 @@ def upgrade() -> None:
         """
     )
     _grant_worker(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON "
+        "public.b24_fit_planner_wakeups TO app_worker"
+    )
+    _grant_worker(
         "GRANT EXECUTE ON FUNCTION "
         "public.b24_due_fit_planner_tenants(text, integer) TO app_worker"
     )
@@ -383,7 +398,7 @@ def downgrade() -> None:
         DROP TRIGGER IF EXISTS trg_b24_signal_fit_planner_wakeup
             ON public.b24_dirty_events;
         DROP FUNCTION IF EXISTS public.b24_signal_fit_planner_wakeup();
-        DROP TABLE IF EXISTS public.b24_fit_planner_wakeups;
+        DROP TABLE IF EXISTS public.b24_fit_planner_wakeups;  -- # CI:DESTRUCTIVE_OK - ADR-016 reversible C6 rollback.
         """
     )  # CI:DESTRUCTIVE_OK - reversible C6 planner selector rollback.
     for function_signature in WORKER_CONTROL_FUNCTIONS:

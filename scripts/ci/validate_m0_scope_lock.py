@@ -232,6 +232,8 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/run_ci_governance_cohort.py",
     "scripts/ci/enforce_boundary.sh",
     "scripts/ci/enforce_postgres_only.py",
+    "scripts/ci/enforce_b21_p4_benchmark_adjudication.py",
+    "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py",
     "scripts/phase8/run_phase8_closure_pack.py",
     "scripts/phase_gates/generate_value_trace_proof_pack.py",
     "api-contracts/openapi/v1/attribution.yaml",

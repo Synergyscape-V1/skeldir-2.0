@@ -111,6 +111,23 @@ def test_c6_worker_authority_is_not_reachable_from_tenant_runtime() -> None:
             assert not _has_execute(conn, planner_sig)
         with worker_engine.connect() as conn:
             assert conn.scalar(text("SELECT current_user")) == "app_worker"
+            assert not conn.scalar(
+                text("SELECT has_schema_privilege(current_user, 'public', 'CREATE')")
+            )
+            assert conn.scalar(
+                text(
+                    "SELECT has_table_privilege(current_user, "
+                    "'public.b24_fit_planner_wakeups', 'INSERT')"
+                )
+            )
+            function_owner = conn.scalar(
+                text(
+                    "SELECT pg_get_userbyid(proowner) "
+                    "FROM pg_proc WHERE oid = "
+                    "'public.b24_signal_fit_planner_wakeup()'::regprocedure"
+                )
+            )
+            assert function_owner == "app_worker"
             assert _has_execute(conn, register_sig)
             assert _has_execute(conn, claim_sig)
             assert _has_execute(conn, planner_sig)
