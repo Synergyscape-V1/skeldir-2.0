@@ -4,8 +4,6 @@ CREATE SCHEMA security;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
-SET check_function_bodies = false;
-
 CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -184,6 +182,43 @@ CREATE FUNCTION public.b24_complete_fit_dispatch() RETURNS void
         END
         $$;
 
+CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease_owner text, p_wakeup_revision bigint, p_succeeded boolean) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+        DECLARE
+            affected integer;
+        BEGIN
+            IF session_user <> 'app_worker' THEN
+                RAISE EXCEPTION 'b24_worker_database_identity_required';
+            END IF;
+            IF p_succeeded THEN
+                DELETE FROM public.b24_fit_planner_wakeups
+                WHERE tenant_id = p_tenant_id
+                  AND status = 'leased'
+                  AND lease_owner = p_lease_owner
+                  AND wakeup_revision = p_wakeup_revision;
+            ELSE
+                UPDATE public.b24_fit_planner_wakeups
+                SET status = 'pending', lease_owner = NULL,
+                    lease_expires_at = NULL, updated_at = now()
+                WHERE tenant_id = p_tenant_id
+                  AND status = 'leased'
+                  AND lease_owner = p_lease_owner;
+            END IF;
+            GET DIAGNOSTICS affected = ROW_COUNT;
+            IF p_succeeded AND affected = 0 THEN
+                UPDATE public.b24_fit_planner_wakeups
+                SET status = 'pending', lease_owner = NULL,
+                    lease_expires_at = NULL, updated_at = now()
+                WHERE tenant_id = p_tenant_id
+                  AND status = 'leased'
+                  AND lease_owner = p_lease_owner;
+            END IF;
+            RETURN affected = 1;
+        END
+        $$;
+
 CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 25) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -275,6 +310,41 @@ CREATE FUNCTION public.b24_current_dispatch_fence_valid(p_tenant_id uuid, p_fit_
                   AND outbox.lease_expires_at > now()
                   AND outbox.status IN ('leased', 'running')
             )
+        $$;
+
+CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit integer DEFAULT 25) RETURNS TABLE(tenant_id uuid, wakeup_revision bigint)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+        BEGIN
+            IF session_user <> 'app_worker' THEN
+                RAISE EXCEPTION 'b24_worker_database_identity_required';
+            END IF;
+            IF p_lease_owner IS NULL OR btrim(p_lease_owner) = '' THEN
+                RAISE EXCEPTION 'b24_fit_planner_lease_owner_required';
+            END IF;
+            RETURN QUERY
+            WITH due AS (
+                SELECT wakeup.tenant_id
+                FROM b24_fit_planner_wakeups wakeup
+                WHERE wakeup.status = 'pending'
+                   OR (
+                        wakeup.status = 'leased'
+                        AND wakeup.lease_expires_at <= now()
+                   )
+                ORDER BY wakeup.observed_at, wakeup.tenant_id
+                LIMIT LEAST(GREATEST(p_limit, 1), 100)
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE public.b24_fit_planner_wakeups wakeup
+            SET status = 'leased',
+                lease_owner = p_lease_owner,
+                lease_expires_at = now() + interval '5 minutes',
+                updated_at = now()
+            FROM due
+            WHERE wakeup.tenant_id = due.tenant_id
+            RETURNING wakeup.tenant_id, wakeup.wakeup_revision;
+        END
         $$;
 
 CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
@@ -401,53 +471,35 @@ CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-            IF NOT public.b24_fit_status_is_terminal(OLD.status) THEN
-                RETURN NEW;
-            END IF;
-            IF NEW.status IS DISTINCT FROM OLD.status
+            IF public.b24_fit_status_is_terminal(OLD.status)
+               AND (NEW.model_type IS DISTINCT FROM OLD.model_type
+               OR NEW.model_version IS DISTINCT FROM OLD.model_version
+               OR NEW.source_window_start IS DISTINCT FROM OLD.source_window_start
+               OR NEW.source_window_end IS DISTINCT FROM OLD.source_window_end
                OR NEW.source_snapshot_hash IS DISTINCT FROM OLD.source_snapshot_hash
-               OR NEW.source_read_started_at IS DISTINCT FROM OLD.source_read_started_at
-               OR NEW.source_read_completed_at IS DISTINCT FROM OLD.source_read_completed_at
+               OR NEW.status IS DISTINCT FROM OLD.status
                OR NEW.data_completeness_status IS DISTINCT FROM OLD.data_completeness_status
                OR NEW.fallback_applied IS DISTINCT FROM OLD.fallback_applied
                OR NEW.fallback_reason IS DISTINCT FROM OLD.fallback_reason
+               OR NEW.completed_at IS DISTINCT FROM OLD.completed_at
+               OR NEW.updated_at IS DISTINCT FROM OLD.updated_at
                OR NEW.diagnostic_status IS DISTINCT FROM OLD.diagnostic_status
                OR NEW.diagnostic_failure_reason IS DISTINCT FROM OLD.diagnostic_failure_reason
-               OR NEW.diagnostic_policy_version IS DISTINCT FROM OLD.diagnostic_policy_version
-               OR NEW.diagnostic_target_filter_version IS DISTINCT FROM OLD.diagnostic_target_filter_version
-               OR NEW.diagnostics_computed_at IS DISTINCT FROM OLD.diagnostics_computed_at
                OR NEW.credible_interval_status IS DISTINCT FROM OLD.credible_interval_status
-               OR NEW.interval_policy_version IS DISTINCT FROM OLD.interval_policy_version
-               OR NEW.interval_shape IS DISTINCT FROM OLD.interval_shape
-               OR NEW.interval_element_count IS DISTINCT FROM OLD.interval_element_count
-               OR NEW.interval_summary_bytes IS DISTINCT FROM OLD.interval_summary_bytes
-               OR NEW.hdi_lower IS DISTINCT FROM OLD.hdi_lower
-               OR NEW.hdi_upper IS DISTINCT FROM OLD.hdi_upper
-               OR NEW.r_hat_max IS DISTINCT FROM OLD.r_hat_max
-               OR NEW.ess_min IS DISTINCT FROM OLD.ess_min
-               OR NEW.divergence_count IS DISTINCT FROM OLD.divergence_count
-               OR NEW.n_chains IS DISTINCT FROM OLD.n_chains
-               OR NEW.n_samples_actual IS DISTINCT FROM OLD.n_samples_actual
-               OR NEW.runtime_seconds IS DISTINCT FROM OLD.runtime_seconds
-               OR NEW.sampling_started_at IS DISTINCT FROM OLD.sampling_started_at
-               OR NEW.last_fit_at IS DISTINCT FROM OLD.last_fit_at
-               OR NEW.completed_at IS DISTINCT FROM OLD.completed_at
-               OR NEW.artifact_ref IS DISTINCT FROM OLD.artifact_ref
-               OR NEW.artifact_hash IS DISTINCT FROM OLD.artifact_hash
                OR NEW.confidence_bucket IS DISTINCT FROM OLD.confidence_bucket
                OR NEW.confidence_bucket_reason IS DISTINCT FROM OLD.confidence_bucket_reason
                OR NEW.confidence_policy_version IS DISTINCT FROM OLD.confidence_policy_version
                OR NEW.confidence_semantics_version IS DISTINCT FROM OLD.confidence_semantics_version
-               OR NEW.confidence_classified_at IS DISTINCT FROM OLD.confidence_classified_at
-               OR NEW.confidence_evidence_snapshot_hash IS DISTINCT FROM OLD.confidence_evidence_snapshot_hash
                OR NEW.confidence_deterministic_revenue_minor IS DISTINCT FROM OLD.confidence_deterministic_revenue_minor
                OR NEW.confidence_deterministic_row_count IS DISTINCT FROM OLD.confidence_deterministic_row_count
                OR NEW.confidence_match_verdict_count IS DISTINCT FROM OLD.confidence_match_verdict_count
                OR NEW.confidence_currency_count IS DISTINCT FROM OLD.confidence_currency_count
-               OR NEW.max_runtime_seconds IS DISTINCT FROM OLD.max_runtime_seconds
-               OR NEW.max_samples IS DISTINCT FROM OLD.max_samples
-               OR NEW.max_cores IS DISTINCT FROM OLD.max_cores
-               OR NEW.updated_at IS DISTINCT FROM OLD.updated_at THEN
+               OR NEW.confidence_classified_at IS DISTINCT FROM OLD.confidence_classified_at
+               OR NEW.confidence_evidence_snapshot_hash IS DISTINCT FROM OLD.confidence_evidence_snapshot_hash
+               OR NEW.source_read_started_at IS DISTINCT FROM OLD.source_read_started_at
+               OR NEW.source_read_completed_at IS DISTINCT FROM OLD.source_read_completed_at
+               OR NEW.artifact_ref IS DISTINCT FROM OLD.artifact_ref
+               OR NEW.artifact_hash IS DISTINCT FROM OLD.artifact_hash) THEN
                 RAISE EXCEPTION 'b24_terminal_fit_truth_immutable';
             END IF;
             RETURN NEW;
@@ -553,9 +605,7 @@ CREATE FUNCTION public.b24_fail_fit_dispatch_terminal(p_reason text) RETURNS voi
 
 CREATE FUNCTION public.b24_fit_status_is_terminal(p_status text) RETURNS boolean
     LANGUAGE sql IMMUTABLE
-    AS $$
-            SELECT p_status IN ('succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled')
-        $$;
+    AS $$ SELECT p_status IN ('succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled') $$;
 
 CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
@@ -651,6 +701,32 @@ CREATE FUNCTION public.b24_sha256_text(value text) RETURNS text
     LANGUAGE sql IMMUTABLE
     AS $$
             SELECT encode(digest(value, 'sha256'), 'hex')
+        $$;
+
+CREATE FUNCTION public.b24_signal_fit_planner_wakeup() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+        BEGIN
+            IF NEW.status IN ('pending', 'authority_retry_ready')
+               AND (
+                    TG_OP = 'INSERT'
+                    OR OLD.status IS DISTINCT FROM NEW.status
+               ) THEN
+                INSERT INTO public.b24_fit_planner_wakeups (
+                    tenant_id, observed_at
+                ) VALUES (NEW.tenant_id, NEW.observed_at)
+                ON CONFLICT (tenant_id) DO UPDATE
+                SET wakeup_revision =
+                        b24_fit_planner_wakeups.wakeup_revision + 1,
+                    observed_at = LEAST(
+                        b24_fit_planner_wakeups.observed_at,
+                        EXCLUDED.observed_at
+                    ),
+                    updated_at = now();
+            END IF;
+            RETURN NEW;
+        END
         $$;
 
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
@@ -2025,6 +2101,22 @@ CREATE TABLE public.b24_fit_dispatch_outbox (
 );
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.b24_fit_planner_wakeups (
+    tenant_id uuid NOT NULL,
+    wakeup_revision bigint DEFAULT 1 NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    lease_owner text,
+    lease_expires_at timestamp with time zone,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT b24_fit_planner_wakeups_check CHECK ((((status = 'pending'::text) AND (lease_owner IS NULL) AND (lease_expires_at IS NULL)) OR ((status = 'leased'::text) AND (lease_owner IS NOT NULL) AND (lease_expires_at IS NOT NULL)))),
+    CONSTRAINT b24_fit_planner_wakeups_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'leased'::text]))),
+    CONSTRAINT b24_fit_planner_wakeups_wakeup_revision_check CHECK ((wakeup_revision > 0))
+);
+
+ALTER TABLE ONLY public.b24_fit_planner_wakeups FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.b24_fit_recovery_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -4991,22 +5083,22 @@ CREATE SEQUENCE public.message_id_sequence
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
 CREATE MATERIALIZED VIEW mv_allocation_summary AS
- SELECT aa.tenant_id,
-    aa.event_id,
-    aa.model_version,
-    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
-    e.revenue_cents AS event_revenue_cents,
+ SELECT tenant_id,
+    event_id,
+    model_version,
+    sum(allocated_revenue_cents) AS total_allocated_cents,
+    revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
+            WHEN (revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(allocated_revenue_cents) = revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
+            WHEN (revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
         END AS drift_cents
    FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
-  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
+     LEFT JOIN attribution_events e ON ((event_id = id)))
+  GROUP BY tenant_id, event_id, model_version, revenue_cents
   WITH NO DATA;
 
 CREATE MATERIALIZED VIEW mv_channel_performance AS
@@ -5095,15 +5187,15 @@ CREATE TABLE public.reconciliation_runs (
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
 CREATE MATERIALIZED VIEW mv_reconciliation_status AS
- SELECT rr.tenant_id,
-    rr.state,
-    rr.last_run_at,
-    rr.id AS reconciliation_run_id
+ SELECT tenant_id,
+    state,
+    last_run_at,
+    id AS reconciliation_run_id
    FROM (reconciliation_runs rr
-     JOIN ( SELECT reconciliation_runs.tenant_id,
-            max(reconciliation_runs.last_run_at) AS max_last_run_at
+     JOIN ( SELECT tenant_id,
+            max(last_run_at) AS max_last_run_at
            FROM reconciliation_runs
-          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
   WITH NO DATA;
 
 CREATE TABLE public.oauth_handshake_sessions (
@@ -5691,6 +5783,9 @@ ALTER TABLE ONLY public.b24_feature_authority_build_requests
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_pkey PRIMARY KEY (tenant_id, id);
 
+ALTER TABLE ONLY public.b24_fit_planner_wakeups
+    ADD CONSTRAINT b24_fit_planner_wakeups_pkey PRIMARY KEY (tenant_id);
+
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT b24_fit_recovery_outbox_pkey PRIMARY KEY (tenant_id, id);
 
@@ -5954,7 +6049,6 @@ ALTER TABLE public.bayesian_model_fits
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_source_read_pair_order CHECK ((((source_read_started_at IS NULL) AND (source_read_completed_at IS NULL)) OR ((source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at)))) NOT VALID;
-
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_pkey PRIMARY KEY (id);
@@ -7527,6 +7621,8 @@ CREATE TRIGGER trg_b24_dispatch_fence_fits BEFORE INSERT OR DELETE OR UPDATE ON 
 
 CREATE TRIGGER trg_b24_evidence_temporal_plausibility BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_evidence_temporal_plausibility();
 
+CREATE TRIGGER trg_b24_signal_fit_planner_wakeup AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup();
+
 CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_terminal_fit_truth();
 
 CREATE TRIGGER trg_bind_session_authority_from_event BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_bind_session_authority_from_event();
@@ -7662,6 +7758,9 @@ ALTER TABLE ONLY public.b24_feature_authority_build_requests
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.b24_fit_planner_wakeups
+    ADD CONSTRAINT b24_fit_planner_wakeups_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
@@ -7922,6 +8021,10 @@ ALTER TABLE public.b24_feature_authority_build_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.b24_feature_authority_build_requests ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b24_fit_dispatch_outbox ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.b24_fit_planner_wakeups ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY b24_fit_planner_wakeups_worker_only ON public.b24_fit_planner_wakeups USING ((CURRENT_USER = 'app_worker'::name)) WITH CHECK ((CURRENT_USER = 'app_worker'::name));
 
 ALTER TABLE public.b24_fit_recovery_outbox ENABLE ROW LEVEL SECURITY;
 

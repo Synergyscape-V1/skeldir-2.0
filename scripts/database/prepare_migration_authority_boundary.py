@@ -20,6 +20,8 @@ class AuthorityConfig:
     migration_password: str
     app_rw_role: str
     app_ro_role: str
+    worker_user: str
+    worker_password: str
 
 
 def _parse_args() -> AuthorityConfig:
@@ -28,7 +30,9 @@ def _parse_args() -> AuthorityConfig:
             "Create/normalize runtime and migration principals for schema authority separation."
         )
     )
-    parser.add_argument("--admin-dsn", required=True, help="Superuser/admin PostgreSQL DSN.")
+    parser.add_argument(
+        "--admin-dsn", required=True, help="Superuser/admin PostgreSQL DSN."
+    )
     parser.add_argument("--database-name", required=True, help="Target database name.")
     parser.add_argument("--runtime-user", default="app_user")
     parser.add_argument("--runtime-password", default="app_user")
@@ -36,6 +40,8 @@ def _parse_args() -> AuthorityConfig:
     parser.add_argument("--migration-password", default="migration_owner")
     parser.add_argument("--app-rw-role", default="app_rw")
     parser.add_argument("--app-ro-role", default="app_ro")
+    parser.add_argument("--worker-user", default="app_worker")
+    parser.add_argument("--worker-password", default="app_worker")
     args = parser.parse_args()
     return AuthorityConfig(
         admin_dsn=args.admin_dsn,
@@ -46,6 +52,8 @@ def _parse_args() -> AuthorityConfig:
         migration_password=args.migration_password,
         app_rw_role=args.app_rw_role,
         app_ro_role=args.app_ro_role,
+        worker_user=args.worker_user,
+        worker_password=args.worker_password,
     )
 
 
@@ -62,12 +70,16 @@ def _database_exists(cursor, database_name: str) -> bool:
 def _create_or_alter_login_role(cursor, role_name: str, password: str) -> None:
     if _role_exists(cursor, role_name):
         cursor.execute(
-            sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(role_name)),
+            sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD %s").format(
+                sql.Identifier(role_name)
+            ),
             (password,),
         )
         return
     cursor.execute(
-        sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(role_name)),
+        sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD %s").format(
+            sql.Identifier(role_name)
+        ),
         (password,),
     )
 
@@ -113,6 +125,9 @@ def _prepare_authority_surface(config: AuthorityConfig) -> None:
             )
             _create_nologin_role_if_missing(cursor, config.app_rw_role)
             _create_nologin_role_if_missing(cursor, config.app_ro_role)
+            _create_or_alter_login_role(
+                cursor, config.worker_user, config.worker_password
+            )
 
             if not _database_exists(cursor, config.database_name):
                 cursor.execute(
@@ -136,6 +151,11 @@ def _prepare_authority_surface(config: AuthorityConfig) -> None:
             )
             _ensure_role_membership(
                 cursor,
+                role_name=config.worker_user,
+                member_name=config.migration_user,
+            )
+            _ensure_role_membership(
+                cursor,
                 role_name=config.app_rw_role,
                 member_name=config.runtime_user,
             )
@@ -143,6 +163,16 @@ def _prepare_authority_surface(config: AuthorityConfig) -> None:
                 cursor,
                 role_name=config.app_ro_role,
                 member_name=config.runtime_user,
+            )
+            _ensure_role_membership(
+                cursor,
+                role_name=config.app_rw_role,
+                member_name=config.worker_user,
+            )
+            _ensure_role_membership(
+                cursor,
+                role_name=config.app_ro_role,
+                member_name=config.worker_user,
             )
     finally:
         admin_conn.close()
@@ -192,12 +222,15 @@ def _host_port_fragment(admin_dsn: str) -> str:
 def main() -> int:
     config = _parse_args()
     if config.runtime_user == config.migration_user:
-        raise RuntimeError("runtime_user and migration_user must be distinct principals")
+        raise RuntimeError(
+            "runtime_user and migration_user must be distinct principals"
+        )
     _prepare_authority_surface(config)
     print("migration_authority_boundary_prepared")
     print(f"database={config.database_name}")
     print(f"runtime_user={config.runtime_user}")
     print(f"migration_user={config.migration_user}")
+    print(f"worker_user={config.worker_user}")
     return 0
 
 

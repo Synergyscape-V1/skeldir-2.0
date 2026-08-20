@@ -4,6 +4,10 @@ supported_schema_versions:
     envelope_version: trust-envelope-v1
     status: supported
     schema_file: trust-envelope.v1.yaml
+  - schema_version: trust-envelope-schema-v2
+    envelope_version: trust-envelope-v1
+    status: supported
+    schema_file: trust-envelope.v2.yaml
 supported_canonicalization_versions:
   - canonicalization_version: trust-canonical-json-v1
     status: supported

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_DIR = ROOT / "contracts/trust-api"
 EXAMPLES_DIR = CONTRACT_DIR / "examples"
 CANONICAL_EXAMPLES_DIR = EXAMPLES_DIR / "canonicalization"
-TRUST_SCHEMA_PATH = CONTRACT_DIR / "trust-envelope.v1.yaml"
+TRUST_SCHEMA_PATH = CONTRACT_DIR / "trust-envelope.v2.yaml"
 HASH_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 
 

@@ -76,6 +76,13 @@ def _runtime_sync_database_url() -> str:
     return _normalize_sync_database_url(_runtime_async_database_url())
 
 
+def _bayesian_worker_sync_database_url() -> str:
+    explicit = os.getenv("B21_P4_BAYESIAN_WORKER_DATABASE_URL")
+    if not explicit:
+        raise RuntimeError("B21_P4_BAYESIAN_WORKER_DATABASE_URL is required")
+    return _normalize_sync_database_url(explicit)
+
+
 def _celery_worker_env(*, async_url: str, sync_url: str) -> dict[str, str]:
     env = os.environ.copy()
     env["DATABASE_URL"] = async_url
@@ -108,6 +115,16 @@ def _start_worker(
     stream = log_path.open("w", encoding="utf-8")
     lines: list[str] = []
     worker_env = dict(env)
+    if role == "deterministic":
+        worker_env.pop("SKELDIR_CELERY_WORKER_ROLE", None)
+        worker_env.pop("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS", None)
+    elif role == "bayesian":
+        worker_sync_url = _bayesian_worker_sync_database_url()
+        worker_env["DATABASE_URL"] = worker_sync_url.replace(
+            "postgresql://", "postgresql+asyncpg://", 1
+        )
+        worker_env["SKELDIR_CELERY_WORKER_ROLE"] = "bayesian"
+        worker_env["SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS"] = "1"
     prom_dir = (artifact_dir / "prometheus_multiproc" / role).resolve()
     prom_dir.mkdir(parents=True, exist_ok=True)
     worker_env["PROMETHEUS_MULTIPROC_DIR"] = str(prom_dir)
@@ -644,14 +661,48 @@ def _runtime_benchmark(
                 )
             )
         elif topology_mode == "corouted_shared_worker":
-            handles.append(
-                _start_worker(
+            try:
+                handle = _start_worker(
                     role="shared",
                     queue_spec=f"{QUEUE_ATTRIBUTION},{QUEUE_BAYESIAN}",
                     env=worker_env,
                     artifact_dir=artifact_dir,
                 )
-            )
+            except RuntimeError as exc:
+                log_path = artifact_dir / "shared.worker.log"
+                deadline = time.time() + 5
+                log_text = ""
+                while time.time() < deadline:
+                    log_text = log_path.read_text(encoding="utf-8", errors="replace")
+                    if "bayesian_worker_boot_topology_probe_failed" in log_text:
+                        break
+                    time.sleep(0.1)
+                if "bayesian_worker_boot_topology_probe_failed" not in log_text:
+                    raise RuntimeError(
+                        "Shared-worker rejection did not reach the C6 authority guard"
+                    ) from exc
+                summary = {
+                    "schema_version": "b21_p4_queue_isolation_benchmark.v1",
+                    "mode": "measure",
+                    "topology_mode": topology_mode,
+                    "contention_mode": contention_mode,
+                    "event_count": int(event_count),
+                    "authority_negative_control": {
+                        "rejected": True,
+                        "reason": "bayesian_worker_boot_topology_probe_failed",
+                        "worker_database_identity": "app_user",
+                        "log_path": str(log_path),
+                    },
+                }
+                output_path.write_text(
+                    json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+                )
+                return summary
+            else:
+                handle.stop()
+                raise RuntimeError(
+                    "C6 authority guard accepted a co-routed shared worker"
+                )
         else:
             raise ValueError(f"unsupported topology_mode: {topology_mode}")
 

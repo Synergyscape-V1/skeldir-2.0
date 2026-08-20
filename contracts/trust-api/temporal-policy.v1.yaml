@@ -1,0 +1,7 @@
+policy_version: b25-p13-temporal-policy-v1
+evidence_future_skew_tolerance_seconds: 120
+evidence_freshness_ceiling_seconds: 31536000
+clock_semantics:
+  producer: postgres_transaction_clock
+  consumer: utc_application_clock
+  rule: evidence timestamps may be at most the declared tolerance ahead of the consumer clock

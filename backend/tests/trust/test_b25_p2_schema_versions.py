@@ -28,7 +28,10 @@ def _fixture() -> dict:
 
 
 def test_supported_versions_are_registry_bound() -> None:
-    assert get_supported_schema_versions() == ("trust-envelope-schema-v1",)
+    assert get_supported_schema_versions() == (
+        "trust-envelope-schema-v1",
+        "trust-envelope-schema-v2",
+    )
     assert get_supported_canonicalization_versions() == ("trust-canonical-json-v1",)
 
 
@@ -40,7 +43,9 @@ def test_schema_version_fails_closed(value) -> None:
 
 @pytest.mark.parametrize("value", [None, "", "latest", "RFC8785-JCS-Skeldir-v999"])
 def test_canonicalization_version_fails_closed(value) -> None:
-    with pytest.raises(VersionRegistryError, match="canonicalization_version_unsupported"):
+    with pytest.raises(
+        VersionRegistryError, match="canonicalization_version_unsupported"
+    ):
         validate_canonicalization_version(value)
 
 
@@ -48,6 +53,7 @@ def test_unknown_versions_fail_before_schema_validation_or_hashing() -> None:
     payload = _fixture()
     payload["canonicalization_version"] = "latest"
 
-    with pytest.raises(VersionRegistryError, match="canonicalization_version_unsupported"):
+    with pytest.raises(
+        VersionRegistryError, match="canonicalization_version_unsupported"
+    ):
         canonicalize_envelope_payload(payload)
-

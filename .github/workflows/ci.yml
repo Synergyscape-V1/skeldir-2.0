@@ -806,6 +806,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b21_p4
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p4
       RUNTIME_SYNC_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p4
+      B21_P4_BAYESIAN_WORKER_DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b21_p4
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p4
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p4
       EXPECTED_RUNTIME_DB_USER: app_user
@@ -1142,6 +1143,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p6
       RUNTIME_SYNC_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
+      B21_P4_BAYESIAN_WORKER_DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b21_p6
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
       EXPECTED_RUNTIME_DB_USER: app_user
@@ -3105,7 +3107,16 @@ jobs:
       
       - name: Install oasdiff
         run: |
-          go install github.com/oasdiff/oasdiff@v1.11.7
+          for attempt in 1 2 3 4 5; do
+            if go install github.com/oasdiff/oasdiff@v1.11.7; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "oasdiff install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
       
       - name: Detect breaking changes
         run: |
@@ -3838,6 +3849,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
+          psql -h localhost -U postgres -c "CREATE USER app_worker WITH PASSWORD 'app_worker';"
           psql -h localhost -U postgres -c "CREATE USER migration_owner WITH PASSWORD 'migration_owner';"
           psql -h localhost -U postgres -c "CREATE USER app_ops WITH PASSWORD 'app_ops';"
           psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
@@ -3846,8 +3858,10 @@ jobs:
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO app_user;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT USAGE ON SCHEMA public TO app_ops;"
+          psql -h localhost -U postgres -d skeldir_phase -c "GRANT CONNECT ON DATABASE skeldir_phase TO app_worker; GRANT USAGE ON SCHEMA public TO app_worker;"
           psql -h localhost -U postgres -d skeldir_phase -c "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
+          psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
 
@@ -3963,6 +3977,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
+          psql -h localhost -U postgres -c "CREATE USER app_worker WITH PASSWORD 'app_worker';"
           psql -h localhost -U postgres -c "CREATE USER migration_owner WITH PASSWORD 'migration_owner';"
           psql -h localhost -U postgres -c "CREATE USER app_ops WITH PASSWORD 'app_ops';"
           psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
@@ -3971,8 +3986,10 @@ jobs:
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO app_user;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT USAGE ON SCHEMA public TO app_ops;"
+          psql -h localhost -U postgres -d skeldir_phase -c "GRANT CONNECT ON DATABASE skeldir_phase TO app_worker; GRANT USAGE ON SCHEMA public TO app_worker;"
           psql -h localhost -U postgres -d skeldir_phase -c "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
+          psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
       - name: Run phase chain to B0.4
@@ -4125,6 +4142,7 @@ jobs:
       B057_P5_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b057_p6
       B057_P5_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
+      B057_P6_WORKER_USER: app_worker
       B057_P5_ARTIFACT_DIR: artifacts/b057-p6
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
     steps:
@@ -4189,11 +4207,14 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_rw NOLOGIN;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_ro NOLOGIN;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${RUNTIME_USER} WITH PASSWORD '${RUNTIME_PASS}';"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${B057_P6_WORKER_USER} WITH PASSWORD 'app_worker';"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${MIGRATION_USER} WITH PASSWORD '${MIGRATION_PASS}';"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_rw TO ${RUNTIME_USER}; GRANT app_ro TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${B057_P6_WORKER_USER} TO ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE ${DB_NAME} TO ${B057_P6_WORKER_USER}; GRANT USAGE ON SCHEMA public TO ${B057_P6_WORKER_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
       - name: Assert runtime identity (least-privilege)
@@ -4263,6 +4284,8 @@ jobs:
       RUNTIME_PASS: app_user
       DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b07_p2
       B07_P2_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b07_p2
+      B07_P5_BAYESIAN_WORKER_DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b07_p2
+      B07_P5_EXPECTED_WORKER_DB_USER: app_worker
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b07_p2
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b07_p2
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b07_p2
@@ -4382,11 +4405,14 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_rw NOLOGIN;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_ro NOLOGIN;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${RUNTIME_USER} WITH PASSWORD '${RUNTIME_PASS}';"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER app_worker WITH PASSWORD 'app_worker';"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${MIGRATION_USER} WITH PASSWORD '${MIGRATION_PASS}';"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_rw TO ${RUNTIME_USER}; GRANT app_ro TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_worker TO ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE ${DB_NAME} TO app_worker; GRANT USAGE ON SCHEMA public TO app_worker;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
       - name: Assert runtime identity (least-privilege)
@@ -4420,6 +4446,7 @@ jobs:
         run: |
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${RUNTIME_USER}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${RUNTIME_USER}; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM ${RUNTIME_USER};"
 
       - name: Enforce llm_api_calls single write path
         run: |
@@ -4812,8 +4839,8 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
-      SKELDIR_CELERY_WORKER_ROLE: bayesian
-      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+      SKELDIR_CELERY_WORKER_ROLE: non_bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
@@ -4872,19 +4899,22 @@ jobs:
         run: |
           echo "Creating database roles and skeldir_validation database..."
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_worker WITH PASSWORD 'app_worker';"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_rw WITH PASSWORD 'app_rw';"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_ro WITH PASSWORD 'app_ro';"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT CONNECT ON DATABASE skeldir_validation TO app_worker;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_rw;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT USAGE ON SCHEMA public TO app_ro;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT USAGE ON SCHEMA public TO app_worker;"
           echo "Database setup complete"
 
       - name: Run migrations
         env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-          MIGRATION_DATABASE_URL: ${{ env.DATABASE_URL }}
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_validation
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_validation
         run: |
           set -euo pipefail
           {
@@ -4898,8 +4928,12 @@ jobs:
             echo "[B055] Alembic upgrade head"
             alembic upgrade head
           } | tee "$B055_EVIDENCE_DIR/LOGS/migrations.log"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO app_user; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM app_user; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM app_user; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM app_user;"
 
       - name: Phase 0 DB authority - required deterministic schema drift gate
+        env:
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_validation
         run: |
           set -euo pipefail
           mkdir -p artifacts/b055-schema-authority
@@ -4913,6 +4947,7 @@ jobs:
       - name: Start Celery worker
         env:
           PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_validation
         run: |
           cd backend
           export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
@@ -5047,9 +5082,11 @@ jobs:
 
       - name: Generate B055 evidence bundle
         env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_validation
         run: |
-          python scripts/ci/b055_evidence_bundle.py generate --bundle-dir "$B055_EVIDENCE_DIR"
+          python scripts/ci/b055_evidence_bundle.py generate \
+            --bundle-dir "$B055_EVIDENCE_DIR" \
+            --database-url "$MIGRATION_DATABASE_URL"
 
       - name: Validate B055 evidence manifest
         run: |
@@ -5188,7 +5225,8 @@ jobs:
       # Dual-URL strategy constructed from single credential source
       DATABASE_URL_SYNC: postgresql://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
       DATABASE_URL_ASYNC: postgresql+asyncpg://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
-      MIGRATION_DATABASE_URL: postgresql://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_validation
+      B0533_WORKER_USER: app_worker
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -5245,12 +5283,14 @@ jobs:
           psql -h localhost -U postgres -c "DROP ROLE IF EXISTS app_user;" || true
           psql -h localhost -U postgres -c "DROP ROLE IF EXISTS app_rw;" || true
           psql -h localhost -U postgres -c "DROP ROLE IF EXISTS app_ro;" || true
+          psql -h localhost -U postgres -c "DROP ROLE IF EXISTS ${B0533_WORKER_USER};" || true
 
           # Create roles with explicit LOGIN and password from shell env vars
           # Use shell variable (not GitHub expression) to ensure proper interpolation
           psql -h localhost -U postgres -c "CREATE ROLE ${{ env.APP_USER }} WITH LOGIN PASSWORD '$APP_USER_PASSWORD';"
           psql -h localhost -U postgres -c "CREATE ROLE app_rw WITH LOGIN PASSWORD 'app_rw';"
           psql -h localhost -U postgres -c "CREATE ROLE app_ro WITH LOGIN PASSWORD 'app_ro';"
+          psql -h localhost -U postgres -c "CREATE ROLE ${B0533_WORKER_USER} WITH LOGIN PASSWORD 'app_worker';"
 
           echo "✓ Roles created with deterministic credentials (shell env interpolation)"
 
@@ -5268,9 +5308,11 @@ jobs:
 
           # Grant privileges
           psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${{ env.DB_NAME }} TO ${{ env.APP_USER }};"
+          psql -h localhost -U postgres -c "GRANT CONNECT ON DATABASE ${{ env.DB_NAME }} TO ${B0533_WORKER_USER};"
           psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "GRANT ALL ON SCHEMA public TO ${{ env.APP_USER }};"
           psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "GRANT ALL ON SCHEMA public TO app_rw;"
           psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "GRANT USAGE ON SCHEMA public TO app_ro;"
+          psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "GRANT USAGE ON SCHEMA public TO ${B0533_WORKER_USER};"
 
           # Set tenant context
           psql -h localhost -U postgres -d ${{ env.DB_NAME }} -c "ALTER DATABASE ${{ env.DB_NAME }} SET app.current_tenant_id = '00000000-0000-0000-0000-000000000000';"
@@ -5297,6 +5339,8 @@ jobs:
           echo "DATABASE_URL (sync): postgresql://app_user:***@127.0.0.1:5432/skeldir_validation"
           alembic upgrade 202511131121
           alembic upgrade skeldir_foundation@head
+          PGPASSWORD=postgres psql -h localhost -U postgres -d "${{ env.DB_NAME }}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${{ env.APP_USER }}; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${{ env.APP_USER }};"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d "${{ env.DB_NAME }}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${{ env.APP_USER }}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${{ env.APP_USER }}; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM ${{ env.APP_USER }};"
           echo "✓ Migrations complete (skeldir_foundation@head reached)"
 
       - name: R5-4 / Gate G4 - Verify schema with canonical DSN

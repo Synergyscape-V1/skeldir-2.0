@@ -1,0 +1,32 @@
+registry_version: b25-p13-confidence-projection-dependencies-v1
+source_table: public.bayesian_model_fits
+terminal_guard: public.b24_enforce_terminal_fit_truth
+dependencies:
+  - model_type
+  - model_version
+  - source_window_start
+  - source_window_end
+  - source_snapshot_hash
+  - status
+  - data_completeness_status
+  - fallback_applied
+  - fallback_reason
+  - completed_at
+  - updated_at
+  - diagnostic_status
+  - diagnostic_failure_reason
+  - credible_interval_status
+  - confidence_bucket
+  - confidence_bucket_reason
+  - confidence_policy_version
+  - confidence_semantics_version
+  - confidence_deterministic_revenue_minor
+  - confidence_deterministic_row_count
+  - confidence_match_verdict_count
+  - confidence_currency_count
+  - confidence_classified_at
+  - confidence_evidence_snapshot_hash
+  - source_read_started_at
+  - source_read_completed_at
+  - artifact_ref
+  - artifact_hash

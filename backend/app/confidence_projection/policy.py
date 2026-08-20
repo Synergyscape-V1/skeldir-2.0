@@ -11,7 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 
 CONFIDENCE_POLICY_VERSION = "b24-p10-confidence-policy-v1"
@@ -26,12 +30,33 @@ CONFIDENCE_SEMANTICS_VERSION = "b24-p10-confidence-semantics-v1"
 #: A bounded tolerance rather than a strict ``<= now()`` because the database
 #: clock and the API clock are genuinely different clocks; a few seconds of skew
 #: is a fact of deployment, thirty days is a defect.
-EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS = 120
+_TEMPORAL_POLICY_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "contracts"
+    / "trust-api"
+    / "temporal-policy.v1.yaml"
+)
+
+
+@lru_cache(maxsize=1)
+def _temporal_policy() -> dict[str, object]:
+    with _TEMPORAL_POLICY_PATH.open(encoding="utf-8") as handle:
+        policy = yaml.safe_load(handle)
+    if not isinstance(policy, dict):
+        raise RuntimeError("temporal_policy_not_object")
+    return policy
+
+
+EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS = int(
+    _temporal_policy()["evidence_future_skew_tolerance_seconds"]
+)
 
 #: The largest age the wire contract can represent in ``data_freshness_seconds``.
 #: Evidence older than this is not misreported as exactly this old -- see
 #: ``data_freshness_bound`` in the evidence temporal boundary.
-EVIDENCE_FRESHNESS_CEILING_SECONDS = 31536000
+EVIDENCE_FRESHNESS_CEILING_SECONDS = int(
+    _temporal_policy()["evidence_freshness_ceiling_seconds"]
+)
 
 
 def evidence_timestamp_is_plausible(

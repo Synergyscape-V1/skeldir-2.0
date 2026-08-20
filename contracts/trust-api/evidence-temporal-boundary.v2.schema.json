@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.skeldir.local/trust-api/evidence-temporal-boundary.schema.json",
+  "$id": "https://schemas.skeldir.local/trust-api/evidence-temporal-boundary.v2.schema.json",
   "title": "B2.5-P1 EvidenceTemporalBoundary",
   "type": "object",
   "additionalProperties": false,
@@ -12,24 +12,26 @@
     "max_source_read_skew_ms",
     "snapshot_consistency_status",
     "data_freshness_seconds",
+    "data_freshness_bound",
+    "evidence_age_status",
     "staleness_status"
   ],
   "properties": {
     "evidence_snapshot_at": {
       "anyOf": [
-        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"},
+        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v2.yaml#/$defs/utcTimestamp"},
         {"type": "null"}
       ]
     },
     "source_read_started_at": {
       "anyOf": [
-        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"},
+        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v2.yaml#/$defs/utcTimestamp"},
         {"type": "null"}
       ]
     },
     "source_read_completed_at": {
       "anyOf": [
-        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"},
+        {"$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v2.yaml#/$defs/utcTimestamp"},
         {"type": "null"}
       ]
     },
@@ -38,6 +40,24 @@
       "type": ["integer", "null"],
       "minimum": 0,
       "maximum": 31536000
+    },
+    "data_freshness_bound": {
+      "description": "How to read data_freshness_seconds. 'exact': it is the actual age. 'at_least_ceiling': the actual age exceeds the representable maximum, so the number is a lower bound and not the age. 'unavailable': no temporal authority exists and data_freshness_seconds is null.",
+      "type": "string",
+      "enum": [
+        "exact",
+        "at_least_ceiling",
+        "unavailable"
+      ]
+    },
+    "evidence_age_status": {
+      "description": "Absolute age of the evidence, independent of lineage. 'within_supported_horizon': the age is exactly representable. 'beyond_supported_horizon': the evidence is older than the supported horizon, so consumers must not treat data_freshness_seconds as its age. 'unavailable': no temporal authority exists. This is deliberately NOT staleness_status: newest-known and recently-read are different properties.",
+      "type": "string",
+      "enum": [
+        "within_supported_horizon",
+        "beyond_supported_horizon",
+        "unavailable"
+      ]
     },
     "staleness_status": {
       "description": "Lineage currency, NOT absolute freshness. 'current' means no superseding source snapshot is known for this subject; it makes no claim about how old the evidence is. Absolute age is carried by data_freshness_seconds, data_freshness_bound and evidence_age_status. 'stale_degraded' means a newer snapshot or a later dirty event exists. 'unavailable' means lineage cannot be established.",
@@ -49,7 +69,7 @@
       ]
     },
     "evidence_snapshot_hash": {
-      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/sha256Tagged"
+      "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v2.yaml#/$defs/sha256Tagged"
     },
     "max_source_read_skew_ms": {
       "type": ["integer", "null"],
@@ -78,18 +98,23 @@
       "then": {
         "properties": {
           "evidence_snapshot_at": {
-            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v2.yaml#/$defs/utcTimestamp"
           },
           "source_read_started_at": {
-            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v2.yaml#/$defs/utcTimestamp"
           },
           "source_read_completed_at": {
-            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v1.yaml#/$defs/utcTimestamp"
+            "$ref": "https://schemas.skeldir.local/trust-api/trust-envelope.v2.yaml#/$defs/utcTimestamp"
           },
           "data_freshness_seconds": {"type": "integer"},
+          "data_freshness_bound": {"enum": ["exact", "at_least_ceiling"]},
+          "evidence_age_status": {
+            "enum": ["within_supported_horizon", "beyond_supported_horizon"]
+          },
           "max_source_read_skew_ms": {"type": "integer"}
         }
       }
     }
   ]
 }
+

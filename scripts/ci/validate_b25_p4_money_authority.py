@@ -40,7 +40,7 @@ class B25P4ValidationError(RuntimeError):
     """Raised when B2.5-P4 validation fails."""
 
 
-TRUST_SCHEMA_PATH = ROOT / "contracts/trust-api/trust-envelope.v1.yaml"
+TRUST_SCHEMA_PATH = ROOT / "contracts/trust-api/trust-envelope.v2.yaml"
 TRUST_DIR = ROOT / "backend/app/trust"
 TRUST_MONEY_FILES = (
     TRUST_DIR / "money_authority_registry.py",
@@ -85,7 +85,13 @@ def discover_authoritative_money_fields() -> set[str]:
             or field_name.endswith("_minor")
             and any(
                 field_name.startswith(prefix)
-                for prefix in ("verified_", "revenue_", "spend_", "budget_", "allocation_")
+                for prefix in (
+                    "verified_",
+                    "revenue_",
+                    "spend_",
+                    "budget_",
+                    "allocation_",
+                )
             )
         )
         if money_name and _is_integer_schema(node):
@@ -108,7 +114,9 @@ def validate_registry_totality(
     for field_name in sorted(fields):
         authority = registry[field_name]
         if not authority.approved_sources:
-            raise B25P4ValidationError(f"{field_name} has no approved/refusal source policy")
+            raise B25P4ValidationError(
+                f"{field_name} has no approved/refusal source policy"
+            )
         if authority.field_policy.trust_field != field_name:
             raise B25P4ValidationError(f"{field_name} field policy is not field-bound")
         for mapping in authority.approved_sources:
@@ -145,13 +153,17 @@ def _require_accepted(result: MoneyAuthorityDecision, expected_minor: int) -> No
         raise B25P4ValidationError(f"expected accepted result, got {result}")
     if result.amount_minor != expected_minor:
         raise B25P4ValidationError(f"amount mismatch: {result.amount_minor}")
-    if not isinstance(result.amount_minor, int) or isinstance(result.amount_minor, bool):
+    if not isinstance(result.amount_minor, int) or isinstance(
+        result.amount_minor, bool
+    ):
         raise B25P4ValidationError("accepted amount_minor is not an int")
     if result.reason_code is not None:
         raise B25P4ValidationError("accepted money carried refusal reason")
 
 
-def _require_refused(result: MoneyAuthorityDecision, status_prefix: str | None = None) -> None:
+def _require_refused(
+    result: MoneyAuthorityDecision, status_prefix: str | None = None
+) -> None:
     if result.status == "accepted_authoritative_minor_units":
         raise B25P4ValidationError(f"unexpected accepted result: {result}")
     if status_prefix and not result.status.startswith(status_prefix):
@@ -279,14 +291,18 @@ def validate_negative_zero_policy() -> int:
         if not isinstance(policy.zero_allowed, bool):
             raise B25P4ValidationError(f"{authority.trust_field} zero policy missing")
         if policy.negative_policy not in {"forbidden", "refund_or_adjustment_only"}:
-            raise B25P4ValidationError(f"{authority.trust_field} negative policy missing")
+            raise B25P4ValidationError(
+                f"{authority.trust_field} negative policy missing"
+            )
     return len(MONEY_FIELD_REGISTRY) + 2
 
 
 def validate_typed_result_shape() -> int:
     results = (
         _resolve(),
-        _resolve(source_domain="export_row", source_field_path="revenue", raw_value=123.45),
+        _resolve(
+            source_domain="export_row", source_field_path="revenue", raw_value=123.45
+        ),
         _resolve(raw_value=None),
         _resolve(raw_value=123.45),
         _resolve(source_field_path="unknown_amount", raw_value=123),
@@ -348,7 +364,9 @@ def validate_static_import_isolation() -> int:
                     if module in forbidden_modules or any(
                         module.startswith(prefix + ".") for prefix in forbidden_modules
                     ):
-                        raise B25P4ValidationError(f"forbidden import {module} in {path}")
+                        raise B25P4ValidationError(
+                            f"forbidden import {module} in {path}"
+                        )
                     checked += 1
                 continue
             if module:
@@ -386,13 +404,17 @@ def validate_scope_overreach() -> int:
         text = path.read_text(encoding="utf-8", errors="replace")
         for token in disallowed_tokens:
             if token in text:
-                raise B25P4ValidationError(f"P4 scope overreach token {token} in {path}")
+                raise B25P4ValidationError(
+                    f"P4 scope overreach token {token} in {path}"
+                )
             checked += 1
     return checked
 
 
 def _run_validator(command: list[str], marker: str) -> None:
-    proc = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
+    proc = subprocess.run(
+        command, cwd=ROOT, text=True, capture_output=True, check=False
+    )
     if proc.returncode != 0:
         raise B25P4ValidationError(
             f"{command} failed stdout={proc.stdout[-1000:]} stderr={proc.stderr[-1000:]}"
@@ -403,19 +425,35 @@ def _run_validator(command: list[str], marker: str) -> None:
 
 def validate_prior_phase_regressions() -> tuple[int, int, int]:
     _run_validator(
-        [sys.executable, "scripts/ci/validate_b25_p1_contracts.py", "--negative-control"],
+        [
+            sys.executable,
+            "scripts/ci/validate_b25_p1_contracts.py",
+            "--negative-control",
+        ],
         "B25_P1_CONTRACT_VALIDATION_PASS",
     )
     _run_validator(
-        [sys.executable, "scripts/ci/validate_b25_p1_trust_drift.py", "--negative-control"],
+        [
+            sys.executable,
+            "scripts/ci/validate_b25_p1_trust_drift.py",
+            "--negative-control",
+        ],
         "B25_P1_TRUST_DRIFT_VALIDATION_PASS",
     )
     _run_validator(
-        [sys.executable, "scripts/ci/validate_b25_p2_canonicalization.py", "--negative-control"],
+        [
+            sys.executable,
+            "scripts/ci/validate_b25_p2_canonicalization.py",
+            "--negative-control",
+        ],
         "B25_P2_CANONICALIZATION_VALIDATION_PASS",
     )
     _run_validator(
-        [sys.executable, "scripts/ci/validate_b25_p3_text_disposition.py", "--negative-control"],
+        [
+            sys.executable,
+            "scripts/ci/validate_b25_p3_text_disposition.py",
+            "--negative-control",
+        ],
         "B25_P3_TEXT_DISPOSITION_VALIDATION_PASS",
     )
     return 2, 1, 1
@@ -477,7 +515,9 @@ def validate_meta_negative_controls() -> int:
             raise B25P4ValidationError(f"negative control accepted: {kwargs}")
         controls += 1
 
-    refused = _resolve(source_domain="budget_dto", source_field_path="total_budget", raw_value=1000.0)
+    refused = _resolve(
+        source_domain="budget_dto", source_field_path="total_budget", raw_value=1000.0
+    )
     if refused.reason_code != MONEY_SOURCE_NOT_AUTHORITATIVE_REASON:
         raise B25P4ValidationError("typed refusal reason mutation control failed")
     controls += 1
@@ -501,7 +541,9 @@ def validate_all() -> None:
     meta_negative = validate_meta_negative_controls()
 
     print("B25_P4_MONEY_AUTHORITY_VALIDATION_PASS")
-    print(f"money_authority_fields_checked={len(discover_authoritative_money_fields())}")
+    print(
+        f"money_authority_fields_checked={len(discover_authoritative_money_fields())}"
+    )
     print(f"minor_unit_source_mappings_checked={source_mappings}")
     print(f"approved_integer_source_controls_passed={positive}")
     print(f"dto_float_rejection_controls_passed={dto_float}")

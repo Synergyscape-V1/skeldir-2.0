@@ -18,7 +18,10 @@ from app.trust.schema_versions import validate_schema_canonicalization_compatibi
 
 ROOT = Path(__file__).resolve().parents[3]
 CONTRACT_DIR = ROOT / "contracts/trust-api"
-TRUST_SCHEMA_PATH = CONTRACT_DIR / "trust-envelope.v1.yaml"
+TRUST_SCHEMA_PATHS = {
+    "trust-envelope-schema-v1": CONTRACT_DIR / "trust-envelope.v1.yaml",
+    "trust-envelope-schema-v2": CONTRACT_DIR / "trust-envelope.v2.yaml",
+}
 CANONICALIZATION_PROFILE = "RFC8785-JCS-Skeldir-v1"
 HASH_ALGORITHM = "sha-256"
 JSON_SAFE_INTEGER_MAX = 9_007_199_254_740_991
@@ -35,8 +38,14 @@ def _read_schema(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _expanded_trust_schema() -> dict[str, Any]:
-    root_schema = _read_schema(TRUST_SCHEMA_PATH)
+def _expanded_trust_schema(schema_version: str) -> dict[str, Any]:
+    try:
+        schema_path = TRUST_SCHEMA_PATHS[schema_version]
+    except KeyError as exc:
+        raise CanonicalizationError(
+            f"schema_version_unsupported:{schema_version}"
+        ) from exc
+    root_schema = _read_schema(schema_path)
 
     def expand(value: Any) -> Any:
         if isinstance(value, dict):
@@ -63,15 +72,18 @@ def _expanded_trust_schema() -> dict[str, Any]:
     return expanded
 
 
-@lru_cache(maxsize=1)
-def _schema_validator() -> Draft202012Validator:
+@lru_cache(maxsize=2)
+def _schema_validator(schema_version: str) -> Draft202012Validator:
     """Compile immutable contract validation authority once per worker."""
-    return Draft202012Validator(_expanded_trust_schema())
+    return Draft202012Validator(_expanded_trust_schema(schema_version))
 
 
 def validate_envelope_schema(payload: dict[str, Any]) -> None:
     """Validate a TrustEnvelope payload against P1 contract authority."""
-    errors = sorted(_schema_validator().iter_errors(payload), key=str)
+    schema_version, _ = validate_schema_canonicalization_compatibility(
+        payload.get("schema_version"), payload.get("canonicalization_version")
+    )
+    errors = sorted(_schema_validator(schema_version).iter_errors(payload), key=str)
     if errors:
         first = errors[0]
         path = ".".join(str(part) for part in first.absolute_path)

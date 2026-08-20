@@ -22,6 +22,7 @@ from app.trust.schema_verification import (
     validate_signature_metadata,
 )
 from app.trust.signing import TrustEnvelopeSigningError, verify_ed25519_signature
+from app.trust.schema_versions import VersionRegistryError, validate_schema_version
 
 
 VerificationStatus = Literal["verified", "rejected"]
@@ -36,6 +37,7 @@ _FORBIDDEN_REASON_TOKENS = (
     "private",
     "secret",
 )
+_V2_TEMPORAL_FIELDS = frozenset({"data_freshness_bound", "evidence_age_status"})
 
 
 @dataclass(frozen=True)
@@ -97,11 +99,40 @@ def _reject(
 
 def _safe_reason_code(exc: Exception) -> str:
     candidate = str(exc).strip().lower()
+    for governed_prefix in (
+        "schema_version_unsupported",
+        "canonicalization_version_unsupported",
+        "canonicalization_version_incompatible",
+    ):
+        if candidate.startswith(f"{governed_prefix}:"):
+            return governed_prefix
     if not _SAFE_REASON_CODE_RE.fullmatch(candidate):
         return "verification_failed"
     if any(token in candidate for token in _FORBIDDEN_REASON_TOKENS):
         return "verification_failed"
     return candidate
+
+
+def _version_shape_rejection(payload: dict[str, Any]) -> str | None:
+    """Classify version/required-shape mismatch before generic validation.
+
+    This makes an attempted v2-as-v1 downgrade observable instead of allowing
+    JSON Schema's generic ``additionalProperties`` error to hide the cause.
+    """
+
+    try:
+        schema_version = validate_schema_version(payload.get("schema_version"))
+    except VersionRegistryError as exc:
+        return str(exc)
+    temporal = payload.get("evidence_temporal_boundary")
+    if not isinstance(temporal, dict):
+        return None
+    present = _V2_TEMPORAL_FIELDS.intersection(temporal)
+    if schema_version == "trust-envelope-schema-v1" and present:
+        return "schema_downgrade_rejected"
+    if schema_version == "trust-envelope-schema-v2" and present != _V2_TEMPORAL_FIELDS:
+        return "schema_version_contract_mismatch"
+    return None
 
 
 def _utc_parse(value: Any, field: str) -> datetime:
@@ -146,6 +177,8 @@ def verify_trust_envelope(
     if not isinstance(payload, dict):
         return _reject(None, "payload_not_object")
     candidate = deepcopy(payload)
+    if version_rejection := _version_shape_rejection(candidate):
+        return _reject(candidate, version_rejection)
     try:
         validate_signature_metadata(candidate)
         expected_semantic_hash = compute_semantic_truth_hash(candidate)

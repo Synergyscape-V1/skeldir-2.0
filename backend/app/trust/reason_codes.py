@@ -41,6 +41,7 @@ class ReasonCode(StrEnum):
 
     # Compatibility codes already present in P1/P5 contracts or examples.
     SCHEMA_DOWNGRADE_REJECTED = "schema_downgrade_rejected"
+    SCHEMA_VERSION_CONTRACT_MISMATCH = "schema_version_contract_mismatch"
     CANONICAL_TIMESTAMP_REJECTED = "canonical_timestamp_rejected"
     HUMAN_WORKFLOW_STATE_REJECTED = "human_workflow_state_rejected"
     SUBJECT_AUTHORITY_REJECTED = "subject_authority_rejected"
@@ -404,6 +405,12 @@ REASON_CODE_REGISTRY: dict[ReasonCode, ReasonCodeDefinition] = {
     ReasonCode.SCHEMA_DOWNGRADE_REJECTED: _definition(
         ReasonCode.SCHEMA_DOWNGRADE_REJECTED,
         source_predicate="schema_version_is_deprecated_or_downgraded",
+        envelope_status="refused",
+        canonicalization="fail_closed_before_success_canonicalization",
+    ),
+    ReasonCode.SCHEMA_VERSION_CONTRACT_MISMATCH: _definition(
+        ReasonCode.SCHEMA_VERSION_CONTRACT_MISMATCH,
+        source_predicate="declared_schema_version_and_required_shape_disagree",
         envelope_status="refused",
         canonicalization="fail_closed_before_success_canonicalization",
     ),

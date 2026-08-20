@@ -59,6 +59,35 @@ def _adjudicate_single(
         failures,
         f"{label}_topology_mode_mismatch",
     )
+    authority_negative = summary.get("authority_negative_control")
+    if label == "corouted" and isinstance(authority_negative, dict):
+        _require(
+            summary.get("contention_mode") == "real",
+            failures,
+            "corouted_contention_mode_not_real",
+        )
+        _require(
+            _int(summary.get("event_count")) == required_event_count,
+            failures,
+            "corouted_event_count_mismatch",
+        )
+        _require(
+            authority_negative.get("rejected") is True,
+            failures,
+            "corouted_shared_worker_not_rejected",
+        )
+        _require(
+            authority_negative.get("reason")
+            == "bayesian_worker_boot_topology_probe_failed",
+            failures,
+            "corouted_rejection_not_c6_authority_guard",
+        )
+        _require(
+            authority_negative.get("worker_database_identity") == "app_user",
+            failures,
+            "corouted_rejection_identity_not_app_user",
+        )
+        return failures, None
     _require(
         summary.get("timing_boundary") == "enqueue_to_durable_commit",
         failures,

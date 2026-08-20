@@ -27,8 +27,8 @@ canonicalization_versions:
     serializer_boundary_policy: only backend/app/trust/canonicalization.py may emit canonical bytes
     compatible_schema_versions:
       - trust-envelope-schema-v1
+      - trust-envelope-schema-v2
     forbidden_fallbacks:
       - latest
       - default
       - schema_only
-

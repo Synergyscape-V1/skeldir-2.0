@@ -1,0 +1,29 @@
+taxonomy_version: b24-fit-lifecycle-v1
+fit_terminal:
+  - succeeded
+  - failed
+  - timeout
+  - worker_lost
+  - fallback_only
+  - cancelled
+outbox_terminal:
+  - completed
+  - failed_terminal
+  - dead_lettered
+  - cancelled
+  - expired
+  - superseded
+  - quarantined
+outbox_active:
+  - pending
+  - dispatching
+  - dispatched
+  - leased
+  - running
+  - failed_retryable
+  - stale_recovered
+reuse_policy:
+  fit_identity: tenant_model_window_source_snapshot_hash
+  attempt_identity: outbox_attempt_id
+  terminal_fit_reuse_dispatches: false
+  terminal_outbox_resurrection: forbidden

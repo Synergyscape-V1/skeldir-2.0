@@ -119,7 +119,14 @@ async def lease_debounced_dirty_candidates(
                         max(observed_at) AS last_observed_at
                     FROM public.b24_dirty_events
                     WHERE tenant_id = :tenant_id
-                      AND status IN ('pending', 'authority_retry_ready')
+                      AND (
+                          status IN ('pending', 'authority_retry_ready')
+                          OR (
+                              status = 'leased'
+                              AND lease_expires_at IS NOT NULL
+                              AND lease_expires_at <= now()
+                          )
+                      )
                     GROUP BY
                         tenant_id,
                         model_type,
@@ -143,7 +150,14 @@ async def lease_debounced_dirty_candidates(
                      AND keys.source_window_start = dirty.source_window_start
                      AND keys.source_window_end = dirty.source_window_end
                      AND keys.source_snapshot_hash IS NOT DISTINCT FROM dirty.source_snapshot_hash
-                    WHERE dirty.status IN ('pending', 'authority_retry_ready')
+                    WHERE (
+                        dirty.status IN ('pending', 'authority_retry_ready')
+                        OR (
+                            dirty.status = 'leased'
+                            AND dirty.lease_expires_at IS NOT NULL
+                            AND dirty.lease_expires_at <= now()
+                        )
+                    )
                     ORDER BY dirty.observed_at ASC, dirty.id ASC
                     FOR UPDATE OF dirty SKIP LOCKED
                 ),

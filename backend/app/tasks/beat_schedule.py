@@ -47,9 +47,14 @@ def _bayesian_recovery_interval_seconds() -> float:
     return float(_positive_int_env("B24_P9_RECOVERY_RECONCILE_INTERVAL_SECONDS", 60))
 
 
+def _bayesian_planner_interval_seconds() -> float:
+    return float(_positive_int_env("B24_FIT_PLANNER_INTERVAL_SECONDS", 60))
+
+
 def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
     interval = _refresh_interval_seconds()
     recovery_interval = _bayesian_recovery_interval_seconds()
+    planner_interval = _bayesian_planner_interval_seconds()
     schedule: Dict[str, Dict[str, Any]] = {
         "refresh-matviews-every-5-min": {
             "task": "app.tasks.matviews.pulse_matviews_global",
@@ -83,6 +88,24 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "options": {"expires": 600},
         },
     }
+    if os.getenv("SKELDIR_B24_DISABLE_FIT_PLANNER_JOB") != "1":
+        schedule["b24-fit-planner"] = {
+            "task": "app.tasks.bayesian.plan_due_fit_intents",
+            "schedule": planner_interval,
+            "options": {
+                "expires": max(int(planner_interval), 1) * 2,
+                "queue": QUEUE_BAYESIAN,
+                "routing_key": f"{QUEUE_BAYESIAN}.task",
+            },
+            "kwargs": {
+                "tenant_batch_size": _positive_int_env(
+                    "B24_FIT_PLANNER_TENANT_BATCH_SIZE", 25
+                ),
+                "candidate_limit": _positive_int_env(
+                    "B24_FIT_PLANNER_CANDIDATE_LIMIT", 25
+                ),
+            },
+        }
     if os.getenv("SKELDIR_B24_P9_DISABLE_RECOVERY_RECONCILER_JOB") != "1":
         schedule["b24-p9-bayesian-recovery-reconciler"] = {
             "task": "app.tasks.bayesian.reconcile_fit_recovery_wakeups",

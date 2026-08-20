@@ -121,7 +121,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "trust-envelope.v1.yaml"
+                $ref: "trust-envelope.v2.yaml"
                 x-max-serialized-bytes: 65536
         "400":
           $ref: "#/components/responses/TrustError"
@@ -221,7 +221,7 @@ paths:
                     type: array
                     maxItems: 2
                     items:
-                      $ref: "trust-envelope.v1.yaml"
+                      $ref: "trust-envelope.v2.yaml"
                     x-max-serialized-item-bytes: 65536
                   page:
                     type: object
@@ -316,7 +316,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "trust-envelope.v1.yaml"
+              $ref: "trust-envelope.v2.yaml"
       responses:
         "200":
           description: Future verification result.

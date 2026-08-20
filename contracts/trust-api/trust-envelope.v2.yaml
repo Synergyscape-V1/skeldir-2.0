@@ -1,0 +1,398 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://schemas.skeldir.local/trust-api/trust-envelope.v2.yaml
+title: B2.5-P1 TrustEnvelope
+type: object
+additionalProperties: false
+required:
+- envelope_version
+- schema_version
+- canonicalization_version
+- envelope_id
+- tenant_id_hash
+- audience_binding
+- subject_authority
+- subject_type
+- subject_ref
+- subject_ref_hash
+- truth_type
+- truth_authority
+- confidence_metadata
+- provenance_chain
+- data_completeness_status
+- benchmark_metadata
+- policy_action_authority
+- fallback_applied
+- fallback_reason
+- evidence_temporal_boundary
+- audit_ref
+- audit_hash
+- semantic_truth_hash
+- artifact_ref
+- artifact_hash
+- signature_hash
+- signature
+- signing_algorithm
+- signing_key_id
+- created_at
+- valid_until
+- untrusted_display_data
+properties:
+  envelope_version:
+    type: string
+    const: trust-envelope-v1
+  schema_version:
+    type: string
+    const: trust-envelope-schema-v2
+  canonicalization_version:
+    type: string
+    const: trust-canonical-json-v1
+  semantic_unicode_probe:
+    type: string
+    const: Café-東京
+    description: Narrow fixture-only semantic probe used to prove UTF-8 bytes participate in B2.5-P2 canonical hash identity.
+  envelope_id:
+    type: string
+    pattern: ^env_[0-9a-f]{32}$
+  tenant_id_hash:
+    $ref: '#/$defs/sha256Tagged'
+  audience_binding:
+    $ref: audience-binding.schema.json
+  subject_authority:
+    $ref: subject-authority.schema.json
+  subject_type:
+    type: string
+    enum:
+    - revenue_claim
+    - match_verdict
+    - attribution_result
+    - reconciliation_discrepancy
+    - confidence_projection
+  subject_ref:
+    type: string
+    pattern: ^urn:skeldir:(revenue_claim|match_verdict|attribution_result|reconciliation_discrepancy|confidence_projection):[A-Za-z0-9._:-]+$
+  subject_ref_hash:
+    $ref: '#/$defs/sha256Tagged'
+  truth_type:
+    type: string
+    enum:
+    - deterministic_revenue_verification
+    - deterministic_match_verdict
+    - deterministic_attribution
+    - confidence_projection_context
+    - degraded_or_unavailable_truth
+  truth_authority:
+    type: object
+    additionalProperties: false
+    required:
+    - authority_class
+    - source_snapshot_hash
+    - source_system
+    properties:
+      authority_class:
+        type: string
+        enum:
+        - deterministic_machine_fact
+        - deterministic_projection
+        - confidence_metadata_projection
+        - refusal_or_degraded_state
+      source_snapshot_hash:
+        $ref: '#/$defs/sha256Tagged'
+      source_system:
+        type: string
+        enum:
+        - skeldir_b23_match_engine
+        - skeldir_b21_attribution
+        - skeldir_b24_confidence_projection
+  deterministic_verification_status:
+    type: string
+    enum:
+    - verified
+    - not_verified
+    - disputed
+    - insufficient_evidence
+    - unavailable
+    - degraded
+  match_verdict_status:
+    type: string
+    enum:
+    - matched
+    - unmatched
+    - ambiguous
+    - duplicate_candidate
+    - provider_conflict
+    - insufficient_evidence
+    - unavailable
+  verified_revenue_minor:
+    $ref: '#/$defs/nonNegativeJsonSafeInteger'
+  currency:
+    type: string
+    pattern: ^[A-Z]{3}$
+  discrepancy_class:
+    type: string
+    enum:
+    - none
+    - amount_mismatch
+    - currency_mismatch
+    - missing_provider_record
+    - missing_platform_record
+    - duplicate_provider_candidate
+    - provider_conflict
+    - insufficient_evidence
+    - unavailable
+  attribution_model:
+    type: string
+    enum:
+    - first_touch
+    - last_touch
+    - linear
+    - time_decay
+    - not_applicable
+  model_assumption:
+    type: string
+    enum:
+    - deterministic_rule_based
+    - deterministic_heuristic_non_causal
+    - bayesian_context_non_authoritative
+    - not_applicable
+  causal_status:
+    type: string
+    enum:
+    - non_causal_deterministic_heuristic
+    - causal_not_estimated
+    - causal_unavailable
+  confidence_metadata:
+    $ref: confidence-metadata.schema.json
+  provenance_chain:
+    $ref: provenance-chain.schema.json
+  data_completeness_status:
+    type: string
+    enum:
+    - complete
+    - partial
+    - insufficient_evidence
+    - unavailable
+    - degraded
+  benchmark_metadata:
+    $ref: benchmark-metadata.schema.json
+  policy_action_authority:
+    $ref: policy-authority.schema.json
+  fallback_applied:
+    type: boolean
+  fallback_reason:
+    type:
+    - string
+    - 'null'
+    enum:
+    - none
+    - confidence_unavailable
+    - confidence_authority_indeterminate
+    - unsupported_financial_context
+    - diagnostics_failed
+    - source_snapshot_stale
+    - artifact_pruned
+    - artifact_unavailable
+    - benchmark_unavailable
+    - policy_denied
+    - policy_engine_not_available
+    - money_amount_exceeds_json_safe_integer
+    - money_source_not_authoritative
+    - deterministic_evidence_unavailable
+    - provider_text_quarantined
+    - null
+  evidence_temporal_boundary:
+    $ref: evidence-temporal-boundary.v2.schema.json
+  audit_ref:
+    $ref: '#/$defs/auditRef'
+  audit_hash:
+    $ref: '#/$defs/sha256Tagged'
+  semantic_truth_hash:
+    $ref: '#/$defs/sha256Tagged'
+  artifact_ref:
+    type:
+    - string
+    - 'null'
+    pattern: ^urn:skeldir:artifact:[A-Za-z0-9._:-]+$
+  artifact_hash:
+    $ref: '#/$defs/nullableSha256Tagged'
+  signature_hash:
+    $ref: '#/$defs/sha256Tagged'
+  signature:
+    type: string
+    minLength: 16
+    maxLength: 2048
+  signing_algorithm:
+    type: string
+    enum:
+    - ed25519
+    - rsa_pss_sha256
+    - ecdsa_p256_sha256
+  signing_key_id:
+    type: string
+    pattern: ^kid:[A-Za-z0-9._:-]{8,128}$
+  created_at:
+    $ref: '#/$defs/utcTimestamp'
+  valid_until:
+    $ref: '#/$defs/utcTimestamp'
+  untrusted_display_data:
+    $ref: text-disposition.schema.json
+$defs:
+  sha256Tagged:
+    type: string
+    pattern: ^sha256:[0-9a-f]{64}$
+  nullableSha256Tagged:
+    anyOf:
+    - $ref: '#/$defs/sha256Tagged'
+    - type: 'null'
+  utcTimestamp:
+    type: string
+    pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$
+  auditRef:
+    type: string
+    pattern: ^urn:skeldir:audit:[A-Za-z0-9._:-]+$
+  nonNegativeJsonSafeInteger:
+    type: integer
+    minimum: 0
+    maximum: 9007199254740991
+  signedJsonSafeInteger:
+    type: integer
+    minimum: -9007199254740991
+    maximum: 9007199254740991
+allOf:
+- if:
+    properties:
+      subject_type:
+        const: revenue_claim
+    required:
+    - subject_type
+  then:
+    required:
+    - deterministic_verification_status
+    - verified_revenue_minor
+    - currency
+    not:
+      anyOf:
+      - required:
+        - match_verdict_status
+      - required:
+        - discrepancy_class
+      - required:
+        - attribution_model
+      - required:
+        - model_assumption
+      - required:
+        - causal_status
+- if:
+    properties:
+      subject_type:
+        const: match_verdict
+    required:
+    - subject_type
+  then:
+    required:
+    - match_verdict_status
+    not:
+      anyOf:
+      - required:
+        - deterministic_verification_status
+      - required:
+        - verified_revenue_minor
+      - required:
+        - currency
+      - required:
+        - discrepancy_class
+      - required:
+        - attribution_model
+      - required:
+        - model_assumption
+      - required:
+        - causal_status
+- if:
+    properties:
+      subject_type:
+        const: attribution_result
+    required:
+    - subject_type
+  then:
+    required:
+    - attribution_model
+    - model_assumption
+    - causal_status
+    not:
+      anyOf:
+      - required:
+        - deterministic_verification_status
+      - required:
+        - match_verdict_status
+      - required:
+        - verified_revenue_minor
+      - required:
+        - currency
+      - required:
+        - discrepancy_class
+- if:
+    properties:
+      subject_type:
+        const: reconciliation_discrepancy
+    required:
+    - subject_type
+  then:
+    required:
+    - discrepancy_class
+    not:
+      anyOf:
+      - required:
+        - deterministic_verification_status
+      - required:
+        - match_verdict_status
+      - required:
+        - verified_revenue_minor
+      - required:
+        - currency
+      - required:
+        - attribution_model
+      - required:
+        - model_assumption
+      - required:
+        - causal_status
+- if:
+    properties:
+      subject_type:
+        const: confidence_projection
+    required:
+    - subject_type
+  then:
+    not:
+      anyOf:
+      - required:
+        - deterministic_verification_status
+      - required:
+        - match_verdict_status
+      - required:
+        - verified_revenue_minor
+      - required:
+        - currency
+      - required:
+        - discrepancy_class
+      - required:
+        - attribution_model
+      - required:
+        - model_assumption
+      - required:
+        - causal_status
+- if:
+    properties:
+      truth_type:
+        const: degraded_or_unavailable_truth
+    required:
+    - truth_type
+  then:
+    properties:
+      fallback_applied:
+        const: true
+    not:
+      anyOf:
+      - required:
+        - verified_revenue_minor
+      - required:
+        - currency
+

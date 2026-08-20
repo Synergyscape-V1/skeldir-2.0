@@ -286,7 +286,7 @@ def validate_bayesian_worker_boot_probe(
         "P9 Bayesian task module must register boot probe signal only when tasks are registered",
     )
     _require(
-        tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 8,
+        tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 9,
         "P9 Bayesian task entries must fail closed on missing boot proof",
     )
     for token in (
@@ -308,7 +308,7 @@ def validate_bayesian_worker_boot_probe(
             f"P9 Bayesian task registration still depends on topology env: {forbidden}",
         )
     _require(
-        tasks.count("@_bayesian_task(") >= 8,
+        tasks.count("@_bayesian_task(") >= 9,
         "P9 Bayesian task entries must use the structural task-registration gate",
     )
     _require(
@@ -808,7 +808,7 @@ def validate_tests_and_ci(
         "test_b24_p9_postgres_runtime.py",
         "test_b24_p9_raw_driver_postgres_runtime.py",
         "SKELDIR_B24_P9_REQUIRE_DB_PROOFS",
-        "EXPECTED_RUNTIME_DB_USER: app_user",
+        "EXPECTED_RUNTIME_DB_USER: app_worker",
         "SKELDIR_CELERY_WORKER_ROLE",
         "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",
         "SKELDIR_BAYESIAN_DB_TOPOLOGY",
@@ -1482,7 +1482,7 @@ def run_negative_controls() -> None:
             "directive_xviii_runtime_user_binding_removed",
             lambda: validate_tests_and_ci(
                 workflow_text=_read(WORKFLOW).replace(
-                    "      EXPECTED_RUNTIME_DB_USER: app_user\n",
+                    "      EXPECTED_RUNTIME_DB_USER: app_worker\n",
                     "",
                 ),
                 b07_p5_timeout_test_text=_read(B07_P5_TIMEOUT_RUNTIME_TEST),

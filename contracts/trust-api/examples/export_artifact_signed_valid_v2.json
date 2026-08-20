@@ -83,7 +83,7 @@
           "source_snapshot_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
         }
       ],
-      "schema_version": "trust-envelope-schema-v1",
+      "schema_version": "trust-envelope-schema-v2",
       "semantic_truth_hash": "sha256:d7a44033d48f24dabdb1cbeb336d89b43dd62ada036f7a813b463070ca6f97dc",
       "signature": "ed25519:lE_t4vBZhg3IrwMsD_px43k2Tj2DgEdErHo5FXuJVMBMVbbVG2t9zm9PxevO1GzBUauITLTI9moSZXBVLUAYBQ",
       "signature_hash": "sha256:c34b4859035272ce5f18e6752a140a92fa0ff1beb63e90e2e7ffeeeb0803407b",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from uuid import uuid4
@@ -18,6 +19,18 @@ from app.bayesian.tenant_context import current_tenant_guc
 
 class BayesianWorkerBootTopologyProbeError(RuntimeError):
     """Raised when the worker DB session boundary cannot be physically proven."""
+
+
+def _assert_worker_database_identity(conn) -> None:
+    """Bind executable Bayesian workers to the non-web database principal."""
+
+    if os.getenv("SKELDIR_CELERY_WORKER_ROLE", "").strip().lower() != "bayesian":
+        return
+    database_user = str(conn.execute(text("SELECT current_user")).scalar_one())
+    if database_user != "app_worker":
+        raise BayesianWorkerBootTopologyProbeError(
+            "bayesian_worker_database_identity_required"
+        )
 
 
 @dataclass(frozen=True)
@@ -97,6 +110,7 @@ def run_bayesian_worker_boot_topology_probe(
     lock_key = int(poison_uuid.int % 2_147_483_647) or 1
     try:
         with worker_engine.connect() as conn:
+            _assert_worker_database_identity(conn)
             old_pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
             conn.execute(
                 text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
@@ -122,6 +136,7 @@ def run_bayesian_worker_boot_topology_probe(
         )
 
         with worker_engine.connect() as conn:
+            _assert_worker_database_identity(conn)
             new_pid = int(conn.execute(text("SELECT pg_backend_pid()")).scalar_one())
             if new_pid == old_pid:
                 raise BayesianWorkerBootTopologyProbeError(

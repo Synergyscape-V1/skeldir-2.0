@@ -64,7 +64,7 @@ FIT_CLAIM = ROOT / "backend/app/bayesian/fit_claim.py"
 BUILDER = ROOT / "backend/app/trust/builder.py"
 POLICY = ROOT / "backend/app/confidence_projection/policy.py"
 CANONICAL_SCHEMA = ROOT / "db/schema/canonical_schema.sql"
-TEMPORAL_SCHEMA = ROOT / "contracts/trust-api/evidence-temporal-boundary.schema.json"
+TEMPORAL_SCHEMA = ROOT / "contracts/trust-api/evidence-temporal-boundary.v2.schema.json"
 HASH_MANIFEST = ROOT / "contracts/trust-api/hash-domain-manifest.v1.yaml"
 P13_SUITE = ROOT / "backend/tests/trust/test_b25_p13_e2e_trust_closure.py"
 C3_VALIDATOR = ROOT / "scripts/ci/validate_b25_p13_confidence_truth.py"
@@ -227,7 +227,9 @@ def validate_skew_tolerance_boundary(tolerance: int | None = None) -> int:
     """The tolerance is a real boundary, exercised on both sides of it."""
 
     seconds = EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS if tolerance is None else tolerance
-    _require(isinstance(seconds, int) and seconds > 0, "skew_tolerance_not_positive_int")
+    _require(
+        isinstance(seconds, int) and seconds > 0, "skew_tolerance_not_positive_int"
+    )
     _require(seconds <= 3600, f"skew_tolerance_implausibly_wide:{seconds}")
     now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
     inside = now + timedelta(seconds=seconds - 1)
@@ -247,9 +249,7 @@ def validate_database_mirrors_tolerance(migration: str | None = None) -> int:
     """Producer and consumer must enforce ONE tolerance, not two."""
 
     text = migration if migration is not None else C5_MIGRATION.read_text("utf-8")
-    match = re.search(
-        r"EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS\s*=\s*(\d+)", text
-    )
+    match = re.search(r"EVIDENCE_FUTURE_SKEW_TOLERANCE_SECONDS\s*=\s*(\d+)", text)
     _require(match is not None, "migration_declares_no_skew_tolerance")
     assert match is not None
     _require(
@@ -437,7 +437,9 @@ def validate_evidence_epoch_is_source_read(read_model_module: Any = None) -> int
 # ---------------------------------------------------------------------------
 
 
-def _not_null_columns_without_default(table: str, schema: str | None = None) -> set[str]:
+def _not_null_columns_without_default(
+    table: str, schema: str | None = None
+) -> set[str]:
     """Derive, from the canonical schema, what an INSERT is REQUIRED to supply."""
 
     text = schema if schema is not None else CANONICAL_SCHEMA.read_text("utf-8")
@@ -496,7 +498,8 @@ def validate_terminal_truth_enforcement(migration: str | None = None) -> int:
 
     text = migration if migration is not None else C5_MIGRATION.read_text("utf-8")
     _require(
-        "trg_b24_terminal_fit_truth" in text and "b24_enforce_terminal_fit_truth" in text,
+        "trg_b24_terminal_fit_truth" in text
+        and "b24_enforce_terminal_fit_truth" in text,
         "terminal_truth_trigger_absent",
     )
     _require(
@@ -563,9 +566,7 @@ def validate_freshness_contract(schema: str | None = None) -> int:
     required = set(document.get("required", []))
     for field in ("data_freshness_bound", "evidence_age_status"):
         _require(field in required, f"freshness_semantics_field_optional:{field}")
-    bound_enum = set(
-        document["properties"]["data_freshness_bound"].get("enum") or []
-    )
+    bound_enum = set(document["properties"]["data_freshness_bound"].get("enum") or [])
     _require(
         bound_enum == {"exact", "at_least_ceiling", "unavailable"},
         f"freshness_bound_enum_drift:{sorted(bound_enum)}",
@@ -624,9 +625,7 @@ def validate_composition_binding(suite: str | None = None) -> int:
         "P13-C5-04-absolute-age-explicitly-bounded",
         "P13-C5-05-adversarial-class-matrix",
     ):
-        _require(
-            f'"{case_id}"' in text, f"c5_journey_removed_from_manifest:{case_id}"
-        )
+        _require(f'"{case_id}"' in text, f"c5_journey_removed_from_manifest:{case_id}")
         _require(
             f'executed.append("{case_id}")' in text,
             f"c5_journey_declared_but_never_executed:{case_id}",
@@ -681,7 +680,10 @@ def validate_counters_are_runtime_derived(
         emitted |= set(re.findall(r'print\(f"(p13_[a-z0-9_]+)=', body))
         emitted |= set(re.findall(r'"(p13_[a-z0-9_]+)",', body))
     orphaned = sorted(asserted - emitted)
-    _require(not orphaned, "workflow_asserts_counters_the_suite_never_emits:" + ",".join(orphaned))
+    _require(
+        not orphaned,
+        "workflow_asserts_counters_the_suite_never_emits:" + ",".join(orphaned),
+    )
     return len(counters)
 
 
@@ -689,7 +691,9 @@ def validate_reuse_preserves_terminal_evidence(fit_claim: str | None = None) -> 
     """Same-snapshot reuse must not re-date a finished observation."""
 
     source = fit_claim if fit_claim is not None else FIT_CLAIM.read_text("utf-8")
-    conflict = source[source.index("ON CONFLICT (") : source.index("RETURNING id, status")]
+    conflict = source[
+        source.index("ON CONFLICT (") : source.index("RETURNING id, status")
+    ]
     for column in (
         "source_read_started_at",
         "source_read_completed_at",
@@ -730,62 +734,95 @@ E2E = "backend/tests/trust/test_b25_p13_e2e_trust_closure.py"
 CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
     # ---- C3: confidence authority and semantic falsifiers -------------------
     ControlClassification(
-        "NC-C3-01", BEHAVIORAL, CAUSAL, f"{C3}::validate_source_authority",
+        "NC-C3-01",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C3}::validate_source_authority",
         "A forbidden relation is appended to the real projection SQL constant "
         "and the real relation parser executes over it, raising before any "
         "database round-trip. Nothing about this is a string comparison.",
     ),
     ControlClassification(
-        "NC-C3-02", BEHAVIORAL, CAUSAL, f"{C3}::validate_subject_conditioned_fields",
+        "NC-C3-02",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C3}::validate_subject_conditioned_fields",
         "The real field-source registry object is swapped for the wrong "
         "subject's registry and the real validator executes against it, so the "
         "control observes a genuine authority decision rather than text.",
     ),
     ControlClassification(
-        "NC-C3-03", BEHAVIORAL, SOURCE, f"{C3}::validate_source_authority",
+        "NC-C3-03",
+        BEHAVIORAL,
+        SOURCE,
+        f"{C3}::validate_source_authority",
         "Fail-open freshness is runtime behaviour, but this control mutates the "
         "reader's source text. It is a deletion tripwire; the behaviour itself "
         "is proven by executing the real freshness classifier.",
         behavioral_backstop=f"{C4}::validate_historical_behavior",
     ),
     ControlClassification(
-        "NC-C3-04", BEHAVIORAL, CAUSAL, f"{C3}::validate_source_authority",
+        "NC-C3-04",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C3}::validate_source_authority",
         "A real forbidden JOIN is added to the real SQL and the production "
         "authority parser runs over it; the refusal is observed, not asserted.",
     ),
     ControlClassification(
-        "NC-C3-05", BEHAVIORAL, CAUSAL, f"{C3}::classify_confidence",
+        "NC-C3-05",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C3}::classify_confidence",
         "The production classifier is invoked with a genuinely multi-currency "
         "input and its typed refusal reason is read from the returned decision.",
     ),
     ControlClassification(
-        "NC-C3-06", BEHAVIORAL, CAUSAL, f"{C3}::validate_reason_truth",
+        "NC-C3-06",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C3}::validate_reason_truth",
         "A false reason mapping is passed into the real reason-truth validator, "
         "which executes the same comparison the runtime performs.",
     ),
     ControlClassification(
-        "NC-C3-07", BEHAVIORAL, CAUSAL, f"{C3}::_confidence_projection_metadata",
+        "NC-C3-07",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C3}::_confidence_projection_metadata",
         "The production metadata projection is executed over a pruned-artifact "
         "projection and the emitted confidence status is read back.",
     ),
     ControlClassification(
-        "NC-C3-08", BEHAVIORAL, CAUSAL, f"{C3}::validate_source_authority",
+        "NC-C3-08",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C3}::validate_source_authority",
         "The real subject-authority definition is widened with an extra table "
         "and the real validator executes against the poisoned object.",
     ),
     ControlClassification(
-        "NC-C3-09", STATIC, SOURCE, f"{C3}::validate_source_authority",
+        "NC-C3-09",
+        STATIC,
+        SOURCE,
+        f"{C3}::validate_source_authority",
         "Whether the read model calls the classifier is a call-topology "
         "property of the module, which is genuinely static: there is no runtime "
         "state in which the call both exists and does not exist.",
     ),
     ControlClassification(
-        "NC-C3-10", STATIC, SOURCE, f"{C3}::validate_workflow_path_filters",
+        "NC-C3-10",
+        STATIC,
+        SOURCE,
+        f"{C3}::validate_ci_topology",
         "Workflow path-filter coverage is a property of the workflow file. No "
         "runtime execution can observe it; the artifact IS the invariant.",
     ),
     ControlClassification(
-        "NC-C3-11", BEHAVIORAL, SOURCE, f"{C3}::validate_bounded_read",
+        "NC-C3-11",
+        BEHAVIORAL,
+        SOURCE,
+        f"{C3}::validate_bounded_read",
         "Exact-subject binding is runtime behaviour, and this control mutates "
         "SQL text. The runtime proof is the wrong-tenant journey, where an "
         "RLS-scoped exact-id read returns nothing and cannot distinguish "
@@ -793,7 +830,10 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         behavioral_backstop=f"{E2E}::P13-G2-wrong-tenant-no-existence-leak",
     ),
     ControlClassification(
-        "NC-C3-12", BEHAVIORAL, SOURCE, f"{C3}::validate_bounded_read",
+        "NC-C3-12",
+        BEHAVIORAL,
+        SOURCE,
+        f"{C3}::validate_bounded_read",
         "Absence of aggregation is runtime behaviour. The runtime proof is the "
         "read-only journey, which captures the statements the real route "
         "actually issues rather than reading the source that issues them.",
@@ -801,22 +841,34 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
     ),
     # ---- C4: confidence state and temporal authority ------------------------
     ControlClassification(
-        "NC-C4-01", BEHAVIORAL, CAUSAL, f"{C4}::validate_consumer",
+        "NC-C4-01",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C4}::validate_consumer",
         "The production classifier is executed over an evidence tuple with a "
         "genuine hole in it and its refusal is read from the decision object.",
     ),
     ControlClassification(
-        "NC-C4-02", BEHAVIORAL, CAUSAL, f"{C4}::validate_consumer",
+        "NC-C4-02",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C4}::validate_consumer",
         "Same execution path with the classification timestamp removed; the "
         "refusal is observed rather than asserted from source.",
     ),
     ControlClassification(
-        "NC-C4-03", BEHAVIORAL, CAUSAL, f"{C4}::validate_historical_behavior",
+        "NC-C4-03",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C4}::validate_historical_behavior",
         "The real projection decision runs over a fabricated-lineage row and "
         "must still fail closed; the returned reason code is checked exactly.",
     ),
     ControlClassification(
-        "NC-C4-04", BEHAVIORAL, SOURCE, f"{C4}::validate_producer_inventory",
+        "NC-C4-04",
+        BEHAVIORAL,
+        SOURCE,
+        f"{C4}::validate_producer_inventory",
         "That the producer binds the evidence hash to the source hash is "
         "runtime behaviour; this control mutates producer source text. The "
         "database now enforces the same identity, and the causal proof drives "
@@ -824,7 +876,10 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         behavioral_backstop=f"{E2E}::evidence_hash_not_source_hash",
     ),
     ControlClassification(
-        "NC-C4-05", BEHAVIORAL, SOURCE, f"{C4}::validate_temporal_truth",
+        "NC-C4-05",
+        BEHAVIORAL,
+        SOURCE,
+        f"{C4}::validate_temporal_truth",
         "Which column becomes the evidence epoch is runtime behaviour; this "
         "control mutates reader source text. The causal proof builds a real "
         "envelope whose fit completes two hours after the source read and "
@@ -832,24 +887,36 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         behavioral_backstop=f"{C5}::validate_evidence_epoch_is_source_read",
     ),
     ControlClassification(
-        "NC-C4-06", BEHAVIORAL, SOURCE, f"{C4}::validate_temporal_truth",
+        "NC-C4-06",
+        BEHAVIORAL,
+        SOURCE,
+        f"{C4}::validate_temporal_truth",
         "What freshness is measured from is runtime behaviour; this control "
         "mutates builder source text. The causal proof executes the real "
         "builder over four temporal regimes and reads the emitted boundary.",
         behavioral_backstop=f"{C5}::validate_wire_temporal_semantics",
     ),
     ControlClassification(
-        "NC-C4-07", BEHAVIORAL, CAUSAL, f"{C4}::validate_executable_authority",
+        "NC-C4-07",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C4}::validate_executable_authority",
         "A real forbidden JOIN is parsed by the production authority checker, "
         "which raises before any database round-trip.",
     ),
     ControlClassification(
-        "NC-C4-08", BEHAVIORAL, CAUSAL, f"{C4}::validate_consumer",
+        "NC-C4-08",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C4}::validate_consumer",
         "The production classifier is executed with an evidence hash that does "
         "not match the source snapshot hash and must refuse.",
     ),
     ControlClassification(
-        "NC-C4-09", BEHAVIORAL, SOURCE, f"{C4}::validate_freshness_lineage",
+        "NC-C4-09",
+        BEHAVIORAL,
+        SOURCE,
+        f"{C4}::validate_freshness_lineage",
         "That newer-fit lineage ignores the newer fit's status is runtime "
         "behaviour; this control mutates SQL text. The causal proof seeds a "
         "genuinely failed newer refit against a real database and requires the "
@@ -857,14 +924,19 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         behavioral_backstop=f"{E2E}::newer_failed_refit_stales_prior_snapshot",
     ),
     ControlClassification(
-        "NC-C4-10", STATIC, SOURCE, f"{C4}::validate_hash_domain",
+        "NC-C4-10",
+        STATIC,
+        SOURCE,
+        f"{C4}::validate_hash_domain",
         "Manifest registration is a property of the manifest. The manifest is "
         "the artifact that decides which fields are hash-bound, so inspecting "
         "it is not a proxy for the invariant -- it is the invariant.",
     ),
     # ---- C5: lifecycle, temporal, and proof-system closure ------------------
     ControlClassification(
-        "NC-C5-01", BEHAVIORAL, CAUSAL,
+        "NC-C5-01",
+        BEHAVIORAL,
+        CAUSAL,
         f"{E2E}::P13-C5-01-terminal-confidence-immutable",
         "Terminal truth immutability is database behaviour. The journey rewrites "
         "outbox lease bookkeeping, registers worker authority, reclaims the "
@@ -872,7 +944,9 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         "authority-field rewrites refused against a real PostgreSQL.",
     ),
     ControlClassification(
-        "NC-C5-02", STATIC, SOURCE,
+        "NC-C5-02",
+        STATIC,
+        SOURCE,
         f"{C5}::validate_claim_path_supplies_required_columns",
         "The invariant is agreement between the canonical schema's NOT "
         "NULL-without-default set and the producer's INSERT column list. The "
@@ -883,7 +957,9 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         behavioral_backstop=f"{E2E}::P13-C5-02-production-claim-seam-operability",
     ),
     ControlClassification(
-        "NC-C5-03", BEHAVIORAL, CAUSAL,
+        "NC-C5-03",
+        BEHAVIORAL,
+        CAUSAL,
         f"{E2E}::P13-C5-02-production-claim-seam-operability",
         "Claim and reuse are runtime behaviour under a live fence. The journey "
         "executes the real claim_fit_for_snapshot() six times against a "
@@ -891,50 +967,72 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         "lane state and evidence-epoch immutability for each.",
     ),
     ControlClassification(
-        "NC-C5-04", BEHAVIORAL, CAUSAL, f"{C5}::validate_wire_temporal_semantics",
+        "NC-C5-04",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C5}::validate_wire_temporal_semantics",
         "Future-evidence handling is a computation over real inputs. The real "
         "builder payload function is executed for evidence beyond the governed "
         "skew tolerance and the resulting wire state is read back.",
     ),
     ControlClassification(
-        "NC-C5-05", BEHAVIORAL, CAUSAL, f"{C5}::validate_wire_temporal_semantics",
+        "NC-C5-05",
+        BEHAVIORAL,
+        CAUSAL,
+        f"{C5}::validate_wire_temporal_semantics",
         "Saturation semantics are a computation. At-cap and over-cap evidence "
         "are both built through the real builder and compared; the control "
         "fires if the two render indistinguishably.",
     ),
     ControlClassification(
-        "NC-C5-06", BEHAVIORAL, CAUSAL,
+        "NC-C5-06",
+        BEHAVIORAL,
+        CAUSAL,
         f"{E2E}::P13-C5-05-adversarial-class-matrix",
         "The JSON/tool-call payload is seeded into a real provider-controlled "
         "column, fetched over the real HTTP route, and its disposition compared "
         "field by field against the production projection for that exact input.",
     ),
     ControlClassification(
-        "NC-C5-07", BEHAVIORAL, CAUSAL,
+        "NC-C5-07",
+        BEHAVIORAL,
+        CAUSAL,
         f"{E2E}::P13-C5-05-adversarial-class-matrix",
         "Identical treatment for the delimiter/script payload, with its own "
         "seeded subject and its own commitment to the exact source bytes.",
     ),
     ControlClassification(
-        "NC-C5-08", STATIC, SOURCE, f"{C5}::validate_freshness_semantics_are_hash_bound",
+        "NC-C5-08",
+        STATIC,
+        SOURCE,
+        f"{C5}::validate_freshness_semantics_are_hash_bound",
         "Whether a field participates in the semantic hash domain is a property "
         "of the manifest, and the manifest is the authority that decides it.",
     ),
     ControlClassification(
-        "NC-C5-09", STATIC, SOURCE, f"{C5}::validate_terminal_truth_enforcement",
+        "NC-C5-09",
+        STATIC,
+        SOURCE,
+        f"{C5}::validate_terminal_truth_enforcement",
         "Presence of the rule in the migration graph is a static property; its "
         "runtime effect is NC-C5-01. This control exists to catch removal of "
         "the rule, not to prove that the rule works.",
         behavioral_backstop=f"{E2E}::P13-C5-01-terminal-confidence-immutable",
     ),
     ControlClassification(
-        "NC-C5-10", STATIC, SOURCE, f"{C5}::validate_composition_binding",
+        "NC-C5-10",
+        STATIC,
+        SOURCE,
+        f"{C5}::validate_composition_binding",
         "This is the meta-gate. Whether the required proof graph still contains "
         "the claim-seam journey is a property of the proof graph, and that "
         "property is exactly what must not be silently editable.",
     ),
     ControlClassification(
-        "NC-C5-12", STATIC, SOURCE, f"{C5}::validate_terminal_truth_enforcement",
+        "NC-C5-12",
+        STATIC,
+        SOURCE,
+        f"{C5}::validate_terminal_truth_enforcement",
         "Whether the terminal freeze covers more than the lease-gated set is a "
         "property of the migration text. The runtime half is NC-C5-01, which now "
         "drives an updated_at rewrite on a terminal fit under a reclaimed lease "
@@ -942,7 +1040,10 @@ CONTROL_CLASSIFICATIONS: tuple[ControlClassification, ...] = (
         behavioral_backstop=f"{E2E}::P13-C5-01-terminal-confidence-immutable",
     ),
     ControlClassification(
-        "NC-C5-11", STATIC, SOURCE, f"{C5}::validate_counters_are_runtime_derived",
+        "NC-C5-11",
+        STATIC,
+        SOURCE,
+        f"{C5}::validate_counters_are_runtime_derived",
         "Whether a counter is a printed literal is a property of the source "
         "text, so a source check is the correct and complete instrument. The "
         "runtime half -- that each declared counter actually recorded something "
@@ -981,7 +1082,9 @@ def validate_control_classification() -> int:
             (ROOT / path_part).exists(),
             f"control_proof_site_does_not_exist:{control.control_id}:{path_part}",
         )
-        _require("::" in control.proof_site, f"control_names_no_object:{control.control_id}")
+        _require(
+            "::" in control.proof_site, f"control_names_no_object:{control.control_id}"
+        )
         target = control.proof_site.split("::", 1)[1]
         _require(
             target in (ROOT / path_part).read_text("utf-8"),
@@ -1012,7 +1115,9 @@ def validate_control_classification() -> int:
     for path in (C3, C4, C5):
         declared |= _declared_control_ids((ROOT / path).read_text("utf-8"))
     unclassified = sorted(declared - seen)
-    _require(not unclassified, "controls_present_but_unclassified:" + ",".join(unclassified))
+    _require(
+        not unclassified, "controls_present_but_unclassified:" + ",".join(unclassified)
+    )
     vanished = sorted(
         control_id
         for control_id in seen
@@ -1030,40 +1135,6 @@ def _expect_failure(label: str, call: Callable[[], Any]) -> None:
     except B25P13C5ClosureError:
         return
     raise B25P13C5ClosureError(f"negative_control_did_not_fire:{label}")
-
-
-def validate_control_classification() -> int:
-    """Every control is classified, and behavioural ones name a real proof site."""
-
-    seen: set[str] = set()
-    for control in CONTROL_CLASSIFICATIONS:
-        _require(
-            control.control_id not in seen, f"duplicate_control:{control.control_id}"
-        )
-        seen.add(control.control_id)
-        _require(
-            control.invariant_class in {STATIC, BEHAVIORAL},
-            f"unclassified_control:{control.control_id}",
-        )
-        _require(
-            len(control.justification) >= 60,
-            f"control_justification_is_not_a_justification:{control.control_id}",
-        )
-        path_part = control.proof_site.split("::", 1)[0]
-        _require(
-            (ROOT / path_part).exists(),
-            f"control_proof_site_does_not_exist:{control.control_id}:{path_part}",
-        )
-        if control.invariant_class is BEHAVIORAL or control.invariant_class == BEHAVIORAL:
-            site = control.proof_site
-            _require("::" in site, f"behavioral_control_names_no_object:{site}")
-            target = site.split("::", 1)[1]
-            body = (ROOT / path_part).read_text("utf-8")
-            _require(
-                target in body or target.replace("P13-", "P13-") in body,
-                f"behavioral_control_target_missing:{control.control_id}:{target}",
-            )
-    return len(CONTROL_CLASSIFICATIONS)
 
 
 def run_negative_controls() -> int:
@@ -1157,18 +1228,14 @@ def run_negative_controls() -> int:
         "TERMINAL_FROZEN_COLUMNS = LEASE_GATED_AUTHORITY_COLUMNS",
         1,
     )
-    _expect_failure(
-        "NC-C5-12", lambda: validate_terminal_truth_enforcement(narrowed)
-    )
+    _expect_failure("NC-C5-12", lambda: validate_terminal_truth_enforcement(narrowed))
     controls += 1
 
     # NC-C5-09: the terminal-truth rule is removed from the migration graph.
     unenforced = C5_MIGRATION.read_text("utf-8").replace(
         "trg_b24_terminal_fit_truth", "trg_b24_disabled_terminal_fit_truth"
     )
-    _expect_failure(
-        "NC-C5-09", lambda: validate_terminal_truth_enforcement(unenforced)
-    )
+    _expect_failure("NC-C5-09", lambda: validate_terminal_truth_enforcement(unenforced))
     controls += 1
 
     # NC-C5-10: the claim seam is dropped from the required proof graph.

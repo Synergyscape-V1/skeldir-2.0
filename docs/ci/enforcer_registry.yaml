@@ -116,6 +116,37 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation V Report.md
+- id: validate-b25-p13-c6-closure
+  path: scripts/ci/validate_b25_p13_c6_closure.py
+  status: required
+  owning_phase: B2.5-P13-C6
+  protected_invariant: B2.5-P13-C6 isolates Bayesian mint, claim, fit, artifact, dispatch, recovery,
+    and planner authority to app_worker; makes committed dirty state causally reach a bounded,
+    restart-safe production planner; freezes terminal projection dependencies; preserves REUSED
+    observations without reviving terminal outbox work; governs lifecycle and temporal vocabularies;
+    versions the Trust schema honestly; and binds independent G5/G8 oracles and the sole completion
+    counter to completed proof journeys with twelve executable negative controls.
+  command: python scripts/ci/validate_b25_p13_c6_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c6_closure.py --negative-control
+  expected_failure_meaning: Worker authority became reachable from app_user or a shared role, dirty
+    events stopped waking the production planner, restart/idempotency or REUSED terminal semantics
+    regressed, terminal projection dependencies drifted, lifecycle/temporal/schema governance diverged,
+    or a supposedly independent oracle or completion counter became self-referential or vacuous.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c6_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_step
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VI Report.md
 - id: validate-b25-p12-contract-projection
   path: scripts/ci/validate_b25_p12_contract_projection.py
   status: required

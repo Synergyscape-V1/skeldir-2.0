@@ -66,7 +66,7 @@ class TrustEnvelopeBuildRequest:
     subject_type: str
     subject_ref: str
     request_context: dict[str, object]
-    schema_version: str = "trust-envelope-schema-v1"
+    schema_version: str = "trust-envelope-schema-v2"
     canonicalization_version: str = "trust-canonical-json-v1"
 
 

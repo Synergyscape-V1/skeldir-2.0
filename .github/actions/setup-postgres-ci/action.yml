@@ -33,6 +33,14 @@ inputs:
     description: Application read-only role.
     required: false
     default: app_ro
+  worker-user:
+    description: Bayesian planner/worker database principal.
+    required: false
+    default: app_worker
+  worker-password:
+    description: Bayesian planner/worker database password.
+    required: false
+    default: app_worker
   migration-command:
     description: Alembic migration command.
     required: false
@@ -56,7 +64,9 @@ runs:
           --migration-user "${{ inputs.migration-user }}" \
           --migration-password "${{ inputs.migration-password }}" \
           --app-rw-role "${{ inputs.app-rw-role }}" \
-          --app-ro-role "${{ inputs.app-ro-role }}"
+          --app-ro-role "${{ inputs.app-ro-role }}" \
+          --worker-user "${{ inputs.worker-user }}" \
+          --worker-password "${{ inputs.worker-password }}"
 
     - name: Run Alembic migrations
       shell: bash
