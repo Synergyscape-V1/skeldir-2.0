@@ -46,7 +46,7 @@ properties:
     minItems: 1
     maxItems: 2
     items:
-      $ref: trust-envelope.v1.yaml
+      $ref: trust-envelope.v2.yaml
   artifact_hash:
     type: string
     pattern: ^sha256:[0-9a-f]{64}$

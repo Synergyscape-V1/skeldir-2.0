@@ -39,7 +39,7 @@ class B25P5ValidationError(RuntimeError):
     """Raised when P5 validation fails."""
 
 
-TRUST_SCHEMA_PATH = ROOT / "contracts/trust-api/trust-envelope.v1.yaml"
+TRUST_SCHEMA_PATH = ROOT / "contracts/trust-api/trust-envelope.v2.yaml"
 TRUST_PATHS = (
     ROOT / "backend/app/trust/builder.py",
     ROOT / "backend/app/trust/source_adapters.py",
@@ -591,7 +591,9 @@ def validate_default_factory_isolation(
         "trust.envelope.read",
         "trust.envelope.verify",
     ]:
-        raise B25P5ValidationError("policy allowed_scopes mutation contaminated later call")
+        raise B25P5ValidationError(
+            "policy allowed_scopes mutation contaminated later call"
+        )
     if benchmark_c.get("benchmark_status") != "unavailable":
         raise B25P5ValidationError("benchmark mutation contaminated later call")
     serialized = f"{policy_c!r}\n{benchmark_c!r}"
@@ -920,9 +922,13 @@ def validate_all() -> None:
     print(f"p4_regression_controls_passed={p4_controls_regression}")
     print(f"scope_overreach_controls_passed={scope_controls}")
     print(f"meta_negative_controls_passed={meta_controls}")
-    print(f"shared_mutable_default_meta_negative_controls_passed={mutable_default_meta_controls}")
+    print(
+        f"shared_mutable_default_meta_negative_controls_passed={mutable_default_meta_controls}"
+    )
     print(f"pydantic_construct_meta_negative_controls_passed={pydantic_meta_controls}")
-    print(f"native_dispatch_meta_negative_controls_passed={native_dispatch_meta_controls}")
+    print(
+        f"native_dispatch_meta_negative_controls_passed={native_dispatch_meta_controls}"
+    )
 
 
 def main() -> int:

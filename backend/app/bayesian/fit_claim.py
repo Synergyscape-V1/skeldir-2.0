@@ -60,7 +60,13 @@ class FitClaimResult:
 
     @property
     def claimed_for_dispatch(self) -> bool:
-        return self.outcome in {FitClaimOutcome.CLAIMED, FitClaimOutcome.REUSED}
+        """True only when this call created/recovered executable work.
+
+        REUSED is historical identity reuse: it intentionally carries no new
+        dispatch attempt and cannot resurrect or rewrite an existing outbox row.
+        """
+
+        return self.outcome is FitClaimOutcome.CLAIMED
 
 
 def _utc(value: datetime) -> datetime:
@@ -489,6 +495,7 @@ async def claim_fit_for_snapshot(
                             now()
                         FROM claimed_fit
                         WHERE NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
+                          AND NOT public.b24_fit_status_is_terminal(status)
                         ON CONFLICT (tenant_id, fit_id)
                         DO UPDATE SET
                             status = CASE
@@ -501,7 +508,8 @@ async def claim_fit_for_snapshot(
                                     'cancelled',
                                     'expired',
                                     'superseded',
-                                    'quarantined'
+                                    'quarantined',
+                                    'dead_lettered'
                                 )
                                     THEN b24_fit_dispatch_outbox.status
                                 ELSE 'pending'
@@ -516,7 +524,8 @@ async def claim_fit_for_snapshot(
                                     'cancelled',
                                     'expired',
                                     'superseded',
-                                    'quarantined'
+                                    'quarantined',
+                                    'dead_lettered'
                                 )
                                     THEN b24_fit_dispatch_outbox.next_attempt_at
                                 ELSE now()
@@ -531,7 +540,8 @@ async def claim_fit_for_snapshot(
                                     'cancelled',
                                     'expired',
                                     'superseded',
-                                    'quarantined'
+                                    'quarantined',
+                                    'dead_lettered'
                                 )
                                     THEN b24_fit_dispatch_outbox.attempt_id
                                 ELSE gen_random_uuid()
@@ -592,6 +602,40 @@ async def claim_fit_for_snapshot(
                             lease.active_source_snapshot_hash,
                             lease.latest_desired_source_snapshot_hash,
                             lease.needs_refit_after_current
+                    ),
+                    reused_execution_lane AS (
+                        -- Terminal snapshot reuse is a read of historical fit
+                        -- identity, never a dispatch attempt. No outbox row is
+                        -- inserted, reset, or resurrected on this branch.
+                        UPDATE public.b24_active_execution_leases lease
+                        SET fit_id = fit.id,
+                            status = CASE fit.status
+                                WHEN 'succeeded' THEN 'succeeded'
+                                WHEN 'cancelled' THEN 'cancelled'
+                                WHEN 'fallback_only' THEN 'fallback_only'
+                                ELSE 'failed'
+                            END,
+                            active_source_snapshot_hash = :source_snapshot_hash,
+                            latest_desired_source_snapshot_hash = :source_snapshot_hash,
+                            needs_refit_after_current = false,
+                            lease_owner = :claim_owner,
+                            leased_until = now(),
+                            heartbeat_at = now(),
+                            terminal_at = COALESCE(lease.terminal_at, now()),
+                            updated_at = now()
+                        FROM claimed_fit fit
+                        WHERE public.b24_fit_status_is_terminal(fit.status)
+                          AND lease.tenant_id = :tenant_id
+                          AND lease.model_type = :model_type
+                          AND lease.model_version = :model_version
+                          AND lease.source_window_start = :source_window_start
+                          AND lease.source_window_end = :source_window_end
+                        RETURNING
+                            lease.fit_id,
+                            lease.status,
+                            lease.active_source_snapshot_hash,
+                            lease.latest_desired_source_snapshot_hash,
+                            lease.needs_refit_after_current
                     )
                     SELECT
                         'source_snapshot_superseded' AS outcome,
@@ -615,15 +659,21 @@ async def claim_fit_for_snapshot(
                     FROM suppressed_active
                     UNION ALL
                     SELECT
+                        'reused' AS outcome,
+                        fit_id,
+                        NULL::uuid AS dispatch_outbox_id,
+                        status AS active_execution_status,
+                        needs_refit_after_current,
+                        active_source_snapshot_hash,
+                        latest_desired_source_snapshot_hash
+                    FROM reused_execution_lane
+                    UNION ALL
+                    SELECT
                         -- A fresh INSERT is always 'queued', so a terminal
                         -- status here can only mean the conflict path matched an
                         -- already-finished observation of this exact source
                         -- content: reuse, not a new claim.
-                        CASE
-                            WHEN public.b24_fit_status_is_terminal(fit.status)
-                                THEN 'reused'
-                            ELSE 'claimed'
-                        END AS outcome,
+                        'claimed' AS outcome,
                         lane.fit_id,
                         outbox.id AS dispatch_outbox_id,
                         lane.status AS active_execution_status,

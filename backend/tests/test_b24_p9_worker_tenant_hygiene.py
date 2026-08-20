@@ -380,7 +380,7 @@ def test_b24_p9_celery_worker_init_runs_boot_probe_before_ready_and_prerun() -> 
     assert "task_prerun" not in boot_probe
     assert "if _BAYESIAN_TASKS_REGISTERED:" in tasks
     assert "ensure_bayesian_worker_boot_probe_signal_registered()" in tasks
-    assert tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 8
+    assert tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 9
 
 
 def test_b24_p9_non_bayesian_worker_registry_excludes_bayesian_tasks() -> None:

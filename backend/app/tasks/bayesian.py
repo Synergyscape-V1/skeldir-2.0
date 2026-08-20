@@ -36,6 +36,7 @@ from app.bayesian.dispatch_authority import (
 )
 from app.bayesian.dispatch_outbox import publish_due_recovery_rows_sync
 from app.bayesian.fit_execution import execute_fit_intent_sync
+from app.bayesian.fit_planner import plan_due_dirty_events
 from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.bayesian.tenant_context import bind_transaction_local_tenant
 from app.bayesian.worker_boot_probe import (
@@ -45,6 +46,7 @@ from app.bayesian.worker_boot_probe import (
 )
 from app.celery_app import celery_app
 from app.core.config import settings
+from app.tasks.context import run_in_worker_loop
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,7 @@ FEATURE_AUTHORITY_DISPATCH_TASK_NAME = (
     "app.tasks.bayesian.dispatch_feature_authority_build"
 )
 RECOVERY_RECONCILER_TASK_NAME = "app.tasks.bayesian.reconcile_fit_recovery_wakeups"
+FIT_PLANNER_TASK_NAME = "app.tasks.bayesian.plan_due_fit_intents"
 RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME = (
     "app.tasks.bayesian.probe_recoverable_failure_ack"
 )
@@ -81,6 +84,7 @@ REQUIRED_BAYESIAN_TASK_NAMES = frozenset(
         "app.tasks.bayesian.run_mcmc_inference",
         "app.tasks.bayesian.execute_fit_intent",
         RECOVERY_RECONCILER_TASK_NAME,
+        FIT_PLANNER_TASK_NAME,
         RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME,
         FEATURE_AUTHORITY_DISPATCH_TASK_NAME,
         FEATURE_AUTHORITY_BUILD_TASK_NAME,
@@ -173,6 +177,127 @@ def _exercise_cpu(*, seed: int, cycles: int) -> int:
     for idx in range(max(1, int(cycles))):
         value = ((value << 5) - value + ((idx * 17) + 13)) & 0xFFFFFFFF
     return value
+
+
+def _due_planner_tenants(
+    *, lease_owner: str, batch_size: int
+) -> tuple[tuple[UUID, int], ...]:
+    """Read a bounded tenant worklist through the worker-only DB seam."""
+
+    engine = create_bayesian_worker_engine()
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT tenant_id, wakeup_revision FROM "
+                    "public.b24_due_fit_planner_tenants("
+                    ":lease_owner, :batch_size)"
+                ),
+                {
+                    "lease_owner": lease_owner,
+                    "batch_size": max(1, min(int(batch_size), 100)),
+                },
+            ).all()
+        return tuple((UUID(str(row[0])), int(row[1])) for row in rows)
+    finally:
+        engine.dispose()
+
+
+def _complete_planner_wakeup(
+    *,
+    tenant_id: UUID,
+    lease_owner: str,
+    wakeup_revision: int,
+    succeeded: bool,
+) -> None:
+    """Acknowledge one revision or release it for retry after failure."""
+
+    engine = create_bayesian_worker_engine()
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "SELECT public.b24_complete_fit_planner_wakeup("
+                    ":tenant_id, :lease_owner, :revision, :succeeded)"
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "lease_owner": lease_owner,
+                    "revision": wakeup_revision,
+                    "succeeded": succeeded,
+                },
+            )
+    finally:
+        engine.dispose()
+
+
+@_bayesian_task(
+    bind=True,
+    name=FIT_PLANNER_TASK_NAME,
+    routing_key="bayesian.task",
+    soft_time_limit=_TASK_SOFT_LIMIT_S,
+    time_limit=_TASK_HARD_LIMIT_S,
+    acks_late=True,
+    max_retries=2,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=False,
+)
+def plan_due_fit_intents(
+    self,
+    *,
+    tenant_batch_size: int = 25,
+    candidate_limit: int = 25,
+) -> dict[str, object]:
+    """Turn naturally dirty source state into fit/outbox work.
+
+    Candidate rows are leased with ``SKIP LOCKED`` and expired planner leases
+    are reclaimable, so overlapping Beat deliveries and process restarts are
+    safe. The selector is bounded and exposes tenant identifiers only to the
+    dedicated worker database login.
+    """
+
+    assert_bayesian_worker_boot_topology_proven()
+    lease_owner = f"celery:{self.request.id}"
+    tenants = _due_planner_tenants(
+        lease_owner=lease_owner, batch_size=tenant_batch_size
+    )
+    planned = 0
+    dispatchable = 0
+    reused = 0
+    for tenant_id, wakeup_revision in tenants:
+        succeeded = False
+        try:
+            intents = run_in_worker_loop(
+                plan_due_dirty_events(
+                    tenant_id=tenant_id,
+                    planner_owner=lease_owner,
+                    limit=max(1, min(int(candidate_limit), 100)),
+                )
+            )
+            planned += len(intents)
+            for intent in intents:
+                if intent.claim is None:
+                    continue
+                if intent.claim.claimed_for_dispatch:
+                    dispatchable += 1
+                elif intent.claim.outcome.value == "reused":
+                    reused += 1
+            succeeded = True
+        finally:
+            _complete_planner_wakeup(
+                tenant_id=tenant_id,
+                lease_owner=lease_owner,
+                wakeup_revision=wakeup_revision,
+                succeeded=succeeded,
+            )
+    return {
+        "status": "completed",
+        "tenant_count": len(tenants),
+        "planned_count": planned,
+        "dispatchable_count": dispatchable,
+        "reused_count": reused,
+    }
 
 
 def _build_fallback_payload(

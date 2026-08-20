@@ -1,5 +1,5 @@
 manifest_version: b25-p2-hash-domain-manifest-v1
-schema_version: trust-envelope-schema-v1
+schema_version: trust-envelope-schema-v2
 canonicalization_version: trust-canonical-json-v1
 # Active issuance protocol. Historical protocols remain verifiable and are
 # enumerated in `export_artifact_protocol_registry` below.

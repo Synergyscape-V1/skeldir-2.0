@@ -93,6 +93,29 @@
     could break every first claim while P13 stayed green, materially future evidence could render as current,
     absolute age could be understated without explicit semantics, or a behavioural invariant could quietly
     regress to a source-text check while its counter kept printing a number nobody derived.
+- gate_id: validate-b25-p13-c6-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_c6_closure.py
+  owning_phase: B2.5-P13-C6
+  protected_invariant: Worker-plane authority is unreachable from app_user and shared roles; committed
+    dirty state reaches a bounded restart-safe production planner; terminal dependencies and dead-letter
+    reuse remain immutable; lifecycle, temporal, and Trust schema versions stay governed; G5/G8 expected
+    results remain independent; and completion is counted only after a complete artifact-backed journey.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C3-C5 govern confidence vocabulary, evidence completeness, temporal semantics,
+    and terminal truth, while the runtime journey proves concrete fixtures. None independently proves
+    effective database privileges, production scheduler reachability and replay behavior, versioned wire
+    compatibility, independent adversarial/read-only oracles, and completion-counter provenance together.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c6_closure.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c6_closure.py --negative-control
+  risk_if_removed: A tenant API process could regain worker authority, dirty events could become inert,
+    retries could duplicate work, REUSED could resurrect dead-letter dispatch, a v1 envelope could silently
+    carry v2 fields, or self-derived expectations and decorative counters could make a broken proof green.
 - gate_id: validate-b25-p12-contract-projection
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates

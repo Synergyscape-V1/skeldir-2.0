@@ -105,6 +105,7 @@ TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY: dict[str, FieldSourceDecision] = {
         "deterministic_default",
         "deterministic_machine_fact",
         "contracts/trust-api/trust-envelope.v1.yaml",
+        "contracts/trust-api/trust-envelope.v2.yaml",
     ),
     "schema_version": FieldSourceDecision(
         "schema_version",
@@ -412,9 +413,7 @@ _CONFIDENCE_FIELD_SOURCE_OVERRIDES: dict[str, FieldSourceDecision] = {
     ),
 }
 
-TRUST_ENVELOPE_FIELD_SOURCE_REGISTRIES: dict[
-    str, dict[str, FieldSourceDecision]
-] = {
+TRUST_ENVELOPE_FIELD_SOURCE_REGISTRIES: dict[str, dict[str, FieldSourceDecision]] = {
     "match_verdict": TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY,
     "confidence_projection": {
         **TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY,
@@ -430,10 +429,7 @@ def iter_field_source_decisions(
 
     subject_authority_definition(subject_type)
     registry = TRUST_ENVELOPE_FIELD_SOURCE_REGISTRIES[subject_type]
-    return tuple(
-        registry[key]
-        for key in sorted(registry)
-    )
+    return tuple(registry[key] for key in sorted(registry))
 
 
 def parse_match_verdict_subject_ref(subject_ref: str) -> UUID | None:

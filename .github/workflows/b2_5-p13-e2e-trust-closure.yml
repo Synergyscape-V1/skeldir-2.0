@@ -19,6 +19,7 @@ on:
     paths:
       - 'backend/app/trust/**'
       - 'backend/app/confidence_projection/**'
+      - 'backend/app/bayesian/**'
       - 'backend/app/bayesian/fit_execution.py'
       - 'backend/app/bayesian/fit_claim.py'
       - 'backend/app/bayesian/runtime_state.py'
@@ -26,14 +27,22 @@ on:
       - 'backend/app/bayesian/models.py'
       - 'backend/app/bayesian/repository.py'
       - 'backend/app/bayesian/source_snapshot.py'
+      - 'backend/app/tasks/bayesian.py'
+      - 'backend/app/tasks/beat_schedule.py'
       - 'backend/app/api/trust_api.py'
       - 'backend/app/api/trust_keys.py'
       - 'backend/tests/trust/test_b25_p13_e2e_trust_closure.py'
+      - 'backend/tests/trust/test_b25_p13_c6_postgres_physics.py'
       - 'alembic/versions/007_skeldir_foundation/**'
       - 'contracts/trust-api/**'
+      - 'contracts/bayesian/**'
       - 'scripts/ci/validate_b25_p13_confidence_truth.py'
       - 'scripts/ci/validate_b25_p13_c4_closure.py'
       - 'scripts/ci/validate_b25_p13_c5_closure.py'
+      - 'scripts/ci/validate_b25_p13_c6_closure.py'
+      - 'scripts/database/prepare_migration_authority_boundary.py'
+      - '.github/actions/setup-postgres-ci/action.yml'
+      - 'docs/forensics/B2.5-P13 Corrective Action Remediation VI Report.md'
       - 'db/schema/canonical_schema.sql'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
@@ -134,7 +143,7 @@ jobs:
           grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=85$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_downgrade_cases_failed_closed=6$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_downgrade_cases_failed_closed=8$" /tmp/b25_p13_e2e.out
           grep -E "^p13_negative_controls_fired=18$" /tmp/b25_p13_e2e.out
           grep -E "^p13_money_columns_integer_not_null=6$" /tmp/b25_p13_e2e.out
           grep -E "^p13_route_level_denials=2$" /tmp/b25_p13_e2e.out
@@ -152,7 +161,7 @@ jobs:
           # B2.5-P13 C5. Each of these is len() of a list the run appended
           # to, and p13_counter_provenance prints what was counted, so a
           # reviewer can check the number against the events behind it.
-          grep -E "^p13_c5_terminal_authority_mutations_rejected=8$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c5_terminal_authority_mutations_rejected=12$" /tmp/b25_p13_e2e.out
           grep -E "^p13_c5_lease_reclaim_still_possible=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_c5_terminal_bookkeeping_still_mutable=1$" /tmp/b25_p13_e2e.out
           grep -E "^p13_c5_claim_seam_cases=6$" /tmp/b25_p13_e2e.out
@@ -164,6 +173,8 @@ jobs:
           grep -E "^p13_g5_adversarial_dispositions=3$" /tmp/b25_p13_e2e.out
           grep -E "^p13_g5_adversarial_classes_quarantined=3$" /tmp/b25_p13_e2e.out
           grep -E "^p13_g5_adversarial_classes_signature_verified=3$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_g8_no_live_recompute_statements=1$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c6_completed_proof_journeys=1$" /tmp/b25_p13_e2e.out
 
       - name: P13 C3 confidence authority and semantic falsifiers
         run: |
@@ -203,6 +214,30 @@ jobs:
           grep -E "^p13_c5_behavioral_invariants=25$" /tmp/b25_p13_c5_closure.out
           grep -E "^p13_c5_causal_controls=18$" /tmp/b25_p13_c5_closure.out
           grep -E "^p13_c5_behavioral_backstops=10$" /tmp/b25_p13_c5_closure.out
+
+      - name: P13 C6 authority, orchestration, contract, and proof closure
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p13_c6_closure.py --negative-control \
+            | tee /tmp/b25_p13_c6_closure.out
+          grep -E "^B25_P13_C6_CLOSURE_VALIDATION_PASS$" /tmp/b25_p13_c6_closure.out
+          grep -E "^c6_invariant_groups_passed=11$" /tmp/b25_p13_c6_closure.out
+          grep -E "^c6_negative_controls_fired=12$" /tmp/b25_p13_c6_closure.out
+
+      - name: P13 C6 PostgreSQL authority and production-planner physics
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_B25_P13_C6_DB_PROOF: "1"
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c6-prometheus
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c6_postgres_physics.py \
+            -q -s --no-header | tee /tmp/b25_p13_c6_physics.out
+          grep -E "2 passed" /tmp/b25_p13_c6_physics.out
 
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody

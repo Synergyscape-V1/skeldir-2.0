@@ -46,6 +46,7 @@
         "continuation_invalid",
         "continuation_expired",
         "schema_downgrade_rejected",
+        "schema_version_contract_mismatch",
         "canonical_timestamp_rejected",
         "human_workflow_state_rejected",
         "subject_authority_rejected",

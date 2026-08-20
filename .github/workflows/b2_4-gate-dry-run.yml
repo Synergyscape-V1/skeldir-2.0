@@ -245,14 +245,14 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p5_ci
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b24_p5_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p5_ci
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
       CI: "true"
       SKELDIR_B24_P5_REQUIRE_DB_PROOFS: "1"
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
-      EXPECTED_RUNTIME_DB_USER: app_user
+      EXPECTED_RUNTIME_DB_USER: app_worker
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
       SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
       SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
@@ -313,14 +313,14 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p6_ci
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b24_p6_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p6_ci
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
       CI: "true"
       SKELDIR_B24_P6_REQUIRE_REAL_FIT_PROOF: "1"
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
-      EXPECTED_RUNTIME_DB_USER: app_user
+      EXPECTED_RUNTIME_DB_USER: app_worker
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       PLATFORM_TOKEN_KEY_ID: test-key
     steps:
@@ -382,7 +382,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p7_ci
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b24_p7_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p7_ci
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
@@ -449,7 +449,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p8_ci
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b24_p8_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p8_ci
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
@@ -516,9 +516,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p9_ci
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b24_p9_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p9_ci
-      EXPECTED_RUNTIME_DB_USER: app_user
+      EXPECTED_RUNTIME_DB_USER: app_worker
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
       CI: "true"
@@ -638,9 +638,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p12_ci
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b24_p12_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p12_ci
-      EXPECTED_RUNTIME_DB_USER: app_user
+      EXPECTED_RUNTIME_DB_USER: app_worker
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
       CI: "true"
@@ -811,7 +811,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p1_ci
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b24_p1_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p1_ci
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
@@ -872,7 +872,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p4_ci
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b24_p4_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p4_ci
       PYTHONPATH: ${{ github.workspace }}/backend
       TESTING: "1"
