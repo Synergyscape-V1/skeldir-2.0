@@ -182,40 +182,91 @@ CREATE FUNCTION public.b24_complete_fit_dispatch() RETURNS void
         END
         $$;
 
-CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease_owner text, p_wakeup_revision bigint, p_succeeded boolean) RETURNS boolean
+CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease_owner text, p_wakeup_revision bigint, p_succeeded boolean, p_quiet_period_seconds integer, p_max_wait_seconds integer) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
         DECLARE
-            affected integer;
+            residual_eligible integer;
+            residual_next timestamptz;
+            fenced boolean;
         BEGIN
             IF session_user <> 'app_worker' THEN
                 RAISE EXCEPTION 'b24_worker_database_identity_required';
             END IF;
-            IF p_succeeded THEN
+
+            IF current_setting('app.current_tenant_id', true)
+               IS DISTINCT FROM p_tenant_id::text THEN
+                RAISE EXCEPTION 'b24_fit_planner_tenant_context_required';
+            END IF;
+
+            IF NOT p_succeeded THEN
+                UPDATE public.b24_fit_planner_wakeups
+                SET status = 'pending', lease_owner = NULL,
+                    lease_expires_at = NULL, next_eligible_at = NULL,
+                    updated_at = now()
+                WHERE tenant_id = p_tenant_id
+                  AND status = 'leased'
+                  AND lease_owner = p_lease_owner;
+                IF FOUND THEN
+                    RETURN 'released';
+                END IF;
+                RETURN 'stale_revision';
+            END IF;
+
+            SELECT eligible_group_count, next_eligible_at
+            INTO residual_eligible, residual_next
+            FROM b24_fit_planner_residual_obligation(
+                p_tenant_id, p_quiet_period_seconds, p_max_wait_seconds
+            );
+
+            IF COALESCE(residual_eligible, 0) > 0 THEN
+                UPDATE public.b24_fit_planner_wakeups
+                SET status = 'pending', lease_owner = NULL,
+                    lease_expires_at = NULL, next_eligible_at = NULL,
+                    updated_at = now()
+                WHERE tenant_id = p_tenant_id
+                  AND status = 'leased'
+                  AND lease_owner = p_lease_owner
+                  AND wakeup_revision = p_wakeup_revision;
+                fenced := FOUND;
+                IF fenced THEN
+                    RETURN 'retained_eligible';
+                END IF;
+            ELSIF residual_next IS NOT NULL THEN
+                UPDATE public.b24_fit_planner_wakeups
+                SET status = 'pending', lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    next_eligible_at = residual_next,
+                    updated_at = now()
+                WHERE tenant_id = p_tenant_id
+                  AND status = 'leased'
+                  AND lease_owner = p_lease_owner
+                  AND wakeup_revision = p_wakeup_revision;
+                fenced := FOUND;
+                IF fenced THEN
+                    RETURN 'deferred';
+                END IF;
+            ELSE
                 DELETE FROM public.b24_fit_planner_wakeups
                 WHERE tenant_id = p_tenant_id
                   AND status = 'leased'
                   AND lease_owner = p_lease_owner
                   AND wakeup_revision = p_wakeup_revision;
-            ELSE
-                UPDATE public.b24_fit_planner_wakeups
-                SET status = 'pending', lease_owner = NULL,
-                    lease_expires_at = NULL, updated_at = now()
-                WHERE tenant_id = p_tenant_id
-                  AND status = 'leased'
-                  AND lease_owner = p_lease_owner;
+                fenced := FOUND;
+                IF fenced THEN
+                    RETURN 'deleted';
+                END IF;
             END IF;
-            GET DIAGNOSTICS affected = ROW_COUNT;
-            IF p_succeeded AND affected = 0 THEN
-                UPDATE public.b24_fit_planner_wakeups
-                SET status = 'pending', lease_owner = NULL,
-                    lease_expires_at = NULL, updated_at = now()
-                WHERE tenant_id = p_tenant_id
-                  AND status = 'leased'
-                  AND lease_owner = p_lease_owner;
-            END IF;
-            RETURN affected = 1;
+
+            UPDATE public.b24_fit_planner_wakeups
+            SET status = 'pending', lease_owner = NULL,
+                lease_expires_at = NULL, next_eligible_at = NULL,
+                updated_at = now()
+            WHERE tenant_id = p_tenant_id
+              AND status = 'leased'
+              AND lease_owner = p_lease_owner;
+            RETURN 'stale_revision';
         END
         $$;
 
@@ -327,11 +378,17 @@ CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit i
             WITH due AS (
                 SELECT wakeup.tenant_id
                 FROM b24_fit_planner_wakeups wakeup
-                WHERE wakeup.status = 'pending'
-                   OR (
-                        wakeup.status = 'leased'
-                        AND wakeup.lease_expires_at <= now()
-                   )
+                WHERE (
+                        wakeup.next_eligible_at IS NULL
+                        OR wakeup.next_eligible_at <= now()
+                      )
+                  AND (
+                        wakeup.status = 'pending'
+                        OR (
+                            wakeup.status = 'leased'
+                            AND wakeup.lease_expires_at <= now()
+                        )
+                      )
                 ORDER BY wakeup.observed_at, wakeup.tenant_id
                 LIMIT LEAST(GREATEST(p_limit, 1), 100)
                 FOR UPDATE SKIP LOCKED
@@ -339,11 +396,46 @@ CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit i
             UPDATE public.b24_fit_planner_wakeups wakeup
             SET status = 'leased',
                 lease_owner = p_lease_owner,
-                lease_expires_at = now() + interval '5 minutes',
+                lease_expires_at = now()
+                    + make_interval(secs => 600),
                 updated_at = now()
             FROM due
             WHERE wakeup.tenant_id = due.tenant_id
             RETURNING wakeup.tenant_id, wakeup.wakeup_revision;
+        END
+        $$;
+
+CREATE FUNCTION public.b24_enforce_artifact_lifecycle() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        BEGIN
+            IF OLD.lifecycle_status IS NOT DISTINCT FROM NEW.lifecycle_status THEN
+                RETURN NEW;
+            END IF;
+            IF OLD.lifecycle_status IN ('pruned', 'rejected')
+               AND NEW.lifecycle_status NOT IN ('pruned', 'rejected') THEN
+                RAISE EXCEPTION 'b24_artifact_lifecycle_resurrection_forbidden';
+            END IF;
+            RETURN NEW;
+        END
+        $$;
+
+CREATE FUNCTION public.b24_enforce_dirty_event_lifecycle() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        BEGIN
+            IF NEW.observed_at IS DISTINCT FROM OLD.observed_at THEN
+                RAISE EXCEPTION 'b24_dirty_event_observed_at_immutable';
+            END IF;
+            IF OLD.status IN (
+                    'coalesced', 'claimed', 'suppressed', 'fallback_only',
+                    'superseded', 'dispatched', 'authority_retry_superseded',
+                    'authority_timeout', 'authority_build_failed', 'pruned'
+               )
+               AND NEW.status IS DISTINCT FROM OLD.status THEN
+                RAISE EXCEPTION 'b24_dirty_event_terminal_status_immutable';
+            END IF;
+            RETURN NEW;
         END
         $$;
 
@@ -472,7 +564,9 @@ CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
     AS $$
         BEGIN
             IF public.b24_fit_status_is_terminal(OLD.status)
-               AND (NEW.model_type IS DISTINCT FROM OLD.model_type
+               AND (NEW.id IS DISTINCT FROM OLD.id
+               OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+               OR NEW.model_type IS DISTINCT FROM OLD.model_type
                OR NEW.model_version IS DISTINCT FROM OLD.model_version
                OR NEW.source_window_start IS DISTINCT FROM OLD.source_window_start
                OR NEW.source_window_end IS DISTINCT FROM OLD.source_window_end
@@ -481,6 +575,7 @@ CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
                OR NEW.data_completeness_status IS DISTINCT FROM OLD.data_completeness_status
                OR NEW.fallback_applied IS DISTINCT FROM OLD.fallback_applied
                OR NEW.fallback_reason IS DISTINCT FROM OLD.fallback_reason
+               OR NEW.created_at IS DISTINCT FROM OLD.created_at
                OR NEW.completed_at IS DISTINCT FROM OLD.completed_at
                OR NEW.updated_at IS DISTINCT FROM OLD.updated_at
                OR NEW.diagnostic_status IS DISTINCT FROM OLD.diagnostic_status
@@ -603,9 +698,585 @@ CREATE FUNCTION public.b24_fail_fit_dispatch_terminal(p_reason text) RETURNS voi
         END
         $$;
 
+CREATE FUNCTION public.b24_fit_planner_residual_obligation(p_tenant_id uuid, p_quiet_period_seconds integer, p_max_wait_seconds integer) RETURNS TABLE(eligible_group_count integer, next_eligible_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+        BEGIN
+            RETURN QUERY
+            WITH candidate_groups AS (
+                SELECT
+                    max(dirty.observed_at) AS last_observed_at,
+                    min(dirty.observed_at) AS first_observed_at
+                FROM b24_dirty_events dirty
+                WHERE dirty.tenant_id = p_tenant_id
+                  AND (
+                      dirty.status IN ('pending', 'authority_retry_ready')
+                      OR (
+                          dirty.status = 'leased'
+                          AND dirty.lease_expires_at IS NOT NULL
+                          AND dirty.lease_expires_at <= now()
+                      )
+                  )
+                GROUP BY
+                    dirty.model_type,
+                    dirty.model_version,
+                    dirty.source_window_start,
+                    dirty.source_window_end,
+                    dirty.source_snapshot_hash
+            ),
+            due_times AS (
+                SELECT LEAST(
+                    last_observed_at
+                        + make_interval(secs => p_quiet_period_seconds),
+                    first_observed_at
+                        + make_interval(secs => GREATEST(
+                            p_quiet_period_seconds, p_max_wait_seconds))
+                ) AS due_at
+                FROM candidate_groups
+            )
+            SELECT
+                count(*) FILTER (WHERE due_at <= now())::integer,
+                min(due_at) FILTER (WHERE due_at > now())
+            FROM due_times;
+        END
+        $$;
+
 CREATE FUNCTION public.b24_fit_status_is_terminal(p_status text) RETURNS boolean
     LANGUAGE sql IMMUTABLE
     AS $$ SELECT p_status IN ('succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled') $$;
+
+CREATE FUNCTION public.b24_invalidate_attribution_allocations_delete() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'attribution_allocations_snapshot_changed',
+        'attribution_allocations',
+        encode(sha256(convert_to(
+            'attribution_allocations|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('attribution_allocations:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT
+            row_set.tenant_id AS tenant_id,
+            date_trunc('day', row_set.created_at) AS window_start
+        FROM old_rows row_set
+        WHERE COALESCE(row_set.verified = true, false) AND row_set.created_at IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_attribution_allocations_insert() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'attribution_allocations_snapshot_changed',
+        'attribution_allocations',
+        encode(sha256(convert_to(
+            'attribution_allocations|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('attribution_allocations:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT
+            row_set.tenant_id AS tenant_id,
+            date_trunc('day', row_set.created_at) AS window_start
+        FROM new_rows row_set
+        WHERE COALESCE(row_set.verified = true, false) AND row_set.created_at IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_attribution_allocations_update() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'attribution_allocations_snapshot_changed',
+        'attribution_allocations',
+        encode(sha256(convert_to(
+            'attribution_allocations|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('attribution_allocations:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT tenant_id, window_start FROM (
+            SELECT new_row.tenant_id AS tenant_id,
+                   date_trunc('day', new_row.created_at) AS window_start
+            FROM new_rows new_row
+            JOIN old_rows old_row ON old_row.id = new_row.id
+            WHERE ((COALESCE(new_row.verified = true, false) AND new_row.created_at IS NOT NULL) OR (COALESCE(old_row.verified = true, false) AND old_row.created_at IS NOT NULL))
+              AND (
+                (COALESCE(new_row.verified = true, false) AND new_row.created_at IS NOT NULL) IS DISTINCT FROM (COALESCE(old_row.verified = true, false) AND old_row.created_at IS NOT NULL)
+                OR (new_row.id, new_row.tenant_id, new_row.event_id, new_row.created_at, new_row.channel_code, new_row.allocated_revenue_cents, new_row.allocation_ratio, new_row.model_type, new_row.model_version, new_row.verified, new_row.verification_source, new_row.verification_timestamp)
+                   IS DISTINCT FROM (old_row.id, old_row.tenant_id, old_row.event_id, old_row.created_at, old_row.channel_code, old_row.allocated_revenue_cents, old_row.allocation_ratio, old_row.model_type, old_row.model_version, old_row.verified, old_row.verification_source, old_row.verification_timestamp)
+              )
+            UNION
+            SELECT old_row.tenant_id AS tenant_id,
+                   date_trunc('day', old_row.created_at) AS window_start
+            FROM new_rows new_row
+            JOIN old_rows old_row ON old_row.id = new_row.id
+            WHERE ((COALESCE(new_row.verified = true, false) AND new_row.created_at IS NOT NULL) OR (COALESCE(old_row.verified = true, false) AND old_row.created_at IS NOT NULL))
+              AND (
+                (COALESCE(new_row.verified = true, false) AND new_row.created_at IS NOT NULL) IS DISTINCT FROM (COALESCE(old_row.verified = true, false) AND old_row.created_at IS NOT NULL)
+                OR (new_row.id, new_row.tenant_id, new_row.event_id, new_row.created_at, new_row.channel_code, new_row.allocated_revenue_cents, new_row.allocation_ratio, new_row.model_type, new_row.model_version, new_row.verified, new_row.verification_source, new_row.verification_timestamp)
+                   IS DISTINCT FROM (old_row.id, old_row.tenant_id, old_row.event_id, old_row.created_at, old_row.channel_code, old_row.allocated_revenue_cents, old_row.allocation_ratio, old_row.model_type, old_row.model_version, old_row.verified, old_row.verification_source, old_row.verification_timestamp)
+              )
+        ) both_buckets
+        WHERE window_start IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_attribution_events_delete() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'attribution_events_snapshot_changed',
+        'attribution_events',
+        encode(sha256(convert_to(
+            'attribution_events|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('attribution_events:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT
+            row_set.tenant_id AS tenant_id,
+            date_trunc('day', row_set.occurred_at) AS window_start
+        FROM old_rows row_set
+        WHERE COALESCE(row_set.processing_status IN ('processed') AND row_set.event_type IN ('conversion'), false) AND row_set.occurred_at IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_attribution_events_insert() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'attribution_events_snapshot_changed',
+        'attribution_events',
+        encode(sha256(convert_to(
+            'attribution_events|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('attribution_events:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT
+            row_set.tenant_id AS tenant_id,
+            date_trunc('day', row_set.occurred_at) AS window_start
+        FROM new_rows row_set
+        WHERE COALESCE(row_set.processing_status IN ('processed') AND row_set.event_type IN ('conversion'), false) AND row_set.occurred_at IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_attribution_events_update() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'attribution_events_snapshot_changed',
+        'attribution_events',
+        encode(sha256(convert_to(
+            'attribution_events|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('attribution_events:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT tenant_id, window_start FROM (
+            SELECT new_row.tenant_id AS tenant_id,
+                   date_trunc('day', new_row.occurred_at) AS window_start
+            FROM new_rows new_row
+            JOIN old_rows old_row ON old_row.id = new_row.id
+            WHERE ((COALESCE(new_row.processing_status IN ('processed') AND new_row.event_type IN ('conversion'), false) AND new_row.occurred_at IS NOT NULL) OR (COALESCE(old_row.processing_status IN ('processed') AND old_row.event_type IN ('conversion'), false) AND old_row.occurred_at IS NOT NULL))
+              AND (
+                (COALESCE(new_row.processing_status IN ('processed') AND new_row.event_type IN ('conversion'), false) AND new_row.occurred_at IS NOT NULL) IS DISTINCT FROM (COALESCE(old_row.processing_status IN ('processed') AND old_row.event_type IN ('conversion'), false) AND old_row.occurred_at IS NOT NULL)
+                OR (new_row.id, new_row.tenant_id, new_row.occurred_at, new_row.event_timestamp, new_row.event_type, new_row.channel, new_row.campaign_id, new_row.revenue_cents, new_row.conversion_value_cents, new_row.currency, new_row.processing_status)
+                   IS DISTINCT FROM (old_row.id, old_row.tenant_id, old_row.occurred_at, old_row.event_timestamp, old_row.event_type, old_row.channel, old_row.campaign_id, old_row.revenue_cents, old_row.conversion_value_cents, old_row.currency, old_row.processing_status)
+              )
+            UNION
+            SELECT old_row.tenant_id AS tenant_id,
+                   date_trunc('day', old_row.occurred_at) AS window_start
+            FROM new_rows new_row
+            JOIN old_rows old_row ON old_row.id = new_row.id
+            WHERE ((COALESCE(new_row.processing_status IN ('processed') AND new_row.event_type IN ('conversion'), false) AND new_row.occurred_at IS NOT NULL) OR (COALESCE(old_row.processing_status IN ('processed') AND old_row.event_type IN ('conversion'), false) AND old_row.occurred_at IS NOT NULL))
+              AND (
+                (COALESCE(new_row.processing_status IN ('processed') AND new_row.event_type IN ('conversion'), false) AND new_row.occurred_at IS NOT NULL) IS DISTINCT FROM (COALESCE(old_row.processing_status IN ('processed') AND old_row.event_type IN ('conversion'), false) AND old_row.occurred_at IS NOT NULL)
+                OR (new_row.id, new_row.tenant_id, new_row.occurred_at, new_row.event_timestamp, new_row.event_type, new_row.channel, new_row.campaign_id, new_row.revenue_cents, new_row.conversion_value_cents, new_row.currency, new_row.processing_status)
+                   IS DISTINCT FROM (old_row.id, old_row.tenant_id, old_row.occurred_at, old_row.event_timestamp, old_row.event_type, old_row.channel, old_row.campaign_id, old_row.revenue_cents, old_row.conversion_value_cents, old_row.currency, old_row.processing_status)
+              )
+        ) both_buckets
+        WHERE window_start IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_delete() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'b23_match_verdicts_snapshot_changed',
+        'b23_match_verdicts',
+        encode(sha256(convert_to(
+            'b23_match_verdicts|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('b23_match_verdicts:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT
+            row_set.tenant_id AS tenant_id,
+            date_trunc('day', row_set.last_transition_at) AS window_start
+        FROM old_rows row_set
+        WHERE COALESCE(row_set.status IN ('matched_confirmed', 'adjusted'), false) AND row_set.last_transition_at IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_insert() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'b23_match_verdicts_snapshot_changed',
+        'b23_match_verdicts',
+        encode(sha256(convert_to(
+            'b23_match_verdicts|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('b23_match_verdicts:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT
+            row_set.tenant_id AS tenant_id,
+            date_trunc('day', row_set.last_transition_at) AS window_start
+        FROM new_rows row_set
+        WHERE COALESCE(row_set.status IN ('matched_confirmed', 'adjusted'), false) AND row_set.last_transition_at IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_update() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'b23_match_verdicts_snapshot_changed',
+        'b23_match_verdicts',
+        encode(sha256(convert_to(
+            'b23_match_verdicts|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('b23_match_verdicts:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT tenant_id, window_start FROM (
+            SELECT new_row.tenant_id AS tenant_id,
+                   date_trunc('day', new_row.last_transition_at) AS window_start
+            FROM new_rows new_row
+            JOIN old_rows old_row ON old_row.id = new_row.id
+            WHERE ((COALESCE(new_row.status IN ('matched_confirmed', 'adjusted'), false) AND new_row.last_transition_at IS NOT NULL) OR (COALESCE(old_row.status IN ('matched_confirmed', 'adjusted'), false) AND old_row.last_transition_at IS NOT NULL))
+              AND (
+                (COALESCE(new_row.status IN ('matched_confirmed', 'adjusted'), false) AND new_row.last_transition_at IS NOT NULL) IS DISTINCT FROM (COALESCE(old_row.status IN ('matched_confirmed', 'adjusted'), false) AND old_row.last_transition_at IS NOT NULL)
+                OR (new_row.id, new_row.tenant_id, new_row.attribution_event_id, new_row.provider, new_row.canonical_commerce_reference, new_row.status, new_row.match_quality, new_row.attributed_amount_minor, new_row.verified_amount_minor, new_row.currency_code, new_row.confirmed_at, new_row.adjusted_at, new_row.last_transition_at, new_row.canonical_expected_gross_amount_minor, new_row.canonical_captured_gross_amount_minor, new_row.canonical_net_verified_amount_minor, new_row.discrepancy_amount_minor, new_row.discrepancy_ratio_bps, new_row.discrepancy_band)
+                   IS DISTINCT FROM (old_row.id, old_row.tenant_id, old_row.attribution_event_id, old_row.provider, old_row.canonical_commerce_reference, old_row.status, old_row.match_quality, old_row.attributed_amount_minor, old_row.verified_amount_minor, old_row.currency_code, old_row.confirmed_at, old_row.adjusted_at, old_row.last_transition_at, old_row.canonical_expected_gross_amount_minor, old_row.canonical_captured_gross_amount_minor, old_row.canonical_net_verified_amount_minor, old_row.discrepancy_amount_minor, old_row.discrepancy_ratio_bps, old_row.discrepancy_band)
+              )
+            UNION
+            SELECT old_row.tenant_id AS tenant_id,
+                   date_trunc('day', old_row.last_transition_at) AS window_start
+            FROM new_rows new_row
+            JOIN old_rows old_row ON old_row.id = new_row.id
+            WHERE ((COALESCE(new_row.status IN ('matched_confirmed', 'adjusted'), false) AND new_row.last_transition_at IS NOT NULL) OR (COALESCE(old_row.status IN ('matched_confirmed', 'adjusted'), false) AND old_row.last_transition_at IS NOT NULL))
+              AND (
+                (COALESCE(new_row.status IN ('matched_confirmed', 'adjusted'), false) AND new_row.last_transition_at IS NOT NULL) IS DISTINCT FROM (COALESCE(old_row.status IN ('matched_confirmed', 'adjusted'), false) AND old_row.last_transition_at IS NOT NULL)
+                OR (new_row.id, new_row.tenant_id, new_row.attribution_event_id, new_row.provider, new_row.canonical_commerce_reference, new_row.status, new_row.match_quality, new_row.attributed_amount_minor, new_row.verified_amount_minor, new_row.currency_code, new_row.confirmed_at, new_row.adjusted_at, new_row.last_transition_at, new_row.canonical_expected_gross_amount_minor, new_row.canonical_captured_gross_amount_minor, new_row.canonical_net_verified_amount_minor, new_row.discrepancy_amount_minor, new_row.discrepancy_ratio_bps, new_row.discrepancy_band)
+                   IS DISTINCT FROM (old_row.id, old_row.tenant_id, old_row.attribution_event_id, old_row.provider, old_row.canonical_commerce_reference, old_row.status, old_row.match_quality, old_row.attributed_amount_minor, old_row.verified_amount_minor, old_row.currency_code, old_row.confirmed_at, old_row.adjusted_at, old_row.last_transition_at, old_row.canonical_expected_gross_amount_minor, old_row.canonical_captured_gross_amount_minor, old_row.canonical_net_verified_amount_minor, old_row.discrepancy_amount_minor, old_row.discrepancy_ratio_bps, old_row.discrepancy_band)
+              )
+        ) both_buckets
+        WHERE window_start IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_b23_revenue_events_delete() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'b23_revenue_events_snapshot_changed',
+        'b23_revenue_events',
+        encode(sha256(convert_to(
+            'b23_revenue_events|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('b23_revenue_events:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT
+            row_set.tenant_id AS tenant_id,
+            date_trunc('day', row_set.event_occurred_at) AS window_start
+        FROM old_rows row_set
+        WHERE COALESCE(row_set.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND row_set.event_occurred_at IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_b23_revenue_events_insert() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'b23_revenue_events_snapshot_changed',
+        'b23_revenue_events',
+        encode(sha256(convert_to(
+            'b23_revenue_events|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('b23_revenue_events:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT
+            row_set.tenant_id AS tenant_id,
+            date_trunc('day', row_set.event_occurred_at) AS window_start
+        FROM new_rows row_set
+        WHERE COALESCE(row_set.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND row_set.event_occurred_at IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.b24_invalidate_b23_revenue_events_update() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.b24_dirty_events (
+        tenant_id, model_type, model_version,
+        source_window_start, source_window_end,
+        dirty_reason, source_family, event_hash, source_event_id,
+        observed_at, status, created_at, updated_at
+    )
+    SELECT
+        affected.tenant_id,
+        'mmm',
+        'b24-p3-orchestration-v1',
+        affected.window_start,
+        affected.window_start + interval '1 day',
+        'b23_revenue_events_snapshot_changed',
+        'b23_revenue_events',
+        encode(sha256(convert_to(
+            'b23_revenue_events|' || affected.tenant_id::text || '|'
+            || affected.window_start::text, 'UTF8')), 'hex'),
+        left('b23_revenue_events:' || affected.window_start::text, 128),
+        now(),
+        'pending',
+        now(),
+        now()
+    FROM (
+        SELECT DISTINCT tenant_id, window_start FROM (
+            SELECT new_row.tenant_id AS tenant_id,
+                   date_trunc('day', new_row.event_occurred_at) AS window_start
+            FROM new_rows new_row
+            JOIN old_rows old_row ON old_row.id = new_row.id
+            WHERE ((COALESCE(new_row.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND new_row.event_occurred_at IS NOT NULL) OR (COALESCE(old_row.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND old_row.event_occurred_at IS NOT NULL))
+              AND (
+                (COALESCE(new_row.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND new_row.event_occurred_at IS NOT NULL) IS DISTINCT FROM (COALESCE(old_row.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND old_row.event_occurred_at IS NOT NULL)
+                OR (new_row.id, new_row.tenant_id, new_row.match_verdict_id, new_row.provider, new_row.canonical_commerce_reference, new_row.event_type, new_row.currency_code, new_row.event_occurred_at, new_row.captured_amount_minor, new_row.refund_amount_minor, new_row.chargeback_amount_minor, new_row.reversal_amount_minor, new_row.net_effect_sign, new_row.is_gross_capture_correction)
+                   IS DISTINCT FROM (old_row.id, old_row.tenant_id, old_row.match_verdict_id, old_row.provider, old_row.canonical_commerce_reference, old_row.event_type, old_row.currency_code, old_row.event_occurred_at, old_row.captured_amount_minor, old_row.refund_amount_minor, old_row.chargeback_amount_minor, old_row.reversal_amount_minor, old_row.net_effect_sign, old_row.is_gross_capture_correction)
+              )
+            UNION
+            SELECT old_row.tenant_id AS tenant_id,
+                   date_trunc('day', old_row.event_occurred_at) AS window_start
+            FROM new_rows new_row
+            JOIN old_rows old_row ON old_row.id = new_row.id
+            WHERE ((COALESCE(new_row.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND new_row.event_occurred_at IS NOT NULL) OR (COALESCE(old_row.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND old_row.event_occurred_at IS NOT NULL))
+              AND (
+                (COALESCE(new_row.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND new_row.event_occurred_at IS NOT NULL) IS DISTINCT FROM (COALESCE(old_row.event_type IN ('payment_capture', 'partial_refund', 'full_refund', 'chargeback_lost', 'chargeback_won', 'reversal'), false) AND old_row.event_occurred_at IS NOT NULL)
+                OR (new_row.id, new_row.tenant_id, new_row.match_verdict_id, new_row.provider, new_row.canonical_commerce_reference, new_row.event_type, new_row.currency_code, new_row.event_occurred_at, new_row.captured_amount_minor, new_row.refund_amount_minor, new_row.chargeback_amount_minor, new_row.reversal_amount_minor, new_row.net_effect_sign, new_row.is_gross_capture_correction)
+                   IS DISTINCT FROM (old_row.id, old_row.tenant_id, old_row.match_verdict_id, old_row.provider, old_row.canonical_commerce_reference, old_row.event_type, old_row.currency_code, old_row.event_occurred_at, old_row.captured_amount_minor, old_row.refund_amount_minor, old_row.chargeback_amount_minor, old_row.reversal_amount_minor, old_row.net_effect_sign, old_row.is_gross_capture_correction)
+              )
+        ) both_buckets
+        WHERE window_start IS NOT NULL
+    ) affected;
+    RETURN NULL;
+END
+$$;
 
 CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
@@ -733,32 +1404,36 @@ CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-BEGIN
-    IF NEW.status IN ('pending', 'authority_retry_ready')
-       AND (
-            TG_OP = 'INSERT'
-            OR OLD.status IS DISTINCT FROM NEW.status
-       ) THEN
-        INSERT INTO public.b24_fit_planner_wakeups (
-            tenant_id, observed_at
-        ) VALUES (NEW.tenant_id, NEW.observed_at)
-        ON CONFLICT (tenant_id) DO NOTHING;
+        BEGIN
+            IF NEW.status IN ('pending', 'authority_retry_ready')
+               AND (
+                    TG_OP = 'INSERT'
+                    OR OLD.status IS DISTINCT FROM NEW.status
+               ) THEN
+                INSERT INTO public.b24_fit_planner_wakeups (
+                    tenant_id, observed_at
+                ) VALUES (NEW.tenant_id, NEW.observed_at)
+                ON CONFLICT (tenant_id) DO NOTHING;
 
-        IF NOT FOUND THEN
-            UPDATE public.b24_fit_planner_wakeups
-            SET wakeup_revision = wakeup_revision + 1,
-                status = 'pending',
-                lease_owner = NULL,
-                lease_expires_at = NULL,
-                observed_at = LEAST(observed_at, NEW.observed_at),
-                updated_at = now()
-            WHERE tenant_id = NEW.tenant_id
-              AND status = 'leased';
-        END IF;
-    END IF;
-    RETURN NEW;
-END
-$$;
+                IF NOT FOUND THEN
+                    UPDATE public.b24_fit_planner_wakeups
+                    SET wakeup_revision = CASE
+                            WHEN status = 'leased' THEN wakeup_revision + 1
+                            ELSE wakeup_revision
+                        END,
+                        status = 'pending',
+                        lease_owner = NULL,
+                        lease_expires_at = NULL,
+                        next_eligible_at = NULL,
+                        observed_at = LEAST(observed_at, NEW.observed_at),
+                        updated_at = now()
+                    WHERE tenant_id = NEW.tenant_id
+                      AND (status = 'leased' OR next_eligible_at IS NOT NULL);
+                END IF;
+            END IF;
+            RETURN NEW;
+        END
+        $$;
 
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
     LANGUAGE plpgsql
@@ -2142,6 +2817,7 @@ CREATE TABLE public.b24_fit_planner_wakeups (
     observed_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    next_eligible_at timestamp with time zone,
     CONSTRAINT b24_fit_planner_wakeups_check CHECK ((((status = 'pending'::text) AND (lease_owner IS NULL) AND (lease_expires_at IS NULL)) OR ((status = 'leased'::text) AND (lease_owner IS NOT NULL) AND (lease_expires_at IS NOT NULL)))),
     CONSTRAINT b24_fit_planner_wakeups_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'leased'::text]))),
     CONSTRAINT b24_fit_planner_wakeups_wakeup_revision_check CHECK ((wakeup_revision > 0))
@@ -7650,7 +8326,35 @@ CREATE TRIGGER trg_b24_dispatch_fence_artifacts BEFORE INSERT OR DELETE OR UPDAT
 
 CREATE TRIGGER trg_b24_dispatch_fence_fits BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('fit');
 
+CREATE TRIGGER trg_b24_enforce_artifact_lifecycle BEFORE UPDATE OF lifecycle_status ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_artifact_lifecycle();
+
+CREATE TRIGGER trg_b24_enforce_dirty_event_lifecycle BEFORE UPDATE ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dirty_event_lifecycle();
+
 CREATE TRIGGER trg_b24_evidence_temporal_plausibility BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_evidence_temporal_plausibility();
+
+CREATE TRIGGER trg_b24_invalidate_attribution_allocations_delete AFTER DELETE ON public.attribution_allocations REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_allocations_delete();
+
+CREATE TRIGGER trg_b24_invalidate_attribution_allocations_insert AFTER INSERT ON public.attribution_allocations REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_allocations_insert();
+
+CREATE TRIGGER trg_b24_invalidate_attribution_allocations_update AFTER UPDATE ON public.attribution_allocations REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_allocations_update();
+
+CREATE TRIGGER trg_b24_invalidate_attribution_events_delete AFTER DELETE ON public.attribution_events REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_delete();
+
+CREATE TRIGGER trg_b24_invalidate_attribution_events_insert AFTER INSERT ON public.attribution_events REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_insert();
+
+CREATE TRIGGER trg_b24_invalidate_attribution_events_update AFTER UPDATE ON public.attribution_events REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_update();
+
+CREATE TRIGGER trg_b24_invalidate_b23_match_verdicts_delete AFTER DELETE ON public.b23_match_verdicts REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_match_verdicts_delete();
+
+CREATE TRIGGER trg_b24_invalidate_b23_match_verdicts_insert AFTER INSERT ON public.b23_match_verdicts REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_match_verdicts_insert();
+
+CREATE TRIGGER trg_b24_invalidate_b23_match_verdicts_update AFTER UPDATE ON public.b23_match_verdicts REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_match_verdicts_update();
+
+CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_delete AFTER DELETE ON public.b23_revenue_events REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_delete();
+
+CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_insert AFTER INSERT ON public.b23_revenue_events REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_insert();
+
+CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_update AFTER UPDATE ON public.b23_revenue_events REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_update();
 
 CREATE TRIGGER trg_b24_signal_fit_planner_wakeup AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced();
 

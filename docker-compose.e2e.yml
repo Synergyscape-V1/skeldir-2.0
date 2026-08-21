@@ -86,6 +86,7 @@ services:
       CI: "true"
       ENVIRONMENT: ${E2E_WORKER_ENVIRONMENT:-${E2E_ENVIRONMENT:-test}}
       LOG_LEVEL: INFO
+      SKELDIR_CELERY_WORKER_ROLE: non_bayesian
       DATABASE_URL: ${E2E_DATABASE_URL?missing E2E_DATABASE_URL}
       DATABASE_POOL_SIZE: ${E2E_WORKER_DATABASE_POOL_SIZE:-${E2E_DATABASE_POOL_SIZE:-20}}
       DATABASE_MAX_OVERFLOW: ${E2E_WORKER_DATABASE_MAX_OVERFLOW:-${E2E_DATABASE_MAX_OVERFLOW:-0}}
@@ -114,16 +115,24 @@ services:
     tmpfs:
       - /tmp/prometheus_multiproc
 
+  # The only process in this topology that plans fits and writes Bayesian truth.
+  # It is the only one given the dedicated app_worker login: the B2.5-P13 worker
+  # authority boundary is a credential-custody property, so a topology that
+  # hands every process the same DSN refutes it no matter what the PostgreSQL
+  # ACLs say. E2E_WORKER_DATABASE_URL must resolve to the app_worker principal
+  # and must not equal E2E_DATABASE_URL; the C7 topology gate asserts both.
   worker_bayesian:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: backend/Dockerfile.bayesian
     container_name: skeldir-worker-bayesian-e2e
     environment:
       CI: "true"
       ENVIRONMENT: ${E2E_WORKER_ENVIRONMENT:-${E2E_ENVIRONMENT:-test}}
       LOG_LEVEL: INFO
-      DATABASE_URL: ${E2E_DATABASE_URL?missing E2E_DATABASE_URL}
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+      DATABASE_URL: ${E2E_WORKER_DATABASE_URL?missing E2E_WORKER_DATABASE_URL}
       DATABASE_POOL_SIZE: ${E2E_WORKER_DATABASE_POOL_SIZE:-${E2E_DATABASE_POOL_SIZE:-20}}
       DATABASE_MAX_OVERFLOW: ${E2E_WORKER_DATABASE_MAX_OVERFLOW:-${E2E_DATABASE_MAX_OVERFLOW:-0}}
       DATABASE_FORCE_POOLING: ${E2E_WORKER_DATABASE_FORCE_POOLING:-${E2E_DATABASE_FORCE_POOLING:-0}}
@@ -160,6 +169,7 @@ services:
       CI: "true"
       ENVIRONMENT: ${E2E_WORKER_ENVIRONMENT:-${E2E_ENVIRONMENT:-test}}
       LOG_LEVEL: INFO
+      SKELDIR_CELERY_WORKER_ROLE: non_bayesian
       DATABASE_URL: ${E2E_DATABASE_URL?missing E2E_DATABASE_URL}
       DATABASE_POOL_SIZE: ${E2E_ADJACENT_DATABASE_POOL_SIZE:-1}
       DATABASE_MAX_OVERFLOW: ${E2E_ADJACENT_DATABASE_MAX_OVERFLOW:-0}

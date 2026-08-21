@@ -36,7 +36,11 @@ from app.bayesian.dispatch_authority import (
 )
 from app.bayesian.dispatch_outbox import publish_due_recovery_rows_sync
 from app.bayesian.fit_execution import execute_fit_intent_sync
-from app.bayesian.fit_planner import plan_due_dirty_events
+from app.bayesian.fit_planner import (
+    MAX_WAIT_SECONDS,
+    QUIET_PERIOD_SECONDS,
+    plan_due_dirty_events,
+)
 from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.bayesian.tenant_context import bind_transaction_local_tenant
 from app.bayesian.worker_boot_probe import (
@@ -209,24 +213,37 @@ def _complete_planner_wakeup(
     lease_owner: str,
     wakeup_revision: int,
     succeeded: bool,
-) -> None:
-    """Acknowledge one revision or release it for retry after failure."""
+) -> str:
+    """Dispose of one planning obligation from residual authority.
+
+    The wakeup is never destroyed because a Python call returned without an
+    exception. The database re-reads the tenant's remaining unplanned dirty
+    state inside this transaction and decides: delete only when nothing is left,
+    retain when eligible work remains after a bounded batch, defer when the only
+    remaining work is still inside its debounce quiet period. Tenant context is
+    bound first because that residual read is tenant truth under FORCE RLS.
+    """
 
     engine = create_bayesian_worker_engine()
     try:
         with engine.begin() as conn:
-            conn.execute(
+            _set_tenant_context(conn, tenant_id)
+            disposition = conn.execute(
                 text(
                     "SELECT public.b24_complete_fit_planner_wakeup("
-                    ":tenant_id, :lease_owner, :revision, :succeeded)"
+                    ":tenant_id, :lease_owner, :revision, :succeeded, "
+                    ":quiet_period_seconds, :max_wait_seconds)"
                 ),
                 {
                     "tenant_id": str(tenant_id),
                     "lease_owner": lease_owner,
                     "revision": wakeup_revision,
                     "succeeded": succeeded,
+                    "quiet_period_seconds": QUIET_PERIOD_SECONDS,
+                    "max_wait_seconds": MAX_WAIT_SECONDS,
                 },
-            )
+            ).scalar_one()
+        return str(disposition)
     finally:
         engine.dispose()
 
@@ -265,6 +282,7 @@ def plan_due_fit_intents(
     planned = 0
     dispatchable = 0
     reused = 0
+    dispositions: dict[str, int] = {}
     for tenant_id, wakeup_revision in tenants:
         succeeded = False
         try:
@@ -285,18 +303,20 @@ def plan_due_fit_intents(
                     reused += 1
             succeeded = True
         finally:
-            _complete_planner_wakeup(
+            disposition = _complete_planner_wakeup(
                 tenant_id=tenant_id,
                 lease_owner=lease_owner,
                 wakeup_revision=wakeup_revision,
                 succeeded=succeeded,
             )
+            dispositions[disposition] = dispositions.get(disposition, 0) + 1
     return {
         "status": "completed",
         "tenant_count": len(tenants),
         "planned_count": planned,
         "dispatchable_count": dispatchable,
         "reused_count": reused,
+        "wakeup_dispositions": dispositions,
     }
 
 

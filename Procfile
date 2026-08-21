@@ -16,9 +16,14 @@
 # Core Services
 db: postgres -D $PGDATA -k $PGSOCKET -h localhost -p 5432
 web: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-worker: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution
-worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1 celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian
-worker_b23: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
+worker: cd backend && SKELDIR_CELERY_WORKER_ROLE=non_bayesian celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution
+# The Bayesian worker is the only process that plans fits and writes Bayesian
+# truth, so it is the only one that runs on the dedicated app_worker login.
+# Foreman-style managers share one environment, so this line must override
+# DATABASE_URL explicitly -- inheriting the API DSN would hand worker
+# authority to a process topology that is supposed to be separated from it.
+worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1 DATABASE_URL=$WORKER_DATABASE_URL celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian
+worker_b23: cd backend && SKELDIR_CELERY_WORKER_ROLE=non_bayesian celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
 beat: cd backend && celery -A app.celery_app.celery_app beat --loglevel=info
 
 # Mock Servers (Contract-First Development)

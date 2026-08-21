@@ -37,6 +37,13 @@ C5_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202608191200_b25_p13_c5_terminal_truth_temporal_plausibility.py"
 )
+# C7 supersedes the C6 terminal inventory with CREATE OR REPLACE, so the
+# governing terminal authority is the C7 revision. C6's own tuple stays under
+# test as a historical floor: governance may expand, never silently shrink.
+GOVERNING_MIGRATION = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202608221200_b25_p13_c7_source_causality_obligation_conservation.py"
+)
 PROVISIONER = ROOT / "scripts/database/prepare_migration_authority_boundary.py"
 FIT_CLAIM = ROOT / "backend/app/bayesian/fit_claim.py"
 FIT_PLANNER = ROOT / "backend/app/bayesian/fit_planner.py"
@@ -269,9 +276,16 @@ def validate_worker_authority(
 def validate_terminal_dependencies(
     migration: str | None = None, registry: dict[str, Any] | None = None
 ) -> int:
-    """The signed fit dependency registry and terminal trigger are identical."""
+    """The signed fit dependency registry and the governing terminal trigger agree.
 
-    body = migration if migration is not None else _read(MIGRATION)
+    ``migration`` is the revision that currently governs terminal truth. C7
+    replaced C6's trigger body with CREATE OR REPLACE, so C6's own 28-column
+    tuple is now a historical floor rather than the live inventory: it must
+    remain a subset of what is governed today, and its own trigger must still be
+    derived from it, but the registry is compared against the governing head.
+    """
+
+    body = migration if migration is not None else _read(GOVERNING_MIGRATION)
     governed = registry if registry is not None else _yaml(DEPENDENCIES)
     dependencies = tuple(str(v) for v in governed.get("dependencies", []))
     frozen = _tuple_assignment(body, "TRUST_FIT_DEPENDENCY_COLUMNS")
@@ -281,6 +295,12 @@ def validate_terminal_dependencies(
         "terminal_dependency_inventory_drift:"
         f"missing={sorted(set(dependencies)-set(frozen))}:"
         f"extra={sorted(set(frozen)-set(dependencies))}",
+    )
+    historical = _tuple_assignment(_read(MIGRATION), "TRUST_FIT_DEPENDENCY_COLUMNS")
+    dropped = sorted(set(historical) - set(dependencies))
+    _require(
+        not dropped,
+        "terminal_governance_shrank_since_c6:" + ",".join(dropped),
     )
     read = _read(READ_MODEL)
     absent = sorted(field for field in dependencies if field not in read)
@@ -693,11 +713,12 @@ def run_negative_controls() -> list[str]:
             ),
         )
     )
+    governing = _read(GOVERNING_MIGRATION)
     controls.append(
         _must_fail(
             "NC-C6-03",
             lambda: validate_terminal_dependencies(
-                migration=migration.replace('    "model_type",\n', "", 1)
+                migration=governing.replace('    "model_type",\n', "", 1)
             ),
         )
     )

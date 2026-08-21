@@ -243,6 +243,192 @@ jobs:
             -q -s --no-header | tee /tmp/b25_p13_c6_physics.out
           grep -E "3 passed" /tmp/b25_p13_c6_physics.out
 
+      - name: P13 C7 source causality, obligation conservation, and authority closure
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p13_c7_closure.py --negative-control             | tee /tmp/b25_p13_c7_closure.out
+          grep -E "^B25_P13_C7_CLOSURE_VALIDATION_PASS$" /tmp/b25_p13_c7_closure.out
+          grep -E "^c7_invariant_groups_passed=7$" /tmp/b25_p13_c7_closure.out
+          grep -E "^c7_static_negative_controls_fired=17$" /tmp/b25_p13_c7_closure.out
+          grep -E "^c7_behavioral_obligations_bound=12$" /tmp/b25_p13_c7_closure.out
+
+      # The behavioural half. Real PostgreSQL, real triggers, real planner
+      # functions, real provisioner re-invocation. C7 refuses to let any of
+      # these invariants be closed by a source-text substitution, which is the
+      # exact gap that let a green C6 tree ship reproducible runtime defects.
+      - name: P13 C7 conservation physics (behavioural falsifiers)
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C7_DB_PROOF: "1"
+          SKELDIR_B25_P13_C7_ADMIN_DSN: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c7-prometheus
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python -m pytest             backend/tests/trust/test_b25_p13_c7_conservation_physics.py             -q -s --no-header | tee /tmp/b25_p13_c7_physics.out
+          grep -E "12 passed" /tmp/b25_p13_c7_physics.out
+
+      # NC-C7-B01. The directive's named authority falsifier, run in both
+      # directions against real privilege state rather than provisioner source
+      # text: restore the broad runtime GRANT that Report 40 reproduced, prove
+      # the required authority gate turns red, then prove provisioning repairs
+      # the state and the gate turns green again. A gate that only reads source
+      # could not tell these four steps apart.
+      - name: NC-C7-B01 restoring runtime schema authority turns the gate red
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C7_DB_PROOF: "1"
+          SKELDIR_B25_P13_C7_ADMIN_DSN: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c7-prometheus
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          DB=postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
+          ADMIN=postgresql://postgres:postgres@127.0.0.1:5432/postgres
+
+          psql "$DB" -c "GRANT ALL ON SCHEMA public TO app_user;"
+          reopened=$(psql "$DB" -tAc "SELECT has_schema_privilege('app_user','public','CREATE')")
+          echo "reopened_runtime_create=$reopened"
+          test "$reopened" = "t"
+
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c7_conservation_physics.py \
+              -q -s --no-header -k reprovision_cannot_restore \
+              > /tmp/nc_c7_b01_red.out 2>&1; then
+            echo "NC-C7-B01 did not fire: the authority proof passed while runtime CREATE was open"
+            cat /tmp/nc_c7_b01_red.out
+            exit 1
+          fi
+          grep -E "1 failed" /tmp/nc_c7_b01_red.out
+
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "$ADMIN" --database-name skeldir_b25_p13_e2e \
+            | tee /tmp/nc_c7_b01_repair.out
+          grep -E "^runtime_schema_hardening_applied=true$" /tmp/nc_c7_b01_repair.out
+          grep -E "^authority_monotonic=true$" /tmp/nc_c7_b01_repair.out
+          repaired=$(psql "$DB" -tAc "SELECT has_schema_privilege('app_user','public','CREATE')")
+          echo "repaired_runtime_create=$repaired"
+          test "$repaired" = "f"
+
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c7_conservation_physics.py \
+            -q -s --no-header -k reprovision_cannot_restore \
+            | tee /tmp/nc_c7_b01_green.out
+          grep -E "1 passed" /tmp/nc_c7_b01_green.out
+
+      # NC-C7-B02. Source-change causality is a physical property of the
+      # contract-derived trigger, so removing the trigger must make a real B2.4
+      # transition stop producing its planning obligation. Restoring it must
+      # make the same proof green again.
+      - name: NC-C7-B02 removing source invalidation turns causality red
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C7_DB_PROOF: "1"
+          SKELDIR_B25_P13_C7_ADMIN_DSN: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c7-prometheus
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          DB=postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
+
+          psql "$DB" -c "DROP TRIGGER trg_b24_invalidate_b23_match_verdicts_update ON public.b23_match_verdicts;"
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c7_conservation_physics.py \
+              -q -s --no-header -k source_change_creates_durable_obligation \
+              > /tmp/nc_c7_b02_red.out 2>&1; then
+            echo "NC-C7-B02 did not fire: causality proof passed without the trigger"
+            cat /tmp/nc_c7_b02_red.out
+            exit 1
+          fi
+          grep -E "1 failed" /tmp/nc_c7_b02_red.out
+          grep -E "produced no invalidation" /tmp/nc_c7_b02_red.out
+
+          psql "$DB" -c "CREATE TRIGGER trg_b24_invalidate_b23_match_verdicts_update AFTER UPDATE ON public.b23_match_verdicts REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_match_verdicts_update();"
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c7_conservation_physics.py \
+            -q -s --no-header -k source_change_creates_durable_obligation \
+            | tee /tmp/nc_c7_b02_green.out
+          grep -E "1 passed" /tmp/nc_c7_b02_green.out
+
+      # NC-C7-B03. Wake-up conservation is a property of the completion
+      # function's residual-authority read. Reinstating the C6 semantics --
+      # unconditional delete on "no exception" -- must strand pre-debounce and
+      # bounded-backlog work and turn both liveness proofs red.
+      - name: NC-C7-B03 unconditional wake-up acknowledgement turns liveness red
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C7_DB_PROOF: "1"
+          SKELDIR_B25_P13_C7_ADMIN_DSN: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c7-prometheus
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          DB=postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
+
+          psql "$DB" <<'SQL'
+          CREATE OR REPLACE FUNCTION public.b24_complete_fit_planner_wakeup(
+              p_tenant_id uuid, p_lease_owner text, p_wakeup_revision bigint,
+              p_succeeded boolean, p_quiet_period_seconds integer,
+              p_max_wait_seconds integer)
+          RETURNS text LANGUAGE plpgsql SECURITY DEFINER
+          SET search_path = public, pg_temp AS $nc$
+          BEGIN
+              DELETE FROM public.b24_fit_planner_wakeups
+              WHERE tenant_id = p_tenant_id AND status = 'leased'
+                AND lease_owner = p_lease_owner
+                AND wakeup_revision = p_wakeup_revision;
+              RETURN 'deleted';
+          END $nc$;
+          SQL
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c7_conservation_physics.py \
+              -q -s --no-header \
+              -k "pre_debounce_pass_cannot_strand or bounded_backlog_drains" \
+              > /tmp/nc_c7_b03_red.out 2>&1; then
+            echo "NC-C7-B03 did not fire: liveness proofs passed with C6 acknowledgement semantics"
+            cat /tmp/nc_c7_b03_red.out
+            exit 1
+          fi
+          grep -E "2 failed" /tmp/nc_c7_b03_red.out
+
+          # Restore the governed function by replaying the C7 revision.
+          MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e \
+          DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e \
+            alembic downgrade 202608202300
+          MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e \
+          DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e \
+            alembic upgrade head
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c7_conservation_physics.py \
+            -q -s --no-header \
+            -k "pre_debounce_pass_cannot_strand or bounded_backlog_drains" \
+            | tee /tmp/nc_c7_b03_green.out
+          grep -E "2 passed" /tmp/nc_c7_b03_green.out
+
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody
       # reads, so the manifest is asserted here as well as inside the test.
