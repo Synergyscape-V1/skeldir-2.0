@@ -810,6 +810,64 @@ def _own_as_worker(signature: str) -> None:
     )
 
 
+# C6 revoked EXECUTE on its planner functions from PUBLIC, app_user, app_rw and
+# app_ro. PostgreSQL requires EXECUTE on an existing function to CREATE OR
+# REPLACE it, so in any topology whose migration principal is one of those roles
+# -- b0545-convergence migrates as app_user -- replacing a C6 function is denied
+# even though that principal owns it. Restore EXECUTE for the migrating
+# principal just long enough to replace, then hand the surface back exactly as
+# it was: the trailing REVOKE in each block re-closes the named roles, and
+# _restore_replace_authority drops the temporary grant for any principal the
+# named list does not already cover.
+_REPLACED_C6_FUNCTIONS = (
+    "b24_due_fit_planner_tenants(text, integer)",
+    "b24_signal_fit_planner_wakeup_coalesced()",
+    "b24_enforce_terminal_fit_truth()",
+)
+
+
+def _allow_replace(signature: str) -> None:
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF to_regprocedure('public.{signature}') IS NOT NULL THEN
+                EXECUTE 'GRANT EXECUTE ON FUNCTION public.{signature} TO '
+                        || quote_ident(current_user);
+            END IF;
+        END
+        $$;
+        """
+    )
+
+
+def _restore_replace_authority() -> None:
+    """Drop temporary EXECUTE grants so the privilege surface is unchanged."""
+
+    for signature in _REPLACED_C6_FUNCTIONS:
+        op.execute(
+            f"""
+            DO $$
+            DECLARE
+                owner_name text;
+            BEGIN
+                IF to_regprocedure('public.{signature}') IS NULL THEN
+                    RETURN;
+                END IF;
+                SELECT pg_get_userbyid(proowner) INTO owner_name
+                FROM pg_proc WHERE oid = 'public.{signature}'::regprocedure;
+                -- An owner keeps its rights implicitly; only a non-owner needs
+                -- the temporary grant taken back.
+                IF owner_name IS DISTINCT FROM current_user THEN
+                    EXECUTE 'REVOKE ALL ON FUNCTION public.{signature} FROM '
+                            || quote_ident(current_user);
+                END IF;
+            END
+            $$;
+            """
+        )
+
+
 def upgrade() -> None:
     # ------------------------------------------------------------------
     # 1. Contract-derived source-change invalidation.
@@ -915,6 +973,7 @@ def upgrade() -> None:
 
     # The selector honours a deferred obligation instead of hot-spinning a
     # tenant whose only work is still inside its quiet period.
+    _allow_replace("b24_due_fit_planner_tenants(text, integer)")
     op.execute(
         f"""
         CREATE OR REPLACE FUNCTION public.b24_due_fit_planner_tenants(
@@ -1101,6 +1160,7 @@ def upgrade() -> None:
     # deferred tenant could sit behind a stale quiet-period estimate. The
     # predicate deliberately matches nothing in the steady pending state, which
     # preserves the PR #661 hot-row correction under bulk ingestion.
+    _allow_replace("b24_signal_fit_planner_wakeup_coalesced()")
     op.execute(
         """
         CREATE OR REPLACE FUNCTION
@@ -1147,6 +1207,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # 3. Complete confidence dependency authority.
     # ------------------------------------------------------------------
+    _allow_replace("b24_enforce_terminal_fit_truth()")
     op.execute(
         f"""
         CREATE OR REPLACE FUNCTION public.b24_enforce_terminal_fit_truth()
@@ -1226,6 +1287,8 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dirty_event_lifecycle();
         """
     )
+
+    _restore_replace_authority()
 
     # ------------------------------------------------------------------
     # 5. Worker authority is not reachable from any runtime principal.

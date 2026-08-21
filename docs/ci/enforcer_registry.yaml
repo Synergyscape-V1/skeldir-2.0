@@ -147,6 +147,72 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VI Report.md
+- id: validate-b25-p13-c7-closure
+  path: scripts/ci/validate_b25_p13_c7_closure.py
+  status: required
+  owning_phase: B2.5-P13-C7
+  protected_invariant: B2.5-P13-C7 makes source-change causality physical by rendering B2.4
+    invalidation triggers from the source contract itself; derives planner-wakeup acknowledgement
+    from residual authority instead of Python control flow so pre-debounce and candidate-limit
+    passes cannot strand dirty work; keeps provisioning monotonic with respect to migration
+    hardening; derives the confidence dependency registry from the read model bidirectionally so
+    an unregistered decision-affecting field cannot land; enforces worker credential custody in
+    every in-scope executable topology; governs artifact and dirty-event lifecycle transitions;
+    and separates static from behavioural controls so a source-text substitution can never stand
+    in for a runtime falsifier.
+  command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  expected_failure_meaning: The generated invalidation surface drifted from the B2.4 source contract,
+    a source relation lost trigger coverage, wakeup acknowledgement stopped consulting residual
+    authority, the planner lease collapsed onto the worker hard time limit, provisioning widened
+    runtime schema authority or lost its fail-closed postcondition, a decision-affecting read-model
+    dependency went unregistered, an in-scope process topology conflated the worker and API database
+    credentials, a non-fit lifecycle guard was removed, or a behavioural obligation lost the runtime
+    proof bound to it.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_step
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VII Report.md
+- id: b25-p13-c7-dependency-derivation
+  path: scripts/ci/_b25_p13_c7_dependency_derivation.py
+  status: required
+  owning_phase: B2.5-P13-C7
+  protected_invariant: Derives the confidence read model's ACTUAL decision dependencies from its SQL
+    by resolving the projection's CTE alias map, so the C7 gate can assert set equality against the
+    governed registry in both directions rather than one-directional substring membership. This is
+    the mechanism by which created_at, an ordering input that decides signed snapshot freshness,
+    can no longer stay governed by nobody while CI is green.
+  command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/_b25_p13_c7_dependency_derivation.py
+  expected_failure_meaning: The read model gained a relation alias or a requested_fit output the
+    derivation cannot resolve, which means the dependency diff would silently stop covering part of
+    the projection.
+  first_diagnostic_command: python scripts/ci/_b25_p13_c7_dependency_derivation.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: library
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VII Report.md
 - id: validate-b25-p12-contract-projection
   path: scripts/ci/validate_b25_p12_contract_projection.py
   status: required

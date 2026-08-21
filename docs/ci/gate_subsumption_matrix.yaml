@@ -116,6 +116,54 @@
   risk_if_removed: A tenant API process could regain worker authority, dirty events could become inert,
     retries could duplicate work, REUSED could resurrect dead-letter dispatch, a v1 envelope could silently
     carry v2 fields, or self-derived expectations and decorative counters could make a broken proof green.
+- gate_id: validate-b25-p13-c7-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_c7_closure.py
+  owning_phase: B2.5-P13-C7
+  protected_invariant: Every committed mutation that changes canonical B2.4 source bytes creates its
+    invalidation obligation in the same transaction; a planning obligation survives being observed
+    too early or only partially processed; reprovisioning cannot restore authority the migration
+    history removed; every decision-affecting fit dependency is registered and terminally governed;
+    only the Bayesian worker holds the worker database credential; and behavioural claims are backed
+    by behavioural falsifiers rather than source-text substitutions.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C6 governs worker-plane grants, planner reachability and terminal dependency
+    membership, but validates the dependency relation in one direction only and cannot observe whether
+    a committed source change produced an obligation, whether an acknowledgement consulted residual
+    authority, or whether reprovisioning converged. C7 is the only gate that derives the invalidation
+    surface from the source contract and that refuses to close a behavioural obligation statically.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  risk_if_removed: A B2.4-source-changing transition could commit with no recomputation obligation, a
+    pre-debounce or candidate-limit-truncated planner pass could delete the only wakeup, a redeploy
+    could silently restore revoked schema authority, a new decision-affecting read-model field could
+    mutate outside the governed lifecycle, or an API process could be handed the worker credential.
+- gate_id: b25-p13-c7-dependency-derivation
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/_b25_p13_c7_dependency_derivation.py
+  owning_phase: B2.5-P13-C7
+  protected_invariant: The confidence read model's actual decision dependencies are derived from its
+    SQL by resolving the projection's CTE alias map, so the C7 registry diff runs in both directions
+    and an unresolvable reference is an error rather than a silently ignored one.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: validate-b25-p13-c7-closure
+  subsumption_evidence: This module has no standalone CI step. It is the derivation library that
+    validate-b25-p13-c7-closure imports, and every one of its failure modes surfaces through that
+    gate's bidirectional dependency assertion and through NC-C7-S01/NC-C7-S02. It is registered
+    because it lives under scripts/ci and must not become an unregistered enforcement surface.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  local_reproduction_command: python scripts/ci/_b25_p13_c7_dependency_derivation.py
+  risk_if_removed: The C7 dependency diff would lose the direction that catches an unregistered
+    decision-affecting read-model field, which is precisely how created_at escaped C6.
 - gate_id: validate-b25-p12-contract-projection
   workflow: .github/workflows/b2_5-p12-ci-gates.yml
   job: B2.5-P12 CI Gates

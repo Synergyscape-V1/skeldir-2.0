@@ -386,7 +386,10 @@ def validate_wakeup_coalescing(
         "test_c6_pending_wakeup_coalesces_and_leased_wakeup_is_invalidated",
         "assert pending.wakeup_revision == 1",
         'assert tuple(invalidated) == (2, "pending", None, None)',
-        "assert stale_ack is False",
+        # C7 replaced the boolean acknowledgement with a disposition. The
+        # invariant is unchanged and still asserted: a stale revision may
+        # never delete the newer wakeup.
+        'assert stale_ack == "stale_revision"',
     ):
         _require(witness in test, f"planner_wakeup_coalescing_proof_missing:{witness}")
     return 12
