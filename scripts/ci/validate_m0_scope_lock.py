@@ -198,6 +198,7 @@ ALLOWED_M0_PATHS = [
     "docs/forensics/B2.5-P13 Remediation Evidence Pack.md",
     "docs/forensics/B2.5-P13 Corrective Action Remediation V Report.md",
     "docs/forensics/B2.5-P13 Corrective Action Remediation VI Report.md",
+    "docs/forensics/B2.5-P13 Corrective Action Remediation VII Report.md",
     "scripts/contracts/error_component_registry.py",
     "api-contracts/openapi/v1/_common/error-component-registry.yaml",
     ".github/workflows/b2_5-p9-machine-identity.yml",

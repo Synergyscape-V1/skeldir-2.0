@@ -193,6 +193,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/forensics/B2.5-P13 Remediation Evidence Pack.md",
     "docs/forensics/B2.5-P13 Corrective Action Remediation V Report.md",
     "docs/forensics/B2.5-P13 Corrective Action Remediation VI Report.md",
+    "docs/forensics/B2.5-P13 Corrective Action Remediation VII Report.md",
     "docs/database/ADR-016-b25-p13-confidence-truth-downgrade.md",
     "alembic/versions/007_skeldir_foundation/202608131200_b25_p13_confidence_truth_closure.py",
     "alembic/versions/007_skeldir_foundation/202608181200_b25_p13_c4_confidence_state_closure.py",
