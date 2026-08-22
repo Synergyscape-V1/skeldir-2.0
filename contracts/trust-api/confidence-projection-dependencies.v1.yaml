@@ -1,18 +1,46 @@
 registry_version: b25-p13-confidence-projection-dependencies-v1
 source_table: public.bayesian_model_fits
 terminal_guard: public.b24_enforce_terminal_fit_truth
+
+# A fit column is authority-bearing when it can change WHICH row is selected,
+# WHETHER a newer row exists, HOW FRESH the evidence is, WHETHER an artifact
+# resolves, WHICH confidence bucket or reason code is emitted, or WHICH
+# provenance path the envelope carries -- whether or not the column itself ever
+# appears verbatim on the wire.
+#
+# C7 derives this set from the production read model in both directions. Every
+# fit column the read model references must appear here, and every column here
+# must be referenced. An unregistered decision-affecting reference is a
+# merge-blocking failure, which is what let created_at escape C6.
 dependencies:
+  # Selection identity: the read model resolves the requested fit by
+  # (tenant_id, id) and correlates artifacts and dirty lineage on the same keys.
+  - id
+  - tenant_id
+  # Lineage identity: also the grouping key for newer-fit and dirty-evidence
+  # correlation.
   - model_type
   - model_version
   - source_window_start
   - source_window_end
   - source_snapshot_hash
+  # Decision state projected into the envelope.
   - status
   - data_completeness_status
   - fallback_applied
   - fallback_reason
+  # Freshness ordering. created_at orders has_newer_fit and backstops
+  # has_later_dirty_evidence through
+  # COALESCE(source_read_started_at, created_at); a mutable created_at could
+  # therefore flip snapshot_freshness to stale and rewrite the signed
+  # confidence bucket to SOURCE_SNAPSHOT_CHANGED without any other column
+  # changing. It is the immutable fit lineage timestamp and is governed as one.
+  - created_at
   - completed_at
   - updated_at
+  - source_read_started_at
+  - source_read_completed_at
+  # Diagnostic and confidence authority.
   - diagnostic_status
   - diagnostic_failure_reason
   - credible_interval_status
@@ -26,7 +54,59 @@ dependencies:
   - confidence_currency_count
   - confidence_classified_at
   - confidence_evidence_snapshot_hash
-  - source_read_started_at
-  - source_read_completed_at
+  # Artifact association.
   - artifact_ref
   - artifact_hash
+
+# Columns the production read model references that are deliberately NOT
+# governed as terminal fit authority, each with the reason it cannot alter a
+# signed decision. The C7 bidirectional derivation subtracts exactly this set;
+# anything else it finds unregistered turns required CI red.
+governed_exclusions: []
+
+# Decision authorities outside bayesian_model_fits. These cannot be frozen --
+# pruning an artifact is a legitimate lifecycle act -- so they are governed by
+# enforced transition contracts instead, and a legal transition must produce a
+# truthful, explainable Trust state rather than silently rewriting history.
+non_fit_authorities:
+  - relation: public.bayesian_artifacts
+    decision_inputs:
+      - artifact_hash
+      - artifact_ref
+      - artifact_type
+      - created_at
+      - fit_id
+      - id
+      - lifecycle_status
+      - tenant_id
+    mutation_authority: app_worker
+    legal_transitions: >-
+      active -> pruned, active -> rejected, and idempotent no-op updates.
+      Resurrection out of pruned or rejected is refused by
+      public.b24_enforce_artifact_lifecycle.
+    effect_on_historical_envelopes: >-
+      None. Already-signed envelopes are immutable artifacts and are verified
+      against the JWKS, not re-derived from the artifact row.
+    effect_on_new_trust_reads: >-
+      A pruned artifact degrades a new read to an explicit evidence-unavailable
+      state rather than silently changing the confidence bucket.
+  - relation: public.b24_dirty_events
+    decision_inputs:
+      - model_type
+      - model_version
+      - observed_at
+      - source_snapshot_hash
+      - source_window_end
+      - source_window_start
+      - tenant_id
+    mutation_authority: app_worker
+    legal_transitions: >-
+      pending/authority_retry_ready/leased/authority_waiting may advance to a
+      terminal disposition. Terminal dispositions are final and observed_at is
+      immutable, both enforced by
+      public.b24_enforce_dirty_event_lifecycle, because observed_at decides
+      has_later_dirty_evidence and therefore signed snapshot freshness.
+    effect_on_historical_envelopes: None.
+    effect_on_new_trust_reads: >-
+      Later dirty evidence for the same window marks a new read stale, which is
+      the intended degradation, not a rewrite of prior truth.

@@ -98,6 +98,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p11_postgres_physics.py",
     "backend/tests/trust/test_b25_p13_e2e_trust_closure.py",
     "backend/tests/trust/test_b25_p13_c6_postgres_physics.py",
+    "backend/tests/trust/test_b25_p13_c7_conservation_physics.py",
 )
 
 

@@ -15,6 +15,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.bayesian.dirty_marker import append_dirty_event
+from app.bayesian.fit_planner import MAX_WAIT_SECONDS, QUIET_PERIOD_SECONDS
 from app.bayesian.feature_authority import (
     FeatureAuthorityStatus,
     SourceWindowFeatureAuthority,
@@ -145,7 +146,8 @@ def test_c6_worker_authority_is_not_reachable_from_tenant_runtime() -> None:
                 text(
                     "SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid IN ("
                     "'public.b24_due_fit_planner_tenants(text,integer)'::regprocedure,"
-                    "'public.b24_complete_fit_planner_wakeup(uuid,text,bigint,boolean)'"
+                    "'public.b24_complete_fit_planner_wakeup"
+                    "(uuid,text,bigint,boolean,integer,integer)'"
                     "::regprocedure)"
                 )
             ).scalars()
@@ -263,14 +265,25 @@ async def test_c6_pending_wakeup_coalesces_and_leased_wakeup_is_invalidated() ->
                 {"tenant": str(tenant_id)},
             ).one()
             assert tuple(invalidated) == (2, "pending", None, None)
+            conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant, false)"),
+                {"tenant": str(tenant_id)},
+            )
             stale_ack = conn.scalar(
                 text(
                     "SELECT public.b24_complete_fit_planner_wakeup("
-                    ":tenant, :owner, 1, true)"
+                    ":tenant, :owner, 1, true, :quiet, :max_wait)"
                 ),
-                {"tenant": str(tenant_id), "owner": f"coalescing-{suffix}"},
+                {
+                    "tenant": str(tenant_id),
+                    "owner": f"coalescing-{suffix}",
+                    "quiet": QUIET_PERIOD_SECONDS,
+                    "max_wait": MAX_WAIT_SECONDS,
+                },
             )
-            assert stale_ack is False
+            # C7: acknowledgement returns the obligation's disposition. A stale
+            # revision may never delete the newer wakeup.
+            assert stale_ack == "stale_revision", stale_ack
 
         await append_signal("pending-3", first_observed + timedelta(seconds=3))
         with worker_engine.begin() as conn:
@@ -524,6 +537,10 @@ async def test_c6_real_stimulus_reaches_registered_planner_and_one_dispatch() ->
         if target_dispatches == 1:
             target_result = result
             break
+    # C7 reports how each planning obligation was disposed of. The five
+    # production counters are unchanged; the disposition is asserted separately
+    # because it is a conservation claim, not a throughput claim.
+    dispositions = dict(target_result.pop("wakeup_dispositions"))
     assert target_result == {
         "status": "completed",
         "tenant_count": 1,
@@ -531,14 +548,44 @@ async def test_c6_real_stimulus_reaches_registered_planner_and_one_dispatch() ->
         "dispatchable_count": 1,
         "reused_count": 0,
     }
+    # The seeded financial rows invalidate their own source windows through the
+    # C7 contract triggers, so unplanned work still exists for this tenant when
+    # the pass completes. The obligation must therefore be conserved -- deferred
+    # until its quiet period matures, or retained when already eligible -- and
+    # must never be deleted while that work is outstanding.
+    assert sorted(dispositions) in (["deferred"], ["retained_eligible"]), dispositions
+    assert sum(dispositions.values()) == 1, dispositions
+
+    # Replay must not mint a second dispatch for the same snapshot. It may
+    # legitimately plan a different, still-outstanding window, so the invariant
+    # is asserted against this snapshot's authority rather than against the
+    # planner having nothing left to do.
     replay = plan_due_fit_intents.run(tenant_batch_size=1, candidate_limit=1)
-    assert replay == {
-        "status": "completed",
-        "tenant_count": 0,
-        "planned_count": 0,
-        "dispatchable_count": 0,
-        "reused_count": 0,
-    }
+    assert replay["status"] == "completed"
+    async with get_session(tenant_id) as replay_session:
+        replayed_dispatches = int(
+            (
+                await replay_session.scalar(
+                    text(
+                        """
+                        SELECT count(*)
+                        FROM public.bayesian_model_fits fit
+                        JOIN public.b24_fit_dispatch_outbox outbox
+                          ON outbox.tenant_id = fit.tenant_id
+                         AND outbox.fit_id = fit.id
+                        WHERE fit.tenant_id = :tenant
+                          AND fit.source_snapshot_hash = :snapshot
+                        """
+                    ),
+                    {
+                        "tenant": str(tenant_id),
+                        "snapshot": snapshot.source_snapshot_hash,
+                    },
+                )
+            )
+            or 0
+        )
+    assert replayed_dispatches == 1, replayed_dispatches
 
     async with get_session(tenant_id) as session:
         row = (

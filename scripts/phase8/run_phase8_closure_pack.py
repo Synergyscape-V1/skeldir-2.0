@@ -31,6 +31,7 @@ class _Phase8Config:
     worker_sync_dsn: str
     migration_dsn: str
     compose_runtime_async_dsn: str
+    compose_worker_async_dsn: str
     compose_runtime_sync_dsn: str
     compose_broker_dsn: str
     compose_result_dsn: str
@@ -317,6 +318,11 @@ def _default_config(*, artifact_dir: Path, ci_subset: bool, full_physics: bool) 
         f"postgresql+asyncpg://{runtime_user}:{runtime_pass}@{db_compose_host}:5432/{db_name}"
     )
     compose_runtime_sync = f"postgresql://{runtime_user}:{runtime_pass}@{db_compose_host}:5432/{db_name}"
+    # The Bayesian worker container runs on the dedicated worker login. It is
+    # deliberately a different principal from the API/generic worker DSN.
+    compose_worker_async = (
+        f"postgresql+asyncpg://app_worker:app_worker@{db_compose_host}:5432/{db_name}"
+    )
 
     return _Phase8Config(
         repo_root=_repo_root(),
@@ -327,6 +333,7 @@ def _default_config(*, artifact_dir: Path, ci_subset: bool, full_physics: bool) 
         worker_sync_dsn=worker_sync,
         migration_dsn=migration,
         compose_runtime_async_dsn=compose_runtime_async,
+        compose_worker_async_dsn=compose_worker_async,
         compose_runtime_sync_dsn=compose_runtime_sync,
         compose_broker_dsn=f"sqla+{compose_runtime_sync}",
         compose_result_dsn=f"db+{compose_runtime_sync}",
@@ -385,6 +392,7 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "PLATFORM_TOKEN_KEY_ID": os.getenv("PLATFORM_TOKEN_KEY_ID", "e2e-key"),
             "INGESTION_FOLLOWUP_TASKS_ENABLED": "true",
             "E2E_DATABASE_URL": cfg.compose_runtime_async_dsn,
+            "E2E_WORKER_DATABASE_URL": cfg.compose_worker_async_dsn,
             "E2E_CELERY_BROKER_URL": cfg.compose_broker_dsn,
             "E2E_CELERY_RESULT_BACKEND": cfg.compose_result_dsn,
             "TENANT_API_KEY_HEADER": "X-Skeldir-Tenant-Key",
