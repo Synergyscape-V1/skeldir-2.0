@@ -184,6 +184,62 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VII Report.md
+- id: b25-p13-c8-model-identity-authority
+  path: backend/app/bayesian/model_identity.py
+  status: required
+  owning_phase: B2.5-P13-C8
+  protected_invariant: Declares the single governed model-identity registry -- which statistical
+    family production may emit, which Trust may project, and which are retired but still readable.
+    Before C8 the invalidation triggers emitted a B2.4-P3 orchestration default the Trust read model
+    refuses, so no committed source change could make a signed claim stale.
+  command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  expected_failure_meaning: Production emits an identity Trust cannot project, Trust eligibility
+    drifted from the registry, the database stopped constraining the family, or a retired identity
+    became producible.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: validate-b25-p13-c7-closure
+  ci_visibility: library
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VIII Report.md
+- id: b25-p13-c8-source-contract-authority
+  path: backend/app/bayesian/source_contract_authority.py
+  status: required
+  owning_phase: B2.5-P13-C8
+  protected_invariant: One structured contract per B2.4 source relation renders both the canonical
+    snapshot SELECT and the invalidation trigger DDL, so membership, projection, window key and
+    normalization have a single definition. Replaces the C7 equivalence check whose projection arm
+    was a tautology over a tuple's own repr and whose membership predicates were never compared to
+    the source queries at all.
+  command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  expected_failure_meaning: A shipped source query diverged from what the authority renders, or the
+    invalidation DDL embedded in the migration is no longer the rendered contract.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: validate-b25-p13-c7-closure
+  ci_visibility: library
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VIII Report.md
 - id: b25-p13-c7-dependency-derivation
   path: scripts/ci/_b25_p13_c7_dependency_derivation.py
   status: required

@@ -23,6 +23,13 @@ from app.trust.subject_authority import subject_authority_definition
 
 
 SnapshotFreshness = Literal["current", "stale", "unknown"]
+# The families Trust may project. This is deliberately a literal and NOT an
+# import of app.bayesian.model_identity: B2.5-P12 forbids the Trust path from
+# reaching Bayesian modules at all, and that isolation is worth more than
+# import-time deduplication. The single authority is still
+# app.bayesian.model_identity.MODEL_IDENTITY_REGISTRY -- the C8 closure gate
+# asserts this set equals its trust-eligible members, so the two cannot diverge
+# without turning required CI red.
 SUPPORTED_CONFIDENCE_MODEL_TYPES = frozenset({"bayesian_attribution_confidence"})
 
 
@@ -154,14 +161,27 @@ _EXACT_FIT_PROJECTION_SQL = text(
                   AND dirty.source_window_end = requested_fit.source_window_end
                   AND dirty.source_snapshot_hash = requested_fit.source_snapshot_hash
             ) AS has_snapshot_lineage,
+            -- C8: staleness is window OVERLAP, not window equality.
+            -- A dirty event records the SCOPE of a source change; a fit records
+            -- the window it read. Requiring the two to be equal meant a change
+            -- inside a 30-day fit could not stale it, and a writer cannot know
+            -- the fit windows it affects without unbounded write-time fan-out.
+            -- Overlap is evaluated here, correlated to one requested fit, so the
+            -- cost stays bounded by that fit's window and is index-supported.
+            -- model_version is deliberately absent: a change to the underlying
+            -- financial truth stales an affected fit regardless of which
+            -- pipeline version produced it.
             EXISTS (
                 SELECT 1
                 FROM public.b24_dirty_events dirty
                 WHERE dirty.tenant_id = requested_fit.tenant_id
                   AND dirty.model_type = requested_fit.model_type
-                  AND dirty.model_version = requested_fit.model_version
-                  AND dirty.source_window_start = requested_fit.source_window_start
-                  AND dirty.source_window_end = requested_fit.source_window_end
+                  AND public.b24_source_windows_overlap(
+                      dirty.source_window_start,
+                      dirty.source_window_end,
+                      requested_fit.source_window_start,
+                      requested_fit.source_window_end
+                  )
                   AND dirty.observed_at > COALESCE(
                       requested_fit.source_read_started_at,
                       requested_fit.created_at

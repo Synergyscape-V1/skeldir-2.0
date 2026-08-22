@@ -1279,8 +1279,15 @@ async def _project_grandfathered_temporal_fit(
                     "fit_id": str(fit_id),
                     "tenant_id": str(tenant_id),
                     "model_version": model_version,
-                    "window_start": datetime(2026, 6, 1, tzinfo=timezone.utc),
-                    "window_end": datetime(2026, 6, 2, tzinfo=timezone.utc),
+                    # Its own window, disjoint from the tenant's seeded source
+                    # rows. Those rows now emit canonical invalidation, and a fit
+                    # that read five-year-old evidence over a window written to
+                    # today is stale for a real reason -- a different property
+                    # from the absolute-age semantics this journey pins.
+                    "window_start": datetime(2024, 1, 1, tzinfo=timezone.utc)
+                    + timedelta(days=index),
+                    "window_end": datetime(2024, 1, 2, tzinfo=timezone.utc)
+                    + timedelta(days=index),
                     "snapshot_hash": snapshot_hash,
                     "read_started": evidence_epoch,
                     "read_completed": evidence_epoch + timedelta(minutes=1),
@@ -1335,8 +1342,15 @@ async def _project_grandfathered_temporal_fit(
                     "id": str(uuid4()),
                     "tenant_id": str(tenant_id),
                     "model_version": model_version,
-                    "window_start": datetime(2026, 6, 1, tzinfo=timezone.utc),
-                    "window_end": datetime(2026, 6, 2, tzinfo=timezone.utc),
+                    # Its own window, disjoint from the tenant's seeded source
+                    # rows. Those rows now emit canonical invalidation, and a fit
+                    # that read five-year-old evidence over a window written to
+                    # today is stale for a real reason -- a different property
+                    # from the absolute-age semantics this journey pins.
+                    "window_start": datetime(2024, 1, 1, tzinfo=timezone.utc)
+                    + timedelta(days=index),
+                    "window_end": datetime(2024, 1, 2, tzinfo=timezone.utc)
+                    + timedelta(days=index),
                     "observed_at": evidence_epoch,
                     "snapshot_hash": snapshot_hash,
                 },
@@ -1416,6 +1430,9 @@ def _worker_database_url() -> str:
     return url.render_as_string(hide_password=False)
 
 
+_CONFIDENCE_CASE_WINDOWS: dict[str, tuple[datetime, datetime]] = {}
+
+
 async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str]:
     """Seed persisted B2.4 classifications and durable freshness authority."""
 
@@ -1474,6 +1491,12 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                 "occurred_at": multi_currency_start,
             },
         )
+    # The multi-currency revenue rows just written are real B2.4 source
+    # rows, so they now emit canonical invalidation of their own. A fit
+    # whose window contains them and which read its source beforehand is
+    # genuinely stale -- correct, but not the scenario that case tests.
+    # Its read is therefore recorded after those rows landed.
+    post_source_seed = datetime.now(timezone.utc)
     cases = {
         "available": {
             "status": "succeeded",
@@ -1570,6 +1593,9 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "currency_count": 2,
             "window_start": multi_currency_start,
             "window_end": multi_currency_end,
+            "source_read_started_at": post_source_seed,
+            "source_read_completed_at": post_source_seed,
+            "recorded_at": post_source_seed,
             "deterministic_revenue_minor": 200,
             "deterministic_row_count": 2,
         },
@@ -1587,6 +1613,7 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "currency_count": 1,
         },
         "failed_refit_base": {
+            "window_group": "refit",
             "status": "succeeded",
             "completeness": "complete",
             "fallback": False,
@@ -1601,6 +1628,7 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
             "model_version": "p13-failed-refit-lineage-v1",
         },
         "newer_failed_refit": {
+            "window_group": "refit",
             "status": "failed",
             "completeness": "complete",
             "fallback": True,
@@ -1631,10 +1659,35 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
         },
     }
     refs: dict[str, str] = {}
+    # C8: each case gets its own source window unless it explicitly shares one.
+    # These cases previously all sat on [start, end) and were kept apart by a
+    # distinct model_version per case. Freshness now joins on model family and
+    # window OVERLAP -- deliberately not on pipeline version, because a source
+    # change stales an affected fit whichever pipeline produced it -- so
+    # model_version namespacing no longer isolates them. Disjoint windows make
+    # the independence a real property of the fixture instead of an artefact of
+    # a predicate that C8 removed. Offsets start well past the explicit windows
+    # above so they cannot collide with them.
+    window_groups: dict[str, int] = {}
+    for _name, _case in cases.items():
+        _group = _case.get("window_group", _name)
+        if _group not in window_groups:
+            window_groups[_group] = len(window_groups)
+
+    refs = {}
     for index, (name, case) in enumerate(cases.items(), start=1):
         fit_id = uuid4()
-        case_start = case.get("window_start", start)
-        case_end = case.get("window_end", end)
+        # Far clear of the tenant's seeded financial rows. Those rows now
+        # emit canonical dirty events of their own, and a confidence case
+        # whose window overlapped them would be stale for a real reason --
+        # correct behaviour, but not the scenario each case is testing.
+        # Backwards, not forwards: evidence timestamps in the future are
+        # refused by the C5 temporal-plausibility guard.
+        window_offset = timedelta(
+            days=30 + 2 * window_groups[case.get("window_group", name)]
+        )
+        case_start = case.get("window_start", start - window_offset)
+        case_end = case.get("window_end", end - window_offset)
         case_model_version = case.get("model_version", f"p13-{name}-v1")
         recorded_at = case.get("recorded_at", case_end)
         source_read_started_at = case.get("source_read_started_at", recorded_at)
@@ -1945,10 +1998,15 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     "model_version": f"p13-{name}-v1",
                     "window_start": case_start,
                     "window_end": case_end,
-                    "observed_at": datetime(2026, 6, 2, 0, 1, tzinfo=timezone.utc),
+                    # Relative to this case's own window. It was pinned to the
+                    # original shared window, which stopped meaning "one minute
+                    # after this fit read its source" once cases were given
+                    # independent windows.
+                    "observed_at": case_end + timedelta(minutes=1),
                     "source_snapshot_hash": "f" * 64,
                 },
             )
+        _CONFIDENCE_CASE_WINDOWS[name] = (case_start, case_end)
         refs[name] = f"urn:skeldir:confidence_projection:{fit_id}"
 
     # C4-A / NC-C4-01 (B2.5-P13 C5 restructure): these controls now run against
@@ -2889,33 +2947,16 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
                     "event_ref": f"post-fit-refund-{uuid4().hex}",
                     "commerce_ref": f"commerce-{reference}",
                     "canonical_ref": reference,
-                    "occurred_at": datetime(2026, 6, 1, 12, tzinfo=timezone.utc),
+                    # Inside the available fit's own window, so the C8 source
+                    # trigger invalidates it as a consequence of the real write.
+                    "occurred_at": (
+                        _CONFIDENCE_CASE_WINDOWS["available"][0] + timedelta(hours=12)
+                    ),
                 },
             )
-            await connection.execute(
-                text(
-                    """
-                    INSERT INTO public.b24_dirty_events (
-                        id, tenant_id, model_type, model_version,
-                        source_window_start, source_window_end, dirty_reason,
-                        source_family, status, observed_at, source_snapshot_hash
-                    ) VALUES (
-                        :id, :tenant_id, 'bayesian_attribution_confidence', 'p13-available-v1',
-                        :window_start, :window_end, 'post_fit_revenue_mutation',
-                        'b23_revenue_events', 'pending', :observed_at,
-                        :source_snapshot_hash
-                    )
-                    """
-                ),
-                {
-                    "id": str(uuid4()),
-                    "tenant_id": str(tenant_a),
-                    "window_start": datetime(2026, 6, 1, tzinfo=timezone.utc),
-                    "window_end": datetime(2026, 6, 2, tzinfo=timezone.utc),
-                    "observed_at": datetime(2026, 6, 2, 0, 2, tzinfo=timezone.utc),
-                    "source_snapshot_hash": "e" * 64,
-                },
-            )
+            # No hand-seeded dirty row: under C8 the refund write above is
+            # itself the invalidation, so staleness here is produced by the
+            # production trigger rather than asserted into existence.
         mutated_fit_response = await _query(
             auth_app,
             tenant_id=tenant_a,

@@ -759,8 +759,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'attribution_allocations_snapshot_changed',
@@ -797,8 +797,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'attribution_allocations_snapshot_changed',
@@ -835,8 +835,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'attribution_allocations_snapshot_changed',
@@ -892,8 +892,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'attribution_events_snapshot_changed',
@@ -930,8 +930,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'attribution_events_snapshot_changed',
@@ -968,8 +968,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'attribution_events_snapshot_changed',
@@ -1025,8 +1025,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'b23_match_verdicts_snapshot_changed',
@@ -1063,8 +1063,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'b23_match_verdicts_snapshot_changed',
@@ -1101,8 +1101,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'b23_match_verdicts_snapshot_changed',
@@ -1158,8 +1158,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'b23_revenue_events_snapshot_changed',
@@ -1196,8 +1196,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'b23_revenue_events_snapshot_changed',
@@ -1234,8 +1234,8 @@ BEGIN
     )
     SELECT
         affected.tenant_id,
-        'mmm',
-        'b24-p3-orchestration-v1',
+        'bayesian_attribution_confidence',
+        'b24-p6-real-fit-v1',
         affected.window_start,
         affected.window_start + interval '1 day',
         'b23_revenue_events_snapshot_changed',
@@ -1433,6 +1433,12 @@ CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced() RETURNS trigger
             END IF;
             RETURN NEW;
         END
+        $$;
+
+CREATE FUNCTION public.b24_source_windows_overlap(p_change_start timestamp with time zone, p_change_end timestamp with time zone, p_fit_start timestamp with time zone, p_fit_end timestamp with time zone) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+            SELECT p_change_start < p_fit_end AND p_fit_start < p_change_end
         $$;
 
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
@@ -2677,6 +2683,7 @@ CREATE TABLE public.b24_dirty_events (
     CONSTRAINT ck_b24_dirty_events_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
     CONSTRAINT ck_b24_dirty_events_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_b24_dirty_events_reason_not_blank CHECK ((char_length(TRIM(BOTH FROM dirty_reason)) > 0)),
+    CONSTRAINT ck_b24_dirty_events_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_b24_dirty_events_source_family_not_blank CHECK ((char_length(TRIM(BOTH FROM source_family)) > 0)),
     CONSTRAINT ck_b24_dirty_events_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash IS NULL) OR ((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_b24_dirty_events_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -3752,6 +3759,7 @@ CREATE TABLE public.bayesian_model_fits (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -3845,6 +3853,7 @@ CREATE TABLE public.bayesian_model_fits_p00 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -3938,6 +3947,7 @@ CREATE TABLE public.bayesian_model_fits_p01 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4031,6 +4041,7 @@ CREATE TABLE public.bayesian_model_fits_p02 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4124,6 +4135,7 @@ CREATE TABLE public.bayesian_model_fits_p03 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4217,6 +4229,7 @@ CREATE TABLE public.bayesian_model_fits_p04 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4310,6 +4323,7 @@ CREATE TABLE public.bayesian_model_fits_p05 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4403,6 +4417,7 @@ CREATE TABLE public.bayesian_model_fits_p06 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4496,6 +4511,7 @@ CREATE TABLE public.bayesian_model_fits_p07 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4589,6 +4605,7 @@ CREATE TABLE public.bayesian_model_fits_p08 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4682,6 +4699,7 @@ CREATE TABLE public.bayesian_model_fits_p09 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4775,6 +4793,7 @@ CREATE TABLE public.bayesian_model_fits_p10 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4868,6 +4887,7 @@ CREATE TABLE public.bayesian_model_fits_p11 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -4961,6 +4981,7 @@ CREATE TABLE public.bayesian_model_fits_p12 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -5054,6 +5075,7 @@ CREATE TABLE public.bayesian_model_fits_p13 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -5147,6 +5169,7 @@ CREATE TABLE public.bayesian_model_fits_p14 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -5240,6 +5263,7 @@ CREATE TABLE public.bayesian_model_fits_p15 (
     CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
     CONSTRAINT ck_bayesian_model_fits_passed_has_no_diagnostic_failure CHECK (((((diagnostic_status)::text = 'passed'::text) AND (diagnostic_failure_reason IS NULL)) OR ((diagnostic_status)::text <> 'passed'::text))),
     CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_registered_model_type CHECK (((model_type)::text = ANY ((ARRAY['bayesian_attribution_confidence'::character varying, 'mmm'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
@@ -7547,6 +7571,8 @@ CREATE INDEX idx_b24_active_execution_tenant_status_lease ON public.b24_active_e
 CREATE INDEX idx_b24_dirty_events_authority_retry_ready ON public.b24_dirty_events USING btree (tenant_id, status, authority_retry_after_at, observed_at, id) WHERE ((status)::text = ANY ((ARRAY['authority_waiting'::character varying, 'authority_retry_ready'::character varying])::text[]));
 
 CREATE INDEX idx_b24_dirty_events_confidence_freshness ON public.b24_dirty_events USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, observed_at, source_snapshot_hash);
+
+CREATE INDEX idx_b24_dirty_events_staleness_overlap ON public.b24_dirty_events USING btree (tenant_id, model_type, source_window_start, source_window_end, observed_at);
 
 CREATE INDEX idx_b24_dirty_events_tenant_event_hash ON public.b24_dirty_events USING btree (tenant_id, event_hash) WHERE (event_hash IS NOT NULL);
 

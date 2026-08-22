@@ -16,9 +16,19 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
+from app.bayesian.model_identity import active_identity
 
-DEFAULT_BAYESIAN_MODEL_TYPE = "mmm"
-DEFAULT_BAYESIAN_MODEL_VERSION = "b24-p3-orchestration-v1"
+
+_ACTIVE_MODEL_IDENTITY = active_identity()
+
+
+# C8: these were "mmm" / "b24-p3-orchestration-v1", B2.4-P3 orchestration-era
+# labels that named no statistical authority the Trust read model would project.
+# Every obligation carrying them terminated in a fit the projection refused, so
+# no committed source change could make a signed claim stale. They now derive
+# from the single governed identity registry.
+DEFAULT_BAYESIAN_MODEL_TYPE = _ACTIVE_MODEL_IDENTITY.model_type
+DEFAULT_BAYESIAN_MODEL_VERSION = _ACTIVE_MODEL_IDENTITY.model_version
 DIRTY_EVENT_LOW_CONTENTION_POLICY = "append_only_single_insert_v1"
 
 
