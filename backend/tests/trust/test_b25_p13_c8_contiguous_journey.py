@@ -368,6 +368,18 @@ def _await_planner_verdict(engine, tenant_id: UUID, *, timeout_s: int) -> dict:
     )
 
 
+def _isolate_planner_worklist(engine, tenant_id: UUID) -> int:
+    """Leave this tenant as the only obligation the planner can see."""
+
+    with engine.begin() as conn:
+        return conn.execute(
+            text(
+                "DELETE FROM public.b24_fit_planner_wakeups WHERE tenant_id <> :t"
+            ),
+            {"t": str(tenant_id)},
+        ).rowcount
+
+
 def _purge_queue(engine, queue_name: str) -> int:
     """Drop any broker backlog for one queue. Environment hygiene only."""
 
@@ -511,8 +523,8 @@ def test_c8_financial_change_conducts_to_the_feature_authority_frontier(
         # starves with a hot queue. A minute is slow enough that the backlog
         # never forms and long-lived enough that every emission is consumed.
         beat_env["B24_FIT_PLANNER_INTERVAL_SECONDS"] = "60"
-        beat_env["B24_FIT_PLANNER_TENANT_BATCH_SIZE"] = "5"
-        beat_env["B24_FIT_PLANNER_CANDIDATE_LIMIT"] = "10"
+        beat_env["B24_FIT_PLANNER_TENANT_BATCH_SIZE"] = "25"
+        beat_env["B24_FIT_PLANNER_CANDIDATE_LIMIT"] = "25"
         beat_env.pop("SKELDIR_B24_DISABLE_FIT_PLANNER_JOB", None)
 
         # Broker hygiene, not evidence management. A database reused across
@@ -523,6 +535,19 @@ def test_c8_financial_change_conducts_to_the_feature_authority_frontier(
         # baseline below is taken *after* the purge, so the negative interval
         # still measures only what this journey emitted.
         _purge_queue(app_engine, QUEUE_BAYESIAN)
+        # And the same for the planner's worklist. This journey runs last in a
+        # database it shares with every earlier P13 step, so the wake-up ledger
+        # still holds their tenants. That is not merely noise competing for a
+        # bounded batch: plan_due_fit_intents leases its whole batch up front
+        # and disposes each tenant in a per-tenant finally, so an exception
+        # raised while planning one tenant propagates out of the loop and leaves
+        # every tenant leased behind it stranded under a ten-minute lease. One
+        # unplannable residue tenant can therefore hold this journey's
+        # obligation for longer than any reasonable timeout, and the journey
+        # would report a broken chain when what it observed was a stranded
+        # batch. Clearing other tenants' wake-ups isolates this journey without
+        # touching a single row of its own evidence.
+        _isolate_planner_worklist(app_engine, tenant_id)
         with app_engine.connect() as conn:
             baseline_message_id = _max_broker_message_id(conn.engine)
         beat_process = subprocess.Popen(
@@ -598,7 +623,7 @@ def test_c8_financial_change_conducts_to_the_feature_authority_frontier(
         # the task raised, the lease stayed held, and the obligation sat until it
         # expired. Reaching an authority wait is the first time in the system's
         # history that a real financial change has been judged fittable.
-        accepted = _await_planner_verdict(app_engine, tenant_id, timeout_s=600)
+        accepted = _await_planner_verdict(app_engine, tenant_id, timeout_s=900)
         assert accepted["dirty_status"] == "authority_waiting", accepted
         assert accepted["authority_requests"] >= 1, accepted
 
