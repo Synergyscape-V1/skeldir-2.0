@@ -238,6 +238,24 @@ def _ack(
     )
 
 
+
+def _residual(conn, tenant_id: uuid.UUID, quiet_period: int):
+    """Read the tenant's residual planning obligation as the planner sees it."""
+
+    _bind_tenant(conn, tenant_id)
+    return conn.execute(
+        text(
+            "SELECT eligible_group_count, next_eligible_at FROM"
+            " public.b24_fit_planner_residual_obligation(:tenant, :quiet, :max_wait)"
+        ),
+        {
+            "tenant": str(tenant_id),
+            "quiet": quiet_period,
+            "max_wait": MAX_WAIT_SECONDS,
+        },
+    ).one()
+
+
 def _bounded_pass(conn, tenant_id: uuid.UUID, *, limit: int, quiet_period: int) -> int:
     """One bounded planner pass, using the production debounce arithmetic."""
 
@@ -716,7 +734,11 @@ def test_c7_pre_debounce_pass_cannot_strand_dirty_work() -> None:
     to fake it, and no second dirty event rescues the first.
     """
 
-    quiet = 3
+    # The quiet period must comfortably exceed this test's own setup latency.
+    # At 3s a cold connection pool could mature the event before the
+    # "pre-debounce" pass ran, so the pass would legitimately plan it and the
+    # experiment would silently measure nothing.
+    quiet = 12
     engine = _engine(_worker_url())
     try:
         with engine.begin() as conn:
@@ -727,6 +749,14 @@ def test_c7_pre_debounce_pass_cannot_strand_dirty_work() -> None:
 
             revision = _lease(conn, "celery:early", tenant_id)
             assert revision is not None
+            # Assert the precondition rather than assuming it: this pass is only
+            # a pre-debounce pass if the planner considers nothing eligible yet.
+            eligible_now, due_at = _residual(conn, tenant_id, quiet)
+            assert eligible_now == 0, (
+                "setup outran the quiet period, so this was not a pre-debounce"
+                f" pass: eligible={eligible_now}"
+            )
+            assert due_at is not None
             assert _bounded_pass(conn, tenant_id, limit=25, quiet_period=quiet) == 0
             disposition = _ack(
                 conn, tenant_id, "celery:early", revision, quiet_period=quiet
@@ -738,9 +768,13 @@ def test_c7_pre_debounce_pass_cannot_strand_dirty_work() -> None:
                 "a deferred tenant must not be re-leased before it is due"
             )
 
-        time.sleep(quiet + 1)
+        # Real elapsed time only. Nothing is edited to fake maturity; the
+        # deferral the database computed must expire on its own.
+        time.sleep(quiet + 2)
 
         with engine.begin() as conn:
+            matured, _ = _residual(conn, tenant_id, quiet)
+            assert matured == 1, f"the deferred work never matured: eligible={matured}"
             revision = _lease(conn, "celery:mature", tenant_id)
             assert revision is not None, "the deferred obligation never became due"
             assert _bounded_pass(conn, tenant_id, limit=25, quiet_period=quiet) == 1

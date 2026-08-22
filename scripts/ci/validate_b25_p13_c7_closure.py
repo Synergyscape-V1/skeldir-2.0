@@ -533,6 +533,28 @@ def validate_proof_taxonomy(
         "validate_b25_p13_c7_closure.py" in flow,
         "c7_static_gate_is_not_executed_by_required_ci",
     )
+    # A gate that does not run is not a gate. The P13 workflow enumerates its
+    # trigger paths individually, so every C7 artefact -- and every manifest a
+    # C7 control reads -- must appear there, or editing one would leave the
+    # workflow unrun and the tree green for the wrong reason.
+    trigger_block = flow.split("jobs:", 1)[0]
+    for triggered in (
+        "backend/tests/trust/test_b25_p13_c7_conservation_physics.py",
+        "scripts/ci/validate_b25_p13_c7_closure.py",
+        "scripts/ci/_b25_p13_c7_dependency_derivation.py",
+        "backend/app/bayesian/",
+        "backend/app/tasks/bayesian.py",
+        "alembic/versions/007_skeldir_foundation/",
+        "scripts/database/prepare_migration_authority_boundary.py",
+        "contracts/trust-api/",
+        "Procfile",
+        ".env.example",
+        "compose.e2e.yml",
+    ):
+        _require(
+            triggered in trigger_block,
+            f"c7_artifact_is_not_path_triggered:{triggered}",
+        )
     # The suite must run against a real database, not a mocked seam.
     _require(
         "create_engine" in suite or "psycopg2" in suite,
@@ -739,6 +761,18 @@ def run_negative_controls() -> list[str]:
                 physics=_read(PHYSICS).replace(
                     "def test_c7_pre_debounce_pass_cannot_strand_dirty_work",
                     "def _disabled_pre_debounce",
+                )
+            ),
+        )
+    )
+    # NC-C7-S18 -- a C7 artefact losing its path trigger, which would let the
+    # gate silently not run when exactly that artefact changes.
+    controls.append(
+        _must_fail(
+            "NC-C7-S18",
+            lambda: validate_proof_taxonomy(
+                workflow=_read(WORKFLOW).replace(
+                    "      - 'scripts/ci/validate_b25_p13_c7_closure.py'\n", "", 1
                 )
             ),
         )

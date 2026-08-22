@@ -33,6 +33,13 @@ on:
       - 'backend/app/api/trust_keys.py'
       - 'backend/tests/trust/test_b25_p13_e2e_trust_closure.py'
       - 'backend/tests/trust/test_b25_p13_c6_postgres_physics.py'
+      - 'backend/tests/trust/test_b25_p13_c7_conservation_physics.py'
+      - 'scripts/ci/validate_b25_p13_c7_closure.py'
+      - 'scripts/ci/_b25_p13_c7_dependency_derivation.py'
+      - 'docs/forensics/B2.5-P13 Corrective Action Remediation VII Report.md'
+      - 'Procfile'
+      - '.env.example'
+      - '*compose.e2e.yml'
       - 'alembic/versions/007_skeldir_foundation/**'
       - 'contracts/trust-api/**'
       - 'contracts/bayesian/**'
@@ -249,7 +256,7 @@ jobs:
           python scripts/ci/validate_b25_p13_c7_closure.py --negative-control             | tee /tmp/b25_p13_c7_closure.out
           grep -E "^B25_P13_C7_CLOSURE_VALIDATION_PASS$" /tmp/b25_p13_c7_closure.out
           grep -E "^c7_invariant_groups_passed=7$" /tmp/b25_p13_c7_closure.out
-          grep -E "^c7_static_negative_controls_fired=17$" /tmp/b25_p13_c7_closure.out
+          grep -E "^c7_static_negative_controls_fired=18$" /tmp/b25_p13_c7_closure.out
           grep -E "^c7_behavioral_obligations_bound=12$" /tmp/b25_p13_c7_closure.out
 
       # The behavioural half. Real PostgreSQL, real triggers, real planner
