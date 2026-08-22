@@ -183,6 +183,21 @@ def _exercise_cpu(*, seed: int, cycles: int) -> int:
     return value
 
 
+def _worker_database_identity() -> str:
+    """The database login this worker process actually holds.
+
+    Read from the worker engine rather than from configuration, so the C8
+    transport proof observes bootstrap identity instead of a rendered manifest.
+    """
+
+    engine = create_bayesian_worker_engine()
+    try:
+        with engine.connect() as conn:
+            return str(conn.execute(text("SELECT current_user")).scalar_one())
+    finally:
+        engine.dispose()
+
+
 def _due_planner_tenants(
     *, lease_owner: str, batch_size: int
 ) -> tuple[tuple[UUID, int], ...]:
@@ -310,7 +325,7 @@ def plan_due_fit_intents(
                 succeeded=succeeded,
             )
             dispositions[disposition] = dispositions.get(disposition, 0) + 1
-    return {
+    result = {
         "status": "completed",
         "tenant_count": len(tenants),
         "planned_count": planned,
@@ -318,6 +333,22 @@ def plan_due_fit_intents(
         "reused_count": reused,
         "wakeup_dispositions": dispositions,
     }
+    # C8: transport evidence. A probe emitted from inside the task body is what
+    # distinguishes "Beat scheduled it" from "a Bayesian worker actually ran it
+    # under the worker database identity". Nothing else in the chain can write
+    # this record, so its presence is causal rather than circumstantial.
+    _append_probe_event(
+        {
+            "event": "b24_fit_planner_beat_delivery",
+            "task_id": str(self.request.id),
+            "task_name": FIT_PLANNER_TASK_NAME,
+            "delivery_info": str(getattr(self.request, "delivery_info", None)),
+            "database_user": _worker_database_identity(),
+            "observed_at": _utc_now(),
+            **result,
+        }
+    )
+    return result
 
 
 def _build_fallback_payload(

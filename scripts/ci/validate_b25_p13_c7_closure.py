@@ -42,10 +42,20 @@ from _b25_p13_c7_dependency_derivation import (  # noqa: E402
     derive_dependencies,
 )
 from app.bayesian.input_contract import ALLOWED_SOURCE_READ_MODELS  # noqa: E402
+from app.bayesian.model_identity import (  # noqa: E402
+    MODEL_IDENTITY_REGISTRY,
+    active_identity,
+    registered_model_types,
+    trust_eligible_model_types,
+)
+from app.bayesian.source_contract_authority import (  # noqa: E402
+    SOURCE_CONTRACT_AUTHORITY,
+    allowed_source_read_models,
+    query_params,
+)
 from app.bayesian.source_invalidation_contract import (  # noqa: E402
-    SOURCE_INVALIDATION_CONTRACT,
+    governed_relations,
     render_source_invalidation_ddl,
-    source_relations,
     trigger_names,
 )
 
@@ -54,9 +64,14 @@ C7_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202608221200_b25_p13_c7_source_causality_obligation_conservation.py"
 )
+C8_MIGRATION = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202608231200_b25_p13_c8_identity_window_causality.py"
+)
 FIT_PLANNER = ROOT / "backend/app/bayesian/fit_planner.py"
 PROVISIONER = ROOT / "scripts/database/prepare_migration_authority_boundary.py"
 READ_MODEL = ROOT / "backend/app/confidence_projection/read_model.py"
+DIRTY_MARKER = ROOT / "backend/app/bayesian/dirty_marker.py"
 SOURCE_SNAPSHOT = ROOT / "backend/app/bayesian/source_snapshot.py"
 TASKS = ROOT / "backend/app/tasks/bayesian.py"
 DEPENDENCIES = ROOT / "contracts/trust-api/confidence-projection-dependencies.v1.yaml"
@@ -109,13 +124,32 @@ def _yaml(path: Path) -> dict[str, Any]:
     return value
 
 
+def _normalize_sql(sql: str) -> str:
+    """Whitespace-insensitive so a semantics-preserving respelling is green."""
+
+    return re.sub(r"\s+", " ", sql).strip()
+
+
+_UNWRAPPED_BUILTINS = {"frozenset", "set", "tuple", "list", "MappingProxyType"}
+
+
 def _literal_assignment(source: str, name: str) -> Any:
     tree = ast.parse(source)
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == name for t in node.targets
         ):
-            return ast.literal_eval(node.value)
+            value = node.value
+            # frozenset({...}) and friends are Calls wrapping a literal; the
+            # literal is what the assignment actually declares.
+            if (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id in _UNWRAPPED_BUILTINS
+                and value.args
+            ):
+                value = value.args[0]
+            return ast.literal_eval(value)
     raise C7ClosureError(f"assignment_missing:{name}")
 
 
@@ -124,62 +158,239 @@ def _literal_assignment(source: str, name: str) -> Any:
 # ---------------------------------------------------------------------------
 def validate_source_invalidation_contract(
     migration: str | None = None,
-    snapshot: str | None = None,
-    contract: dict[str, Any] | None = None,
+    shipped_sql: dict[str, str] | None = None,
+    authority: dict[str, Any] | None = None,
 ) -> int:
-    """The migration's DDL is exactly what the B2.4 source contract renders."""
+    """Source semantics and invalidation semantics are one authority.
 
-    body = migration if migration is not None else _read(C7_MIGRATION)
+    C7 kept two truths and compared them afterwards, and the comparison was
+    partly vacuous. Its projection arm was ``column in str(projection)`` -- a
+    tautology over a tuple's own repr that could not fail, while still adding
+    ``len(projection)`` to the reported witness count -- and the membership
+    predicates were never compared to the source queries at all. Changing source
+    semantics without changing invalidation semantics left this gate green.
+
+    C8 makes ``source_contract_authority`` the generator of both artefacts and
+    compares each shipped artefact against what it renders, whitespace-normalised
+    so a semantics-preserving respelling stays green while any change to
+    membership, projection or window key on either side turns red.
+    """
+
+    body = migration if migration is not None else _read(C8_MIGRATION)
+    contracts = authority if authority is not None else SOURCE_CONTRACT_AUTHORITY
+
+    # 1. The migration embeds exactly the invalidation DDL the authority renders.
     embedded = _literal_assignment(body, "SOURCE_INVALIDATION_DDL")
-    rendered = render_source_invalidation_ddl()
     _require(
-        embedded.strip() == rendered.strip(),
+        embedded.strip() == render_source_invalidation_ddl().strip(),
         "source_invalidation_ddl_drift:migration_is_not_the_rendered_contract",
     )
 
-    # The membership predicate must still be the authoritative source query's
-    # filter. If source_snapshot.py changes what it considers in-snapshot and
-    # the invalidation contract does not follow, invalidation silently stops
-    # covering real snapshot changes.
-    snapshot_source = snapshot if snapshot is not None else _read(SOURCE_SNAPSHOT)
-    rules = contract if contract is not None else SOURCE_INVALIDATION_CONTRACT
-    witnesses = 0
-    for relation, projection in ALLOWED_SOURCE_READ_MODELS.items():
-        _require(
-            relation in rules,
-            f"source_relation_not_governed_by_invalidation:{relation}",
-        )
-        rule = rules[relation]
-        window_key = str(rule["window_key"])
-        _require(
-            re.search(
-                rf"FROM public\.{relation}\s+WHERE tenant_id = :tenant_id\s+"
-                rf"AND {window_key} >= :window_start",
-                snapshot_source,
-                re.S,
-            )
-            is not None,
-            f"invalidation_window_key_not_source_query_range:{relation}:{window_key}",
-        )
-        for column in projection:
-            _require(
-                column in str(projection),
-                f"projection_column_missing:{relation}:{column}",
-            )
-        witnesses += len(projection)
+    # 2. The canonical snapshot SELECTs the application executes are exactly the
+    #    ones the same authority renders. This is the arm that was a tautology:
+    #    it now reads the real query text and compares membership, projection,
+    #    window key and ordering in one byte-level equality.
+    from app.bayesian.source_snapshot import _QUERY_PARAMS, _SOURCE_QUERIES
 
-    derived = {rule.relation for rule in source_relations()}
+    executed = (
+        shipped_sql
+        if shipped_sql is not None
+        else {name: query.text for name, query in _SOURCE_QUERIES.items()}
+    )
     _require(
-        derived == set(ALLOWED_SOURCE_READ_MODELS),
+        set(executed) == set(contracts),
+        "executed_source_queries_do_not_cover_the_contract:"
+        f"{sorted(set(contracts) ^ set(executed))}",
+    )
+    witnesses = 0
+    for relation, contract in contracts.items():
+        _require(
+            _normalize_sql(executed[relation])
+            == _normalize_sql(contract.render_select()),
+            f"source_query_diverges_from_the_contract_authority:{relation}",
+        )
+        # Real witnesses: each was compared against the SQL the database runs.
+        witnesses += len(contract.projection) + sum(
+            max(len(item.values), 1) for item in contract.membership
+        )
+    _require(
+        dict(_QUERY_PARAMS) == query_params(),
+        "source_query_bind_values_diverge_from_the_contract_authority",
+    )
+
+    # 3. The projected inventory other modules consume matches the authority.
+    _require(
+        {k: tuple(v) for k, v in ALLOWED_SOURCE_READ_MODELS.items()}
+        == {k: tuple(v) for k, v in allowed_source_read_models().items()},
+        "allowed_source_read_models_diverges_from_the_authority",
+    )
+
+    # 4. Coverage: every governed relation carries insert/update/delete.
+    derived = set(governed_relations())
+    _require(
+        derived == set(contracts),
         "invalidation_coverage_is_not_the_full_source_contract:"
-        f"{sorted(set(ALLOWED_SOURCE_READ_MODELS) - derived)}",
+        f"{sorted(set(contracts) - derived)}",
     )
     expected_triggers = set(trigger_names())
-    _require(len(expected_triggers) == 3 * len(ALLOWED_SOURCE_READ_MODELS),
-             "invalidation_triggers_do_not_cover_insert_update_delete")
+    _require(
+        len(expected_triggers) == 3 * len(contracts),
+        "invalidation_triggers_do_not_cover_insert_update_delete",
+    )
     for trigger in sorted(expected_triggers):
         _require(trigger in embedded, f"invalidation_trigger_absent:{trigger}")
     return witnesses
+
+
+# ---------------------------------------------------------------------------
+# STATIC: one model identity authority, bound across the P12 isolation boundary.
+# ---------------------------------------------------------------------------
+def validate_model_identity_authority(
+    read_model: str | None = None,
+    migration: str | None = None,
+    dirty_marker: str | None = None,
+) -> int:
+    """Every stage names the same identity, and the database enforces it.
+
+    The C7 triggers emitted the B2.4-P3 orchestration default while the Trust
+    read model projected a different family and joined dirty evidence on exact
+    model equality, so no committed source change could stale a signed claim.
+    The registry is now the single authority. Trust deliberately does NOT import
+    it -- B2.5-P12 forbids the Trust path from reaching Bayesian modules -- so
+    the binding that keeps the two from diverging is asserted here instead.
+    """
+
+    model = read_model if read_model is not None else _read(READ_MODEL)
+    body = migration if migration is not None else _read(C8_MIGRATION)
+    marker = dirty_marker if dirty_marker is not None else _read(DIRTY_MARKER)
+
+    active = active_identity()
+
+    # 1. Trust's shipped eligibility set equals the registry's eligible members.
+    shipped = _literal_assignment(model, "SUPPORTED_CONFIDENCE_MODEL_TYPES")
+    _require(
+        set(shipped) == set(trust_eligible_model_types()),
+        "trust_eligible_models_diverge_from_registry:"
+        f"shipped={sorted(shipped)}:registry={sorted(trust_eligible_model_types())}",
+    )
+
+    # 2. What production emits is the one active identity, and it is projectable.
+    _require(
+        active.model_type in shipped,
+        f"active_identity_is_not_trust_projectable:{active.model_type}",
+    )
+    _require(
+        "_ACTIVE_MODEL_IDENTITY.model_type" in marker
+        and "_ACTIVE_MODEL_IDENTITY.model_version" in marker,
+        "dirty_marker_defaults_are_not_derived_from_the_identity_registry",
+    )
+    # Code only: prose that names the retired identity while explaining why it
+    # was retired is exactly what this file should contain.
+    marker_code = chr(10).join(
+        line for line in marker.splitlines() if not line.lstrip().startswith("#")
+    )
+    retired_types = {
+        item.model_type for item in MODEL_IDENTITY_REGISTRY if not item.is_active
+    }
+    for retired_type in retired_types:
+        for literal in (f'"{retired_type}"', f"'{retired_type}'"):
+            _require(
+                literal not in marker_code,
+                "dirty_marker_still_hardcodes_a_retired_identity:" + retired_type,
+            )
+
+    # 3. The invalidation triggers emit that same identity.
+    embedded = _literal_assignment(body, "SOURCE_INVALIDATION_DDL")
+    _require(
+        f"'{active.model_type}'" in embedded
+        and f"'{active.model_version}'" in embedded,
+        "invalidation_triggers_do_not_emit_the_active_identity",
+    )
+    _require(
+        "'mmm'" not in embedded,
+        "invalidation_triggers_still_emit_the_retired_identity",
+    )
+
+    # 4. The database refuses an unregistered family, and its admitted set is
+    #    exactly the registry's. A default parameter is not an architecture
+    #    guarantee; a CHECK constraint is.
+    _require(
+        tuple(_literal_assignment(body, "REGISTERED_MODEL_TYPES"))
+        == registered_model_types(),
+        "database_registered_model_types_diverge_from_the_registry",
+    )
+    for constraint in (
+        "ck_b24_dirty_events_registered_model_type",
+        "ck_bayesian_model_fits_registered_model_type",
+    ):
+        _require(constraint in body, f"model_registration_constraint_absent:{constraint}")
+
+    # 5. Exactly one identity may be produced; retired ones stay readable.
+    retired = [item for item in MODEL_IDENTITY_REGISTRY if not item.is_active]
+    _require(retired, "the retired orchestration identity must remain declared")
+    for item in retired:
+        _require(
+            not item.trust_eligible,
+            f"retired_identity_is_trust_eligible:{item.model_type}",
+        )
+    return len(MODEL_IDENTITY_REGISTRY) + len(shipped)
+
+
+# ---------------------------------------------------------------------------
+# STATIC: staleness is window overlap, not window equality.
+# ---------------------------------------------------------------------------
+def validate_window_dependency_is_overlap(
+    read_model: str | None = None, migration: str | None = None
+) -> int:
+    """A change inside a fit's window must stale it whatever that window's shape.
+
+    Equality could only stale a fit whose window was exactly the trigger's day
+    bucket, and two of three production dirty producers forward arbitrary caller
+    windows, so wider fits were structurally uninvalidatable.
+    """
+
+    model = read_model if read_model is not None else _read(READ_MODEL)
+    body = migration if migration is not None else _read(C8_MIGRATION)
+
+    # Exactly the has_later_dirty_evidence EXISTS block. Slicing wider would
+    # catch has_snapshot_lineage, which legitimately keeps exact equality: it
+    # asks whether THIS fit's snapshot has lineage, not whether a later change
+    # overlapped it.
+    end = model.find("AS has_later_dirty_evidence")
+    _require(end > 0, "read_model_has_no_later_dirty_evidence_predicate")
+    start = model.rfind("EXISTS (", 0, end)
+    _require(start > 0, "later_dirty_evidence_predicate_is_not_an_EXISTS_block")
+    staleness = model[start:end]
+    _require(
+        "b24_source_windows_overlap" in staleness,
+        "staleness_predicate_is_not_overlap_based",
+    )
+    _require(
+        "dirty.source_window_start = requested_fit.source_window_start"
+        not in staleness,
+        "staleness_predicate_still_requires_exact_window_equality",
+    )
+    _require(
+        "dirty.model_version = requested_fit.model_version" not in staleness,
+        "staleness_predicate_still_joins_on_pipeline_version",
+    )
+    _require(
+        "dirty.model_type = requested_fit.model_type" in staleness,
+        "staleness_predicate_lost_its_model_family_binding",
+    )
+    _require(
+        "CREATE OR REPLACE FUNCTION public.b24_source_windows_overlap" in body,
+        "overlap_relation_is_not_defined_in_the_migration",
+    )
+    _require(
+        "p_change_start < p_fit_end AND p_fit_start < p_change_end" in body,
+        "overlap_relation_is_not_half_open",
+    )
+    _require(
+        "idx_b24_dirty_events_staleness_overlap" in body,
+        "overlap_staleness_has_no_supporting_index",
+    )
+    return 7
 
 
 # ---------------------------------------------------------------------------
@@ -565,6 +776,8 @@ def validate_proof_taxonomy(
 
 VALIDATORS: tuple[Callable[[], int], ...] = (
     validate_source_invalidation_contract,
+    validate_model_identity_authority,
+    validate_window_dependency_is_overlap,
     validate_worker_topology,
     validate_terminal_dependencies_bidirectional,
     validate_planner_obligation_contract,
@@ -572,6 +785,15 @@ VALIDATORS: tuple[Callable[[], int], ...] = (
     validate_non_fit_lifecycle,
     validate_proof_taxonomy,
 )
+
+
+def _replace_last(source: str, old: str, new: str) -> str:
+    """Replace the final occurrence, for mutating the later of two similar blocks."""
+
+    index = source.rfind(old)
+    if index < 0:
+        return source
+    return source[:index] + new + source[index + len(old) :]
 
 
 def _must_fail(control_id: str, action: Callable[[], object]) -> str:
@@ -582,9 +804,10 @@ def _must_fail(control_id: str, action: Callable[[], object]) -> str:
     raise C7ClosureError(f"negative_control_did_not_fire:{control_id}")
 
 
-def run_negative_controls() -> list[str]:
+def run_negative_controls(positive_controls: list[str] | None = None) -> list[str]:
     """STATIC falsifiers only. Behavioural falsifiers live in the physics suite."""
 
+    positive_controls = positive_controls if positive_controls is not None else []
     migration = _read(C7_MIGRATION)
     provisioner = _read(PROVISIONER)
     compose = _read(COMPOSE_E2E)
@@ -626,15 +849,62 @@ def run_negative_controls() -> list[str]:
             ),
         )
     )
-    # NC-C7-S04 -- a source relation dropped from invalidation coverage.
-    drifted_contract = dict(SOURCE_INVALIDATION_CONTRACT)
-    drifted_contract.pop("b23_match_verdicts")
+    # NC-C7-S04 -- source-query membership changed while the invalidation
+    # authority is left alone. On C7 this stayed green: nothing compared them.
+    from app.bayesian.source_snapshot import _SOURCE_QUERIES as _SHIPPED
+
+    def _shipped_with(replacement: tuple[str, str]) -> dict[str, str]:
+        old, new = replacement
+        return {
+            name: (query.text.replace(old, new) if old in query.text else query.text)
+            for name, query in _SHIPPED.items()
+        }
+
     controls.append(
         _must_fail(
             "NC-C7-S04",
-            lambda: validate_source_invalidation_contract(contract=drifted_contract),
+            lambda: validate_source_invalidation_contract(
+                shipped_sql=_shipped_with(
+                    ("AND status IN :match_verdict_statuses", "")
+                )
+            ),
         )
     )
+    # NC-C7-S19 -- source-query projection changed only.
+    controls.append(
+        _must_fail(
+            "NC-C7-S19",
+            lambda: validate_source_invalidation_contract(
+                shipped_sql=_shipped_with(("discrepancy_band", "discrepancy_band_v2"))
+            ),
+        )
+    )
+    # NC-C7-S20 -- source-query window key changed only.
+    controls.append(
+        _must_fail(
+            "NC-C7-S20",
+            lambda: validate_source_invalidation_contract(
+                shipped_sql=_shipped_with(
+                    ("AND last_transition_at >= :window_start",
+                     "AND confirmed_at >= :window_start")
+                )
+            ),
+        )
+    )
+    # NC-C7-S21 -- a semantics-preserving respelling must NOT turn the gate red.
+    # A proof that fires on whitespace is validating formatting, not semantics.
+    def _respelled() -> None:
+        respelled = {
+            name: "  ".join(query.text.split()) + "\n"
+            for name, query in _SHIPPED.items()
+        }
+        validate_source_invalidation_contract(shipped_sql=respelled)
+
+    # Deliberately NOT appended to `controls`. This is a POSITIVE control: it
+    # must stay green, and counting a control that never fires among "controls
+    # fired" is the count-inflation this gate exists to avoid.
+    _respelled()
+    positive_controls.append("NC-C7-S21-semantics-preserving-respelling")
     # NC-C7-S05 -- the E2E topology conflating worker and API credentials, the
     # concrete counterexample Report 40 found on main.
     controls.append(
@@ -777,6 +1047,113 @@ def run_negative_controls() -> list[str]:
             ),
         )
     )
+    # --- C8 identity and window controls (the two dispositive audit findings) --
+    read_model_text = _read(READ_MODEL)
+    marker_text = _read(DIRTY_MARKER)
+    c8_migration = _read(C8_MIGRATION)
+
+    # NC-C8-S01 -- Trust eligibility drifting from the registry. This is the
+    # F-01 shape: production emits one family, Trust projects another.
+    controls.append(
+        _must_fail(
+            "NC-C8-S01",
+            lambda: validate_model_identity_authority(
+                read_model=read_model_text.replace(
+                    '{"bayesian_attribution_confidence"}', '{"some_other_family"}', 1
+                )
+            ),
+        )
+    )
+    # NC-C8-S02 -- the trigger emitting the retired orchestration identity again.
+    controls.append(
+        _must_fail(
+            "NC-C8-S02",
+            lambda: validate_model_identity_authority(
+                migration=c8_migration.replace(
+                    "'bayesian_attribution_confidence',", "'mmm',"
+                )
+            ),
+        )
+    )
+    # NC-C8-S03 -- the dirty marker hardcoding an identity instead of deriving it.
+    controls.append(
+        _must_fail(
+            "NC-C8-S03",
+            lambda: validate_model_identity_authority(
+                dirty_marker=marker_text.replace(
+                    "_ACTIVE_MODEL_IDENTITY.model_type", "'mmm'", 1
+                )
+            ),
+        )
+    )
+    # NC-C8-S04 -- the database no longer constraining the family.
+    controls.append(
+        _must_fail(
+            "NC-C8-S04",
+            lambda: validate_model_identity_authority(
+                migration=c8_migration.replace(
+                    "ck_b24_dirty_events_registered_model_type", "ck_removed"
+                )
+            ),
+        )
+    )
+    # NC-C8-S05 -- staleness reverting to exact window equality. This is
+    # the F-02 shape: a change inside a wider fit cannot stale it.
+    _OVERLAP_CALL = 'public.b24_source_windows_overlap(\n                      dirty.source_window_start,\n                      dirty.source_window_end,\n                      requested_fit.source_window_start,\n                      requested_fit.source_window_end\n                  )'
+    _WINDOW_EQUALITY = 'dirty.source_window_start = requested_fit.source_window_start'
+    _VERSION_JOIN = 'AND dirty.model_type = requested_fit.model_type\n                  AND dirty.model_version = requested_fit.model_version'
+    controls.append(
+        _must_fail(
+            "NC-C8-S05",
+            lambda: validate_window_dependency_is_overlap(
+                read_model=read_model_text.replace(
+                    _OVERLAP_CALL, _WINDOW_EQUALITY, 1
+                )
+            ),
+        )
+    )
+    # NC-C8-S06 -- staleness re-joining on pipeline version, which would
+    # leave fits from a previous pipeline version permanently unstaleable.
+    controls.append(
+        _must_fail(
+            "NC-C8-S06",
+            lambda: validate_window_dependency_is_overlap(
+                # The LAST occurrence: the first is inside has_snapshot_lineage,
+                # which legitimately joins on pipeline version.
+                read_model=_replace_last(
+                    read_model_text,
+                    "AND dirty.model_type = requested_fit.model_type",
+                    _VERSION_JOIN,
+                )
+            ),
+        )
+    )
+    # NC-C8-S07 -- the overlap relation losing its half-open semantics, which
+    # would stale fits that merely abut a change.
+    controls.append(
+        _must_fail(
+            "NC-C8-S07",
+            lambda: validate_window_dependency_is_overlap(
+                migration=c8_migration.replace(
+                    "p_change_start < p_fit_end AND p_fit_start < p_change_end",
+                    "p_change_start <= p_fit_end AND p_fit_start <= p_change_end",
+                )
+            ),
+        )
+    )
+    # NC-C8-S08 -- the overlap staleness losing its supporting index, which is
+    # what keeps a per-fit correlated overlap read bounded.
+    controls.append(
+        _must_fail(
+            "NC-C8-S08",
+            lambda: validate_window_dependency_is_overlap(
+                migration=c8_migration.replace(
+                    "idx_b24_dirty_events_staleness_overlap", "idx_removed"
+                )
+            ),
+        )
+    )
+
     # NC-C7-S16 -- the behavioural suite dropped from required CI.
     controls.append(
         _must_fail(
@@ -808,11 +1185,15 @@ def main() -> int:
     args = parser.parse_args()
     try:
         counts = {validator.__name__: validator() for validator in VALIDATORS}
-        controls = run_negative_controls() if args.negative_control else []
+        positive: list[str] = []
+        controls = (
+            run_negative_controls(positive) if args.negative_control else []
+        )
         print("B25_P13_C7_CLOSURE_VALIDATION_PASS")
         print(f"c7_invariant_groups_passed={len(counts)}")
         print(f"c7_invariant_witnesses={sum(counts.values())}")
         print(f"c7_static_negative_controls_fired={len(controls)}")
+        print(f"c7_semantics_preserving_controls_held={len(positive)}")
         print(f"c7_behavioral_obligations_bound={len(BEHAVIORAL_OBLIGATIONS)}")
         print(
             "c7_behavioral_negative_controls_fired=0"
