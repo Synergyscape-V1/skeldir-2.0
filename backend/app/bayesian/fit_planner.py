@@ -20,6 +20,7 @@ from app.bayesian.feature_authority import (
     load_source_window_feature_authority,
 )
 from app.bayesian.fit_claim import FitClaimResult, claim_fit_for_snapshot
+from app.bayesian.input_contract import SPARSE_PRIVACY_THRESHOLDS
 from app.bayesian.preflight_lease import (
     PreflightLeaseResult,
     acquire_preflight_lease,
@@ -45,10 +46,36 @@ from app.db.session import AsyncSessionLocal, get_session
 
 
 DEBOUNCE_POLICY_VERSION = "b24-p3-debounce-v1"
+# Read from the contract that imposes it, never restated here.
+MIN_FIT_WINDOW_DAYS = (
+    SPARSE_PRIVACY_THRESHOLDS.minimum_source_window_density_days
+)
 QUIET_PERIOD_SECONDS = 120
 MAX_WAIT_SECONDS = 900
 PLANNER_CANDIDATE_LIMIT = 100
 DIRTY_EVENT_LEASE_SECONDS = 300
+
+
+def fit_window_for(candidate: "DirtyPlanningCandidate") -> tuple[datetime, datetime]:
+    """The window to fit for one dirty candidate, anchored on the change.
+
+    ``b24_dirty_events`` records the window in which the source moved. Both
+    production invalidation triggers bucket that to a single day, which is the
+    right description of a change and the wrong description of a fit: B2.4's
+    sparse-privacy contract refuses any window whose source data spans fewer
+    than ``minimum_source_window_density_days`` distinct days, so a one-day
+    window is refused before its contents are ever considered.
+
+    The fit window therefore ends where the change window ends and reaches back
+    at least far enough for that floor to be satisfiable. The bound is read from
+    the contract that imposes it rather than chosen here, so the two cannot
+    drift apart, and the widening is monotone: a caller that already supplied a
+    window at least this wide keeps exactly the window it asked for.
+    """
+
+    end = candidate.source_window_end
+    earliest_admissible = end - timedelta(days=MIN_FIT_WINDOW_DAYS)
+    return min(candidate.source_window_start, earliest_admissible), end
 
 
 @dataclass(frozen=True)
@@ -329,6 +356,13 @@ async def plan_candidate(
     candidate: DirtyPlanningCandidate,
     planner_owner: str,
 ) -> PlannedFitIntent:
+    # The dirty event says *when* the source changed; it does not say what
+    # window to fit. Conflating the two is why a real source change could never
+    # produce a real fit: the invalidation triggers bucket by day, and a one-day
+    # window can never satisfy the eligibility contract's window-density floor,
+    # so every trigger-produced candidate was condemned to the fallback path
+    # before its contents were ever examined.
+    fit_window_start, fit_window_end = fit_window_for(candidate)
     """Acquire P4 preflight, freeze/retry by hash, profile, then claim/outbox."""
 
     from app.bayesian.source_snapshot import compute_source_snapshot_hash
@@ -344,8 +378,8 @@ async def plan_candidate(
             tenant_id=candidate.tenant_id,
             model_type=candidate.model_type,
             model_version=candidate.model_version,
-            source_window_start=candidate.source_window_start,
-            source_window_end=candidate.source_window_end,
+            source_window_start=fit_window_start,
+            source_window_end=fit_window_end,
             lease_owner=planner_owner,
         )
 
@@ -375,8 +409,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 source_snapshot_hash=frozen_source_snapshot_hash,
             )
             if supersession.superseded:
@@ -385,8 +419,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     fit_id=None,
                     terminal_status="authority_retry_superseded",
                 )
@@ -414,8 +448,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 source_snapshot_hash=frozen_source_snapshot_hash,
                 lease_owner=planner_owner,
             )
@@ -425,8 +459,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     fit_id=None,
                     terminal_status="suppressed",
                 )
@@ -456,8 +490,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     source_snapshot_hash=frozen_source_snapshot_hash,
                 )
             except FeatureAuthorityUnavailable as exc:
@@ -466,8 +500,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     source_snapshot_hash=frozen_source_snapshot_hash,
                     reason=exc.reason,
                     detail=exc.detail,
@@ -477,8 +511,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     source_snapshot_hash=frozen_source_snapshot_hash,
                     lease_owner=planner_owner,
                     terminal_status=ProfilingLeaseStatus.PROFILE_FAILED,
@@ -489,8 +523,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     fit_id=None,
                     terminal_status=AuthorityBuildStatus.WAITING.value,
                 )
@@ -513,8 +547,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
             )
         if snapshot.source_snapshot_hash != frozen_source_snapshot_hash:
             async with get_session(candidate.tenant_id) as session:
@@ -523,8 +557,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     source_snapshot_hash=frozen_source_snapshot_hash,
                     lease_owner=planner_owner,
                     terminal_status=ProfilingLeaseStatus.PROFILE_SUPERSEDED,
@@ -535,8 +569,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     fit_id=None,
                     terminal_status="authority_retry_superseded",
                 )
@@ -567,8 +601,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
             )
 
     if not snapshot.preflight.is_eligible:
@@ -581,8 +615,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 fit_id=fit_id,
                 terminal_status=fallback_status,
             )
@@ -612,8 +646,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 source_snapshot_hash=snapshot.source_snapshot_hash,
                 lease_owner=planner_owner,
             )
@@ -623,8 +657,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     fit_id=None,
                     terminal_status="suppressed",
                 )
@@ -654,8 +688,8 @@ async def plan_candidate(
                     tenant_id=candidate.tenant_id,
                     model_type=candidate.model_type,
                     model_version=candidate.model_version,
-                    source_window_start=candidate.source_window_start,
-                    source_window_end=candidate.source_window_end,
+                    source_window_start=fit_window_start,
+                    source_window_end=fit_window_end,
                     source_snapshot_hash=snapshot.source_snapshot_hash,
                 )
         except FeatureAuthorityUnavailable as exc:
@@ -683,8 +717,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 source_snapshot_hash=snapshot.source_snapshot_hash,
                 lease_owner=planner_owner,
                 terminal_status=ProfilingLeaseStatus.PROFILE_FAILED,
@@ -695,8 +729,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 fit_id=fit_id,
                 terminal_status=(
                     "fallback_only"
@@ -763,8 +797,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 fit_id=fit_id,
                 terminal_status=resource_fallback_status,
             )
@@ -773,8 +807,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 source_snapshot_hash=snapshot.source_snapshot_hash,
                 lease_owner=planner_owner,
                 terminal_status=ProfilingLeaseStatus.PROFILE_REJECTED,
@@ -808,8 +842,8 @@ async def plan_candidate(
             tenant_id=candidate.tenant_id,
             model_type=candidate.model_type,
             model_version=candidate.model_version,
-            source_window_start=candidate.source_window_start,
-            source_window_end=candidate.source_window_end,
+            source_window_start=fit_window_start,
+            source_window_end=fit_window_end,
             source_snapshot_hash=snapshot.source_snapshot_hash,
         )
         if supersession.superseded:
@@ -818,8 +852,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 source_snapshot_hash=snapshot.source_snapshot_hash,
                 lease_owner=planner_owner,
                 terminal_status=ProfilingLeaseStatus.PROFILE_SUPERSEDED,
@@ -830,8 +864,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 fit_id=None,
                 terminal_status="authority_retry_superseded",
             )
@@ -846,8 +880,8 @@ async def plan_candidate(
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
                 model_version=candidate.model_version,
-                source_window_start=candidate.source_window_start,
-                source_window_end=candidate.source_window_end,
+                source_window_start=fit_window_start,
+                source_window_end=fit_window_end,
                 source_snapshot_hash=snapshot.source_snapshot_hash,
                 lease_owner=planner_owner,
                 terminal_status=ProfilingLeaseStatus.PROFILE_PASSED,

@@ -36,6 +36,8 @@ on:
       - 'backend/tests/trust/test_b25_p13_c7_conservation_physics.py'
       - 'backend/tests/trust/test_b25_p13_c8_identity_window_physics.py'
       - 'backend/tests/trust/test_b25_p13_c8_transport_physics.py'
+      - 'backend/tests/trust/test_b25_p13_c8_contiguous_journey.py'
+      - 'backend/app/bayesian/fit_planner.py'
       - 'backend/app/bayesian/model_identity.py'
       - 'backend/app/bayesian/source_contract_authority.py'
       - 'backend/app/bayesian/source_invalidation_contract.py'
@@ -263,8 +265,8 @@ jobs:
           set -o pipefail
           python scripts/ci/validate_b25_p13_c7_closure.py --negative-control             | tee /tmp/b25_p13_c7_closure.out
           grep -E "^B25_P13_C7_CLOSURE_VALIDATION_PASS$" /tmp/b25_p13_c7_closure.out
-          grep -E "^c7_invariant_groups_passed=9$" /tmp/b25_p13_c7_closure.out
-          grep -E "^c7_static_negative_controls_fired=28$" /tmp/b25_p13_c7_closure.out
+          grep -E "^c7_invariant_groups_passed=10$" /tmp/b25_p13_c7_closure.out
+          grep -E "^c7_static_negative_controls_fired=31$" /tmp/b25_p13_c7_closure.out
           grep -E "^c7_semantics_preserving_controls_held=1$" /tmp/b25_p13_c7_closure.out
           grep -E "^c7_behavioral_obligations_bound=12$" /tmp/b25_p13_c7_closure.out
 
@@ -491,6 +493,31 @@ jobs:
             backend/tests/trust/test_b25_p13_c8_transport_physics.py \
             -q -s --no-header | tee /tmp/b25_p13_c8_transport.out
           grep -E "1 passed" /tmp/b25_p13_c8_transport.out
+
+      # C8-N: the principal closure gate. One real financial fact must reach a
+      # JWKS-verifiable Trust claim with no substituted authority at any seam.
+      # This is the only proof in the suite that spans the identity boundary the
+      # audits found severed, and the only one that could have discovered F-05.
+      - name: P13 C8-N contiguous journey (source change -> JWKS-verified claim)
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          CELERY_BROKER_URL: sqla+postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          CELERY_RESULT_BACKEND: db+postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C8_JOURNEY_PROOF: "1"
+          SKELDIR_B24_P9_REQUIRE_DB_PROOFS: "1"
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c8n-prometheus
+        timeout-minutes: 25
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python -m pytest             backend/tests/trust/test_b25_p13_c8_contiguous_journey.py             -q -s --no-header | tee /tmp/b25_p13_c8_journey.out
+          grep -E "2 passed" /tmp/b25_p13_c8_journey.out
 
       # NC-C8-B05: removing the planner's Beat entry must make the transport
       # proof red. Without this the proof cannot distinguish real delivery from

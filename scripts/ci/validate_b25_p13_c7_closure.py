@@ -394,6 +394,73 @@ def validate_window_dependency_is_overlap(
 
 
 # ---------------------------------------------------------------------------
+# STATIC: the fit window is derived from the contract that constrains it.
+# ---------------------------------------------------------------------------
+def validate_fit_window_is_contract_derived(planner: str | None = None) -> int:
+    """A dirty bucket is a change description, not a fittable window.
+
+    Both production invalidation triggers bucket to a single day. B2.4's
+    sparse-privacy contract refuses any window whose source spans fewer than
+    ``minimum_source_window_density_days`` distinct days. While the planner
+    fitted the dirty window verbatim, every trigger-produced candidate was
+    structurally ineligible before its contents were read -- and the fallback
+    path it fell to is rejected by the C5 dispatch fence, so the planner raised
+    instead of degrading. No gate could see this because no proof asked a real
+    source change to produce a real fit.
+
+    The remediation only holds if the bound stays tied to the contract that
+    imposes it. A literal here would drift the moment the floor moved, and the
+    drift would be invisible in exactly the same way.
+    """
+
+    body = planner if planner is not None else _read(FIT_PLANNER)
+
+    _require(
+        "def fit_window_for(" in body,
+        "planner_has_no_fit_window_derivation",
+    )
+    _require(
+        "SPARSE_PRIVACY_THRESHOLDS.minimum_source_window_density_days" in body,
+        "fit_window_floor_is_not_read_from_the_sparse_privacy_contract",
+    )
+    # The derivation must widen, never narrow: a caller that already asked for a
+    # wide window must keep it, which is what leaves every existing 30-day and
+    # 31-day proof untouched.
+    _require(
+        "min(candidate.source_window_start, earliest_admissible)" in body,
+        "fit_window_derivation_is_not_monotone_widening",
+    )
+    # And plan_candidate must actually use it. Deriving a window and then fitting
+    # the dirty bucket anyway would satisfy every check above.
+    start = body.index("async def plan_candidate(")
+    end = body.index("async def plan_due_dirty_events(")
+    candidate_body = body[start:end]
+    _require(
+        "fit_window_start, fit_window_end = fit_window_for(candidate)"
+        in candidate_body,
+        "plan_candidate_does_not_derive_its_fit_window",
+    )
+    _require(
+        "candidate.source_window_start" not in candidate_body
+        and "candidate.source_window_end" not in candidate_body,
+        "plan_candidate_still_fits_the_raw_dirty_window",
+    )
+    # The dirty rows themselves must still be marked by their own window, or the
+    # planner would lease evidence it then fails to dispose of.
+    for marker in (
+        "async def mark_dirty_events_for_candidate(",
+        "async def mark_authority_waiting_dirty_events(",
+    ):
+        m_start = body.index(marker)
+        m_end = body.index(chr(10) * 2 + "async def ", m_start + 1)
+        _require(
+            "candidate.source_window_start" in body[m_start:m_end],
+            f"dirty_marking_no_longer_keys_on_the_change_window:{marker}",
+        )
+    return 7
+
+
+# ---------------------------------------------------------------------------
 # STATIC: worker credential custody in every in-scope executable topology.
 # ---------------------------------------------------------------------------
 def validate_worker_topology(
@@ -778,6 +845,7 @@ VALIDATORS: tuple[Callable[[], int], ...] = (
     validate_source_invalidation_contract,
     validate_model_identity_authority,
     validate_window_dependency_is_overlap,
+    validate_fit_window_is_contract_derived,
     validate_worker_topology,
     validate_terminal_dependencies_bidirectional,
     validate_planner_obligation_contract,
@@ -1161,6 +1229,52 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
             lambda: validate_proof_taxonomy(
                 workflow=_read(WORKFLOW).replace(
                     "test_b25_p13_c7_conservation_physics.py", "removed.py"
+                )
+            ),
+        )
+    )
+    # NC-C8-S09 -- the density floor restated in the planner as a literal.
+    # This is the drift the derivation exists to prevent, and it is invisible
+    # from the planner alone: the code reads correctly and is simply wrong the
+    # moment the contract moves.
+    planner_text = _read(FIT_PLANNER)
+    controls.append(
+        _must_fail(
+            "NC-C8-S09",
+            lambda: validate_fit_window_is_contract_derived(
+                planner=planner_text.replace(
+                    "SPARSE_PRIVACY_THRESHOLDS.minimum_source_window_density_days",
+                    "20",
+                    1,
+                )
+            ),
+        )
+    )
+    # NC-C8-S10 -- the derivation narrowing a caller-supplied window. A planner
+    # that clamps every window to the floor would satisfy the floor and silently
+    # discard the history a wider caller asked to fit over.
+    controls.append(
+        _must_fail(
+            "NC-C8-S10",
+            lambda: validate_fit_window_is_contract_derived(
+                planner=planner_text.replace(
+                    "min(candidate.source_window_start, earliest_admissible)",
+                    "earliest_admissible",
+                    1,
+                )
+            ),
+        )
+    )
+    # NC-C8-S11 -- the derivation present but unused, with plan_candidate still
+    # fitting the raw dirty bucket. Every other check above stays green.
+    controls.append(
+        _must_fail(
+            "NC-C8-S11",
+            lambda: validate_fit_window_is_contract_derived(
+                planner=planner_text.replace(
+                    "fit_window_start, fit_window_end = fit_window_for(candidate)",
+                    "fit_window_start = candidate.source_window_start",
+                    1,
                 )
             ),
         )

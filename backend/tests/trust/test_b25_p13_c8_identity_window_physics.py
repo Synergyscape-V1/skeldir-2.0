@@ -179,6 +179,16 @@ def _seed_fit(tenant_id, *, window_start, window_end, model_type=None,
     Seeded through the migration principal with the dispatch fence suspended,
     exactly as the P13 E2E suite does. The fence is not the guard under test;
     the freshness verdict is.
+
+    Building the pre-state means writing source rows, and those writes fire the
+    production invalidation triggers, so the tenant already carries dirty
+    evidence describing its own construction. That evidence is discarded here.
+    Not to make the assertion easier -- it makes it strictly harder. Ordering
+    setup evidence against the fit's source read would otherwise rest on which
+    transaction happened to start first, a margin measured in microseconds, and
+    a pass earned that way proves nothing. With the construction evidence gone,
+    the only row that can ever stale this fit is one produced by the change the
+    test performs after it.
     """
 
     fit_id = uuid.uuid4()
@@ -186,6 +196,10 @@ def _seed_fit(tenant_id, *, window_start, window_end, model_type=None,
     try:
         with engine.begin() as conn:
             _bind(conn, tenant_id)
+            conn.execute(
+                text("DELETE FROM public.b24_dirty_events WHERE tenant_id = :t"),
+                {"t": str(tenant_id)},
+            )
             for table, trigger in _FENCED:
                 conn.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER {trigger}"))
             conn.execute(

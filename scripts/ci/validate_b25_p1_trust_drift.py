@@ -101,6 +101,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p13_c7_conservation_physics.py",
     "backend/tests/trust/test_b25_p13_c8_identity_window_physics.py",
     "backend/tests/trust/test_b25_p13_c8_transport_physics.py",
+    "backend/tests/trust/test_b25_p13_c8_contiguous_journey.py",
 )
 
 
