@@ -18,8 +18,9 @@ Three conservation laws become physical here.
    planner ran and becomes a durable obligation to revisit the tenant until no
    dirty state requires a later planner opportunity.  Acknowledgement is derived
    from residual authority read atomically at completion time, never from the
-   absence of a Python exception, so a pre-debounce or candidate-limit-truncated
-   pass retains or defers the obligation instead of destroying it.
+   absence of a Python exception, so a pre-debounce pass, or one that processed
+   only part of a bounded batch, retains or defers the obligation instead of
+   destroying it.
 
 3. Complete confidence dependency authority.  ``created_at`` orders
    ``has_newer_fit`` and backstops ``has_later_dirty_evidence``; ``id`` and
@@ -1340,6 +1341,6 @@ def downgrade() -> None:
             uuid, integer, integer
         );
         ALTER TABLE public.b24_fit_planner_wakeups
-            DROP COLUMN IF EXISTS next_eligible_at;
+            DROP COLUMN IF EXISTS next_eligible_at;  -- # CI:DESTRUCTIVE_OK - Downgrade rollback of the column this revision added; carries deferral scheduling state only, never tenant or financial truth.
         """
     )
