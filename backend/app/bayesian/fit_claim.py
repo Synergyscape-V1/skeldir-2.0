@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
 from app.bayesian.source_snapshot import SourceSnapshotResult
 
 
@@ -69,6 +70,12 @@ class FitClaimResult:
         return self.outcome is FitClaimOutcome.CLAIMED
 
 
+#: Wall-clock ceiling granted to one fit execution. Unchanged from the
+#: value this claim has always written; named here so the three budget
+#: components sit together and none of them is a bare number in SQL again.
+B24_FIT_EXECUTION_BUDGET_SECONDS = 60
+
+
 def _utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -123,6 +130,27 @@ async def claim_fit_for_snapshot(
         "source_read_completed_at": snapshot.source_read_completed_at,
         "claim_owner": claim_owner,
         "leased_until": leased_until,
+        # The execution budget the claim grants, read from the policy that
+        # spends it.
+        #
+        # These were literals -- 60, 0, 1 -- and the middle one was fatal. A fit
+        # is refused at execution when its ``max_samples`` budget is below what
+        # the sampling policy intends to draw, and ``0`` is below any policy
+        # whatsoever. Every fit the planner ever claimed was therefore
+        # structurally unexecutable: the worker authenticated, took its lease,
+        # loaded the row, and refused it as ``policy_rejected`` before compute
+        # started.
+        #
+        # Nothing caught it because the only proof that a fit can execute wrote
+        # its own fit row, with its own budget, and never asked the planner for
+        # one. That is the same fixture substitution that hid the missing
+        # feature-authority producer, one layer further down.
+        #
+        # Reading the values keeps them correct by construction: if the policy
+        # draws more samples tomorrow, the budget it is granted moves with it.
+        "max_runtime_seconds": B24_FIT_EXECUTION_BUDGET_SECONDS,
+        "max_samples": DEFAULT_P6_SAMPLING_POLICY.sample_count,
+        "max_cores": DEFAULT_P6_SAMPLING_POLICY.cores,
     }
     await session.execute(
         text(
@@ -375,9 +403,9 @@ async def claim_fit_for_snapshot(
                             false,
                             NULL,
                             now(),
-                            60,
-                            0,
-                            1
+                            :max_runtime_seconds,
+                            :max_samples,
+                            :max_cores
                         WHERE EXISTS (SELECT 1 FROM claimable_execution_lane)
                           AND NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
                         ON CONFLICT (

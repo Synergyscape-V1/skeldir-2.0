@@ -42,6 +42,13 @@ on:
       - 'backend/app/bayesian/feature_authority.py'
       - 'backend/app/bayesian/input_contract.py'
       - 'backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py'
+      - 'backend/tests/trust/test_b25_p13_c9_tenant_containment.py'
+      - 'backend/tests/trust/test_b25_p13_c9_degradation_matrix.py'
+      - 'backend/tests/trust/test_b25_p13_c9_authority_supersession.py'
+      - 'backend/tests/trust/test_b25_p13_c9_positive_confidence.py'
+      - 'backend/app/bayesian/fit_claim.py'
+      - 'backend/app/bayesian/authority_liveness.py'
+      - 'backend/app/bayesian/source_snapshot.py'
       - 'backend/app/bayesian/model_identity.py'
       - 'backend/app/bayesian/source_contract_authority.py'
       - 'backend/app/bayesian/source_invalidation_contract.py'
@@ -498,6 +505,163 @@ jobs:
             -q -s --no-header | tee /tmp/b25_p13_c8_transport.out
           grep -E "1 passed" /tmp/b25_p13_c8_transport.out
 
+      # C9-G/H: one tenant's failure is not another tenant's scheduling
+      # authority. Containment, and then bounded progress across repeated
+      # failure -- the second does not follow from the first.
+      - name: P13 C9 cross-tenant failure containment
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C9_DB_PROOF: "1"
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c9-prometheus
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_tenant_containment.py \
+            -q -s --no-header | tee /tmp/b25_p13_c9_containment.out
+          grep -E "2 passed" /tmp/b25_p13_c9_containment.out
+
+      # C9-F: safe degradation is a state machine, not a test case. Every
+      # legitimate reason not to fit must end in typed refusal rather than an
+      # uncaught trigger exception.
+      - name: P13 C9 safe degradation matrix
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C9_DB_PROOF: "1"
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c9-prometheus
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_degradation_matrix.py \
+            -q -s --no-header | tee /tmp/b25_p13_c9_degradation.out
+          grep -E "4 passed" /tmp/b25_p13_c9_degradation.out
+
+      # C9-C: a request naming a snapshot that no longer exists must stop being
+      # work, and one naming the snapshot that does exist must still complete.
+      - name: P13 C9 feature-authority supersession
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C9_DB_PROOF: "1"
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c9-prometheus
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_authority_supersession.py \
+            -q -s --no-header | tee /tmp/b25_p13_c9_supersession.out
+          grep -E "2 passed" /tmp/b25_p13_c9_supersession.out
+
+      # NC-C9-01: splitting the feature-authority measurements back across two
+      # transactions must make the exact-snapshot proof red. Without this the
+      # proof cannot distinguish one snapshot from two that happened to agree.
+      - name: NC-C9-01 splitting the snapshot measurement turns the gate red
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C9_DB_PROOF: "1"
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c9-prometheus
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          cp backend/app/bayesian/feature_cardinality.py /tmp/fc_backup.py
+          python - <<'PY'
+          import pathlib
+          p = pathlib.Path("backend/app/bayesian/feature_cardinality.py")
+          s = p.read_text(encoding="utf-8")
+          old = "            within_snapshot=_within,\n        )\n\n    walked = snapshot.within_snapshot_result"
+          assert s.count(old) == 1, "the single-snapshot measurement point moved"
+          new = (
+              "        )\n"
+              "    from app.db.session import get_session as _later_session\n"
+              "    async with _later_session(tenant_id) as _later:\n"
+              "        walked = await _within(_later)"
+          )
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
+              -q -s --no-header > /tmp/nc_c9_01.out 2>&1; then
+            echo "NC-C9-01 did not fire: a split measurement still passed"
+            cp /tmp/fc_backup.py backend/app/bayesian/feature_cardinality.py
+            cat /tmp/nc_c9_01.out
+            exit 1
+          fi
+          grep -E "failed" /tmp/nc_c9_01.out
+          cp /tmp/fc_backup.py backend/app/bayesian/feature_cardinality.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
+            -q -s --no-header | tee /tmp/nc_c9_01_restored.out
+          grep -E "10 passed" /tmp/nc_c9_01_restored.out
+
+      # NC-C9-06: removing the per-tenant containment boundary must strand the
+      # tenants behind a failing one again.
+      - name: NC-C9-06 removing tenant containment turns the gate red
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C9_DB_PROOF: "1"
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c9-prometheus
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          cp backend/app/tasks/bayesian.py /tmp/tasks_backup.py
+          python - <<'PY'
+          import pathlib
+          p = pathlib.Path("backend/app/tasks/bayesian.py")
+          s = p.read_text(encoding="utf-8")
+          start = s.index("        except Exception as exc:  # noqa: BLE001 - containment boundary")
+          end = s.index("        finally:\n            disposition = _complete_planner_wakeup(", start)
+          p.write_text(s[:start] + s[end:], encoding="utf-8")
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c9_tenant_containment.py \
+              -q -s --no-header > /tmp/nc_c9_06.out 2>&1; then
+            echo "NC-C9-06 did not fire: a batch-aborting planner still passed"
+            cp /tmp/tasks_backup.py backend/app/tasks/bayesian.py
+            cat /tmp/nc_c9_06.out
+            exit 1
+          fi
+          grep -E "failed" /tmp/nc_c9_06.out
+          cp /tmp/tasks_backup.py backend/app/tasks/bayesian.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_tenant_containment.py \
+            -q -s --no-header | tee /tmp/nc_c9_06_restored.out
+          grep -E "2 passed" /tmp/nc_c9_06_restored.out
+
       # C9: the producer C8-N proved was missing. Cardinality, not confidence --
       # these assert the four widths are the widths of the data, that a width
       # past its cap is reported as a floor rather than a count, and that an
@@ -520,7 +684,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
             -q -s --no-header | tee /tmp/b25_p13_c9_cardinality.out
-          grep -E "8 passed" /tmp/b25_p13_c9_cardinality.out
+          grep -E "10 passed" /tmp/b25_p13_c9_cardinality.out
 
       # C8-N: the principal closure gate, and it now closes. One real financial
       # fact reaches a JWKS-verifiable Trust claim with no substituted authority
@@ -725,3 +889,112 @@ jobs:
           grep -E "^B25_P12_CI_GATES_VALIDATION_PASS$" /tmp/b25_p13_p12_gates.out
           grep -E "^ci_gate_negative_controls_fired=7$" /tmp/b25_p13_p12_gates.out
           echo "p13_preservation_validators_passed=4"
+
+  b2-5-p13-c9-positive-confidence:
+    name: B2.5-P13 C9 Positive Confidence Composition
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c9
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c9
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B25_P13_C9_POSITIVE_PROOF: "1"
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+      ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      EXPECTED_RUNTIME_DB_USER: app_worker
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+      PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c9-positive-prometheus
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      # The Bayesian runtime is required, not optional. This journey samples a
+      # real posterior; the proof it replaces was the one that supplied its own
+      # feature authority instead.
+      - name: Install backend and Bayesian dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-bayesian.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare C9 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b25_p13_c9"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      # C9-J. One real settlement run reaches a signed, usable confidence with
+      # no test-written feature authority, no test-written fit, and no
+      # test-constructed dispatch claim at any point in the chain.
+      - name: P13 C9 positive available-confidence composition
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_positive_confidence.py \
+            -q -s --no-header | tee /tmp/b25_p13_c9_positive.out
+          grep -E "2 passed" /tmp/b25_p13_c9_positive.out
+
+      # NC-C9-08: substituting a test-created feature authority at the seam must
+      # make this red. The gate is only meaningful if the seam is load-bearing,
+      # and the seam is exactly where every previous positive-confidence proof
+      # started from state it wrote itself.
+      - name: NC-C9-08 substituting the feature authority turns the gate red
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          cp backend/tests/trust/test_b25_p13_c9_positive_confidence.py /tmp/pos_backup.py
+          python - <<'PY'
+          import pathlib
+          p = pathlib.Path("backend/tests/trust/test_b25_p13_c9_positive_confidence.py")
+          s = p.read_text(encoding="utf-8")
+          old = "    return asyncio.run(produce_all())"
+          assert s.count(old) == 1, "the producer call site moved"
+          # Skip the real producer entirely, as the historical P6 proof does.
+          p.write_text(s.replace(old, "    return 1", 1), encoding="utf-8")
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c9_positive_confidence.py \
+              -q -s --no-header > /tmp/nc_c9_08.out 2>&1; then
+            echo "NC-C9-08 did not fire: the journey passed without the producer"
+            cp /tmp/pos_backup.py backend/tests/trust/test_b25_p13_c9_positive_confidence.py
+            cat /tmp/nc_c9_08.out
+            exit 1
+          fi
+          grep -E "failed" /tmp/nc_c9_08.out
+          cp /tmp/pos_backup.py backend/tests/trust/test_b25_p13_c9_positive_confidence.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_positive_confidence.py \
+            -q -s --no-header | tee /tmp/nc_c9_08_restored.out
+          grep -E "2 passed" /tmp/nc_c9_08_restored.out

@@ -1490,8 +1490,10 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
             "NC-C9-S06",
             lambda: validate_feature_authority_producer(
                 producer=producer_text.replace(
-                    "    currency = _bounded",
-                    "    assert preflight.is_eligible" + "\n" + "    currency = _bounded",
+                    "    return SourceWindowCardinality(",
+                    "    assert preflight.is_eligible"
+                    + chr(10)
+                    + "    return SourceWindowCardinality(",
                     1,
                 )
             ),

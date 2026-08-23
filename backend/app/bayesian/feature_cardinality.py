@@ -44,8 +44,10 @@ P2 selects those columns but never aggregates them.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
@@ -266,48 +268,117 @@ async def _derive_dimension(
     return _bounded(dimension, len(union), proven_overflow=overflowed)
 
 
-async def compute_source_window_cardinality(
+async def measure_walked_dimensions(
     session: AsyncSession,
     *,
     tenant_id: UUID,
     source_window_start: datetime,
     source_window_end: datetime,
-    preflight: EligibilityPreflightResult,
-    source_snapshot_hash: str,
-) -> SourceWindowCardinality:
-    """Measure the four governed widths of one exact source snapshot.
+) -> dict[str, BoundedCardinality]:
+    """The two dimensions P2 does not aggregate, measured on the given session.
 
-    ``preflight`` is not a convenience argument. Channel cardinality and the
-    normalized currency groups are computed by P2 under the eligibility policy's
-    own membership and normalization rules, and P2's channel walk is already
-    this module's cap-plus-one walk. Recomputing either here would create a
-    second definition that could disagree with the one the eligibility decision
-    was made from -- so they are read, not repeated.
+    Which session is given is the entire safety property. These walks must run
+    inside the transaction that produced the hash the resulting authority will
+    be stamped with, or they describe a different state of the database than the
+    hash does.
     """
 
-    channel = _bounded("channel", int(preflight.eligible_channel_count))
-    currency = _bounded("currency", len(preflight.currency_groups))
-    provider = await _derive_dimension(
-        session,
-        dimension="provider",
-        tenant_id=tenant_id,
-        source_window_start=source_window_start,
-        source_window_end=source_window_end,
-    )
-    campaign_or_feature = await _derive_dimension(
-        session,
-        dimension="campaign_or_feature",
-        tenant_id=tenant_id,
-        source_window_start=source_window_start,
-        source_window_end=source_window_end,
-    )
+    return {
+        dimension: await _derive_dimension(
+            session,
+            dimension=dimension,
+            tenant_id=tenant_id,
+            source_window_start=source_window_start,
+            source_window_end=source_window_end,
+        )
+        for dimension in DERIVED_DIMENSION_SOURCES
+    }
+
+
+def assemble_source_window_cardinality(
+    *,
+    preflight: EligibilityPreflightResult,
+    walked: dict[str, BoundedCardinality],
+    source_snapshot_hash: str,
+) -> SourceWindowCardinality:
+    """Combine the two P2-measured widths with the two walked ones.
+
+    Both halves must have come from the same transaction. This function cannot
+    check that -- nothing in the values themselves records which snapshot they
+    were read from -- which is exactly why the only production caller obtains
+    both inside one, and why the safety lives there rather than here.
+    """
+
     return SourceWindowCardinality(
-        channel=channel,
-        currency=currency,
-        provider=provider,
-        campaign_or_feature=campaign_or_feature,
+        channel=_bounded("channel", int(preflight.eligible_channel_count)),
+        currency=_bounded("currency", len(preflight.currency_groups)),
+        provider=walked["provider"],
+        campaign_or_feature=walked["campaign_or_feature"],
         cardinality_policy=BOUNDED_CARDINALITY_POLICY,
         source_snapshot_hash=source_snapshot_hash,
+    )
+
+
+async def measure_source_window_within_one_snapshot(
+    *,
+    tenant_id: UUID,
+    model_type: str,
+    model_version: str,
+    source_window_start: datetime,
+    source_window_end: datetime,
+    barrier: Callable[[], Awaitable[None]] | None = None,
+) -> tuple[Any, SourceWindowCardinality]:
+    """Hash and all four widths, read from one MVCC snapshot.
+
+    This is the function the exact-snapshot invariant lives in. The hash, the P2
+    preflight that supplies channel and currency width, and the walks that
+    supply provider and campaign width are all reads inside a single
+    ``REPEATABLE READ READ ONLY`` transaction, so they describe one state of the
+    database because they *are* one read of it.
+
+    ``barrier`` is awaited inside that transaction, after the hash and preflight
+    and before the walks -- the precise window in which the earlier
+    two-transaction implementation could be made to lie. A proof passes a
+    callback that commits a real mutation there. It can change when the walks
+    run; it cannot change what they see.
+    """
+
+    from app.bayesian.source_snapshot import compute_source_snapshot_hash
+    from app.db.session import AsyncSessionLocal
+
+    async def _within(session: AsyncSession) -> dict[str, BoundedCardinality]:
+        if barrier is not None:
+            await barrier()
+        return await measure_walked_dimensions(
+            session,
+            tenant_id=tenant_id,
+            source_window_start=source_window_start,
+            source_window_end=source_window_end,
+        )
+
+    # No tenant GUC is bound here on purpose. compute_source_snapshot_hash opens
+    # its own transaction and sets the GUC inside it, and touching the session
+    # first starts an implicit transaction that its begin() then refuses.
+    async with AsyncSessionLocal() as snapshot_session:
+        snapshot = await compute_source_snapshot_hash(
+            snapshot_session,
+            tenant_id=tenant_id,
+            model_type=model_type,
+            model_version=model_version,
+            source_window_start=source_window_start,
+            source_window_end=source_window_end,
+            within_snapshot=_within,
+        )
+
+    walked = snapshot.within_snapshot_result
+    if not isinstance(walked, dict):
+        raise RuntimeError(
+            "feature cardinality was not measured inside the snapshot transaction"
+        )
+    return snapshot, assemble_source_window_cardinality(
+        preflight=snapshot.preflight,
+        walked=walked,
+        source_snapshot_hash=snapshot.source_snapshot_hash,
     )
 
 
@@ -319,21 +390,37 @@ async def produce_source_window_feature_authority(
     source_window_start: datetime,
     source_window_end: datetime,
     expected_source_snapshot_hash: str,
+    barrier: Callable[[], Awaitable[None]] | None = None,
 ) -> "SourceWindowFeatureAuthority | None":
     """Materialize the feature authority for one exact source snapshot.
 
-    Freshness here is snapshot identity, not elapsed time. The authority is
-    recomputed and re-hashed inside one repeatable-read transaction, and it is
-    written only when the hash it observes is the hash the request was made
-    about. If the source moved between the request and this call, the snapshot
-    the caller is waiting on no longer exists, and writing a row keyed to it
-    would be asserting a width for bytes that are gone. Nothing is written and
-    ``None`` is returned; the caller parks the request, the next source change
-    produces a new hash, and the new request is answered about the new bytes.
+    Every dimension is measured inside the same repeatable-read transaction that
+    produces the hash the row is stamped with. That is the whole design, and the
+    first version of this function did not have it.
 
-    That is a stronger guarantee than any wall-clock TTL. A one-second-old
-    authority for a changed snapshot is already wrong, and a year-old authority
-    for an unchanged snapshot is still right.
+    It hashed the source and ran the P2 preflight in one transaction, let that
+    transaction close, then walked provider and campaign width in a second,
+    later one. Both halves were individually correct. Together they were a lie
+    waiting for a coincidence: a mutation committed in the gap changed provider
+    and campaign width without changing the hash, and the row was written
+    ``fresh`` describing a snapshot that had never existed -- channel and
+    currency from S0, provider and campaign from S1, keyed by hash(S0). No test
+    could catch it, because the only guard compared the caller's expectation
+    against the hash the *first* transaction had already returned, and that
+    comparison is blind to anything happening after it.
+
+    Measuring inside one snapshot removes the coincidence rather than detecting
+    it. Under ``REPEATABLE READ`` a mutation committed after the transaction
+    begins is invisible to every read within it, so the five measurements agree
+    because they are one observation, not because nothing happened to disturb
+    them.
+
+    Freshness is therefore snapshot identity. The row is written only when the
+    snapshot it describes is the snapshot the request named; if the source moved
+    before the request arrived, nothing is written and the caller parks it.
+
+    ``barrier`` exists so this can be disproved -- see
+    ``measure_source_window_within_one_snapshot``. Production passes nothing.
 
     Eligibility is deliberately not consulted. Whether a snapshot has *enough*
     data is the eligibility policy's decision; this function reports how wide it
@@ -346,36 +433,22 @@ async def produce_source_window_feature_authority(
         SourceWindowFeatureAuthority,
         upsert_source_window_feature_authority,
     )
-    from app.bayesian.source_snapshot import compute_source_snapshot_hash
-    from app.db.session import AsyncSessionLocal, get_session
+    from app.db.session import get_session
 
-    # No tenant GUC is bound here on purpose. compute_source_snapshot_hash opens
-    # its own REPEATABLE READ READ ONLY transaction and sets the GUC inside it,
-    # and touching the session first starts an implicit transaction that its
-    # begin() then refuses.
-    async with AsyncSessionLocal() as snapshot_session:
-        snapshot = await compute_source_snapshot_hash(
-            snapshot_session,
-            tenant_id=tenant_id,
-            model_type=model_type,
-            model_version=model_version,
-            source_window_start=source_window_start,
-            source_window_end=source_window_end,
-        )
+    snapshot, cardinality = await measure_source_window_within_one_snapshot(
+        tenant_id=tenant_id,
+        model_type=model_type,
+        model_version=model_version,
+        source_window_start=source_window_start,
+        source_window_end=source_window_end,
+        barrier=barrier,
+    )
 
     if snapshot.source_snapshot_hash != expected_source_snapshot_hash:
         return None
 
+    counts = cardinality.counts()
     async with get_session(tenant_id) as session:
-        cardinality = await compute_source_window_cardinality(
-            session,
-            tenant_id=tenant_id,
-            source_window_start=source_window_start,
-            source_window_end=source_window_end,
-            preflight=snapshot.preflight,
-            source_snapshot_hash=snapshot.source_snapshot_hash,
-        )
-        counts = cardinality.counts()
         authority = SourceWindowFeatureAuthority(
             tenant_id=tenant_id,
             model_type=model_type,

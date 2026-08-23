@@ -546,6 +546,12 @@ async def test_c6_real_stimulus_reaches_registered_planner_and_one_dispatch() ->
         "tenant_count": 1,
         "planned_count": 1,
         "dispatchable_count": 1,
+        # C9 contains a per-tenant planning failure instead of letting it
+        # abort the batch, and reports what it contained. A healthy pass must
+        # report nothing contained -- asserted here rather than omitted, so a
+        # silently-swallowed exception on this journey would fail this test.
+        "failed_tenant_count": 0,
+        "failure_classes": {},
         "reused_count": 0,
     }
     # The seeded financial rows invalidate their own source windows through the

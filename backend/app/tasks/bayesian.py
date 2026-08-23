@@ -317,6 +317,8 @@ def plan_due_fit_intents(
     dispatchable = 0
     reused = 0
     dispositions: dict[str, int] = {}
+    failed_tenants = 0
+    failure_classes: dict[str, int] = {}
     for tenant_id, wakeup_revision in tenants:
         succeeded = False
         try:
@@ -336,6 +338,40 @@ def plan_due_fit_intents(
                 elif intent.claim.outcome.value == "reused":
                     reused += 1
             succeeded = True
+        except Exception as exc:  # noqa: BLE001 - containment boundary, see below
+            # One tenant's failure is not evidence about any other tenant.
+            #
+            # This batch was leased in a single call, so without this boundary an
+            # exception here propagates out of the loop and every tenant queued
+            # behind the failing one is never reached and never disposed. Their
+            # wake-ups stay leased under an owner that has already gone away,
+            # and they are unschedulable until the lease expires -- a tenant
+            # whose only mistake was being later in an ordered list. Retrying the
+            # task does not rescue them either: the retry leases a fresh batch
+            # while the stranded rows remain held by the previous owner.
+            #
+            # Containment here rather than a wider try because the disposal in
+            # ``finally`` must still run for this tenant. Its wake-up is released
+            # by the same residual-authority logic that disposes a successful
+            # one, so the work is conserved rather than dropped: the database
+            # re-reads what remains unplanned and decides, and a failed pass
+            # leaves the obligation immediately eligible again instead of
+            # destroying it.
+            #
+            # ``Exception`` and not ``BaseException`` on purpose. A hard worker
+            # time limit or a process signal is not a per-tenant fault and must
+            # keep propagating.
+            failed_tenants += 1
+            failure_class = type(exc).__name__
+            failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
+            logger.exception(
+                "b24_fit_planner_tenant_failed",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "lease_owner": lease_owner,
+                    "failure_class": failure_class,
+                },
+            )
         finally:
             disposition = _complete_planner_wakeup(
                 tenant_id=tenant_id,
@@ -351,6 +387,11 @@ def plan_due_fit_intents(
         "dispatchable_count": dispatchable,
         "reused_count": reused,
         "wakeup_dispositions": dispositions,
+        # Contained failures are reported, never hidden. A planner pass that
+        # silently absorbed exceptions would trade one invisible defect for
+        # another.
+        "failed_tenant_count": failed_tenants,
+        "failure_classes": failure_classes,
     }
     # C8: transport evidence. A probe emitted from inside the task body is what
     # distinguishes "Beat scheduled it" from "a Bayesian worker actually ran it
@@ -1002,12 +1043,46 @@ def build_feature_authority(
                 .one_or_none()
             )
             if authority is None or authority["freshness_status"] != "fresh":
+                # Retry a hash that does not match *yet*; terminate one that
+                # names a source state which is gone.
+                #
+                # The producer writes nothing when the snapshot it observes is
+                # not the snapshot the request named -- measuring a state it
+                # cannot see would be the hybrid-authority defect. But parking
+                # unconditionally, as this did, cannot distinguish a writer
+                # mid-flight from a snapshot that has been superseded. The first
+                # resolves in seconds. The second never resolves at all, and was
+                # re-queued every sixty seconds for the life of the deployment
+                # against a question with a permanent answer.
+                #
+                # The bounded-retry columns for exactly this were already on the
+                # table and never consulted. Past max_retries the request
+                # terminates as superseded, and the dirty evidence waiting on it
+                # is released to the state B2.4 already had a name for -- rather
+                # than waiting on a request that will never complete.
                 conn.execute(
                     text(
                         """
                         UPDATE public.b24_feature_authority_build_requests
-                        SET status = 'authority_waiting',
-                            retry_after_at = now() + interval '60 seconds',
+                        SET retry_count = retry_count + 1,
+                            status = CASE
+                                WHEN retry_count + 1 >= max_retries
+                                    THEN 'authority_superseded'
+                                ELSE 'authority_waiting'
+                            END,
+                            retry_after_at = CASE
+                                WHEN retry_count + 1 >= max_retries THEN NULL
+                                ELSE now() + interval '60 seconds'
+                            END,
+                            terminal_reason = CASE
+                                WHEN retry_count + 1 >= max_retries
+                                    THEN 'source_snapshot_superseded'
+                                ELSE terminal_reason
+                            END,
+                            terminal_at = CASE
+                                WHEN retry_count + 1 >= max_retries THEN now()
+                                ELSE terminal_at
+                            END,
                             updated_at = now()
                         WHERE tenant_id = :tenant_id
                           AND model_type = :model_type
@@ -1031,11 +1106,50 @@ def build_feature_authority(
                         "source_snapshot_hash": source_snapshot_hash,
                     },
                 )
+                superseded = conn.execute(
+                    text(
+                        """
+                        UPDATE public.b24_dirty_events dirty
+                        SET status = 'authority_retry_superseded',
+                            superseded_at = now(),
+                            updated_at = now()
+                        FROM public.b24_feature_authority_build_requests request
+                        WHERE dirty.tenant_id = request.tenant_id
+                          AND dirty.model_type = request.model_type
+                          AND dirty.model_version = request.model_version
+                          AND dirty.source_window_start = request.source_window_start
+                          AND dirty.source_window_end = request.source_window_end
+                          AND dirty.source_snapshot_hash = request.source_snapshot_hash
+                          AND dirty.status = 'authority_waiting'
+                          AND request.status = 'authority_superseded'
+                          AND request.tenant_id = :tenant_id
+                          AND request.source_snapshot_hash = :source_snapshot_hash
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant),
+                        "source_snapshot_hash": source_snapshot_hash,
+                    },
+                ).rowcount
+                terminal = conn.execute(
+                    text(
+                        "SELECT status FROM"
+                        " public.b24_feature_authority_build_requests"
+                        " WHERE tenant_id = :tenant_id"
+                        "   AND source_snapshot_hash = :source_snapshot_hash"
+                        " ORDER BY updated_at DESC LIMIT 1"
+                    ),
+                    {
+                        "tenant_id": str(tenant),
+                        "source_snapshot_hash": source_snapshot_hash,
+                    },
+                ).scalar_one_or_none()
                 return {
-                    "status": "authority_waiting",
+                    "status": str(terminal or "authority_waiting"),
                     "task_id": task_id,
                     "tenant_id": str(tenant),
                     "source_snapshot_hash": source_snapshot_hash,
+                    "superseded_dirty_events": int(superseded or 0),
                 }
             conn.execute(
                 text(

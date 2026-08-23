@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import bindparam, text
@@ -47,6 +49,11 @@ class SourceSnapshotResult:
     streamed_chunk_count: int
     source_read_started_at: datetime | None = None
     source_read_completed_at: datetime | None = None
+    #: Whatever ``within_snapshot`` measured, measured inside the same
+    #: transaction that produced ``source_snapshot_hash``. Carrying it here
+    #: rather than returning it separately keeps the measurement and the hash
+    #: that authorises it inseparable at the type level.
+    within_snapshot_result: object | None = None
     sentinel_material: str | None = None
 
     @property
@@ -622,8 +629,24 @@ async def compute_source_snapshot_hash(
     model_version: str,
     source_window_start: datetime,
     source_window_end: datetime,
+    within_snapshot: Callable[[AsyncSession], Awaitable[Any]] | None = None,
 ) -> SourceSnapshotResult:
-    """Preflight and hash the source state under one repeatable-read transaction."""
+    """Preflight and hash the source state under one repeatable-read transaction.
+
+    ``within_snapshot`` runs any additional measurement inside that same
+    transaction, and its result is carried back on
+    ``SourceSnapshotResult.within_snapshot_result``.
+
+    It exists because a caller that needs a second measurement of the same
+    source state has exactly two options, and only one of them is true. It can
+    open its own transaction afterwards -- in which case it measures a
+    *different* MVCC snapshot than the one this function hashed, and any claim
+    that the two describe the same source state is a guess about timing. Or it
+    can measure here, inside the snapshot this function already holds, and the
+    claim becomes a property of the database rather than of luck.
+
+    Passing nothing leaves the behaviour of every existing caller unchanged.
+    """
 
     async with session.begin():
         await session.execute(
@@ -653,10 +676,14 @@ async def compute_source_snapshot_hash(
         if not preflight.is_eligible:
             assert preflight.fallback_reason is not None
             material = sentinel_material_for(preflight.fallback_reason)
+            within_result = (
+                None if within_snapshot is None else await within_snapshot(session)
+            )
             source_read_completed_at = (
                 await session.execute(text("SELECT clock_timestamp()"))
             ).scalar_one()
             return SourceSnapshotResult(
+                within_snapshot_result=within_result,
                 tenant_id=tenant_id,
                 model_type=model_type,
                 model_version=model_version,
@@ -691,10 +718,14 @@ async def compute_source_snapshot_hash(
         ):
             hasher.update(canonical_chunk)
             chunk_count += 1
+        within_result = (
+            None if within_snapshot is None else await within_snapshot(session)
+        )
         source_read_completed_at = (
             await session.execute(text("SELECT clock_timestamp()"))
         ).scalar_one()
         return SourceSnapshotResult(
+            within_snapshot_result=within_result,
             tenant_id=tenant_id,
             model_type=model_type,
             model_version=model_version,
