@@ -240,7 +240,8 @@ def _seed_market(conn, tenant_id) -> list[uuid.UUID]:
 
 def _seed_caller(conn, tenant_id) -> str:
     client_id = uuid.uuid4()
-    token = f"c9ptok{uuid.uuid4().hex}"
+    # Entropy first: token_prefix is the first eight characters and unique.
+    token = f"{uuid.uuid4().hex}{uuid.uuid4().hex}c9p"
     conn.execute(
         text(
             "INSERT INTO public.agent_clients (id, tenant_id, client_name,"
