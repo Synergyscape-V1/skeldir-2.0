@@ -964,7 +964,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c9_positive_confidence.py \
             -q -s --no-header | tee /tmp/b25_p13_c9_positive.out
-          grep -E "1 passed" /tmp/b25_p13_c9_positive.out
+          grep -E "2 passed" /tmp/b25_p13_c9_positive.out
 
       # NC-C9-08: substituting a test-created feature authority at the seam must
       # make this red. The gate is only meaningful if the seam is load-bearing,
@@ -997,4 +997,4 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c9_positive_confidence.py \
             -q -s --no-header | tee /tmp/nc_c9_08_restored.out
-          grep -E "1 passed" /tmp/nc_c9_08_restored.out
+          grep -E "2 passed" /tmp/nc_c9_08_restored.out

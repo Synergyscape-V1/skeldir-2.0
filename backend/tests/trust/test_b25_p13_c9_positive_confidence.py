@@ -1,39 +1,49 @@
-"""B2.5-P13 C9-J: available confidence, produced by the chain that claims it.
+"""B2.5-P13 C9-J: how far the real chain reaches, and exactly where it stops.
 
-Every previous proof of a *positive* confidence result in this repository began
+Every previous proof of a positive confidence result in this repository began
 from state a test had written. The B2.4-P6 real-fit proof samples a genuine
-posterior, but it inserts its own feature authority -- with the cardinalities
-spelled out as literals -- and its own ``queued`` fit before it starts. That is
-the same fixture substitution that let F-06 hide for as long as it did: a proof
-that begins after the seam cannot see whether the seam conducts.
+posterior, but it inserts its own feature authority -- cardinalities spelled out
+as literals -- and its own ``queued`` fit before it starts. That is the same
+fixture substitution that let F-06 hide: a proof that begins after the seam
+cannot see whether the seam conducts.
 
-So this journey never writes a feature authority, never writes a fit, and never
-constructs a dispatch claim. It performs one real financial settlement run and
-then takes, at each stage, exactly what the previous stage produced:
+So this journey writes no feature authority, no fit, and no dispatch claim. One
+real settlement run, and at each stage exactly what the previous stage produced:
 
     real settlements committed
       -> production invalidation trigger writes the dirty evidence
         -> production planner judges it fittable and asks for an authority
           -> production cardinality producer measures the exact snapshot
             -> production planner claims the fit and mints a dispatch lease
-              -> the dispatch outbox row that lease produced
-                -> production worker executes THAT row's payload
-                  -> real sampling, real diagnostics, persisted confidence
+              -> production relay leases that row
+                -> production worker executes its payload
+                  -> a real posterior, real diagnostics, persisted confidence
                     -> production Trust route, signed and JWKS-verified
 
-The bridge to the worker is deliberate and narrow: the payload handed to
-``execute_fit_intent`` is ``DispatchOutboxRow.queue_payload`` -- the identical
-object production publishes to the broker -- read from the row the planner
-actually minted. The broker hop itself is proven separately by the live
-transport proof; repeating it here would add a second thing that can break
-without adding a fact. What is *not* bridged is any authority: the fit id, the
-attempt id, the claim epoch and the payload hash all originate in the planner's
-own claim, and if any of them were manufactured here the dispatch fence would
-refuse the execution outright.
+Building it found two defects and then a wall.
 
-The negative mirror stays green elsewhere: an unsampled fit must withhold
-confidence. This is the other half -- a legitimately sampled fit with accepted
-diagnostics must expose one, and it must be the one that was persisted.
+The defects: the fit-claim granted every fit ``max_samples = 0``, so every fit
+the planner ever claimed was refused ``policy_rejected`` before compute; and an
+unleased dispatch row is refused ``UNAUTHORIZED``, which is how the first was
+found. Both are fixed, and the chain now runs end to end.
+
+The wall is F-11, and it is arithmetic rather than a bug in any one component.
+The B2.4-P6 sampling policy draws sixty-four posterior samples. The B2.4-P7
+diagnostic policy requires an effective sample size of at least four hundred.
+Effective sample size cannot exceed the number of samples drawn, so **no fit
+this system can produce is capable of passing its own diagnostics**, whatever
+the data. Every real sampled fit is truthfully reported ``nonconverged``, and a
+usable confidence is unreachable through the production sampling path.
+
+That is why this module proves composition and correspondence rather than
+availability. The chain is real all the way to a real posterior; what the
+posterior is allowed to become is decided by two governed policies that cannot
+both be satisfied, and choosing new numbers for either is a modelling decision
+this corrective is explicitly forbidden to make in order to turn a proof green.
+
+``test_c9_the_sampling_policy_cannot_satisfy_its_own_diagnostics`` states the
+wall as a permanent falsifiable fact. The day either policy moves, it goes red
+and says what to do next.
 """
 
 from __future__ import annotations
@@ -449,7 +459,7 @@ def _lease_claimed_dispatch(tenant_id) -> tuple[dict, dict]:
     return asyncio.run(lease())
 
 
-def test_c9_available_confidence_comes_from_the_chain_that_claims_it(
+def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     monkeypatch, tmp_path
 ) -> None:
     """One settlement run reaches a signed, usable confidence. No fixtures."""
@@ -644,18 +654,66 @@ def test_c9_available_confidence_comes_from_the_chain_that_claims_it(
     )
     assert str(dispatch["fit_id"]) in flat, flat[:400]
 
-    # And then the property this gate exists for. A legitimately sampled fit
-    # with accepted diagnostics must expose a usable confidence, because the
-    # negative mirror -- an unsampled fit withholding one -- is only meaningful
-    # if the positive case can actually be reached. Both halves are needed;
-    # neither alone distinguishes a working chain from one that always says no.
-    assert fit["confidence_bucket"] == "available", (
-        "the chain sampled a real posterior but did not expose a usable "
-        f"confidence: status={fit['status']!r} "
-        f"bucket={fit['confidence_bucket']!r} "
-        f"reason={fit['confidence_bucket_reason']!r} "
-        f"diagnostics={fit['diagnostic_status']!r}"
-    )
+    # Diagnostics were genuinely computed on a genuine posterior -- not skipped,
+    # not defaulted. This is what separates "the chain reached the sampler" from
+    # "the chain reached a verdict about what the sampler produced".
     assert fit["r_hat_max"] is not None, dict(fit)
     assert fit["ess_min"] is not None, dict(fit)
-    assert fit["confidence_evidence_snapshot_hash"], dict(fit)
+    assert fit["diagnostic_status"] in {"accepted", "failed"}, dict(fit)
+
+    # And the verdict is the one the arithmetic allows. F-11: the sampler draws
+    # sixty-four posterior samples and the diagnostics demand an effective
+    # sample size of four hundred, so acceptance is unreachable and the honest
+    # outcome is a withheld confidence. Asserted rather than tolerated: if this
+    # ever becomes "accepted", the wall has moved and this journey must be
+    # extended to prove the available branch it currently cannot reach.
+    assert fit["diagnostic_status"] == "failed", (
+        "diagnostics accepted a fit for the first time -- F-11 has been "
+        "remediated, and this proof must now assert the available-confidence "
+        f"branch: {dict(fit)}"
+    )
+    assert fit["confidence_bucket"] == "unavailable", dict(fit)
+
+
+def test_c9_the_sampling_policy_cannot_satisfy_its_own_diagnostics() -> None:
+    """F-11, stated in arithmetic so it cannot be mislaid.
+
+    Two governed, separately versioned policies. Each is defensible alone. They
+    cannot both be satisfied by the same run:
+
+        b24-p6-sampling-policy-v1   draws x chains posterior samples
+        b24-p7-diagnostic-*         requires effective sample size >= threshold
+
+    Effective sample size is bounded above by the number of samples drawn -- it
+    measures how many independent draws the correlated ones are worth, and
+    correlation can only reduce that number. So when the threshold exceeds the
+    draw count, no run can pass, no data can help, and every real fit this
+    system produces is truthfully reported ``nonconverged``.
+
+    That is why no proof here has ever shown an available confidence from real
+    sampling: the P6 proof samples successfully and asserts nothing about
+    diagnostics, and every other positive-confidence test writes the confidence
+    it then reads.
+
+    This test does not judge which policy is wrong. Raising the draw count costs
+    compute against a thirty-second soft limit; lowering the ESS threshold
+    weakens a published convergence criterion. Both are modelling decisions with
+    owners, and neither may be made to turn a proof green. What this test does
+    is refuse to let the incompatibility be forgotten, and go red the moment
+    somebody resolves it -- at which point C9-J's available-confidence branch
+    becomes reachable and the journey above must be extended to prove it.
+    """
+
+    from app.bayesian.diagnostics import DEFAULT_P7_DIAGNOSTIC_POLICY
+    from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
+
+    drawn = DEFAULT_P6_SAMPLING_POLICY.draws * DEFAULT_P6_SAMPLING_POLICY.chains
+    required = DEFAULT_P7_DIAGNOSTIC_POLICY.thresholds().ess_min_threshold
+
+    assert drawn < required, (
+        "the sampling policy now draws enough samples to satisfy the diagnostic "
+        f"effective-sample-size threshold ({drawn} >= {required}). F-11 is "
+        "resolved: the available-confidence branch is reachable and "
+        "test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it must "
+        "be extended to assert it."
+    )
