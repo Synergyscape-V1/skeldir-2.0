@@ -186,7 +186,8 @@ def _seed_settlement(
 
 def _seed_caller(conn, tenant_id) -> str:
     client_id = uuid.uuid4()
-    token = f"c9dtok{uuid.uuid4().hex}"
+    # Entropy first: token_prefix is the first eight characters and unique.
+    token = f"{uuid.uuid4().hex}{uuid.uuid4().hex}c9d"
     conn.execute(
         text(
             "INSERT INTO public.agent_clients (id, tenant_id, client_name,"

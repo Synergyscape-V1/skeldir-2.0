@@ -395,7 +395,8 @@ def _seed_caller(conn, tenant_id: UUID) -> tuple[UUID, str]:
     """
 
     client_id = uuid4()
-    token = f"c8ntok{uuid4().hex}"
+    # Entropy first: token_prefix is the first eight characters and unique.
+    token = f"{uuid4().hex}{uuid4().hex}c8n"
     conn.execute(
         text(
             "INSERT INTO public.agent_clients (id, tenant_id, client_name,"

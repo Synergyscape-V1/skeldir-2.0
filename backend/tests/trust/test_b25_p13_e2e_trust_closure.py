@@ -2176,7 +2176,12 @@ async def _issue_credential(
     authentication dependency -- the real `authenticate_machine_caller` runs,
     including its scope check and its replay check.
     """
-    token = f"p13tok{uuid4().hex}"
+    # Entropy first. ``token_prefix`` is the first eight characters and carries
+    # a unique constraint, so a token shaped ``p13tok`` + hex offers exactly two
+    # random characters -- 256 possibilities for a column the database refuses to
+    # repeat. Several steps in this workflow run this suite against one database,
+    # and the collision is a birthday problem rather than a rare accident.
+    token = f"{uuid4().hex}{uuid4().hex}p13"
     await connection.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)},
