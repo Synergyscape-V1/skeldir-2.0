@@ -36,7 +36,10 @@ down_revision = "202608240900"
 branch_labels = None
 depends_on = None
 
-CONSTRAINT = "ck_b24_feature_authority_build_requests_status"
+# Reuse the constraint's existing name. A drop-and-recreate under a new
+# name would change the schema's identity for this rule and make every
+# future diff read as a rename plus an addition rather than an addition.
+CONSTRAINT = "ck_b24_feature_authority_request_status"
 
 PRIOR_STATUSES = (
     "authority_build_requested",

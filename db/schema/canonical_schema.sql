@@ -520,6 +520,27 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
                 IF TG_OP = 'INSERT' AND NEW.status IN ('queued', 'pending') THEN
                     RETURN NEW;
                 END IF;
+                IF TG_OP IN ('INSERT', 'UPDATE')
+                   AND NEW.status = 'fallback_only'
+                   AND NEW.fallback_applied IS TRUE
+                   AND NEW.fallback_reason IS NOT NULL
+                   AND NEW.confidence_bucket = 'unavailable'
+                   AND NEW.artifact_ref IS NULL
+                   AND NEW.artifact_hash IS NULL
+                   AND NEW.confidence_evidence_snapshot_hash IS NULL
+                   AND NEW.sampling_started_at IS NULL
+                   AND NEW.last_fit_at IS NULL
+                   AND NEW.completed_at IS NULL
+                   AND NEW.runtime_seconds IS NULL
+                   AND NEW.n_samples_actual IS NULL
+                   AND NEW.n_chains IS NULL
+                   AND NEW.r_hat_max IS NULL
+                   AND NEW.ess_min IS NULL
+                   AND NEW.divergence_count IS NULL
+                   AND NEW.hdi_lower IS NULL
+                   AND NEW.hdi_upper IS NULL THEN
+                    RETURN NEW;
+                END IF;
             ELSIF TG_ARGV[0] = 'artifact' THEN
                 v_tenant_id := NEW.tenant_id;
                 v_fit_id := NEW.fit_id;
@@ -2751,8 +2772,8 @@ CREATE TABLE public.b24_feature_authority_build_requests (
     CONSTRAINT ck_b24_feature_authority_request_reason CHECK (((authority_reason)::text = ANY ((ARRAY['cardinality_authority_missing'::character varying, 'cardinality_authority_stale'::character varying, 'cardinality_authority_mismatch'::character varying])::text[]))),
     CONSTRAINT ck_b24_feature_authority_request_retry_count CHECK ((retry_count >= 0)),
     CONSTRAINT ck_b24_feature_authority_request_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
-    CONSTRAINT ck_b24_feature_authority_request_status CHECK (((status)::text = ANY ((ARRAY['authority_build_requested'::character varying, 'authority_waiting'::character varying, 'authority_retry_ready'::character varying, 'authority_completed'::character varying, 'authority_timeout'::character varying, 'authority_build_failed'::character varying])::text[]))),
-    CONSTRAINT ck_b24_feature_authority_request_terminal_reason CHECK (((terminal_reason IS NULL) OR ((terminal_reason)::text = ANY ((ARRAY['cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying])::text[])))),
+    CONSTRAINT ck_b24_feature_authority_request_status CHECK (((status)::text = ANY ((ARRAY['authority_build_requested'::character varying, 'authority_waiting'::character varying, 'authority_retry_ready'::character varying, 'authority_completed'::character varying, 'authority_timeout'::character varying, 'authority_build_failed'::character varying, 'authority_superseded'::character varying])::text[]))),
+    CONSTRAINT ck_b24_feature_authority_request_terminal_reason CHECK (((terminal_reason IS NULL) OR ((terminal_reason)::text = ANY ((ARRAY['cardinality_authority_timeout'::character varying, 'cardinality_authority_build_failed'::character varying, 'source_snapshot_superseded'::character varying])::text[])))),
     CONSTRAINT ck_b24_feature_authority_request_window_order CHECK ((source_window_end > source_window_start))
 );
 
