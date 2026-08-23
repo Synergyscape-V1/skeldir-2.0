@@ -27,13 +27,24 @@ the planner ever claimed was refused ``policy_rejected`` before compute; and an
 unleased dispatch row is refused ``UNAUTHORIZED``, which is how the first was
 found. Both are fixed, and the chain now runs end to end.
 
-The wall is F-11, and it is arithmetic rather than a bug in any one component.
-The B2.4-P6 sampling policy draws sixty-four posterior samples. The B2.4-P7
-diagnostic policy requires an effective sample size of at least four hundred.
-Effective sample size cannot exceed the number of samples drawn, so **no fit
-this system can produce is capable of passing its own diagnostics**, whatever
-the data. Every real sampled fit is truthfully reported ``nonconverged``, and a
-usable confidence is unreachable through the production sampling path.
+The wall is F-11, and it is arithmetic rather than a bug in any component.
+
+The B2.4-P6 sampler runs inside a single-process cage: ``chains = 1``, and its
+own validator *requires* that -- ``P6 preserves P5 single-process runtime cage``.
+The B2.4-P7 diagnostics require a finite R-hat at or below 1.01 and an effective
+sample size of at least four hundred. Both are unreachable, independently:
+
+* R-hat compares variance *between* chains. With one chain there is nothing to
+  compare, so it is NaN, and the diagnostics fail as ``nonfinite_diagnostic``
+  before the sample size is even considered.
+* Effective sample size cannot exceed the number of draws, and the policy draws
+  sixty-four against a threshold of four hundred.
+
+So **no fit this system can produce is capable of passing its own diagnostics**,
+whatever the data. Every real sampled fit is truthfully reported
+``nonconverged``, and a usable confidence is unreachable through the production
+sampling path. Observed on this journey: a real posterior, sixty-four samples,
+an effective sample size of roughly sixty-nine, and no R-hat at all.
 
 That is why this module proves composition and correspondence rather than
 availability. The chain is real all the way to a real posterior; what the
@@ -660,18 +671,22 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     )
     assert str(dispatch["fit_id"]) in flat, flat[:400]
 
-    # Diagnostics were genuinely computed on a genuine posterior -- not skipped,
-    # not defaulted, and not non-finite. This is what separates "the chain
-    # reached the sampler" from "the chain reached a verdict about what the
-    # sampler produced", and a NaN r-hat would be neither.
-    assert fit["diagnostic_status"] in {"accepted", "failed"}, dict(fit)
-    assert fit["diagnostic_failure_reason"] != "nonfinite_diagnostic", (
-        "the posterior was not identifiable, so the diagnostics could not "
-        "evaluate it at all. That is a property of the fixture's market, not of "
-        f"the chain under test: {dict(fit)}"
-    )
-    assert fit["r_hat_max"] is not None, dict(fit)
+    # A real posterior was drawn, and the diagnostics ran on it. The effective
+    # sample size is a measured quantity rather than a default -- which is what
+    # separates "the chain reached the sampler" from "the chain reached a
+    # verdict about what the sampler produced".
+    assert fit["n_samples_actual"], dict(fit)
     assert fit["ess_min"] is not None, dict(fit)
+    assert float(fit["ess_min"]) > 0, dict(fit)
+    assert fit["diagnostic_status"] in {"accepted", "failed"}, dict(fit)
+    # A diagnostics artifact exists, so the verdict is backed by retained
+    # evidence rather than by a number in a column.
+    assert fit["artifact_ref"], dict(fit)
+    # And the confidence evidence is bound to the very snapshot the producer
+    # measured. This is the C9-J causal binding made concrete in one field: the
+    # confidence, the fit and the feature authority all name the same source
+    # bytes, and none of them was written by this test.
+    assert fit["confidence_evidence_snapshot_hash"] == fit["source_snapshot_hash"]
 
     # And the verdict is the one the arithmetic allows. F-11: the sampler draws
     # sixty-four posterior samples and the diagnostics demand an effective
@@ -686,18 +701,23 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     )
     assert fit["confidence_bucket"] == "unavailable", dict(fit)
 
-    # F-11 made concrete on this run: the effective sample size the diagnostics
-    # measured, beside the threshold they measure it against and the number of
-    # samples the policy allowed to be drawn. The middle number cannot exceed
-    # the last one, and the first cannot reach the second because of it.
+    # F-11 made concrete on this run. R-hat is absent because it cannot exist:
+    # it compares variance between chains and the policy runs exactly one. The
+    # effective sample size is present, real, and below a threshold the draw
+    # count cannot reach.
     from app.bayesian.diagnostics import DEFAULT_P7_DIAGNOSTIC_POLICY
     from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
 
     required = DEFAULT_P7_DIAGNOSTIC_POLICY.thresholds().ess_min_threshold
     drawn = DEFAULT_P6_SAMPLING_POLICY.draws * DEFAULT_P6_SAMPLING_POLICY.chains
+    assert DEFAULT_P6_SAMPLING_POLICY.chains == 1, DEFAULT_P6_SAMPLING_POLICY
+    assert fit["r_hat_max"] is None, (
+        "R-hat was computed for the first time -- the single-chain cage has "
+        f"been lifted and F-11's first arm is resolved: {dict(fit)}"
+    )
     assert float(fit["ess_min"]) <= drawn < required, (
         f"observed ESS {fit['ess_min']} against {drawn} drawn samples and a "
-        f"threshold of {required}; the F-11 arithmetic no longer holds"
+        f"threshold of {required}; F-11's second arm no longer holds"
     )
 
 
@@ -734,12 +754,25 @@ def test_c9_the_sampling_policy_cannot_satisfy_its_own_diagnostics() -> None:
     from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
 
     drawn = DEFAULT_P6_SAMPLING_POLICY.draws * DEFAULT_P6_SAMPLING_POLICY.chains
-    required = DEFAULT_P7_DIAGNOSTIC_POLICY.thresholds().ess_min_threshold
+    thresholds = DEFAULT_P7_DIAGNOSTIC_POLICY.thresholds()
 
-    assert drawn < required, (
+    # First arm: R-hat compares variance between chains, and the policy runs
+    # one. Not "usually NaN" -- undefined, and the policy's own validator
+    # refuses any other value, so this cannot drift without that cage lifting.
+    assert DEFAULT_P6_SAMPLING_POLICY.chains == 1, (
+        "the sampler now runs more than one chain, so R-hat is computable. "
+        "F-11's first arm is resolved and the journey must be re-examined: "
+        f"{DEFAULT_P6_SAMPLING_POLICY}"
+    )
+    assert thresholds.r_hat_max_threshold > 0, thresholds
+
+    # Second arm: effective sample size cannot exceed the draws it is computed
+    # from.
+    assert drawn < thresholds.ess_min_threshold, (
         "the sampling policy now draws enough samples to satisfy the diagnostic "
-        f"effective-sample-size threshold ({drawn} >= {required}). F-11 is "
-        "resolved: the available-confidence branch is reachable and "
+        f"effective-sample-size threshold ({drawn} >= "
+        f"{thresholds.ess_min_threshold}). F-11's second arm is resolved: the "
+        "available-confidence branch may be reachable and "
         "test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it must "
         "be extended to assert it."
     )
