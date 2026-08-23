@@ -27,7 +27,7 @@ from sqlalchemy import create_engine, text
 from app.bayesian.feature_cardinality import (
     BOUNDED_CARDINALITY_POLICY,
     DIMENSION_CAPS,
-    compute_source_window_cardinality,
+    measure_source_window_within_one_snapshot,
     produce_source_window_feature_authority,
 )
 from app.bayesian.model_identity import active_identity
@@ -194,31 +194,24 @@ def _seed_row(
     )
 
 
-def _measure(tenant_id) -> dict:
-    """Run the producer's measurement, without persisting anything."""
+def _measure(tenant_id, *, barrier=None) -> dict:
+    """Measure the way production measures: one snapshot, five reads.
 
-    from app.bayesian.source_snapshot import compute_source_snapshot_hash
-    from app.db.session import AsyncSessionLocal, get_session
+    This deliberately calls the same function the producer calls rather than
+    assembling the pieces itself. A proof that measured cardinality its own way
+    would be proving something about the test, and the property under test here
+    is precisely that the four widths and the hash come from one observation.
+    """
 
     async def go() -> dict:
-        async with AsyncSessionLocal() as snapshot_session:
-            snapshot = await compute_source_snapshot_hash(
-                snapshot_session,
-                tenant_id=tenant_id,
-                model_type=ACTIVE.model_type,
-                model_version=ACTIVE.model_version,
-                source_window_start=WINDOW_START,
-                source_window_end=WINDOW_END,
-            )
-        async with get_session(tenant_id) as session:
-            cardinality = await compute_source_window_cardinality(
-                session,
-                tenant_id=tenant_id,
-                source_window_start=WINDOW_START,
-                source_window_end=WINDOW_END,
-                preflight=snapshot.preflight,
-                source_snapshot_hash=snapshot.source_snapshot_hash,
-            )
+        snapshot, cardinality = await measure_source_window_within_one_snapshot(
+            tenant_id=tenant_id,
+            model_type=ACTIVE.model_type,
+            model_version=ACTIVE.model_version,
+            source_window_start=WINDOW_START,
+            source_window_end=WINDOW_END,
+            barrier=barrier,
+        )
         return {
             "counts": cardinality.counts(),
             "policy": cardinality.cardinality_policy,
@@ -616,3 +609,179 @@ def test_c9_producing_twice_for_one_snapshot_is_idempotent() -> None:
         assert rows == 1, rows
     finally:
         app_engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# The race the audit found, run deliberately.
+# ---------------------------------------------------------------------------
+def _commit_new_provider_and_campaign(tenant_id, *, index: int) -> None:
+    """Commit a real settlement from a separate connection, right now.
+
+    Separate connection and separate transaction on purpose: a mutation made on
+    the measuring session would be visible to it trivially and would prove
+    nothing. This is another writer, committing while the measurement is in
+    flight, exactly as a second worker or an API request would.
+    """
+
+    engine = _migration_engine()
+    try:
+        with engine.begin() as conn:
+            _bind(conn, tenant_id)
+            _seed_row(
+                conn,
+                tenant_id,
+                index=index,
+                channel=f"c9_race_channel_{index}",
+                campaign=f"c9-race-campaign-{index}",
+                provider=f"c9_race_provider_{index}",
+                currency="USD",
+                occurred_at=INSIDE + timedelta(hours=3, minutes=index),
+            )
+    finally:
+        engine.dispose()
+
+
+def test_c9_a_mutation_between_measurements_cannot_produce_a_hybrid_authority() -> None:
+    """The exact-snapshot invariant, attacked at the point it used to break.
+
+    The first version of the producer hashed the source in one transaction and
+    walked provider and campaign width in a later one. A commit landing between
+    them changed those widths without changing the hash, so a row could be
+    written ``fresh`` describing a state of the database that had never
+    existed. That defect was invisible to every test, because the only guard
+    compared the caller's expected hash against a value the first transaction
+    had already returned -- a comparison that cannot see anything happening
+    after it.
+
+    This test stands in that window and pushes. A real settlement, introducing
+    a provider and a campaign that exist in no earlier state, is committed from
+    another connection at precisely the moment the old code would have been
+    between transactions. The measurement must not see it: under one repeatable
+    -read snapshot, a commit made after the transaction began is not part of
+    what that transaction reads.
+
+    The assertion is deliberately on the *value*, not on an exception. Refusing
+    to write would also be sound, but it would be a weaker property -- it would
+    mean the producer had noticed the mutation. The stronger claim, and the one
+    the architecture now supports, is that the mutation is not there to notice.
+    """
+
+    engine = _migration_engine()
+    try:
+        with engine.begin() as conn:
+            tenant_id = _new_tenant(conn, "race")
+            for index in range(6):
+                _seed_row(
+                    conn,
+                    tenant_id,
+                    index=index,
+                    channel=f"c9_race_base_channel_{index}",
+                    campaign=f"c9-race-base-campaign-{index}",
+                    provider="c9_race_base_provider",
+                    currency="USD",
+                    occurred_at=INSIDE + timedelta(minutes=index),
+                )
+    finally:
+        engine.dispose()
+
+    # S0: what the database looks like before anyone interferes.
+    before = _measure(tenant_id)
+    assert before["counts"]["provider_count"] == 1, before
+    assert before["counts"]["campaign_or_feature_count"] == 6, before
+
+    fired = {"count": 0}
+
+    async def mutate_mid_measurement() -> None:
+        # Awaited inside the snapshot transaction, after the hash and preflight
+        # and before the cardinality walk -- the old defect's window exactly.
+        fired["count"] += 1
+        _commit_new_provider_and_campaign(tenant_id, index=900 + fired["count"])
+
+    during = _measure(tenant_id, barrier=mutate_mid_measurement)
+
+    assert fired["count"] == 1, "the barrier never ran; the race was not attempted"
+
+    # The mutation is committed and visible to anyone who looks now.
+    after = _measure(tenant_id)
+    assert after["counts"]["provider_count"] == 2, after
+    assert after["counts"]["campaign_or_feature_count"] == 7, after
+
+    # And the measurement taken across the mutation describes S0 throughout --
+    # hash and all four widths. A hybrid would show S0's hash beside S1's
+    # provider and campaign counts, which is precisely the row the audit
+    # showed could be persisted.
+    assert during["hash"] == before["hash"], (
+        "the snapshot hash moved mid-measurement; the transaction is not "
+        "repeatable-read"
+    )
+    assert during["counts"] == before["counts"], (
+        "a mutation committed between the hash and the cardinality walk changed "
+        f"the measured widths: S0={before['counts']} observed={during['counts']} "
+        f"S1={after['counts']}"
+    )
+
+
+def test_c9_a_persisted_authority_matches_a_fresh_measurement_of_its_own_hash() -> None:
+    """The written row is re-derivable from the snapshot it names.
+
+    The previous test proves the measurement is coherent. This one proves the
+    coherent measurement is what actually reaches the table -- that nothing
+    between measuring and writing substitutes a different number.
+    """
+
+    engine = _migration_engine()
+    try:
+        with engine.begin() as conn:
+            tenant_id = _new_tenant(conn, "persisted")
+            for index in range(5):
+                _seed_row(
+                    conn,
+                    tenant_id,
+                    index=index,
+                    channel=f"c9_persist_channel_{index}",
+                    campaign=f"c9-persist-campaign-{index}",
+                    provider=f"c9_persist_provider_{index % 3}",
+                    currency="USD" if index % 2 == 0 else "EUR",
+                    occurred_at=INSIDE + timedelta(minutes=index),
+                )
+    finally:
+        engine.dispose()
+
+    observed = _measure(tenant_id)
+    authority = asyncio.run(
+        produce_source_window_feature_authority(
+            tenant_id=tenant_id,
+            model_type=ACTIVE.model_type,
+            model_version=ACTIVE.model_version,
+            source_window_start=WINDOW_START,
+            source_window_end=WINDOW_END,
+            expected_source_snapshot_hash=observed["hash"],
+        )
+    )
+    assert authority is not None
+    assert authority.source_snapshot_hash == observed["hash"]
+
+    app_engine = _engine()
+    try:
+        with app_engine.connect() as conn:
+            _bind(conn, tenant_id)
+            row = conn.execute(
+                text(
+                    "SELECT source_snapshot_hash, freshness_status, channel_count,"
+                    " currency_count, provider_count, campaign_or_feature_count"
+                    " FROM public.b24_source_window_feature_authority"
+                    " WHERE tenant_id = :t"
+                ),
+                {"t": str(tenant_id)},
+            ).mappings().one()
+    finally:
+        app_engine.dispose()
+
+    assert row["freshness_status"] == "fresh", dict(row)
+    assert row["source_snapshot_hash"] == observed["hash"], dict(row)
+    assert {
+        "channel_count": row["channel_count"],
+        "currency_count": row["currency_count"],
+        "provider_count": row["provider_count"],
+        "campaign_or_feature_count": row["campaign_or_feature_count"],
+    } == observed["counts"], dict(row)

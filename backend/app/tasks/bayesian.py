@@ -317,6 +317,8 @@ def plan_due_fit_intents(
     dispatchable = 0
     reused = 0
     dispositions: dict[str, int] = {}
+    failed_tenants = 0
+    failure_classes: dict[str, int] = {}
     for tenant_id, wakeup_revision in tenants:
         succeeded = False
         try:
@@ -336,6 +338,40 @@ def plan_due_fit_intents(
                 elif intent.claim.outcome.value == "reused":
                     reused += 1
             succeeded = True
+        except Exception as exc:  # noqa: BLE001 - containment boundary, see below
+            # One tenant's failure is not evidence about any other tenant.
+            #
+            # This batch was leased in a single call, so without this boundary an
+            # exception here propagates out of the loop and every tenant queued
+            # behind the failing one is never reached and never disposed. Their
+            # wake-ups stay leased under an owner that has already gone away,
+            # and they are unschedulable until the lease expires -- a tenant
+            # whose only mistake was being later in an ordered list. Retrying the
+            # task does not rescue them either: the retry leases a fresh batch
+            # while the stranded rows remain held by the previous owner.
+            #
+            # Containment here rather than a wider try because the disposal in
+            # ``finally`` must still run for this tenant. Its wake-up is released
+            # by the same residual-authority logic that disposes a successful
+            # one, so the work is conserved rather than dropped: the database
+            # re-reads what remains unplanned and decides, and a failed pass
+            # leaves the obligation immediately eligible again instead of
+            # destroying it.
+            #
+            # ``Exception`` and not ``BaseException`` on purpose. A hard worker
+            # time limit or a process signal is not a per-tenant fault and must
+            # keep propagating.
+            failed_tenants += 1
+            failure_class = type(exc).__name__
+            failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
+            logger.exception(
+                "b24_fit_planner_tenant_failed",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "lease_owner": lease_owner,
+                    "failure_class": failure_class,
+                },
+            )
         finally:
             disposition = _complete_planner_wakeup(
                 tenant_id=tenant_id,
@@ -351,6 +387,11 @@ def plan_due_fit_intents(
         "dispatchable_count": dispatchable,
         "reused_count": reused,
         "wakeup_dispositions": dispositions,
+        # Contained failures are reported, never hidden. A planner pass that
+        # silently absorbed exceptions would trade one invisible defect for
+        # another.
+        "failed_tenant_count": failed_tenants,
+        "failure_classes": failure_classes,
     }
     # C8: transport evidence. A probe emitted from inside the task body is what
     # distinguishes "Beat scheduled it" from "a Bayesian worker actually ran it
