@@ -37,8 +37,10 @@ sample size of at least four hundred. Both are unreachable, independently:
 * R-hat compares variance *between* chains. With one chain there is nothing to
   compare, so it is NaN, and the diagnostics fail as ``nonfinite_diagnostic``
   before the sample size is even considered.
-* Effective sample size cannot exceed the number of draws, and the policy draws
-  sixty-four against a threshold of four hundred.
+* Effective sample size sits near the number of draws -- it can edge slightly
+  above it when NUTS samples antithetically, and is usually below -- and the
+  policy draws sixty-four against a threshold of four hundred. A better-behaved
+  sampler does not close a 6.25x gap; only drawing more samples would.
 
 So **no fit this system can produce is capable of passing its own diagnostics**,
 whatever the data. Every real sampled fit is truthfully reported
@@ -716,10 +718,17 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
         "R-hat was computed for the first time -- the single-chain cage has "
         f"been lifted and F-11's first arm is resolved: {dict(fit)}"
     )
-    assert float(fit["ess_min"]) <= drawn < required, (
-        f"observed ESS {fit['ess_min']} against {drawn} drawn samples and a "
-        f"threshold of {required}; F-11's second arm no longer holds"
+    observed_ess = float(fit["ess_min"])
+    assert observed_ess < required, (
+        f"the measured effective sample size {observed_ess} now satisfies the "
+        f"diagnostic threshold {required}. F-11's second arm is resolved and "
+        "this proof must be extended to assert the available-confidence branch"
     )
+    # And it is not a near miss that better sampling could close: the threshold
+    # is several times the number of draws the policy permits. ESS tracks the
+    # draw count -- modestly above it when NUTS samples antithetically, usually
+    # below -- so the gap is a budget, not a quality problem.
+    assert drawn < required, (drawn, required)
 
 
 def test_c9_the_sampling_policy_cannot_satisfy_its_own_diagnostics() -> None:
@@ -767,8 +776,10 @@ def test_c9_the_sampling_policy_cannot_satisfy_its_own_diagnostics() -> None:
     )
     assert thresholds.r_hat_max_threshold > 0, thresholds
 
-    # Second arm: effective sample size cannot exceed the draws it is computed
-    # from.
+    # Second arm: the threshold is several times the number of draws the policy
+    # permits. Effective sample size tracks the draw count -- it can edge above
+    # it under antithetic sampling and is usually below -- so no sampler quality
+    # closes a gap of this size. Only drawing more samples would.
     assert drawn < thresholds.ess_min_threshold, (
         "the sampling policy now draws enough samples to satisfy the diagnostic "
         f"effective-sample-size threshold ({drawn} >= "
