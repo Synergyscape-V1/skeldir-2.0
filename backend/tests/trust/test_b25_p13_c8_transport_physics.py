@@ -172,6 +172,23 @@ def test_c8_live_beat_broker_worker_delivers_fit_planner(tmp_path) -> None:
         assert celery_app.conf.task_always_eager is False
 
         tenant_id = _seed_due_obligation(seed_engine)
+        # Leave this tenant as the only obligation the planner can see. The
+        # planner leases its whole batch up front and disposes each tenant in a
+        # per-tenant finally, so one unplannable tenant strands every tenant
+        # behind it for a ten-minute lease; and every obligation the planner does
+        # reach now costs a real snapshot read and a cardinality walk. In a
+        # database shared with the earlier proofs, this test's own obligation can
+        # simply never be reached -- which is starvation, not a transport
+        # failure, and would make the proof report the wrong thing. Nothing this
+        # test asserts about delivery depends on other tenants existing.
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM public.b24_fit_planner_wakeups"
+                    " WHERE tenant_id <> :t"
+                ),
+                {"t": str(tenant_id)},
+            )
         seeded = _wakeup_state(engine, tenant_id)
         assert len(seeded) == 1 and seeded[0][0] == "pending", seeded
 

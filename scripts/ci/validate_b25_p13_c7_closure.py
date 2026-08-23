@@ -69,6 +69,9 @@ C8_MIGRATION = ROOT / (
     "202608231200_b25_p13_c8_identity_window_causality.py"
 )
 FIT_PLANNER = ROOT / "backend/app/bayesian/fit_planner.py"
+FEATURE_CARDINALITY = ROOT / "backend/app/bayesian/feature_cardinality.py"
+BAYESIAN_TASKS = ROOT / "backend/app/tasks/bayesian.py"
+SOURCE_CONTRACT = ROOT / "backend/app/bayesian/source_contract_authority.py"
 PROVISIONER = ROOT / "scripts/database/prepare_migration_authority_boundary.py"
 READ_MODEL = ROOT / "backend/app/confidence_projection/read_model.py"
 DIRTY_MARKER = ROOT / "backend/app/bayesian/dirty_marker.py"
@@ -461,6 +464,131 @@ def validate_fit_window_is_contract_derived(planner: str | None = None) -> int:
 
 
 # ---------------------------------------------------------------------------
+# STATIC: the feature-authority producer measures shape and decides nothing.
+# ---------------------------------------------------------------------------
+def _code_only(source: str) -> str:
+    """Source with docstrings removed, so prose can neither pass nor fail a check."""
+
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if isinstance(body, list) and body:
+            first = body[0]
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                body.pop(0)
+    return ast.unparse(tree)
+
+
+def validate_feature_authority_producer(
+    producer: str | None = None,
+    task: str | None = None,
+    contract: str | None = None,
+) -> int:
+    """The producer materializes an existing authority; it does not author one.
+
+    C8-N found that ``b24_source_window_feature_authority`` had no production
+    writer, so every planner that requested one waited forever and every proof
+    that showed a fit had written that row itself. The writer exists now, and
+    the risk moves: a component that measures data is one careless commit away
+    from becoming a component that judges it.
+
+    Skeldir already owns both judgements. ``b24-eligibility-v1`` decides whether
+    a snapshot has enough data; the resource policy decides whether it has too
+    much. Feature authority sits between them and answers only *how wide*. A
+    threshold appearing here would be a third opinion about data quality with
+    nothing versioning it, which is the same defect C8 removed from the identity
+    space wearing different clothes.
+    """
+
+    producer_src = producer if producer is not None else _read(FEATURE_CARDINALITY)
+    task_src = task if task is not None else _read(BAYESIAN_TASKS)
+    contract_src = contract if contract is not None else _read(SOURCE_CONTRACT)
+    code = _code_only(producer_src)
+
+    # 1. It is wired. The task named for building the authority must build it.
+    start = task_src.index("def build_feature_authority(")
+    end = task_src.index("@_bayesian_task", start)
+    _require(
+        "produce_source_window_feature_authority(" in task_src[start:end],
+        "build_feature_authority_still_only_reads_the_authority_table",
+    )
+
+    # 2. Membership is derived from the source contract, never restated.
+    for restated in ("matched_confirmed", "payment_capture", "processed"):
+        _require(
+            restated not in code,
+            f"producer_restates_source_membership:{restated}",
+        )
+    _require(
+        "member_predicate(" in code,
+        "producer_does_not_render_membership_from_the_source_contract",
+    )
+
+    # 3. And the source contract itself reads those values rather than holding a
+    #    second copy of them, or the derivation above would only move the
+    #    duplication one file further away.
+    _require(
+        "LIFECYCLE_INCLUSION_RULES" in contract_src,
+        "source_contract_membership_is_not_read_from_the_lifecycle_rules",
+    )
+    _require(
+        '"matched_confirmed", "adjusted"' not in contract_src,
+        "source_contract_still_restates_lifecycle_membership_values",
+    )
+
+    # 4. Caps are read from the resource policy, never spelled out.
+    for cap in ("128", "2048", "2_048"):
+        _require(cap not in code, f"producer_hard_codes_a_resource_cap:{cap}")
+    for reference in (
+        "B24_RESOURCE_POLICY.max_channels",
+        "B24_RESOURCE_POLICY.max_currencies",
+        "B24_RESOURCE_POLICY.max_providers",
+        "B24_RESOURCE_POLICY.max_campaigns_or_feature_keys",
+    ):
+        _require(reference in code, f"producer_cap_is_not_read_from_policy:{reference}")
+
+    # 5. Counting is the adjudicated bounded walk, not an unbounded scan.
+    _require(
+        "B24_DISTINCT_CARDINALITY_POLICY" in code,
+        "producer_does_not_declare_the_governed_cardinality_policy",
+    )
+    _require("WITH RECURSIVE" in code, "producer_cardinality_is_not_a_bounded_walk")
+    _require(
+        "count(distinct" not in code.lower(),
+        "producer_reintroduced_an_unbounded_distinct_scan",
+    )
+
+    # 6. Freshness is snapshot identity. Checked as identifiers, because what
+    #    matters is whether the producer computes with a duration.
+    tree = ast.parse(producer_src)
+    identifiers = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {
+        n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)
+    }
+    forbidden = {"timedelta", "ttl", "expires_at", "max_age", "monotonic"}
+    _require(
+        not (identifiers & forbidden),
+        f"producer_introduces_time_based_freshness:{sorted(identifiers & forbidden)}",
+    )
+
+    # 7. No eligibility threshold may appear here at all.
+    for threshold in (
+        "SPARSE_PRIVACY_THRESHOLDS",
+        "minimum_distinct_channels",
+        "minimum_source_window_density_days",
+        "is_eligible",
+    ):
+        _require(
+            threshold not in code,
+            f"producer_consults_or_restates_an_eligibility_threshold:{threshold}",
+        )
+    return 7
+
+
+# ---------------------------------------------------------------------------
 # STATIC: worker credential custody in every in-scope executable topology.
 # ---------------------------------------------------------------------------
 def validate_worker_topology(
@@ -846,6 +974,7 @@ VALIDATORS: tuple[Callable[[], int], ...] = (
     validate_model_identity_authority,
     validate_window_dependency_is_overlap,
     validate_fit_window_is_contract_derived,
+    validate_feature_authority_producer,
     validate_worker_topology,
     validate_terminal_dependencies_bidirectional,
     validate_planner_obligation_contract,
@@ -1275,6 +1404,109 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
                     "fit_window_start, fit_window_end = fit_window_for(candidate)",
                     "fit_window_start = candidate.source_window_start",
                     1,
+                )
+            ),
+        )
+    )
+    # ---- C9: the producer measures shape and decides nothing ---------------
+    producer_text = _read(FEATURE_CARDINALITY)
+    task_text = _read(BAYESIAN_TASKS)
+    contract_text = _read(SOURCE_CONTRACT)
+
+    # NC-C9-S01 -- the task reverting to a read. This is F-06 exactly: a task
+    # that is registered, routed, dispatched, returns cleanly, is retried on a
+    # schedule, and builds nothing.
+    controls.append(
+        _must_fail(
+            "NC-C9-S01",
+            lambda: validate_feature_authority_producer(
+                task=task_text.replace(
+                    "produce_source_window_feature_authority(", "_no_producer(", 1
+                )
+            ),
+        )
+    )
+    # NC-C9-S02 -- membership restated in the producer instead of derived from
+    # the contract that renders it into the snapshot SELECT and the trigger DDL.
+    controls.append(
+        _must_fail(
+            "NC-C9-S02",
+            lambda: validate_feature_authority_producer(
+                producer=producer_text.replace(
+                    "BOUNDED_CARDINALITY_POLICY = B24_DISTINCT_CARDINALITY_POLICY",
+                    "BOUNDED_CARDINALITY_POLICY = B24_DISTINCT_CARDINALITY_POLICY"
+                    + "\n" + 'LOCAL_STATUSES = ("matched_confirmed",)',
+                    1,
+                )
+            ),
+        )
+    )
+    # NC-C9-S03 -- a cap written out instead of read from the resource policy,
+    # so a policy change would leave the producer measuring against the old one.
+    controls.append(
+        _must_fail(
+            "NC-C9-S03",
+            lambda: validate_feature_authority_producer(
+                producer=producer_text.replace(
+                    '"provider": B24_RESOURCE_POLICY.max_providers',
+                    '"provider": 128',
+                    1,
+                )
+            ),
+        )
+    )
+    # NC-C9-S04 -- the bounded walk replaced by an unbounded distinct scan. The
+    # answer is usually identical, which is exactly what makes it dangerous: the
+    # regression is in cost and in overflow semantics, not in the number.
+    controls.append(
+        _must_fail(
+            "NC-C9-S04",
+            lambda: validate_feature_authority_producer(
+                producer=producer_text.replace(
+                    "WITH RECURSIVE", "-- count(distinct x)", 1
+                )
+            ),
+        )
+    )
+    # NC-C9-S05 -- time-based freshness. A TTL expires a correct width while its
+    # snapshot is untouched, and keeps an incorrect one after the source moves.
+    controls.append(
+        _must_fail(
+            "NC-C9-S05",
+            lambda: validate_feature_authority_producer(
+                producer=producer_text.replace(
+                    "from datetime import datetime, timezone",
+                    "from datetime import datetime, timedelta, timezone"
+                    + "\n" + "AUTHORITY_TTL = timedelta(hours=24)",
+                    1,
+                )
+            ),
+        )
+    )
+    # NC-C9-S06 -- an eligibility decision consulted inside the producer, which
+    # would collapse "how wide is this" into "is this good enough".
+    controls.append(
+        _must_fail(
+            "NC-C9-S06",
+            lambda: validate_feature_authority_producer(
+                producer=producer_text.replace(
+                    "    currency = _bounded",
+                    "    assert preflight.is_eligible" + "\n" + "    currency = _bounded",
+                    1,
+                )
+            ),
+        )
+    )
+    # NC-C9-S07 -- the source contract holding its own copy of the lifecycle
+    # membership again, which would make the producer's derivation cosmetic.
+    controls.append(
+        _must_fail(
+            "NC-C9-S07",
+            lambda: validate_feature_authority_producer(
+                contract=contract_text.replace(
+                    "LIFECYCLE_INCLUSION_RULES", "_LOCAL_RULES"
+                ).replace(
+                    "_lifecycle(", 'MembershipFilter("matched_confirmed", "adjusted", '
                 )
             ),
         )

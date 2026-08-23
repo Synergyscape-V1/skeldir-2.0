@@ -184,6 +184,36 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VII Report.md
+- id: b25-p13-c9-feature-authority-producer
+  path: backend/app/bayesian/feature_cardinality.py
+  status: required
+  owning_phase: B2.5-P13-C9
+  protected_invariant: Materializes the P4 source-window cardinality authority that had no production
+    writer. Measures the four governed widths of an exact snapshot under the source contract's own
+    membership and the adjudicated cap-plus-one bounded walk, and states no threshold of its own --
+    sufficiency belongs to b24-eligibility-v1 and admissibility to the resource policy. Before C9 the
+    task named for building this authority only read it, so every planner that requested one waited
+    forever and every proof of a fit wrote that row itself.
+  command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  expected_failure_meaning: The producer has started deciding rather than measuring -- a threshold, a
+    time-based freshness rule, a restated membership value or a hard-coded cap -- or the task named
+    for building the feature authority has gone back to only reading it, which is the F-06 defect.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason:
+  subsumed_by: validate-b25-p13-c7-closure
+  ci_visibility: library
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement:
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VIII Report.md
 - id: b25-p13-c8-model-identity-authority
   path: backend/app/bayesian/model_identity.py
   status: required

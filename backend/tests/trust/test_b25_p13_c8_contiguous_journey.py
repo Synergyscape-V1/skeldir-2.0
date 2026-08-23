@@ -57,6 +57,9 @@ proving something about its own process.
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -67,8 +70,11 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 
+from app.api import trust_api, trust_keys
 from app.bayesian.fit_planner import (
     MIN_FIT_WINDOW_DAYS,
     DirtyPlanningCandidate,
@@ -79,6 +85,7 @@ from app.core.queues import QUEUE_BAYESIAN
 from app.core.secrets import get_database_url
 from app.db.dsn import to_sync_postgres_dsn
 from app.tasks.bayesian import FIT_PLANNER_TASK_NAME
+from app.trust.machine_identity import AgentScope
 from tests.test_b24_p9_postgres_runtime import (
     _beat_env,
     _max_broker_message_id,
@@ -328,6 +335,14 @@ def _await_planner_verdict(engine, tenant_id: UUID, *, timeout_s: int) -> dict:
                     ),
                     {"t": str(tenant_id)},
                 ).scalar_one(),
+                "requested_hash": conn.execute(
+                    text(
+                        "SELECT source_snapshot_hash FROM"
+                        " public.b24_feature_authority_build_requests"
+                        " WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 1"
+                    ),
+                    {"t": str(tenant_id)},
+                ).scalar_one_or_none(),
                 "requested_window": conn.execute(
                     text(
                         "SELECT source_window_start, source_window_end FROM"
@@ -360,12 +375,202 @@ def _await_planner_verdict(engine, tenant_id: UUID, *, timeout_s: int) -> dict:
                     {"t": str(tenant_id)},
                 ).scalar_one(),
             }
-        if state["dirty_status"] == "authority_waiting" or state["fits"]:
+        # Return on a durable milestone, never on a transient status. The
+        # authority build request survives its own completion, so it is still
+        # observable after the chain has moved on; ``authority_waiting`` is not.
+        if state["authority_requests"] or state["fits"]:
             return state
         _time.sleep(2.0)
     raise AssertionError(
         f"the planner reached no durable verdict within {timeout_s}s: {state}"
     )
+
+
+def _seed_caller(conn, tenant_id: UUID) -> tuple[UUID, str]:
+    """A real credential and a real scope grant, not a dependency override.
+
+    The production ``authenticate_machine_caller`` runs against these rows, so
+    the envelope this journey obtains is obtained the way a real agent obtains
+    one -- including the scope check and the replay check.
+    """
+
+    client_id = uuid4()
+    token = f"c8ntok{uuid4().hex}"
+    conn.execute(
+        text(
+            "INSERT INTO public.agent_clients (id, tenant_id, client_name,"
+            " client_display_hash, audience, status) VALUES (:c, :t, :n, :h,"
+            " 'b25-p13-c8n', 'active')"
+        ),
+        {
+            "c": str(client_id),
+            "t": str(tenant_id),
+            "n": f"c8n-client-{client_id}",
+            "h": "sha256:" + "c" * 64,
+        },
+    )
+    conn.execute(
+        text(
+            "INSERT INTO public.agent_service_credentials (id, tenant_id,"
+            " agent_client_id, token_prefix, token_hash, hash_algorithm, status,"
+            " issued_at) VALUES (:i, :t, :c, :p, :h, 'sha256', 'active', now())"
+        ),
+        {
+            "i": str(uuid4()),
+            "t": str(tenant_id),
+            "c": str(client_id),
+            "p": token[:8],
+            "h": hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        },
+    )
+    conn.execute(
+        text(
+            "INSERT INTO public.agent_scope_grants (id, tenant_id,"
+            " agent_client_id, scope_value, granted_at) VALUES (:i, :t, :c, :s,"
+            " now())"
+        ),
+        {
+            "i": str(uuid4()),
+            "t": str(tenant_id),
+            "c": str(client_id),
+            "s": AgentScope.ENVELOPE_READ.value,
+        },
+    )
+    return client_id, token
+
+
+def _await_feature_authority(engine, tenant_id: UUID, *, timeout_s: int) -> dict:
+    """Block until the producer has written this tenant's snapshot width."""
+
+    import time as _time
+
+    deadline = _time.monotonic() + timeout_s
+    row = None
+    while _time.monotonic() < deadline:
+        with engine.connect() as conn:
+            _bind(conn, tenant_id)
+            row = conn.execute(
+                text(
+                    "SELECT source_snapshot_hash, freshness_status, policy_version,"
+                    " channel_count, currency_count, provider_count,"
+                    " campaign_or_feature_count FROM"
+                    " public.b24_source_window_feature_authority"
+                    " WHERE tenant_id = :t ORDER BY computed_at DESC LIMIT 1"
+                ),
+                {"t": str(tenant_id)},
+            ).mappings().one_or_none()
+        if row is not None:
+            return dict(row)
+        _time.sleep(2.0)
+    raise AssertionError(
+        f"no feature authority was produced within {timeout_s}s; the chain "
+        "still stops where C8-N first found it stopping"
+    )
+
+
+def _await_fit(engine, tenant_id: UUID, *, timeout_s: int) -> dict:
+    """Block until the planner has produced exactly one fit for this tenant."""
+
+    import time as _time
+
+    deadline = _time.monotonic() + timeout_s
+    rows: list[dict] = []
+    while _time.monotonic() < deadline:
+        with engine.connect() as conn:
+            rows = _fit_rows(conn, tenant_id)
+        if rows:
+            break
+        _time.sleep(2.0)
+    assert rows, (
+        f"the feature authority exists but no fit appeared within {timeout_s}s"
+    )
+    assert len(rows) == 1, f"one change produced {len(rows)} fits: {rows}"
+    return rows[0]
+
+
+def _build_trust_app() -> FastAPI:
+    """Production routers, production dependencies, no overrides."""
+
+    app = FastAPI()
+    app.include_router(trust_api.router, prefix="/api")
+    app.include_router(trust_keys.router, prefix="/api")
+    assert not app.dependency_overrides, "C8-N must use production dependencies"
+    return app
+
+
+async def _verified_envelope(app: FastAPI, *, tenant_id: UUID, token: str, fit_id):
+    """Fetch one envelope and verify it against the *published* JWKS.
+
+    The registry is rebuilt from the public document rather than reused from
+    server state, so a signature that only verifies with private material a
+    consumer could never hold is not accepted here.
+    """
+
+    from app.trust.jwks import assert_jwks_public_only, registry_from_public_jwks
+    from app.trust.verification import verify_trust_envelope
+
+    ref = f"urn:skeldir:confidence_projection:{fit_id}"
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/trust/v1/envelopes/query",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Tenant-ID": str(tenant_id),
+                "X-Trust-Nonce": f"c8n-{uuid4().hex}",
+                "X-Correlation-ID": str(uuid4()),
+                "X-Idempotency-Key": f"c8n-{uuid4()}",
+            },
+            json={
+                "subject_types": ["confidence_projection"],
+                "subject_refs": [ref],
+            },
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        envelopes = body.get("envelopes") or body.get("results") or []
+        assert len(envelopes) == 1, json.dumps(body)[:400]
+        envelope = envelopes[0]
+
+        jwks_response = await client.get(
+            "/api/trust/v1/keys/jwks", headers={"X-Correlation-ID": str(uuid4())}
+        )
+    assert jwks_response.status_code == 200, jwks_response.text
+    jwks = jwks_response.json()
+    assert assert_jwks_public_only(jwks) >= 1
+    verified = verify_trust_envelope(
+        envelope, key_registry=registry_from_public_jwks(jwks)
+    )
+    status = str(getattr(verified, "verification_status", verified))
+    assert status in {"valid", "verified"}, (
+        f"public-only verification of a chain-produced envelope: {verified}"
+    )
+    return envelope, verified
+
+
+def _assert_confidence_reflects_fit(payload: dict, fit: dict) -> None:
+    """The signed claim must agree with the fit the pipeline actually has.
+
+    Checked structurally rather than against one hard-coded verdict string, so
+    the assertion stays about correspondence: a fit that has not been sampled
+    must not be reported as carrying a usable confidence value, and one that has
+    must not be reported as withholding it.
+    """
+
+    flat = json.dumps(payload, default=str).lower()
+    terminal = str(fit["status"]).lower() in {"succeeded", "completed"}
+    if terminal:
+        assert "unavailable" not in flat, (
+            f"a succeeded fit was reported as unavailable: {flat[:400]}"
+        )
+    else:
+        assert (
+            "unavailable" in flat or "withheld" in flat or "degraded" in flat
+        ), (
+            f"a {fit['status']!r} fit was reported as carrying confidence: "
+            f"{flat[:400]}"
+        )
 
 
 def _isolate_planner_worklist(engine, tenant_id: UUID) -> int:
@@ -396,12 +601,30 @@ def _purge_queue(engine, queue_name: str) -> int:
 # ---------------------------------------------------------------------------
 # C8-N. The journey.
 # ---------------------------------------------------------------------------
-def test_c8_financial_change_conducts_to_the_feature_authority_frontier(
-    tmp_path,
+def test_c8_financial_change_reaches_a_jwks_verified_trust_claim(
+    tmp_path, monkeypatch
 ) -> None:
     """One fact, one chain, no substituted authority at any seam."""
 
     from app.celery_app import celery_app
+
+    # The signing authority the route needs. Supplied the same way the P13 E2E
+    # suite supplies it -- a deterministic seed rather than a fixture key -- so
+    # the envelope this journey verifies is signed by the production signer
+    # holding real Ed25519 material, and the JWKS it verifies against is the
+    # document that signer publishes.
+    monkeypatch.setenv(
+        "SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL",
+        base64.urlsafe_b64encode(
+            hashlib.sha256(b"b25-p13-c8n-signing-key").digest()
+        )
+        .rstrip(b"=")
+        .decode("ascii"),
+    )
+    monkeypatch.setenv("SKELDIR_TRUST_SIGNING_KEY_ID", "kid:b25-p13-c8n")
+    monkeypatch.setenv(
+        "SKELDIR_TRUST_SIGNING_KEY_VALID_FROM", "2026-01-01T00:00:00Z"
+    )
 
     app_engine = _engine()
     admin_engine = _migration_engine()
@@ -441,6 +664,7 @@ def test_c8_financial_change_conducts_to_the_feature_authority_frontier(
             _bind(conn, tenant_id)
             # A twenty-day market with three settlements a day: dense enough
             # for every floor the eligibility contract enforces, and no denser.
+            _, token = _seed_caller(conn, tenant_id)
             verdicts = _seed_financial_history(
                 conn, tenant_id, days=MIN_FIT_WINDOW_DAYS, per_day=3
             )
@@ -624,7 +848,11 @@ def test_c8_financial_change_conducts_to_the_feature_authority_frontier(
         # expired. Reaching an authority wait is the first time in the system's
         # history that a real financial change has been judged fittable.
         accepted = _await_planner_verdict(app_engine, tenant_id, timeout_s=900)
-        assert accepted["dirty_status"] == "authority_waiting", accepted
+        # Asserted on the request rather than on the dirty row's status. The
+        # chain now runs to completion in well under the time it takes to poll,
+        # so a dirty event can be through ``authority_waiting`` and out the
+        # other side before this reads it. A proof that requires catching a
+        # transient state is measuring the observer, not the system.
         assert accepted["authority_requests"] >= 1, accepted
 
         # F-05, observed causally rather than asserted statically. The dirty
@@ -651,27 +879,63 @@ def test_c8_financial_change_conducts_to_the_feature_authority_frontier(
             f"request records {accepted['requested_window']}"
         )
 
-        # -- Stage 7: the frontier ------------------------------------------
-        # And here the chain stops, for a reason no audit found and no gate
-        # could see. ``build_feature_authority`` does not build a feature
-        # authority. It reads the table, finds nothing, and parks the request
-        # for a sixty-second retry. Nothing in the application writes that
-        # table: the only writer, upsert_source_window_feature_authority, is
-        # called exclusively from tests. Every production dirty event, however
-        # correct its identity and however fittable its window, terminates in an
-        # indefinite authority wait.
-        #
-        # This is asserted rather than worked around. A journey that reached a
-        # signed envelope by seeding the authority itself would be making
-        # exactly the substitution both audits condemned, and would hide the
-        # finding that matters most. The assertion is falsifiable in the useful
-        # direction: implement the producer and this goes red, which is the
-        # correct signal that the frontier has moved.
-        assert accepted["feature_authorities"] == 0, (
-            "a feature authority appeared; the producer described in F-06 now "
-            "exists and this frontier assertion must be replaced by the "
-            "remaining journey to the signed envelope"
+        # -- Stage 7: the authority the pipeline never used to produce -------
+        # C8-N previously stopped here and asserted that it stopped, because
+        # build_feature_authority read a table nothing wrote. It writes now, and
+        # the assertion is inverted: the width of this snapshot must exist, and
+        # it must be the width of the snapshot the planner asked about.
+        authority = _await_feature_authority(app_engine, tenant_id, timeout_s=300)
+        assert authority["freshness_status"] == "fresh", authority
+        assert authority["source_snapshot_hash"] == accepted["requested_hash"], (
+            "a feature authority was written for a snapshot nobody asked about"
         )
+        # Cardinality, not confidence. The fixture is a known market, so these
+        # are exact numbers rather than a range: one settlement provider, one
+        # currency, and one channel and one campaign per settlement.
+        assert authority["provider_count"] == 1, authority
+        assert authority["currency_count"] == 1, authority
+        assert authority["channel_count"] == MIN_FIT_WINDOW_DAYS * 3, authority
+        assert authority["campaign_or_feature_count"] == MIN_FIT_WINDOW_DAYS * 3
+
+        # -- Stage 8: a fit, produced by the planner from that authority -----
+        fit = _await_fit(app_engine, tenant_id, timeout_s=600)
+        # F-01 at the far end of the chain: the identity the trigger emitted is
+        # the identity the fit carries, which is the identity Trust projects.
+        assert fit["model_type"] == ACTIVE.model_type, fit
+        assert fit["model_version"] == ACTIVE.model_version, fit
+        assert fit["has_snapshot"], fit
+        assert fit["source_window_start"] <= CHANGE_AT < fit["source_window_end"], fit
+
+        # -- Stage 9: the signed claim, verified against the published JWKS --
+        # The route runs production authentication, the production confidence
+        # projection and the production signer. The subject is the fit id the
+        # planner chose; nothing in this module picked it.
+        loop = asyncio.new_event_loop()
+        try:
+            envelope, verified = loop.run_until_complete(
+                _verified_envelope(
+                    _build_trust_app(),
+                    tenant_id=tenant_id,
+                    token=token,
+                    fit_id=fit["id"],
+                )
+            )
+        finally:
+            loop.close()
+        assert envelope["subject_type"] == "confidence_projection", envelope
+        assert str(fit["id"]) in envelope["subject_ref"], envelope
+        assert str(
+            getattr(verified, "verification_status", verified)
+        ) in {"valid", "verified"}, verified
+
+        # -- Stage 10: the claim must describe the chain's real state --------
+        # The envelope is signed and verifiable. That is not the same as true.
+        # A planner-created fit has not been sampled, so the governed answer is
+        # a withheld confidence rather than a number, and the envelope has to
+        # say so. An envelope that reported a usable confidence for an unsampled
+        # fit would be a verifiable lie, which is worse than an unverifiable one.
+        payload = envelope.get("payload") or envelope.get("claims") or envelope
+        _assert_confidence_reflects_fit(payload, fit)
         return
 
     finally:
@@ -691,50 +955,87 @@ def test_c8_financial_change_conducts_to_the_feature_authority_frontier(
         admin_engine.dispose()
 
 
-def test_c8_no_production_component_builds_the_feature_authority() -> None:
-    """F-06, pinned structurally so the frontier cannot move unobserved.
+def test_c8_the_feature_authority_producer_is_wired_and_derives_its_rules() -> None:
+    """The inverse of the pin C8-N carried while F-06 was open.
 
-    ``app.tasks.bayesian.build_feature_authority`` is registered, routed,
-    dispatched through a durable outbox and retried on a schedule. It is wired
-    end to end. It also does not build anything: it selects from
-    ``b24_source_window_feature_authority``, finds nothing, and parks the
-    request for another sixty seconds.
+    That test asserted no production component wrote the feature authority, and
+    said in its own failure message that finding one meant the frontier had
+    moved and the journey had to be extended. It has, and this is what replaces
+    it: the producer exists, the task that is named for building the authority
+    actually builds it, and -- the part worth guarding -- the producer states no
+    policy of its own.
 
-    This is invisible to every form of inspection the repository performs. The
-    task exists, so a registry check passes. It is dispatched, so a transport
-    check passes. It returns without raising, so a liveness check passes. Only
-    asking the whole chain to produce a fit reveals that the table it consults
-    has no writer outside the test suite.
-
-    The assertion is a two-sided pin. If a production writer appears, this test
-    goes red and the journey above must be extended through the fit, the
-    confidence projection and the signed envelope. If the existing writer is
-    deleted, it goes red too. Either way the frontier is stated rather than
-    assumed.
+    That last property is the whole design. Feature authority measures how wide
+    a snapshot is so that two other authorities can decide whether it is
+    sufficient and whether it is affordable. A threshold appearing in the
+    producer would mean a third opinion had been created about data quality with
+    nothing versioning it, which is how the identity space fractured in the
+    first place.
     """
 
-    writer = "upsert_source_window_feature_authority"
-    backend = ROOT / "backend"
-    callers: dict[str, int] = {}
-    for path in backend.rglob("*.py"):
-        rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith("backend/tests/"):
-            continue
-        hits = path.read_text(encoding="utf-8", errors="replace").count(writer)
-        if hits:
-            callers[rel] = hits
+    import ast as _ast
 
-    # The definition itself is the only non-test occurrence. Anything else is a
-    # caller, and a caller means the producer now exists.
-    assert set(callers) == {"backend/app/bayesian/feature_authority.py"}, (
-        "a non-test caller of the feature-authority writer appeared; F-06 is "
-        f"closed and the C8-N frontier assertion must move: {callers}"
+    source = (ROOT / "backend/app/bayesian/feature_cardinality.py").read_text(
+        encoding="utf-8"
     )
+    tree = _ast.parse(source)
 
-    # And the task that is named for building it must still only be reading it.
-    task_body = (backend / "app/tasks/bayesian.py").read_text(encoding="utf-8")
+    # Prose is not evidence either way, so it is removed before anything is
+    # scanned. A docstring explaining why the producer has no TTL must not be
+    # what makes a TTL check pass, and must not be what makes it fail.
+    for node in _ast.walk(tree):
+        body = getattr(node, "body", None)
+        if isinstance(body, list) and body:
+            first = body[0]
+            if (
+                isinstance(first, _ast.Expr)
+                and isinstance(first.value, _ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                body.pop(0)
+    code = _ast.unparse(tree)
+
+    # 1. It is wired: the task reads a table it now also writes.
+    task_body = (ROOT / "backend/app/tasks/bayesian.py").read_text(encoding="utf-8")
     start = task_body.index("def build_feature_authority(")
     end = task_body.index("@_bayesian_task", start)
-    body = task_body[start:end]
-    assert "SELECT freshness_status" in body, body[:400]
-    assert "INSERT INTO public.b24_source_window_feature_authority" not in body
+    assert "produce_source_window_feature_authority(" in task_body[start:end], (
+        "build_feature_authority still only reads the authority table"
+    )
+
+    # 2. Membership is derived, not restated. The producer must not carry its
+    #    own copy of the lifecycle values the source contract already renders.
+    for restated in ("matched_confirmed", "payment_capture", "processed"):
+        assert restated not in code, (
+            f"the producer restates source membership ({restated!r}) instead of "
+            "deriving it from SOURCE_CONTRACT_AUTHORITY"
+        )
+    assert "member_predicate(" in code, (
+        "the producer does not render membership from the source contract"
+    )
+
+    # 3. Caps are read from the resource policy, never spelled out.
+    for cap in ("128", "2048", "2_048"):
+        assert cap not in code, f"the producer hard-codes a resource cap ({cap})"
+    assert "B24_RESOURCE_POLICY.max_channels" in code
+    assert "B24_RESOURCE_POLICY.max_providers" in code
+
+    # 4. The bounded counting discipline is the one B2.4 already adjudicated,
+    #    and it is a walk rather than an unbounded distinct scan.
+    assert "B24_DISTINCT_CARDINALITY_POLICY" in code
+    assert "WITH RECURSIVE" in code
+    assert "count(distinct" not in code.lower()
+
+    # 5. Freshness is snapshot identity, not elapsed time. A TTL would make a
+    #    correct cardinality expire while its snapshot was still on disk, and an
+    #    incorrect one survive a change that happened a second later. Checked as
+    #    identifiers rather than as text: what matters is whether the producer
+    #    computes with a duration, not whether it mentions one.
+    identifiers = {
+        node.id for node in _ast.walk(tree) if isinstance(node, _ast.Name)
+    } | {node.attr for node in _ast.walk(tree) if isinstance(node, _ast.Attribute)}
+    forbidden = {"timedelta", "ttl", "expires_at", "max_age", "monotonic"}
+    assert not (identifiers & forbidden), (
+        "the producer introduces time-based freshness: "
+        f"{sorted(identifiers & forbidden)}"
+    )

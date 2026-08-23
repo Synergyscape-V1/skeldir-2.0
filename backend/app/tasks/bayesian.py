@@ -50,6 +50,9 @@ from app.bayesian.worker_boot_probe import (
 )
 from app.celery_app import celery_app
 from app.core.config import settings
+from app.bayesian.feature_cardinality import (
+    produce_source_window_feature_authority,
+)
 from app.tasks.context import run_in_worker_loop
 
 logger = logging.getLogger(__name__)
@@ -164,6 +167,22 @@ def _append_probe_event(event: dict) -> None:
             handle.write(json.dumps(event, sort_keys=True) + "\n")
     except Exception:
         logger.warning("bayesian_probe_log_write_failed", extra={"path": path})
+
+
+def _as_utc_datetime(raw: str | datetime) -> datetime:
+    """Broker payloads carry timestamps as text; asyncpg will not coerce them.
+
+    The sync paths in this module bind through psycopg2, which accepts an ISO
+    string silently, so the window has always arrived here as text and nothing
+    noticed. The producer binds through asyncpg, which does not, and would
+    rather raise than guess.
+    """
+
+    if isinstance(raw, datetime):
+        parsed = raw
+    else:
+        parsed = datetime.fromisoformat(str(raw))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _as_uuid(raw: str | UUID) -> UUID:
@@ -914,6 +933,44 @@ def build_feature_authority(
     assert_bayesian_worker_boot_topology_proven()
     tenant = _as_uuid(tenant_id)
     task_id = str(self.request.id)
+
+    # The step this task is named for but has never performed. Until now it read
+    # the authority table, found nothing, and parked the request for another
+    # sixty seconds -- so a planner waiting on a feature authority waited
+    # forever, and every proof that ever showed a fit wrote that row itself.
+    #
+    # The producer is snapshot-keyed: it recomputes the source hash and writes
+    # only if the snapshot this request was made about is still the snapshot on
+    # disk. If the source moved, nothing is written and the read below parks the
+    # request exactly as it always did -- which is the correct answer, because
+    # the bytes that request described no longer exist.
+    produced = run_in_worker_loop(
+        produce_source_window_feature_authority(
+            tenant_id=tenant,
+            model_type=model_type,
+            model_version=model_version,
+            source_window_start=_as_utc_datetime(source_window_start),
+            source_window_end=_as_utc_datetime(source_window_end),
+            expected_source_snapshot_hash=source_snapshot_hash,
+        )
+    )
+    _append_probe_event(
+        {
+            "event": "b24_feature_authority_produced",
+            "task_id": task_id,
+            "tenant_id": str(tenant),
+            "source_snapshot_hash": source_snapshot_hash,
+            "produced": produced is not None,
+            "channel_count": getattr(produced, "channel_count", None),
+            "currency_count": getattr(produced, "currency_count", None),
+            "provider_count": getattr(produced, "provider_count", None),
+            "campaign_or_feature_count": getattr(
+                produced, "campaign_or_feature_count", None
+            ),
+            "observed_at": _utc_now(),
+        }
+    )
+
     engine = create_bayesian_worker_engine()
     try:
         with engine.begin() as conn:
