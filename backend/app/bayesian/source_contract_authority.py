@@ -30,6 +30,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from app.bayesian.input_contract import LIFECYCLE_INCLUSION_RULES
+
 
 SOURCE_CONTRACT_AUTHORITY_VERSION = "b25-p13-c8-source-authority-v1"
 
@@ -143,6 +145,22 @@ def _identity(*columns: str) -> tuple[ProjectedColumn, ...]:
     return tuple(ProjectedColumn(column=column) for column in columns)
 
 
+def _lifecycle(relation: str, column: str, bind: str) -> "MembershipFilter":
+    """One membership filter, read from the lifecycle rules rather than restated.
+
+    B2.4's inclusion rules are the authority on which source rows are members.
+    Before this, the same tuples were written out again here, and the two agreed
+    only because someone kept them agreeing. That is the shape of defect C8 was
+    called to remove from the identity space, and it is the same shape: a value
+    that must match another value, with nothing that fails when it stops
+    matching. Reading it collapses the pair into one truth, which is what lets
+    the cardinality producer derive membership from this contract instead of
+    authoring a third copy.
+    """
+
+    return MembershipFilter(column, LIFECYCLE_INCLUSION_RULES[f"{relation}.{column}"], bind)
+
+
 SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
     {
         "attribution_events": SourceRelationContract(
@@ -166,11 +184,11 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
                 ProjectedColumn("processing_status"),
             ),
             membership=(
-                MembershipFilter(
-                    "processing_status", ("processed",), "processed_statuses"
+                _lifecycle(
+                    "attribution_events", "processing_status", "processed_statuses"
                 ),
-                MembershipFilter(
-                    "event_type", ("conversion",), "conversion_event_types"
+                _lifecycle(
+                    "attribution_events", "event_type", "conversion_event_types"
                 ),
             ),
         ),
@@ -232,10 +250,8 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
                 ),
             ),
             membership=(
-                MembershipFilter(
-                    "status",
-                    ("matched_confirmed", "adjusted"),
-                    "match_verdict_statuses",
+                _lifecycle(
+                    "b23_match_verdicts", "status", "match_verdict_statuses"
                 ),
             ),
         ),
@@ -267,17 +283,8 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
                 ),
             ),
             membership=(
-                MembershipFilter(
-                    "event_type",
-                    (
-                        "payment_capture",
-                        "partial_refund",
-                        "full_refund",
-                        "chargeback_lost",
-                        "chargeback_won",
-                        "reversal",
-                    ),
-                    "revenue_event_types",
+                _lifecycle(
+                    "b23_revenue_events", "event_type", "revenue_event_types"
                 ),
             ),
         ),
@@ -307,3 +314,11 @@ def query_params() -> dict[str, tuple[str, ...]]:
     for contract in SOURCE_CONTRACT_AUTHORITY.values():
         params.update(contract.bind_params())
     return params
+
+# ``attribution_allocations.verified`` is a boolean predicate rather than an
+# IN-list, so it cannot be rendered from the rule the way the others are. It is
+# bound by assertion instead, which fails at import if the rule ever stops
+# meaning "verified is true" -- the one thing the literal SQL above assumes.
+assert LIFECYCLE_INCLUSION_RULES["attribution_allocations.verified"] == (True,), (
+    "attribution_allocations membership no longer means verified = true"
+)
