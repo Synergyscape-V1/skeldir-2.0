@@ -80,7 +80,7 @@ PROBE_OWNER = "c9-positive-probe"
 DAY = datetime(2027, 2, 1, tzinfo=timezone.utc)
 CHANGE_AT = DAY + timedelta(days=19, hours=9)
 SETTLEMENT_DAYS = 20
-PER_DAY = 1
+CHANNELS = 20
 
 
 def _engine(url: str | None = None):
@@ -124,21 +124,27 @@ def _seed_market(conn, tenant_id) -> list[uuid.UUID]:
     """A twenty-day market, left provisional so a real settlement run can occur."""
 
     verdicts: list[uuid.UUID] = []
-    for index in range(SETTLEMENT_DAYS * PER_DAY):
-        # Deliberately the shape the B2.4-P6 real-fit proof samples: one channel
-        # and one settlement per day, revenue on a clean linear trend. Twenty
-        # channels each observed once is the sparsest market the eligibility
-        # floors admit, and spreading the same twenty observations across sixty
-        # channels triples the parameters without adding information -- the
-        # sampler then runs, succeeds, and reports nonconverged, which is a
-        # truthful answer to a badly posed question rather than evidence about
-        # the chain. The conditioning of the fixture is not a threshold this
-        # corrective may move, so the fixture is what changes.
-        channel = f"c9p_channel_{index:02d}"
+    for index in range(SETTLEMENT_DAYS * CHANNELS):
+        # Twenty channels observed on each of twenty days.
+        #
+        # The eligibility floors demand at least twenty distinct channels and
+        # twenty distinct days, and the cheapest way to satisfy both is twenty
+        # settlements where channel and day advance together. That market is
+        # also unfittable: every channel has exactly one observation, so its
+        # coefficient is unidentifiable, and the sampler returns a posterior
+        # whose diagnostics are not finite numbers at all. That is a badly posed
+        # question, not evidence about the chain.
+        #
+        # Crossing the two dimensions gives each channel twenty observations
+        # while clearing the same floors, so r-hat and ESS are real quantities
+        # the diagnostics can actually evaluate.
+        day = index // CHANNELS
+        channel_index = index % CHANNELS
+        channel = f"c9p_channel_{channel_index:02d}"
         event_id = uuid.uuid4()
         verdict_id = uuid.uuid4()
-        occurred_at = DAY + timedelta(days=index // PER_DAY, hours=2)
-        amount = 10_000 + index
+        occurred_at = DAY + timedelta(days=day, hours=2, minutes=channel_index)
+        amount = 10_000 + day * 100 + channel_index
         conn.execute(
             text(
                 "INSERT INTO public.channel_taxonomy (code, family, is_paid,"
@@ -167,7 +173,7 @@ def _seed_market(conn, tenant_id) -> list[uuid.UUID]:
                 "payload": json.dumps({"source": "b25_p13_c9_positive"}),
                 "key": f"c9p:{tenant_id.hex[:8]}:{index}",
                 "ch": channel,
-                "camp": f"c9p-campaign-{index:03d}",
+                "camp": f"c9p-campaign-{channel_index:02d}",
             },
         )
         conn.execute(
@@ -655,11 +661,17 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     assert str(dispatch["fit_id"]) in flat, flat[:400]
 
     # Diagnostics were genuinely computed on a genuine posterior -- not skipped,
-    # not defaulted. This is what separates "the chain reached the sampler" from
-    # "the chain reached a verdict about what the sampler produced".
+    # not defaulted, and not non-finite. This is what separates "the chain
+    # reached the sampler" from "the chain reached a verdict about what the
+    # sampler produced", and a NaN r-hat would be neither.
+    assert fit["diagnostic_status"] in {"accepted", "failed"}, dict(fit)
+    assert fit["diagnostic_failure_reason"] != "nonfinite_diagnostic", (
+        "the posterior was not identifiable, so the diagnostics could not "
+        "evaluate it at all. That is a property of the fixture's market, not of "
+        f"the chain under test: {dict(fit)}"
+    )
     assert fit["r_hat_max"] is not None, dict(fit)
     assert fit["ess_min"] is not None, dict(fit)
-    assert fit["diagnostic_status"] in {"accepted", "failed"}, dict(fit)
 
     # And the verdict is the one the arithmetic allows. F-11: the sampler draws
     # sixty-four posterior samples and the diagnostics demand an effective
@@ -673,6 +685,20 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
         f"branch: {dict(fit)}"
     )
     assert fit["confidence_bucket"] == "unavailable", dict(fit)
+
+    # F-11 made concrete on this run: the effective sample size the diagnostics
+    # measured, beside the threshold they measure it against and the number of
+    # samples the policy allowed to be drawn. The middle number cannot exceed
+    # the last one, and the first cannot reach the second because of it.
+    from app.bayesian.diagnostics import DEFAULT_P7_DIAGNOSTIC_POLICY
+    from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
+
+    required = DEFAULT_P7_DIAGNOSTIC_POLICY.thresholds().ess_min_threshold
+    drawn = DEFAULT_P6_SAMPLING_POLICY.draws * DEFAULT_P6_SAMPLING_POLICY.chains
+    assert float(fit["ess_min"]) <= drawn < required, (
+        f"observed ESS {fit['ess_min']} against {drawn} drawn samples and a "
+        f"threshold of {required}; the F-11 arithmetic no longer holds"
+    )
 
 
 def test_c9_the_sampling_policy_cannot_satisfy_its_own_diagnostics() -> None:
