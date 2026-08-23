@@ -684,7 +684,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
             -q -s --no-header | tee /tmp/b25_p13_c9_cardinality.out
-          grep -E "8 passed" /tmp/b25_p13_c9_cardinality.out
+          grep -E "10 passed" /tmp/b25_p13_c9_cardinality.out
 
       # C8-N: the principal closure gate, and it now closes. One real financial
       # fact reaches a JWKS-verifiable Trust claim with no substituted authority

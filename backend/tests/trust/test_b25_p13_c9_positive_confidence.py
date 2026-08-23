@@ -70,7 +70,7 @@ PROBE_OWNER = "c9-positive-probe"
 DAY = datetime(2027, 2, 1, tzinfo=timezone.utc)
 CHANGE_AT = DAY + timedelta(days=19, hours=9)
 SETTLEMENT_DAYS = 20
-PER_DAY = 3
+PER_DAY = 1
 
 
 def _engine(url: str | None = None):
@@ -115,15 +115,20 @@ def _seed_market(conn, tenant_id) -> list[uuid.UUID]:
 
     verdicts: list[uuid.UUID] = []
     for index in range(SETTLEMENT_DAYS * PER_DAY):
-        channel = f"c9p_channel_{index:03d}"
+        # Deliberately the shape the B2.4-P6 real-fit proof samples: one channel
+        # and one settlement per day, revenue on a clean linear trend. Twenty
+        # channels each observed once is the sparsest market the eligibility
+        # floors admit, and spreading the same twenty observations across sixty
+        # channels triples the parameters without adding information -- the
+        # sampler then runs, succeeds, and reports nonconverged, which is a
+        # truthful answer to a badly posed question rather than evidence about
+        # the chain. The conditioning of the fixture is not a threshold this
+        # corrective may move, so the fixture is what changes.
+        channel = f"c9p_channel_{index:02d}"
         event_id = uuid.uuid4()
         verdict_id = uuid.uuid4()
-        occurred_at = (
-            DAY
-            + timedelta(days=index // PER_DAY)
-            + timedelta(hours=2 + (index % PER_DAY) * 4)
-        )
-        amount = 60_000 + index * 97
+        occurred_at = DAY + timedelta(days=index // PER_DAY, hours=2)
+        amount = 10_000 + index
         conn.execute(
             text(
                 "INSERT INTO public.channel_taxonomy (code, family, is_paid,"
