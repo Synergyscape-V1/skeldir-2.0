@@ -103,6 +103,10 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p13_c8_transport_physics.py",
     "backend/tests/trust/test_b25_p13_c8_contiguous_journey.py",
     "backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py",
+    "backend/tests/trust/test_b25_p13_c9_tenant_containment.py",
+    "backend/tests/trust/test_b25_p13_c9_degradation_matrix.py",
+    "backend/tests/trust/test_b25_p13_c9_authority_supersession.py",
+    "backend/tests/trust/test_b25_p13_c9_positive_confidence.py",
 )
 
 

@@ -184,6 +184,33 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VII Report.md
+- id: b25-p13-c9-exact-snapshot-measurement
+  path: backend/app/bayesian/source_snapshot.py
+  status: required
+  owning_phase: B2.5-P13-C9
+  protected_invariant: Every feature-authority dimension is measured inside the one repeatable-read
+    transaction that produced the hash the row is stamped with. The earlier producer hashed and
+    preflighted in one transaction and walked provider and campaign width in a later one, so a commit
+    landing in the gap produced a row marked fresh describing a snapshot that never existed.
+  command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  expected_failure_meaning: The producer has gone back to measuring across more than one snapshot, or
+    the single-snapshot measurement point has been removed, so a hybrid authority can be persisted.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason:
+  subsumed_by: validate-b25-p13-c7-closure
+  ci_visibility: library
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement:
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation IX Report.md
 - id: b25-p13-c9-feature-authority-producer
   path: backend/app/bayesian/feature_cardinality.py
   status: required
