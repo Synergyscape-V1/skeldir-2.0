@@ -1043,12 +1043,46 @@ def build_feature_authority(
                 .one_or_none()
             )
             if authority is None or authority["freshness_status"] != "fresh":
+                # Retry a hash that does not match *yet*; terminate one that
+                # names a source state which is gone.
+                #
+                # The producer writes nothing when the snapshot it observes is
+                # not the snapshot the request named -- measuring a state it
+                # cannot see would be the hybrid-authority defect. But parking
+                # unconditionally, as this did, cannot distinguish a writer
+                # mid-flight from a snapshot that has been superseded. The first
+                # resolves in seconds. The second never resolves at all, and was
+                # re-queued every sixty seconds for the life of the deployment
+                # against a question with a permanent answer.
+                #
+                # The bounded-retry columns for exactly this were already on the
+                # table and never consulted. Past max_retries the request
+                # terminates as superseded, and the dirty evidence waiting on it
+                # is released to the state B2.4 already had a name for -- rather
+                # than waiting on a request that will never complete.
                 conn.execute(
                     text(
                         """
                         UPDATE public.b24_feature_authority_build_requests
-                        SET status = 'authority_waiting',
-                            retry_after_at = now() + interval '60 seconds',
+                        SET retry_count = retry_count + 1,
+                            status = CASE
+                                WHEN retry_count + 1 >= max_retries
+                                    THEN 'authority_superseded'
+                                ELSE 'authority_waiting'
+                            END,
+                            retry_after_at = CASE
+                                WHEN retry_count + 1 >= max_retries THEN NULL
+                                ELSE now() + interval '60 seconds'
+                            END,
+                            terminal_reason = CASE
+                                WHEN retry_count + 1 >= max_retries
+                                    THEN 'source_snapshot_superseded'
+                                ELSE terminal_reason
+                            END,
+                            terminal_at = CASE
+                                WHEN retry_count + 1 >= max_retries THEN now()
+                                ELSE terminal_at
+                            END,
                             updated_at = now()
                         WHERE tenant_id = :tenant_id
                           AND model_type = :model_type
@@ -1072,11 +1106,50 @@ def build_feature_authority(
                         "source_snapshot_hash": source_snapshot_hash,
                     },
                 )
+                superseded = conn.execute(
+                    text(
+                        """
+                        UPDATE public.b24_dirty_events dirty
+                        SET status = 'authority_retry_superseded',
+                            superseded_at = now(),
+                            updated_at = now()
+                        FROM public.b24_feature_authority_build_requests request
+                        WHERE dirty.tenant_id = request.tenant_id
+                          AND dirty.model_type = request.model_type
+                          AND dirty.model_version = request.model_version
+                          AND dirty.source_window_start = request.source_window_start
+                          AND dirty.source_window_end = request.source_window_end
+                          AND dirty.source_snapshot_hash = request.source_snapshot_hash
+                          AND dirty.status = 'authority_waiting'
+                          AND request.status = 'authority_superseded'
+                          AND request.tenant_id = :tenant_id
+                          AND request.source_snapshot_hash = :source_snapshot_hash
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant),
+                        "source_snapshot_hash": source_snapshot_hash,
+                    },
+                ).rowcount
+                terminal = conn.execute(
+                    text(
+                        "SELECT status FROM"
+                        " public.b24_feature_authority_build_requests"
+                        " WHERE tenant_id = :tenant_id"
+                        "   AND source_snapshot_hash = :source_snapshot_hash"
+                        " ORDER BY updated_at DESC LIMIT 1"
+                    ),
+                    {
+                        "tenant_id": str(tenant),
+                        "source_snapshot_hash": source_snapshot_hash,
+                    },
+                ).scalar_one_or_none()
                 return {
-                    "status": "authority_waiting",
+                    "status": str(terminal or "authority_waiting"),
                     "task_id": task_id,
                     "tenant_id": str(tenant),
                     "source_snapshot_hash": source_snapshot_hash,
+                    "superseded_dirty_events": int(superseded or 0),
                 }
             conn.execute(
                 text(

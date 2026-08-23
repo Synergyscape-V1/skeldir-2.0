@@ -47,6 +47,11 @@ class AuthorityBuildStatus(StrEnum):
     COMPLETED = "authority_completed"
     TIMEOUT = "authority_timeout"
     BUILD_FAILED = "authority_build_failed"
+    #: The request named a source snapshot that no longer exists. Distinct from
+    #: BUILD_FAILED on purpose: nothing failed, and distinct from TIMEOUT on
+    #: purpose: no amount of further waiting can help. Conflating "not yet" with
+    #: "never again" is what made obsolete requests retry forever.
+    SUPERSEDED = "authority_superseded"
 
 
 @dataclass(frozen=True)
