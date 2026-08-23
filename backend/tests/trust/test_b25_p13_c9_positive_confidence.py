@@ -66,6 +66,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 ACTIVE = active_identity()
+PROBE_OWNER = "c9-positive-probe"
 DAY = datetime(2027, 2, 1, tzinfo=timezone.utc)
 CHANGE_AT = DAY + timedelta(days=19, hours=9)
 SETTLEMENT_DAYS = 20
@@ -271,9 +272,63 @@ def _boot_worker_authority() -> None:
     )
 
 
+def _mature_dirty_evidence(tenant_id) -> None:
+    """Wait for this tenant's dirty evidence to clear the debounce quiet period.
+
+    Waiting rather than back-dating, because ``observed_at`` is immutable by a
+    C7 lifecycle trigger -- correctly, since a debounce whose clock can be
+    rewritten is not a debounce. The planner is asked repeatedly until it has
+    something to decide about, bounded, so a source that genuinely produces no
+    candidate still fails rather than hanging.
+    """
+
+    import time as _time
+
+    from app.bayesian.fit_planner import lease_debounced_dirty_candidates
+
+    deadline = _time.monotonic() + 30.0
+    while _time.monotonic() < deadline:
+        candidates = asyncio.run(
+            lease_debounced_dirty_candidates(
+                tenant_id=tenant_id,
+                planner_owner=f"{PROBE_OWNER}-{uuid.uuid4().hex[:6]}",
+                quiet_period_seconds=1,
+                limit=1,
+            )
+        )
+        if candidates:
+            _release_probe_lease(tenant_id)
+            return
+        _time.sleep(0.25)
+    raise AssertionError(
+        "no dirty evidence became plannable within the debounce window"
+    )
+
+
+def _release_probe_lease(tenant_id) -> None:
+    """Return the row the readiness probe leased, so the real planner sees it."""
+
+    engine = _engine()
+    try:
+        with engine.begin() as conn:
+            _bind(conn, tenant_id)
+            conn.execute(
+                text(
+                    "UPDATE public.b24_dirty_events SET status = 'pending',"
+                    " planner_owner = NULL, lease_expires_at = NULL,"
+                    " updated_at = now() WHERE tenant_id = :t"
+                    "   AND status = 'leased' AND planner_owner LIKE :owner"
+                ),
+                {"t": str(tenant_id), "owner": f"{PROBE_OWNER}%"},
+            )
+    finally:
+        engine.dispose()
+
+
 def _plan(tenant_id, owner: str):
     from app.bayesian.fit_planner import plan_due_dirty_events
 
+    _mature_dirty_evidence(tenant_id)
     return asyncio.run(
         plan_due_dirty_events(
             tenant_id=tenant_id,
