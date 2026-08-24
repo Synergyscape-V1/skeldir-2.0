@@ -94,6 +94,29 @@ class BayesianModelFit(Base, TenantMixin):
     max_cores: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )
+    inference_profile_version: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    runtime_policy_version: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    sampling_policy_version: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    policy_bundle_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    authorized_chains: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    authorized_posterior_draws_total: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    superseded_policy_bundle_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    policy_replanned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    policy_replan_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     n_chains: Mapped[int | None] = mapped_column(Integer, nullable=True)
     n_samples_actual: Mapped[int | None] = mapped_column(Integer, nullable=True)
     r_hat_max: Mapped[float | None] = mapped_column(Float, nullable=True)

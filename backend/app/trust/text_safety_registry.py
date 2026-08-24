@@ -153,6 +153,11 @@ _MACHINE_AUTHORITY_CODE_FIELDS = frozenset(
         "audit_hash",
         "benchmark_metadata.benchmark_hash",
         "confidence_metadata.bayesian_model_version",
+        "confidence_metadata.inference_provenance.diagnostic_policy_version",
+        "confidence_metadata.inference_provenance.inference_profile_version",
+        "confidence_metadata.inference_provenance.policy_bundle_hash",
+        "confidence_metadata.inference_provenance.runtime_policy_version",
+        "confidence_metadata.inference_provenance.sampling_policy_version",
         "created_at",
         "envelope_id",
         "evidence_temporal_boundary.evidence_snapshot_at",
@@ -203,7 +208,7 @@ _QUARANTINED_HASH_FIELDS = frozenset(
     }
 )
 
-_REDACTED_TEXT_FIELDS = frozenset()
+_REDACTED_TEXT_FIELDS: frozenset[str] = frozenset()
 
 
 def _field_registry() -> dict[str, str]:
@@ -224,7 +229,9 @@ def _field_registry() -> dict[str, str]:
                 duplicates.add(field_path)
             registry[field_path] = trust_class
     if duplicates:
-        raise TextSafetyRegistryError(f"text_trust_duplicate_paths:{sorted(duplicates)}")
+        raise TextSafetyRegistryError(
+            f"text_trust_duplicate_paths:{sorted(duplicates)}"
+        )
     return registry
 
 
@@ -250,7 +257,9 @@ def _matrix() -> dict[tuple[str, str], str]:
             elif trust_class == REDACTED_TEXT:
                 action = REDACT_WITH_REASON
             else:
-                raise TextSafetyRegistryError(f"text_trust_class_unhandled:{trust_class}")
+                raise TextSafetyRegistryError(
+                    f"text_trust_class_unhandled:{trust_class}"
+                )
             matrix[(trust_class, risk_class)] = action
     return matrix
 
@@ -288,7 +297,9 @@ def disposition_action_for(trust_class: str, risk_class: str) -> str:
         ) from exc
 
 
-def validate_registry_totality(schema_string_field_paths: set[str]) -> RegistryValidationResult:
+def validate_registry_totality(
+    schema_string_field_paths: set[str],
+) -> RegistryValidationResult:
     """Validate exact schema-to-registry coverage and full matrix totality."""
     registry_paths = set(FIELD_TEXT_TRUST_CLASSES)
     missing = sorted(schema_string_field_paths - registry_paths)
@@ -307,7 +318,9 @@ def validate_registry_totality(schema_string_field_paths: set[str]) -> RegistryV
     missing_cells = sorted(expected_keys - matrix_keys)
     extra_cells = sorted(matrix_keys - expected_keys)
     if missing_cells:
-        raise TextSafetyRegistryError(f"disposition_matrix_missing_cells:{missing_cells}")
+        raise TextSafetyRegistryError(
+            f"disposition_matrix_missing_cells:{missing_cells}"
+        )
     if extra_cells:
         raise TextSafetyRegistryError(f"disposition_matrix_unknown_cells:{extra_cells}")
     for key, action in DISPOSITION_MATRIX.items():

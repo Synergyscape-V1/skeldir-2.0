@@ -102,6 +102,7 @@ ALLOWED_B24_P5_RUNTIME_MARKER_PATHS = {
     # it does not import or execute the Bayesian runtime.
     "backend/app/trust/builder.py",
     "backend/app/bayesian/runtime_policy.py",
+    "backend/app/bayesian/inference_profile.py",
     "backend/app/bayesian/runtime_probe.py",
     "backend/app/bayesian/runtime_identity.py",
     "backend/app/bayesian/child_environment.py",

@@ -37,12 +37,12 @@ C5_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202608191200_b25_p13_c5_terminal_truth_temporal_plausibility.py"
 )
-# C7 supersedes the C6 terminal inventory with CREATE OR REPLACE, so the
-# governing terminal authority is the C7 revision. C6's own tuple stays under
-# test as a historical floor: governance may expand, never silently shrink.
+# Later correctives supersede the C6 terminal inventory with CREATE OR REPLACE.
+# C6's own tuple stays under test as a historical floor: governance may expand,
+# never silently shrink.
 GOVERNING_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
-    "202608221200_b25_p13_c7_source_causality_obligation_conservation.py"
+    "202608250900_b25_p13_c10_inference_policy_provenance.py"
 )
 PROVISIONER = ROOT / "scripts/database/prepare_migration_authority_boundary.py"
 FIT_CLAIM = ROOT / "backend/app/bayesian/fit_claim.py"
@@ -288,13 +288,21 @@ def validate_terminal_dependencies(
     body = migration if migration is not None else _read(GOVERNING_MIGRATION)
     governed = registry if registry is not None else _yaml(DEPENDENCIES)
     dependencies = tuple(str(v) for v in governed.get("dependencies", []))
-    frozen = _tuple_assignment(body, "TRUST_FIT_DEPENDENCY_COLUMNS")
+    terminal_only = tuple(
+        str(v) for v in governed.get("terminal_only_dependencies", [])
+    )
+    terminal_name = (
+        "_TERMINAL_GOVERNED_COLUMNS"
+        if "_TERMINAL_GOVERNED_COLUMNS" in body
+        else "TRUST_FIT_DEPENDENCY_COLUMNS"
+    )
+    frozen = _tuple_assignment(body, terminal_name)
     _require(dependencies, "confidence_dependency_registry_empty")
     _require(
-        set(dependencies) == set(frozen),
+        set(dependencies) | set(terminal_only) == set(frozen),
         "terminal_dependency_inventory_drift:"
-        f"missing={sorted(set(dependencies)-set(frozen))}:"
-        f"extra={sorted(set(frozen)-set(dependencies))}",
+        f"missing={sorted((set(dependencies) | set(terminal_only))-set(frozen))}:"
+        f"extra={sorted(set(frozen)-set(dependencies)-set(terminal_only))}",
     )
     historical = _tuple_assignment(_read(MIGRATION), "TRUST_FIT_DEPENDENCY_COLUMNS")
     dropped = sorted(set(historical) - set(dependencies))
@@ -306,7 +314,13 @@ def validate_terminal_dependencies(
     absent = sorted(field for field in dependencies if field not in read)
     _require(not absent, "registered_fit_dependency_not_read:" + ",".join(absent))
     _require(
-        "_changed(TRUST_FIT_DEPENDENCY_COLUMNS)" in body,
+        (
+            "_changed(TRUST_FIT_DEPENDENCY_COLUMNS)" in body
+            or (
+                "columns: tuple[str, ...] = _TERMINAL_GOVERNED_COLUMNS" in body
+                and "for column in columns" in body
+            )
+        ),
         "terminal_trigger_not_derived_from_dependency_inventory",
     )
     return len(dependencies)

@@ -159,11 +159,76 @@ def _confidence_unavailable() -> dict[str, object]:
         "bayesian_model_version": None,
         "diagnostics_status": "not_applicable",
         "unavailable_reason": "not_applicable",
+        # No inference ran, so there is no producing regime to name. Null is
+        # the honest value; a bundle hash here would attribute a Bayesian
+        # authority to a claim that never had one.
+        "inference_provenance": None,
     }
 
 
 def _tag_b24_hash(value: str) -> str:
     return value if value.startswith("sha256:") else f"sha256:{value}"
+
+
+def _inference_provenance(projection: object) -> dict[str, object] | None:
+    """The producing policy bundle, as persisted beside the confidence.
+
+    Returns None only for rows written before C10 existed, which is honest:
+    those confidences genuinely have no recorded regime, and inventing one
+    would be worse than admitting the gap.
+    """
+
+    bundle_hash = getattr(projection, "policy_bundle_hash", None)
+    if not bundle_hash:
+        return None
+    provenance = {
+        "policy_bundle_hash": _tag_b24_hash(str(bundle_hash)),
+        "inference_profile_version": getattr(
+            projection, "inference_profile_version", None
+        ),
+        "runtime_policy_version": getattr(projection, "runtime_policy_version", None),
+        "sampling_policy_version": getattr(projection, "sampling_policy_version", None),
+        "diagnostic_policy_version": getattr(
+            projection, "diagnostic_policy_version", None
+        ),
+        # Both halves of the correspondence, so a verifier can check the claim
+        # rather than take the producer's word that they matched.
+        "authorized_chains": getattr(projection, "authorized_chains", None),
+        "observed_chains": getattr(projection, "observed_chains", None),
+        "authorized_posterior_draws_total": getattr(
+            projection, "authorized_posterior_draws_total", None
+        ),
+        "observed_posterior_draws_total": getattr(
+            projection, "observed_posterior_draws_total", None
+        ),
+    }
+    required_versions = (
+        "inference_profile_version",
+        "runtime_policy_version",
+        "sampling_policy_version",
+        "diagnostic_policy_version",
+    )
+    if any(not provenance.get(field) for field in required_versions):
+        return None
+    topology_values = (
+        provenance["authorized_chains"],
+        provenance["observed_chains"],
+        provenance["authorized_posterior_draws_total"],
+        provenance["observed_posterior_draws_total"],
+    )
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        for value in topology_values
+    ):
+        return None
+    if provenance["authorized_chains"] != provenance["observed_chains"]:
+        return None
+    if (
+        provenance["authorized_posterior_draws_total"]
+        != provenance["observed_posterior_draws_total"]
+    ):
+        return None
+    return provenance
 
 
 def _confidence_projection_metadata(
@@ -175,6 +240,24 @@ def _confidence_projection_metadata(
     decision = projection.decision
     reason = decision.confidence_bucket_reason.value
     if decision.confidence_available:
+        provenance = _inference_provenance(projection)
+        if provenance is None:
+            return (
+                {
+                    "confidence_status": "unavailable",
+                    "confidence_authority": "explicitly_unavailable",
+                    "confidence_score_basis_points": None,
+                    "bayesian_model_type": None,
+                    "bayesian_model_version": None,
+                    "diagnostics_status": "unavailable",
+                    "unavailable_reason": "confidence_unavailable",
+                    "inference_provenance": None,
+                },
+                "degraded_or_unavailable_truth",
+                "insufficient_evidence",
+                True,
+                "confidence_unavailable",
+            )
         return (
             {
                 "confidence_status": "available",
@@ -185,6 +268,21 @@ def _confidence_projection_metadata(
                 "bayesian_model_version": projection.model_version,
                 "diagnostics_status": "passed",
                 "unavailable_reason": None,
+                # The regime that produced this number, carried into the bytes
+                # that get signed.
+                #
+                # A confidence means different things under different inference
+                # policies -- four chains against one, an ESS floor of 400
+                # against 40 -- so a signature over the number alone commits to
+                # less than the claim asserts. This was previously computed by
+                # as_provenance() and then never called, so nothing an external
+                # verifier could inspect named the governing regime at all.
+                #
+                # Read from the persisted fit, not recomputed: Trust may not
+                # reach into Bayesian modules, and re-deriving it here would
+                # report today's policy for a confidence produced under an
+                # older one -- exactly the substitution being prevented.
+                "inference_provenance": provenance,
             },
             "confidence_projection_context",
             "complete",
@@ -263,6 +361,11 @@ def _confidence_projection_metadata(
             "bayesian_model_version": model_version,
             "diagnostics_status": diagnostics_status,
             "unavailable_reason": unavailable_reason,
+            # Recorded for refusals too. "This regime looked and could not
+            # answer" is a different and more useful statement than "no answer",
+            # and a verifier auditing a topology defect needs the refusals as
+            # much as the acceptances.
+            "inference_provenance": _inference_provenance(projection),
         },
         "degraded_or_unavailable_truth",
         (

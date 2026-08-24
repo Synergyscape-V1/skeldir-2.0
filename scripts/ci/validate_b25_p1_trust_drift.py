@@ -107,6 +107,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p13_c9_degradation_matrix.py",
     "backend/tests/trust/test_b25_p13_c9_authority_supersession.py",
     "backend/tests/trust/test_b25_p13_c9_positive_confidence.py",
+    "backend/tests/trust/test_b25_p13_c10_policy_transport_physics.py",
 )
 
 

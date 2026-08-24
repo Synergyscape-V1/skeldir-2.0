@@ -19,6 +19,7 @@ from app.bayesian.confidence_policy import (
     classify_confidence,
     persisted_confidence_decision,
 )
+from app.confidence_projection.read_model import _projection_decision
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -98,6 +99,7 @@ def _base_row(**overrides):
         "webhook_identity_count": 2,
         "source_snapshot_mismatch": False,
         "fit_id": fit_id,
+        "source_snapshot_hash": "a" * 64,
         "fit_status": "succeeded",
         "model_type": "bayesian_attribution_confidence",
         "model_version": "b24-p10",
@@ -119,9 +121,44 @@ def _base_row(**overrides):
         "artifact_hash": "a" * 64,
         "artifact_lifecycle_status": "active",
         "artifact_policy_version": "b24-p8-artifact-policy-v1",
+        "inference_profile_version": "b24-p13-4x1000-v1",
+        "runtime_policy_version": "b24-p13-runtime-v1",
+        "sampling_policy_version": "b24-p13-sequential-v1",
+        "policy_bundle_hash": "b" * 64,
+        "authorized_chains": 4,
+        "authorized_posterior_draws_total": 4000,
+        "observed_chains": 4,
+        "observed_posterior_draws_total": 4000,
     }
     row.update(overrides)
     return row
+
+
+def test_b24_p10_historical_available_fit_without_policy_provenance_fails_closed() -> (
+    None
+):
+    """A legacy available row cannot acquire invented C10 provenance."""
+
+    row = _base_row(inference_profile_version=None)
+    row.update(
+        confidence_bucket="high",
+        confidence_bucket_reason="narrow_interval",
+        confidence_policy_version=CONFIDENCE_POLICY_VERSION,
+        confidence_semantics_version=CONFIDENCE_SEMANTICS_VERSION,
+        confidence_deterministic_revenue_minor=10_000,
+        confidence_deterministic_row_count=2,
+        confidence_match_verdict_count=2,
+        confidence_currency_count=1,
+        confidence_classified_at=datetime.now(timezone.utc),
+        confidence_evidence_snapshot_hash=row["source_snapshot_hash"],
+        source_read_started_at=datetime.now(timezone.utc),
+        source_read_completed_at=datetime.now(timezone.utc),
+    )
+    decision = _projection_decision(row, freshness="current")
+    assert decision.confidence_available is False
+    assert decision.confidence_bucket_reason is (
+        ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID
+    )
 
 
 def test_b24_p10_sql_roots_on_deterministic_left_and_left_joins_bayesian() -> None:

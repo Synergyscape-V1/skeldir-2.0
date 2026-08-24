@@ -57,6 +57,24 @@ dependencies:
   # Artifact association.
   - artifact_ref
   - artifact_hash
+  # C10 producing-regime authority and observed-versus-authorized topology.
+  - inference_profile_version
+  - runtime_policy_version
+  - sampling_policy_version
+  - policy_bundle_hash
+  - diagnostic_policy_version
+  - authorized_chains
+  - authorized_posterior_draws_total
+  - n_chains
+  - n_samples_actual
+
+# Terminal audit authority that is deliberately persisted and immutable but is
+# not itself consumed by the confidence projection. It proves a fenced policy
+# transition without rewriting the signed producing-regime identity.
+terminal_only_dependencies:
+  - superseded_policy_bundle_hash
+  - policy_replanned_at
+  - policy_replan_count
 
 # Columns the production read model references that are deliberately NOT
 # governed as terminal fit authority, each with the reason it cannot alter a

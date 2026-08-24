@@ -646,6 +646,26 @@
     cannot import, compile, sample, bound threads, kill native compute, repair stale fits, or preserve
     internal-only boundaries.
   decision: keep_required
+- gate_id: validate-b24-artifact-topology
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 C10 Production Artifact Topology
+  script: scripts/ci/validate_b24_artifact_topology.py
+  owning_phase: B2.5-P13-C10
+  protected_invariant: The production Bayesian image, not a host approximation, physically executes the
+    governed four sequential chains with one core and one BLAS thread and reports observed posterior
+    dimensions rather than configured defaults.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P5 proves the generic native-runtime containment substrate but does not build the
+    current production image or compare its resolved runtime to the C10 inference profile. The C10 job
+    is the only gate whose measured object is the exact deployable artifact that carried the one-chain defect.
+  negative_control_preserved_by: .github/workflows/b2_5-p13-e2e-trust-closure.yml NC-C10-01 through NC-C10-03
+  local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate backend
+  risk_if_removed: A production image can override the governed chain count or deadlines while host tests
+    and static policy validators remain green, reproducing the audited one-chain escape.
+  decision: keep_required
 - gate_id: validate-b24-p6-real-fit-worker
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run / B2.4-P6 Real Fit Worker Proof

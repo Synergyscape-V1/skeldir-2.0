@@ -37,9 +37,12 @@ effective sample per retained draw as structurally implausible.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 from app.bayesian.diagnostics import DEFAULT_P7_DIAGNOSTIC_POLICY
+from app.bayesian.runtime_policy import B24_RUNTIME_POLICY_VERSION
 from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
 
 
@@ -69,6 +72,7 @@ class InferenceCompatibilityProfile:
     """One authorised tuple of independently versioned inference policies."""
 
     profile_version: str
+    runtime_policy_version: str
     sampling_policy_version: str
     diagnostic_policy_version: str
     chains: int
@@ -98,9 +102,26 @@ class InferenceCompatibilityProfile:
 
         return {
             "inference_profile_version": self.profile_version,
+            "runtime_policy_version": self.runtime_policy_version,
             "sampling_policy_version": self.sampling_policy_version,
             "diagnostic_policy_version": self.diagnostic_policy_version,
         }
+
+    def policy_bundle_hash(self) -> str:
+        """One immutable identifier for the whole authorised bundle.
+
+        Four version strings that must be interpreted together are more
+        faithfully carried as one identity than as four fields that can drift
+        apart or be partially copied. This is that identity: a canonical
+        digest over the tuple, stable across processes and machines, so a
+        signed confidence can name the regime that produced it in one value
+        that cannot be half-right.
+        """
+
+        canonical = json.dumps(
+            self.as_provenance(), sort_keys=True, separators=(",", ":")
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def validate(self) -> None:
         """Reject combinations in which no posterior could ever be accepted."""
@@ -175,6 +196,7 @@ def build_inference_profile() -> InferenceCompatibilityProfile:
     thresholds = DEFAULT_P7_DIAGNOSTIC_POLICY.thresholds()
     return InferenceCompatibilityProfile(
         profile_version=B24_INFERENCE_PROFILE_VERSION,
+        runtime_policy_version=B24_RUNTIME_POLICY_VERSION,
         sampling_policy_version=sampling.policy_version,
         diagnostic_policy_version=(
             DEFAULT_P7_DIAGNOSTIC_POLICY.diagnostic_policy_version
@@ -197,6 +219,112 @@ def build_inference_profile() -> InferenceCompatibilityProfile:
         celery_hard_time_limit_seconds=CELERY_HARD_TIME_LIMIT_SECONDS,
     )
 
+
+
+#: Every dimension the profile authorises that the *environment* can also
+#: resolve independently, paired as (profile attribute, runtime attribute).
+#:
+#: This list is the answer to "why did F-11 survive its own remediation". The
+#: profile validated that P6 and P7 agree, which they did. Nothing validated
+#: that the process about to spend compute had resolved those same values, and
+#: the shipped image had resolved a different one. Any field a deployment can
+#: set belongs here; a special case for B24_PYMC_CHAINS alone would leave the
+#: identical hole open for the deadlines, which are equally environment-driven
+#: and today merely happen to agree.
+RUNTIME_BOUND_DIMENSIONS: tuple[tuple[str, str], ...] = (
+    ("chains", "pymc_chains"),
+    ("cores", "pymc_cores"),
+    ("blas_cores", "blas_total_threads"),
+    ("sampler_supervisor_deadline_seconds", "sampler_supervisor_deadline_s"),
+    ("celery_soft_time_limit_seconds", "celery_soft_time_limit_s"),
+    ("celery_hard_time_limit_seconds", "celery_hard_time_limit_s"),
+)
+
+
+class RuntimeProfileMismatchError(InferenceProfileError):
+    """The resolved runtime is not the runtime the profile authorised."""
+
+
+def assert_runtime_matches_profile(
+    runtime_policy: object,
+    profile: InferenceCompatibilityProfile | None = None,
+) -> dict[str, object]:
+    """Refuse to sample unless the executing runtime *is* the authorised one.
+
+    Called immediately before consequence-bearing computation, on the policy
+    object the worker actually resolved from its own environment -- never on a
+    module default. The profile is an authority only if something checks it
+    against reality at the moment reality is about to be spent.
+
+    Returns the AUTHORIZED-equals-RESOLVED record so callers can persist the
+    correspondence rather than assert it and discard the evidence.
+    """
+
+    active = profile if profile is not None else B24_INFERENCE_PROFILE
+
+    divergences: list[str] = []
+    correspondence: dict[str, object] = {}
+    for profile_field, runtime_field in RUNTIME_BOUND_DIMENSIONS:
+        authorized = getattr(active, profile_field)
+        resolved = getattr(runtime_policy, runtime_field)
+        correspondence[profile_field] = {
+            "authorized": authorized,
+            "resolved": resolved,
+        }
+        if authorized != resolved:
+            divergences.append(
+                f"{profile_field}: authorized={authorized} resolved={resolved}"
+            )
+
+    if divergences:
+        raise RuntimeProfileMismatchError(
+            "resolved runtime diverges from the authorised inference profile "
+            f"{active.profile_version}; refusing to sample. "
+            + "; ".join(divergences)
+        )
+
+    correspondence["policy_bundle_hash"] = active.policy_bundle_hash()
+    correspondence["runtime_policy_version"] = getattr(
+        runtime_policy, "runtime_policy_version", None
+    )
+    return correspondence
+
+
+def assert_observed_topology_matches_profile(
+    *,
+    observed_chains: int,
+    observed_draws_per_chain: int,
+    profile: InferenceCompatibilityProfile | None = None,
+) -> dict[str, int]:
+    """Check the posterior that exists against the one that was authorised.
+
+    The runtime check above happens before sampling and can only see intent
+    resolved from configuration. This one happens after, and reads the physical
+    dimensions of the object PyMC returned. Both are necessary: a sampler that
+    is interrupted, or that silently produces fewer chains than requested, is
+    not caught by any amount of pre-flight agreement.
+    """
+
+    active = profile if profile is not None else B24_INFERENCE_PROFILE
+    observed_total = observed_chains * observed_draws_per_chain
+
+    if (
+        observed_chains != active.chains
+        or observed_draws_per_chain != active.draws_per_chain
+    ):
+        raise RuntimeProfileMismatchError(
+            "observed posterior does not match the authorised topology: "
+            f"authorized chains={active.chains} "
+            f"draws_per_chain={active.draws_per_chain}; "
+            f"observed chains={observed_chains} "
+            f"draws_per_chain={observed_draws_per_chain}"
+        )
+
+    return {
+        "observed_chains": observed_chains,
+        "observed_draws_per_chain": observed_draws_per_chain,
+        "observed_posterior_draws_total": observed_total,
+    }
 
 B24_INFERENCE_PROFILE = build_inference_profile()
 

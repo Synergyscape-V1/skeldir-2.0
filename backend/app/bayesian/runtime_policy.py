@@ -12,6 +12,20 @@ from pathlib import Path
 from uuid import uuid4
 
 
+#: The governed identity of the P5 containment contract.
+#:
+#: P6 and P7 have carried policy versions since they existed; P5 never did, and
+#: the absence was not cosmetic. A confidence is only interpretable against the
+#: containment that produced it -- how many chains ran, in how many processes,
+#: against which deadlines -- and without an identifier for that contract there
+#: is no way to reconstruct, after the fact, which runtime governed a fit.
+#:
+#: This versions *semantics*, not deployment particulars. Container hostname,
+#: PID, image digest and build timestamp are audit metadata; they do not change
+#: what a confidence means. The chain topology, the process cage and the
+#: deadline hierarchy do.
+B24_RUNTIME_POLICY_VERSION = "b24-p5-runtime-policy-v1"
+
 THREAD_ENV_VARS = (
     "OMP_NUM_THREADS",
     "OPENBLAS_NUM_THREADS",
@@ -41,6 +55,29 @@ class B24RuntimePolicy:
     benchmark_threshold_s: float
     compiledir: str
     execution_id: str
+    runtime_policy_version: str = B24_RUNTIME_POLICY_VERSION
+
+    def containment_identity(self) -> dict[str, object]:
+        """The resolved containment contract, as this process actually has it.
+
+        Every field here was resolved from the environment this worker is
+        running in, not read from a module default. That distinction is the
+        whole of Corrective Action X: a policy default describes what was
+        intended, and only a resolved value describes what will execute.
+        """
+
+        return {
+            "runtime_policy_version": self.runtime_policy_version,
+            "chains": self.pymc_chains,
+            "cores": self.pymc_cores,
+            "blas_cores": self.blas_total_threads,
+            "worker_concurrency": self.worker_concurrency,
+            "sampler_supervisor_deadline_seconds": (
+                self.sampler_supervisor_deadline_s
+            ),
+            "celery_soft_time_limit_seconds": self.celery_soft_time_limit_s,
+            "celery_hard_time_limit_seconds": self.celery_hard_time_limit_s,
+        }
 
     def validate(self) -> None:
         if self.worker_concurrency < 1:

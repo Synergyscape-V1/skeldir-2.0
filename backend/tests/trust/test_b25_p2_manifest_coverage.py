@@ -10,9 +10,14 @@ from app.trust.hash_domains import validate_hash_domain_manifest_against_schema
 
 
 def test_hash_domain_manifest_covers_every_schema_field_path() -> None:
+    # 109 before C10, 119 after. The ten added paths are the inference
+    # provenance the signature now commits to: the policy bundle hash, the four
+    # policy versions, and the authorised/observed topology pair. Pinned exactly
+    # rather than bounded, so a field entering the schema without a declared
+    # hash domain -- signed but unclassified -- turns this red.
     assert (
         validate_hash_domain_manifest_against_schema(discover_schema_field_paths())
-        == 109
+        == 119
     )
 
 

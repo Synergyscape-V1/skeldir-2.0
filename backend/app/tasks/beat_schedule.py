@@ -55,6 +55,9 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
     interval = _refresh_interval_seconds()
     recovery_interval = _bayesian_recovery_interval_seconds()
     planner_interval = _bayesian_planner_interval_seconds()
+    # The publisher runs with the planner, because what it publishes is
+    # exactly what the planner has just claimed.
+    dispatch_interval = planner_interval
     schedule: Dict[str, Dict[str, Any]] = {
         "refresh-matviews-every-5-min": {
             "task": "app.tasks.matviews.pulse_matviews_global",
@@ -103,6 +106,31 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
                 ),
                 "candidate_limit": _positive_int_env(
                     "B24_FIT_PLANNER_CANDIDATE_LIMIT", 25
+                ),
+            },
+        }
+    if os.getenv("SKELDIR_B24_DISABLE_FIT_DISPATCH_PUBLISHER_JOB") != "1":
+        # The fast path a freshly claimed fit takes to the broker.
+        #
+        # Without this entry the outbox row the planner writes has no publisher,
+        # and the only thing that ever moved it was the recovery reconciler
+        # below -- a repair sweep for rows that had already gone stale. Every
+        # fresh fit therefore waited out a staleness window before any worker
+        # saw it, and arrived carrying a failure attempt it had not made.
+        #
+        # Runs on the same interval as the planner, since the work it publishes
+        # is exactly what the planner just created.
+        schedule["b24-fit-dispatch-publisher"] = {
+            "task": "app.tasks.bayesian.publish_due_fit_dispatches",
+            "schedule": dispatch_interval,
+            "options": {
+                "expires": max(int(dispatch_interval), 1) * 2,
+                "queue": QUEUE_BAYESIAN,
+                "routing_key": f"{QUEUE_BAYESIAN}.task",
+            },
+            "kwargs": {
+                "batch_size": _positive_int_env(
+                    "B24_FIT_DISPATCH_PUBLISHER_BATCH_SIZE", 25
                 ),
             },
         }

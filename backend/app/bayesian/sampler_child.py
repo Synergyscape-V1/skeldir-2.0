@@ -80,8 +80,7 @@ def forbidden_sys_modules_snapshot() -> list[str]:
 
 def assert_boot_airgap_active() -> dict[str, object]:
     preinstall = sorted(
-        str(name)
-        for name in getattr(sys, "_b24_p5_airgap_preinstall_forbidden", ())
+        str(name) for name in getattr(sys, "_b24_p5_airgap_preinstall_forbidden", ())
     )
     if preinstall:
         raise RuntimeError(
@@ -302,6 +301,29 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
 
     random_seed = int(payload["random_seed"])
 
+    # The authority check, on the runtime this process actually resolved.
+    #
+    # Everything above validated the *fit* against policy. This validates the
+    # policy against the *machine*, and it is the seam Corrective Action X
+    # exists to close: the profile declared four chains while the shipped image
+    # resolved one, and nothing compared them, so PyMC sampled a topology no
+    # authority had approved and the diagnostics discovered it four minutes
+    # later by failing. A refusal here costs nothing and happens before any
+    # financial-compute authority is spent.
+    from app.bayesian.inference_profile import (
+        RuntimeProfileMismatchError,
+        assert_observed_topology_matches_profile,
+        assert_runtime_matches_profile,
+    )
+    from typing import Any
+
+    emit_stage_marker("runtime_authority_check", mode="real-fit")
+    try:
+        runtime_correspondence = assert_runtime_matches_profile(runtime_policy)
+    except RuntimeProfileMismatchError:
+        emit_stage_marker("runtime_authority_rejected", mode="real-fit")
+        raise
+
     started = time.monotonic()
     with pm.Model() as model:
         mu = pm.Normal("mu", mu=0.0, sigma=1.0)
@@ -311,7 +333,7 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         model.compile_logp()
         emit_stage_marker("graph_compiled", mode="real-fit")
         emit_stage_marker("sampling_started", mode="real-fit")
-        trace = run_single_process_pymc_sample(
+        trace: Any = run_single_process_pymc_sample(
             pm,
             runtime_policy,
             draws=policy.draws_per_chain,
@@ -332,6 +354,24 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         if sample_stats is not None and "diverging" in sample_stats
         else 0
     )
+    # What physically exists, measured on the object PyMC returned.
+    #
+    # These were `policy.chains` and `policy.posterior_draws_total` -- the
+    # numbers the configuration intended. Under the shipped one-chain image
+    # they would have recorded 4 and 4000 for a posterior that had 1 and 1000,
+    # which is not a rounding error but a false statement about what happened,
+    # persisted beside a hash and eventually signed.
+    observed_chains = int(trace.posterior.sizes["chain"])
+    observed_draws_per_chain = int(trace.posterior.sizes["draw"])
+    try:
+        observed_topology = assert_observed_topology_matches_profile(
+            observed_chains=observed_chains,
+            observed_draws_per_chain=observed_draws_per_chain,
+        )
+    except RuntimeProfileMismatchError:
+        emit_stage_marker("observed_topology_rejected", mode="real-fit")
+        raise
+
     mu_values = np.asarray(trace.posterior["mu"].values, dtype=float)
     mu_mean = float(np.mean(mu_values))
     mu_sd = float(np.std(mu_values))
@@ -346,9 +386,15 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         "source_snapshot_hash": str(payload["source_snapshot_hash"]),
         "runtime_seconds": round(elapsed_seconds, 6),
         "execution_success": True,
-        "n_chains": policy.chains,
-        # Retained draws across all chains -- what was kept, not what was run.
-        "n_samples_actual": policy.posterior_draws_total,
+        # Observed, not intended. See the measurement above.
+        "n_chains": observed_topology["observed_chains"],
+        "n_samples_actual": observed_topology["observed_posterior_draws_total"],
+        # Both halves retained, so the correspondence is auditable rather than
+        # merely asserted once and discarded.
+        "authorized_chains": policy.chains,
+        "authorized_posterior_draws_total": policy.posterior_draws_total,
+        "observed_draws_per_chain": observed_topology["observed_draws_per_chain"],
+        "runtime_correspondence": runtime_correspondence,
         "divergence_count": divergence_count,
         "posterior_summary": {
             "mu_mean": mu_mean,

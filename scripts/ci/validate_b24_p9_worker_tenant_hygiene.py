@@ -285,9 +285,12 @@ def validate_bayesian_worker_boot_probe(
         and "ensure_bayesian_worker_boot_probe_signal_registered()" in tasks,
         "P9 Bayesian task module must register boot probe signal only when tasks are registered",
     )
+    task_entry_count = tasks.count("@_bayesian_task(")
+    guarded_entry_count = tasks.count("assert_bayesian_worker_boot_topology_proven()")
     _require(
-        tasks.count("assert_bayesian_worker_boot_topology_proven()") >= 9,
-        "P9 Bayesian task entries must fail closed on missing boot proof",
+        task_entry_count > 0 and guarded_entry_count == task_entry_count,
+        "P9 Bayesian task entries must each fail closed on missing boot proof: "
+        f"tasks={task_entry_count}, guarded={guarded_entry_count}",
     )
     for token in (
         "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS",

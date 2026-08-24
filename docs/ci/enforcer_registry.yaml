@@ -829,6 +829,33 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b24-artifact-topology
+  path: scripts/ci/validate_b24_artifact_topology.py
+  status: required
+  owning_phase: B2.5-P13-C10
+  protected_invariant: The unmodified production Bayesian image resolves the governed four-chain,
+    single-core, single-BLAS-thread inference profile before PyMC; the posterior physically contains
+    four independent chain dimensions and the authorized retained-draw count; and finite diagnostics
+    satisfy the governed thresholds.
+  command: python scripts/ci/validate_b24_artifact_topology.py
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 C10 Production Artifact Topology
+  local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate backend
+  expected_failure_meaning: The shipped Bayesian artifact resolves a runtime/profile mismatch, reaches
+    PyMC with an unauthorized topology, returns incomplete posterior dimensions, violates single-process
+    containment, or cannot produce finite diagnostics under its governed policy.
+  first_diagnostic_command: python scripts/ci/validate_b24_artifact_topology.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-b24-p6-real-fit-worker
   path: scripts/ci/validate_b24_p6_real_fit_worker.py
   status: required
