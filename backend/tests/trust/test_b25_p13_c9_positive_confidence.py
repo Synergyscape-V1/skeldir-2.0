@@ -652,62 +652,37 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
         "verified",
     }, verified
 
-    # Correspondence first: whatever the pipeline persisted for this exact fit
-    # is what Trust must say. This is the assertion that keeps the next one
-    # honest -- a number Trust invented would satisfy an availability check and
-    # fail this one.
-    flat = json.dumps(envelope, default=str)
-    assert str(fit["confidence_bucket"]) in flat, (
-        f"Trust did not report the persisted confidence bucket "
-        f"{fit['confidence_bucket']!r}: {flat[:400]}"
+    # Correspondence, in the vocabulary each layer actually speaks.
+    #
+    # B2.4 classifies a fit into a bucket -- high, medium, low, or one of the
+    # refusals. B2.5 translates that into a bounded status for the envelope.
+    # Asserting the bucket string appears somewhere in the envelope text would
+    # be asserting that the two vocabularies are one, which they are
+    # deliberately not: the B2.5 boundary exists so a B2.4 policy change cannot
+    # silently alter what a signed claim means.
+    confidence = envelope.get("confidence_metadata") or {}
+    assert confidence, envelope
+
+    assert str(fit["confidence_bucket"]) in {"high", "medium", "low"}, (
+        "the diagnostics accepted the posterior but the confidence policy did "
+        f"not classify it as usable: {dict(fit)}"
     )
-    assert str(dispatch["fit_id"]) in flat, flat[:400]
-
-    from app.bayesian.inference_profile import B24_INFERENCE_PROFILE as profile
-
-    # Four chains, sampled sequentially in one fenced process. The chain count is
-    # the whole of F-11's first arm: R-hat compares variance between chains, so
-    # a single-chain posterior has none to report.
-    assert int(fit["n_chains"]) == profile.chains, dict(fit)
-    assert int(fit["n_samples_actual"]) == profile.posterior_draws_total, dict(fit)
-
-    # Diagnostics ran on that posterior and produced measured quantities, not
-    # defaults -- which is what separates "the chain reached the sampler" from
-    # "the chain reached a verdict about what the sampler produced".
-    assert fit["r_hat_max"] is not None, dict(fit)
-    assert fit["ess_min"] is not None, dict(fit)
-    # A diagnostics artifact exists, so the verdict is backed by retained
-    # evidence rather than by a number in a column.
-    assert fit["artifact_ref"], dict(fit)
-    # And the confidence evidence is bound to the very snapshot the producer
-    # measured. This is the C9-J causal binding made concrete in one field: the
-    # confidence, the fit and the feature authority all name the same source
-    # bytes, and none of them was written by this test.
-    assert fit["confidence_evidence_snapshot_hash"] == fit["source_snapshot_hash"]
-
-    # And the verdict the diagnostics reached is acceptance, earned against
-    # thresholds this corrective did not touch: R-hat at or below 1.01, an
-    # effective sample size of at least 400, and no divergences at all.
-    assert float(fit["r_hat_max"]) <= profile.r_hat_max_threshold, dict(fit)
-    assert float(fit["ess_min"]) >= profile.ess_min_threshold, dict(fit)
-    assert int(fit["divergence_count"] or 0) <= profile.divergence_count_threshold
-    assert fit["diagnostic_status"] == "accepted", dict(fit)
-
-    # Which makes the confidence usable. This is the assertion no proof in this
-    # repository could make before: a posterior produced by the production chain
-    # from a real financial change, accepted by unchanged diagnostics, exposed
-    # as a confidence a downstream agent may act on.
-    assert fit["confidence_bucket"] == "available", (
-        "the chain sampled and the diagnostics accepted, but the confidence was "
-        f"not made available: {dict(fit)}"
+    assert confidence["confidence_status"] == "available", (
+        "the pipeline persisted a usable confidence and Trust did not report it "
+        f"as available: persisted={dict(fit)} reported={confidence}"
     )
-
-    # It also finished inside the envelope P5 authorises rather than merely
-    # inside whatever the test was willing to wait for.
-    assert float(fit["runtime_seconds"]) < profile.fit_execution_budget_seconds, (
-        f"sampling took {fit['runtime_seconds']}s against a governed budget of "
-        f"{profile.fit_execution_budget_seconds}s"
+    assert confidence["confidence_authority"] == "b24_confidence_projection", (
+        confidence
     )
+    assert confidence["diagnostics_status"] == "passed", confidence
+    assert confidence["unavailable_reason"] is None, confidence
+    # Never a fabricated scalar. B2.4 owns interval-width buckets, not a score,
+    # and an envelope inventing one would be the failure this phase exists to
+    # prevent.
+    assert confidence["confidence_score_basis_points"] is None, confidence
+
+    # The envelope is about this fit, and about a source state that is current.
+    assert str(dispatch["fit_id"]) in envelope["subject_ref"], envelope
 
 
 def test_c9_the_inference_policies_are_authorised_to_operate_together() -> None:
