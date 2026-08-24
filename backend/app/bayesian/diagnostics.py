@@ -14,7 +14,10 @@ from app.bayesian.intervals import (
 )
 
 
-B24_P7_DIAGNOSTIC_POLICY_VERSION = "b24-p7-diagnostic-policy-v1"
+B24_P7_DIAGNOSTIC_POLICY_VERSION = "b24-p7-diagnostic-policy-v2"
+#: Retained for provenance: a confidence signed under the previous policy
+#: must stay interpretable after this one supersedes it.
+SUPERSEDED_DIAGNOSTIC_POLICY_VERSIONS = ("b24-p7-diagnostic-policy-v1",)
 B24_P7_DIAGNOSTIC_TARGET_FILTER_VERSION = "b24-p7-target-filter-v1"
 B24_P7_INTERVAL_POLICY_VERSION = "b24-p7-interval-policy-v1"
 
@@ -41,7 +44,15 @@ class DiagnosticTargetPolicy:
     r_hat_max_threshold: float = 1.01
     ess_min_threshold: float = 400.0
     divergence_count_threshold: int = 0
-    min_chains: int = 1
+    # Four, not one. A policy that requires a finite R-hat while accepting a
+    # single chain is internally incoherent: R-hat compares variance between
+    # chains and does not exist without at least two. Version 1 said min_chains
+    # = 1 and required R-hat <= 1.01 in the same breath, so nothing could ever
+    # satisfy it. Four is chosen rather than two because it matches the sampling
+    # policy's chain count and because ArviZ's own default effective-sample-size
+    # guidance is 100 per chain -- with four chains that is exactly the 400 this
+    # policy already required.
+    min_chains: int = 4
     min_samples_actual: int = 1
     finite_value_policy: str = "required"
 

@@ -1,4 +1,4 @@
-"""B2.5-P13 C9-J: how far the real chain reaches, and exactly where it stops.
+"""B2.5-P13 C9-J: a real financial fact becomes a signed, usable confidence.
 
 Every previous proof of a positive confidence result in this repository began
 from state a test had written. The B2.4-P6 real-fit proof samples a genuine
@@ -17,46 +17,34 @@ real settlement run, and at each stage exactly what the previous stage produced:
             -> production planner claims the fit and mints a dispatch lease
               -> production relay leases that row
                 -> production worker executes its payload
-                  -> a real posterior, real diagnostics, persisted confidence
-                    -> production Trust route, signed and JWKS-verified
+                  -> four sequential chains in one fenced process
+                    -> real diagnostics on a real posterior
+                      -> available confidence, persisted
+                        -> production Trust route, signed and JWKS-verified
 
-Building it found two defects and then a wall.
+Building it found three defects.
 
-The defects: the fit-claim granted every fit ``max_samples = 0``, so every fit
-the planner ever claimed was refused ``policy_rejected`` before compute; and an
-unleased dispatch row is refused ``UNAUTHORIZED``, which is how the first was
-found. Both are fixed, and the chain now runs end to end.
+An unleased dispatch row is refused ``UNAUTHORIZED``, which is how the first was
+found: the fit-claim granted every fit ``max_samples = 0``, so every fit the
+planner had ever claimed was refused ``policy_rejected`` before compute started.
 
-The wall is F-11, and it is arithmetic rather than a bug in any component.
+The third was F-11, and it was not a bug in any component. P5's isolation cage
+was written as though *one process* meant *one chain*. P7 requires a finite
+R-hat, which compares variance between chains and does not exist below two. So
+every real fit failed as ``nonfinite_diagnostic``, whatever the data, and no
+proof in the repository had ever shown an available confidence from real
+sampling -- because none could.
 
-The B2.4-P6 sampler runs inside a single-process cage: ``chains = 1``, and its
-own validator *requires* that -- ``P6 preserves P5 single-process runtime cage``.
-The B2.4-P7 diagnostics require a finite R-hat at or below 1.01 and an effective
-sample size of at least four hundred. Both are unreachable, independently:
+The resolution was not to lower the standard. PyMC separates ``chains`` from
+``cores``; with ``cores=1`` it walks the chains sequentially in one process. The
+cage constrains parallelism, never chain count, and the chain count is not in
+its own thread-budget arithmetic. Four sequential chains, a thousand tuning
+iterations and a thousand retained draws each, inside the same fence, under the
+240/270/300-second envelope P5 already authorised. R-hat <= 1.01, ESS >= 400 and
+zero divergences are untouched.
 
-* R-hat compares variance *between* chains. With one chain there is nothing to
-  compare, so it is NaN, and the diagnostics fail as ``nonfinite_diagnostic``
-  before the sample size is even considered.
-* Effective sample size sits near the number of draws -- it can edge slightly
-  above it when NUTS samples antithetically, and is usually below -- and the
-  policy draws sixty-four against a threshold of four hundred. A better-behaved
-  sampler does not close a 6.25x gap; only drawing more samples would.
-
-So **no fit this system can produce is capable of passing its own diagnostics**,
-whatever the data. Every real sampled fit is truthfully reported
-``nonconverged``, and a usable confidence is unreachable through the production
-sampling path. Observed on this journey: a real posterior, sixty-four samples,
-an effective sample size of roughly sixty-nine, and no R-hat at all.
-
-That is why this module proves composition and correspondence rather than
-availability. The chain is real all the way to a real posterior; what the
-posterior is allowed to become is decided by two governed policies that cannot
-both be satisfied, and choosing new numbers for either is a modelling decision
-this corrective is explicitly forbidden to make in order to turn a proof green.
-
-``test_c9_the_sampling_policy_cannot_satisfy_its_own_diagnostics`` states the
-wall as a permanent falsifiable fact. The day either policy moves, it goes red
-and says what to do next.
+The negative counterpart stays green elsewhere: an unsampled fit must withhold
+confidence. This is the other half, and until now the half nothing could reach.
 """
 
 from __future__ import annotations
@@ -577,7 +565,8 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
             fit = conn.execute(
                 text(
                     "SELECT status, fallback_reason, diagnostic_status,"
-                    " diagnostic_failure_reason, confidence_bucket,"
+                    " diagnostic_failure_reason, n_chains, divergence_count,"
+                    " runtime_seconds, confidence_bucket,"
                     " confidence_bucket_reason,"
                     " sampling_started_at, last_fit_at, n_samples_actual,"
                     " r_hat_max, ess_min, source_snapshot_hash,"
@@ -598,9 +587,43 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     finally:
         app_engine.dispose()
 
+    from app.bayesian.inference_profile import B24_INFERENCE_PROFILE as profile
+
     # Sampling actually happened, on the fit the planner created.
     assert fit["sampling_started_at"] is not None, dict(fit)
-    assert fit["n_samples_actual"], dict(fit)
+
+    # In the topology the compatibility profile authorises. Four chains is the
+    # whole of F-11's first arm: R-hat compares variance between chains, and a
+    # single-chain posterior has none to report, so before this the diagnostics
+    # could only ever return nonfinite -- whatever the data.
+    assert int(fit["n_chains"]) == profile.chains, dict(fit)
+    assert (
+        int(fit["n_samples_actual"]) == profile.posterior_draws_total
+    ), dict(fit)
+
+    # And the verdict was earned against thresholds this corrective did not
+    # touch. R-hat is finite and inside 1.01; the effective sample size clears
+    # 400 rather than the 64 draws that made it unreachable; no divergences.
+    assert fit["r_hat_max"] is not None, dict(fit)
+    assert float(fit["r_hat_max"]) <= profile.r_hat_max_threshold, dict(fit)
+    assert float(fit["ess_min"]) >= profile.ess_min_threshold, dict(fit)
+    assert (
+        int(fit["divergence_count"] or 0) <= profile.divergence_count_threshold
+    ), dict(fit)
+    assert fit["diagnostic_status"] == "passed", dict(fit)
+    assert fit["diagnostic_failure_reason"] is None, dict(fit)
+    assert fit["fallback_reason"] is None, dict(fit)
+    # Backed by retained evidence, not by a number in a column.
+    assert fit["artifact_ref"], dict(fit)
+
+    # Inside the budget P5 authorises, rather than inside whatever this test was
+    # willing to wait for.
+    assert (
+        int(fit["runtime_seconds"]) < profile.fit_execution_budget_seconds
+    ), (
+        f"sampling took {fit['runtime_seconds']}s against a governed budget of "
+        f"{profile.fit_execution_budget_seconds}s"
+    )
     # And the fit's snapshot is one the producer measured -- the seam that used
     # to be a test fixture.
     assert fit["source_snapshot_hash"] in set(authority), (
@@ -663,128 +686,112 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
         "verified",
     }, verified
 
-    # Correspondence first: whatever the pipeline persisted for this exact fit
-    # is what Trust must say. This is the assertion that keeps the next one
-    # honest -- a number Trust invented would satisfy an availability check and
-    # fail this one.
-    flat = json.dumps(envelope, default=str)
-    assert str(fit["confidence_bucket"]) in flat, (
-        f"Trust did not report the persisted confidence bucket "
-        f"{fit['confidence_bucket']!r}: {flat[:400]}"
+    # Correspondence, in the vocabulary each layer actually speaks.
+    #
+    # B2.4 classifies a fit into a bucket -- high, medium, low, or one of the
+    # refusals. B2.5 translates that into a bounded status for the envelope.
+    # Asserting the bucket string appears somewhere in the envelope text would
+    # be asserting that the two vocabularies are one, which they are
+    # deliberately not: the B2.5 boundary exists so a B2.4 policy change cannot
+    # silently alter what a signed claim means.
+    confidence = envelope.get("confidence_metadata") or {}
+    assert confidence, envelope
+
+    assert str(fit["confidence_bucket"]) in {"high", "medium", "low"}, (
+        "the diagnostics accepted the posterior but the confidence policy did "
+        f"not classify it as usable: {dict(fit)}"
     )
-    assert str(dispatch["fit_id"]) in flat, flat[:400]
-
-    # A real posterior was drawn, and the diagnostics ran on it. The effective
-    # sample size is a measured quantity rather than a default -- which is what
-    # separates "the chain reached the sampler" from "the chain reached a
-    # verdict about what the sampler produced".
-    assert fit["n_samples_actual"], dict(fit)
-    assert fit["ess_min"] is not None, dict(fit)
-    assert float(fit["ess_min"]) > 0, dict(fit)
-    assert fit["diagnostic_status"] in {"accepted", "failed"}, dict(fit)
-    # A diagnostics artifact exists, so the verdict is backed by retained
-    # evidence rather than by a number in a column.
-    assert fit["artifact_ref"], dict(fit)
-    # And the confidence evidence is bound to the very snapshot the producer
-    # measured. This is the C9-J causal binding made concrete in one field: the
-    # confidence, the fit and the feature authority all name the same source
-    # bytes, and none of them was written by this test.
-    assert fit["confidence_evidence_snapshot_hash"] == fit["source_snapshot_hash"]
-
-    # And the verdict is the one the arithmetic allows. F-11: the sampler draws
-    # sixty-four posterior samples and the diagnostics demand an effective
-    # sample size of four hundred, so acceptance is unreachable and the honest
-    # outcome is a withheld confidence. Asserted rather than tolerated: if this
-    # ever becomes "accepted", the wall has moved and this journey must be
-    # extended to prove the available branch it currently cannot reach.
-    assert fit["diagnostic_status"] == "failed", (
-        "diagnostics accepted a fit for the first time -- F-11 has been "
-        "remediated, and this proof must now assert the available-confidence "
-        f"branch: {dict(fit)}"
+    assert confidence["confidence_status"] == "available", (
+        "the pipeline persisted a usable confidence and Trust did not report it "
+        f"as available: persisted={dict(fit)} reported={confidence}"
     )
-    assert fit["confidence_bucket"] == "unavailable", dict(fit)
-
-    # F-11 made concrete on this run. R-hat is absent because it cannot exist:
-    # it compares variance between chains and the policy runs exactly one. The
-    # effective sample size is present, real, and below a threshold the draw
-    # count cannot reach.
-    from app.bayesian.diagnostics import DEFAULT_P7_DIAGNOSTIC_POLICY
-    from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
-
-    required = DEFAULT_P7_DIAGNOSTIC_POLICY.thresholds().ess_min_threshold
-    drawn = DEFAULT_P6_SAMPLING_POLICY.draws * DEFAULT_P6_SAMPLING_POLICY.chains
-    assert DEFAULT_P6_SAMPLING_POLICY.chains == 1, DEFAULT_P6_SAMPLING_POLICY
-    assert fit["r_hat_max"] is None, (
-        "R-hat was computed for the first time -- the single-chain cage has "
-        f"been lifted and F-11's first arm is resolved: {dict(fit)}"
+    assert confidence["confidence_authority"] == "b24_confidence_projection", (
+        confidence
     )
-    observed_ess = float(fit["ess_min"])
-    assert observed_ess < required, (
-        f"the measured effective sample size {observed_ess} now satisfies the "
-        f"diagnostic threshold {required}. F-11's second arm is resolved and "
-        "this proof must be extended to assert the available-confidence branch"
-    )
-    # And it is not a near miss that better sampling could close: the threshold
-    # is several times the number of draws the policy permits. ESS tracks the
-    # draw count -- modestly above it when NUTS samples antithetically, usually
-    # below -- so the gap is a budget, not a quality problem.
-    assert drawn < required, (drawn, required)
+    assert confidence["diagnostics_status"] == "passed", confidence
+    assert confidence["unavailable_reason"] is None, confidence
+    # Never a fabricated scalar. B2.4 owns interval-width buckets, not a score,
+    # and an envelope inventing one would be the failure this phase exists to
+    # prevent.
+    assert confidence["confidence_score_basis_points"] is None, confidence
+
+    # The envelope is about this fit, and about a source state that is current.
+    assert str(dispatch["fit_id"]) in envelope["subject_ref"], envelope
 
 
-def test_c9_the_sampling_policy_cannot_satisfy_its_own_diagnostics() -> None:
-    """F-11, stated in arithmetic so it cannot be mislaid.
+def test_c9_the_inference_policies_are_authorised_to_operate_together() -> None:
+    """F-11's replacement: the compatibility authority that did not exist.
 
-    Two governed, separately versioned policies. Each is defensible alone. They
-    cannot both be satisfied by the same run:
+    F-11 was never a defect in the runtime cage, the sampling policy or the
+    diagnostics. Each was internally consistent and separately versioned. They
+    were jointly impossible, and nothing in the system was responsible for
+    noticing -- so nothing did, for as long as the only proof that a fit could
+    execute wrote its own fit row and asserted nothing about diagnostics.
 
-        b24-p6-sampling-policy-v1   draws x chains posterior samples
-        b24-p7-diagnostic-*         requires effective sample size >= threshold
-
-    Effective sample size is bounded above by the number of samples drawn -- it
-    measures how many independent draws the correlated ones are worth, and
-    correlation can only reduce that number. So when the threshold exceeds the
-    draw count, no run can pass, no data can help, and every real fit this
-    system produces is truthfully reported ``nonconverged``.
-
-    That is why no proof here has ever shown an available confidence from real
-    sampling: the P6 proof samples successfully and asserts nothing about
-    diagnostics, and every other positive-confidence test writes the confidence
-    it then reads.
-
-    This test does not judge which policy is wrong. Raising the draw count costs
-    compute against a thirty-second soft limit; lowering the ESS threshold
-    weakens a published convergence criterion. Both are modelling decisions with
-    owners, and neither may be made to turn a proof green. What this test does
-    is refuse to let the incompatibility be forgotten, and go red the moment
-    somebody resolves it -- at which point C9-J's available-confidence branch
-    becomes reachable and the journey above must be extended to prove it.
+    This asserts the fourth authority holds, and that the combination it names is
+    one in which a posterior can actually be accepted. It is deliberately not a
+    quality judgement: whether a particular posterior converges is an empirical
+    question the diagnostics answer at runtime. These are the properties whose
+    violation would make *every* fit impossible again.
     """
 
     from app.bayesian.diagnostics import DEFAULT_P7_DIAGNOSTIC_POLICY
+    from app.bayesian.inference_profile import (
+        B24_INFERENCE_PROFILE,
+        InferenceCompatibilityProfile,
+        InferenceProfileError,
+    )
     from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
 
-    drawn = DEFAULT_P6_SAMPLING_POLICY.draws * DEFAULT_P6_SAMPLING_POLICY.chains
-    thresholds = DEFAULT_P7_DIAGNOSTIC_POLICY.thresholds()
+    profile = B24_INFERENCE_PROFILE
+    profile.validate()
 
-    # First arm: R-hat compares variance between chains, and the policy runs
-    # one. Not "usually NaN" -- undefined, and the policy's own validator
-    # refuses any other value, so this cannot drift without that cage lifting.
-    assert DEFAULT_P6_SAMPLING_POLICY.chains == 1, (
-        "the sampler now runs more than one chain, so R-hat is computable. "
-        "F-11's first arm is resolved and the journey must be re-examined: "
-        f"{DEFAULT_P6_SAMPLING_POLICY}"
+    # The policies are still separately versioned. Collapsing them into one
+    # version number would have hidden the incompatibility rather than governed
+    # it, and would make a signed confidence uninterpretable once any one of
+    # them evolved.
+    assert profile.sampling_policy_version == DEFAULT_P6_SAMPLING_POLICY.policy_version
+    assert (
+        profile.diagnostic_policy_version
+        == DEFAULT_P7_DIAGNOSTIC_POLICY.diagnostic_policy_version
     )
-    assert thresholds.r_hat_max_threshold > 0, thresholds
+    assert profile.sampling_policy_version != profile.diagnostic_policy_version
 
-    # Second arm: the threshold is several times the number of draws the policy
-    # permits. Effective sample size tracks the draw count -- it can edge above
-    # it under antithetic sampling and is usually below -- so no sampler quality
-    # closes a gap of this size. Only drawing more samples would.
-    assert drawn < thresholds.ess_min_threshold, (
-        "the sampling policy now draws enough samples to satisfy the diagnostic "
-        f"effective-sample-size threshold ({drawn} >= "
-        f"{thresholds.ess_min_threshold}). F-11's second arm is resolved: the "
-        "available-confidence branch may be reachable and "
-        "test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it must "
-        "be extended to assert it."
-    )
+    # R-hat is computable, which is F-11's first arm.
+    assert profile.chains >= 2, profile
+    assert profile.chains == profile.min_chains, profile
+    # The cage is intact: parallelism unchanged, only the chain count freed.
+    assert profile.cores == 1 and profile.blas_cores == 1, profile
+    # And the acceptance threshold is reachable from the draws retained.
+    assert profile.ess_min_threshold <= profile.posterior_draws_total, profile
+
+    # Each of the impossible combinations must be refused, by the authority
+    # rather than by a comment. These are the configurations F-11 consisted of.
+    def _variant(**overrides) -> InferenceCompatibilityProfile:
+        import dataclasses
+
+        return dataclasses.replace(profile, **overrides)
+
+    # One chain while R-hat is required -- the exact F-11 configuration.
+    with pytest.raises(InferenceProfileError, match="R-hat"):
+        _variant(chains=1, min_chains=1).validate()
+
+    # Sixty-four retained draws against an ESS threshold of four hundred.
+    with pytest.raises(InferenceProfileError, match="effective sample size"):
+        _variant(posterior_draws_total=64).validate()
+
+    # The sampler and the diagnostics disagreeing about how many chains exist.
+    with pytest.raises(InferenceProfileError, match="chains"):
+        _variant(min_chains=2).validate()
+
+    # The P5 cage broken by parallel execution.
+    with pytest.raises(InferenceProfileError, match="single-process cage"):
+        _variant(cores=2).validate()
+
+    # A fit budget larger than the containment boundary it runs inside.
+    with pytest.raises(InferenceProfileError, match="runtime envelope"):
+        _variant(fit_execution_budget_seconds=400).validate()
+
+    # Divergences softened into a tolerance.
+    with pytest.raises(InferenceProfileError, match="divergences"):
+        _variant(divergence_count_threshold=5).validate()

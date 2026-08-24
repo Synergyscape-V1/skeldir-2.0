@@ -292,7 +292,10 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
 
     policy = DEFAULT_P6_SAMPLING_POLICY
     policy.validate()
-    if int(payload.get("max_samples", policy.sample_count)) < policy.sample_count:
+    if (
+        int(payload.get("max_samples", policy.total_chain_iterations))
+        < policy.total_chain_iterations
+    ):
         raise RuntimeError("real-fit sampling policy exceeds fit max_samples")
     if int(payload.get("max_cores", policy.cores)) < policy.cores:
         raise RuntimeError("real-fit sampling policy exceeds fit max_cores")
@@ -311,8 +314,8 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         trace = run_single_process_pymc_sample(
             pm,
             runtime_policy,
-            draws=policy.draws,
-            tune=policy.tune,
+            draws=policy.draws_per_chain,
+            tune=policy.tune_per_chain,
             random_seed=random_seed,
             progressbar=False,
             compute_convergence_checks=False,
@@ -344,7 +347,8 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         "runtime_seconds": round(elapsed_seconds, 6),
         "execution_success": True,
         "n_chains": policy.chains,
-        "n_samples_actual": policy.draws * policy.chains,
+        # Retained draws across all chains -- what was kept, not what was run.
+        "n_samples_actual": policy.posterior_draws_total,
         "divergence_count": divergence_count,
         "posterior_summary": {
             "mu_mean": mu_mean,

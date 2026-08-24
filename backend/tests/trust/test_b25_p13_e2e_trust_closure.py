@@ -1496,7 +1496,19 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
     # whose window contains them and which read its source beforehand is
     # genuinely stale -- correct, but not the scenario that case tests.
     # Its read is therefore recorded after those rows landed.
-    post_source_seed = datetime.now(timezone.utc)
+    # Read the clock the invalidation triggers read, not Python's.
+    #
+    # Those triggers stamp observed_at with the database's now(), and the
+    # freshness predicate compares it against this fit's source_read_started_at.
+    # Taking this timestamp in Python compares two different clocks, and on a
+    # machine where they agree closely the ordering is decided by whichever
+    # happens to be a few microseconds ahead -- so the multi-currency fit
+    # intermittently came back degraded rather than unavailable, for a reason
+    # that had nothing to do with currencies. clock_timestamp() advances within
+    # a transaction, so this is strictly later than the trigger writes above.
+    post_source_seed = (
+        await connection.execute(text("SELECT clock_timestamp()"))
+    ).scalar_one()
     cases = {
         "available": {
             "status": "succeeded",

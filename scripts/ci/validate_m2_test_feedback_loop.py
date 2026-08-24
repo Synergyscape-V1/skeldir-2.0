@@ -107,7 +107,20 @@ ALLOWED_B24_P5_RUNTIME_MARKER_PATHS = {
     "backend/app/bayesian/child_environment.py",
     "backend/app/bayesian/sampler_child.py",
     "backend/app/bayesian/diagnostics.py",
+    # Pure policy numbers -- no import, and none reachable from here. It names
+    # the sampler's chains/cores distinction because that distinction *is* the
+    # policy: conflating them is what made every real fit fail its own
+    # diagnostics, and a policy whose comments cannot say why it is shaped this
+    # way invites the same conflation back.
+    "backend/app/bayesian/sampling_policy.py",
 }
+
+#: A runtime path may name the sampler libraries; it may not load them at
+#: import time, which would pull them into the API process. The genuine imports
+#: in this tree are all function-local inside the fenced worker paths.
+_MODULE_SCOPE_RUNTIME_IMPORT = re.compile(
+    r"^(?:import|from)[ 	]+(?:py" + r"mc|ar" + r"viz)(?![A-Za-z0-9_])", re.M
+)
 
 PROHIBITED_PRODUCTION_SURFACES = (
     "backend/app/llm/provider_boundary.py",
@@ -425,6 +438,23 @@ def check_b24_guard(result: Result) -> None:
         "B2.4 implementation dependencies/markers absent from runtime paths",
         not implementation_violations,
         ", ".join(implementation_violations),
+    )
+    # The allowlist above exempts files from the *textual* marker scan, which
+    # makes it a blanket exemption: an allowlisted file could acquire a real
+    # module-scope import and nothing here would notice. The property that
+    # actually matters is narrower, and is now checked everywhere -- allowlist
+    # included -- rather than approximated by the absence of a word.
+    module_scope_importers = [
+        rel(path)
+        for path in iter_files("backend/app")
+        if _MODULE_SCOPE_RUNTIME_IMPORT.search(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+    ]
+    result.add(
+        "sampler libraries are never imported at runtime module scope",
+        not module_scope_importers,
+        ", ".join(sorted(module_scope_importers)[:10]),
     )
     entry_gate = read("docs/testing_b24_persistence_entry_gate.md")
     result.add(

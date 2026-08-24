@@ -116,6 +116,11 @@ def _float_env(name: str, default: float) -> float:
 
 
 def build_runtime_policy() -> B24RuntimePolicy:
+    # Imported here rather than at module scope: runtime_policy is loaded by
+    # the sampler child bootstrap before the application package is fully
+    # importable, and only this function needs the sampling policy.
+    from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
+
     worker_runtime_id = os.getenv(
         "B24_BAYESIAN_WORKER_RUNTIME_ID", "local-bayesian-worker"
     )
@@ -135,7 +140,12 @@ def build_runtime_policy() -> B24RuntimePolicy:
         worker_runtime_id=worker_runtime_id,
         worker_concurrency=_int_env("B24_BAYESIAN_WORKER_CONCURRENCY", 1),
         pymc_cores=_int_env("B24_PYMC_CORES", 1),
-        pymc_chains=_int_env("B24_PYMC_CHAINS", 1),
+        # Read from the sampling policy rather than restated. These two
+        # numbers describe the same sampler, and the whole of F-11 was two
+        # policies drifting apart while each stayed internally consistent.
+        pymc_chains=_int_env(
+            "B24_PYMC_CHAINS", DEFAULT_P6_SAMPLING_POLICY.chains
+        ),
         blas_total_threads=_int_env("B24_BLAS_TOTAL_THREADS", 1),
         sampler_supervisor_deadline_s=_int_env(
             "B24_SAMPLER_SUPERVISOR_DEADLINE_S", 240
@@ -175,17 +185,39 @@ def apply_native_runtime_environment(
 def pymc_single_process_sample_kwargs(
     policy: B24RuntimePolicy,
 ) -> dict[str, int]:
-    """Return the only allowed PyMC parallelism kwargs for P5 probes."""
+    """Return the only allowed PyMC parallelism kwargs for P5 execution.
+
+    The cage is about parallelism, and it is unchanged: one execution core, one
+    BLAS thread, one fenced sampler process, no multiprocessing fan-out.
+
+    What changed is that it used to also demand ``chains == 1``, and that was a
+    conflation rather than an isolation requirement. PyMC separates the two
+    explicitly -- ``chains`` is how many independent Markov chains exist,
+    ``cores`` is how many of them run at once -- and with ``cores=1`` it walks
+    the chains sequentially inside the same process. Nothing about the physical
+    containment depends on the chain count, which is visible in this module's own
+    thread-budget arithmetic: ``worker_concurrency x pymc_cores x
+    blas_total_threads``. Chains do not appear in it, because they do not
+    consume a thread.
+
+    Demanding one chain therefore bought no isolation and cost the diagnostics
+    their most important statistic: R-hat compares variance *between* chains, so
+    with one chain it does not exist. Every real fit this system produced failed
+    as ``nonfinite_diagnostic``, and no amount of data could have changed that.
+    """
 
     if (
         policy.pymc_cores != 1
-        or policy.pymc_chains != 1
         or policy.blas_total_threads != 1
     ):
         raise RuntimeError(
             "B2.4-P5 sampler runtime is single-process-only: "
-            f"chains={policy.pymc_chains}, cores={policy.pymc_cores}, "
+            f"cores={policy.pymc_cores}, "
             f"blas_cores={policy.blas_total_threads}"
+        )
+    if policy.pymc_chains < 1:
+        raise RuntimeError(
+            f"B2.4-P5 requires at least one chain: chains={policy.pymc_chains}"
         )
     return {
         "chains": policy.pymc_chains,
