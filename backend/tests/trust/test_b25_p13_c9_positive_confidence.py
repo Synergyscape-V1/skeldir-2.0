@@ -587,9 +587,43 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     finally:
         app_engine.dispose()
 
+    from app.bayesian.inference_profile import B24_INFERENCE_PROFILE as profile
+
     # Sampling actually happened, on the fit the planner created.
     assert fit["sampling_started_at"] is not None, dict(fit)
-    assert fit["n_samples_actual"], dict(fit)
+
+    # In the topology the compatibility profile authorises. Four chains is the
+    # whole of F-11's first arm: R-hat compares variance between chains, and a
+    # single-chain posterior has none to report, so before this the diagnostics
+    # could only ever return nonfinite -- whatever the data.
+    assert int(fit["n_chains"]) == profile.chains, dict(fit)
+    assert (
+        int(fit["n_samples_actual"]) == profile.posterior_draws_total
+    ), dict(fit)
+
+    # And the verdict was earned against thresholds this corrective did not
+    # touch. R-hat is finite and inside 1.01; the effective sample size clears
+    # 400 rather than the 64 draws that made it unreachable; no divergences.
+    assert fit["r_hat_max"] is not None, dict(fit)
+    assert float(fit["r_hat_max"]) <= profile.r_hat_max_threshold, dict(fit)
+    assert float(fit["ess_min"]) >= profile.ess_min_threshold, dict(fit)
+    assert (
+        int(fit["divergence_count"] or 0) <= profile.divergence_count_threshold
+    ), dict(fit)
+    assert fit["diagnostic_status"] == "passed", dict(fit)
+    assert fit["diagnostic_failure_reason"] is None, dict(fit)
+    assert fit["fallback_reason"] is None, dict(fit)
+    # Backed by retained evidence, not by a number in a column.
+    assert fit["artifact_ref"], dict(fit)
+
+    # Inside the budget P5 authorises, rather than inside whatever this test was
+    # willing to wait for.
+    assert (
+        int(fit["runtime_seconds"]) < profile.fit_execution_budget_seconds
+    ), (
+        f"sampling took {fit['runtime_seconds']}s against a governed budget of "
+        f"{profile.fit_execution_budget_seconds}s"
+    )
     # And the fit's snapshot is one the producer measured -- the seam that used
     # to be a test fixture.
     assert fit["source_snapshot_hash"] in set(authority), (

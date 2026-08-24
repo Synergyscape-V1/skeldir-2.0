@@ -411,6 +411,8 @@ async def _insert_authority_and_fit(
     *,
     fit_id: UUID,
     source_snapshot_hash: str,
+    source_read_started_at: datetime,
+    source_read_completed_at: datetime,
 ) -> None:
     async with get_session(tenant_id) as session:
         await upsert_source_window_feature_authority(
@@ -446,6 +448,8 @@ async def _insert_authority_and_fit(
                     eligibility_status,
                     data_completeness_status,
                     fallback_applied,
+                    source_read_started_at,
+                    source_read_completed_at,
                     max_runtime_seconds,
                     max_samples,
                     max_cores
@@ -462,6 +466,13 @@ async def _insert_authority_and_fit(
                     'eligible',
                     'complete',
                     false,
+                    -- The window over which the snapshot was actually read.
+                    -- The production claim path records this from the snapshot;
+                    -- this fixture never did, because no fit it created had ever
+                    -- reached available confidence, so the constraint that
+                    -- requires it had never once been evaluated.
+                    :source_read_started_at,
+                    :source_read_completed_at,
                     :max_runtime_seconds,
                     :max_samples,
                     :max_cores
@@ -476,6 +487,8 @@ async def _insert_authority_and_fit(
                 "source_window_start": START,
                 "source_window_end": END,
                 "source_snapshot_hash": source_snapshot_hash,
+                "source_read_started_at": source_read_started_at,
+                "source_read_completed_at": source_read_completed_at,
                 # The budget the production claim path grants, read from the same
                 # authority rather than restated. Literals here were how F-09
                 # survived: this fixture granted 160 samples and the production
@@ -609,6 +622,8 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
         tenant_id,
         fit_id=fit_id,
         source_snapshot_hash=snapshot.source_snapshot_hash,
+        source_read_started_at=snapshot.source_read_started_at,
+        source_read_completed_at=snapshot.source_read_completed_at,
     )
     dispatch_claim, worker_authority = _insert_dispatch_claim_for_fit(
         tenant_id=tenant_id,
@@ -676,7 +691,7 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
     assert row == {
         "status": "succeeded",
         "credible_interval_status": "available",
-        "diagnostic_status": "accepted",
+        "diagnostic_status": "passed",
         "diagnostic_failure_reason": None,
         "n_samples_actual": B24_INFERENCE_PROFILE.posterior_draws_total,
         "divergence_count": 0,
@@ -701,6 +716,8 @@ async def test_b24_p6_source_snapshot_mismatch_fails_before_sampler(
         tenant_id,
         fit_id=fit_id,
         source_snapshot_hash=bad_hash,
+        source_read_started_at=snapshot.source_read_started_at,
+        source_read_completed_at=snapshot.source_read_completed_at,
     )
     dispatch_claim, worker_authority = _insert_dispatch_claim_for_fit(
         tenant_id=tenant_id,
