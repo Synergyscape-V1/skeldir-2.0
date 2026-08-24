@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.bayesian.diagnostics import (
+    B24_P7_DIAGNOSTIC_POLICY_VERSION,
     DEFAULT_P7_DIAGNOSTIC_POLICY,
     compute_arviz_diagnostic_summary,
 )
@@ -162,7 +163,14 @@ def test_b24_p7_interval_payload_bounds_are_enforced() -> None:
 def test_b24_p7_policy_versions_and_target_scope_are_centralized() -> None:
     policy = DEFAULT_P7_DIAGNOSTIC_POLICY
 
-    assert policy.diagnostic_policy_version == "b24-p7-diagnostic-policy-v1"
+    # Version 2 requires four chains. Version 1 asked for a finite R-hat while
+    # accepting a single chain, which is internally incoherent -- R-hat compares
+    # variance between chains and does not exist below two -- so no fit could
+    # ever satisfy it. The thresholds below are unchanged; only the chain
+    # requirement that made them reachable moved.
+    assert policy.diagnostic_policy_version == B24_P7_DIAGNOSTIC_POLICY_VERSION
+    assert policy.diagnostic_policy_version == "b24-p7-diagnostic-policy-v2"
+    assert policy.min_chains == 4
     assert policy.diagnostic_target_filter_version == "b24-p7-target-filter-v1"
     assert policy.interval_policy_version == "b24-p7-interval-policy-v1"
     assert policy.r_hat_max_threshold == pytest.approx(1.01)

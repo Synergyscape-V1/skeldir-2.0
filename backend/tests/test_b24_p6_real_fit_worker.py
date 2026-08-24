@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import create_engine, text
 
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
 from app.bayesian.feature_authority import (
     FeatureAuthorityStatus,
     SourceWindowFeatureAuthority,
@@ -461,9 +462,9 @@ async def _insert_authority_and_fit(
                     'eligible',
                     'complete',
                     false,
-                    60,
-                    160,
-                    1
+                    :max_runtime_seconds,
+                    :max_samples,
+                    :max_cores
                 )
                 """
             ),
@@ -475,6 +476,15 @@ async def _insert_authority_and_fit(
                 "source_window_start": START,
                 "source_window_end": END,
                 "source_snapshot_hash": source_snapshot_hash,
+                # The budget the production claim path grants, read from the same
+                # authority rather than restated. Literals here were how F-09
+                # survived: this fixture granted 160 samples and the production
+                # claim granted 0, and no proof compared them.
+                "max_runtime_seconds": (
+                    B24_INFERENCE_PROFILE.fit_execution_budget_seconds
+                ),
+                "max_samples": B24_INFERENCE_PROFILE.total_chain_iterations,
+                "max_cores": B24_INFERENCE_PROFILE.cores,
             },
         )
 
