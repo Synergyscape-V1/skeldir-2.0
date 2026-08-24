@@ -178,9 +178,22 @@ def validate_pymc_child_boundary(
         "run_single_process_pymc_sample(",
         "compute_convergence_checks=False",
         'emit_stage_marker("sampling_completed"',
+        'trace.posterior.sizes["chain"]',
+        'trace.posterior.sizes["draw"]',
+        "assert_observed_topology_matches_profile(",
+        'emit_stage_marker("runtime_authority_rejected"',
+        'emit_stage_marker("observed_topology_rejected"',
         "_write_json_durable(output_path, result)",
     ):
         _require(token in child, f"P6 child physical real-fit proof missing: {token}")
+    for fabricated in (
+        '"n_chains": policy.chains',
+        '"n_samples_actual": policy.posterior_draws_total',
+    ):
+        _require(
+            fabricated not in child,
+            f"P6 child fabricates observed posterior metadata: {fabricated}",
+        )
 
 
 def validate_stream_and_stage_physics() -> None:
@@ -324,6 +337,16 @@ def run_negative_controls() -> None:
                 fit_execution_text="import pymc\n" + _read(FIT_EXECUTION)
             ),
             "parent imports",
+        ),
+        (
+            "posterior_dimensions_replaced_by_policy_defaults",
+            lambda: validate_pymc_child_boundary(
+                sampler_child_text=_read(SAMPLER_CHILD).replace(
+                    '"n_chains": observed["observed_chains"]',
+                    '"n_chains": policy.chains',
+                )
+            ),
+            "fabricates observed posterior metadata",
         ),
         (
             "missing_required_status",

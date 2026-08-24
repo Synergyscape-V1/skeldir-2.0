@@ -141,14 +141,7 @@ async def recover_stale_dispatching(
     return int(result.rowcount or 0)
 
 
-async def lease_due_dispatch_rows(
-    session: AsyncSession,
-    *,
-    batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
-) -> list[DispatchOutboxRow]:
-    result = await session.execute(
-        text(
-            """
+_LEASE_DUE_DISPATCH_SQL = """
             WITH due AS (
                 SELECT tenant_id, id
                 FROM public.b24_fit_dispatch_outbox
@@ -196,7 +189,28 @@ async def lease_due_dispatch_rows(
                 outbox.attempt_count,
                 outbox.max_attempts
             """
-        ),
+
+
+async def _bind_initial_dispatch_publisher(session: AsyncSession) -> None:
+    await session.execute(
+        text("SELECT set_config('app.b24_initial_dispatch_publisher', 'on', true)")
+    )
+
+
+def _bind_initial_dispatch_publisher_sync(conn) -> None:
+    conn.execute(
+        text("SELECT set_config('app.b24_initial_dispatch_publisher', 'on', true)")
+    )
+
+
+async def lease_due_dispatch_rows(
+    session: AsyncSession,
+    *,
+    batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
+) -> list[DispatchOutboxRow]:
+    await _bind_initial_dispatch_publisher(session)
+    result = await session.execute(
+        text(_LEASE_DUE_DISPATCH_SQL),
         {
             "batch_size": max(1, int(batch_size)),
             "task_name": BAYESIAN_FIT_EXECUTION_TASK,
@@ -221,15 +235,7 @@ async def lease_due_dispatch_rows(
     ]
 
 
-async def mark_dispatched(
-    session: AsyncSession,
-    *,
-    tenant_id: UUID,
-    outbox_id: UUID,
-) -> None:
-    await session.execute(
-        text(
-            """
+_MARK_DISPATCHED_SQL = """
             UPDATE public.b24_fit_dispatch_outbox
             SET status = 'dispatched',
                 dispatched_at = now(),
@@ -238,22 +244,21 @@ async def mark_dispatched(
             WHERE tenant_id = :tenant_id
               AND id = :outbox_id
             """
-        ),
+
+
+async def mark_dispatched(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    outbox_id: UUID,
+) -> None:
+    await session.execute(
+        text(_MARK_DISPATCHED_SQL),
         {"tenant_id": str(tenant_id), "outbox_id": str(outbox_id)},
     )
 
 
-async def mark_dispatch_failed(
-    session: AsyncSession,
-    *,
-    row: DispatchOutboxRow,
-    error: str,
-    retry_delay_seconds: int = 60,
-) -> None:
-    dead_letter = row.attempt_count >= row.max_attempts
-    await session.execute(
-        text(
-            """
+_MARK_DISPATCH_FAILED_SQL = """
             UPDATE public.b24_fit_dispatch_outbox
             SET status = :status,
                 next_attempt_at = CASE
@@ -269,7 +274,18 @@ async def mark_dispatch_failed(
             WHERE tenant_id = :tenant_id
               AND id = :outbox_id
             """
-        ),
+
+
+async def mark_dispatch_failed(
+    session: AsyncSession,
+    *,
+    row: DispatchOutboxRow,
+    error: str,
+    retry_delay_seconds: int = 60,
+) -> None:
+    dead_letter = row.attempt_count >= row.max_attempts
+    await session.execute(
+        text(_MARK_DISPATCH_FAILED_SQL),
         {
             "tenant_id": str(row.tenant_id),
             "outbox_id": str(row.id),
@@ -302,6 +318,116 @@ async def dispatch_due_outbox_rows(
             continue
         await mark_dispatched(session, tenant_id=row.tenant_id, outbox_id=row.id)
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Fast-path publication, synchronous.
+#
+# `dispatch_due_outbox_rows` above has been present and correct for as long as
+# this module has, and had no caller anywhere in the application: no Beat entry,
+# no task, no production call site. A freshly claimed fit therefore had no wired
+# route to a worker at all. The only publication that ever ran was the recovery
+# reconciler's sweep of rows that had already gone stale -- a repair mechanism
+# carrying the primary path, with the delay and attempt-count semantics of a
+# repair rather than of a dispatch.
+#
+# These mirror the async functions above and reuse their exact SQL, because the
+# Celery worker lane runs on a synchronous engine and an independently written
+# publisher would be a second design free to drift from the first.
+# ---------------------------------------------------------------------------
+
+
+def lease_due_dispatch_rows_sync(
+    conn,
+    *,
+    batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
+) -> list[DispatchOutboxRow]:
+    """Durably lease due dispatch rows with SKIP LOCKED, on a sync connection."""
+
+    _bind_initial_dispatch_publisher_sync(conn)
+    result = conn.execute(
+        text(_LEASE_DUE_DISPATCH_SQL),
+        {
+            "batch_size": max(1, int(batch_size)),
+            "task_name": BAYESIAN_FIT_EXECUTION_TASK,
+        },
+    )
+    return [
+        DispatchOutboxRow(
+            id=row["id"],
+            tenant_id=row["tenant_id"],
+            fit_id=row["fit_id"],
+            task_name=str(row["task_name"] or BAYESIAN_FIT_EXECUTION_TASK),
+            attempt_id=row["attempt_id"],
+            payload_hash=str(
+                row["payload_hash"] or dispatch_payload_hash(fit_id=row["fit_id"])
+            ),
+            recovery_generation=int(row["recovery_generation"] or 0),
+            assigned_worker_generation=str(row["assigned_worker_generation"]),
+            attempt_count=int(row["attempt_count"]),
+            max_attempts=int(row["max_attempts"]),
+        )
+        for row in result.mappings()
+    ]
+
+
+def mark_dispatched_sync(conn, *, tenant_id: UUID, outbox_id: UUID) -> None:
+    conn.execute(
+        text(_MARK_DISPATCHED_SQL),
+        {"tenant_id": str(tenant_id), "outbox_id": str(outbox_id)},
+    )
+
+
+def mark_dispatch_failed_sync(
+    conn,
+    *,
+    row: DispatchOutboxRow,
+    error: str,
+    retry_delay_seconds: int = 60,
+) -> None:
+    dead_letter = row.attempt_count >= row.max_attempts
+    conn.execute(
+        text(_MARK_DISPATCH_FAILED_SQL),
+        {
+            "tenant_id": str(row.tenant_id),
+            "outbox_id": str(row.id),
+            "status": (
+                DispatchStatus.DEAD_LETTERED.value
+                if dead_letter
+                else DispatchStatus.FAILED_RETRYABLE.value
+            ),
+            "dead_letter": dead_letter,
+            "retry_delay_seconds": max(1, int(retry_delay_seconds)),
+            "error": error[:2048],
+        },
+    )
+
+
+def publish_due_dispatch_rows_sync(
+    conn,
+    *,
+    publish: Callable[[DispatchOutboxRow], str] = publish_capability_bound_dispatch,
+    batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
+) -> list[DispatchOutboxRow]:
+    """Lease, then publish, the initial broker wake-up for fresh dispatches.
+
+    Identical task name, queue, payload shape and capability semantics as the
+    recovery republisher: possession of what crosses the broker still authorises
+    nothing, and the worker must lease the row to execute. The only differences
+    are which rows are eligible and the assignment reason recorded against them.
+    """
+
+    rows = lease_due_dispatch_rows_sync(conn, batch_size=batch_size)
+    published: list[DispatchOutboxRow] = []
+    for row in rows:
+        try:
+            publish(row)
+        except Exception as exc:  # noqa: BLE001 - the failure is recorded, not raised
+            mark_dispatch_failed_sync(conn, row=row, error=str(exc))
+            continue
+        mark_dispatched_sync(conn, tenant_id=row.tenant_id, outbox_id=row.id)
+        published.append(row)
+    return published
 
 
 async def create_recovery_wakeups(

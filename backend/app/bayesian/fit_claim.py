@@ -70,7 +70,6 @@ class FitClaimResult:
         return self.outcome is FitClaimOutcome.CLAIMED
 
 
-
 def _utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -157,6 +156,14 @@ async def claim_fit_for_snapshot(
         "max_runtime_seconds": B24_INFERENCE_PROFILE.fit_execution_budget_seconds,
         "max_samples": B24_INFERENCE_PROFILE.total_chain_iterations,
         "max_cores": B24_INFERENCE_PROFILE.cores,
+        "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
+        "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
+        "sampling_policy_version": (B24_INFERENCE_PROFILE.sampling_policy_version),
+        "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
+        "authorized_chains": B24_INFERENCE_PROFILE.chains,
+        "authorized_posterior_draws_total": (
+            B24_INFERENCE_PROFILE.posterior_draws_total
+        ),
     }
     await session.execute(
         text(
@@ -392,7 +399,13 @@ async def claim_fit_for_snapshot(
                             last_eligibility_check_at,
                             max_runtime_seconds,
                             max_samples,
-                            max_cores
+                            max_cores,
+                            inference_profile_version,
+                            runtime_policy_version,
+                            sampling_policy_version,
+                            policy_bundle_hash,
+                            authorized_chains,
+                            authorized_posterior_draws_total
                         )
                         SELECT
                             :tenant_id,
@@ -411,7 +424,18 @@ async def claim_fit_for_snapshot(
                             now(),
                             :max_runtime_seconds,
                             :max_samples,
-                            :max_cores
+                            :max_cores,
+                            -- The regime this fit is claimed under. Execution
+                            -- compares its own bundle against this one and
+                            -- refuses to proceed when they differ, so a fit
+                            -- cannot be authorised by one policy and then
+                            -- quietly executed by another after a deployment.
+                            :inference_profile_version,
+                            :runtime_policy_version,
+                            :sampling_policy_version,
+                            :policy_bundle_hash,
+                            :authorized_chains,
+                            :authorized_posterior_draws_total
                         WHERE EXISTS (SELECT 1 FROM claimable_execution_lane)
                           AND NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)
                         ON CONFLICT (

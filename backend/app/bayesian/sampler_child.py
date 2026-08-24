@@ -12,6 +12,7 @@ import signal
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 
 FORBIDDEN_ENV_FRAGMENTS = (
@@ -80,8 +81,7 @@ def forbidden_sys_modules_snapshot() -> list[str]:
 
 def assert_boot_airgap_active() -> dict[str, object]:
     preinstall = sorted(
-        str(name)
-        for name in getattr(sys, "_b24_p5_airgap_preinstall_forbidden", ())
+        str(name) for name in getattr(sys, "_b24_p5_airgap_preinstall_forbidden", ())
     )
     if preinstall:
         raise RuntimeError(
@@ -312,12 +312,17 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
     # later by failing. A refusal here costs nothing and happens before any
     # financial-compute authority is spent.
     from app.bayesian.inference_profile import (
+        RuntimeProfileMismatchError,
         assert_observed_topology_matches_profile,
         assert_runtime_matches_profile,
     )
 
     emit_stage_marker("runtime_authority_check", mode="real-fit")
-    runtime_correspondence = assert_runtime_matches_profile(runtime_policy)
+    try:
+        runtime_correspondence = assert_runtime_matches_profile(runtime_policy)
+    except RuntimeProfileMismatchError:
+        emit_stage_marker("runtime_authority_rejected", mode="real-fit")
+        raise
 
     started = time.monotonic()
     with pm.Model() as model:
@@ -328,7 +333,7 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         model.compile_logp()
         emit_stage_marker("graph_compiled", mode="real-fit")
         emit_stage_marker("sampling_started", mode="real-fit")
-        trace = run_single_process_pymc_sample(
+        trace: Any = run_single_process_pymc_sample(
             pm,
             runtime_policy,
             draws=policy.draws_per_chain,
@@ -358,10 +363,14 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
     # persisted beside a hash and eventually signed.
     observed_chains = int(trace.posterior.sizes["chain"])
     observed_draws_per_chain = int(trace.posterior.sizes["draw"])
-    observed = assert_observed_topology_matches_profile(
-        observed_chains=observed_chains,
-        observed_draws_per_chain=observed_draws_per_chain,
-    )
+    try:
+        observed = assert_observed_topology_matches_profile(
+            observed_chains=observed_chains,
+            observed_draws_per_chain=observed_draws_per_chain,
+        )
+    except RuntimeProfileMismatchError:
+        emit_stage_marker("observed_topology_rejected", mode="real-fit")
+        raise
 
     mu_values = np.asarray(trace.posterior["mu"].values, dtype=float)
     mu_mean = float(np.mean(mu_values))

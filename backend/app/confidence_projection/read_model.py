@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import text
@@ -271,6 +271,43 @@ def _snapshot_freshness(mapping: dict[str, object]) -> SnapshotFreshness:
     return "current"
 
 
+def _policy_provenance_complete(mapping: dict[str, object]) -> bool:
+    """Return whether usable confidence names and matches its producing regime."""
+
+    versions = (
+        mapping.get("inference_profile_version"),
+        mapping.get("runtime_policy_version"),
+        mapping.get("sampling_policy_version"),
+        mapping.get("diagnostic_policy_version"),
+    )
+    if any(not isinstance(value, str) or not value.strip() for value in versions):
+        return False
+    bundle_hash = mapping.get("policy_bundle_hash")
+    if (
+        not isinstance(bundle_hash, str)
+        or len(bundle_hash) != 64
+        or any(character not in "0123456789abcdef" for character in bundle_hash)
+    ):
+        return False
+    topology = (
+        mapping.get("authorized_chains"),
+        mapping.get("authorized_posterior_draws_total"),
+        mapping.get("observed_chains"),
+        mapping.get("observed_posterior_draws_total"),
+    )
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in topology):
+        return False
+    authorized_chains, authorized_draws, observed_chains, observed_draws = cast(
+        tuple[int, int, int, int], topology
+    )
+    return (
+        authorized_chains > 0
+        and authorized_draws > 0
+        and observed_chains == authorized_chains
+        and observed_draws == authorized_draws
+    )
+
+
 def _projection_decision(
     mapping: dict[str, object], *, freshness: SnapshotFreshness
 ) -> ConfidencePolicyDecision:
@@ -348,6 +385,13 @@ def _projection_decision(
     )
     if not persisted.confidence_available:
         return persisted
+    # The database constraint governs every new write but is intentionally
+    # NOT VALID for historical rows: inventing provenance for old confidence
+    # would be worse than admitting it was never recorded. This consumer guard
+    # makes those legacy rows unusable and independently checks observed versus
+    # authorized topology before Trust can sign an available claim.
+    if not _policy_provenance_complete(mapping):
+        return _unavailable(ConfidenceBucketReason.PERSISTED_CLASSIFICATION_INVALID)
     lifecycle = mapping.get("artifact_lifecycle_status")
     if lifecycle == "pruned":
         return _unavailable(ConfidenceBucketReason.ARTIFACT_PRUNED)
@@ -445,9 +489,7 @@ async def read_b24_confidence_projection_for_fit(
             "authorized_posterior_draws_total"
         ),
         observed_chains=_nullable_int("observed_chains"),
-        observed_posterior_draws_total=_nullable_int(
-            "observed_posterior_draws_total"
-        ),
+        observed_posterior_draws_total=_nullable_int("observed_posterior_draws_total"),
         observed_at=observed_at,
         evidence_snapshot_at=mapping.get("source_read_started_at"),
         source_read_started_at=mapping.get("source_read_started_at"),

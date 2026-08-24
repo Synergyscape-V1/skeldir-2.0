@@ -46,6 +46,9 @@ on:
       - 'backend/tests/trust/test_b25_p13_c9_degradation_matrix.py'
       - 'backend/tests/trust/test_b25_p13_c9_authority_supersession.py'
       - 'backend/tests/trust/test_b25_p13_c9_positive_confidence.py'
+      - 'backend/tests/trust/test_b25_p13_c10_policy_transport_physics.py'
+      - 'backend/Dockerfile.bayesian'
+      - 'scripts/ci/validate_b24_artifact_topology.py'
       - 'backend/app/bayesian/fit_claim.py'
       - 'backend/app/bayesian/authority_liveness.py'
       - 'backend/app/bayesian/source_snapshot.py'
@@ -166,7 +169,8 @@ jobs:
           # reads. Both tamper counts are pinned, so neither a shrinking matrix nor
           # a blind field can pass.
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_executed_cases=20$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_expected_cases=21$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_executed_cases=21$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_expected=158$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=95$" /tmp/b25_p13_e2e.out
@@ -763,6 +767,70 @@ jobs:
             -q -s --no-header | tee /tmp/nc_c8_b05_restored.out
           grep -E "1 passed" /tmp/nc_c8_b05_restored.out
 
+      # C10-G/H/P: claim-time policy transitions and fresh transport are
+      # runtime properties. The live test observes Beat emission, a PostgreSQL
+      # broker row, execution inside the real Bayesian worker, and the durable
+      # dispatch identity; direct task invocation is not part of the proof.
+      - name: P13 C10 policy transition and natural fresh-dispatch physics
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          CELERY_BROKER_URL: sqla+postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          CELERY_RESULT_BACKEND: db+postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C10_DB_PROOF: "1"
+          SKELDIR_B24_P9_REQUIRE_DB_PROOFS: "1"
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c10-prometheus
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c10_policy_transport_physics.py \
+            -q -s --no-header | tee /tmp/b25_p13_c10_policy_transport.out
+          grep -E "5 passed" /tmp/b25_p13_c10_policy_transport.out
+
+      # NC-C10-09 / NC-C10-10. Remove the only production scheduler edge. The
+      # required proof must turn red immediately; a direct `.run()` call is not
+      # present and therefore cannot rescue it.
+      - name: NC-C10-09 removing fresh publisher turns transport gate red
+        env:
+          SKELDIR_B25_P13_C10_DB_PROOF: "1"
+        run: |
+          set -o pipefail
+          cp backend/app/tasks/beat_schedule.py /tmp/c10_beat_schedule_backup.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("backend/app/tasks/beat_schedule.py")
+          source = path.read_text(encoding="utf-8")
+          marker = 'if os.getenv("SKELDIR_B24_DISABLE_FIT_DISPATCH_PUBLISHER_JOB") != "1":'
+          assert source.count(marker) == 1, "fresh publisher schedule guard moved"
+          path.write_text(source.replace(marker, "if False:  # NC-C10-09", 1), encoding="utf-8")
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c10_policy_transport_physics.py \
+              -q -s --no-header \
+              -k production_schedule_contains_fresh_dispatch_publisher \
+              > /tmp/nc_c10_09_red.out 2>&1; then
+            echo "NC-C10-09 DID NOT FIRE: transport gate passed without publisher"
+            cp /tmp/c10_beat_schedule_backup.py backend/app/tasks/beat_schedule.py
+            cat /tmp/nc_c10_09_red.out
+            exit 1
+          fi
+          grep -E "1 failed" /tmp/nc_c10_09_red.out
+          cp /tmp/c10_beat_schedule_backup.py backend/app/tasks/beat_schedule.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c10_policy_transport_physics.py \
+            -q -s --no-header \
+            -k production_schedule_contains_fresh_dispatch_publisher \
+            | tee /tmp/nc_c10_09_green.out
+          grep -E "1 passed" /tmp/nc_c10_09_green.out
+
       # P13-G11: the suite must not silently lose a journey. An expected case
       # that disappears has to fail the gate rather than reduce a count nobody
       # reads, so the manifest is asserted here as well as inside the test.
@@ -800,6 +868,7 @@ jobs:
               "P13-C5-03-future-evidence-cannot-be-current",
               "P13-C5-04-absolute-age-explicitly-bounded",
               "P13-C5-05-adversarial-class-matrix",
+              "P13-C10-signed-inference-provenance-tamper-closure",
           }
           missing = sorted(required - set(cases))
           assert not missing, f"required P13 journeys removed from manifest: {missing}"
@@ -1033,12 +1102,21 @@ jobs:
           set -euo pipefail
           # Piped in rather than baked into the image: the artifact under test
           # stays byte-identical to the one that would ship.
-          docker run --rm -i skeldir-bayesian:candidate \
-            python - < scripts/ci/validate_b24_artifact_topology.py | tee artifact_topology.log
-          grep -q 'B24_ARTIFACT_TOPOLOGY_PASS' artifact_topology.log
-          grep -q 'Sequential sampling (4 chains in 1 job)' artifact_topology.log \
-            || { echo "artifact did not sample four chains sequentially"; exit 1; }
+          for run in 1 2; do
+            docker run --rm -i skeldir-bayesian:candidate \
+              python - < scripts/ci/validate_b24_artifact_topology.py \
+              2>&1 | tee "artifact_topology_${run}.log"
+            grep -q 'B24_ARTIFACT_TOPOLOGY_PASS' "artifact_topology_${run}.log"
+            grep -q 'Sequential sampling (4 chains in 1 job)' \
+              "artifact_topology_${run}.log" \
+              || { echo "artifact did not sample four chains sequentially"; exit 1; }
+            grep -q '"observed_posterior_draws_total": 4000' \
+              "artifact_topology_${run}.log"
+            grep -q '"divergence_count": 0' "artifact_topology_${run}.log"
+            grep -q '"identical_chain_pairs": \[\]' "artifact_topology_${run}.log"
+          done
           echo "p13_c10_artifact_topology_pass=1" >> "$GITHUB_STEP_SUMMARY"
+          echo "p13_c10_artifact_statistical_repeats=2" >> "$GITHUB_STEP_SUMMARY"
 
       - name: NC-C10-01 -- reintroducing the one-chain image override turns this RED
         run: |

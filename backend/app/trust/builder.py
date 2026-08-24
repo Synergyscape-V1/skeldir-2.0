@@ -170,7 +170,6 @@ def _tag_b24_hash(value: str) -> str:
     return value if value.startswith("sha256:") else f"sha256:{value}"
 
 
-
 def _inference_provenance(projection: object) -> dict[str, object] | None:
     """The producing policy bundle, as persisted beside the confidence.
 
@@ -182,15 +181,13 @@ def _inference_provenance(projection: object) -> dict[str, object] | None:
     bundle_hash = getattr(projection, "policy_bundle_hash", None)
     if not bundle_hash:
         return None
-    return {
+    provenance = {
         "policy_bundle_hash": _tag_b24_hash(str(bundle_hash)),
         "inference_profile_version": getattr(
             projection, "inference_profile_version", None
         ),
         "runtime_policy_version": getattr(projection, "runtime_policy_version", None),
-        "sampling_policy_version": getattr(
-            projection, "sampling_policy_version", None
-        ),
+        "sampling_policy_version": getattr(projection, "sampling_policy_version", None),
         "diagnostic_policy_version": getattr(
             projection, "diagnostic_policy_version", None
         ),
@@ -205,6 +202,33 @@ def _inference_provenance(projection: object) -> dict[str, object] | None:
             projection, "observed_posterior_draws_total", None
         ),
     }
+    required_versions = (
+        "inference_profile_version",
+        "runtime_policy_version",
+        "sampling_policy_version",
+        "diagnostic_policy_version",
+    )
+    if any(not provenance.get(field) for field in required_versions):
+        return None
+    topology_values = (
+        provenance["authorized_chains"],
+        provenance["observed_chains"],
+        provenance["authorized_posterior_draws_total"],
+        provenance["observed_posterior_draws_total"],
+    )
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        for value in topology_values
+    ):
+        return None
+    if provenance["authorized_chains"] != provenance["observed_chains"]:
+        return None
+    if (
+        provenance["authorized_posterior_draws_total"]
+        != provenance["observed_posterior_draws_total"]
+    ):
+        return None
+    return provenance
 
 
 def _confidence_projection_metadata(
@@ -216,6 +240,24 @@ def _confidence_projection_metadata(
     decision = projection.decision
     reason = decision.confidence_bucket_reason.value
     if decision.confidence_available:
+        provenance = _inference_provenance(projection)
+        if provenance is None:
+            return (
+                {
+                    "confidence_status": "unavailable",
+                    "confidence_authority": "explicitly_unavailable",
+                    "confidence_score_basis_points": None,
+                    "bayesian_model_type": None,
+                    "bayesian_model_version": None,
+                    "diagnostics_status": "unavailable",
+                    "unavailable_reason": "confidence_unavailable",
+                    "inference_provenance": None,
+                },
+                "degraded_or_unavailable_truth",
+                "insufficient_evidence",
+                True,
+                "confidence_unavailable",
+            )
         return (
             {
                 "confidence_status": "available",
@@ -240,7 +282,7 @@ def _confidence_projection_metadata(
                 # reach into Bayesian modules, and re-deriving it here would
                 # report today's policy for a confidence produced under an
                 # older one -- exactly the substitution being prevented.
-                "inference_provenance": _inference_provenance(projection),
+                "inference_provenance": provenance,
             },
             "confidence_projection_context",
             "complete",

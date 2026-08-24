@@ -580,6 +580,30 @@ CREATE FUNCTION public.b24_enforce_evidence_temporal_plausibility() RETURNS trig
         END
         $$;
 
+CREATE FUNCTION public.b24_enforce_policy_bundle_write_authority() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        BEGIN
+            IF NEW.inference_profile_version IS DISTINCT FROM OLD.inference_profile_version
+               OR NEW.runtime_policy_version IS DISTINCT FROM OLD.runtime_policy_version
+               OR NEW.sampling_policy_version IS DISTINCT FROM OLD.sampling_policy_version
+               OR NEW.policy_bundle_hash IS DISTINCT FROM OLD.policy_bundle_hash
+               OR NEW.diagnostic_policy_version IS DISTINCT FROM OLD.diagnostic_policy_version
+               OR NEW.authorized_chains IS DISTINCT FROM OLD.authorized_chains
+               OR NEW.authorized_posterior_draws_total
+                    IS DISTINCT FROM OLD.authorized_posterior_draws_total
+               OR NEW.superseded_policy_bundle_hash
+                    IS DISTINCT FROM OLD.superseded_policy_bundle_hash
+               OR NEW.policy_replanned_at IS DISTINCT FROM OLD.policy_replanned_at
+               OR NEW.policy_replan_count IS DISTINCT FROM OLD.policy_replan_count THEN
+                IF NOT public.b24_current_dispatch_fence_valid(NEW.tenant_id, NEW.id) THEN
+                    RAISE EXCEPTION 'b24_policy_bundle_write_authority_rejected';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END
+        $$;
+
 CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -615,7 +639,19 @@ CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
                OR NEW.source_read_started_at IS DISTINCT FROM OLD.source_read_started_at
                OR NEW.source_read_completed_at IS DISTINCT FROM OLD.source_read_completed_at
                OR NEW.artifact_ref IS DISTINCT FROM OLD.artifact_ref
-               OR NEW.artifact_hash IS DISTINCT FROM OLD.artifact_hash) THEN
+               OR NEW.artifact_hash IS DISTINCT FROM OLD.artifact_hash
+               OR NEW.inference_profile_version IS DISTINCT FROM OLD.inference_profile_version
+               OR NEW.runtime_policy_version IS DISTINCT FROM OLD.runtime_policy_version
+               OR NEW.sampling_policy_version IS DISTINCT FROM OLD.sampling_policy_version
+               OR NEW.policy_bundle_hash IS DISTINCT FROM OLD.policy_bundle_hash
+               OR NEW.diagnostic_policy_version IS DISTINCT FROM OLD.diagnostic_policy_version
+               OR NEW.authorized_chains IS DISTINCT FROM OLD.authorized_chains
+               OR NEW.authorized_posterior_draws_total IS DISTINCT FROM OLD.authorized_posterior_draws_total
+               OR NEW.superseded_policy_bundle_hash IS DISTINCT FROM OLD.superseded_policy_bundle_hash
+               OR NEW.policy_replanned_at IS DISTINCT FROM OLD.policy_replanned_at
+               OR NEW.policy_replan_count IS DISTINCT FROM OLD.policy_replan_count
+               OR NEW.n_chains IS DISTINCT FROM OLD.n_chains
+               OR NEW.n_samples_actual IS DISTINCT FROM OLD.n_samples_actual) THEN
                 RAISE EXCEPTION 'b24_terminal_fit_truth_immutable';
             END IF;
             RETURN NEW;
@@ -3750,6 +3786,15 @@ CREATE TABLE public.bayesian_model_fits (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3844,6 +3889,15 @@ CREATE TABLE public.bayesian_model_fits_p00 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -3938,6 +3992,15 @@ CREATE TABLE public.bayesian_model_fits_p01 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4032,6 +4095,15 @@ CREATE TABLE public.bayesian_model_fits_p02 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4126,6 +4198,15 @@ CREATE TABLE public.bayesian_model_fits_p03 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4220,6 +4301,15 @@ CREATE TABLE public.bayesian_model_fits_p04 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4314,6 +4404,15 @@ CREATE TABLE public.bayesian_model_fits_p05 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4408,6 +4507,15 @@ CREATE TABLE public.bayesian_model_fits_p06 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4502,6 +4610,15 @@ CREATE TABLE public.bayesian_model_fits_p07 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4596,6 +4713,15 @@ CREATE TABLE public.bayesian_model_fits_p08 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4690,6 +4816,15 @@ CREATE TABLE public.bayesian_model_fits_p09 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4784,6 +4919,15 @@ CREATE TABLE public.bayesian_model_fits_p10 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4878,6 +5022,15 @@ CREATE TABLE public.bayesian_model_fits_p11 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -4972,6 +5125,15 @@ CREATE TABLE public.bayesian_model_fits_p12 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -5066,6 +5228,15 @@ CREATE TABLE public.bayesian_model_fits_p13 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -5160,6 +5331,15 @@ CREATE TABLE public.bayesian_model_fits_p14 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -5254,6 +5434,15 @@ CREATE TABLE public.bayesian_model_fits_p15 (
     confidence_evidence_snapshot_hash character varying(64),
     source_read_started_at timestamp with time zone,
     source_read_completed_at timestamp with time zone,
+    inference_profile_version character varying(128),
+    runtime_policy_version character varying(128),
+    sampling_policy_version character varying(128),
+    policy_bundle_hash character varying(64),
+    authorized_chains integer,
+    authorized_posterior_draws_total integer,
+    superseded_policy_bundle_hash character varying(64),
+    policy_replanned_at timestamp with time zone,
+    policy_replan_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
@@ -6791,6 +6980,9 @@ ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_available_confidence_complete CHECK ((((confidence_bucket)::text <> ALL ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying])::text[])) OR (((status)::text = 'succeeded'::text) AND ((data_completeness_status)::text = 'complete'::text) AND (fallback_applied = false) AND ((diagnostic_status)::text = 'passed'::text) AND ((credible_interval_status)::text = 'available'::text) AND (artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND (confidence_currency_count <= 1) AND (confidence_classified_at IS NOT NULL) AND (confidence_classified_at >= source_read_completed_at) AND (source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at) AND ((((confidence_bucket)::text = 'high'::text) AND ((confidence_bucket_reason)::text = 'narrow_interval'::text)) OR (((confidence_bucket)::text = 'medium'::text) AND ((confidence_bucket_reason)::text = 'moderate_interval'::text)) OR (((confidence_bucket)::text = 'low'::text) AND ((confidence_bucket_reason)::text = 'wide_interval'::text)))))) NOT VALID;
 
 ALTER TABLE public.bayesian_model_fits
+    ADD CONSTRAINT ck_bayesian_model_fits_available_policy_bundle CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text <> ALL (ARRAY['low'::text, 'medium'::text, 'high'::text])) OR ((inference_profile_version IS NOT NULL) AND (runtime_policy_version IS NOT NULL) AND (sampling_policy_version IS NOT NULL) AND (diagnostic_policy_version IS NOT NULL) AND (policy_bundle_hash IS NOT NULL) AND (char_length((policy_bundle_hash)::text) = 64) AND (authorized_chains IS NOT NULL) AND (authorized_posterior_draws_total IS NOT NULL) AND (n_chains IS NOT NULL) AND (n_samples_actual IS NOT NULL) AND (n_chains = authorized_chains) AND (n_samples_actual = authorized_posterior_draws_total)))) NOT VALID;
+
+ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_confidence_classification_state CHECK ((((confidence_bucket IS NULL) AND (confidence_bucket_reason IS NULL) AND (confidence_policy_version IS NULL) AND (confidence_semantics_version IS NULL) AND (confidence_classified_at IS NULL)) OR ((confidence_bucket IS NOT NULL) AND (confidence_bucket_reason IS NOT NULL) AND ((confidence_policy_version)::text = 'b24-p10-confidence-policy-v1'::text) AND ((confidence_semantics_version)::text = 'b24-p10-confidence-semantics-v1'::text) AND (confidence_classified_at IS NOT NULL)))) NOT VALID;
 
 ALTER TABLE public.bayesian_model_fits
@@ -6798,6 +6990,9 @@ ALTER TABLE public.bayesian_model_fits
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_confidence_evidence_tuple CHECK ((((confidence_evidence_snapshot_hash IS NULL) AND (confidence_deterministic_revenue_minor IS NULL) AND (confidence_deterministic_row_count IS NULL) AND (confidence_match_verdict_count IS NULL) AND (confidence_currency_count IS NULL)) OR ((confidence_evidence_snapshot_hash IS NOT NULL) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text)))) NOT VALID;
+
+ALTER TABLE public.bayesian_model_fits
+    ADD CONSTRAINT ck_bayesian_model_fits_policy_replan_evidence CHECK ((((policy_replan_count = 0) AND (superseded_policy_bundle_hash IS NULL) AND (policy_replanned_at IS NULL)) OR ((policy_replan_count > 0) AND (superseded_policy_bundle_hash IS NOT NULL) AND (char_length((superseded_policy_bundle_hash)::text) = 64) AND (policy_replanned_at IS NOT NULL)))) NOT VALID;
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_source_read_pair_order CHECK ((((source_read_started_at IS NULL) AND (source_read_completed_at IS NULL)) OR ((source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at)))) NOT VALID;
@@ -8439,6 +8634,8 @@ CREATE TRIGGER trg_pii_guardrail_revenue_ledger BEFORE INSERT ON public.revenue_
 
 CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.revenue_ledger FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_revenue_state_change();
 
+CREATE TRIGGER trg_z_b24_policy_bundle_write_authority BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
+
 ALTER TABLE ONLY public.agent_clients
     ADD CONSTRAINT agent_clients_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -8915,6 +9112,8 @@ ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY function_access_b24_worker_process_authority ON public.b24_worker_process_authority USING ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text));
+
+CREATE POLICY initial_dispatch_publisher_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING (((SESSION_USER = 'app_worker'::name) AND (current_setting('app.b24_initial_dispatch_publisher'::text, true) = 'on'::text))) WITH CHECK (((SESSION_USER = 'app_worker'::name) AND (current_setting('app.b24_initial_dispatch_publisher'::text, true) = 'on'::text)));
 
 ALTER TABLE public.investigation_jobs ENABLE ROW LEVEL SECURITY;
 

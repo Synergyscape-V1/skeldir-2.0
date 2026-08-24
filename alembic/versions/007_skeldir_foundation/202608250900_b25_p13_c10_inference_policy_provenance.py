@@ -6,7 +6,7 @@ identities -- ``diagnostic_policy_version`` -- and Trust's read model did not
 select even that one, so an external verifier holding a signed envelope had no
 way to answer "which governed inference regime produced this number?".
 
-Four columns and one bundle hash close that. The hash is the load-bearing
+Version columns and one bundle hash close that. The hash is the load-bearing
 identity: four version strings that must be read together are more faithfully
 carried as one digest that cannot be half-right than as four fields that can
 drift apart or be partially copied.
@@ -77,8 +77,12 @@ _TERMINAL_GOVERNED_COLUMNS = (
     "runtime_policy_version",
     "sampling_policy_version",
     "policy_bundle_hash",
+    "diagnostic_policy_version",
     "authorized_chains",
     "authorized_posterior_draws_total",
+    "superseded_policy_bundle_hash",
+    "policy_replanned_at",
+    "policy_replan_count",
     "n_chains",
     "n_samples_actual",
 )
@@ -90,15 +94,19 @@ _NEW_COLUMNS = (
     ("policy_bundle_hash", "varchar(64)"),
     ("authorized_chains", "integer"),
     ("authorized_posterior_draws_total", "integer"),
+    ("superseded_policy_bundle_hash", "varchar(64)"),
+    ("policy_replanned_at", "timestamp with time zone"),
 )
 
 _AVAILABLE_BUCKETS = ("low", "medium", "high")
+_PRE_C10_TERMINAL_COLUMNS = _TERMINAL_GOVERNED_COLUMNS[:31]
 
 
-def _terminal_trigger_body() -> str:
+def _terminal_trigger_body(
+    columns: tuple[str, ...] = _TERMINAL_GOVERNED_COLUMNS,
+) -> str:
     comparisons = "\n               OR ".join(
-        f"NEW.{column} IS DISTINCT FROM OLD.{column}"
-        for column in _TERMINAL_GOVERNED_COLUMNS
+        f"NEW.{column} IS DISTINCT FROM OLD.{column}" for column in columns
     )
     return f"""
         CREATE OR REPLACE FUNCTION public.b24_enforce_terminal_fit_truth()
@@ -122,8 +130,80 @@ def upgrade() -> None:
             "ALTER TABLE public.bayesian_model_fits "
             f"ADD COLUMN IF NOT EXISTS {column} {column_type}"
         )
+    op.execute(
+        "ALTER TABLE public.bayesian_model_fits "
+        "DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_policy_replan_evidence"  # CI:DESTRUCTIVE_OK - Idempotent C10 constraint replacement; see ADR-017.
+    )
+    op.execute(
+        "ALTER TABLE public.bayesian_model_fits "
+        "ADD COLUMN IF NOT EXISTS policy_replan_count integer DEFAULT 0 NOT NULL"
+    )
 
     op.execute(_terminal_trigger_body())
+
+    # The initial publisher is intentionally global: it must see due outbox
+    # rows across tenants, just like the separately governed recovery
+    # reconciler. FORCE RLS therefore needs an explicit transaction-local
+    # capability; without this policy a correctly scheduled publisher would
+    # observe an empty table and fresh work would still never move.
+    op.execute(
+        """
+        DROP POLICY IF EXISTS initial_dispatch_publisher_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox;
+        CREATE POLICY initial_dispatch_publisher_b24_fit_dispatch_outbox
+            ON public.b24_fit_dispatch_outbox
+            FOR ALL
+            USING (
+                session_user = 'app_worker'
+                AND current_setting('app.b24_initial_dispatch_publisher', true) = 'on'
+            )
+            WITH CHECK (
+                session_user = 'app_worker'
+                AND current_setting('app.b24_initial_dispatch_publisher', true) = 'on'
+            );
+        """
+    )
+
+    # Claim-time policy identity is inserted by the planner. Once a dispatch
+    # exists, changing that identity is an execution-authority write and must
+    # carry the same live database lease as every other worker mutation. This
+    # separate trigger composes with the established C5 dispatch fence without
+    # copying its larger state machine into a later migration.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b24_enforce_policy_bundle_write_authority()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF NEW.inference_profile_version IS DISTINCT FROM OLD.inference_profile_version
+               OR NEW.runtime_policy_version IS DISTINCT FROM OLD.runtime_policy_version
+               OR NEW.sampling_policy_version IS DISTINCT FROM OLD.sampling_policy_version
+               OR NEW.policy_bundle_hash IS DISTINCT FROM OLD.policy_bundle_hash
+               OR NEW.diagnostic_policy_version IS DISTINCT FROM OLD.diagnostic_policy_version
+               OR NEW.authorized_chains IS DISTINCT FROM OLD.authorized_chains
+               OR NEW.authorized_posterior_draws_total
+                    IS DISTINCT FROM OLD.authorized_posterior_draws_total
+               OR NEW.superseded_policy_bundle_hash
+                    IS DISTINCT FROM OLD.superseded_policy_bundle_hash
+               OR NEW.policy_replanned_at IS DISTINCT FROM OLD.policy_replanned_at
+               OR NEW.policy_replan_count IS DISTINCT FROM OLD.policy_replan_count THEN
+                IF NOT public.b24_current_dispatch_fence_valid(NEW.tenant_id, NEW.id) THEN
+                    RAISE EXCEPTION 'b24_policy_bundle_write_authority_rejected';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END
+        $$;
+
+        DROP TRIGGER IF EXISTS trg_z_b24_policy_bundle_write_authority
+            ON public.bayesian_model_fits;
+        CREATE TRIGGER trg_z_b24_policy_bundle_write_authority
+            BEFORE UPDATE ON public.bayesian_model_fits
+            FOR EACH ROW
+            EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
+        """
+    )
 
     buckets = ", ".join(f"'{bucket}'" for bucket in _AVAILABLE_BUCKETS)
     # Usable confidence now requires the authority needed to interpret it.
@@ -135,7 +215,7 @@ def upgrade() -> None:
     # should not be expressible, rather than merely discouraged.
     op.execute(
         "ALTER TABLE public.bayesian_model_fits "
-        "DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_available_policy_bundle"
+        "DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_available_policy_bundle"  # CI:DESTRUCTIVE_OK - Idempotent C10 constraint replacement; see ADR-017.
     )
     op.execute(
         f"""
@@ -165,15 +245,54 @@ def upgrade() -> None:
         NOT VALID
         """
     )
+    op.execute(
+        "ALTER TABLE public.bayesian_model_fits "
+        "ADD CONSTRAINT ck_bayesian_model_fits_policy_replan_evidence "
+        "CHECK ((policy_replan_count = 0 "
+        "AND superseded_policy_bundle_hash IS NULL "
+        "AND policy_replanned_at IS NULL) OR (policy_replan_count > 0 "
+        "AND superseded_policy_bundle_hash IS NOT NULL "
+        "AND char_length(superseded_policy_bundle_hash) = 64 "
+        "AND policy_replanned_at IS NOT NULL)) NOT VALID"
+    )
 
 
 def downgrade() -> None:
     op.execute(
+        "DROP POLICY IF EXISTS initial_dispatch_publisher_b24_fit_dispatch_outbox "
+        "ON public.b24_fit_dispatch_outbox; "
+        "-- # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017."
+    )
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_z_b24_policy_bundle_write_authority "
+        "ON public.bayesian_model_fits; "
+        "-- # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017."
+    )
+    op.execute(
+        "DROP FUNCTION IF EXISTS public.b24_enforce_policy_bundle_write_authority(); "
+        "-- # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017."
+    )
+    op.execute(
         "ALTER TABLE public.bayesian_model_fits "
-        "DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_available_policy_bundle"
+        "DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_policy_replan_evidence; "  # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017.
+        "-- # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017."
+    )
+    # Restore the C7 terminal predicate before removing columns it would
+    # otherwise continue to reference after a one-revision rollback.
+    op.execute(_terminal_trigger_body(_PRE_C10_TERMINAL_COLUMNS))
+    op.execute(
+        "ALTER TABLE public.bayesian_model_fits "
+        "DROP CONSTRAINT IF EXISTS ck_bayesian_model_fits_available_policy_bundle; "  # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017.
+        "-- # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017."
+    )
+    op.execute(
+        "ALTER TABLE public.bayesian_model_fits "
+        "DROP COLUMN IF EXISTS policy_replan_count; "  # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017.
+        "-- # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017."
     )
     for column, _ in _NEW_COLUMNS:
         op.execute(
             "ALTER TABLE public.bayesian_model_fits "
-            f"DROP COLUMN IF EXISTS {column}"
+            f"DROP COLUMN IF EXISTS {column}; "  # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017.
+            "-- # CI:DESTRUCTIVE_OK - Controlled C10 rollback; see ADR-017."
         )

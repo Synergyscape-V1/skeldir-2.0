@@ -50,6 +50,7 @@ from app.bayesian.fit_execution import (
     _persist_result_summary,
     _set_tenant_context,
 )
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
 from app.bayesian.model_spec import B24_P6_MODEL_TYPE, B24_P6_MODEL_VERSION
 from app.bayesian.sampler_supervisor import (
     build_child_env_for_lease,
@@ -1331,8 +1332,12 @@ async def test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction(
         "diagnostic_policy_version": "b24-p7-diagnostic-policy-v1",
         "diagnostic_target_filter_version": "b24-p7-target-filter-v1",
         "interval_policy_version": "b24-p7-interval-policy-v1",
-        "n_chains": 1,
-        "n_samples_actual": 20,
+        # This test proves transaction-local tenant rebinding, but its result
+        # still has to be physically coherent with the governed inference
+        # profile because available confidence now enforces that correspondence
+        # in PostgreSQL.
+        "n_chains": B24_INFERENCE_PROFILE.chains,
+        "n_samples_actual": B24_INFERENCE_PROFILE.posterior_draws_total,
         "r_hat_max": 1.0,
         "ess_min": 500,
         "divergence_count": 0,

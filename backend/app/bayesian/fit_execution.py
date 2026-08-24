@@ -136,7 +136,8 @@ def _load_fit_for_execution(
                     status,
                     max_runtime_seconds,
                     max_samples,
-                    max_cores
+                    max_cores,
+                    policy_bundle_hash
                 FROM public.bayesian_model_fits
                 WHERE tenant_id = :tenant_id
                   AND id = :fit_id
@@ -316,6 +317,92 @@ def _iso(value: object) -> str:
 _SamplerInput = dict[str, object]
 
 
+_REPLAN_POLICY_BUNDLE_SQL = """
+    UPDATE public.bayesian_model_fits
+    SET superseded_policy_bundle_hash = policy_bundle_hash,
+        policy_bundle_hash = :policy_bundle_hash,
+        inference_profile_version = :inference_profile_version,
+        runtime_policy_version = :runtime_policy_version,
+        sampling_policy_version = :sampling_policy_version,
+        authorized_chains = :authorized_chains,
+        authorized_posterior_draws_total = :authorized_posterior_draws_total,
+        max_runtime_seconds = :max_runtime_seconds,
+        max_samples = :max_samples,
+        max_cores = :max_cores,
+        policy_replanned_at = now(),
+        policy_replan_count = policy_replan_count + 1,
+        updated_at = now()
+    WHERE tenant_id = :tenant_id
+      AND id = :fit_id
+      AND NOT public.b24_fit_status_is_terminal(status)
+      AND sampling_started_at IS NULL
+      AND policy_bundle_hash IS NOT NULL
+      AND policy_bundle_hash IS DISTINCT FROM :policy_bundle_hash
+    RETURNING
+        max_runtime_seconds,
+        max_samples,
+        max_cores,
+        inference_profile_version,
+        runtime_policy_version,
+        sampling_policy_version,
+        policy_bundle_hash,
+        authorized_chains,
+        authorized_posterior_draws_total,
+        superseded_policy_bundle_hash,
+        policy_replanned_at,
+        policy_replan_count
+"""
+
+
+def _replan_superseded_policy_bundle(conn, *, tenant_id, fit_id) -> _LoadFitRow | None:
+    """Move a not-yet-started fit onto the regime that is about to execute it.
+
+    A fit claimed under one policy bundle and executed after a deployment has
+    two honest dispositions: run under the bundle that authorised it, or be
+    superseded and replanned under the current one. The first is not available
+    to a worker that only has today's code loaded, so this is the second, done
+    explicitly.
+
+    Explicit is the whole distinction. The invalid outcome is a fit that keeps
+    one continuous authority identity while its physics changes underneath; here
+    the row is moved onto the executing regime before any compute happens, so
+    the provenance it later carries names the regime that actually produced the
+    posterior.
+
+    Guarded three ways. A terminal fit is untouched -- its evidence has been
+    issued and may already be signed. A fit that has begun sampling is untouched
+    -- work has been spent under the old bundle and replanning would misattribute
+    it. And nothing happens at all when the bundles already agree, which is the
+    ordinary case.
+
+    The budget columns move with the bundle for a practical reason: a fit queued
+    under an older sampling policy carries that policy's much smaller
+    `max_samples`, and the execution-time budget check would otherwise refuse it
+    as `policy_rejected` on every attempt, indefinitely.
+    """
+
+    result = conn.execute(
+        text(_REPLAN_POLICY_BUNDLE_SQL),
+        {
+            "tenant_id": str(tenant_id),
+            "fit_id": str(fit_id),
+            "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
+            "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
+            "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
+            "sampling_policy_version": (B24_INFERENCE_PROFILE.sampling_policy_version),
+            "authorized_chains": B24_INFERENCE_PROFILE.chains,
+            "authorized_posterior_draws_total": (
+                B24_INFERENCE_PROFILE.posterior_draws_total
+            ),
+            "max_runtime_seconds": (B24_INFERENCE_PROFILE.fit_execution_budget_seconds),
+            "max_samples": B24_INFERENCE_PROFILE.total_chain_iterations,
+            "max_cores": B24_INFERENCE_PROFILE.cores,
+        },
+    )
+    row = result.mappings().one_or_none()
+    return dict(row) if row is not None else None
+
+
 def _build_sampler_input(
     row: _LoadFitRow,
     *,
@@ -332,6 +419,25 @@ def _build_sampler_input(
     # moment there were four.
     if max_samples < policy.total_chain_iterations or max_cores < policy.cores:
         raise RuntimeError("policy_rejected")
+
+    # The fit was authorised under one policy bundle; this worker imports
+    # another. A deployment happened between the claim and this moment, and
+    # executing anyway would give one fit a continuous authority identity
+    # spanning two governed regimes -- a confidence whose provenance says P1 and
+    # whose posterior came from P2.
+    #
+    # By the time control reaches here the row has already been replanned onto
+    # the executing bundle (see `_replan_superseded_policy_bundle`), which is
+    # the directive's supersede-and-replan outcome rather than its silent-drift
+    # one: the fit runs under exactly one regime and records that regime. This
+    # check is what remains after that -- a row that could not be replanned,
+    # because it was already terminal, must not proceed.
+    claimed_bundle = row["policy_bundle_hash"]
+    executing_bundle = B24_INFERENCE_PROFILE.policy_bundle_hash()
+    if claimed_bundle is None:
+        raise RuntimeError("policy_bundle_missing")
+    if str(claimed_bundle) != executing_bundle:
+        raise RuntimeError("policy_bundle_superseded")
     seed = derive_rng_seed(
         RngSeedMaterial(
             tenant_id=str(row["tenant_id"]),
@@ -421,6 +527,14 @@ def _diagnostic_stage_failure_reason(
     if "intervals_started" in stages and "intervals_completed" not in stages:
         return "diagnostics_timeout" if timed_out else "diagnostics_failed"
     return None
+
+
+def _policy_authority_stage_failed(marker_path: Path) -> bool:
+    stages = _stage_markers(marker_path)
+    return any(
+        stage in stages
+        for stage in ("runtime_authority_rejected", "observed_topology_rejected")
+    )
 
 
 def _sampler_failure_stream_metadata(result) -> dict[str, object]:
@@ -653,9 +767,7 @@ def _persist_result_summary(
             # exited -- so if it is not written here it is gone.
             "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
             "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
-            "sampling_policy_version": (
-                B24_INFERENCE_PROFILE.sampling_policy_version
-            ),
+            "sampling_policy_version": (B24_INFERENCE_PROFILE.sampling_policy_version),
             "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
             # Authorised topology, kept beside the observed topology the child
             # measured. The DB constraint requires them equal for any usable
@@ -753,6 +865,13 @@ def execute_fit_intent_sync(
                     "idempotent_replay": True,
                     "compute_started": False,
                 }
+            replanned = _replan_superseded_policy_bundle(
+                conn,
+                tenant_id=tenant_id,
+                fit_id=fit_id,
+            )
+            if replanned is not None:
+                row.update(replanned)
         execution_attempt_id = f"{fit_id}-{task_id}-{uuid4().hex}"
         source_snapshot_hash = str(row["source_snapshot_hash"])
         workspace = create_workspace_lease(
@@ -951,8 +1070,25 @@ def execute_fit_intent_sync(
             diagnostic_reason = _diagnostic_stage_failure_reason(
                 marker_path, timed_out=False
             )
+            policy_authority_failed = _policy_authority_stage_failed(marker_path)
             with engine.begin() as conn:
-                if diagnostic_reason is not None:
+                if policy_authority_failed:
+                    _mark_fit_failure(
+                        conn,
+                        tenant_id=tenant_id,
+                        fit_id=fit_id,
+                        status=FitStatus.FAILED,
+                        fallback_reason=FallbackReason.POLICY_REJECTED,
+                        runtime_seconds=runtime_seconds,
+                        dispatch_lease=dispatch_lease,
+                    )
+                    if dispatch_lease is not None:
+                        fail_dispatch_terminal_sync(
+                            conn,
+                            lease=dispatch_lease,
+                            reason=FallbackReason.POLICY_REJECTED.value,
+                        )
+                elif diagnostic_reason is not None:
                     _mark_fit_diagnostic_error(
                         conn,
                         tenant_id=tenant_id,
@@ -974,12 +1110,18 @@ def execute_fit_intent_sync(
                         )
             return {
                 "status": (
-                    "failed" if diagnostic_reason is not None else "failed_retryable"
+                    "failed"
+                    if diagnostic_reason is not None or policy_authority_failed
+                    else "failed_retryable"
                 ),
                 "fallback_reason": (
-                    FallbackReason.NO_CONVERGENCE.value
-                    if diagnostic_reason is not None
-                    else FallbackReason.WORKER_FAILURE.value
+                    FallbackReason.POLICY_REJECTED.value
+                    if policy_authority_failed
+                    else (
+                        FallbackReason.NO_CONVERGENCE.value
+                        if diagnostic_reason is not None
+                        else FallbackReason.WORKER_FAILURE.value
+                    )
                 ),
                 "diagnostic_failure_reason": diagnostic_reason,
                 "task_id": task_id,

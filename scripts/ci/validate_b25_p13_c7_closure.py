@@ -64,6 +64,10 @@ C7_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202608221200_b25_p13_c7_source_causality_obligation_conservation.py"
 )
+CURRENT_TERMINAL_MIGRATION = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202608250900_b25_p13_c10_inference_policy_provenance.py"
+)
 C8_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202608231200_b25_p13_c8_identity_window_causality.py"
@@ -326,7 +330,9 @@ def validate_model_identity_authority(
         "ck_b24_dirty_events_registered_model_type",
         "ck_bayesian_model_fits_registered_model_type",
     ):
-        _require(constraint in body, f"model_registration_constraint_absent:{constraint}")
+        _require(
+            constraint in body, f"model_registration_constraint_absent:{constraint}"
+        )
 
     # 5. Exactly one identity may be produced; retired ones stay readable.
     retired = [item for item in MODEL_IDENTITY_REGISTRY if not item.is_active]
@@ -646,7 +652,11 @@ def validate_worker_topology(
     # override DATABASE_URL rather than inherit the API DSN.
     proc_body = procfile if procfile is not None else _read(PROCFILE)
     bayesian_line = next(
-        (line for line in proc_body.splitlines() if line.startswith("worker_bayesian:")),
+        (
+            line
+            for line in proc_body.splitlines()
+            if line.startswith("worker_bayesian:")
+        ),
         "",
     )
     _require(bool(bayesian_line), "procfile_has_no_bayesian_worker_line")
@@ -659,9 +669,7 @@ def validate_worker_topology(
         "procfile_bayesian_worker_role_not_declared",
     )
     for prefix in ("worker:", "worker_b23:", "web:"):
-        line = next(
-            (ln for ln in proc_body.splitlines() if ln.startswith(prefix)), ""
-        )
+        line = next((ln for ln in proc_body.splitlines() if ln.startswith(prefix)), "")
         _require(bool(line), f"procfile_missing_process:{prefix}")
         _require(
             "WORKER_DATABASE_URL" not in line,
@@ -695,18 +703,25 @@ def validate_terminal_dependencies_bidirectional(
 ) -> int:
     """ACTUAL read-model dependencies == DECLARED == terminally protected."""
 
-    body = migration if migration is not None else _read(C7_MIGRATION)
+    body = migration if migration is not None else _read(CURRENT_TERMINAL_MIGRATION)
     governed = registry if registry is not None else _yaml(DEPENDENCIES)
     model = read_model if read_model is not None else _read(READ_MODEL)
 
     declared = set(str(v) for v in governed.get("dependencies", []))
+    terminal_only = set(str(v) for v in governed.get("terminal_only_dependencies", []))
     excluded = set(str(v) for v in governed.get("governed_exclusions", []))
-    frozen = set(_literal_assignment(body, "TRUST_FIT_DEPENDENCY_COLUMNS"))
+    terminal_name = (
+        "_TERMINAL_GOVERNED_COLUMNS"
+        if "_TERMINAL_GOVERNED_COLUMNS" in body
+        else "TRUST_FIT_DEPENDENCY_COLUMNS"
+    )
+    frozen = set(_literal_assignment(body, terminal_name))
     _require(declared, "confidence_dependency_registry_empty")
     _require(
-        declared == frozen,
+        declared | terminal_only == frozen,
         "terminal_dependency_inventory_drift:"
-        f"missing={sorted(declared - frozen)}:extra={sorted(frozen - declared)}",
+        f"missing={sorted((declared | terminal_only) - frozen)}:"
+        f"extra={sorted(frozen - declared - terminal_only)}",
     )
 
     try:
@@ -727,7 +742,13 @@ def validate_terminal_dependencies_bidirectional(
     unread = sorted(declared - fit_actual)
     _require(not unread, "registered_fit_dependency_not_read:" + ",".join(unread))
     _require(
-        "_changed(TRUST_FIT_DEPENDENCY_COLUMNS)" in body,
+        (
+            "_changed(TRUST_FIT_DEPENDENCY_COLUMNS)" in body
+            or (
+                "columns: tuple[str, ...] = _TERMINAL_GOVERNED_COLUMNS" in body
+                and "for column in columns" in body
+            )
+        ),
         "terminal_trigger_not_derived_from_dependency_inventory",
     )
 
@@ -746,8 +767,12 @@ def validate_terminal_dependencies_bidirectional(
             f"missing={sorted(set(actual[relation]) - inputs)}:"
             f"extra={sorted(inputs - set(actual[relation]))}",
         )
-        for field in ("mutation_authority", "legal_transitions",
-                      "effect_on_historical_envelopes", "effect_on_new_trust_reads"):
+        for field in (
+            "mutation_authority",
+            "legal_transitions",
+            "effect_on_historical_envelopes",
+            "effect_on_new_trust_reads",
+        ):
             _require(
                 bool(str(entry.get(field, "")).strip()),
                 f"non_fit_lifecycle_semantics_missing:{relation}:{field}",
@@ -773,7 +798,9 @@ def validate_planner_obligation_contract(
     # Deletion must be reachable only after residual authority says nothing is
     # left. The ELSE branch below the eligible/deferred branches is the only
     # DELETE in the completion function.
-    completion = body[body.find("CREATE FUNCTION public.b24_complete_fit_planner_wakeup"):]
+    completion = body[
+        body.find("CREATE FUNCTION public.b24_complete_fit_planner_wakeup") :
+    ]
     _require(bool(completion), "completion_function_absent")
     delete_index = completion.find("DELETE FROM public.b24_fit_planner_wakeups")
     residual_index = completion.find("b24_fit_planner_residual_obligation")
@@ -782,8 +809,11 @@ def validate_planner_obligation_contract(
         "wakeup_deleted_without_consulting_residual_authority",
     )
     for disposition in (
-        "'deleted'", "'retained_eligible'", "'deferred'",
-        "'released'", "'stale_revision'",
+        "'deleted'",
+        "'retained_eligible'",
+        "'deferred'",
+        "'released'",
+        "'stale_revision'",
     ):
         _require(
             disposition in completion,
@@ -858,9 +888,8 @@ def validate_provisioner_monotonicity(provisioner: str | None = None) -> int:
     body = provisioner if provisioner is not None else _read(PROVISIONER)
     _require(
         "GRANT ALL ON SCHEMA public TO {}" not in body.split("runtime_user")[0]
-        or 'sql.Identifier(config.runtime_user)' not in body.split(
-            "GRANT ALL ON SCHEMA public"
-        )[-1][:400],
+        or "sql.Identifier(config.runtime_user)"
+        not in body.split("GRANT ALL ON SCHEMA public")[-1][:400],
         "provisioner_still_grants_all_schema_authority_to_runtime",
     )
     _require(
@@ -1006,6 +1035,7 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
 
     positive_controls = positive_controls if positive_controls is not None else []
     migration = _read(C7_MIGRATION)
+    current_terminal_migration = _read(CURRENT_TERMINAL_MIGRATION)
     provisioner = _read(PROVISIONER)
     compose = _read(COMPOSE_E2E)
     procfile = _read(PROCFILE)
@@ -1030,7 +1060,9 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
         _must_fail(
             "NC-C7-S02",
             lambda: validate_terminal_dependencies_bidirectional(
-                migration=migration.replace('    "created_at",\n', "", 1)
+                migration=current_terminal_migration.replace(
+                    '    "created_at",\n', "", 1
+                )
             ),
         )
     )
@@ -1061,9 +1093,7 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
         _must_fail(
             "NC-C7-S04",
             lambda: validate_source_invalidation_contract(
-                shipped_sql=_shipped_with(
-                    ("AND status IN :match_verdict_statuses", "")
-                )
+                shipped_sql=_shipped_with(("AND status IN :match_verdict_statuses", ""))
             ),
         )
     )
@@ -1082,12 +1112,15 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
             "NC-C7-S20",
             lambda: validate_source_invalidation_contract(
                 shipped_sql=_shipped_with(
-                    ("AND last_transition_at >= :window_start",
-                     "AND confirmed_at >= :window_start")
+                    (
+                        "AND last_transition_at >= :window_start",
+                        "AND confirmed_at >= :window_start",
+                    )
                 )
             ),
         )
     )
+
     # NC-C7-S21 -- a semantics-preserving respelling must NOT turn the gate red.
     # A proof that fires on whitespace is validating formatting, not semantics.
     def _respelled() -> None:
@@ -1296,16 +1329,14 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
     )
     # NC-C8-S05 -- staleness reverting to exact window equality. This is
     # the F-02 shape: a change inside a wider fit cannot stale it.
-    _OVERLAP_CALL = 'public.b24_source_windows_overlap(\n                      dirty.source_window_start,\n                      dirty.source_window_end,\n                      requested_fit.source_window_start,\n                      requested_fit.source_window_end\n                  )'
-    _WINDOW_EQUALITY = 'dirty.source_window_start = requested_fit.source_window_start'
-    _VERSION_JOIN = 'AND dirty.model_type = requested_fit.model_type\n                  AND dirty.model_version = requested_fit.model_version'
+    _OVERLAP_CALL = "public.b24_source_windows_overlap(\n                      dirty.source_window_start,\n                      dirty.source_window_end,\n                      requested_fit.source_window_start,\n                      requested_fit.source_window_end\n                  )"
+    _WINDOW_EQUALITY = "dirty.source_window_start = requested_fit.source_window_start"
+    _VERSION_JOIN = "AND dirty.model_type = requested_fit.model_type\n                  AND dirty.model_version = requested_fit.model_version"
     controls.append(
         _must_fail(
             "NC-C8-S05",
             lambda: validate_window_dependency_is_overlap(
-                read_model=read_model_text.replace(
-                    _OVERLAP_CALL, _WINDOW_EQUALITY, 1
-                )
+                read_model=read_model_text.replace(_OVERLAP_CALL, _WINDOW_EQUALITY, 1)
             ),
         )
     )
@@ -1435,7 +1466,8 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
                 producer=producer_text.replace(
                     "BOUNDED_CARDINALITY_POLICY = B24_DISTINCT_CARDINALITY_POLICY",
                     "BOUNDED_CARDINALITY_POLICY = B24_DISTINCT_CARDINALITY_POLICY"
-                    + "\n" + 'LOCAL_STATUSES = ("matched_confirmed",)',
+                    + "\n"
+                    + 'LOCAL_STATUSES = ("matched_confirmed",)',
                     1,
                 )
             ),
@@ -1477,7 +1509,8 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
                 producer=producer_text.replace(
                     "from datetime import datetime, timezone",
                     "from datetime import datetime, timedelta, timezone"
-                    + "\n" + "AUTHORITY_TTL = timedelta(hours=24)",
+                    + "\n"
+                    + "AUTHORITY_TTL = timedelta(hours=24)",
                     1,
                 )
             ),
@@ -1534,9 +1567,7 @@ def main() -> int:
     try:
         counts = {validator.__name__: validator() for validator in VALIDATORS}
         positive: list[str] = []
-        controls = (
-            run_negative_controls(positive) if args.negative_control else []
-        )
+        controls = run_negative_controls(positive) if args.negative_control else []
         print("B25_P13_C7_CLOSURE_VALIDATION_PASS")
         print(f"c7_invariant_groups_passed={len(counts)}")
         print(f"c7_invariant_witnesses={sum(counts.values())}")

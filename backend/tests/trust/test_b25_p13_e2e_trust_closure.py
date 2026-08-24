@@ -52,6 +52,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api import trust_api, trust_keys
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
 from app.core.secrets import get_database_url, get_migration_database_url
 from app.db.dsn import to_asyncpg_postgres_dsn
 from app.trust.machine_identity import AgentScope
@@ -139,6 +140,7 @@ EXPECTED_CASE_IDS = (
     "P13-C5-03-future-evidence-cannot-be-current",
     "P13-C5-04-absolute-age-explicitly-bounded",
     "P13-C5-05-adversarial-class-matrix",
+    "P13-C10-signed-inference-provenance-tamper-closure",
 )
 
 #: Tables that a TrustEnvelope read must never mutate. Deliberately split by
@@ -394,8 +396,6 @@ async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
 #: The single statement a B2.4 worker uses to terminalize a fit. Every C4/C5
 #: database control drives THIS statement rather than a hand-written mutation, so
 #: a control can only pass for the reason the production seam would.
-from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
-
 _TERMINALIZE_FIT_SQL = """
     UPDATE public.bayesian_model_fits
     SET status = 'succeeded',
@@ -445,9 +445,7 @@ _PROVENANCE_DEFAULTS: dict[str, object] = {
     "diagnostic_policy_version": B24_INFERENCE_PROFILE.diagnostic_policy_version,
     "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
     "authorized_chains": B24_INFERENCE_PROFILE.chains,
-    "authorized_posterior_draws_total": (
-        B24_INFERENCE_PROFILE.posterior_draws_total
-    ),
+    "authorized_posterior_draws_total": (B24_INFERENCE_PROFILE.posterior_draws_total),
     "observed_chains": B24_INFERENCE_PROFILE.chains,
     "observed_posterior_draws_total": B24_INFERENCE_PROFILE.posterior_draws_total,
 }
@@ -2955,14 +2953,8 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
                         c_container[c_key] = mutated_value
                         break
                 try:
-                    verdict = verify_trust_envelope(
-                        candidate, registry=verification_registry
-                    )
-                    status = (
-                        verdict.get("status")
-                        if isinstance(verdict, dict)
-                        else getattr(verdict, "status", None)
-                    )
+                    verdict = verify_trust_envelope(candidate, key_registry=public_only)
+                    status = getattr(verdict, "verification_status", verdict)
                     if status not in {"valid", "verified"}:
                         provenance_failed.append(label)
                 except Exception:  # noqa: BLE001 - the refusal is the record

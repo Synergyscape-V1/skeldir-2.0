@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
 
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE  # noqa: E402
 from app.confidence_projection.policy import (  # noqa: E402
     CONFIDENCE_POLICY_VERSION,
     CONFIDENCE_SEMANTICS_VERSION,
@@ -146,6 +147,17 @@ def _projection(
         "artifact_lifecycle_status": "active",
         "artifact_ref": "b24://artifact/x",
         "artifact_hash": "b" * 64,
+        "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
+        "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
+        "sampling_policy_version": B24_INFERENCE_PROFILE.sampling_policy_version,
+        "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
+        "diagnostic_policy_version": "b24-p7-diagnostic-policy-v1",
+        "authorized_chains": B24_INFERENCE_PROFILE.chains,
+        "authorized_posterior_draws_total": (
+            B24_INFERENCE_PROFILE.posterior_draws_total
+        ),
+        "observed_chains": B24_INFERENCE_PROFILE.chains,
+        "observed_posterior_draws_total": (B24_INFERENCE_PROFILE.posterior_draws_total),
         "has_snapshot_lineage": True,
         "has_later_dirty_evidence": False,
         "has_newer_fit": False,
@@ -169,6 +181,15 @@ def _projection(
         artifact_ref="b24://artifact/x",
         artifact_hash="b" * 64,
         artifact_lifecycle_status="active",
+        inference_profile_version=B24_INFERENCE_PROFILE.profile_version,
+        runtime_policy_version=B24_INFERENCE_PROFILE.runtime_policy_version,
+        sampling_policy_version=B24_INFERENCE_PROFILE.sampling_policy_version,
+        diagnostic_policy_version="b24-p7-diagnostic-policy-v1",
+        policy_bundle_hash=B24_INFERENCE_PROFILE.policy_bundle_hash(),
+        authorized_chains=B24_INFERENCE_PROFILE.chains,
+        authorized_posterior_draws_total=(B24_INFERENCE_PROFILE.posterior_draws_total),
+        observed_chains=B24_INFERENCE_PROFILE.chains,
+        observed_posterior_draws_total=B24_INFERENCE_PROFILE.posterior_draws_total,
         observed_at=classified_at,
         evidence_snapshot_at=read_started,
         source_read_started_at=read_started,
