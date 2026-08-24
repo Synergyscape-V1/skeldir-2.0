@@ -41,6 +41,7 @@ from app.bayesian.sampler_supervisor import (
     run_supervised_sampler,
     sampler_child_command,
 )
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
 from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
 from app.bayesian.source_snapshot import (
     P6SourceAuthorityError,
@@ -325,7 +326,11 @@ def _build_sampler_input(
     policy.validate()
     max_samples = int(row["max_samples"] or 0)
     max_cores = int(row["max_cores"] or 0)
-    if max_samples < policy.sample_count or max_cores < policy.cores:
+    # max_samples is a ceiling on total_chain_iterations -- every iteration the
+    # sampler will perform, tuning included. Comparing it against a per-chain
+    # figure was harmless while there was one chain and silently wrong the
+    # moment there were four.
+    if max_samples < policy.total_chain_iterations or max_cores < policy.cores:
         raise RuntimeError("policy_rejected")
     seed = derive_rng_seed(
         RngSeedMaterial(
@@ -352,7 +357,10 @@ def _build_sampler_input(
         "random_seed": seed,
         "max_samples": max_samples,
         "max_cores": max_cores,
-        "max_runtime_seconds": int(row["max_runtime_seconds"] or 60),
+        "max_runtime_seconds": int(
+            row["max_runtime_seconds"]
+            or B24_INFERENCE_PROFILE.fit_execution_budget_seconds
+        ),
         "observed_signal": observed_input.observed_signal,
         "observed_signal_source": observed_input.metadata(),
     }
@@ -846,7 +854,20 @@ def execute_fit_intent_sync(
             **os.environ,
             "B24_STAGE_MARKER_PATH": str(marker_path),
         }
-        deadline = max(1, min(int(sampler_input["max_runtime_seconds"] or 60), 240))
+        # One envelope, one authority. The ceiling was the literal 240 beside a
+        # fallback of 60, which are the same two numbers that drifted apart in
+        # the fit claim -- a fit fenced at a quarter of the containment boundary
+        # three other components described correctly.
+        deadline = max(
+            1,
+            min(
+                int(
+                    sampler_input["max_runtime_seconds"]
+                    or B24_INFERENCE_PROFILE.fit_execution_budget_seconds
+                ),
+                B24_INFERENCE_PROFILE.sampler_supervisor_deadline_seconds,
+            ),
+        )
         result = run_supervised_sampler(
             sampler_child_command(
                 mode="real-fit",

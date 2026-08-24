@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
 from app.bayesian.source_snapshot import SourceSnapshotResult
 
 
@@ -69,11 +69,6 @@ class FitClaimResult:
 
         return self.outcome is FitClaimOutcome.CLAIMED
 
-
-#: Wall-clock ceiling granted to one fit execution. Unchanged from the
-#: value this claim has always written; named here so the three budget
-#: components sit together and none of them is a bare number in SQL again.
-B24_FIT_EXECUTION_BUDGET_SECONDS = 60
 
 
 def _utc(value: datetime) -> datetime:
@@ -148,9 +143,20 @@ async def claim_fit_for_snapshot(
         #
         # Reading the values keeps them correct by construction: if the policy
         # draws more samples tomorrow, the budget it is granted moves with it.
-        "max_runtime_seconds": B24_FIT_EXECUTION_BUDGET_SECONDS,
-        "max_samples": DEFAULT_P6_SAMPLING_POLICY.sample_count,
-        "max_cores": DEFAULT_P6_SAMPLING_POLICY.cores,
+        # Read from the inference profile, which is the authority that binds the
+        # runtime cage, the sampling policy and the diagnostics into one system.
+        #
+        # These were literals -- 60, 0, 1 -- and two of the three were wrong. A
+        # sample budget of zero refused every fit before compute. A runtime
+        # budget of 60 was a quarter of the 240 seconds P5 already authorised,
+        # so a fit was fenced far below its own containment boundary while three
+        # other numbers described that boundary correctly.
+        #
+        # max_samples governs total_chain_iterations: all the work, tuning
+        # included, because tuning costs the same wall clock as drawing.
+        "max_runtime_seconds": B24_INFERENCE_PROFILE.fit_execution_budget_seconds,
+        "max_samples": B24_INFERENCE_PROFILE.total_chain_iterations,
+        "max_cores": B24_INFERENCE_PROFILE.cores,
     }
     await session.execute(
         text(
