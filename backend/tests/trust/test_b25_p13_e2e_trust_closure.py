@@ -394,6 +394,8 @@ async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
 #: The single statement a B2.4 worker uses to terminalize a fit. Every C4/C5
 #: database control drives THIS statement rather than a hand-written mutation, so
 #: a control can only pass for the reason the production seam would.
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
+
 _TERMINALIZE_FIT_SQL = """
     UPDATE public.bayesian_model_fits
     SET status = 'succeeded',
@@ -414,12 +416,41 @@ _TERMINALIZE_FIT_SQL = """
         confidence_currency_count = :currency_count,
         confidence_classified_at = :confidence_classified_at,
         confidence_evidence_snapshot_hash = :evidence_snapshot_hash,
+        inference_profile_version = :inference_profile_version,
+        runtime_policy_version = :runtime_policy_version,
+        sampling_policy_version = :sampling_policy_version,
+        diagnostic_policy_version = :diagnostic_policy_version,
+        policy_bundle_hash = :policy_bundle_hash,
+        authorized_chains = :authorized_chains,
+        authorized_posterior_draws_total = :authorized_posterior_draws_total,
+        n_chains = :observed_chains,
+        n_samples_actual = :observed_posterior_draws_total,
         completed_at = :confidence_classified_at,
         updated_at = now()
     WHERE tenant_id = :tenant_id
       AND id = :fit_id
       AND status IN ('pending', 'queued', 'running', 'persist_pending')
 """
+
+# The producing inference regime, taken from the profile rather than restated.
+#
+# C10 makes a usable confidence bucket unexpressible without the authority
+# needed to interpret it, and this fixture writes usable buckets. Reading the
+# values from the profile means a policy change moves this fixture too, instead
+# of leaving it asserting a regime that no longer exists.
+_PROVENANCE_DEFAULTS: dict[str, object] = {
+    "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
+    "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
+    "sampling_policy_version": B24_INFERENCE_PROFILE.sampling_policy_version,
+    "diagnostic_policy_version": B24_INFERENCE_PROFILE.diagnostic_policy_version,
+    "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
+    "authorized_chains": B24_INFERENCE_PROFILE.chains,
+    "authorized_posterior_draws_total": (
+        B24_INFERENCE_PROFILE.posterior_draws_total
+    ),
+    "observed_chains": B24_INFERENCE_PROFILE.chains,
+    "observed_posterior_draws_total": B24_INFERENCE_PROFILE.posterior_draws_total,
+}
 
 _TERMINALIZE_DEFAULTS: dict[str, object] = {
     "confidence_bucket": "high",
@@ -428,6 +459,7 @@ _TERMINALIZE_DEFAULTS: dict[str, object] = {
     "deterministic_row_count": 1,
     "match_verdict_count": 1,
     "currency_count": 1,
+    **_PROVENANCE_DEFAULTS,
 }
 
 
@@ -1253,7 +1285,12 @@ async def _project_grandfathered_temporal_fit(
                         confidence_classified_at,
                         confidence_evidence_snapshot_hash,
                         source_read_started_at, source_read_completed_at,
-                        artifact_ref, artifact_hash, created_at, updated_at
+                        artifact_ref, artifact_hash,
+                        inference_profile_version, runtime_policy_version,
+                        sampling_policy_version, policy_bundle_hash,
+                        authorized_chains, authorized_posterior_draws_total,
+                        n_chains, n_samples_actual,
+                        created_at, updated_at
                     ) VALUES (
                         :fit_id, :tenant_id, 'bayesian_attribution_confidence',
                         :model_version, :window_start, :window_end,
@@ -1271,11 +1308,17 @@ async def _project_grandfathered_temporal_fit(
                         10000, 1, 1, 1,
                         :classified_at, :snapshot_hash,
                         :read_started, :read_completed,
-                        :artifact_ref, :artifact_hash, :classified_at, :classified_at
+                        :artifact_ref, :artifact_hash,
+                        :inference_profile_version, :runtime_policy_version,
+                        :sampling_policy_version, :policy_bundle_hash,
+                        :authorized_chains, :authorized_posterior_draws_total,
+                        :observed_chains, :observed_posterior_draws_total,
+                        :classified_at, :classified_at
                     )
                     """
                 ),
                 {
+                    **_PROVENANCE_DEFAULTS,
                     "fit_id": str(fit_id),
                     "tenant_id": str(tenant_id),
                     "model_version": model_version,
@@ -1733,7 +1776,12 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     confidence_classified_at,
                     confidence_evidence_snapshot_hash,
                     source_read_started_at, source_read_completed_at,
-                    artifact_ref, artifact_hash, created_at, updated_at
+                    artifact_ref, artifact_hash,
+                    inference_profile_version, runtime_policy_version,
+                    sampling_policy_version, policy_bundle_hash,
+                    authorized_chains, authorized_posterior_draws_total,
+                    n_chains, n_samples_actual,
+                    created_at, updated_at
                 ) VALUES (
                     :fit_id, :tenant_id, 'bayesian_attribution_confidence', :model_version,
                     :window_start, :window_end, :snapshot_hash,
@@ -1750,7 +1798,12 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     NULL, NULL, NULL,
                     NULL,
                     :source_read_started_at, :source_read_completed_at,
-                    :artifact_ref, :artifact_hash, :completed_at, :completed_at
+                    :artifact_ref, :artifact_hash,
+                    :inference_profile_version, :runtime_policy_version,
+                    :sampling_policy_version, :policy_bundle_hash,
+                    :authorized_chains, :authorized_posterior_draws_total,
+                    :observed_chains, :observed_posterior_draws_total,
+                    :completed_at, :completed_at
                 )
                 """
             ),
@@ -1783,6 +1836,7 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                 "diagnostic_policy": "p13-diagnostics-v1",
                 "target_policy": "p13-target-v1",
                 "interval_policy": "p13-interval-v1",
+                **_PROVENANCE_DEFAULTS,
                 "confidence_bucket": case["bucket"],
                 "confidence_bucket_reason": case["reason"],
                 "currency_count": case["currency_count"],
@@ -1905,11 +1959,21 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     confidence_currency_count = :currency_count,
                     confidence_classified_at = :completed_at,
                     confidence_evidence_snapshot_hash = :snapshot_hash,
+                    inference_profile_version = :inference_profile_version,
+                    runtime_policy_version = :runtime_policy_version,
+                    sampling_policy_version = :sampling_policy_version,
+                    policy_bundle_hash = :policy_bundle_hash,
+                    authorized_chains = :authorized_chains,
+                    authorized_posterior_draws_total
+                        = :authorized_posterior_draws_total,
+                    n_chains = :observed_chains,
+                    n_samples_actual = :observed_posterior_draws_total,
                     updated_at = :completed_at
                 WHERE tenant_id = :tenant_id AND id = :fit_id
                 """
             ),
             {
+                **_PROVENANCE_DEFAULTS,
                 "status": case["status"],
                 "completed_at": recorded_at,
                 "tenant_id": str(tenant_id),
@@ -2849,6 +2913,70 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
         )
         assert tampered_expected, "tamper matrix exercised zero fields"
         executed.append("P13-G3-tamper-matrix-all-load-bearing-fields")
+
+        # ---- C10-N: the signature commits to the producing inference regime ---
+        #
+        # The matrix above runs over a match_verdict envelope, where inference
+        # provenance is legitimately null -- no inference produced a
+        # deterministic match, and a bundle hash there would be a fabrication.
+        # So the provenance fields are declared load-bearing and never actually
+        # tampered, which is precisely the shape of a blind spot: covered on
+        # paper, unexercised in fact.
+        #
+        # This pass runs the same tamper over the available-confidence envelope,
+        # which does carry a regime. It is the assertion that answers "could a
+        # confidence produced under one inference policy be presented as though
+        # produced under another": not without breaking the signature.
+        provenance_expected: list[str] = []
+        provenance_failed: list[str] = []
+        provenance_paths = sorted(
+            path
+            for path in load_bearing_paths
+            if path.startswith("confidence_metadata.inference_provenance")
+        )
+        assert provenance_paths, "provenance paths absent from the hash manifest"
+        for path in provenance_paths:
+            targets = _resolve_path(available_confidence_envelope, path)
+            assert targets, (
+                f"{path} is declared load-bearing but absent from a signed "
+                "available-confidence envelope; the regime that produced this "
+                "confidence is not being committed to"
+            )
+            for container, key in targets:
+                original = container[key]
+                mutated_value = _tamper(original)
+                if mutated_value == original:
+                    continue
+                label = f"{path}[{key}]"
+                provenance_expected.append(label)
+                candidate = copy.deepcopy(available_confidence_envelope)
+                for c_container, c_key in _resolve_path(candidate, path):
+                    if c_key == key:
+                        c_container[c_key] = mutated_value
+                        break
+                try:
+                    verdict = verify_trust_envelope(
+                        candidate, registry=verification_registry
+                    )
+                    status = (
+                        verdict.get("status")
+                        if isinstance(verdict, dict)
+                        else getattr(verdict, "status", None)
+                    )
+                    if status not in {"valid", "verified"}:
+                        provenance_failed.append(label)
+                except Exception:  # noqa: BLE001 - the refusal is the record
+                    provenance_failed.append(label)
+
+        provenance_blind = sorted(set(provenance_expected) - set(provenance_failed))
+        assert not provenance_blind, (
+            "inference provenance accepted tampering; a confidence could be "
+            f"re-attributed to another policy regime: {provenance_blind}"
+        )
+        assert provenance_expected, "provenance tamper pass exercised zero fields"
+        print(f"p13_c10_provenance_tamper_fields_expected={len(provenance_expected)}")
+        print(f"p13_c10_provenance_tamper_fields_failed={len(provenance_failed)}")
+        executed.append("P13-C10-signed-inference-provenance-tamper-closure")
 
         # ---- G4: B2.4 confidence states compose truthfully --------------------
         confidence_envelopes = {"available": available_confidence_envelope}

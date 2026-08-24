@@ -593,6 +593,12 @@ def _persist_result_summary(
                 diagnostic_policy_version = :diagnostic_policy_version,
                 diagnostic_target_filter_version = :diagnostic_target_filter_version,
                 interval_policy_version = :interval_policy_version,
+                inference_profile_version = :inference_profile_version,
+                runtime_policy_version = :runtime_policy_version,
+                sampling_policy_version = :sampling_policy_version,
+                policy_bundle_hash = :policy_bundle_hash,
+                authorized_chains = :authorized_chains,
+                authorized_posterior_draws_total = :authorized_posterior_draws_total,
                 diagnostics_computed_at = now(),
                 runtime_seconds = :runtime_seconds,
                 n_chains = :n_chains,
@@ -642,6 +648,23 @@ def _persist_result_summary(
                 result_summary["diagnostic_target_filter_version"]
             ),
             "interval_policy_version": str(result_summary["interval_policy_version"]),
+            # The producing regime, recorded beside the number it produced.
+            # Trust cannot compute this later -- the process that knew it has
+            # exited -- so if it is not written here it is gone.
+            "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
+            "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
+            "sampling_policy_version": (
+                B24_INFERENCE_PROFILE.sampling_policy_version
+            ),
+            "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
+            # Authorised topology, kept beside the observed topology the child
+            # measured. The DB constraint requires them equal for any usable
+            # bucket; keeping both makes the equality auditable rather than
+            # merely enforced.
+            "authorized_chains": B24_INFERENCE_PROFILE.chains,
+            "authorized_posterior_draws_total": (
+                B24_INFERENCE_PROFILE.posterior_draws_total
+            ),
             "runtime_seconds": runtime_seconds,
             "n_chains": int(result_summary["n_chains"]),
             "n_samples_actual": int(result_summary["n_samples_actual"]),

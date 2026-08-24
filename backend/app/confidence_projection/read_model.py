@@ -73,6 +73,25 @@ class B24ConfidenceProjectionRead:
     has_newer_fit: bool
     decision: ConfidencePolicyDecision
 
+    #: The inference regime that produced this confidence. Read from the fit,
+    #: never recomputed -- Trust may not reach into Bayesian modules, and the
+    #: process that knew these values exited long ago.
+    #:
+    #: Defaulted to None because rows written before C10 genuinely have no
+    #: recorded regime. That is the honest representation of a real gap; the
+    #: places where a regime is mandatory enforce it directly -- the database
+    #: refuses a usable confidence bucket without a policy bundle, and the P13
+    #: closure proof refuses an available envelope whose provenance is absent.
+    inference_profile_version: str | None = None
+    runtime_policy_version: str | None = None
+    sampling_policy_version: str | None = None
+    diagnostic_policy_version: str | None = None
+    policy_bundle_hash: str | None = None
+    authorized_chains: int | None = None
+    authorized_posterior_draws_total: int | None = None
+    observed_chains: int | None = None
+    observed_posterior_draws_total: int | None = None
+
     @property
     def source_snapshot_mismatch(self) -> bool:
         """Preserve the historical adapter property with fail-closed semantics."""
@@ -117,7 +136,16 @@ _EXACT_FIT_PROJECTION_SQL = text(
             fit.source_read_started_at,
             fit.source_read_completed_at,
             fit.artifact_ref AS fit_artifact_ref,
-            fit.artifact_hash AS fit_artifact_hash
+            fit.artifact_hash AS fit_artifact_hash,
+            fit.inference_profile_version,
+            fit.runtime_policy_version,
+            fit.sampling_policy_version,
+            fit.diagnostic_policy_version,
+            fit.policy_bundle_hash,
+            fit.authorized_chains,
+            fit.authorized_posterior_draws_total,
+            fit.n_chains AS observed_chains,
+            fit.n_samples_actual AS observed_posterior_draws_total
         FROM public.bayesian_model_fits fit
         WHERE fit.tenant_id = :tenant_id
           AND fit.id = :fit_id
@@ -362,6 +390,10 @@ async def read_b24_confidence_projection_for_fit(
             return None
         return int(value)
 
+    def _nullable_str(column: str) -> str | None:
+        value = mapping.get(column)
+        return None if value is None else str(value)
+
     return B24ConfidenceProjectionRead(
         tenant_id=UUID(str(mapping["tenant_id"])),
         fit_id=UUID(str(mapping["fit_id"])),
@@ -402,6 +434,19 @@ async def read_b24_confidence_projection_for_fit(
             str(mapping["artifact_lifecycle_status"])
             if mapping.get("artifact_lifecycle_status") is not None
             else None
+        ),
+        inference_profile_version=_nullable_str("inference_profile_version"),
+        runtime_policy_version=_nullable_str("runtime_policy_version"),
+        sampling_policy_version=_nullable_str("sampling_policy_version"),
+        diagnostic_policy_version=_nullable_str("diagnostic_policy_version"),
+        policy_bundle_hash=_nullable_str("policy_bundle_hash"),
+        authorized_chains=_nullable_int("authorized_chains"),
+        authorized_posterior_draws_total=_nullable_int(
+            "authorized_posterior_draws_total"
+        ),
+        observed_chains=_nullable_int("observed_chains"),
+        observed_posterior_draws_total=_nullable_int(
+            "observed_posterior_draws_total"
         ),
         observed_at=observed_at,
         evidence_snapshot_at=mapping.get("source_read_started_at"),

@@ -169,7 +169,13 @@ jobs:
           grep -E "^p13_executed_cases=20$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_expected=158$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_load_bearing_paths=85$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_load_bearing_paths=95$" /tmp/b25_p13_e2e.out
+
+          # C10: the signature commits to the producing inference regime.
+          # Pinned exactly -- a provenance field that stops being covered must
+          # turn this red rather than quietly shrink a number nobody reads.
+          grep -E "^p13_c10_provenance_tamper_fields_expected=10$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c10_provenance_tamper_fields_failed=10$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
           grep -E "^p13_downgrade_cases_failed_closed=8$" /tmp/b25_p13_e2e.out
           grep -E "^p13_negative_controls_fired=18$" /tmp/b25_p13_e2e.out
@@ -998,3 +1004,126 @@ jobs:
             backend/tests/trust/test_b25_p13_c9_positive_confidence.py \
             -q -s --no-header | tee /tmp/nc_c9_08_restored.out
           grep -E "2 passed" /tmp/nc_c9_08_restored.out
+
+  b2-5-p13-c10-artifact-topology:
+    name: B2.5-P13 C10 Executable Artifact Topology
+    runs-on: ubuntu-latest
+    # This job exists because F-11 was declared resolved on evidence produced by
+    # a job that pip-installs onto a runner. That evidence was real, and it
+    # measured a topology the shipped image did not have: Dockerfile.bayesian
+    # set B24_PYMC_CHAINS=1, so production resolved one chain, R-hat was
+    # undefined, and no fit it produced could pass its own diagnostics -- while
+    # required CI stayed green, because nothing in CI ever built the image.
+    #
+    # Nothing here reads a policy default. Every assertion is made against the
+    # artifact this repository would actually deploy.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Build the production Bayesian artifact, unmodified
+        run: |
+          set -euo pipefail
+          docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate .
+
+      - name: C10-B/C10-I -- the shipped artifact resolves the governed topology
+        run: |
+          set -euo pipefail
+          # Piped in rather than baked into the image: the artifact under test
+          # stays byte-identical to the one that would ship.
+          docker run --rm -i skeldir-bayesian:candidate \
+            python - < scripts/ci/validate_b24_artifact_topology.py | tee artifact_topology.log
+          grep -q 'B24_ARTIFACT_TOPOLOGY_PASS' artifact_topology.log
+          grep -q 'Sequential sampling (4 chains in 1 job)' artifact_topology.log \
+            || { echo "artifact did not sample four chains sequentially"; exit 1; }
+          echo "p13_c10_artifact_topology_pass=1" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: NC-C10-01 -- reintroducing the one-chain image override turns this RED
+        run: |
+          set -euo pipefail
+          # The decisive F-12 successor control. No test expectation is touched;
+          # only the deployment artifact changes, exactly as it stood on main.
+          python - <<'PY'
+          import pathlib
+          lines = pathlib.Path("backend/Dockerfile.bayesian").read_text().split("\n")
+          i = next(n for n, l in enumerate(lines)
+                   if l.strip().startswith("B24_PYMC_CORES="))
+          lines.insert(i + 1, "    B24_PYMC_CHAINS=1 " + chr(92))
+          pathlib.Path("Dockerfile.nc-c10-01").write_text("\n".join(lines))
+          PY
+          docker build -f Dockerfile.nc-c10-01 -t skeldir-bayesian:nc-c10-01 .
+          if docker run --rm -i skeldir-bayesian:nc-c10-01 \
+               python - < scripts/ci/validate_b24_artifact_topology.py > nc01.log 2>&1; then
+            echo "NC-C10-01 DID NOT FIRE: the one-chain artifact passed the gate"
+            cat nc01.log
+            exit 1
+          fi
+          grep -q 'B24_ARTIFACT_TOPOLOGY_FAIL' nc01.log
+          grep -q 'authorized=4 resolved=1' nc01.log
+          rm -f Dockerfile.nc-c10-01
+          echo "p13_c10_nc01_artifact_one_chain_fired=1" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: NC-C10-02 -- an environment override is refused before PyMC runs
+        run: |
+          set -euo pipefail
+          for n in 1 2 3; do
+            if docker run --rm -i -e B24_PYMC_CHAINS=$n skeldir-bayesian:candidate \
+                 python - < scripts/ci/validate_b24_artifact_topology.py > "nc02-$n.log" 2>&1; then
+              echo "NC-C10-02 DID NOT FIRE for chains=$n"
+              cat "nc02-$n.log"
+              exit 1
+            fi
+            grep -q "authorized=4 resolved=$n" "nc02-$n.log"
+            # Refused *before* computation, not diagnosed after it.
+            if grep -q 'Sequential sampling' "nc02-$n.log"; then
+              echo "chains=$n reached PyMC; the binding is not fail-closed"
+              exit 1
+            fi
+          done
+          echo "p13_c10_nc02_runtime_override_refused=3" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: NC-C10-03 -- a deadline that diverges from the profile fails closed
+        run: |
+          set -euo pipefail
+          # The chains defect proved that equal defaults are not a binding. These
+          # three are equally environment-driven and today merely happen to agree.
+          fired=0
+          for spec in "B24_SAMPLER_SUPERVISOR_DEADLINE_S=120" \
+                      "BAYESIAN_TASK_SOFT_TIME_LIMIT_S=250" \
+                      "BAYESIAN_TASK_TIME_LIMIT_S=999"; do
+            if docker run --rm -i -e "$spec" skeldir-bayesian:candidate \
+                 python - < scripts/ci/validate_b24_artifact_topology.py > nc03.log 2>&1; then
+              echo "NC-C10-03 DID NOT FIRE for $spec"
+              cat nc03.log
+              exit 1
+            fi
+            grep -q 'B24_ARTIFACT_TOPOLOGY_FAIL' nc03.log
+            fired=$((fired + 1))
+          done
+          echo "p13_c10_nc03_deadline_divergence_refused=$fired" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: C10-I -- four chains without multiprocessing fan-out
+        run: |
+          set -euo pipefail
+          # Chains rose; parallelism did not. Confirmed from inside the running
+          # container rather than from the policy that requested it.
+          docker run --rm -i skeldir-bayesian:candidate python - <<'PY' | tee containment.log
+          import json, os, warnings
+          warnings.filterwarnings("ignore")
+          from app.bayesian.runtime_policy import build_runtime_policy
+          r = build_runtime_policy()
+          assert r.pymc_cores == 1, r.pymc_cores
+          assert r.blas_total_threads == 1, r.blas_total_threads
+          for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+                      "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+              assert os.environ.get(var) == "1", (var, os.environ.get(var))
+          print("B24_ARTIFACT_CONTAINMENT_PASS " + json.dumps({
+              "chains": r.pymc_chains, "cores": r.pymc_cores,
+              "blas_total_threads": r.blas_total_threads,
+              "worker_concurrency": r.worker_concurrency,
+          }, sort_keys=True))
+          PY
+          grep -q 'B24_ARTIFACT_CONTAINMENT_PASS' containment.log
+          echo "p13_c10_single_process_containment_pass=1" >> "$GITHUB_STEP_SUMMARY"

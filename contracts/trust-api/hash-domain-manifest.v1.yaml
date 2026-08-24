@@ -114,6 +114,16 @@ field_domains:
   - {field_path: confidence_metadata.confidence_status, domain: semantic_truth_v1}
   - {field_path: confidence_metadata.diagnostics_status, domain: semantic_truth_v1}
   - {field_path: confidence_metadata.unavailable_reason, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.policy_bundle_hash, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.inference_profile_version, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.runtime_policy_version, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.sampling_policy_version, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.diagnostic_policy_version, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.authorized_chains, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.observed_chains, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.authorized_posterior_draws_total, domain: semantic_truth_v1}
+  - {field_path: confidence_metadata.inference_provenance.observed_posterior_draws_total, domain: semantic_truth_v1}
   - {field_path: created_at, domain: signature_material_v1}
   - {field_path: currency, domain: semantic_truth_v1}
   - {field_path: data_completeness_status, domain: semantic_truth_v1}

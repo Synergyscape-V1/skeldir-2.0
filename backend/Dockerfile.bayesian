@@ -1,12 +1,29 @@
 FROM python:3.11-slim
 
+# B24_PYMC_CHAINS is deliberately NOT set here.
+#
+# It was set to 1 from this file's first commit, and it silently outranked
+# the governed four-chain inference policy: the image resolved one chain,
+# PyMC sampled one chain, R-hat was undefined, and every production fit
+# failed its own diagnostics -- while CI, which never builds this image,
+# measured four chains and reported the topology as fixed.
+#
+# The cores and BLAS pins below stay, because those genuinely are
+# container-level thread controls that must be set before the process
+# starts. Chain count is not a thread control; it is inference policy, and
+# it belongs to the policy that owns it. Leaving it unset here means the
+# governed default applies.
+#
+# Anything that does set it -- here, in a compose file, or at docker run --
+# is refused before sampling by assert_runtime_matches_profile(), so this
+# is a sane default rather than the only line of defence.
+
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     B24_BAYESIAN_WORKER_RUNTIME_ID=skeldir-b24-bayesian-worker \
     B24_BAYESIAN_WORKER_CONCURRENCY=1 \
     B24_PYMC_CORES=1 \
-    B24_PYMC_CHAINS=1 \
     B24_BLAS_TOTAL_THREADS=1 \
     B24_PYTENSOR_ROOT=/tmp/skeldir-b24-pytensor \
     SKELDIR_CELERY_WORKER_ROLE=bayesian \

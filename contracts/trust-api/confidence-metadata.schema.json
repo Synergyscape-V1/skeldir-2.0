@@ -32,12 +32,18 @@
       ]
     },
     "confidence_score_basis_points": {
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 10000
     },
     "bayesian_model_type": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "enum": [
         "pymc_marketing_mmm",
         "deterministic_only",
@@ -45,7 +51,10 @@
       ]
     },
     "bayesian_model_version": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "pattern": "^[A-Za-z0-9._:-]{1,64}$"
     },
     "diagnostics_status": {
@@ -58,7 +67,10 @@
       ]
     },
     "unavailable_reason": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "enum": [
         "cold_start_insufficient_data",
         "diagnostics_failed",
@@ -71,6 +83,87 @@
         "not_applicable",
         null
       ]
+    },
+    "inference_provenance": {
+      "description": "The governed inference regime that produced this confidence. Optional in the wire contract so existing consumers stay compatible, and null where no inference ran. Presence is enforced where it carries meaning rather than where it would merely be uniform: the database refuses a usable confidence bucket without a policy bundle, and the P13 closure proof refuses an available-confidence envelope whose provenance is absent. The field is declared load-bearing in the hash-domain manifest, so the signature commits to it and it cannot be re-attributed to another regime.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "policy_bundle_hash",
+        "inference_profile_version",
+        "runtime_policy_version",
+        "sampling_policy_version",
+        "diagnostic_policy_version",
+        "authorized_chains",
+        "observed_chains",
+        "authorized_posterior_draws_total",
+        "observed_posterior_draws_total"
+      ],
+      "properties": {
+        "policy_bundle_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "inference_profile_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+        },
+        "runtime_policy_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+        },
+        "sampling_policy_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+        },
+        "diagnostic_policy_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+        },
+        "authorized_chains": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "observed_chains": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "authorized_posterior_draws_total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "observed_posterior_draws_total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      }
     }
   }
 }
