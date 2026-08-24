@@ -662,12 +662,23 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
             .mappings()
             .one()
         )
+    # This block asserted the opposite of itself. The repository's flagship
+    # evidence that real sampling works expected diagnostic_status 'failed' with
+    # reason 'nonfinite_diagnostic' -- and went green on every run, because the
+    # failure was the assertion. F-11 was not merely undetected here; it was
+    # certified. A single chain makes R-hat undefined, so 'nonfinite' was the
+    # only outcome reachable, and 64 draws could not have met an effective
+    # sample size of 400 even if it had been.
+    #
+    # Under four sequential chains the same model, the same data and the same
+    # unchanged thresholds produce an accepted posterior and an available
+    # interval. Nothing was relaxed to get here.
     assert row == {
         "status": "succeeded",
-        "credible_interval_status": "not_available",
-        "diagnostic_status": "failed",
-        "diagnostic_failure_reason": "nonfinite_diagnostic",
-        "n_samples_actual": 64,
+        "credible_interval_status": "available",
+        "diagnostic_status": "accepted",
+        "diagnostic_failure_reason": None,
+        "n_samples_actual": B24_INFERENCE_PROFILE.posterior_draws_total,
         "divergence_count": 0,
         "has_artifact_hash": True,
     }

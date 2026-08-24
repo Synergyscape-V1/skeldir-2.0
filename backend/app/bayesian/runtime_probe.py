@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -157,17 +158,25 @@ def tiny_benchmark() -> dict[str, object]:
     import numpy as np
     import pymc as pm
 
-    if policy.pymc_cores != 1 or policy.pymc_chains != 1:
+    if policy.pymc_cores != 1 or policy.blas_total_threads != 1:
         raise RuntimeError(
-            "B2.4-P5 single-process PyMC policy requires cores=1 and chains=1"
+            "B2.4-P5 single-process PyMC policy requires cores=1 and blas_cores=1"
         )
+    # This is a fixed micro-benchmark measured against a wall-clock threshold:
+    # it answers "is this runtime fast enough to sample at all", which is a
+    # property of the machine, not of how many chains a fit happens to want.
+    # Inheriting the fit policy's chain count would multiply the measurement by
+    # that count and make an unrelated threshold fail whenever the statistics
+    # changed. So the benchmark pins its own topology and the cage above is
+    # what it asserts about the policy.
+    benchmark_policy = replace(policy, pymc_chains=1)
     started = time.monotonic()
     with pm.Model():
         mu = pm.Normal("mu", mu=0.0, sigma=1.0)
         pm.Normal("obs", mu=mu, sigma=1.0, observed=np.asarray([0.0, 0.1, -0.1]))
         idata = run_single_process_pymc_sample(
             pm,
-            policy,
+            benchmark_policy,
             draws=20,
             tune=20,
             random_seed=42,
@@ -184,7 +193,7 @@ def tiny_benchmark() -> dict[str, object]:
         "probe": "tiny_benchmark",
         "elapsed_seconds": round(elapsed, 3),
         "threshold_seconds": policy.benchmark_threshold_s,
-        "chains": policy.pymc_chains,
+        "chains": benchmark_policy.pymc_chains,
         "cores": policy.pymc_cores,
         "blas_cores": policy.blas_total_threads,
         "multiprocessing_policy": "single-process",

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
 from app.bayesian.child_environment import build_sampler_child_env
 from app.bayesian.compiledir_reaper import (
     create_compiledir_lease,
@@ -206,8 +207,15 @@ def test_b24_p6_real_fit_child_emits_bounded_unvalidated_summary(
     assert result.status == "completed"
     assert result.returncode == 0
     assert payload["status"] == "sampled_unvalidated"
-    assert payload["n_chains"] == 1
-    assert payload["n_samples_actual"] == 64
+    # Read from the policy. These were 1 and 64, and the pair was F-11 in two
+    # literals: one chain makes R-hat undefined, and 64 draws cannot reach an
+    # effective sample size of 400. A proof that pinned them could only ever
+    # have stayed green by expecting the sampler to fail its own diagnostics.
+    assert payload["n_chains"] == DEFAULT_P6_SAMPLING_POLICY.chains
+    assert (
+        payload["n_samples_actual"]
+        == DEFAULT_P6_SAMPLING_POLICY.posterior_draws_total
+    )
     assert "posterior" not in payload
     assert "trace" not in payload
     assert stages == [
