@@ -2966,6 +2966,10 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             f"re-attributed to another policy regime: {provenance_blind}"
         )
         assert provenance_expected, "provenance tamper pass exercised zero fields"
+        # Pytest's progress label has no trailing newline under ``-q -s``.
+        # Delimit the first machine-read counter so CI's exact-line assertion
+        # cannot depend on the test runner's terminal rendering behavior.
+        print()
         print(f"p13_c10_provenance_tamper_fields_expected={len(provenance_expected)}")
         print(f"p13_c10_provenance_tamper_fields_failed={len(provenance_failed)}")
         executed.append("P13-C10-signed-inference-provenance-tamper-closure")
