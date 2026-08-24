@@ -289,7 +289,7 @@ def validate_bayesian_worker_boot_probe(
     guarded_entry_count = tasks.count("assert_bayesian_worker_boot_topology_proven()")
     _require(
         task_entry_count > 0 and guarded_entry_count == task_entry_count,
-        "P9 every Bayesian task entry must fail closed on missing boot proof: "
+        "P9 Bayesian task entries must each fail closed on missing boot proof: "
         f"tasks={task_entry_count}, guarded={guarded_entry_count}",
     )
     for token in (
