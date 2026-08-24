@@ -342,7 +342,7 @@ def run_negative_controls() -> None:
             "posterior_dimensions_replaced_by_policy_defaults",
             lambda: validate_pymc_child_boundary(
                 sampler_child_text=_read(SAMPLER_CHILD).replace(
-                    '"n_chains": observed["observed_chains"]',
+                    '"n_chains": observed_topology["observed_chains"]',
                     '"n_chains": policy.chains',
                 )
             ),
