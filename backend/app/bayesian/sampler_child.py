@@ -12,7 +12,6 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 
 FORBIDDEN_ENV_FRAGMENTS = (
@@ -316,6 +315,7 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         assert_observed_topology_matches_profile,
         assert_runtime_matches_profile,
     )
+    from typing import Any
 
     emit_stage_marker("runtime_authority_check", mode="real-fit")
     try:
@@ -364,7 +364,7 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
     observed_chains = int(trace.posterior.sizes["chain"])
     observed_draws_per_chain = int(trace.posterior.sizes["draw"])
     try:
-        observed = assert_observed_topology_matches_profile(
+        observed_topology = assert_observed_topology_matches_profile(
             observed_chains=observed_chains,
             observed_draws_per_chain=observed_draws_per_chain,
         )
@@ -387,13 +387,13 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         "runtime_seconds": round(elapsed_seconds, 6),
         "execution_success": True,
         # Observed, not intended. See the measurement above.
-        "n_chains": observed["observed_chains"],
-        "n_samples_actual": observed["observed_posterior_draws_total"],
+        "n_chains": observed_topology["observed_chains"],
+        "n_samples_actual": observed_topology["observed_posterior_draws_total"],
         # Both halves retained, so the correspondence is auditable rather than
         # merely asserted once and discarded.
         "authorized_chains": policy.chains,
         "authorized_posterior_draws_total": policy.posterior_draws_total,
-        "observed_draws_per_chain": observed["observed_draws_per_chain"],
+        "observed_draws_per_chain": observed_topology["observed_draws_per_chain"],
         "runtime_correspondence": runtime_correspondence,
         "divergence_count": divergence_count,
         "posterior_summary": {
