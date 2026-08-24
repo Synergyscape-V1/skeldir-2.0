@@ -497,7 +497,13 @@ async def _insert_authority_and_fit(
                     source_read_completed_at,
                     max_runtime_seconds,
                     max_samples,
-                    max_cores
+                    max_cores,
+                    inference_profile_version,
+                    runtime_policy_version,
+                    sampling_policy_version,
+                    policy_bundle_hash,
+                    authorized_chains,
+                    authorized_posterior_draws_total
                 )
                 VALUES (
                     :tenant_id,
@@ -520,7 +526,13 @@ async def _insert_authority_and_fit(
                     :source_read_completed_at,
                     :max_runtime_seconds,
                     :max_samples,
-                    :max_cores
+                    :max_cores,
+                    :inference_profile_version,
+                    :runtime_policy_version,
+                    :sampling_policy_version,
+                    :policy_bundle_hash,
+                    :authorized_chains,
+                    :authorized_posterior_draws_total
                 )
                 """
             ),
@@ -543,6 +555,16 @@ async def _insert_authority_and_fit(
                 ),
                 "max_samples": B24_INFERENCE_PROFILE.total_chain_iterations,
                 "max_cores": B24_INFERENCE_PROFILE.cores,
+                "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
+                "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
+                "sampling_policy_version": (
+                    B24_INFERENCE_PROFILE.sampling_policy_version
+                ),
+                "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
+                "authorized_chains": B24_INFERENCE_PROFILE.chains,
+                "authorized_posterior_draws_total": (
+                    B24_INFERENCE_PROFILE.posterior_draws_total
+                ),
             },
         )
 
