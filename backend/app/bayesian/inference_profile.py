@@ -37,16 +37,19 @@ effective sample per retained draw as structurally implausible.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 
 from app.bayesian.diagnostics import DEFAULT_P7_DIAGNOSTIC_POLICY
 from app.bayesian.runtime_policy import B24_RUNTIME_POLICY_VERSION
 from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
+from app.inference_policy_registry import (
+    CURRENT_POLICY_BUNDLE_HASH,
+    INFERENCE_PROFILE_VERSION,
+    current_manifest,
+)
 
 
-B24_INFERENCE_PROFILE_VERSION = "b24-inference-profile-v1"
+B24_INFERENCE_PROFILE_VERSION = INFERENCE_PROFILE_VERSION
 
 #: The sampler is given the runtime envelope P5 already authorises, rather than
 #: a smaller number that drifted independently. Before this, a planner-created
@@ -108,20 +111,9 @@ class InferenceCompatibilityProfile:
         }
 
     def policy_bundle_hash(self) -> str:
-        """One immutable identifier for the whole authorised bundle.
+        """Content identity of the complete governed semantic manifest."""
 
-        Four version strings that must be interpreted together are more
-        faithfully carried as one identity than as four fields that can drift
-        apart or be partially copied. This is that identity: a canonical
-        digest over the tuple, stable across processes and machines, so a
-        signed confidence can name the regime that produced it in one value
-        that cannot be half-right.
-        """
-
-        canonical = json.dumps(
-            self.as_provenance(), sort_keys=True, separators=(",", ":")
-        )
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return CURRENT_POLICY_BUNDLE_HASH
 
     def validate(self) -> None:
         """Reject combinations in which no posterior could ever be accepted."""
@@ -220,7 +212,6 @@ def build_inference_profile() -> InferenceCompatibilityProfile:
     )
 
 
-
 #: Every dimension the profile authorises that the *environment* can also
 #: resolve independently, paired as (profile attribute, runtime attribute).
 #:
@@ -279,8 +270,7 @@ def assert_runtime_matches_profile(
     if divergences:
         raise RuntimeProfileMismatchError(
             "resolved runtime diverges from the authorised inference profile "
-            f"{active.profile_version}; refusing to sample. "
-            + "; ".join(divergences)
+            f"{active.profile_version}; refusing to sample. " + "; ".join(divergences)
         )
 
     correspondence["policy_bundle_hash"] = active.policy_bundle_hash()
@@ -326,9 +316,84 @@ def assert_observed_topology_matches_profile(
         "observed_posterior_draws_total": observed_total,
     }
 
+
 B24_INFERENCE_PROFILE = build_inference_profile()
 
 # Fail at import rather than at the end of a four-minute sampling run. A
 # configuration in which no posterior could be accepted is not a runtime
 # condition to be reported; it is a deployment that should not start.
 B24_INFERENCE_PROFILE.validate()
+
+
+def assert_live_policy_registry_correspondence() -> None:
+    """Prove producer objects still mean exactly what their labels declare."""
+
+    manifest = current_manifest()["components"]
+    sampling = DEFAULT_P6_SAMPLING_POLICY.as_dict()
+    sampling_version = sampling.pop("policy_version")
+    diagnostics = DEFAULT_P7_DIAGNOSTIC_POLICY.as_dict()
+    diagnostic_version = diagnostics.pop("diagnostic_policy_version")
+    confidence = manifest["confidence_policy"]
+    from app.confidence_projection.policy import (
+        CONFIDENCE_POLICY_VERSION,
+        CONFIDENCE_SEMANTICS_VERSION,
+        confidence_policy_semantics,
+    )
+
+    expected_profile = {
+        "fit_execution_budget_seconds": B24_INFERENCE_PROFILE.fit_execution_budget_seconds,
+        "sampler_supervisor_deadline_seconds": (
+            B24_INFERENCE_PROFILE.sampler_supervisor_deadline_seconds
+        ),
+        "celery_soft_time_limit_seconds": (
+            B24_INFERENCE_PROFILE.celery_soft_time_limit_seconds
+        ),
+        "celery_hard_time_limit_seconds": (
+            B24_INFERENCE_PROFILE.celery_hard_time_limit_seconds
+        ),
+        "dispatch_lease_recovery_margin_seconds": (
+            DISPATCH_LEASE_RECOVERY_MARGIN_SECONDS
+        ),
+        "runtime_correspondence_required": True,
+        "observed_posterior_correspondence_required": True,
+    }
+    expected_runtime = {
+        "worker_concurrency": 1,
+        "pymc_cores": B24_INFERENCE_PROFILE.cores,
+        "pymc_chains": B24_INFERENCE_PROFILE.chains,
+        "blas_total_threads": B24_INFERENCE_PROFILE.blas_cores,
+        "sampler_supervisor_deadline_seconds": (
+            B24_INFERENCE_PROFILE.sampler_supervisor_deadline_seconds
+        ),
+        "celery_soft_time_limit_seconds": (
+            B24_INFERENCE_PROFILE.celery_soft_time_limit_seconds
+        ),
+        "celery_hard_time_limit_seconds": (
+            B24_INFERENCE_PROFILE.celery_hard_time_limit_seconds
+        ),
+        "worker_sampler_explicit_runtime_record": True,
+    }
+    checks = (
+        (
+            manifest["inference_profile"]["version"],
+            B24_INFERENCE_PROFILE.profile_version,
+        ),
+        (manifest["inference_profile"]["semantics"], expected_profile),
+        (
+            manifest["runtime_policy"]["version"],
+            B24_INFERENCE_PROFILE.runtime_policy_version,
+        ),
+        (manifest["runtime_policy"]["semantics"], expected_runtime),
+        (manifest["sampling_policy"]["version"], sampling_version),
+        (manifest["sampling_policy"]["semantics"], sampling),
+        (manifest["diagnostic_policy"]["version"], diagnostic_version),
+        (manifest["diagnostic_policy"]["semantics"], diagnostics),
+        (confidence["version"], CONFIDENCE_POLICY_VERSION),
+        (confidence["semantics_version"], CONFIDENCE_SEMANTICS_VERSION),
+        (confidence["semantics"], confidence_policy_semantics()),
+    )
+    if any(actual != expected for actual, expected in checks):
+        raise InferenceProfileError("live_policy_semantics_registry_mismatch")
+
+
+assert_live_policy_registry_correspondence()

@@ -221,6 +221,7 @@ ALLOWED_M0_PATHS = [
     "alembic/versions/007_skeldir_foundation/202608240900_b25_p13_c9_planner_degradation_authority.py",
     "alembic/versions/007_skeldir_foundation/202608241000_b25_p13_c9_authority_request_supersession.py",
     "alembic/versions/007_skeldir_foundation/202608250900_b25_p13_c10_inference_policy_provenance.py",
+    "alembic/versions/007_skeldir_foundation/202608251200_b25_p13_c11_semantic_authority.py",
     "contracts/bayesian/",
     "scripts/database/prepare_migration_authority_boundary.py",
     "api-contracts/openapi/v1/export.yaml",

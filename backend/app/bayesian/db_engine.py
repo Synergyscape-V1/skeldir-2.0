@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.pool import NullPool
 
 from app.bayesian.db_topology import resolve_bayesian_worker_db_topology_policy
@@ -31,6 +34,26 @@ def create_bayesian_worker_engine(database_url: str | None = None) -> Engine:
     resolve_bayesian_worker_db_topology_policy(resolved_database_url)
     engine = create_engine(
         resolved_database_url,
+        pool_pre_ping=True,
+        poolclass=NullPool,
+    )
+    assert_bayesian_worker_engine_nonpooled(engine)
+    return engine
+
+
+def create_dispatch_publisher_engine(database_url: str | None = None) -> Engine:
+    """Create the dedicated global-dispatch engine and verify DSN custody."""
+
+    raw_url = database_url or os.getenv("B24_DISPATCH_PUBLISHER_DATABASE_URL", "")
+    if not raw_url:
+        raise RuntimeError("dispatch_publisher_database_url_missing")
+    parsed = make_url(raw_url)
+    if parsed.username != "app_dispatch_publisher":
+        raise RuntimeError("dispatch_publisher_database_principal_mismatch")
+    resolved = to_sync_postgres_dsn(raw_url)
+    resolve_bayesian_worker_db_topology_policy(resolved)
+    engine = create_engine(
+        resolved,
         pool_pre_ping=True,
         poolclass=NullPool,
     )

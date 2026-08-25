@@ -324,6 +324,7 @@ _REPLAN_POLICY_BUNDLE_SQL = """
         inference_profile_version = :inference_profile_version,
         runtime_policy_version = :runtime_policy_version,
         sampling_policy_version = :sampling_policy_version,
+        diagnostic_policy_version = :diagnostic_policy_version,
         authorized_chains = :authorized_chains,
         authorized_posterior_draws_total = :authorized_posterior_draws_total,
         max_runtime_seconds = :max_runtime_seconds,
@@ -345,6 +346,7 @@ _REPLAN_POLICY_BUNDLE_SQL = """
         inference_profile_version,
         runtime_policy_version,
         sampling_policy_version,
+        diagnostic_policy_version,
         policy_bundle_hash,
         authorized_chains,
         authorized_posterior_draws_total,
@@ -390,6 +392,9 @@ def _replan_superseded_policy_bundle(conn, *, tenant_id, fit_id) -> _LoadFitRow 
             "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
             "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
             "sampling_policy_version": (B24_INFERENCE_PROFILE.sampling_policy_version),
+            "diagnostic_policy_version": (
+                B24_INFERENCE_PROFILE.diagnostic_policy_version
+            ),
             "authorized_chains": B24_INFERENCE_PROFILE.chains,
             "authorized_posterior_draws_total": (
                 B24_INFERENCE_PROFILE.posterior_draws_total
@@ -450,6 +455,8 @@ def _build_sampler_input(
             sampling_policy_version=policy.policy_version,
         )
     )
+    from app.bayesian.runtime_policy import resolved_runtime_authority_from_env
+
     return {
         "schema_version": "b24-p6-parent-input-v1",
         "execution_id": execution_id,
@@ -469,6 +476,7 @@ def _build_sampler_input(
         ),
         "observed_signal": observed_input.observed_signal,
         "observed_signal_source": observed_input.metadata(),
+        "worker_runtime_authority": resolved_runtime_authority_from_env(),
     }
 
 
