@@ -93,6 +93,33 @@
     could break every first claim while P13 stayed green, materially future evidence could render as current,
     absolute age could be understated without explicit semantics, or a behavioural invariant could quietly
     regress to a source-text check while its counter kept printing a number nobody derived.
+- gate_id: validate-b25-p13-c11-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_c11_closure.py
+  owning_phase: B2.5-P13-C11
+  protected_invariant: Global fresh-dispatch publication is held by a dedicated database principal that an
+    ordinary tenant-scoped worker cannot become or self-assert into, a policy identifier denotes one
+    immutable set of governed semantics, policy_bundle_hash is recomputed from and compared against its
+    component policy identities before Trust signs an available confidence, and every policy replan appends
+    a durable lineage transition in the same transaction as the mutation it describes.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C5 proves terminal evidence is immutable and C10 proves the executing runtime matches
+    the authorised profile, but neither can observe who holds the publisher capability, whether a version
+    label still denotes the numbers it denoted last release, whether a bundle digest corresponds to the
+    versions persisted beside it, or whether a replan left a reconstructable trail. Those are authority
+    questions rather than runtime-physics questions, and nothing else in the proof graph asks them.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c11_closure.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c11_closure.py --negative-control
+  risk_if_removed: An ordinary worker principal could regain self-issued cross-tenant publisher authority, a
+    policy version could silently come to mean different statistical semantics than it meant when an earlier
+    confidence was signed under it, a bundle hash could contradict the versions stored beside it and still
+    reach a signed available confidence, or a multi-step replan could erase the intermediate transitions that
+    make a confidence's producing regime reconstructable.
 - gate_id: validate-b25-p13-c6-closure
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 E2E Trust Closure
