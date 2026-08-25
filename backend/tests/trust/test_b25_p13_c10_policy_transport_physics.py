@@ -297,8 +297,25 @@ async def test_c10_claimed_p1_is_explicitly_replanned_to_p2_before_compute(
                 ("policy_replanned_at", "now() + interval '1 hour'"),
                 ("policy_replan_count", "2"),
             ):
+                # Two governed guards can answer here, and which one does
+                # depends on whether the column is also execution-authority
+                # governed. diagnostic_policy_version is: it is stamped at claim
+                # time with the rest of the policy bundle, so the C5 dispatch
+                # fence sees the write first and refuses it before terminal
+                # immutability is consulted. Both are correct refusals of the
+                # same mutation, and pinning one of them would be pinning
+                # trigger ordering rather than the property.
+                #
+                # The property is asserted directly instead: the mutation is
+                # refused by a named governed guard, and the stored value is
+                # unchanged afterwards.
                 with pytest.raises(
-                    DBAPIError, match="b24_terminal_fit_truth_immutable"
+                    DBAPIError,
+                    match=(
+                        "b24_terminal_fit_truth_immutable"
+                        "|b24_dispatch_fence_rejected"
+                        "|b24_policy_provenance_sampling_immutable"
+                    ),
                 ):
                     with conn.begin_nested():
                         conn.execute(
@@ -309,6 +326,26 @@ async def test_c10_claimed_p1_is_explicitly_replanned_to_p2_before_compute(
                             ),
                             {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
                         )
+                survived = (
+                    conn.execute(
+                        text(
+                            f"SELECT {column} AS value "
+                            "FROM public.bayesian_model_fits "
+                            "WHERE tenant_id = :tenant_id AND id = :fit_id"
+                        ),
+                        {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+                    )
+                    .mappings()
+                    .one()
+                )
+                assert str(survived["value"]) not in {
+                    "tampered-profile",
+                    "tampered-runtime",
+                    "tampered-sampling",
+                    "tampered-diagnostic",
+                    "f" * 64,
+                    "e" * 64,
+                }, (column, survived)
     finally:
         engine.dispose()
 
