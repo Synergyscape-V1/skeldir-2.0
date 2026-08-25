@@ -15,6 +15,7 @@ from sqlalchemy.pool import NullPool
 
 from pathlib import Path
 
+from app.core.secrets import get_database_url, get_migration_database_url
 from app.bayesian.compiledir_reaper import create_compiledir_lease
 from app.bayesian.runtime_policy import resolved_runtime_authority_from_env
 
@@ -196,9 +197,15 @@ def _engine(url: str):
 
 
 def _runtime_urls() -> tuple[str, str, str]:
-    worker = os.environ["DATABASE_URL"]
+    # Through the governed secret accessors, the way every other database proof
+    # in this tree reaches these DSNs. B1.1-P4's scan forbids reading the two
+    # connection secrets out of the environment anywhere -- by subscript or by
+    # getenv -- and a proof file is not exempt from a rule about how secrets are
+    # read. The publisher DSN has no accessor because the principal is new here;
+    # it stays an explicit environment read, which the same scan permits.
+    worker = get_database_url()
+    migration = get_migration_database_url()
     publisher = os.environ["B24_DISPATCH_PUBLISHER_DATABASE_URL"]
-    migration = os.environ["MIGRATION_DATABASE_URL"]
     return worker, publisher, migration
 
 
