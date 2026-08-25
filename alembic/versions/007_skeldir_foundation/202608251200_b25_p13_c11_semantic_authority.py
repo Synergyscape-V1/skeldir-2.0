@@ -383,14 +383,14 @@ def upgrade() -> None:
             FROM PUBLIC, app_user;
 
         REVOKE ALL ON TABLE public.b24_inference_policy_registry FROM PUBLIC;
-        REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+        REVOKE INSERT, UPDATE, DELETE, TRUNCATE  -- # CI:DESTRUCTIVE_OK - Removing the TRUNCATE privilege, not exercising it; see ADR-017.
             ON TABLE public.b24_inference_policy_registry
             FROM app_user;
         GRANT SELECT ON TABLE public.b24_inference_policy_registry
             TO app_user;
 
         REVOKE ALL ON TABLE public.b24_fit_policy_replan_lineage FROM PUBLIC;
-        REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+        REVOKE INSERT, UPDATE, DELETE, TRUNCATE  -- # CI:DESTRUCTIVE_OK - Removing the TRUNCATE privilege, not exercising it; see ADR-017.
             ON TABLE public.b24_fit_policy_replan_lineage
             FROM app_user;
         GRANT SELECT ON TABLE public.b24_fit_policy_replan_lineage
@@ -401,10 +401,10 @@ def upgrade() -> None:
         "app_worker",
         """
         REVOKE ALL ON FUNCTION public.b24_assert_dispatch_publisher() FROM app_worker;
-        REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+        REVOKE INSERT, UPDATE, DELETE, TRUNCATE  -- # CI:DESTRUCTIVE_OK - Removing the TRUNCATE privilege, not exercising it; see ADR-017.
             ON public.b24_inference_policy_registry FROM app_worker;
         GRANT SELECT ON public.b24_inference_policy_registry TO app_worker;
-        REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+        REVOKE INSERT, UPDATE, DELETE, TRUNCATE  -- # CI:DESTRUCTIVE_OK - Removing the TRUNCATE privilege, not exercising it; see ADR-017.
             ON public.b24_fit_policy_replan_lineage FROM app_worker;
         GRANT SELECT ON public.b24_fit_policy_replan_lineage TO app_worker;
         """,
@@ -491,8 +491,8 @@ def downgrade() -> None:
         DROP FUNCTION IF EXISTS public.b24_enforce_c11_policy_provenance();
         DROP FUNCTION IF EXISTS public.b24_policy_lineage_complete(uuid, uuid);
         DROP FUNCTION IF EXISTS public.b24_assert_dispatch_publisher();
-        DROP TABLE IF EXISTS public.b24_fit_policy_replan_lineage;
-        DROP TABLE IF EXISTS public.b24_inference_policy_registry;
+        DROP TABLE IF EXISTS public.b24_fit_policy_replan_lineage;  -- # CI:DESTRUCTIVE_OK - Controlled C11 rollback of tables this revision created; see ADR-017.
+        DROP TABLE IF EXISTS public.b24_inference_policy_registry;  -- # CI:DESTRUCTIVE_OK - Controlled C11 rollback of tables this revision created; see ADR-017.
         DROP POLICY IF EXISTS c11_dispatch_publisher_select
             ON public.b24_fit_dispatch_outbox;
         DROP POLICY IF EXISTS c11_dispatch_publisher_update
