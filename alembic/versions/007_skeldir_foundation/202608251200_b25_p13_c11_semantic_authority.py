@@ -300,11 +300,19 @@ def upgrade() -> None:
         CREATE OR REPLACE FUNCTION public.b24_policy_lineage_complete(
             p_tenant_id uuid, p_fit_id uuid
         ) RETURNS boolean
-        LANGUAGE sql
+        LANGUAGE plpgsql
         STABLE
         SECURITY INVOKER
         SET search_path = pg_catalog, public
         AS $$
+        DECLARE
+            v_complete boolean;
+        BEGIN
+            -- plpgsql, not sql, so the body is resolved when it runs.
+            -- canonical_schema.sql emits functions before tables, and a
+            -- LANGUAGE sql body is resolved at CREATE, so this function
+            -- alone could not be applied to a bare database. The query is
+            -- unchanged.
             WITH fit AS (
                 SELECT policy_replan_count
                 FROM public.bayesian_model_fits
@@ -340,7 +348,10 @@ def upgrade() -> None:
                 ),
                 false
             )
-            FROM fit CROSS JOIN summary
+            INTO v_complete
+            FROM fit CROSS JOIN summary;
+            RETURN COALESCE(v_complete, false);
+        END
         $$;
         """
     )
