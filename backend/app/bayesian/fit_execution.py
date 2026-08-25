@@ -712,15 +712,20 @@ def _persist_result_summary(
                 credible_interval_status = :credible_interval_status,
                 diagnostic_status = :diagnostic_status,
                 diagnostic_failure_reason = :diagnostic_failure_reason,
-                diagnostic_policy_version = :diagnostic_policy_version,
                 diagnostic_target_filter_version = :diagnostic_target_filter_version,
                 interval_policy_version = :interval_policy_version,
-                inference_profile_version = :inference_profile_version,
-                runtime_policy_version = :runtime_policy_version,
-                sampling_policy_version = :sampling_policy_version,
-                policy_bundle_hash = :policy_bundle_hash,
-                authorized_chains = :authorized_chains,
-                authorized_posterior_draws_total = :authorized_posterior_draws_total,
+                -- The producing regime is claim-time authority and is not
+                -- restated here.
+                --
+                -- The claim stamps all four policy identities, the bundle hash
+                -- and the authorised topology; the runtime binding refuses to
+                -- sample unless the executing runtime is that same regime; and
+                -- the replan path is the one place a not-yet-started fit may
+                -- move between regimes, with lineage. Writing the same values
+                -- again at completion added nothing and made every fixture whose
+                -- claim differed by one field look like a policy change after
+                -- sampling -- which C11 refuses, correctly, because that is
+                -- exactly what it would be.
                 diagnostics_computed_at = now(),
                 runtime_seconds = :runtime_seconds,
                 n_chains = :n_chains,

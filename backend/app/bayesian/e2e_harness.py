@@ -22,6 +22,7 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
 from app.bayesian.artifact_repository import persist_artifact_sync
 from app.bayesian.confidence_metadata import B24ConfidenceProjection
 from app.bayesian.dispatch_authority import (
@@ -268,13 +269,20 @@ def _mark_p12_ca1_success(
                 credible_interval_status = 'available',
                 diagnostic_status = 'passed',
                 diagnostic_failure_reason = NULL,
-                diagnostic_policy_version = :diagnostic_policy_version,
+                -- The producing regime is claim-time authority; this harness
+                -- simulates completion, not authorisation, so it does not
+                -- restate it. Writing it here made a simulated completion look
+                -- like a policy change after sampling had started.
                 diagnostic_target_filter_version = :target_filter_version,
                 interval_policy_version = :interval_policy_version,
                 diagnostics_computed_at = now(),
                 runtime_seconds = :runtime_seconds,
-                n_chains = 1,
-                n_samples_actual = 400,
+                -- Observed topology must be the authorised topology for a fit
+                -- that claims usable confidence. 1 and 400 were literals from
+                -- an older sampling policy and now contradict the regime the
+                -- claim recorded.
+                n_chains = :authorized_chains,
+                n_samples_actual = :authorized_posterior_draws_total,
                 r_hat_max = 1.0,
                 ess_min = 500.0,
                 divergence_count = 0,
@@ -296,7 +304,10 @@ def _mark_p12_ca1_success(
         {
             "tenant_id": str(lease.tenant_id),
             "fit_id": str(lease.fit_id),
-            "diagnostic_policy_version": P12_CA1_DIAGNOSTIC_POLICY_VERSION,
+            "authorized_chains": B24_INFERENCE_PROFILE.chains,
+            "authorized_posterior_draws_total": (
+                B24_INFERENCE_PROFILE.posterior_draws_total
+            ),
             "target_filter_version": P12_CA1_TARGET_FILTER_VERSION,
             "interval_policy_version": P12_CA1_INTERVAL_POLICY_VERSION,
             "runtime_seconds": runtime_seconds,

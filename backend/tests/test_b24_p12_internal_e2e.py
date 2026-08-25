@@ -83,6 +83,32 @@ DB_PROOF_SKIP = pytest.mark.skipif(
 )
 
 
+
+from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
+
+#: Budget and producing regime, exactly as the production claim path
+#: stamps them at insert. The literals these replace were 60/160/1 -- a
+#: sample budget the current policy refuses -- and the regime was absent
+#: entirely, so the completion write became a policy change after
+#: sampling had already started.
+_C11_FIT_AUTHORITY_PARAMS = {
+    "max_runtime_seconds": B24_INFERENCE_PROFILE.fit_execution_budget_seconds,
+    "max_samples": B24_INFERENCE_PROFILE.total_chain_iterations,
+    "max_cores": B24_INFERENCE_PROFILE.cores,
+    "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
+    "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
+    "sampling_policy_version": B24_INFERENCE_PROFILE.sampling_policy_version,
+    "diagnostic_policy_version": (
+        B24_INFERENCE_PROFILE.diagnostic_policy_version
+    ),
+    "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
+    "authorized_chains": B24_INFERENCE_PROFILE.chains,
+    "authorized_posterior_draws_total": (
+        B24_INFERENCE_PROFILE.posterior_draws_total
+    ),
+}
+
+
 def _require_db_proofs() -> bool:
     import os
 
@@ -158,7 +184,14 @@ async def _insert_test_fit(
                     fallback_applied,
                     max_runtime_seconds,
                     max_samples,
-                    max_cores
+                    max_cores,
+                    inference_profile_version,
+                    runtime_policy_version,
+                    sampling_policy_version,
+                    diagnostic_policy_version,
+                    policy_bundle_hash,
+                    authorized_chains,
+                    authorized_posterior_draws_total
                 )
                 VALUES (
                     :tenant_id,
@@ -172,9 +205,16 @@ async def _insert_test_fit(
                     'eligible',
                     'complete',
                     false,
-                    60,
-                    160,
-                    1
+                    :max_runtime_seconds,
+                    :max_samples,
+                    :max_cores,
+                    :inference_profile_version,
+                    :runtime_policy_version,
+                    :sampling_policy_version,
+                    :diagnostic_policy_version,
+                    :policy_bundle_hash,
+                    :authorized_chains,
+                    :authorized_posterior_draws_total
                 )
                 """
             ),
@@ -185,6 +225,7 @@ async def _insert_test_fit(
                 "source_window_start": START,
                 "source_window_end": END,
                 "source_snapshot_hash": source_hash,
+                **_C11_FIT_AUTHORITY_PARAMS,
                 "status": status,
             },
         )
@@ -216,7 +257,14 @@ def _insert_test_fit_sync(
                 fallback_applied,
                 max_runtime_seconds,
                 max_samples,
-                max_cores
+                max_cores,
+                inference_profile_version,
+                runtime_policy_version,
+                sampling_policy_version,
+                diagnostic_policy_version,
+                policy_bundle_hash,
+                authorized_chains,
+                authorized_posterior_draws_total
             )
             VALUES (
                 :tenant_id,
@@ -230,9 +278,16 @@ def _insert_test_fit_sync(
                 'eligible',
                 'complete',
                 false,
-                60,
-                160,
-                1
+                :max_runtime_seconds,
+                :max_samples,
+                :max_cores,
+                :inference_profile_version,
+                :runtime_policy_version,
+                :sampling_policy_version,
+                :diagnostic_policy_version,
+                :policy_bundle_hash,
+                :authorized_chains,
+                :authorized_posterior_draws_total
             )
             """
         ),
@@ -244,6 +299,7 @@ def _insert_test_fit_sync(
             "source_window_start": START,
             "source_window_end": END,
             "source_snapshot_hash": source_hash,
+            **_C11_FIT_AUTHORITY_PARAMS,
             "status": status,
         },
     )
@@ -724,7 +780,14 @@ async def test_b24_p12_committed_visibility_and_uncommitted_negative_control(
                     fallback_applied,
                     max_runtime_seconds,
                     max_samples,
-                    max_cores
+                    max_cores,
+                    inference_profile_version,
+                    runtime_policy_version,
+                    sampling_policy_version,
+                    diagnostic_policy_version,
+                    policy_bundle_hash,
+                    authorized_chains,
+                    authorized_posterior_draws_total
                 )
                 VALUES (
                     :tenant_id,
@@ -738,9 +801,16 @@ async def test_b24_p12_committed_visibility_and_uncommitted_negative_control(
                     'eligible',
                     'complete',
                     false,
-                    60,
-                    160,
-                    1
+                    :max_runtime_seconds,
+                    :max_samples,
+                    :max_cores,
+                    :inference_profile_version,
+                    :runtime_policy_version,
+                    :sampling_policy_version,
+                    :diagnostic_policy_version,
+                    :policy_bundle_hash,
+                    :authorized_chains,
+                    :authorized_posterior_draws_total
                 )
                 """
             ),
@@ -751,6 +821,7 @@ async def test_b24_p12_committed_visibility_and_uncommitted_negative_control(
                 "source_window_start": START,
                 "source_window_end": END,
                 "source_snapshot_hash": source_hash,
+                **_C11_FIT_AUTHORITY_PARAMS,
             },
         )
         with sync_engine.begin() as observer:
