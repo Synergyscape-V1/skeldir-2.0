@@ -1442,7 +1442,8 @@ jobs:
 
           for container in skeldir-c11-execution skeldir-c11-publisher; do
             for attempt in $(seq 1 90); do
-              docker logs "$container" 2>&1 | grep -q ' ready' && break
+              docker logs "$container" > "/tmp/${container}-boot.log" 2>&1
+              grep -q ' ready' "/tmp/${container}-boot.log" && break
               test "$attempt" -lt 90 || {
                 docker logs "$container"; exit 1;
               }
@@ -1466,10 +1467,16 @@ jobs:
             -k real_posterior_is_produced_by_the_chain_that_claims_it \
             | tee /tmp/c11-artifact-positive.out
           grep -E '1 passed' /tmp/c11-artifact-positive.out
-          docker logs skeldir-c11-execution 2>&1 \
-            | grep -q 'app.tasks.bayesian.execute_fit_intent'
-          docker logs skeldir-c11-publisher 2>&1 \
-            | grep -q 'app.tasks.bayesian.publish_due_fit_dispatches'
+          # Captured to files before matching. `docker logs | grep -q` makes
+          # grep exit on its first hit while docker is still writing, which
+          # SIGPIPEs the writer and surfaces as exit 141 under pipefail -- a
+          # green journey reported as a failed step. The rest of this workflow
+          # already matches against captured files for the same reason.
+          docker logs skeldir-c11-execution > /tmp/c11-exec.log 2>&1
+          docker logs skeldir-c11-publisher > /tmp/c11-pub.log 2>&1
+          grep -q 'app.tasks.bayesian.execute_fit_intent' /tmp/c11-exec.log
+          grep -q 'app.tasks.bayesian.publish_due_fit_dispatches' \
+            /tmp/c11-pub.log
           echo "p13_c11_actual_docker_cmd_worker=1" >> "$GITHUB_STEP_SUMMARY"
           echo "p13_c11_natural_publisher_worker_trust_journey=1" >> "$GITHUB_STEP_SUMMARY"
 
