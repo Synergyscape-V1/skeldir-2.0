@@ -4,12 +4,12 @@ Celery application configured for PostgreSQL broker/result backend.
 This module centralizes Celery initialization so workers and tests share
 the same configuration, logging, and metrics wiring as the FastAPI app.
 """
-
 import logging
 import multiprocessing
 import os
 import threading
 import time
+from typing import Optional
 
 from celery import Celery, signals
 from sqlalchemy import create_engine, text
@@ -29,17 +29,10 @@ from app.core.queues import (
     QUEUE_MAINTENANCE,
 )
 from app.observability.logging_config import configure_logging
-from app.observability.metrics_runtime_config import (
-    get_multiproc_dir,
-    get_multiproc_prune_policy,
-)
+from app.observability.metrics_runtime_config import get_multiproc_dir, get_multiproc_prune_policy
 from app.observability.multiprocess_shard_pruner import prune_stale_multiproc_shards
 from app.observability.metrics_policy import normalize_task_name
-from app.core.secrets import (
-    assert_runtime_secret_contract,
-    get_database_url,
-    get_secret,
-)
+from app.core.secrets import assert_runtime_secret_contract, get_database_url, get_secret
 from app.privacy.output_redaction import redact_output_text, sanitize_output_payload
 from app.security.secret_boundary import redact_text_fragments, sanitize_for_transport
 from app.observability.celery_task_lifecycle import (
@@ -59,7 +52,6 @@ def _get_settings():
     that pytest conftest.py can validate/set DATABASE_URL before settings reads it.
     """
     from app.core.config import settings
-
     return settings
 
 
@@ -216,7 +208,6 @@ def _ensure_celery_configured():
         return
 
     from kombu import Queue
-
     settings = _get_settings()  # Lazy settings access
     assert_runtime_secret_contract("worker")
 
@@ -286,66 +277,31 @@ def _ensure_celery_configured():
         # B0.5.3.1: Added attribution queue for deterministic routing
         # B0.5.6.3: Use centralized queue constants for bounded cardinality
         task_queues=[
-            Queue(QUEUE_HOUSEKEEPING, routing_key=f"{QUEUE_HOUSEKEEPING}.#"),
-            Queue(QUEUE_MAINTENANCE, routing_key=f"{QUEUE_MAINTENANCE}.#"),
-            Queue(QUEUE_LLM, routing_key=f"{QUEUE_LLM}.#"),
-            Queue(QUEUE_ATTRIBUTION, routing_key=f"{QUEUE_ATTRIBUTION}.#"),
-            Queue(QUEUE_BAYESIAN, routing_key=f"{QUEUE_BAYESIAN}.#"),
-            Queue(
-                QUEUE_BAYESIAN_PUBLISHER, routing_key=f"{QUEUE_BAYESIAN_PUBLISHER}.#"
-            ),
-            Queue(QUEUE_B23_MATCH_ENGINE, routing_key=f"{QUEUE_B23_MATCH_ENGINE}.#"),
+            Queue(QUEUE_HOUSEKEEPING, routing_key=f'{QUEUE_HOUSEKEEPING}.#'),
+            Queue(QUEUE_MAINTENANCE, routing_key=f'{QUEUE_MAINTENANCE}.#'),
+            Queue(QUEUE_LLM, routing_key=f'{QUEUE_LLM}.#'),
+            Queue(QUEUE_ATTRIBUTION, routing_key=f'{QUEUE_ATTRIBUTION}.#'),
+            Queue(QUEUE_BAYESIAN, routing_key=f'{QUEUE_BAYESIAN}.#'),
+            Queue(QUEUE_BAYESIAN_PUBLISHER, routing_key=f'{QUEUE_BAYESIAN_PUBLISHER}.#'),
+            Queue(QUEUE_B23_MATCH_ENGINE, routing_key=f'{QUEUE_B23_MATCH_ENGINE}.#'),
         ],
         task_routes={
-            "app.tasks.housekeeping.*": {
-                "queue": QUEUE_HOUSEKEEPING,
-                "routing_key": f"{QUEUE_HOUSEKEEPING}.task",
-            },
-            "app.tasks.health.*": {
-                "queue": QUEUE_HOUSEKEEPING,
-                "routing_key": f"{QUEUE_HOUSEKEEPING}.task",
-            },
-            "app.tasks.maintenance.*": {
-                "queue": QUEUE_MAINTENANCE,
-                "routing_key": f"{QUEUE_MAINTENANCE}.task",
-            },
-            "app.tasks.matviews.*": {
-                "queue": QUEUE_MAINTENANCE,
-                "routing_key": f"{QUEUE_MAINTENANCE}.task",
-            },
-            "app.tasks.llm.*": {"queue": QUEUE_LLM, "routing_key": f"{QUEUE_LLM}.task"},
-            "app.tasks.attribution.*": {
-                "queue": QUEUE_ATTRIBUTION,
-                "routing_key": f"{QUEUE_ATTRIBUTION}.task",
-            },
-            "app.tasks.bayesian.publish_due_fit_dispatches": {
-                "queue": QUEUE_BAYESIAN_PUBLISHER,
-                "routing_key": f"{QUEUE_BAYESIAN_PUBLISHER}.task",
-            },
-            "app.tasks.bayesian.*": {
-                "queue": QUEUE_BAYESIAN,
-                "routing_key": f"{QUEUE_BAYESIAN}.task",
-            },
-            "app.tasks.revenue_verification.*": {
-                "queue": QUEUE_B23_MATCH_ENGINE,
-                "routing_key": f"{QUEUE_B23_MATCH_ENGINE}.task",
-            },
-            "app.tasks.r4_failure_semantics.*": {
-                "queue": QUEUE_HOUSEKEEPING,
-                "routing_key": f"{QUEUE_HOUSEKEEPING}.task",
-            },
-            "app.tasks.r6_resource_governance.*": {
-                "queue": QUEUE_HOUSEKEEPING,
-                "routing_key": f"{QUEUE_HOUSEKEEPING}.task",
-            },
-            "app.tasks.privacy.*": {
-                "queue": QUEUE_MAINTENANCE,
-                "routing_key": f"{QUEUE_MAINTENANCE}.task",
-            },
+            'app.tasks.housekeeping.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
+            'app.tasks.health.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
+            'app.tasks.maintenance.*': {'queue': QUEUE_MAINTENANCE, 'routing_key': f'{QUEUE_MAINTENANCE}.task'},
+            'app.tasks.matviews.*': {'queue': QUEUE_MAINTENANCE, 'routing_key': f'{QUEUE_MAINTENANCE}.task'},
+            'app.tasks.llm.*': {'queue': QUEUE_LLM, 'routing_key': f'{QUEUE_LLM}.task'},
+            'app.tasks.attribution.*': {'queue': QUEUE_ATTRIBUTION, 'routing_key': f'{QUEUE_ATTRIBUTION}.task'},
+            'app.tasks.bayesian.publish_due_fit_dispatches': {'queue': QUEUE_BAYESIAN_PUBLISHER, 'routing_key': f'{QUEUE_BAYESIAN_PUBLISHER}.task'},
+            'app.tasks.bayesian.*': {'queue': QUEUE_BAYESIAN, 'routing_key': f'{QUEUE_BAYESIAN}.task'},
+            'app.tasks.revenue_verification.*': {'queue': QUEUE_B23_MATCH_ENGINE, 'routing_key': f'{QUEUE_B23_MATCH_ENGINE}.task'},
+            'app.tasks.r4_failure_semantics.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
+            'app.tasks.r6_resource_governance.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
+            'app.tasks.privacy.*': {'queue': QUEUE_MAINTENANCE, 'routing_key': f'{QUEUE_MAINTENANCE}.task'},
         },
         task_default_queue=QUEUE_HOUSEKEEPING,
-        task_default_exchange="tasks",
-        task_default_routing_key=f"{QUEUE_HOUSEKEEPING}.task",
+        task_default_exchange='tasks',
+        task_default_routing_key=f'{QUEUE_HOUSEKEEPING}.task',
         control_exchange="celery.control",
         control_exchange_type="direct",
     )
@@ -354,7 +310,6 @@ def _ensure_celery_configured():
 
     # B0.5.4.0: Load Beat schedule (closes G11 drift - beat not deployed)
     from app.tasks.beat_schedule import BEAT_SCHEDULE
-
     celery_app.conf.beat_schedule = BEAT_SCHEDULE
 
     logger.info(
@@ -365,9 +320,7 @@ def _ensure_celery_configured():
             "broker_transport_options": celery_app.conf.broker_transport_options,
             "queues": [q.name for q in celery_app.conf.task_queues],
             "beat_schedule_loaded": bool(celery_app.conf.beat_schedule),
-            "scheduled_tasks": list(celery_app.conf.beat_schedule.keys())
-            if celery_app.conf.beat_schedule
-            else [],
+            "scheduled_tasks": list(celery_app.conf.beat_schedule.keys()) if celery_app.conf.beat_schedule else [],
             "app_name": celery_app.main,
         },
     )
@@ -417,14 +370,10 @@ def _configure_worker_logging(**kwargs):
     settings = _get_settings()  # B0.5.3.3 Gate C: Lazy settings access
     configure_logging(settings.LOG_LEVEL)
     configure_task_lifecycle_loggers(settings.LOG_LEVEL)
-    # The dispatch publisher has no tenant/auth read authority.  Its process is
-    # intentionally unable to initialize the API revocation cache.
-    if os.getenv("SKELDIR_CELERY_WORKER_ROLE", "").strip().lower() != (
-        "bayesian_publisher"
-    ):
-        from app.security.revocation_runtime import get_revocation_runtime_cache
+    # P7 fork-safety: initialize LISTEN/NOTIFY cache in each worker child process.
+    from app.security.revocation_runtime import get_revocation_runtime_cache
 
-        get_revocation_runtime_cache().ensure_started()
+    get_revocation_runtime_cache().ensure_started()
     logger.info("celery_worker_logging_configured")
 
 
@@ -442,9 +391,7 @@ def _on_worker_process_shutdown(pid=None, **kwargs):
 
         multiprocess.mark_process_dead(resolved_pid)
     except Exception:
-        logger.exception(
-            "multiproc_mark_process_dead_failed", extra={"pid": resolved_pid}
-        )
+        logger.exception("multiproc_mark_process_dead_failed", extra={"pid": resolved_pid})
 
     try:
         _child_pid_events.put(("dead", resolved_pid))
@@ -452,9 +399,7 @@ def _on_worker_process_shutdown(pid=None, **kwargs):
         pass
 
 
-def _recover_invisible_kombu_messages(
-    *, engine, visibility_timeout_s: int, task_name_filter: str | None
-) -> int:
+def _recover_invisible_kombu_messages(*, engine, visibility_timeout_s: int, task_name_filter: str | None) -> int:
     sql = """
         UPDATE public.kombu_message
         SET visible = true
@@ -538,18 +483,13 @@ def _start_kombu_visibility_recovery_thread() -> None:
                 if recovered:
                     logger.warning(
                         "celery_kombu_visibility_recovered_messages",
-                        extra={
-                            "recovered": recovered,
-                            "visibility_timeout_s": visibility_timeout_s,
-                        },
+                        extra={"recovered": recovered, "visibility_timeout_s": visibility_timeout_s},
                     )
             except Exception:
                 logger.exception("celery_kombu_visibility_recovery_failed")
             time.sleep(sweep_interval_s)
 
-    threading.Thread(
-        target=_loop, name="celery-kombu-visibility-recovery", daemon=True
-    ).start()
+    threading.Thread(target=_loop, name="celery-kombu-visibility-recovery", daemon=True).start()
     _kombu_visibility_recovery_started = True
 
 
@@ -639,13 +579,9 @@ def _start_multiproc_sweeper_thread(*, worker) -> None:
                 from app.observability import metrics as metrics_module
 
                 if result.orphan_db_files_detected:
-                    metrics_module.multiproc_orphan_files_detected.inc(
-                        result.orphan_db_files_detected
-                    )
+                    metrics_module.multiproc_orphan_files_detected.inc(result.orphan_db_files_detected)
                 if result.pruned_db_files:
-                    metrics_module.multiproc_pruned_files_total.inc(
-                        result.pruned_db_files
-                    )
+                    metrics_module.multiproc_pruned_files_total.inc(result.pruned_db_files)
                 if result.overflow:
                     metrics_module.multiproc_dir_overflow_total.inc()
                     logger.error(
@@ -664,6 +600,8 @@ def _start_multiproc_sweeper_thread(*, worker) -> None:
     _multiproc_sweeper_started = True
 
 
+
+
 def _log_registered_tasks() -> None:
     tasks = sorted(celery_app.tasks.keys())
     matview_tasks = [task for task in tasks if task.startswith("app.tasks.matviews.")]
@@ -672,10 +610,8 @@ def _log_registered_tasks() -> None:
         extra={
             "task_count": len(tasks),
             "matview_tasks": matview_tasks,
-            "has_pulse_matviews_global": "app.tasks.matviews.pulse_matviews_global"
-            in tasks,
-            "has_refresh_all_for_tenant": "app.tasks.matviews.refresh_all_for_tenant"
-            in tasks,
+            "has_pulse_matviews_global": "app.tasks.matviews.pulse_matviews_global" in tasks,
+            "has_refresh_all_for_tenant": "app.tasks.matviews.refresh_all_for_tenant" in tasks,
         },
     )
 
@@ -701,9 +637,7 @@ def _queue_name_for_task(task) -> str:
 
 
 @signals.task_prerun.connect
-def _on_task_prerun(
-    task_id=None, task=None, sender=None, args=None, kwargs=None, **extra
-):
+def _on_task_prerun(task_id=None, task=None, sender=None, args=None, kwargs=None, **extra):
     task_obj = task or sender
     if task_obj is None:
         return
@@ -717,9 +651,7 @@ def _on_task_prerun(
     emit_lifecycle_event(
         status="started",
         task=task_obj,
-        task_id=str(task_id)
-        if task_id
-        else getattr(getattr(task_obj, "request", None), "id", None),
+        task_id=str(task_id) if task_id else getattr(getattr(task_obj, "request", None), "id", None),
         queue_name=_queue_name_for_task(task_obj),
         call_kwargs=kwargs,
     )
@@ -734,9 +666,7 @@ def _on_task_postrun(task_id, task, retval, state, **kwargs):
         duration = time.perf_counter() - started
         from app.observability import metrics as metrics_module
 
-        metrics_module.celery_task_duration_seconds.labels(
-            task_name=normalized_name
-        ).observe(duration)
+        metrics_module.celery_task_duration_seconds.labels(task_name=normalized_name).observe(duration)
     if state == "SUCCESS":
         from app.observability import metrics as metrics_module
 
@@ -782,11 +712,9 @@ def _on_task_retry(sender=None, request=None, reason=None, einfo=None, **kwargs)
 
 
 @signals.task_failure.connect
-def _on_task_failure(
-    task_id=None, exception=None, args=None, kwargs=None, einfo=None, **extra
-):
+def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo=None, **extra):
     # Extract task from extra if available (signal signature variations)
-    task = extra.get("sender")
+    task = extra.get('sender')
     raw_task_name = task.name if task else "unknown"
     # B0.5.6.3: Normalize task_name to bounded set
     normalized_name = normalize_task_name(raw_task_name)
@@ -797,17 +725,13 @@ def _on_task_failure(
     if task is not None:
         retry_count = None
         try:
-            retry_count = int(
-                getattr(getattr(task, "request", None), "retries", 0) or 0
-            )
+            retry_count = int(getattr(getattr(task, "request", None), "retries", 0) or 0)
         except (TypeError, ValueError):
             retry_count = None
         emit_lifecycle_event(
             status="failure",
             task=task,
-            task_id=str(task_id)
-            if task_id
-            else getattr(getattr(task, "request", None), "id", None),
+            task_id=str(task_id) if task_id else getattr(getattr(task, "request", None), "id", None),
             queue_name=_queue_name_for_task(task),
             call_kwargs=kwargs,
             exception=exception,
@@ -823,8 +747,8 @@ def _on_task_failure(
         from uuid import UUID, uuid5, NAMESPACE_URL
         from sqlalchemy.engine.url import make_url
 
-        # B0.5.3.3 Gate C: validate lazy settings access in the DLQ handler.
-        _get_settings()
+        # B0.5.3.3 Gate C: Lazy settings access in DLQ handler
+        settings = _get_settings()
 
         # G4-AUTH: Build sync DSN with 127.0.0.1 normalization for CI determinism
         # Step 1: Get raw DATABASE_URL from settings
@@ -850,7 +774,7 @@ def _on_task_failure(
                 redacted_raw = raw_database_url
             logger.info(
                 f"[G4-AUTH-RAW] database_url = {redacted_raw}",
-                extra={"raw_dsn_redacted": redacted_raw},
+                extra={"raw_dsn_redacted": redacted_raw}
             )
 
         # Step 2: Parse with make_url
@@ -861,11 +785,7 @@ def _on_task_failure(
             has_password = url.password is not None and url.password != ""
             logger.info(
                 f"[G4-AUTH-PARSED] After make_url: host={url.host} user={url.username} password_present={has_password}",
-                extra={
-                    "parsed_host": url.host,
-                    "parsed_user": url.username,
-                    "password_present": has_password,
-                },
+                extra={"parsed_host": url.host, "parsed_user": url.username, "password_present": has_password}
             )
 
         # Step 3: Normalize localhost to 127.0.0.1 for IPv4 enforcement
@@ -913,7 +833,7 @@ def _on_task_failure(
                 redacted_dsn = dsn
             logger.info(
                 f"[G4-AUTH-FINAL] Final DSN for psycopg2.connect() = {redacted_dsn}",
-                extra={"final_dsn_redacted": redacted_dsn},
+                extra={"final_dsn_redacted": redacted_dsn}
             )
 
         # Extract metadata
@@ -950,15 +870,11 @@ def _on_task_failure(
         worker_name = None
         correlation_id = None
         retry_count = 0
-        if task and hasattr(task, "request"):
+        if task and hasattr(task, 'request'):
             delivery_info = getattr(task.request, "delivery_info", None) or {}
-            queue = (
-                delivery_info.get("routing_key", None)
-                if isinstance(delivery_info, dict)
-                else None
-            )
-            worker_name = getattr(task.request, "hostname", None)
-            correlation_id_val = getattr(task.request, "correlation_id", None)
+            queue = delivery_info.get("routing_key", None) if isinstance(delivery_info, dict) else None
+            worker_name = getattr(task.request, 'hostname', None)
+            correlation_id_val = getattr(task.request, 'correlation_id', None)
             if correlation_id_val:
                 try:
                     correlation_id = UUID(str(correlation_id_val))
@@ -1037,8 +953,7 @@ def _on_task_failure(
             else:
                 dlq_id = str(uuid5(NAMESPACE_URL, "unknown:unknown"))
 
-            cur.execute(
-                """
+            cur.execute("""
                 INSERT INTO worker_failed_jobs (
                     id, task_id, task_name, queue, worker,
                     task_args, task_kwargs, tenant_id,
@@ -1050,32 +965,30 @@ def _on_task_failure(
                     %s, %s, %s, %s,
                     %s, %s, %s, CURRENT_TIMESTAMP
                 )
-            """,
-                (
-                    dlq_id,
-                    task_id,
-                    raw_task_name,
-                    queue,
-                    worker_name,
-                    psycopg2.extras.Json(sanitized_args),
-                    psycopg2.extras.Json(sanitized_kwargs),
-                    str(tenant_id) if tenant_id else None,
-                    error_type,
-                    exception.__class__.__name__ if exception else "Unknown",
-                    sanitized_error_message,
-                    sanitized_traceback,
-                    retry_count,
-                    "pending",
-                    str(correlation_id) if correlation_id else None,
-                ),
-            )
+            """, (
+                dlq_id,
+                task_id,
+                raw_task_name,
+                queue,
+                worker_name,
+                psycopg2.extras.Json(sanitized_args),
+                psycopg2.extras.Json(sanitized_kwargs),
+                str(tenant_id) if tenant_id else None,
+                error_type,
+                exception.__class__.__name__ if exception else "Unknown",
+                sanitized_error_message,
+                sanitized_traceback,
+                retry_count,
+                "pending",
+                str(correlation_id) if correlation_id else None,
+            ))
             conn.commit()
 
             # G4-AUTH: Confirm successful persistence
             if os.getenv("CI") == "true":
                 logger.info(
                     "[G4-AUTH] DB CONNECT OK - DLQ row persisted",
-                    extra={"task_id": task_id, "task_name": raw_task_name},
+                    extra={"task_id": task_id, "task_name": raw_task_name}
                 )
         finally:
             conn.close()
@@ -1089,16 +1002,11 @@ def _on_task_failure(
         )
 
 
-__all__ = [
-    "celery_app",
-    "_build_broker_url",
-    "_build_result_backend",
-    "_ensure_celery_configured",
-]
+__all__ = ["celery_app", "_build_broker_url", "_build_result_backend", "_ensure_celery_configured"]
 
 # B0.5.3.3 Gate B FIX: Remove module-level task imports to prevent premature psycopg2 import
 # Tasks are discovered via `include` config in _ensure_celery_configured() - no need for eager imports
-# Module-level imports caused: conftest → celery_app → tasks.housekeeping → psycopg2 → DB connection
+# Module-level imports caused: conftest â†’ celery_app â†’ tasks.housekeeping â†’ psycopg2 â†’ DB connection
 # during pytest COLLECTION (before DATABASE_URL validation), causing auth failures with stale .env creds
 
 # Ensure the Celery app is configured whenever this module is imported (worker or test process).
