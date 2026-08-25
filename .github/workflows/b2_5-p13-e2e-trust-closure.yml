@@ -921,8 +921,14 @@ jobs:
             grep -E 'live_policy_semantics_registry_mismatch' \
               /tmp/c11-semantic-red.out
             cp /tmp/c11-policy-backup.py "$file"
+            # Drop cached bytecode for the restored module. CPython invalidates
+            # .pyc by source mtime at one-second granularity, so a mutate-and-
+            # restore inside the same second can leave the mutated bytecode
+            # authoritative -- the control then reports the mutation it just
+            # undid, and the step fails for a reason that no longer exists.
+            find backend/app -name '__pycache__' -type d -prune -exec rm -rf {} +
           done
-          python scripts/ci/validate_b25_p13_c11_closure.py \
+          python -B scripts/ci/validate_b25_p13_c11_closure.py \
             | grep -E '^B25_P13_C11_CLOSURE_VALIDATION_PASS$'
 
       # NC-C10-09 / NC-C10-10. Remove the only production scheduler edge. The
