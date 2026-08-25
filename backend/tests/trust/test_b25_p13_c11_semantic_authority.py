@@ -151,6 +151,16 @@ def test_c11_sampler_child_refuses_worker_runtime_drift_before_sampling(
     )
     assert result.returncode != 0
     assert not output_path.exists()
+    # A missing marker file means the child died before it could record why.
+    # Reporting the child's own stderr here is the difference between "the
+    # refusal did not happen" and "we cannot tell what happened", and only the
+    # first of those is a finding about the system under test.
+    assert marker_path.exists(), (
+        "sampler child emitted no stage markers; it exited "
+        f"{result.returncode} before reaching the authority check. "
+        f"stderr={getattr(result.stderr, 'text', result.stderr)!r} "
+        f"stdout={getattr(result.stdout, 'text', result.stdout)!r}"
+    )
     stages = [
         json.loads(line)["stage"]
         for line in marker_path.read_text(encoding="utf-8").splitlines()

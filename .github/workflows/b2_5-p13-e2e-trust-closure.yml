@@ -1424,10 +1424,19 @@ jobs:
             celery -A app.celery_app.celery_app worker \
               -Q bayesian_publisher --loglevel=INFO --concurrency=1
 
+          # Teardown is made incapable of failing rather than having its
+          # failure swallowed. A trailing short-circuit to a no-op would do the
+          # same thing to this block and to a real assertion, which is why P12
+          # forbids that token outright; an explicit `return 0` on a function
+          # that only removes containers says what is intended and cannot
+          # spread to anything that asserts.
           cleanup() {
-            test -z "${BEAT_PID:-}" || kill "$BEAT_PID" 2>/dev/null || true
+            if [ -n "${BEAT_PID:-}" ]; then
+              kill "$BEAT_PID" 2>/dev/null
+            fi
             docker rm -f skeldir-c11-execution skeldir-c11-publisher \
-              >/dev/null 2>&1 || true
+              >/dev/null 2>&1
+            return 0
           }
           trap cleanup EXIT
 
