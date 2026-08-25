@@ -501,6 +501,7 @@ async def _insert_authority_and_fit(
                     inference_profile_version,
                     runtime_policy_version,
                     sampling_policy_version,
+                    diagnostic_policy_version,
                     policy_bundle_hash,
                     authorized_chains,
                     authorized_posterior_draws_total
@@ -530,6 +531,7 @@ async def _insert_authority_and_fit(
                     :inference_profile_version,
                     :runtime_policy_version,
                     :sampling_policy_version,
+                    :diagnostic_policy_version,
                     :policy_bundle_hash,
                     :authorized_chains,
                     :authorized_posterior_draws_total
@@ -559,6 +561,13 @@ async def _insert_authority_and_fit(
                 "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
                 "sampling_policy_version": (
                     B24_INFERENCE_PROFILE.sampling_policy_version
+                ),
+                # Stamped with the rest of the bundle. The production claim path
+                # records all four identities at claim; a fixture that recorded
+                # three left the completion write to change the fourth after
+                # sampling, which C11 refuses.
+                "diagnostic_policy_version": (
+                    B24_INFERENCE_PROFILE.diagnostic_policy_version
                 ),
                 "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
                 "authorized_chains": B24_INFERENCE_PROFILE.chains,
