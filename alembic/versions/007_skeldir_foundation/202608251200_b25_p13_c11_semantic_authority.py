@@ -6,18 +6,28 @@ Revises: 202608250900
 
 from __future__ import annotations
 
-import json
 
 from alembic import op
 
-from app.inference_policy_registry import (
-    CONFIDENCE_POLICY_VERSION,
-    CONFIDENCE_SEMANTICS_VERSION,
-    CURRENT_POLICY_BUNDLE_HASH,
-    current_component_digests,
-    current_manifest,
-    current_policy_tuple,
-)
+#: The registry seed, embedded as data rather than imported from the
+#: application.
+#:
+#: A migration is a historical record. If it computed this seed from live
+#: policy modules it would write whatever those modules happen to say on
+#: the day it runs, so a fresh database and an existing one could disagree
+#: about what a version identifier meant -- which is the drift the registry
+#: exists to prevent. Frozen here, this revision states what these
+#: identifiers denoted when it was written, permanently.
+#:
+#: It also removes the only `from app...` import in any migration in this
+#: tree; alembic invocations that do not put backend on sys.path failed at
+#: revision-map build.
+CONFIDENCE_POLICY_VERSION = 'b24-p10-confidence-policy-v1'
+CONFIDENCE_SEMANTICS_VERSION = 'b24-p10-confidence-semantics-v1'
+CURRENT_POLICY_BUNDLE_HASH = 'b5757b2f4419091aabd97bf5906809260cb2a7bad01edeabd604668380a6301c'
+SEMANTIC_MANIFEST_JSON = '{"components":{"confidence_policy":{"semantics":{"available_requires":["diagnostic_status=passed","credible_interval_status=available","artifact_identity_present","single_currency"],"money_authority":"deterministic_minor_units_only","width_ratio_high_max":0.1,"width_ratio_medium_max":0.25},"semantics_version":"b24-p10-confidence-semantics-v1","version":"b24-p10-confidence-policy-v1"},"diagnostic_policy":{"semantics":{"allowed_interval_targets":["mu"],"diagnostic_target_coords":{},"diagnostic_target_filter_version":"b24-p7-target-filter-v1","diagnostic_target_var_names":["mu"],"divergence_count_threshold":0,"ess_min_threshold":400.0,"excluded_deterministic_var_names":["observed_signal"],"finite_value_policy":"required","hdi_probability":0.95,"interval_policy_version":"b24-p7-interval-policy-v1","interval_target_coords":{},"interval_target_var_names":["mu"],"max_diagnostic_coords":8,"max_diagnostic_elements":4096,"max_diagnostic_variables":4,"max_hdi_elements":4,"max_interval_dimensions":1,"max_interval_elements":4,"max_interval_summary_bytes":2048,"min_chains":4,"min_samples_actual":1,"r_hat_max_threshold":1.01},"version":"b24-p7-diagnostic-policy-v2"},"inference_profile":{"semantics":{"celery_hard_time_limit_seconds":300,"celery_soft_time_limit_seconds":270,"dispatch_lease_recovery_margin_seconds":30,"fit_execution_budget_seconds":240,"observed_posterior_correspondence_required":true,"runtime_correspondence_required":true,"sampler_supervisor_deadline_seconds":240},"version":"b24-inference-profile-v2"},"runtime_policy":{"semantics":{"blas_total_threads":1,"celery_hard_time_limit_seconds":300,"celery_soft_time_limit_seconds":270,"pymc_chains":4,"pymc_cores":1,"sampler_supervisor_deadline_seconds":240,"worker_concurrency":1,"worker_sampler_explicit_runtime_record":true},"version":"b24-p5-runtime-policy-v2"},"sampling_policy":{"semantics":{"blas_cores":1,"chains":4,"cores":1,"draws_per_chain":1000,"init":"jitter+adapt_diag","posterior_draws_total":4000,"target_accept":0.9,"total_chain_iterations":8000,"tune_per_chain":1000},"version":"b24-p6-sampling-policy-v2"}},"schema_version":"b24-inference-policy-manifest-v1"}'
+COMPONENT_DIGESTS_JSON = '{"confidence_policy":"e7f1627ba3f0654b1891cb9484735cc54ead291471dc66ed7074a4eeee66d862","diagnostic_policy":"0022df7fb2555854fcefb5f5f3f48470e65990168a6837a821c87b2ec7f49fdc","inference_profile":"f484b4bfaac96a874f84c6a747d0b9139f19d38377a74515fb179898d2736601","runtime_policy":"1692cf404180c2fdb370c7c33305aca37ca2e839519beb617ed86cf87bd881c2","sampling_policy":"b9bda475d8a2027798f7231ad723dc74b76c70b279eba1f5cc64f92225fc0404"}'
+POLICY_TUPLE = {'inference_profile_version': 'b24-inference-profile-v2', 'runtime_policy_version': 'b24-p5-runtime-policy-v2', 'sampling_policy_version': 'b24-p6-sampling-policy-v2', 'diagnostic_policy_version': 'b24-p7-diagnostic-policy-v2'}
 
 
 revision = "202608251200"
@@ -45,13 +55,9 @@ def _execute_if_role_exists(role_name: str, statement: str) -> None:
 
 
 def upgrade() -> None:
-    manifest = _literal(
-        json.dumps(current_manifest(), sort_keys=True, separators=(",", ":"))
-    )
-    digests = _literal(
-        json.dumps(current_component_digests(), sort_keys=True, separators=(",", ":"))
-    )
-    policy_tuple = current_policy_tuple()
+    manifest = _literal(SEMANTIC_MANIFEST_JSON)
+    digests = _literal(COMPONENT_DIGESTS_JSON)
+    policy_tuple = POLICY_TUPLE
 
     op.execute(
         """
