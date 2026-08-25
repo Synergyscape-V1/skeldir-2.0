@@ -1458,12 +1458,20 @@ CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
         $$;
 
 CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE
+    LANGUAGE plpgsql STABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            v_complete boolean;
+        BEGIN
+            -- plpgsql, not sql, so the body is resolved when it runs.
+            -- canonical_schema.sql emits functions before tables, and a
+            -- LANGUAGE sql body is resolved at CREATE, so this function
+            -- alone could not be applied to a bare database. The query is
+            -- unchanged.
             WITH fit AS (
                 SELECT policy_replan_count
-                FROM bayesian_model_fits
+                FROM public.bayesian_model_fits
                 WHERE tenant_id = p_tenant_id AND id = p_fit_id
             ), ordered AS (
                 SELECT transition_sequence,
@@ -1472,7 +1480,7 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
                        lag(to_policy_bundle_hash) OVER (
                            ORDER BY transition_sequence
                        ) AS prior_to
-                FROM b24_fit_policy_replan_lineage
+                FROM public.b24_fit_policy_replan_lineage
                 WHERE tenant_id = p_tenant_id AND fit_id = p_fit_id
             ), summary AS (
                 SELECT count(*)::integer AS row_count,
@@ -1496,7 +1504,10 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
                 ),
                 false
             )
-            FROM fit CROSS JOIN summary
+            INTO v_complete
+            FROM fit CROSS JOIN summary;
+            RETURN COALESCE(v_complete, false);
+        END
         $$;
 
 CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id text, p_pid integer, p_parent_pid integer, p_topology_fingerprint text, p_process_token text, p_ttl_seconds integer DEFAULT 3600) RETURNS void
