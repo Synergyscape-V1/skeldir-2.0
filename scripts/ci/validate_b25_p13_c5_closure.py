@@ -151,7 +151,15 @@ def _projection(
         "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
         "sampling_policy_version": B24_INFERENCE_PROFILE.sampling_policy_version,
         "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
-        "diagnostic_policy_version": "b24-p7-diagnostic-policy-v1",
+        # Was a stale "-v1" literal sitting beside a bundle hash computed
+        # over the current tuple -- an internally inconsistent regime that
+        # passed Trust because nothing recomputed the digest. Audit 48
+        # found it in the repository as shipped, not as a constructed
+        # adversarial input. C11 refuses it, so the fixture has to mean
+        # what it says.
+        "diagnostic_policy_version": (
+            B24_INFERENCE_PROFILE.diagnostic_policy_version
+        ),
         "authorized_chains": B24_INFERENCE_PROFILE.chains,
         "authorized_posterior_draws_total": (
             B24_INFERENCE_PROFILE.posterior_draws_total
@@ -184,7 +192,9 @@ def _projection(
         inference_profile_version=B24_INFERENCE_PROFILE.profile_version,
         runtime_policy_version=B24_INFERENCE_PROFILE.runtime_policy_version,
         sampling_policy_version=B24_INFERENCE_PROFILE.sampling_policy_version,
-        diagnostic_policy_version="b24-p7-diagnostic-policy-v1",
+        diagnostic_policy_version=(
+            B24_INFERENCE_PROFILE.diagnostic_policy_version
+        ),
         policy_bundle_hash=B24_INFERENCE_PROFILE.policy_bundle_hash(),
         authorized_chains=B24_INFERENCE_PROFILE.chains,
         authorized_posterior_draws_total=(B24_INFERENCE_PROFILE.posterior_draws_total),
