@@ -1369,7 +1369,14 @@ async def test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction(
     result_summary = {
         "diagnostic_status": "passed",
         "credible_interval_status": "available",
-        "diagnostic_policy_version": "b24-p7-diagnostic-policy-v1",
+        # The synthetic result summary reported a superseded diagnostic
+        # policy, so the completion write moved the fit onto a tuple no
+        # registry row describes. Under C11 that is an unresolvable
+        # producing regime, which is the correct refusal -- the fixture
+        # was naming a regime that does not exist.
+        "diagnostic_policy_version": (
+            B24_INFERENCE_PROFILE.diagnostic_policy_version
+        ),
         "diagnostic_target_filter_version": "b24-p7-target-filter-v1",
         "interval_policy_version": "b24-p7-interval-policy-v1",
         # This test proves transaction-local tenant rebinding, but its result
