@@ -13,8 +13,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError, ProgrammingError
 from sqlalchemy.pool import NullPool
 
+from pathlib import Path
+
 from app.bayesian.compiledir_reaper import create_compiledir_lease
 from app.bayesian.runtime_policy import resolved_runtime_authority_from_env
+
+#: Repository backend root, resolved from this file rather than the
+#: environment: tests/trust/<file> -> backend.
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
 from app.bayesian.sampler_supervisor import (
     build_child_env_for_lease,
     run_supervised_sampler,
@@ -139,7 +145,17 @@ def test_c11_sampler_child_refuses_worker_runtime_drift_before_sampling(
     )
     env = build_child_env_for_lease(
         lease,
-        source_env={**os.environ, "B24_STAGE_MARKER_PATH": str(marker_path)},
+        source_env={
+            **os.environ,
+            # Explicit rather than ambient, matching every other child-spawning
+            # proof in this repository. The bootstrap runs as a script, so
+            # sys.path[0] is the bayesian package directory and the `app`
+            # package is only importable via PYTHONPATH; inheriting whatever a
+            # given CI job happened to export made this proof depend on the
+            # harness instead of on the system it is testing.
+            "PYTHONPATH": str(_BACKEND_ROOT),
+            "B24_STAGE_MARKER_PATH": str(marker_path),
+        },
     )
     result = run_supervised_sampler(
         sampler_child_command(
