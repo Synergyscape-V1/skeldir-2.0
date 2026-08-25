@@ -338,6 +338,7 @@ ALLOWED_M0_PATHS = [
     "backend/app/celery_app.py",
     "backend/app/core/queues.py",
     "scripts/ci/validate_b25_p13_c11_closure.py",
+    "scripts/security/phase4_enforcement_probe.py",
     "backend/app/tasks/beat_schedule.py",
     "Procfile",
     "docs/ci/",
