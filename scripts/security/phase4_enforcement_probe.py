@@ -157,6 +157,18 @@ def discover_tenant_tables(conn) -> list[dict]:
     return discovered
 
 
+#: Tenant-scoped tables that are append-only by construction. Each carries
+#: SELECT and INSERT policies; UPDATE and DELETE are refused by a trigger
+#: rather than permitted by a policy, so the four-command coverage rule
+#: below would ask them to widen authority they exist to withhold.
+APPEND_ONLY_TABLES = frozenset(
+    {
+        "dead_events_quarantine",
+        "b24_fit_policy_replan_lineage",
+    }
+)
+
+
 def assert_rls_coverage(discovered: list[dict]) -> None:
     if not discovered:
         raise ProbeFailure("tenant-scoped discovery returned zero tables")
@@ -170,15 +182,23 @@ def assert_rls_coverage(discovered: list[dict]) -> None:
             or {"R", "A", "W", "D"}.issubset(cmd_set)
             or {"SELECT", "INSERT", "UPDATE", "DELETE"}.issubset(cmd_set)
         )
-        is_quarantine = row["table_name"] == "dead_events_quarantine"
-        has_quarantine_coverage = {"SELECT", "INSERT"}.issubset(cmd_set)
+        # Append-only tables are more restricted than the general rule, not
+        # less: they carry SELECT and INSERT policies and no UPDATE or DELETE
+        # policy at all, because those commands are refused outright by trigger.
+        # Adding the missing two policies purely to satisfy a coverage count
+        # would grant authority the design deliberately withholds.
+        is_append_only = row["table_name"] in APPEND_ONLY_TABLES
+        has_append_only_coverage = {"SELECT", "INSERT"}.issubset(cmd_set)
         if not row["rls_enabled"]:
             missing.append(f"{row['table_name']}: RLS disabled")
         if not row["force_rls"]:
             missing.append(f"{row['table_name']}: FORCE RLS disabled")
-        if is_quarantine:
-            if not has_quarantine_coverage:
-                missing.append(f"{row['table_name']}: missing quarantine policy coverage cmds={sorted(cmd_set)}")
+        if is_append_only:
+            if not has_append_only_coverage:
+                missing.append(
+                    f"{row['table_name']}: missing append-only policy coverage "
+                    f"cmds={sorted(cmd_set)}"
+                )
         elif not has_full_coverage:
             missing.append(f"{row['table_name']}: missing policy coverage cmds={sorted(cmd_set)}")
     if missing:
