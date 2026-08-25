@@ -23,6 +23,9 @@ worker: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info
 # DATABASE_URL explicitly -- inheriting the API DSN would hand worker
 # authority to a process topology that is supposed to be separated from it.
 worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian DATABASE_URL=$WORKER_DATABASE_URL SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1 celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian
+# Fresh cross-tenant dispatch is a separate process and credential.  It cannot
+# execute fits and the ordinary Bayesian worker never receives its queue or DSN.
+worker_bayesian_publisher: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian_publisher DATABASE_URL=$PUBLISHER_DATABASE_URL B24_DISPATCH_PUBLISHER_DATABASE_URL=$PUBLISHER_DATABASE_URL celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian_publisher --concurrency=1
 worker_b23: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
 beat: cd backend && celery -A app.celery_app.celery_app beat --loglevel=info
 

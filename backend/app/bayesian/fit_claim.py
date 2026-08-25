@@ -159,6 +159,9 @@ async def claim_fit_for_snapshot(
         "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
         "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
         "sampling_policy_version": (B24_INFERENCE_PROFILE.sampling_policy_version),
+        "diagnostic_policy_version": (
+            B24_INFERENCE_PROFILE.diagnostic_policy_version
+        ),
         "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
         "authorized_chains": B24_INFERENCE_PROFILE.chains,
         "authorized_posterior_draws_total": (
@@ -403,6 +406,7 @@ async def claim_fit_for_snapshot(
                             inference_profile_version,
                             runtime_policy_version,
                             sampling_policy_version,
+                            diagnostic_policy_version,
                             policy_bundle_hash,
                             authorized_chains,
                             authorized_posterior_draws_total
@@ -433,6 +437,13 @@ async def claim_fit_for_snapshot(
                             :inference_profile_version,
                             :runtime_policy_version,
                             :sampling_policy_version,
+                            -- Stamped with the rest of the bundle rather than
+                            -- discovered at completion. The diagnostic policy is
+                            -- one of the four authorities the bundle hash is
+                            -- taken over, so a fit that records it only after
+                            -- sampling has a provenance that changes under it
+                            -- mid-execution -- which C11 refuses, correctly.
+                            :diagnostic_policy_version,
                             :policy_bundle_hash,
                             :authorized_chains,
                             :authorized_posterior_draws_total

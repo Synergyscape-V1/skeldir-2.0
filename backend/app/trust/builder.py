@@ -228,6 +228,28 @@ def _inference_provenance(projection: object) -> dict[str, object] | None:
         != provenance["observed_posterior_draws_total"]
     ):
         return None
+    # Signature integrity cannot repair false provenance.  Resolve the bundle
+    # and all component labels against the neutral semantic registry before the
+    # available claim is constructed.  This import is intentionally not a
+    # Bayesian import, preserving P12's read-only boundary.
+    from app.inference_policy_registry import (
+        PolicyRegistryError,
+        validate_policy_provenance,
+    )
+
+    decision = getattr(projection, "decision", None)
+    try:
+        validate_policy_provenance(
+            provenance,
+            confidence_policy_version=getattr(
+                decision, "confidence_policy_version", None
+            ),
+            confidence_semantics_version=getattr(
+                decision, "confidence_semantics_version", None
+            ),
+        )
+    except PolicyRegistryError:
+        return None
     return provenance
 
 

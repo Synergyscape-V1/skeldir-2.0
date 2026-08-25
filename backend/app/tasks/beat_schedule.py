@@ -11,7 +11,7 @@ from typing import Dict, Any
 
 from celery.schedules import crontab
 
-from app.core.queues import QUEUE_BAYESIAN
+from app.core.queues import QUEUE_BAYESIAN, QUEUE_BAYESIAN_PUBLISHER
 
 
 def _refresh_interval_seconds() -> float:
@@ -125,8 +125,8 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "schedule": dispatch_interval,
             "options": {
                 "expires": max(int(dispatch_interval), 1) * 2,
-                "queue": QUEUE_BAYESIAN,
-                "routing_key": f"{QUEUE_BAYESIAN}.task",
+                "queue": QUEUE_BAYESIAN_PUBLISHER,
+                "routing_key": f"{QUEUE_BAYESIAN_PUBLISHER}.task",
             },
             "kwargs": {
                 "batch_size": _positive_int_env(

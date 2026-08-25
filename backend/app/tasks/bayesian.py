@@ -35,7 +35,6 @@ from app.bayesian.dispatch_authority import (
     mark_dispatch_running_sync,
 )
 from app.bayesian.dispatch_outbox import (
-    publish_due_dispatch_rows_sync,
     publish_due_recovery_rows_sync,
 )
 from app.bayesian.fit_execution import execute_fit_intent_sync
@@ -70,7 +69,6 @@ FEATURE_AUTHORITY_DISPATCH_TASK_NAME = (
 RECOVERY_RECONCILER_TASK_NAME = "app.tasks.bayesian.reconcile_fit_recovery_wakeups"
 #: The initial publisher for a freshly claimed dispatch. Its absence is what
 #: made the recovery reconciler above the only route a fit had to a worker.
-DISPATCH_PUBLISHER_TASK_NAME = "app.tasks.bayesian.publish_due_fit_dispatches"
 FIT_PLANNER_TASK_NAME = "app.tasks.bayesian.plan_due_fit_intents"
 RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME = (
     "app.tasks.bayesian.probe_recoverable_failure_ack"
@@ -91,13 +89,13 @@ _BAYESIAN_TASK_REGISTRATION_FALSE_VALUES = {"0", "false", "no", "off"}
 _BAYESIAN_TASK_REGISTRATION_TRUE_VALUES = {"1", "true", "yes", "on"}
 _BAYESIAN_WORKER_ROLE_ENV = "SKELDIR_CELERY_WORKER_ROLE"
 _BAYESIAN_WORKER_ROLE_BAYESIAN = "bayesian"
+_BAYESIAN_WORKER_ROLE_PUBLISHER = "bayesian_publisher"
 _BAYESIAN_WORKER_ROLE_NON_BAYESIAN = "non_bayesian"
 REQUIRED_BAYESIAN_TASK_NAMES = frozenset(
     {
         "app.tasks.bayesian.run_mcmc_inference",
         "app.tasks.bayesian.execute_fit_intent",
         RECOVERY_RECONCILER_TASK_NAME,
-        DISPATCH_PUBLISHER_TASK_NAME,
         FIT_PLANNER_TASK_NAME,
         RECOVERABLE_FAILURE_ACK_PROBE_TASK_NAME,
         FEATURE_AUTHORITY_DISPATCH_TASK_NAME,
@@ -139,6 +137,10 @@ def _bayesian_tasks_registered_for_process() -> bool:
     if role == _BAYESIAN_WORKER_ROLE_NON_BAYESIAN:
         if explicit is True:
             raise RuntimeError("non_bayesian_worker_role_registration_contradiction")
+        return False
+    if role == _BAYESIAN_WORKER_ROLE_PUBLISHER:
+        if explicit is True:
+            raise RuntimeError("publisher_worker_bayesian_registration_contradiction")
         return False
     if role:
         raise RuntimeError("bayesian_worker_role_unknown")
@@ -746,61 +748,6 @@ def probe_recoverable_failure_ack(
         "failure_taxonomy": "recoverable_acknowledged_worker_failure",
     }
     _append_probe_event({"event": "bayesian_recoverable_failure_ack_probe", **payload})
-    return payload
-
-
-@_bayesian_task(
-    bind=True,
-    name=DISPATCH_PUBLISHER_TASK_NAME,
-    routing_key="bayesian.task",
-    soft_time_limit=30,
-    time_limit=60,
-    acks_late=True,
-    max_retries=0,
-)
-def publish_due_fit_dispatches(self, *, batch_size: int = 25) -> dict:
-    """Carry freshly claimed fit dispatches onto the broker.
-
-    This is the fast path, and until now it existed only as an unwired
-    function. `dispatch_due_outbox_rows` was complete and correct and had no
-    caller: no Beat entry, no task, no production call site. The consequence was
-    that a fit the planner had just claimed sat in the outbox until the recovery
-    reconciler swept it up as stale -- so the repair mechanism was the delivery
-    mechanism, and every fresh fit paid a staleness delay and an attempt-count
-    penalty designed for failures.
-
-    What crosses the broker still authorises nothing. The payload carries a
-    dispatch id and a payload hash; the worker must lease the row against a live
-    worker generation before it may execute, and the C5 fence refuses it
-    otherwise. That is identical to the recovery path, which is the point: one
-    governed publisher shape, two eligibility rules.
-    """
-
-    assert_bayesian_worker_boot_topology_proven()
-    task_id = str(self.request.id)
-    engine = create_bayesian_worker_engine()
-    try:
-        with engine.begin() as conn:
-            published_rows = publish_due_dispatch_rows_sync(conn, batch_size=batch_size)
-    finally:
-        engine.dispose()
-
-    payload = {
-        "status": "ok",
-        "task_id": task_id,
-        "dispatches_published": len(published_rows),
-        "dispatch_ids": [str(row.id) for row in published_rows],
-        "fit_ids": [str(row.fit_id) for row in published_rows],
-    }
-    logger.info(
-        "bayesian_fresh_dispatch_published",
-        extra={
-            "event_type": "bayesian.dispatch",
-            "task_id": task_id,
-            "dispatches_published": payload["dispatches_published"],
-        },
-    )
-    _append_probe_event({"event": "bayesian_fresh_dispatch_published", **payload})
     return payload
 
 

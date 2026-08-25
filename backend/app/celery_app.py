@@ -22,6 +22,7 @@ from sqlalchemy.engine.url import make_url
 from app.core.queues import (
     QUEUE_ATTRIBUTION,
     QUEUE_BAYESIAN,
+    QUEUE_BAYESIAN_PUBLISHER,
     QUEUE_B23_MATCH_ENGINE,
     QUEUE_HOUSEKEEPING,
     QUEUE_LLM,
@@ -226,6 +227,7 @@ def _ensure_celery_configured():
         "app.tasks.llm",
         "app.tasks.attribution",
         "app.tasks.bayesian",
+        "app.tasks.bayesian_publisher",
         "app.tasks.revenue_verification",
         "app.tasks.r4_failure_semantics",
         "app.tasks.r6_resource_governance",
@@ -280,6 +282,7 @@ def _ensure_celery_configured():
             Queue(QUEUE_LLM, routing_key=f'{QUEUE_LLM}.#'),
             Queue(QUEUE_ATTRIBUTION, routing_key=f'{QUEUE_ATTRIBUTION}.#'),
             Queue(QUEUE_BAYESIAN, routing_key=f'{QUEUE_BAYESIAN}.#'),
+            Queue(QUEUE_BAYESIAN_PUBLISHER, routing_key=f'{QUEUE_BAYESIAN_PUBLISHER}.#'),
             Queue(QUEUE_B23_MATCH_ENGINE, routing_key=f'{QUEUE_B23_MATCH_ENGINE}.#'),
         ],
         task_routes={
@@ -289,6 +292,7 @@ def _ensure_celery_configured():
             'app.tasks.matviews.*': {'queue': QUEUE_MAINTENANCE, 'routing_key': f'{QUEUE_MAINTENANCE}.task'},
             'app.tasks.llm.*': {'queue': QUEUE_LLM, 'routing_key': f'{QUEUE_LLM}.task'},
             'app.tasks.attribution.*': {'queue': QUEUE_ATTRIBUTION, 'routing_key': f'{QUEUE_ATTRIBUTION}.task'},
+            'app.tasks.bayesian.publish_due_fit_dispatches': {'queue': QUEUE_BAYESIAN_PUBLISHER, 'routing_key': f'{QUEUE_BAYESIAN_PUBLISHER}.task'},
             'app.tasks.bayesian.*': {'queue': QUEUE_BAYESIAN, 'routing_key': f'{QUEUE_BAYESIAN}.task'},
             'app.tasks.revenue_verification.*': {'queue': QUEUE_B23_MATCH_ENGINE, 'routing_key': f'{QUEUE_B23_MATCH_ENGINE}.task'},
             'app.tasks.r4_failure_semantics.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
@@ -1002,7 +1006,7 @@ __all__ = ["celery_app", "_build_broker_url", "_build_result_backend", "_ensure_
 
 # B0.5.3.3 Gate B FIX: Remove module-level task imports to prevent premature psycopg2 import
 # Tasks are discovered via `include` config in _ensure_celery_configured() - no need for eager imports
-# Module-level imports caused: conftest → celery_app → tasks.housekeeping → psycopg2 → DB connection
+# Module-level imports caused: conftest â†’ celery_app â†’ tasks.housekeeping â†’ psycopg2 â†’ DB connection
 # during pytest COLLECTION (before DATABASE_URL validation), causing auth failures with stale .env creds
 
 # Ensure the Celery app is configured whenever this module is imported (worker or test process).

@@ -527,7 +527,19 @@ async def _seed_open_leased_fit(
                 interval_summary_bytes, credible_interval_status,
                 diagnostic_status, diagnostic_policy_version,
                 diagnostic_target_filter_version, interval_policy_version,
-                artifact_ref, artifact_hash, created_at, updated_at
+                artifact_ref, artifact_hash,
+                -- Stamped at insert, the way the production claim path stamps
+                -- it. C11 treats a later change to policy_bundle_hash as a
+                -- replan requiring lineage evidence, which is correct: in
+                -- production the claim always stamps first, so an UPDATE that
+                -- moves the hash really is a policy transition. A fixture that
+                -- inserted bare and stamped afterwards was modelling a sequence
+                -- production never performs.
+                inference_profile_version, runtime_policy_version,
+                sampling_policy_version, policy_bundle_hash,
+                authorized_chains, authorized_posterior_draws_total,
+                n_chains, n_samples_actual,
+                created_at, updated_at
             ) VALUES (
                 :fit_id, :tenant_id, 'bayesian_attribution_confidence', :model_version,
                 :window_start, :window_end, :snapshot_hash,
@@ -535,13 +547,19 @@ async def _seed_open_leased_fit(
                 false, 1.0, 500, 0,
                 9700, 10300, '[2]'::jsonb, 2,
                 16, 'available',
-                'passed', 'p13-diagnostics-v1',
+                'passed', :diagnostic_policy_version,
                 'p13-target-v1', 'p13-interval-v1',
-                :artifact_ref, :artifact_hash, now(), now()
+                :artifact_ref, :artifact_hash,
+                :inference_profile_version, :runtime_policy_version,
+                :sampling_policy_version, :policy_bundle_hash,
+                :authorized_chains, :authorized_posterior_draws_total,
+                :observed_chains, :observed_posterior_draws_total,
+                now(), now()
             )
             """
         ),
         {
+            **_PROVENANCE_DEFAULTS,
             "fit_id": str(fit_id),
             "tenant_id": str(tenant_id),
             "model_version": f"p13-open-{label}-v1",
@@ -1298,7 +1316,11 @@ async def _project_grandfathered_temporal_fit(
                         9700, 10300, '[2]'::jsonb,
                         2, 16,
                         'available', 'passed',
-                        'p13-diagnostics-v1',
+                        -- The registry resolves an available confidence's whole
+                        -- policy tuple, so a fixture literal here is not a
+                        -- naming detail: it is an unregistered regime, and the
+                        -- refusal is the point.
+                        :diagnostic_policy_version,
                         'p13-target-v1', 'p13-interval-v1',
                         'high', 'narrow_interval',
                         'b24-p10-confidence-policy-v1',
@@ -1960,6 +1982,13 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
                     inference_profile_version = :inference_profile_version,
                     runtime_policy_version = :runtime_policy_version,
                     sampling_policy_version = :sampling_policy_version,
+                    -- Required for the same reason as the other three: C11
+                    -- resolves an available confidence's regime against the
+                    -- policy registry, and the registry match is over the whole
+                    -- tuple. Omitting one member leaves it NULL and no row can
+                    -- match, which is the intended refusal rather than a
+                    -- fixture inconvenience.
+                    diagnostic_policy_version = :diagnostic_policy_version,
                     policy_bundle_hash = :policy_bundle_hash,
                     authorized_chains = :authorized_chains,
                     authorized_posterior_draws_total

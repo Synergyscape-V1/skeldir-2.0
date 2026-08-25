@@ -47,6 +47,9 @@ on:
       - 'backend/tests/trust/test_b25_p13_c9_authority_supersession.py'
       - 'backend/tests/trust/test_b25_p13_c9_positive_confidence.py'
       - 'backend/tests/trust/test_b25_p13_c10_policy_transport_physics.py'
+      - 'backend/tests/trust/test_b25_p13_c11_semantic_authority.py'
+      - 'backend/app/inference_policy_registry.py'
+      - 'backend/app/tasks/bayesian_publisher.py'
       - 'backend/Dockerfile.bayesian'
       - 'scripts/ci/validate_b24_artifact_topology.py'
       - 'backend/app/bayesian/fit_claim.py'
@@ -115,6 +118,7 @@ jobs:
       # never existed and went unnoticed because nothing in the job read this
       # variable until C5's legacy-row seeding did.
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+      B24_DISPATCH_PUBLISHER_DATABASE_URL: postgresql://app_dispatch_publisher:app_dispatch_publisher@127.0.0.1:5432/skeldir_b25_p13_e2e
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       SKELDIR_B25_P13_E2E_PROOF: "1"
       PGPASSWORD: postgres
@@ -795,6 +799,138 @@ jobs:
             -q -s --no-header | tee /tmp/b25_p13_c10_policy_transport.out
           grep -E "5 passed" /tmp/b25_p13_c10_policy_transport.out
 
+      - name: P13 C11 semantic authority, publisher custody, and lineage physics
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C11_DB_PROOF: "1"
+          SKELDIR_B24_P9_REQUIRE_DB_PROOFS: "1"
+          SKELDIR_CELERY_WORKER_ROLE: bayesian
+          SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+          SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+          SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+          SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+          PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c11-prometheus
+        run: |
+          set -o pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          python scripts/ci/validate_b25_p13_c11_closure.py --negative-control \
+            | tee /tmp/b25_p13_c11_validator.out
+          grep -E '^B25_P13_C11_CLOSURE_VALIDATION_PASS$' \
+            /tmp/b25_p13_c11_validator.out
+          grep -E '^c11_semantic_negative_controls_fired=3$' \
+            /tmp/b25_p13_c11_validator.out
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c11_semantic_authority.py \
+            -q -s --no-header | tee /tmp/b25_p13_c11_physics.out
+          grep -E '7 passed' /tmp/b25_p13_c11_physics.out
+
+      - name: NC-C11-07 removing P2 turns the lineage gate RED
+        env:
+          C11_ADMIN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
+          C11_WORKER_DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import psycopg2
+          from psycopg2.extras import RealDictCursor
+
+          admin = psycopg2.connect(os.environ["C11_ADMIN_DATABASE_URL"])
+          worker = psycopg2.connect(os.environ["C11_WORKER_DATABASE_URL"])
+          row = None
+          deleted = False
+          try:
+              with admin.cursor(cursor_factory=RealDictCursor) as cursor:
+                  cursor.execute(
+                      "SELECT * FROM public.b24_fit_policy_replan_lineage "
+                      "WHERE transition_sequence=2 LIMIT 1"
+                  )
+                  row = cursor.fetchone()
+                  assert row, "C11 P1->P2->P3->P4 witness missing"
+                  cursor.execute(
+                      "ALTER TABLE public.b24_fit_policy_replan_lineage "
+                      "DISABLE TRIGGER trg_b24_replan_lineage_append_only"
+                  )
+                  cursor.execute(
+                      "DELETE FROM public.b24_fit_policy_replan_lineage "
+                      "WHERE tenant_id=%s AND fit_id=%s AND transition_sequence=2",
+                      (row["tenant_id"], row["fit_id"]),
+                  )
+              admin.commit()
+              deleted = True
+
+              with worker.cursor() as cursor:
+                  cursor.execute(
+                      "SELECT set_config('app.current_tenant_id', %s, false)",
+                      (str(row["tenant_id"]),),
+                  )
+                  cursor.execute(
+                      "SELECT public.b24_policy_lineage_complete(%s,%s)",
+                      (row["tenant_id"], row["fit_id"]),
+                  )
+                  assert cursor.fetchone()[0] is False
+              worker.commit()
+              print("nc_c11_07_lineage_gap_detected=1")
+          finally:
+              if row is not None and deleted:
+                  columns = list(row)
+                  placeholders = ",".join(["%s"] * len(columns))
+                  with admin.cursor() as cursor:
+                      cursor.execute(
+                          "INSERT INTO public.b24_fit_policy_replan_lineage ("
+                          + ",".join(columns)
+                          + ") VALUES (" + placeholders + ")",
+                          [row[column] for column in columns],
+                      )
+                      cursor.execute(
+                          "ALTER TABLE public.b24_fit_policy_replan_lineage "
+                          "ENABLE TRIGGER trg_b24_replan_lineage_append_only"
+                      )
+                  admin.commit()
+              worker.close()
+              admin.close()
+          PY
+
+      # NC-C11-04/05/06 mutate production semantics while deliberately leaving
+      # their labels and registry identity unchanged.  The same validator used
+      # above must turn red for each family, then return green after restoration.
+      - name: NC-C11 semantic mutation without version transition turns RED
+        run: |
+          set -euo pipefail
+          for spec in \
+            'backend/app/bayesian/sampling_policy.py|draws_per_chain: int = 1000|draws_per_chain: int = 999' \
+            'backend/app/bayesian/diagnostics.py|ess_min_threshold: float = 400.0|ess_min_threshold: float = 399.0' \
+            'backend/app/bayesian/inference_profile.py|CELERY_SOFT_TIME_LIMIT_SECONDS = 270|CELERY_SOFT_TIME_LIMIT_SECONDS = 271'; do
+            IFS='|' read -r file old new <<< "$spec"
+            cp "$file" /tmp/c11-policy-backup.py
+            python - "$file" "$old" "$new" <<'PY'
+          import pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          assert source.count(sys.argv[2]) == 1, (path, sys.argv[2])
+          path.write_text(source.replace(sys.argv[2], sys.argv[3], 1), encoding="utf-8")
+          PY
+            if python scripts/ci/validate_b25_p13_c11_closure.py \
+                 > /tmp/c11-semantic-red.out 2>&1; then
+              echo "C11 semantic mutation did not turn the gate red: $file"
+              cp /tmp/c11-policy-backup.py "$file"
+              exit 1
+            fi
+            grep -E 'live_policy_semantics_registry_mismatch' \
+              /tmp/c11-semantic-red.out
+            cp /tmp/c11-policy-backup.py "$file"
+            # Drop cached bytecode for the restored module. CPython invalidates
+            # .pyc by source mtime at one-second granularity, so a mutate-and-
+            # restore inside the same second can leave the mutated bytecode
+            # authoritative -- the control then reports the mutation it just
+            # undid, and the step fails for a reason that no longer exists.
+            find backend/app -name '__pycache__' -type d -prune -exec rm -rf {} +
+          done
+          python -B scripts/ci/validate_b25_p13_c11_closure.py \
+            | grep -E '^B25_P13_C11_CLOSURE_VALIDATION_PASS$'
+
       # NC-C10-09 / NC-C10-10. Remove the only production scheduler edge. The
       # required proof must turn red immediately; a direct `.run()` call is not
       # present and therefore cannot rescue it.
@@ -1077,6 +1213,39 @@ jobs:
   b2-5-p13-c10-artifact-topology:
     name: B2.5-P13 C10 Executable Artifact Topology
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c11
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c11
+      B24_DISPATCH_PUBLISHER_DATABASE_URL: postgresql://app_dispatch_publisher:app_dispatch_publisher@127.0.0.1:5432/skeldir_b25_p13_c11
+      CELERY_BROKER_URL: sqla+postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c11
+      CELERY_RESULT_BACKEND: db+postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c11
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B25_P13_C9_POSITIVE_PROOF: "1"
+      SKELDIR_B25_P13_C11_DB_PROOF: "1"
+      SKELDIR_B25_P13_C11_EXTERNAL_WORKER: "1"
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_ci_postgres15
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: github_actions_postgres_15_alpine
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+      PROMETHEUS_MULTIPROC_DIR: /tmp/skeldir-p13-c11-host-prometheus
     # This job exists because F-11 was declared resolved on evidence produced by
     # a job that pip-installs onto a runner. That evidence was real, and it
     # measured a topology the shipped image did not have: Dockerfile.bayesian
@@ -1091,6 +1260,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python and C11 database authority
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install host orchestration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Provision C11 principals and migrate
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p13_c11
 
       - name: Build the production Bayesian artifact, unmodified
         run: |
@@ -1205,3 +1391,134 @@ jobs:
           PY
           grep -q 'B24_ARTIFACT_CONTAINMENT_PASS' containment.log
           echo "p13_c10_single_process_containment_pass=1" >> "$GITHUB_STEP_SUMMARY"
+
+      # C11-M/P/Q/T.  The execution container is started with no command
+      # override: Docker therefore uses Dockerfile.bayesian's deployed Celery
+      # CMD.  A second credential-isolated process consumes only the publisher
+      # queue.  Beat emits the publisher task; the financial journey creates
+      # the fit naturally; the real image consumes its broker wake-up and its
+      # sampler child produces the posterior that Trust later signs.
+      - name: C11 real artifact worker positive Trust composition
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          docker run -d --rm --network host --name skeldir-c11-execution \
+            -e DATABASE_URL \
+            -e CELERY_BROKER_URL \
+            -e CELERY_RESULT_BACKEND \
+            -e TESTING -e CI \
+            -e SKELDIR_BAYESIAN_DB_TOPOLOGY \
+            -e SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION \
+            -e SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE \
+            -e SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY \
+            skeldir-bayesian:candidate
+
+          docker run -d --rm --network host --name skeldir-c11-publisher \
+            -e DATABASE_URL="$B24_DISPATCH_PUBLISHER_DATABASE_URL" \
+            -e B24_DISPATCH_PUBLISHER_DATABASE_URL \
+            -e CELERY_BROKER_URL="sqla+$B24_DISPATCH_PUBLISHER_DATABASE_URL" \
+            -e CELERY_RESULT_BACKEND="db+$B24_DISPATCH_PUBLISHER_DATABASE_URL" \
+            -e SKELDIR_CELERY_WORKER_ROLE=bayesian_publisher \
+            -e SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=0 \
+            -e TESTING -e CI \
+            -e SKELDIR_BAYESIAN_DB_TOPOLOGY \
+            -e SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION \
+            -e SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE \
+            -e SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY \
+            skeldir-bayesian:candidate \
+            celery -A app.celery_app.celery_app worker \
+              -Q bayesian_publisher --loglevel=INFO --concurrency=1
+
+          # Teardown is made incapable of failing rather than having its
+          # failure swallowed. A trailing short-circuit to a no-op would do the
+          # same thing to this block and to a real assertion, which is why P12
+          # forbids that token outright; an explicit `return 0` on a function
+          # that only removes containers says what is intended and cannot
+          # spread to anything that asserts.
+          cleanup() {
+            if [ -n "${BEAT_PID:-}" ]; then
+              kill "$BEAT_PID" 2>/dev/null
+            fi
+            docker rm -f skeldir-c11-execution skeldir-c11-publisher \
+              >/dev/null 2>&1
+            return 0
+          }
+          trap cleanup EXIT
+
+          for container in skeldir-c11-execution skeldir-c11-publisher; do
+            for attempt in $(seq 1 90); do
+              docker logs "$container" > "/tmp/${container}-boot.log" 2>&1
+              grep -q ' ready' "/tmp/${container}-boot.log" && break
+              test "$attempt" -lt 90 || {
+                docker logs "$container"; exit 1;
+              }
+              sleep 1
+            done
+          done
+
+          (
+            cd backend
+            B24_FIT_PLANNER_INTERVAL_SECONDS=1 \
+            SKELDIR_B24_DISABLE_FIT_PLANNER_JOB=1 \
+            SKELDIR_B24_P9_DISABLE_RECOVERY_RECONCILER_JOB=1 \
+            celery -A app.celery_app.celery_app beat --loglevel=INFO \
+              --pidfile= --schedule=/tmp/c11-celerybeat-schedule
+          ) > /tmp/c11-beat.log 2>&1 &
+          BEAT_PID=$!
+
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_positive_confidence.py \
+            -q -s --no-header \
+            -k real_posterior_is_produced_by_the_chain_that_claims_it \
+            | tee /tmp/c11-artifact-positive.out
+          grep -E '1 passed' /tmp/c11-artifact-positive.out
+          # Captured to files before matching. `docker logs | grep -q` makes
+          # grep exit on its first hit while docker is still writing, which
+          # SIGPIPEs the writer and surfaces as exit 141 under pipefail -- a
+          # green journey reported as a failed step. The rest of this workflow
+          # already matches against captured files for the same reason.
+          docker logs skeldir-c11-execution > /tmp/c11-exec.log 2>&1
+          docker logs skeldir-c11-publisher > /tmp/c11-pub.log 2>&1
+          grep -q 'app.tasks.bayesian.execute_fit_intent' /tmp/c11-exec.log
+          grep -q 'app.tasks.bayesian.publish_due_fit_dispatches' \
+            /tmp/c11-pub.log
+          echo "p13_c11_actual_docker_cmd_worker=1" >> "$GITHUB_STEP_SUMMARY"
+          echo "p13_c11_natural_publisher_worker_trust_journey=1" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: NC-C11-10 broken Celery CMD turns the production worker gate RED
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("backend/Dockerfile.bayesian").read_text(encoding="utf-8")
+          marker = 'CMD ["celery", "-A", "app.celery_app", "worker"'
+          assert source.count(marker) == 1
+          Path("Dockerfile.nc-c11-10").write_text(
+              source.replace(marker, 'CMD ["false", "-A", "app.celery_app", "worker"', 1),
+              encoding="utf-8",
+          )
+          PY
+          docker build -f Dockerfile.nc-c11-10 \
+            -t skeldir-bayesian:nc-c11-10 .
+
+          # The old command-replacement validator remains green, proving why it
+          # was insufficient as an executable-artifact gate.
+          docker run --rm -i skeldir-bayesian:nc-c11-10 \
+            python - < scripts/ci/validate_b24_artifact_topology.py \
+            > /tmp/nc-c11-10-old-validator.out 2>&1
+          grep -q 'B24_ARTIFACT_TOPOLOGY_PASS' \
+            /tmp/nc-c11-10-old-validator.out
+
+          # The C11 gate uses the real default CMD, so the same image is red.
+          if docker run --rm skeldir-bayesian:nc-c11-10 \
+               > /tmp/nc-c11-10-worker.out 2>&1; then
+            echo 'NC-C11-10 did not fire: broken default worker CMD succeeded'
+            exit 1
+          fi
+          if grep -q ' ready' /tmp/nc-c11-10-worker.out; then
+            echo 'NC-C11-10 did not fire: broken image reported worker readiness'
+            exit 1
+          fi
+          rm -f Dockerfile.nc-c11-10
+          echo "p13_c11_nc10_broken_worker_cmd_fired=1" >> "$GITHUB_STEP_SUMMARY"

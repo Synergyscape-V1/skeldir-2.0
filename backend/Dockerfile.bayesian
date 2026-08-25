@@ -26,6 +26,7 @@ ENV PYTHONUNBUFFERED=1 \
     B24_PYMC_CORES=1 \
     B24_BLAS_TOTAL_THREADS=1 \
     B24_PYTENSOR_ROOT=/tmp/skeldir-b24-pytensor \
+    PROMETHEUS_MULTIPROC_DIR=/tmp/skeldir-prometheus \
     SKELDIR_CELERY_WORKER_ROLE=bayesian \
     SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1 \
     SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY=connection_lifetime \
@@ -40,6 +41,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential gfortran libopenblas-dev procps \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /tmp/skeldir-prometheus \
+    && chmod 0770 /tmp/skeldir-prometheus
+
 COPY backend/requirements.txt /app/backend/requirements.txt
 COPY backend/requirements-bayesian.txt /app/backend/requirements-bayesian.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
@@ -48,6 +52,13 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
 COPY backend /app/backend
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
+# The worker's own execution path imports app.confidence_projection.policy
+# (via fit_execution's classify_confidence), which reads the temporal
+# policy contract at module import. Without this the production image
+# cannot import the module that classifies its own confidences -- a gap
+# that stayed invisible while nothing in CI exercised the real worker
+# import graph inside the image.
+COPY contracts /app/contracts
 COPY contracts-internal/governance /app/contracts-internal/governance
 COPY db/channel_mapping.yaml /app/db/channel_mapping.yaml
 ENV PYTHONPATH=/app/backend

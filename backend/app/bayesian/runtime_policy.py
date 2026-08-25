@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from app.inference_policy_registry import RUNTIME_POLICY_VERSION
+
 
 #: The governed identity of the P5 containment contract.
 #:
@@ -24,7 +26,7 @@ from uuid import uuid4
 #: PID, image digest and build timestamp are audit metadata; they do not change
 #: what a confidence means. The chain topology, the process cage and the
 #: deadline hierarchy do.
-B24_RUNTIME_POLICY_VERSION = "b24-p5-runtime-policy-v1"
+B24_RUNTIME_POLICY_VERSION = RUNTIME_POLICY_VERSION
 
 THREAD_ENV_VARS = (
     "OMP_NUM_THREADS",
@@ -72,9 +74,7 @@ class B24RuntimePolicy:
             "cores": self.pymc_cores,
             "blas_cores": self.blas_total_threads,
             "worker_concurrency": self.worker_concurrency,
-            "sampler_supervisor_deadline_seconds": (
-                self.sampler_supervisor_deadline_s
-            ),
+            "sampler_supervisor_deadline_seconds": (self.sampler_supervisor_deadline_s),
             "celery_soft_time_limit_seconds": self.celery_soft_time_limit_s,
             "celery_hard_time_limit_seconds": self.celery_hard_time_limit_s,
         }
@@ -152,6 +152,40 @@ def _float_env(name: str, default: float) -> float:
     return float(os.getenv(name, str(default)))
 
 
+def resolved_runtime_authority_from_env(
+    source_env: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """Resolve decision-significant runtime authority without process state.
+
+    The worker writes this record into the sampler input.  The child resolves
+    its own environment independently and must match this record exactly before
+    PyMC is imported.  Paths, PIDs, and benchmark metadata are deliberately not
+    authority dimensions.
+    """
+
+    from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
+
+    source = source_env if source_env is not None else os.environ
+
+    def _value(name: str, default: int) -> int:
+        return int(source.get(name, str(default)))
+
+    return {
+        "runtime_policy_version": B24_RUNTIME_POLICY_VERSION,
+        "chains": _value("B24_PYMC_CHAINS", DEFAULT_P6_SAMPLING_POLICY.chains),
+        "cores": _value("B24_PYMC_CORES", 1),
+        "blas_cores": _value("B24_BLAS_TOTAL_THREADS", 1),
+        "worker_concurrency": _value("B24_BAYESIAN_WORKER_CONCURRENCY", 1),
+        "sampler_supervisor_deadline_seconds": _value(
+            "B24_SAMPLER_SUPERVISOR_DEADLINE_S", 240
+        ),
+        "celery_soft_time_limit_seconds": _value(
+            "BAYESIAN_TASK_SOFT_TIME_LIMIT_S", 270
+        ),
+        "celery_hard_time_limit_seconds": _value("BAYESIAN_TASK_TIME_LIMIT_S", 300),
+    }
+
+
 def build_runtime_policy() -> B24RuntimePolicy:
     # Imported here rather than at module scope: runtime_policy is loaded by
     # the sampler child bootstrap before the application package is fully
@@ -180,9 +214,7 @@ def build_runtime_policy() -> B24RuntimePolicy:
         # Read from the sampling policy rather than restated. These two
         # numbers describe the same sampler, and the whole of F-11 was two
         # policies drifting apart while each stayed internally consistent.
-        pymc_chains=_int_env(
-            "B24_PYMC_CHAINS", DEFAULT_P6_SAMPLING_POLICY.chains
-        ),
+        pymc_chains=_int_env("B24_PYMC_CHAINS", DEFAULT_P6_SAMPLING_POLICY.chains),
         blas_total_threads=_int_env("B24_BLAS_TOTAL_THREADS", 1),
         sampler_supervisor_deadline_s=_int_env(
             "B24_SAMPLER_SUPERVISOR_DEADLINE_S", 240
@@ -243,10 +275,7 @@ def pymc_single_process_sample_kwargs(
     as ``nonfinite_diagnostic``, and no amount of data could have changed that.
     """
 
-    if (
-        policy.pymc_cores != 1
-        or policy.blas_total_threads != 1
-    ):
+    if policy.pymc_cores != 1 or policy.blas_total_threads != 1:
         raise RuntimeError(
             "B2.4-P5 sampler runtime is single-process-only: "
             f"cores={policy.pymc_cores}, "

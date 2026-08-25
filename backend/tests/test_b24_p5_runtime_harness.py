@@ -4,7 +4,6 @@ import ast
 import importlib.util
 import json
 import os
-import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +17,7 @@ from app.bayesian.compiledir_reaper import (
 from app.bayesian.runtime_policy import (
     apply_native_runtime_environment,
     build_runtime_policy,
+    resolved_runtime_authority_from_env,
 )
 from app.bayesian.sampler_supervisor import (
     build_child_env_for_lease,
@@ -169,9 +169,10 @@ def test_b24_p6_real_fit_child_emits_bounded_unvalidated_summary(
                 "execution_id": "real-fit-unit",
                 "fit_id": "0bd2d855-dceb-4039-bd98-5848edb269c7",
                 "random_seed": 42,
-                "max_samples": 160,
+                "max_samples": DEFAULT_P6_SAMPLING_POLICY.total_chain_iterations,
                 "max_cores": 1,
                 "observed_signal": [0.0, 0.1, -0.1],
+                "worker_runtime_authority": resolved_runtime_authority_from_env(),
             },
             sort_keys=True,
         ),
@@ -213,8 +214,7 @@ def test_b24_p6_real_fit_child_emits_bounded_unvalidated_summary(
     # have stayed green by expecting the sampler to fail its own diagnostics.
     assert payload["n_chains"] == DEFAULT_P6_SAMPLING_POLICY.chains
     assert (
-        payload["n_samples_actual"]
-        == DEFAULT_P6_SAMPLING_POLICY.posterior_draws_total
+        payload["n_samples_actual"] == DEFAULT_P6_SAMPLING_POLICY.posterior_draws_total
     )
     assert "posterior" not in payload
     assert "trace" not in payload
@@ -252,7 +252,9 @@ def test_b24_p6_parent_recomputes_after_db_failure_without_staging() -> None:
     child_pos = text.find("result = run_supervised_sampler")
     persist_tx_pos = text.find("with engine.begin() as conn:", child_pos)
     persist_call_pos = text.find("_persist_result_summary(", persist_tx_pos)
-    cleanup_pos = text.rfind("cleanup_fit_attempt(workspace=workspace, compiledir=lease)")
+    cleanup_pos = text.rfind(
+        "cleanup_fit_attempt(workspace=workspace, compiledir=lease)"
+    )
     assert -1 not in {child_pos, persist_tx_pos, persist_call_pos, cleanup_pos}
     assert "cleanup_compiledir_on_exit=False" in text
     assert "except" not in text[persist_tx_pos:persist_call_pos]
@@ -283,7 +285,9 @@ def test_b24_p6_stage_markers_wrap_physical_operations() -> None:
     model_pos = text.find("with pm.Model() as model:")
     observed_pos = text.find('pm.Normal("observed_signal"', model_pos)
     model_built_pos = text.find('emit_stage_marker("model_built"', observed_pos)
-    graph_compiling_pos = text.find('emit_stage_marker("graph_compiling"', model_built_pos)
+    graph_compiling_pos = text.find(
+        'emit_stage_marker("graph_compiling"', model_built_pos
+    )
     compile_pos = text.find("model.compile_logp()", graph_compiling_pos)
     graph_compiled_pos = text.find('emit_stage_marker("graph_compiled"', compile_pos)
     sampling_started_pos = text.find(

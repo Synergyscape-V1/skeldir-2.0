@@ -114,6 +114,10 @@ ALLOWED_B24_P5_RUNTIME_MARKER_PATHS = {
     # diagnostics, and a policy whose comments cannot say why it is shaped this
     # way invites the same conflation back.
     "backend/app/bayesian/sampling_policy.py",
+    # Pure policy semantics as data: the registry records what a version
+    # identifier denotes, including the sampler field names, and imports
+    # nothing. The module-scope import guard below still covers it.
+    "backend/app/inference_policy_registry.py",
 }
 
 #: A runtime path may name the sampler libraries; it may not load them at

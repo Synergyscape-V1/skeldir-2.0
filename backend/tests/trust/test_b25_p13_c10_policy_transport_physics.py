@@ -30,7 +30,7 @@ from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.inference_profile import B24_INFERENCE_PROFILE
 from app.bayesian.model_spec import B24_P6_MODEL_TYPE, B24_P6_MODEL_VERSION
 from app.bayesian.source_snapshot import P6SourceObservedInput
-from app.core.queues import QUEUE_BAYESIAN
+from app.core.queues import QUEUE_BAYESIAN, QUEUE_BAYESIAN_PUBLISHER
 from app.core.secrets import get_database_url
 from app.db.dsn import to_sync_postgres_dsn
 from tests.test_b24_p9_postgres_runtime import (
@@ -60,12 +60,14 @@ PUBLISHER_BEAT_ENTRY = "b24-fit-dispatch-publisher"
 def test_c10_production_schedule_contains_fresh_dispatch_publisher() -> None:
     """The live proof depends on a production Beat entry, not direct `.run()`."""
 
-    from app.tasks.bayesian import DISPATCH_PUBLISHER_TASK_NAME
+    from app.tasks.bayesian_publisher import DISPATCH_PUBLISHER_TASK_NAME
     from app.tasks.beat_schedule import build_beat_schedule
 
     schedule = build_beat_schedule()
     assert schedule[PUBLISHER_BEAT_ENTRY]["task"] == DISPATCH_PUBLISHER_TASK_NAME
-    assert schedule[PUBLISHER_BEAT_ENTRY]["options"]["queue"] == QUEUE_BAYESIAN
+    assert (
+        schedule[PUBLISHER_BEAT_ENTRY]["options"]["queue"] == QUEUE_BAYESIAN_PUBLISHER
+    )
 
 
 def test_c10_initial_and_recovery_payload_authority_are_equivalent() -> None:
@@ -195,7 +197,7 @@ async def test_c10_claimed_p1_is_explicitly_replanned_to_p2_before_compute(
         with engine.begin() as conn:
             _set_tenant_context(conn, tenant_id)
             with pytest.raises(
-                DBAPIError, match="b24_policy_bundle_write_authority_rejected"
+                DBAPIError, match="b24_policy_replan_evidence_incomplete"
             ):
                 conn.execute(
                     text(
@@ -287,6 +289,7 @@ async def test_c10_claimed_p1_is_explicitly_replanned_to_p2_before_compute(
                 ("inference_profile_version", "'tampered-profile'"),
                 ("runtime_policy_version", "'tampered-runtime'"),
                 ("sampling_policy_version", "'tampered-sampling'"),
+                ("diagnostic_policy_version", "'tampered-diagnostic'"),
                 ("policy_bundle_hash", "repeat('f', 64)"),
                 ("authorized_chains", "2"),
                 ("authorized_posterior_draws_total", "2000"),
@@ -294,8 +297,25 @@ async def test_c10_claimed_p1_is_explicitly_replanned_to_p2_before_compute(
                 ("policy_replanned_at", "now() + interval '1 hour'"),
                 ("policy_replan_count", "2"),
             ):
+                # Two governed guards can answer here, and which one does
+                # depends on whether the column is also execution-authority
+                # governed. diagnostic_policy_version is: it is stamped at claim
+                # time with the rest of the policy bundle, so the C5 dispatch
+                # fence sees the write first and refuses it before terminal
+                # immutability is consulted. Both are correct refusals of the
+                # same mutation, and pinning one of them would be pinning
+                # trigger ordering rather than the property.
+                #
+                # The property is asserted directly instead: the mutation is
+                # refused by a named governed guard, and the stored value is
+                # unchanged afterwards.
                 with pytest.raises(
-                    DBAPIError, match="b24_terminal_fit_truth_immutable"
+                    DBAPIError,
+                    match=(
+                        "b24_terminal_fit_truth_immutable"
+                        "|b24_dispatch_fence_rejected"
+                        "|b24_policy_provenance_sampling_immutable"
+                    ),
                 ):
                     with conn.begin_nested():
                         conn.execute(
@@ -306,6 +326,26 @@ async def test_c10_claimed_p1_is_explicitly_replanned_to_p2_before_compute(
                             ),
                             {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
                         )
+                survived = (
+                    conn.execute(
+                        text(
+                            f"SELECT {column} AS value "
+                            "FROM public.bayesian_model_fits "
+                            "WHERE tenant_id = :tenant_id AND id = :fit_id"
+                        ),
+                        {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+                    )
+                    .mappings()
+                    .one()
+                )
+                assert str(survived["value"]) not in {
+                    "tampered-profile",
+                    "tampered-runtime",
+                    "tampered-sampling",
+                    "tampered-diagnostic",
+                    "f" * 64,
+                    "e" * 64,
+                }, (column, survived)
     finally:
         engine.dispose()
 
@@ -430,7 +470,7 @@ async def test_c10_live_beat_broker_worker_delivers_fresh_dispatch(
     """Beat -> publisher task -> broker wake-up -> real Bayesian worker."""
 
     from app.celery_app import celery_app
-    from app.tasks.bayesian import DISPATCH_PUBLISHER_TASK_NAME
+    from app.tasks.bayesian_publisher import DISPATCH_PUBLISHER_TASK_NAME
 
     tenant_id, _ = test_tenant_pair
     fit_id = uuid4()
@@ -443,20 +483,31 @@ async def test_c10_live_beat_broker_worker_delivers_fresh_dispatch(
     original_eager = celery_app.conf.task_always_eager
     celery_app.conf.task_always_eager = False
     worker_log = tmp_path / "c10_dispatch_worker.log"
+    publisher_log = tmp_path / "c10_dispatch_publisher.log"
     beat_log = tmp_path / "c10_dispatch_beat.log"
     probe_log = tmp_path / "c10_dispatch_probe.jsonl"
     beat_schedule_db = tmp_path / "c10_celerybeat-schedule"
     worker_env = _worker_env(include_bayesian_tasks=True, log_path=probe_log)
     worker_env["B24_BAYESIAN_WORKSPACE_ROOT"] = str(tmp_path / "workspaces")
     worker_env["B24_PYTENSOR_ROOT"] = str(tmp_path / "compiledirs")
+    publisher_env = _worker_env(include_bayesian_tasks=False, log_path=probe_log)
+    publisher_url = os.environ["B24_DISPATCH_PUBLISHER_DATABASE_URL"]
+    publisher_env["SKELDIR_CELERY_WORKER_ROLE"] = "bayesian_publisher"
+    publisher_env.pop("SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS", None)
+    publisher_env["DATABASE_URL"] = publisher_url
+    publisher_env["B24_DISPATCH_PUBLISHER_DATABASE_URL"] = publisher_url
+    publisher_env["CELERY_BROKER_URL"] = f"sqla+{publisher_url}"
+    publisher_env["CELERY_RESULT_BACKEND"] = f"db+{publisher_url}"
     beat_env = _beat_env(log_path=probe_log, disable_recovery_schedule=True)
     beat_env["B24_FIT_PLANNER_INTERVAL_SECONDS"] = "1"
     beat_env["SKELDIR_B24_DISABLE_FIT_PLANNER_JOB"] = "1"
     beat_env.pop("SKELDIR_B24_DISABLE_FIT_DISPATCH_PUBLISHER_JOB", None)
 
     worker_handle = worker_log.open("w", encoding="utf-8", buffering=1)
+    publisher_handle = publisher_log.open("w", encoding="utf-8", buffering=1)
     beat_handle = beat_log.open("w", encoding="utf-8", buffering=1)
     worker_process: subprocess.Popen[str] | None = None
+    publisher_process: subprocess.Popen[str] | None = None
     beat_process: subprocess.Popen[str] | None = None
     try:
         baseline = _max_broker_message_id(engine)
@@ -485,7 +536,7 @@ async def test_c10_live_beat_broker_worker_delivers_fresh_dispatch(
         _wait_for_broker_task_messages(
             engine,
             task_name=DISPATCH_PUBLISHER_TASK_NAME,
-            queue_name=QUEUE_BAYESIAN,
+            queue_name=QUEUE_BAYESIAN_PUBLISHER,
             after_message_id=baseline,
             timeout_s=60,
         )
@@ -503,6 +554,41 @@ async def test_c10_live_beat_broker_worker_delivers_fresh_dispatch(
                 ).scalar_one()
                 == "pending"
             )
+
+        publisher_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "celery",
+                "-A",
+                "app.celery_app.celery_app",
+                "worker",
+                "-P",
+                "solo",
+                "-c",
+                "1",
+                "-Q",
+                QUEUE_BAYESIAN_PUBLISHER,
+                "--loglevel=INFO",
+                "--without-gossip",
+                "--without-mingle",
+                "--without-heartbeat",
+            ],
+            cwd=ROOT / "backend",
+            env=publisher_env,
+            text=True,
+            stdout=publisher_handle,
+            stderr=subprocess.STDOUT,
+        )
+        publisher_ready = _wait_for_log(publisher_log, " ready", timeout_s=120)
+        assert publisher_process.poll() is None, publisher_ready
+        published = _wait_for_probe_event_matching(
+            probe_log,
+            "bayesian_fresh_dispatch_published",
+            predicate=lambda event: str(fit_id) in event.get("fit_ids", []),
+            timeout_s=120,
+        )
+        assert str(dispatch_id) in published["dispatch_ids"], published
 
         worker_process = subprocess.Popen(
             [
@@ -531,13 +617,6 @@ async def test_c10_live_beat_broker_worker_delivers_fresh_dispatch(
         )
         ready = _wait_for_log(worker_log, " ready", timeout_s=120)
         assert worker_process.poll() is None, ready
-        published = _wait_for_probe_event_matching(
-            probe_log,
-            "bayesian_fresh_dispatch_published",
-            predicate=lambda event: str(fit_id) in event.get("fit_ids", []),
-            timeout_s=120,
-        )
-        assert str(dispatch_id) in published["dispatch_ids"], published
         executed = _wait_for_probe_event_matching(
             probe_log,
             "bayesian_fit_intent_executed",
@@ -547,9 +626,10 @@ async def test_c10_live_beat_broker_worker_delivers_fresh_dispatch(
         assert executed["dispatch_id"] == str(dispatch_id), executed
     finally:
         celery_app.conf.task_always_eager = original_eager
-        for process in (beat_process, worker_process):
+        for process in (beat_process, publisher_process, worker_process):
             if process is not None:
                 _terminate_worker(process)
         beat_handle.close()
+        publisher_handle.close()
         worker_handle.close()
         engine.dispose()

@@ -41,6 +41,14 @@ inputs:
     description: Bayesian planner/worker database password.
     required: false
     default: app_worker
+  publisher-user:
+    description: Dedicated cross-tenant fit-dispatch publisher principal.
+    required: false
+    default: app_dispatch_publisher
+  publisher-password:
+    description: Dedicated fit-dispatch publisher password.
+    required: false
+    default: app_dispatch_publisher
   migration-command:
     description: Alembic migration command.
     required: false
@@ -66,7 +74,9 @@ runs:
           --app-rw-role "${{ inputs.app-rw-role }}" \
           --app-ro-role "${{ inputs.app-ro-role }}" \
           --worker-user "${{ inputs.worker-user }}" \
-          --worker-password "${{ inputs.worker-password }}"
+          --worker-password "${{ inputs.worker-password }}" \
+          --publisher-user "${{ inputs.publisher-user }}" \
+          --publisher-password "${{ inputs.publisher-password }}"
 
     - name: Run Alembic migrations
       shell: bash

@@ -1558,3 +1558,70 @@ class B24WorkerProcessAuthority(Base):
             name="ck_b24_worker_process_authority_status",
         ),
     )
+
+
+class B24InferencePolicyRegistry(Base):
+    """Immutable semantic meanings for content-addressed policy bundles."""
+
+    __tablename__ = "b24_inference_policy_registry"
+
+    policy_bundle_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    inference_profile_version: Mapped[str] = mapped_column(String(128))
+    runtime_policy_version: Mapped[str] = mapped_column(String(128))
+    sampling_policy_version: Mapped[str] = mapped_column(String(128))
+    diagnostic_policy_version: Mapped[str] = mapped_column(String(128))
+    confidence_policy_version: Mapped[str] = mapped_column(String(128))
+    confidence_semantics_version: Mapped[str] = mapped_column(String(128))
+    semantic_manifest: Mapped[dict[str, object]] = mapped_column(JSONB)
+    component_digests: Mapped[dict[str, str]] = mapped_column(JSONB)
+    identity_scheme: Mapped[str] = mapped_column(
+        String(64), server_default="canonical-semantic-manifest-sha256-v1"
+    )
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class B24FitPolicyReplanLineage(Base):
+    """Append-only, ordered authority transitions for one tenant fit."""
+
+    __tablename__ = "b24_fit_policy_replan_lineage"
+
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
+    fit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
+    transition_sequence: Mapped[int] = mapped_column(Integer)
+    from_policy_bundle_hash: Mapped[str] = mapped_column(String(64))
+    to_policy_bundle_hash: Mapped[str] = mapped_column(String(64))
+    from_inference_profile_version: Mapped[str] = mapped_column(String(128))
+    to_inference_profile_version: Mapped[str] = mapped_column(String(128))
+    from_runtime_policy_version: Mapped[str] = mapped_column(String(128))
+    to_runtime_policy_version: Mapped[str] = mapped_column(String(128))
+    from_sampling_policy_version: Mapped[str] = mapped_column(String(128))
+    to_sampling_policy_version: Mapped[str] = mapped_column(String(128))
+    from_diagnostic_policy_version: Mapped[str | None] = mapped_column(String(128))
+    to_diagnostic_policy_version: Mapped[str] = mapped_column(String(128))
+    actor_session_user: Mapped[str] = mapped_column(String(128))
+    transitioned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "tenant_id",
+            "fit_id",
+            "transition_sequence",
+            name="b24_fit_policy_replan_lineage_pkey",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "fit_id"],
+            ["bayesian_model_fits.tenant_id", "bayesian_model_fits.id"],
+            name="fk_b24_replan_lineage_fit",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "transition_sequence > 0",
+            name="ck_b24_replan_lineage_sequence",
+        ),
+        CheckConstraint(
+            "from_policy_bundle_hash <> to_policy_bundle_hash",
+            name="ck_b24_replan_lineage_transition",
+        ),
+    )

@@ -66,6 +66,8 @@ class AuthorityConfig:
     app_ro_role: str
     worker_user: str
     worker_password: str
+    publisher_user: str
+    publisher_password: str
     rotate_existing_credentials: bool = False
 
 
@@ -87,6 +89,8 @@ def _parse_args() -> AuthorityConfig:
     parser.add_argument("--app-ro-role", default="app_ro")
     parser.add_argument("--worker-user", default="app_worker")
     parser.add_argument("--worker-password", default="app_worker")
+    parser.add_argument("--publisher-user", default="app_dispatch_publisher")
+    parser.add_argument("--publisher-password", default="app_dispatch_publisher")
     parser.add_argument(
         "--rotate-existing-credentials",
         action="store_true",
@@ -109,6 +113,8 @@ def _parse_args() -> AuthorityConfig:
         app_ro_role=args.app_ro_role,
         worker_user=args.worker_user,
         worker_password=args.worker_password,
+        publisher_user=args.publisher_user,
+        publisher_password=args.publisher_password,
         rotate_existing_credentials=bool(args.rotate_existing_credentials),
     )
 
@@ -202,6 +208,15 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                 cursor,
                 config.worker_user,
                 config.worker_password,
+                rotate_existing=rotate,
+            )
+            # Cross-tenant dispatch visibility is a separate credential-custody
+            # boundary.  This login is intentionally not a member of app_rw,
+            # app_ro, app_user, or app_worker.
+            _create_or_alter_login_role(
+                cursor,
+                config.publisher_user,
+                config.publisher_password,
                 rotate_existing=rotate,
             )
             # The migration principal must be a member of the worker role:
@@ -328,9 +343,7 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                     sql.Identifier(config.runtime_user),
                 )
             )
-            _assert_runtime_authority_not_expanded(
-                cursor, config, hardened=hardened
-            )
+            _assert_runtime_authority_not_expanded(cursor, config, hardened=hardened)
             return hardened
     finally:
         db_conn.close()
@@ -392,8 +405,7 @@ def _assert_runtime_authority_not_expanded(
         )
         if not bool(cursor.fetchone()[0]):
             raise AuthorityExpansionError(
-                "runtime_authority_missing:"
-                f"{config.runtime_user}:public:{privilege}"
+                f"runtime_authority_missing:{config.runtime_user}:public:{privilege}"
             )
 
 
@@ -427,6 +439,7 @@ def main() -> int:
     print(f"runtime_user={config.runtime_user}")
     print(f"migration_user={config.migration_user}")
     print(f"worker_user={config.worker_user}")
+    print(f"publisher_user={config.publisher_user}")
     print("runtime_schema_privileges=" + ",".join(GOVERNED_RUNTIME_SCHEMA_PRIVILEGES))
     print(f"runtime_schema_hardening_applied={str(hardened).lower()}")
     print(

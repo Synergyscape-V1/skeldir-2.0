@@ -88,6 +88,25 @@ def _is_ci() -> bool:
     return os.getenv("CI", "").strip().lower() == "true"
 
 
+
+#: Budget and producing-regime columns the production claim path stamps at
+#: insert. A fixture that omits them makes the completion write look like a
+#: policy replan onto an unstamped row, which C11 correctly refuses.
+_C11_FIT_AUTHORITY_PARAMS = {
+    "max_runtime_seconds": B24_INFERENCE_PROFILE.fit_execution_budget_seconds,
+    "max_samples": B24_INFERENCE_PROFILE.total_chain_iterations,
+    "max_cores": B24_INFERENCE_PROFILE.cores,
+    "inference_profile_version": B24_INFERENCE_PROFILE.profile_version,
+    "runtime_policy_version": B24_INFERENCE_PROFILE.runtime_policy_version,
+    "sampling_policy_version": B24_INFERENCE_PROFILE.sampling_policy_version,
+    "diagnostic_policy_version": B24_INFERENCE_PROFILE.diagnostic_policy_version,
+    "policy_bundle_hash": B24_INFERENCE_PROFILE.policy_bundle_hash(),
+    "authorized_chains": B24_INFERENCE_PROFILE.chains,
+    "authorized_posterior_draws_total": (
+        B24_INFERENCE_PROFILE.posterior_draws_total
+    ),
+}
+
 pytestmark = pytest.mark.skipif(
     not _require_db_proofs() and not _is_ci(),
     reason="B2.4-P9 PostgreSQL proof is opt-in for local runs",
@@ -143,7 +162,14 @@ async def _insert_fit(tenant_id: UUID, *, fit_id: UUID, source_hash: str) -> Non
                     fallback_applied,
                     max_runtime_seconds,
                     max_samples,
-                    max_cores
+                    max_cores,
+                    inference_profile_version,
+                    runtime_policy_version,
+                    sampling_policy_version,
+                    diagnostic_policy_version,
+                    policy_bundle_hash,
+                    authorized_chains,
+                    authorized_posterior_draws_total
                 )
                 VALUES (
                     :tenant_id,
@@ -159,9 +185,22 @@ async def _insert_fit(tenant_id: UUID, *, fit_id: UUID, source_hash: str) -> Non
                     'eligible',
                     'complete',
                     false,
-                    60,
-                    160,
-                    1
+                    -- Read from the profile rather than restated. The literals
+                    -- here were 60/160/1, a budget the current sampling policy
+                    -- refuses outright, and the policy bundle was absent -- so
+                    -- the production completion write looked like a replan onto
+                    -- a row that had never been stamped. The claim path stamps
+                    -- both at insert; this fixture now models that.
+                    :max_runtime_seconds,
+                    :max_samples,
+                    :max_cores,
+                    :inference_profile_version,
+                    :runtime_policy_version,
+                    :sampling_policy_version,
+                    :diagnostic_policy_version,
+                    :policy_bundle_hash,
+                    :authorized_chains,
+                    :authorized_posterior_draws_total
                 )
                 """
             ),
@@ -173,6 +212,7 @@ async def _insert_fit(tenant_id: UUID, *, fit_id: UUID, source_hash: str) -> Non
                 "source_window_start": START,
                 "source_window_end": END,
                 "source_snapshot_hash": source_hash,
+                **_C11_FIT_AUTHORITY_PARAMS,
             },
         )
 
@@ -1329,7 +1369,14 @@ async def test_b24_p9_multi_transaction_task_flow_rebinds_each_transaction(
     result_summary = {
         "diagnostic_status": "passed",
         "credible_interval_status": "available",
-        "diagnostic_policy_version": "b24-p7-diagnostic-policy-v1",
+        # The synthetic result summary reported a superseded diagnostic
+        # policy, so the completion write moved the fit onto a tuple no
+        # registry row describes. Under C11 that is an unresolvable
+        # producing regime, which is the correct refusal -- the fixture
+        # was naming a regime that does not exist.
+        "diagnostic_policy_version": (
+            B24_INFERENCE_PROFILE.diagnostic_policy_version
+        ),
         "diagnostic_target_filter_version": "b24-p7-target-filter-v1",
         "interval_policy_version": "b24-p7-interval-policy-v1",
         # This test proves transaction-local tenant rebinding, but its result

@@ -31,6 +31,18 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
             LIMIT 1
         $$;
 
+CREATE FUNCTION public.b24_assert_dispatch_publisher() RETURNS text
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF session_user <> 'app_dispatch_publisher' THEN
+                RAISE EXCEPTION 'b24_dispatch_publisher_identity_required';
+            END IF;
+            RETURN session_user;
+        END
+        $$;
+
 CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid, p_task_name text, p_attempt_id uuid, p_payload_hash text, p_worker_generation text, p_worker_pid integer, p_worker_process_token text, p_recovery_generation integer DEFAULT 0, p_lease_seconds integer DEFAULT 330) RETURNS TABLE(outcome text, tenant_id uuid, fit_id uuid, dispatch_id uuid, attempt_id uuid, claim_epoch integer, lease_capability text, lease_expires_at timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -420,6 +432,77 @@ CREATE FUNCTION public.b24_enforce_artifact_lifecycle() RETURNS trigger
         END
         $$;
 
+CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            registry_match boolean;
+            available_bucket boolean;
+        BEGIN
+            available_bucket := NEW.confidence_bucket::text IN ('low','medium','high');
+
+            IF TG_OP = 'UPDATE'
+               AND NEW.policy_bundle_hash IS DISTINCT FROM OLD.policy_bundle_hash THEN
+                IF OLD.sampling_started_at IS NOT NULL THEN
+                    RAISE EXCEPTION 'b24_policy_replan_after_sampling_forbidden';
+                END IF;
+                IF NEW.policy_replan_count <> OLD.policy_replan_count + 1
+                   OR NEW.superseded_policy_bundle_hash IS DISTINCT FROM OLD.policy_bundle_hash
+                   OR NEW.policy_replanned_at IS NULL THEN
+                    RAISE EXCEPTION 'b24_policy_replan_evidence_incomplete';
+                END IF;
+
+                SELECT EXISTS (
+                    SELECT 1 FROM b24_inference_policy_registry registry
+                    WHERE registry.policy_bundle_hash = NEW.policy_bundle_hash
+                      AND registry.inference_profile_version = NEW.inference_profile_version
+                      AND registry.runtime_policy_version = NEW.runtime_policy_version
+                      AND registry.sampling_policy_version = NEW.sampling_policy_version
+                      AND registry.diagnostic_policy_version = NEW.diagnostic_policy_version
+                ) INTO registry_match;
+                IF NOT registry_match THEN
+                    RAISE EXCEPTION 'b24_policy_bundle_tuple_unknown';
+                END IF;
+
+                INSERT INTO public.b24_fit_policy_replan_lineage (
+                    tenant_id, fit_id, transition_sequence,
+                    from_policy_bundle_hash, to_policy_bundle_hash,
+                    from_inference_profile_version, to_inference_profile_version,
+                    from_runtime_policy_version, to_runtime_policy_version,
+                    from_sampling_policy_version, to_sampling_policy_version,
+                    from_diagnostic_policy_version, to_diagnostic_policy_version,
+                    actor_session_user, transitioned_at
+                ) VALUES (
+                    NEW.tenant_id, NEW.id, NEW.policy_replan_count,
+                    OLD.policy_bundle_hash, NEW.policy_bundle_hash,
+                    OLD.inference_profile_version, NEW.inference_profile_version,
+                    OLD.runtime_policy_version, NEW.runtime_policy_version,
+                    OLD.sampling_policy_version, NEW.sampling_policy_version,
+                    OLD.diagnostic_policy_version, NEW.diagnostic_policy_version,
+                    session_user, NEW.policy_replanned_at
+                );
+            END IF;
+
+            IF available_bucket THEN
+                SELECT EXISTS (
+                    SELECT 1 FROM b24_inference_policy_registry registry
+                    WHERE registry.policy_bundle_hash = NEW.policy_bundle_hash
+                      AND registry.inference_profile_version = NEW.inference_profile_version
+                      AND registry.runtime_policy_version = NEW.runtime_policy_version
+                      AND registry.sampling_policy_version = NEW.sampling_policy_version
+                      AND registry.diagnostic_policy_version = NEW.diagnostic_policy_version
+                      AND registry.confidence_policy_version = NEW.confidence_policy_version
+                      AND registry.confidence_semantics_version = NEW.confidence_semantics_version
+                ) INTO registry_match;
+                IF NOT registry_match THEN
+                    RAISE EXCEPTION 'b24_available_policy_provenance_unresolvable';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END
+        $$;
+
 CREATE FUNCTION public.b24_enforce_dirty_event_lifecycle() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -590,12 +673,13 @@ CREATE FUNCTION public.b24_enforce_policy_bundle_write_authority() RETURNS trigg
                OR NEW.policy_bundle_hash IS DISTINCT FROM OLD.policy_bundle_hash
                OR NEW.diagnostic_policy_version IS DISTINCT FROM OLD.diagnostic_policy_version
                OR NEW.authorized_chains IS DISTINCT FROM OLD.authorized_chains
-               OR NEW.authorized_posterior_draws_total
-                    IS DISTINCT FROM OLD.authorized_posterior_draws_total
-               OR NEW.superseded_policy_bundle_hash
-                    IS DISTINCT FROM OLD.superseded_policy_bundle_hash
+               OR NEW.authorized_posterior_draws_total IS DISTINCT FROM OLD.authorized_posterior_draws_total
+               OR NEW.superseded_policy_bundle_hash IS DISTINCT FROM OLD.superseded_policy_bundle_hash
                OR NEW.policy_replanned_at IS DISTINCT FROM OLD.policy_replanned_at
                OR NEW.policy_replan_count IS DISTINCT FROM OLD.policy_replan_count THEN
+                IF OLD.sampling_started_at IS NOT NULL THEN
+                    RAISE EXCEPTION 'b24_policy_provenance_sampling_immutable';
+                END IF;
                 IF NOT public.b24_current_dispatch_fence_valid(NEW.tenant_id, NEW.id) THEN
                     RAISE EXCEPTION 'b24_policy_bundle_write_authority_rejected';
                 END IF;
@@ -1373,6 +1457,48 @@ CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
         END
         $$;
 
+CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+            WITH fit AS (
+                SELECT policy_replan_count
+                FROM bayesian_model_fits
+                WHERE tenant_id = p_tenant_id AND id = p_fit_id
+            ), ordered AS (
+                SELECT transition_sequence,
+                       from_policy_bundle_hash,
+                       to_policy_bundle_hash,
+                       lag(to_policy_bundle_hash) OVER (
+                           ORDER BY transition_sequence
+                       ) AS prior_to
+                FROM b24_fit_policy_replan_lineage
+                WHERE tenant_id = p_tenant_id AND fit_id = p_fit_id
+            ), summary AS (
+                SELECT count(*)::integer AS row_count,
+                       COALESCE(min(transition_sequence), 0) AS min_sequence,
+                       COALESCE(max(transition_sequence), 0) AS max_sequence,
+                       COALESCE(bool_and(
+                           transition_sequence = 1
+                           OR from_policy_bundle_hash = prior_to
+                       ), true) AS chain_complete
+                FROM ordered
+            )
+            SELECT COALESCE(
+                summary.row_count = fit.policy_replan_count
+                AND (
+                    fit.policy_replan_count = 0
+                    OR (
+                        summary.min_sequence = 1
+                        AND summary.max_sequence = fit.policy_replan_count
+                        AND summary.chain_complete
+                    )
+                ),
+                false
+            )
+            FROM fit CROSS JOIN summary
+        $$;
+
 CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id text, p_pid integer, p_parent_pid integer, p_topology_fingerprint text, p_process_token text, p_ttl_seconds integer DEFAULT 3600) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1424,6 +1550,22 @@ CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id tex
                 revoked_at = NULL;
         END
         $_$;
+
+CREATE FUNCTION public.b24_reject_policy_registry_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        BEGIN
+            RAISE EXCEPTION 'b24_policy_registry_immutable';
+        END
+        $$;
+
+CREATE FUNCTION public.b24_reject_replan_lineage_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        BEGIN
+            RAISE EXCEPTION 'b24_replan_lineage_append_only';
+        END
+        $$;
 
 CREATE FUNCTION public.b24_sha256_text(value text) RETURNS text
     LANGUAGE sql IMMUTABLE
@@ -2889,6 +3031,28 @@ CREATE TABLE public.b24_fit_planner_wakeups (
 
 ALTER TABLE ONLY public.b24_fit_planner_wakeups FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.b24_fit_policy_replan_lineage (
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    transition_sequence integer NOT NULL,
+    from_policy_bundle_hash character varying(64) NOT NULL,
+    to_policy_bundle_hash character varying(64) NOT NULL,
+    from_inference_profile_version character varying(128) NOT NULL,
+    to_inference_profile_version character varying(128) NOT NULL,
+    from_runtime_policy_version character varying(128) NOT NULL,
+    to_runtime_policy_version character varying(128) NOT NULL,
+    from_sampling_policy_version character varying(128) NOT NULL,
+    to_sampling_policy_version character varying(128) NOT NULL,
+    from_diagnostic_policy_version character varying(128),
+    to_diagnostic_policy_version character varying(128) NOT NULL,
+    actor_session_user character varying(128) NOT NULL,
+    transitioned_at timestamp with time zone NOT NULL,
+    CONSTRAINT ck_b24_replan_lineage_sequence CHECK ((transition_sequence > 0)),
+    CONSTRAINT ck_b24_replan_lineage_transition CHECK (((from_policy_bundle_hash)::text <> (to_policy_bundle_hash)::text))
+);
+
+ALTER TABLE ONLY public.b24_fit_policy_replan_lineage FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.b24_fit_recovery_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     dispatch_id uuid NOT NULL,
@@ -2911,6 +3075,21 @@ CREATE TABLE public.b24_fit_recovery_outbox (
 );
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.b24_inference_policy_registry (
+    policy_bundle_hash character varying(64) NOT NULL,
+    inference_profile_version character varying(128) NOT NULL,
+    runtime_policy_version character varying(128) NOT NULL,
+    sampling_policy_version character varying(128) NOT NULL,
+    diagnostic_policy_version character varying(128) NOT NULL,
+    confidence_policy_version character varying(128) NOT NULL,
+    confidence_semantics_version character varying(128) NOT NULL,
+    semantic_manifest jsonb NOT NULL,
+    component_digests jsonb NOT NULL,
+    identity_scheme character varying(64) DEFAULT 'canonical-semantic-manifest-sha256-v1'::character varying NOT NULL,
+    registered_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b24_policy_registry_hash CHECK (((policy_bundle_hash)::text ~ '^[0-9a-f]{64}$'::text))
+);
 
 CREATE TABLE public.b24_source_window_feature_authority (
     tenant_id uuid NOT NULL,
@@ -6727,8 +6906,14 @@ ALTER TABLE ONLY public.b24_fit_dispatch_outbox
 ALTER TABLE ONLY public.b24_fit_planner_wakeups
     ADD CONSTRAINT b24_fit_planner_wakeups_pkey PRIMARY KEY (tenant_id);
 
+ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
+    ADD CONSTRAINT b24_fit_policy_replan_lineage_pkey PRIMARY KEY (tenant_id, fit_id, transition_sequence);
+
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT b24_fit_recovery_outbox_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.b24_inference_policy_registry
+    ADD CONSTRAINT b24_inference_policy_registry_pkey PRIMARY KEY (policy_bundle_hash);
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
@@ -7203,6 +7388,9 @@ ALTER TABLE ONLY public.b24_fit_dispatch_outbox
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT uq_b24_fit_recovery_outbox_generation UNIQUE (tenant_id, dispatch_id, recovery_generation);
+
+ALTER TABLE ONLY public.b24_inference_policy_registry
+    ADD CONSTRAINT uq_b24_policy_registry_tuple UNIQUE (policy_bundle_hash, inference_profile_version, runtime_policy_version, sampling_policy_version, diagnostic_policy_version);
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
@@ -8050,6 +8238,8 @@ CREATE INDEX idx_worker_failed_jobs_task_name ON public.worker_failed_jobs USING
 
 CREATE INDEX idx_worker_side_effects_tenant_created_at ON public.worker_side_effects USING btree (tenant_id, created_at DESC);
 
+CREATE INDEX ix_b24_fit_policy_replan_lineage_fit ON public.b24_fit_policy_replan_lineage USING btree (tenant_id, fit_id, transition_sequence);
+
 CREATE INDEX ix_celery_taskmeta_task_id ON public.celery_taskmeta USING btree (task_id);
 
 CREATE INDEX ix_celery_tasksetmeta_taskset_id ON public.celery_tasksetmeta USING btree (taskset_id);
@@ -8598,6 +8788,10 @@ CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_insert AFTER INSERT ON publ
 
 CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_update AFTER UPDATE ON public.b23_revenue_events REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_update();
 
+CREATE TRIGGER trg_b24_policy_registry_immutable BEFORE DELETE OR UPDATE ON public.b24_inference_policy_registry FOR EACH ROW EXECUTE FUNCTION public.b24_reject_policy_registry_rewrite();
+
+CREATE TRIGGER trg_b24_replan_lineage_append_only BEFORE DELETE OR UPDATE ON public.b24_fit_policy_replan_lineage FOR EACH ROW EXECUTE FUNCTION public.b24_reject_replan_lineage_mutation();
+
 CREATE TRIGGER trg_b24_signal_fit_planner_wakeup AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced();
 
 CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_terminal_fit_truth();
@@ -8633,6 +8827,8 @@ CREATE TRIGGER trg_pii_guardrail_dead_events BEFORE INSERT ON public.dead_events
 CREATE TRIGGER trg_pii_guardrail_revenue_ledger BEFORE INSERT ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
 
 CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.revenue_ledger FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_revenue_state_change();
+
+CREATE TRIGGER trg_y_b24_c11_policy_provenance BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_c11_policy_provenance();
 
 CREATE TRIGGER trg_z_b24_policy_bundle_write_authority BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
 
@@ -8812,6 +9008,9 @@ ALTER TABLE ONLY public.b24_fit_dispatch_outbox
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT fk_b24_fit_recovery_outbox_dispatch FOREIGN KEY (tenant_id, dispatch_id) REFERENCES public.b24_fit_dispatch_outbox(tenant_id, id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
+    ADD CONSTRAINT fk_b24_replan_lineage_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT fk_bayesian_artifacts_tenant_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
@@ -9005,6 +9204,8 @@ ALTER TABLE public.b24_fit_planner_wakeups ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY b24_fit_planner_wakeups_worker_only ON public.b24_fit_planner_wakeups USING ((CURRENT_USER = 'app_worker'::name)) WITH CHECK ((CURRENT_USER = 'app_worker'::name));
 
+ALTER TABLE public.b24_fit_policy_replan_lineage ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.b24_fit_recovery_outbox ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY;
@@ -9085,6 +9286,14 @@ ALTER TABLE public.budget_jobs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.budget_optimization_jobs ENABLE ROW LEVEL SECURITY;
 
+CREATE POLICY c11_dispatch_publisher_select ON public.b24_fit_dispatch_outbox FOR SELECT USING ((SESSION_USER = 'app_dispatch_publisher'::name));
+
+CREATE POLICY c11_dispatch_publisher_update ON public.b24_fit_dispatch_outbox FOR UPDATE USING ((SESSION_USER = 'app_dispatch_publisher'::name)) WITH CHECK ((SESSION_USER = 'app_dispatch_publisher'::name));
+
+CREATE POLICY c11_trigger_insert_b24_fit_policy_replan_lineage ON public.b24_fit_policy_replan_lineage FOR INSERT WITH CHECK ((CURRENT_USER = pg_get_userbyid(( SELECT pg_class.relowner
+   FROM pg_class
+  WHERE (pg_class.oid = ('b24_fit_policy_replan_lineage'::regclass)::oid)))));
+
 ALTER TABLE public.channel_assignment_corrections ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.compliance_audit_ledger ENABLE ROW LEVEL SECURITY;
@@ -9112,8 +9321,6 @@ ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY function_access_b24_worker_process_authority ON public.b24_worker_process_authority USING ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text));
-
-CREATE POLICY initial_dispatch_publisher_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING (((SESSION_USER = 'app_worker'::name) AND (current_setting('app.b24_initial_dispatch_publisher'::text, true) = 'on'::text))) WITH CHECK (((SESSION_USER = 'app_worker'::name) AND (current_setting('app.b24_initial_dispatch_publisher'::text, true) = 'on'::text)));
 
 ALTER TABLE public.investigation_jobs ENABLE ROW LEVEL SECURITY;
 
@@ -9166,6 +9373,8 @@ ALTER TABLE public.revenue_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.revenue_state_transitions ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.session_authority ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation_b24_fit_policy_replan_lineage ON public.b24_fit_policy_replan_lineage FOR SELECT USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.attribution_allocations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 

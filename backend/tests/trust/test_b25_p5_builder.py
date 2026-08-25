@@ -8,6 +8,11 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.inference_policy_registry import (
+    CURRENT_POLICY_BUNDLE_HASH,
+    current_policy_tuple,
+)
+
 from app.trust.builder import (
     TrustEnvelopeBuildRequest,
     build_unsigned_trust_envelope,
@@ -121,6 +126,7 @@ def _confidence_source(
     pruned = reason is ConfidenceBucketReason.ARTIFACT_PRUNED
     cold_start = reason is ConfidenceBucketReason.INSUFFICIENT_DATA
     stale = reason is ConfidenceBucketReason.SOURCE_SNAPSHOT_CHANGED
+    policy_tuple = current_policy_tuple()
     return ConfidenceProjectionSource(
         projection=B24ConfidenceProjectionRead(
             tenant_id=tenant_id,
@@ -153,13 +159,11 @@ def _confidence_source(
             has_snapshot_lineage=True,
             has_later_dirty_evidence=stale,
             has_newer_fit=False,
-            inference_profile_version="b24-inference-profile-v1",
-            runtime_policy_version="b24-p5-runtime-policy-v1",
-            sampling_policy_version="b24-p6-sampling-policy-v2",
-            diagnostic_policy_version="b24-p7-diagnostic-policy-v1",
-            policy_bundle_hash=(
-                "8c35cd4c90ba1a2c2ea13821bd798fa8cdadbcbea05268e1b12eeee0b16144e9"
-            ),
+            inference_profile_version=policy_tuple["inference_profile_version"],
+            runtime_policy_version=policy_tuple["runtime_policy_version"],
+            sampling_policy_version=policy_tuple["sampling_policy_version"],
+            diagnostic_policy_version=policy_tuple["diagnostic_policy_version"],
+            policy_bundle_hash=CURRENT_POLICY_BUNDLE_HASH,
             authorized_chains=4,
             authorized_posterior_draws_total=4000,
             observed_chains=4,

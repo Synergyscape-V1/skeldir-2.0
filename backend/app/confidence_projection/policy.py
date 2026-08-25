@@ -20,6 +20,25 @@ import yaml
 
 CONFIDENCE_POLICY_VERSION = "b24-p10-confidence-policy-v1"
 CONFIDENCE_SEMANTICS_VERSION = "b24-p10-confidence-semantics-v1"
+CONFIDENCE_WIDTH_RATIO_HIGH_MAX = 0.10
+CONFIDENCE_WIDTH_RATIO_MEDIUM_MAX = 0.25
+
+
+def confidence_policy_semantics() -> dict[str, object]:
+    """Governed semantic content bound into the inference policy registry."""
+
+    return {
+        "available_requires": [
+            "diagnostic_status=passed",
+            "credible_interval_status=available",
+            "artifact_identity_present",
+            "single_currency",
+        ],
+        "width_ratio_high_max": CONFIDENCE_WIDTH_RATIO_HIGH_MAX,
+        "width_ratio_medium_max": CONFIDENCE_WIDTH_RATIO_MEDIUM_MAX,
+        "money_authority": "deterministic_minor_units_only",
+    }
+
 
 #: Single owner of the allowable future-skew tolerance between the clock that
 #: stamped a piece of evidence and the clock that reads it. The database mirrors
@@ -293,13 +312,13 @@ def classify_confidence(
     width = max(data.hdi_upper - data.hdi_lower, 0.0)
     denominator = max(abs(float(data.deterministic_revenue_minor)), 1.0)
     width_ratio = width / denominator
-    if width_ratio <= 0.10:
+    if width_ratio <= CONFIDENCE_WIDTH_RATIO_HIGH_MAX:
         return ConfidencePolicyDecision(
             confidence_available=True,
             confidence_bucket=ConfidenceBucket.HIGH,
             confidence_bucket_reason=ConfidenceBucketReason.NARROW_INTERVAL,
         )
-    if width_ratio <= 0.25:
+    if width_ratio <= CONFIDENCE_WIDTH_RATIO_MEDIUM_MAX:
         return ConfidencePolicyDecision(
             confidence_available=True,
             confidence_bucket=ConfidenceBucket.MEDIUM,

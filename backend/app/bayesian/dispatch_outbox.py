@@ -191,24 +191,11 @@ _LEASE_DUE_DISPATCH_SQL = """
             """
 
 
-async def _bind_initial_dispatch_publisher(session: AsyncSession) -> None:
-    await session.execute(
-        text("SELECT set_config('app.b24_initial_dispatch_publisher', 'on', true)")
-    )
-
-
-def _bind_initial_dispatch_publisher_sync(conn) -> None:
-    conn.execute(
-        text("SELECT set_config('app.b24_initial_dispatch_publisher', 'on', true)")
-    )
-
-
 async def lease_due_dispatch_rows(
     session: AsyncSession,
     *,
     batch_size: int = DEFAULT_DISPATCH_BATCH_SIZE,
 ) -> list[DispatchOutboxRow]:
-    await _bind_initial_dispatch_publisher(session)
     result = await session.execute(
         text(_LEASE_DUE_DISPATCH_SQL),
         {
@@ -344,7 +331,6 @@ def lease_due_dispatch_rows_sync(
 ) -> list[DispatchOutboxRow]:
     """Durably lease due dispatch rows with SKIP LOCKED, on a sync connection."""
 
-    _bind_initial_dispatch_publisher_sync(conn)
     result = conn.execute(
         text(_LEASE_DUE_DISPATCH_SQL),
         {

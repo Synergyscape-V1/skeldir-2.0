@@ -84,8 +84,7 @@ def assert_boot_airgap_active() -> dict[str, object]:
     )
     if preinstall:
         raise RuntimeError(
-            "forbidden modules were cached before child airgap bootstrap: "
-            f"{preinstall}"
+            f"forbidden modules were cached before child airgap bootstrap: {preinstall}"
         )
     if getattr(sys, "_b24_p5_airgap_bootstrap_active", False) is not True:
         raise RuntimeError("sampler child boot airgap was not installed by bootstrap")
@@ -277,6 +276,17 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
 
     runtime_policy = apply_native_runtime_environment(build_runtime_policy())
 
+    worker_runtime_authority = payload.get("worker_runtime_authority")
+    if not isinstance(worker_runtime_authority, dict):
+        raise RuntimeError("worker_runtime_authority_missing")
+    child_runtime_authority = runtime_policy.containment_identity()
+    if worker_runtime_authority != child_runtime_authority:
+        emit_stage_marker("runtime_authority_rejected", mode="real-fit")
+        raise RuntimeError(
+            "worker_sampler_runtime_authority_mismatch:"
+            f"worker={worker_runtime_authority!r}:child={child_runtime_authority!r}"
+        )
+
     import numpy as np
     import pymc as pm
 
@@ -395,6 +405,10 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
         "authorized_posterior_draws_total": policy.posterior_draws_total,
         "observed_draws_per_chain": observed_topology["observed_draws_per_chain"],
         "runtime_correspondence": runtime_correspondence,
+        "worker_sampler_runtime_correspondence": {
+            "worker": worker_runtime_authority,
+            "sampler_child": child_runtime_authority,
+        },
         "divergence_count": divergence_count,
         "posterior_summary": {
             "mu_mean": mu_mean,

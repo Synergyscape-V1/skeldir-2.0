@@ -116,6 +116,39 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation V Report.md
+- id: validate-b25-p13-c11-closure
+  path: scripts/ci/validate_b25_p13_c11_closure.py
+  status: required
+  owning_phase: B2.5-P13-C11
+  protected_invariant: B2.5-P13-C11 binds the four authority-correspondence properties Corrective Action
+    XI closes -- that global fresh-dispatch publication is held by a dedicated database principal an
+    ordinary tenant-scoped worker cannot become or self-assert into, that a policy identifier denotes one
+    immutable set of governed semantics so the same identity cannot mean different numbers over time, that
+    policy_bundle_hash is recomputed from and compared against its component policy identities before Trust
+    signs an available confidence rather than merely checked for shape, and that every policy replan
+    appends a durable lineage transition in the same transaction as the mutation it describes so a
+    multi-step P1 through P4 history stays fully reconstructable.
+  command: python scripts/ci/validate_b25_p13_c11_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c11_closure.py --negative-control
+  expected_failure_meaning: The publisher capability became reachable from the ordinary worker principal
+    again, a policy version was allowed to denote changed semantics without an identity transition, a
+    bundle hash was accepted without being recomputed against the versions persisted beside it, or a replan
+    committed without its append-only lineage transition.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c11_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_step
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XI Report.md
 - id: validate-b25-p13-c6-closure
   path: scripts/ci/validate_b25_p13_c6_closure.py
   status: required
