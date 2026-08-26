@@ -48,6 +48,7 @@ on:
       - 'backend/tests/trust/test_b25_p13_c9_positive_confidence.py'
       - 'backend/tests/trust/test_b25_p13_c10_policy_transport_physics.py'
       - 'backend/tests/trust/test_b25_p13_c11_semantic_authority.py'
+      - 'backend/tests/trust/test_b25_p13_c12_authority_closure.py'
       - 'backend/app/inference_policy_registry.py'
       - 'backend/app/tasks/bayesian_publisher.py'
       - 'backend/Dockerfile.bayesian'
@@ -74,9 +75,11 @@ on:
       - 'scripts/ci/validate_b25_p13_c4_closure.py'
       - 'scripts/ci/validate_b25_p13_c5_closure.py'
       - 'scripts/ci/validate_b25_p13_c6_closure.py'
+      - 'scripts/ci/validate_b25_p13_c12_closure.py'
       - 'scripts/database/prepare_migration_authority_boundary.py'
       - '.github/actions/setup-postgres-ci/action.yml'
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation VI Report.md'
+      - 'docs/forensics/B2.5-P13 Corrective Action Remediation XII Report.md'
       - 'db/schema/canonical_schema.sql'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
@@ -96,8 +99,8 @@ permissions:
   contents: read
 
 jobs:
-  b25-p13-e2e-trust-closure:
-    name: B2.5-P13 E2E Trust Closure
+  b25-p13-e2e-trust-closure-core:
+    name: B2.5-P13 E2E Trust Closure Core
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -826,6 +829,57 @@ jobs:
             -q -s --no-header | tee /tmp/b25_p13_c11_physics.out
           grep -E '7 passed' /tmp/b25_p13_c11_physics.out
 
+      - name: P13 C12 authority closure and producing-regime concurrency
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          B24_DISPATCH_PUBLISHER_DATABASE_URL: postgresql://app_dispatch_publisher:app_dispatch_publisher@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C12_DB_PROOF: "1"
+        run: |
+          set -euo pipefail
+          python scripts/ci/validate_b25_p13_c12_closure.py --negative-control \
+            | tee /tmp/b25_p13_c12_validator.out
+          grep -E '^c12_semantic_negative_controls_fired=4$' \
+            /tmp/b25_p13_c12_validator.out
+          grep -E '^B25_P13_C12_CLOSURE_VALIDATION_PASS$' \
+            /tmp/b25_p13_c12_validator.out
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c12_authority_closure.py \
+            -q -s --no-header | tee /tmp/b25_p13_c12_physics.out
+          grep -E '6 passed' /tmp/b25_p13_c12_physics.out
+
+      - name: NC-C12 alternate self-issued authority turns the gate RED
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_e2e
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e
+          SKELDIR_B25_P13_C12_DB_PROOF: "1"
+        run: |
+          set -euo pipefail
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE POLICY nc_c12_alternate_global_authority
+            ON public.b24_fit_dispatch_outbox FOR ALL
+            USING (current_setting('app.b24_recovery_reconciler', true) = 'on')
+            WITH CHECK (current_setting('app.b24_recovery_reconciler', true) = 'on');
+          SQL
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c12_authority_closure.py \
+              -q --no-header \
+              -k arbitrary_session_state_has_no_cross_tenant_consequence \
+              > /tmp/nc_c12_authority.out 2>&1; then
+            echo 'NC-C12 did not fire: alternate caller-minted authority survived'
+            cat /tmp/nc_c12_authority.out
+            exit 1
+          fi
+          grep -E '1 failed' /tmp/nc_c12_authority.out
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c 'DROP POLICY nc_c12_alternate_global_authority ON public.b24_fit_dispatch_outbox'
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c12_authority_closure.py \
+            -q --no-header \
+            -k arbitrary_session_state_has_no_cross_tenant_consequence \
+            | tee /tmp/nc_c12_authority_restored.out
+          grep -E '1 passed' /tmp/nc_c12_authority_restored.out
+
       - name: NC-C11-07 removing P2 turns the lineage gate RED
         env:
           C11_ADMIN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
@@ -1522,3 +1576,34 @@ jobs:
           fi
           rm -f Dockerfile.nc-c11-10
           echo "p13_c11_nc10_broken_worker_cmd_fired=1" >> "$GITHUB_STEP_SUMMARY"
+
+  # This job deliberately owns the branch-protection context name. It is a
+  # mechanical AND over the core trust chain, the real positive posterior
+  # journey, and executable production-artifact topology. A skipped or failed
+  # load-bearing proof therefore cannot report the required context green.
+  b25-p13-e2e-trust-closure:
+    name: B2.5-P13 E2E Trust Closure
+    if: always()
+    needs:
+      - b25-p13-e2e-trust-closure-core
+      - b2-5-p13-c9-positive-confidence
+      - b2-5-p13-c10-artifact-topology
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every load-bearing P13 proof
+        env:
+          CORE_RESULT: ${{ needs['b25-p13-e2e-trust-closure-core'].result }}
+          POSITIVE_RESULT: ${{ needs['b2-5-p13-c9-positive-confidence'].result }}
+          ARTIFACT_RESULT: ${{ needs['b2-5-p13-c10-artifact-topology'].result }}
+        run: |
+          set -euo pipefail
+          test "$CORE_RESULT" = success || {
+            echo "b25-p13-e2e-trust-closure-core=$CORE_RESULT"; exit 1;
+          }
+          test "$POSITIVE_RESULT" = success || {
+            echo "b2-5-p13-c9-positive-confidence=$POSITIVE_RESULT"; exit 1;
+          }
+          test "$ARTIFACT_RESULT" = success || {
+            echo "b2-5-p13-c10-artifact-topology=$ARTIFACT_RESULT"; exit 1;
+          }
+          echo 'p13_load_bearing_proof_graph=green'

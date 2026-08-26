@@ -540,11 +540,9 @@ def validate_directive_ix_dispatch_authority(
         "mark_recovery_publish_failed_sync",
         "published_task_id",
         "DEFAULT_STALE_RECOVERY_PUBLISHING_SECONDS = 300",
-        "app.b24_recovery_reconciler",
-        "app.b24_dispatch_claim_access",
-        "updated_at <= now() - (:stale_publishing_seconds * interval '1 second')",
-        "assigned_worker_generation = NULL",
-        "assignment_reason = 'recovery_shared_eligible'",
+        "b24_lease_fit_recovery_rows",
+        "b24_mark_fit_recovery_published",
+        "b24_mark_fit_recovery_failed",
         '"dispatch_id": str(self.id)',
         '"attempt_id": str(self.attempt_id)',
         '"payload_hash": self.payload_hash',
@@ -556,6 +554,14 @@ def validate_directive_ix_dispatch_authority(
         '"claim_capability": self.claim_capability' not in outbox,
         "Directive X broker payload must not carry claim capability",
     )
+    for forbidden in (
+        "app.b24_recovery_reconciler",
+        "app.b24_dispatch_claim_access",
+    ):
+        _require(
+            forbidden not in outbox,
+            f"Directive XII caller-minted authority remained: {forbidden}",
+        )
     for token in (
         "dispatch_id: str",
         "attempt_id: str",
@@ -1246,7 +1252,7 @@ def run_negative_controls() -> None:
                     + _read(P9_DIRECTIVE_XIV_MIGRATION)
                 ),
             ),
-            "recovery_shared_eligible",
+            "shared_recovery",
         ),
         (
             "directive_xiv_recoverable_failure_api_removed",

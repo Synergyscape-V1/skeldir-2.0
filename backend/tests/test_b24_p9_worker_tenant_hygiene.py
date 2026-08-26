@@ -935,13 +935,11 @@ def test_b24_p9_directive_xi_recovery_scheduler_is_production_wired() -> None:
     assert "mark_recovery_published_sync" in outbox
     assert "mark_recovery_publish_failed_sync" in outbox
     assert "published_task_id" in outbox
-    assert "app.b24_recovery_reconciler" in outbox
-    assert "app.b24_dispatch_claim_access" in outbox
-    assert "status = 'publishing'" in outbox
-    assert (
-        "updated_at <= now() - (:stale_publishing_seconds * interval '1 second')"
-        in outbox
-    )
+    assert "b24_lease_fit_recovery_rows" in outbox
+    assert "b24_mark_fit_recovery_published" in outbox
+    assert "b24_mark_fit_recovery_failed" in outbox
+    assert "app.b24_recovery_reconciler" not in outbox
+    assert "app.b24_dispatch_claim_access" not in outbox
     assert '"claim_capability":' not in outbox
     assert '"lease_capability":' not in outbox
     assert "worker_process_token" not in outbox

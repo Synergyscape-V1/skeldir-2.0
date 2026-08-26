@@ -17,7 +17,7 @@ SAMPLER_SUPERVISOR = BAYESIAN_PACKAGE / "sampler_supervisor.py"
 P6_TESTS = Path("backend/tests/test_b24_p6_real_fit_worker.py")
 P5_TESTS = Path("backend/tests/test_b24_p5_runtime_harness.py")
 P6_MIGRATION = Path(
-    "alembic/versions/007_skeldir_foundation/202606031200_b24_p6_fit_id_resolution_policy.py"
+    "alembic/versions/007_skeldir_foundation/202608261200_b25_p13_c12_authority_closure.py"
 )
 BAYESIAN_REQUIREMENTS = Path("backend/requirements-bayesian.txt")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
@@ -125,21 +125,26 @@ def validate_fit_id_resolution_policy(
     )
     migration = migration_text if migration_text is not None else _read(P6_MIGRATION)
     _require(
-        "set_config('app.b24_fit_resolution_id'" in fit_execution,
-        "fit-id-only tenant resolution GUC is not set before identity lookup",
+        "app.b24_fit_resolution_id" not in fit_execution,
+        "fit-id knowledge must not mint an RLS capability",
+    )
+    _require(
+        "WHERE tenant_id = :tenant_id" in fit_execution
+        and "AND id = :fit_id" in fit_execution,
+        "fit resolution must bind both tenant and fit identity",
     )
     for token in (
-        "ALTER POLICY tenant_isolation_policy_",
-        "app.b24_fit_resolution_id",
-        "tenant_id = NULLIF(current_setting('app.current_tenant_id'",
+        "_replace_fit_policies(include_resolution_capability=False)",
+        "tenant_id = NULLIF(",
+        "current_setting('app.current_tenant_id'",
         "WITH CHECK",
-        "PARTITION_COUNT = 16",
+        "range(16)",
     ):
-        _require(token in migration, f"P6 fit-id RLS policy migration missing: {token}")
-    with_check_tail = migration.split("FIT_POLICY_WITH_CHECK", 1)[1]
+        _require(token in migration, f"P6 tenant-bound RLS migration missing: {token}")
+    upgrade = migration.split("def downgrade()", 1)[0]
     _require(
-        "app.b24_fit_resolution_id" not in with_check_tail.split('"""', 2)[1],
-        "fit-id resolution capability must not be a write WITH CHECK condition",
+        "include_resolution_capability=True" not in upgrade,
+        "upgrade must not restore fit-id resolution authority",
     )
 
 
@@ -268,7 +273,7 @@ def validate_tests() -> None:
     for token in (
         "test_b24_p6_hash_derived_observed_signal_is_erased",
         "test_b24_p6_observed_signal_is_source_snapshot_replay_derived",
-        "test_b24_p6_fit_id_only_resolution_is_explicit_rls_capability",
+        "test_b24_p6_fit_resolution_is_tenant_bound_not_a_capability",
         "test_b24_p6_real_fit_uses_frozen_source_snapshot_authority",
         "test_b24_p6_source_snapshot_mismatch_fails_before_sampler",
         "compute_source_snapshot_hash",
@@ -322,14 +327,14 @@ def run_negative_controls() -> None:
             "resource",
         ),
         (
-            "missing_fit_resolution_guc",
+            "missing_tenant_fit_predicate",
             lambda: validate_fit_id_resolution_policy(
                 fit_execution_text=_read(FIT_EXECUTION).replace(
-                    "app.b24_fit_resolution_id",
-                    "app.b24_missing_resolution",
+                    "WHERE tenant_id = :tenant_id",
+                    "WHERE TRUE",
                 )
             ),
-            "resolution",
+            "tenant and fit",
         ),
         (
             "parent_imports_pymc",
