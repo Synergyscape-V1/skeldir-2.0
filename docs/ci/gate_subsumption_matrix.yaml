@@ -120,6 +120,29 @@
     confidence was signed under it, a bundle hash could contradict the versions stored beside it and still
     reach a signed available confidence, or a multi-step replan could erase the intermediate transitions that
     make a confidence's producing regime reconstructable.
+- gate_id: validate-b25-p13-c12-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_c12_closure.py
+  owning_phase: B2.5-P13-C12
+  protected_invariant: Privileged Bayesian fit, dispatch, and recovery authority cannot be minted by a caller;
+    ordinary roles remain tenant-scoped; authenticated worker recovery is available only through bounded
+    SECURITY DEFINER transitions; direct table privileges cannot bypass those transitions; and concurrent
+    recovery preserves a single active producer.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C6 inventories worker-plane grants and C11 separates the fresh-dispatch publisher,
+    but neither proves that legacy fit-resolution, claim-access, or recovery GUCs cannot be self-asserted,
+    that every ordinary login lacks direct authority over the recovery tables, or that the replacement
+    privileged transition is bounded and one-producer under concurrency.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c12_closure.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c12_closure.py --negative-control
+  risk_if_removed: A tenant-scoped principal could regain cross-tenant reads or writes by setting a session
+    variable or naming a foreign fit, a helper could expand into an unbounded table bypass, session residue
+    could confer authority on pool reuse, or competing recovery workers could create duplicate producers.
 - gate_id: validate-b25-p13-c6-closure
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 E2E Trust Closure
