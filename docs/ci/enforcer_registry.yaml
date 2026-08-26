@@ -149,6 +149,36 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XI Report.md
+- id: validate-b25-p13-c12-closure
+  path: scripts/ci/validate_b25_p13_c12_closure.py
+  status: required
+  owning_phase: B2.5-P13-C12
+  protected_invariant: B2.5-P13-C12 removes every caller-mintable privileged RLS capability from Bayesian
+    fit, dispatch, and recovery relations; keeps ordinary worker and API principals tenant-scoped; exposes
+    global recovery only through bounded SECURITY DEFINER transitions anchored to authenticated login
+    identity; revokes direct ordinary-role table authority that bypasses those transitions; and preserves
+    one-producer claim behavior under concurrent recovery.
+  command: python scripts/ci/validate_b25_p13_c12_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c12_closure.py --negative-control
+  expected_failure_meaning: A caller-controlled GUC or fit identifier regained privileged RLS authority,
+    an ordinary role recovered direct cross-tenant table access, a recovery function lost its bounded
+    transition or authenticated-login anchor, a session leaked authority, or concurrent recovery could
+    produce more than one active lease for the same fit.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c12_closure.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_step
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XII Report.md
 - id: validate-b25-p13-c6-closure
   path: scripts/ci/validate_b25_p13_c6_closure.py
   status: required

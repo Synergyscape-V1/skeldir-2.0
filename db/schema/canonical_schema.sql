@@ -1419,6 +1419,77 @@ BEGIN
 END
 $$;
 
+CREATE FUNCTION public.b24_lease_fit_recovery_rows(p_batch_size integer DEFAULT 25, p_stale_publishing_seconds integer DEFAULT 300) RETURNS TABLE(recovery_id uuid, tenant_id uuid, dispatch_id uuid, fit_id uuid, task_name text, attempt_id uuid, payload_hash text, recovery_generation integer, publish_attempt_count integer)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            RETURN QUERY
+            WITH due AS (
+                SELECT recovery.tenant_id, recovery.id, recovery.dispatch_id
+                FROM b24_fit_recovery_outbox recovery
+                WHERE (
+                    recovery.status IN ('pending', 'failed_retryable')
+                    OR (
+                        recovery.status = 'publishing'
+                        AND recovery.updated_at <= now() - (
+                            LEAST(
+                                GREATEST(
+                                    COALESCE(p_stale_publishing_seconds, 300), 1
+                                ),
+                                86400
+                            ) * interval '1 second'
+                        )
+                    )
+                )
+                ORDER BY recovery.created_at ASC, recovery.id ASC
+                LIMIT LEAST(GREATEST(COALESCE(p_batch_size, 25), 1), 100)
+                FOR UPDATE SKIP LOCKED
+            ),
+            assigned AS (
+                UPDATE public.b24_fit_dispatch_outbox dispatch
+                SET status = 'dispatching',
+                    assigned_worker_generation = NULL,
+                    assignment_generation = dispatch.assignment_generation + 1,
+                    assignment_expires_at = now() + interval '10 minutes',
+                    assignment_reason = 'recovery_shared_eligible',
+                    dispatching_started_at = now(),
+                    updated_at = now()
+                FROM due
+                WHERE dispatch.tenant_id = due.tenant_id
+                  AND dispatch.id = due.dispatch_id
+                RETURNING
+                    dispatch.tenant_id,
+                    dispatch.id AS dispatch_id,
+                    dispatch.fit_id,
+                    dispatch.task_name,
+                    dispatch.attempt_id,
+                    dispatch.payload_hash::text AS payload_hash,
+                    dispatch.recovery_generation
+            )
+            UPDATE public.b24_fit_recovery_outbox recovery
+            SET status = 'publishing',
+                publish_attempt_count = recovery.publish_attempt_count + 1,
+                updated_at = now()
+            FROM due
+            JOIN assigned
+              ON assigned.tenant_id = due.tenant_id
+             AND assigned.dispatch_id = due.dispatch_id
+            WHERE recovery.tenant_id = due.tenant_id
+              AND recovery.id = due.id
+            RETURNING
+                recovery.id,
+                recovery.tenant_id,
+                recovery.dispatch_id,
+                assigned.fit_id,
+                assigned.task_name,
+                assigned.attempt_id,
+                assigned.payload_hash,
+                assigned.recovery_generation,
+                recovery.publish_attempt_count;
+        END
+        $$;
+
 CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1433,6 +1504,67 @@ CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b24_dispatch_running_fence_rejected';
             END IF;
+        END
+        $$;
+
+CREATE FUNCTION public.b24_mark_fit_recovery_failed(p_tenant_id uuid, p_recovery_id uuid, p_dispatch_id uuid, p_error text, p_max_attempts integer DEFAULT 5) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            v_count integer;
+        BEGIN
+            UPDATE public.b24_fit_recovery_outbox recovery
+            SET status = CASE
+                    WHEN recovery.publish_attempt_count >= LEAST(
+                        GREATEST(COALESCE(p_max_attempts, 5), 1), 100
+                    ) THEN 'quarantined'
+                    ELSE 'failed_retryable'
+                END,
+                last_error = left(COALESCE(p_error, ''), 2048),
+                updated_at = now()
+            WHERE recovery.tenant_id = p_tenant_id
+              AND recovery.id = p_recovery_id
+              AND recovery.dispatch_id = p_dispatch_id
+              AND recovery.status = 'publishing';
+            GET DIAGNOSTICS v_count = ROW_COUNT;
+            RETURN v_count = 1;
+        END
+        $$;
+
+CREATE FUNCTION public.b24_mark_fit_recovery_published(p_tenant_id uuid, p_recovery_id uuid, p_dispatch_id uuid) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            v_count integer;
+        BEGIN
+            UPDATE public.b24_fit_recovery_outbox recovery
+            SET status = 'published',
+                published_at = now(),
+                updated_at = now(),
+                last_error = NULL
+            WHERE recovery.tenant_id = p_tenant_id
+              AND recovery.id = p_recovery_id
+              AND recovery.dispatch_id = p_dispatch_id
+              AND recovery.status = 'publishing';
+            GET DIAGNOSTICS v_count = ROW_COUNT;
+            IF v_count <> 1 THEN
+                RETURN false;
+            END IF;
+
+            UPDATE public.b24_fit_dispatch_outbox dispatch
+            SET status = 'dispatched',
+                dispatched_at = now(),
+                updated_at = now()
+            WHERE dispatch.tenant_id = p_tenant_id
+              AND dispatch.id = p_dispatch_id
+              AND dispatch.status = 'dispatching';
+            GET DIAGNOSTICS v_count = ROW_COUNT;
+            IF v_count <> 1 THEN
+                RAISE EXCEPTION 'b24_recovery_dispatch_transition_missing';
+            END IF;
+            RETURN true;
         END
         $$;
 
@@ -9305,6 +9437,22 @@ CREATE POLICY c11_trigger_insert_b24_fit_policy_replan_lineage ON public.b24_fit
    FROM pg_class
   WHERE (pg_class.oid = ('b24_fit_policy_replan_lineage'::regclass)::oid)))));
 
+CREATE POLICY c12_dispatch_internal_select ON public.b24_fit_dispatch_outbox FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+CREATE POLICY c12_dispatch_internal_update ON public.b24_fit_dispatch_outbox FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+CREATE POLICY c12_recovery_internal_insert ON public.b24_fit_recovery_outbox FOR INSERT WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+CREATE POLICY c12_recovery_internal_select ON public.b24_fit_recovery_outbox FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+CREATE POLICY c12_recovery_internal_update ON public.b24_fit_recovery_outbox FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+CREATE POLICY c12_worker_authority_internal_insert ON public.b24_worker_process_authority FOR INSERT WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+CREATE POLICY c12_worker_authority_internal_select ON public.b24_worker_process_authority FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = ANY (ARRAY['app_worker'::name, 'app_dispatch_publisher'::name]))));
+
+CREATE POLICY c12_worker_authority_internal_update ON public.b24_worker_process_authority FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
 ALTER TABLE public.channel_assignment_corrections ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.compliance_audit_ledger ENABLE ROW LEVEL SECURITY;
@@ -9315,23 +9463,11 @@ ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY deny_all_b24_worker_process_authority ON public.b24_worker_process_authority USING (false) WITH CHECK (false);
 
-CREATE POLICY dispatch_capability_claim_select_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox FOR SELECT USING ((((claim_capability_digest)::text = NULLIF(current_setting('app.b24_claim_capability_digest'::text, true), ''::text)) AND (claim_capability_expires_at > now())));
-
-CREATE POLICY dispatch_capability_claim_update_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox FOR UPDATE USING ((((claim_capability_digest)::text = NULLIF(current_setting('app.b24_claim_capability_digest'::text, true), ''::text)) AND (claim_capability_expires_at > now()))) WITH CHECK ((((claim_capability_digest)::text = NULLIF(current_setting('app.b24_claim_capability_digest'::text, true), ''::text)) AND (claim_capability_expires_at > now())));
-
-CREATE POLICY dispatch_claim_function_access_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((current_setting('app.b24_dispatch_claim_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_dispatch_claim_access'::text, true) = 'on'::text));
-
-CREATE POLICY dispatch_recovery_reconciler_select_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox FOR SELECT USING ((current_setting('app.b24_recovery_reconciler'::text, true) = 'on'::text));
-
-CREATE POLICY dispatch_recovery_reconciler_update_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox FOR UPDATE USING ((current_setting('app.b24_recovery_reconciler'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_recovery_reconciler'::text, true) = 'on'::text));
-
 ALTER TABLE public.ephemeral_click_resolution ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY function_access_b24_worker_process_authority ON public.b24_worker_process_authority USING ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_worker_authority_access'::text, true) = 'on'::text));
 
 ALTER TABLE public.investigation_jobs ENABLE ROW LEVEL SECURITY;
 
@@ -9374,8 +9510,6 @@ ALTER TABLE public.r4_task_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.raw_event_payloads ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.reconciliation_runs ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY recovery_reconciler_policy_b24_fit_recovery_outbox ON public.b24_fit_recovery_outbox USING ((current_setting('app.b24_recovery_reconciler'::text, true) = 'on'::text)) WITH CHECK ((current_setting('app.b24_recovery_reconciler'::text, true) = 'on'::text));
 
 ALTER TABLE public.revenue_cache_entries ENABLE ROW LEVEL SECURITY;
 
@@ -9529,39 +9663,39 @@ CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p14 ON public.bayesian_
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p15 ON public.bayesian_artifacts_p15 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits ON public.bayesian_model_fits USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits ON public.bayesian_model_fits USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p00 ON public.bayesian_model_fits_p00 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p00 ON public.bayesian_model_fits_p00 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p01 ON public.bayesian_model_fits_p01 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p01 ON public.bayesian_model_fits_p01 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p02 ON public.bayesian_model_fits_p02 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p02 ON public.bayesian_model_fits_p02 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p03 ON public.bayesian_model_fits_p03 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p03 ON public.bayesian_model_fits_p03 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p04 ON public.bayesian_model_fits_p04 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p04 ON public.bayesian_model_fits_p04 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p05 ON public.bayesian_model_fits_p05 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p05 ON public.bayesian_model_fits_p05 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p06 ON public.bayesian_model_fits_p06 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p06 ON public.bayesian_model_fits_p06 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p07 ON public.bayesian_model_fits_p07 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p07 ON public.bayesian_model_fits_p07 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p08 ON public.bayesian_model_fits_p08 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p08 ON public.bayesian_model_fits_p08 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p09 ON public.bayesian_model_fits_p09 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p09 ON public.bayesian_model_fits_p09 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p10 ON public.bayesian_model_fits_p10 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p10 ON public.bayesian_model_fits_p10 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p11 ON public.bayesian_model_fits_p11 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p11 ON public.bayesian_model_fits_p11 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p12 ON public.bayesian_model_fits_p12 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p12 ON public.bayesian_model_fits_p12 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p13 ON public.bayesian_model_fits_p13 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p13 ON public.bayesian_model_fits_p13 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p14 ON public.bayesian_model_fits_p14 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p14 ON public.bayesian_model_fits_p14 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p15 ON public.bayesian_model_fits_p15 USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (id = (NULLIF(current_setting('app.b24_fit_resolution_id'::text, true), ''::text))::uuid))) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p15 ON public.bayesian_model_fits_p15 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
 CREATE POLICY tenant_isolation_policy_compliance_audit_ledger ON public.compliance_audit_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 

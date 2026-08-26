@@ -48,7 +48,7 @@ SAMPLER_CHILD = ROOT / "backend/app/bayesian/sampler_child.py"
 VALIDATOR = ROOT / "scripts/ci/validate_b24_p6_real_fit_worker.py"
 MIGRATION = (
     ROOT
-    / "alembic/versions/007_skeldir_foundation/202606031200_b24_p6_fit_id_resolution_policy.py"
+    / "alembic/versions/007_skeldir_foundation/202608261200_b25_p13_c12_authority_closure.py"
 )
 START = datetime(2026, 5, 1, tzinfo=timezone.utc)
 END = START + timedelta(days=30)
@@ -173,14 +173,17 @@ def test_b24_p6_observed_signal_is_source_snapshot_replay_derived() -> None:
         assert token in text
 
 
-def test_b24_p6_fit_id_only_resolution_is_explicit_rls_capability() -> None:
+def test_b24_p6_fit_resolution_is_tenant_bound_not_a_capability() -> None:
     fit_execution = _read(FIT_EXECUTION)
     migration = _read(MIGRATION)
-    assert "app.b24_fit_resolution_id" in fit_execution
-    assert "app.b24_fit_resolution_id" in migration
-    assert "tenant_id = NULLIF(current_setting('app.current_tenant_id'" in migration
+    assert "app.b24_fit_resolution_id" not in fit_execution
+    assert "WHERE tenant_id = :tenant_id" in fit_execution
+    assert "AND id = :fit_id" in fit_execution
+    assert "tenant_id = NULLIF(" in migration
+    assert "current_setting('app.current_tenant_id'" in migration
     assert "WITH CHECK" in migration
-    assert "app.b24_fit_resolution_id" not in migration.split("WITH CHECK", 1)[1]
+    upgrade = migration.split("def downgrade()", 1)[0]
+    assert "include_resolution_capability=True" not in upgrade
 
 
 def test_b24_p6_parent_keeps_pymc_child_only() -> None:

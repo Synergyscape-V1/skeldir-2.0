@@ -79,15 +79,6 @@ def _set_tenant_context(conn, tenant_id: UUID) -> None:
     assert_bound_tenant(conn, tenant_id=tenant_id)
 
 
-def _bind_fit_resolution_context(conn, *, fit_id: UUID) -> None:
-    if not conn.in_transaction():
-        raise RuntimeError("bayesian_fit_resolution_transaction_required")
-    conn.execute(
-        text("SELECT set_config('app.b24_fit_resolution_id', :fit_id, true)"),
-        {"fit_id": str(fit_id)},
-    )
-
-
 def _set_execution_context(
     conn,
     *,
@@ -95,7 +86,6 @@ def _set_execution_context(
     fit_id: UUID,
     dispatch_lease: BayesianDispatchLease | None = None,
 ) -> None:
-    _bind_fit_resolution_context(conn, fit_id=fit_id)
     _set_tenant_context(conn, tenant_id)
     if dispatch_lease is not None:
         if dispatch_lease.tenant_id != tenant_id:
