@@ -152,7 +152,7 @@
   expected_test_cases:
     - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_hash_derived_observed_signal_is_erased
     - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_observed_signal_is_source_snapshot_replay_derived
-    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_fit_id_only_resolution_is_explicit_rls_capability
+    - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_fit_resolution_is_tenant_bound_not_a_capability
     - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_parent_keeps_pymc_child_only
     - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_ci_validator_negative_controls
     - backend/tests/test_b24_p6_real_fit_worker.py::test_b24_p6_real_fit_uses_frozen_source_snapshot_authority
