@@ -185,13 +185,13 @@ jobs:
           grep -E "^p13_executed_cases=21$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_expected=158$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_load_bearing_paths=95$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_load_bearing_paths=97$" /tmp/b25_p13_e2e.out
 
           # C10: the signature commits to the producing inference regime.
           # Pinned exactly -- a provenance field that stops being covered must
           # turn this red rather than quietly shrink a number nobody reads.
-          grep -E "^p13_c10_provenance_tamper_fields_expected=10$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_c10_provenance_tamper_fields_failed=10$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c10_provenance_tamper_fields_expected=12$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c10_provenance_tamper_fields_failed=12$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
           grep -E "^p13_downgrade_cases_failed_closed=8$" /tmp/b25_p13_e2e.out
           grep -E "^p13_negative_controls_fired=18$" /tmp/b25_p13_e2e.out
