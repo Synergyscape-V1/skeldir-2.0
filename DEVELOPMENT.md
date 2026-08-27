@@ -2,6 +2,13 @@
 
 The canonical path is container-first. Host-native Python execution is noncanonical.
 
+`docker-compose.local.yml` is a supported, deliberately reduced development
+loop. It is not a B2.5-P13 production-equivalent topology: it omits the
+credential-isolated Bayesian worker, dispatch publisher, and Beat scheduler.
+The only authoritative P13 integration proof is
+`.github/workflows/b2_5-p13-e2e-trust-closure.yml`, which builds and runs
+`backend/Dockerfile.bayesian` without governed-code bind mounts.
+
 M1 successor onboarding uses one topology:
 
 ```text
