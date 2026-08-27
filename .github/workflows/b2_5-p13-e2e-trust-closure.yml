@@ -49,6 +49,7 @@ on:
       - 'backend/tests/trust/test_b25_p13_c10_policy_transport_physics.py'
       - 'backend/tests/trust/test_b25_p13_c11_semantic_authority.py'
       - 'backend/tests/trust/test_b25_p13_c12_authority_closure.py'
+      - 'backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py'
       - 'backend/app/inference_policy_registry.py'
       - 'backend/app/tasks/bayesian_publisher.py'
       - 'backend/Dockerfile.bayesian'
@@ -76,10 +77,14 @@ on:
       - 'scripts/ci/validate_b25_p13_c5_closure.py'
       - 'scripts/ci/validate_b25_p13_c6_closure.py'
       - 'scripts/ci/validate_b25_p13_c12_closure.py'
+      - 'scripts/ci/validate_b25_p13_c13_closure.py'
+      - 'scripts/ci/validate_b25_p13_c13_artifact_closure.py'
+      - 'contracts-internal/governance/b25_p13_c13_authority_topology.v1.json'
       - 'scripts/database/prepare_migration_authority_boundary.py'
       - '.github/actions/setup-postgres-ci/action.yml'
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation VI Report.md'
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation XII Report.md'
+      - 'docs/forensics/B2.5-P13 Corrective Action Remediation XIII Report.md'
       - 'db/schema/canonical_schema.sql'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
@@ -180,13 +185,13 @@ jobs:
           grep -E "^p13_executed_cases=21$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_expected=158$" /tmp/b25_p13_e2e.out
           grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_load_bearing_paths=95$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_load_bearing_paths=97$" /tmp/b25_p13_e2e.out
 
           # C10: the signature commits to the producing inference regime.
           # Pinned exactly -- a provenance field that stops being covered must
           # turn this red rather than quietly shrink a number nobody reads.
-          grep -E "^p13_c10_provenance_tamper_fields_expected=10$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_c10_provenance_tamper_fields_failed=10$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c10_provenance_tamper_fields_expected=12$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_c10_provenance_tamper_fields_failed=12$" /tmp/b25_p13_e2e.out
           grep -E "^p13_display_only_paths_excluded=24$" /tmp/b25_p13_e2e.out
           grep -E "^p13_downgrade_cases_failed_closed=8$" /tmp/b25_p13_e2e.out
           grep -E "^p13_negative_controls_fired=18$" /tmp/b25_p13_e2e.out
@@ -1155,6 +1160,50 @@ jobs:
           grep -E "^ci_gate_negative_controls_fired=7$" /tmp/b25_p13_p12_gates.out
           echo "p13_preservation_validators_passed=4"
 
+  b2-5-p13-c13-semantic-history:
+    name: B2.5-P13 C13 Semantic Signing and Historical Replay
+    runs-on: ubuntu-latest
+    env:
+      # The shared pytest bootstrap requires an explicit localhost DSN in CI even
+      # for this deliberately database-free semantic proof. No connection is made.
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p13_c13
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install semantic proof dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Production signer boundary and historical replay physics
+        run: |
+          set -euo pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py \
+            -q -s --no-header | tee /tmp/c13-signing-history.out
+          grep -E '16 passed' /tmp/c13-signing-history.out
+
+      - name: C13 route topology and proof graph with negative controls
+        run: |
+          set -euo pipefail
+          python scripts/ci/validate_b25_p13_c13_closure.py --negative-control \
+            | tee /tmp/c13-closure.out
+          grep -q '^B25_P13_C13_CLOSURE_VALIDATION_PASS$' /tmp/c13-closure.out
+          grep -q '^c13_static_negative_controls_fired=6$' /tmp/c13-closure.out
+
   b2-5-p13-c9-positive-confidence:
     name: B2.5-P13 C9 Positive Confidence Composition
     runs-on: ubuntu-latest
@@ -1336,6 +1385,57 @@ jobs:
         run: |
           set -euo pipefail
           docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate .
+
+      - name: C13 artifact identity, default CMD, and dependency trace
+        run: |
+          set -euo pipefail
+          docker image inspect skeldir-bayesian:candidate \
+            --format '{{json .Id}} {{json .Config.Cmd}}' | tee c13-image-inspect.log
+          grep -q 'celery' c13-image-inspect.log
+          grep -q 'bayesian' c13-image-inspect.log
+          docker run --rm -i skeldir-bayesian:candidate \
+            python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py \
+            | tee c13-artifact-trace.log
+          grep -q '^B25_P13_C13_ARTIFACT_CLOSURE_PASS$' c13-artifact-trace.log
+          echo "p13_c13_image_identity=$(cut -d' ' -f1 c13-image-inspect.log)" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: NC-XIII artifact dependency and host mount-shadow controls
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'FROM skeldir-bayesian:candidate' \
+            'RUN rm /app/contracts/trust-api/temporal-policy.v1.yaml' \
+            > Dockerfile.nc-xiii-contract
+          docker build -f Dockerfile.nc-xiii-contract -t skeldir-bayesian:nc-xiii-contract .
+          if docker run --rm -i skeldir-bayesian:nc-xiii-contract \
+               python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py \
+               > nc-xiii-contract.log 2>&1; then
+            echo 'missing governed contract passed artifact closure'; exit 1
+          fi
+          grep -q 'resource_missing' nc-xiii-contract.log
+
+          printf '%s\n' \
+            'FROM skeldir-bayesian:candidate' \
+            'RUN rm /app/backend/app/inference_policy_registry.py' \
+            > Dockerfile.nc-xiii-module
+          docker build -f Dockerfile.nc-xiii-module -t skeldir-bayesian:nc-xiii-module .
+          if docker run --rm -i skeldir-bayesian:nc-xiii-module \
+               python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py \
+               > nc-xiii-module.log 2>&1; then
+            echo 'missing governed module passed artifact closure'; exit 1
+          fi
+          grep -q 'module_import_failed' nc-xiii-module.log
+
+          if docker run --rm -i \
+               -v "$PWD/backend/app:/app/backend/app:ro" \
+               skeldir-bayesian:candidate python - \
+               < scripts/ci/validate_b25_p13_c13_artifact_closure.py \
+               > nc-xiii-mount-shadow.log 2>&1; then
+            echo 'mount-shadow runtime passed production equivalence'; exit 1
+          fi
+          grep -q 'host_mount_shadows_governed_runtime' nc-xiii-mount-shadow.log
+          echo 'p13_c13_artifact_negative_controls_fired=3' >> "$GITHUB_STEP_SUMMARY"
 
       - name: C10-B/C10-I -- the shipped artifact resolves the governed topology
         run: |
@@ -1588,6 +1688,7 @@ jobs:
       - b25-p13-e2e-trust-closure-core
       - b2-5-p13-c9-positive-confidence
       - b2-5-p13-c10-artifact-topology
+      - b2-5-p13-c13-semantic-history
     runs-on: ubuntu-latest
     steps:
       - name: Require every load-bearing P13 proof
@@ -1595,6 +1696,7 @@ jobs:
           CORE_RESULT: ${{ needs['b25-p13-e2e-trust-closure-core'].result }}
           POSITIVE_RESULT: ${{ needs['b2-5-p13-c9-positive-confidence'].result }}
           ARTIFACT_RESULT: ${{ needs['b2-5-p13-c10-artifact-topology'].result }}
+          SEMANTIC_RESULT: ${{ needs['b2-5-p13-c13-semantic-history'].result }}
         run: |
           set -euo pipefail
           test "$CORE_RESULT" = success || {
@@ -1605,5 +1707,8 @@ jobs:
           }
           test "$ARTIFACT_RESULT" = success || {
             echo "b2-5-p13-c10-artifact-topology=$ARTIFACT_RESULT"; exit 1;
+          }
+          test "$SEMANTIC_RESULT" = success || {
+            echo "b2-5-p13-c13-semantic-history=$SEMANTIC_RESULT"; exit 1;
           }
           echo 'p13_load_bearing_proof_graph=green'

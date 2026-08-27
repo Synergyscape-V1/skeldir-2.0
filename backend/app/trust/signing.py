@@ -8,6 +8,10 @@ from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 
+from app.inference_policy_registry import (
+    PolicyRegistryError,
+    validate_envelope_policy_authority,
+)
 from app.trust.canonicalization import canonicalize_envelope_payload
 from app.trust.hash_identity import (
     compute_semantic_truth_hash,
@@ -62,6 +66,10 @@ def prepare_payload_for_signing(
     signing_algorithm: str = "ed25519",
 ) -> dict[str, Any]:
     """Replace unsigned placeholders and compute P8 hash identity before signing."""
+    try:
+        validate_envelope_policy_authority(payload)
+    except PolicyRegistryError as exc:
+        raise TrustEnvelopeSigningError(f"policy_authority_refused:{exc}") from exc
     try:
         validate_signature_metadata_versions(payload)
         validate_signature_algorithm(signing_algorithm)

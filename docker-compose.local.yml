@@ -1,3 +1,6 @@
+# SUPPORTED LOCAL DEVELOPMENT ONLY. This reduced topology omits the P13
+# Bayesian execution worker, dedicated publisher, and Beat process. It is not
+# production-equivalent and must never be cited as P13 evidence.
 services:
   postgres:
     image: postgres:15-alpine

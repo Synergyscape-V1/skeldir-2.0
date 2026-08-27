@@ -48,7 +48,7 @@ def semantic_digest(value: Mapping[str, Any]) -> str:
 # a semantic change adds a new component version and a new complete manifest.
 # The C11 validator mechanically compares every live producer policy with this
 # record, while Trust imports only this neutral module.
-_CURRENT_MANIFEST: dict[str, Any] = {
+_HISTORICAL_P1_MANIFEST: dict[str, Any] = {
     "schema_version": "b24-inference-policy-manifest-v1",
     "components": {
         "inference_profile": {
@@ -140,7 +140,30 @@ _CURRENT_MANIFEST: dict[str, Any] = {
     },
 }
 
+# P2 is a real semantic evolution of the bundle, not a label-only bump.  P1
+# described producer/runtime/confidence semantics but did not require the
+# signer itself to resolve them.  P2 makes that final authority boundary part
+# of the meaning of an issuable TrustEnvelope.  P1 remains byte-for-byte
+# resolvable below; current issuance is P2-only.
+_CURRENT_MANIFEST: dict[str, Any] = deepcopy(_HISTORICAL_P1_MANIFEST)
+_CURRENT_MANIFEST["components"]["trust_issuance_policy"] = {
+    "version": "b25-p13-trust-issuance-policy-v2",
+    "semantics": {
+        "semantic_validation_before_private_key_signature": True,
+        "available_confidence_requires_current_policy_bundle": True,
+        "available_confidence_requires_runtime_correspondence": True,
+        "historical_bundle_resolution_is_read_only": True,
+        "historical_bundle_reissuance_forbidden": True,
+    },
+}
+
 CURRENT_POLICY_BUNDLE_HASH = semantic_digest(_CURRENT_MANIFEST)
+HISTORICAL_P1_POLICY_BUNDLE_HASH = semantic_digest(_HISTORICAL_P1_MANIFEST)
+
+_POLICY_MANIFESTS_BY_HASH: dict[str, dict[str, Any]] = {
+    HISTORICAL_P1_POLICY_BUNDLE_HASH: _HISTORICAL_P1_MANIFEST,
+    CURRENT_POLICY_BUNDLE_HASH: _CURRENT_MANIFEST,
+}
 
 
 def current_manifest() -> dict[str, Any]:
@@ -169,6 +192,81 @@ def current_component_digests() -> dict[str, str]:
     }
 
 
+def resolve_policy_bundle(policy_bundle_hash: object) -> dict[str, Any]:
+    """Resolve one immutable historical bundle by content identity."""
+
+    raw_hash = str(policy_bundle_hash or "")
+    bundle_hash = raw_hash.removeprefix("sha256:")
+    manifest = _POLICY_MANIFESTS_BY_HASH.get(bundle_hash)
+    if manifest is None:
+        raise PolicyRegistryError("policy_bundle_unknown_or_semantically_rewritten")
+    if semantic_digest(manifest) != bundle_hash:
+        raise PolicyRegistryError("policy_bundle_registry_integrity_failure")
+    return deepcopy(manifest)
+
+
+def _manifest_policy_tuple(manifest: Mapping[str, Any]) -> dict[str, str]:
+    components = manifest["components"]
+    return {
+        "inference_profile_version": components["inference_profile"]["version"],
+        "runtime_policy_version": components["runtime_policy"]["version"],
+        "sampling_policy_version": components["sampling_policy"]["version"],
+        "diagnostic_policy_version": components["diagnostic_policy"]["version"],
+    }
+
+
+def resolve_policy_provenance(
+    provenance: Mapping[str, object],
+    *,
+    confidence_policy_version: object | None = None,
+    confidence_semantics_version: object | None = None,
+) -> dict[str, Any]:
+    """Resolve current or historical provenance and prove internal meaning."""
+
+    manifest = resolve_policy_bundle(provenance.get("policy_bundle_hash"))
+    expected = _manifest_policy_tuple(manifest)
+    for field, expected_value in expected.items():
+        if provenance.get(field) != expected_value:
+            raise PolicyRegistryError(f"policy_bundle_tuple_mismatch:{field}")
+    confidence = manifest["components"]["confidence_policy"]
+    expected_confidence_policy = confidence["version"]
+    expected_confidence_semantics = confidence["semantics_version"]
+    supplied_policy = (
+        confidence_policy_version
+        if confidence_policy_version is not None
+        else provenance.get("confidence_policy_version")
+    )
+    supplied_semantics = (
+        confidence_semantics_version
+        if confidence_semantics_version is not None
+        else provenance.get("confidence_semantics_version")
+    )
+    if supplied_policy != expected_confidence_policy:
+        raise PolicyRegistryError("confidence_policy_version_unknown")
+    if supplied_semantics != expected_confidence_semantics:
+        raise PolicyRegistryError("confidence_semantics_version_unknown")
+
+    sampling = manifest["components"]["sampling_policy"]["semantics"]
+    runtime = manifest["components"]["runtime_policy"]["semantics"]
+    diagnostics = manifest["components"]["diagnostic_policy"]["semantics"]
+    expected_chains = sampling["chains"]
+    expected_draws = sampling["posterior_draws_total"]
+    if runtime["pymc_chains"] != expected_chains:
+        raise PolicyRegistryError("policy_bundle_runtime_chain_contradiction")
+    if diagnostics["min_chains"] != expected_chains:
+        raise PolicyRegistryError("policy_bundle_diagnostic_chain_contradiction")
+    for field in ("authorized_chains", "observed_chains"):
+        if provenance.get(field) != expected_chains:
+            raise PolicyRegistryError(f"policy_bundle_runtime_mismatch:{field}")
+    for field in (
+        "authorized_posterior_draws_total",
+        "observed_posterior_draws_total",
+    ):
+        if provenance.get(field) != expected_draws:
+            raise PolicyRegistryError(f"policy_bundle_runtime_mismatch:{field}")
+    return manifest
+
+
 def validate_policy_provenance(
     provenance: Mapping[str, object],
     *,
@@ -177,31 +275,43 @@ def validate_policy_provenance(
 ) -> dict[str, Any]:
     """Resolve provenance or fail closed before any available claim is signed."""
 
+    manifest = resolve_policy_provenance(
+        provenance,
+        confidence_policy_version=confidence_policy_version,
+        confidence_semantics_version=confidence_semantics_version,
+    )
     raw_hash = str(provenance.get("policy_bundle_hash") or "")
-    bundle_hash = raw_hash.removeprefix("sha256:")
-    if bundle_hash != CURRENT_POLICY_BUNDLE_HASH:
-        raise PolicyRegistryError("policy_bundle_unknown_or_semantically_rewritten")
-    expected = current_policy_tuple()
-    for field, expected_value in expected.items():
-        if provenance.get(field) != expected_value:
-            raise PolicyRegistryError(f"policy_bundle_tuple_mismatch:{field}")
-    if (
-        confidence_policy_version is not None
-        and confidence_policy_version != CONFIDENCE_POLICY_VERSION
-    ):
-        raise PolicyRegistryError("confidence_policy_version_unknown")
-    if (
-        confidence_semantics_version is not None
-        and confidence_semantics_version != CONFIDENCE_SEMANTICS_VERSION
-    ):
-        raise PolicyRegistryError("confidence_semantics_version_unknown")
-    return current_manifest()
+    if raw_hash.removeprefix("sha256:") != CURRENT_POLICY_BUNDLE_HASH:
+        raise PolicyRegistryError("historical_policy_bundle_not_issuable")
+    return manifest
+
+
+def validate_envelope_policy_authority(payload: Mapping[str, object]) -> None:
+    """Fail closed at the final pre-sign TrustEnvelope authority boundary."""
+
+    metadata = payload.get("confidence_metadata")
+    if not isinstance(metadata, Mapping):
+        raise PolicyRegistryError("confidence_metadata_missing")
+    provenance = metadata.get("inference_provenance")
+    status = metadata.get("confidence_status")
+    if status == "available":
+        if not isinstance(provenance, Mapping):
+            raise PolicyRegistryError("available_confidence_provenance_missing")
+        validate_policy_provenance(provenance)
+        return
+    # No inference is the honest state for deterministic-only envelopes.  If a
+    # degraded envelope does name a regime, however, it may not name nonsense.
+    if provenance is not None:
+        if not isinstance(provenance, Mapping):
+            raise PolicyRegistryError("inference_provenance_invalid")
+        resolve_policy_provenance(provenance)
 
 
 __all__ = (
     "CONFIDENCE_POLICY_VERSION",
     "CONFIDENCE_SEMANTICS_VERSION",
     "CURRENT_POLICY_BUNDLE_HASH",
+    "HISTORICAL_P1_POLICY_BUNDLE_HASH",
     "DIAGNOSTIC_POLICY_VERSION",
     "INFERENCE_PROFILE_VERSION",
     "PolicyRegistryError",
@@ -211,6 +321,9 @@ __all__ = (
     "current_component_digests",
     "current_manifest",
     "current_policy_tuple",
+    "resolve_policy_bundle",
+    "resolve_policy_provenance",
     "semantic_digest",
+    "validate_envelope_policy_authority",
     "validate_policy_provenance",
 )

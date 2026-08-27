@@ -32,6 +32,7 @@ LOAD_BEARING_JOBS = {
     "b25-p13-e2e-trust-closure-core",
     "b2-5-p13-c9-positive-confidence",
     "b2-5-p13-c10-artifact-topology",
+    "b2-5-p13-c13-semantic-history",
 }
 
 

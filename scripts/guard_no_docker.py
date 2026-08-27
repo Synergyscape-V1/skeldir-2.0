@@ -70,6 +70,9 @@ ALLOWED_DOCKER_PATHS = {
     Path("scripts/ci/run_m1_onboarding_bootstrap.sh"),
     Path("scripts/ci/validate_b24_p5_runtime_harness.py"),
     Path("scripts/ci/validate_b24_artifact_topology.py"),
+    # P13 C13 inventories and validates the already-authorized Bayesian image
+    # and Compose topology; it does not introduce a new container substrate.
+    Path("scripts/ci/validate_b25_p13_c13_closure.py"),
     Path("scripts/ci/validate_m0_scope_lock.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),

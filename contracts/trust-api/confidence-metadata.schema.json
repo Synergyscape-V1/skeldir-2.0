@@ -135,6 +135,20 @@
           ],
           "pattern": "^[A-Za-z0-9._:-]{1,64}$"
         },
+        "confidence_policy_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+        },
+        "confidence_semantics_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+        },
         "authorized_chains": {
           "type": [
             "integer",

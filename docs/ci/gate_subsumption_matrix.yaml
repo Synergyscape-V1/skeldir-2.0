@@ -143,6 +143,36 @@
   risk_if_removed: A tenant-scoped principal could regain cross-tenant reads or writes by setting a session
     variable or naming a foreign fit, a helper could expand into an unbounded table bypass, session residue
     could confer authority on pool reuse, or competing recovery workers could create duplicate producers.
+- gate_id: validate-b25-p13-c13-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_c13_closure.py
+  owning_phase: B2.5-P13-C13
+  protected_invariant: TrustEnvelope signing is semantically fail-closed at the private-key boundary, historical bundle meaning is immutable and read-only, artifact dependencies are physically present in the exact image, and every supported topology states its authority honestly.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C11 validates semantics in the producer and C10 executes the image, but neither previously made the signer validation inescapable, replayed old meanings, inventoried every key route and topology, or rejected missing/shadowed image dependencies.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c13_closure.py --negative-control
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c13_closure.py --negative-control
+  risk_if_removed: A direct signer caller could cryptographically authenticate forged statistical provenance while CI remains green, or a production-equivalence claim could be proven against host files absent from the shipped image.
+- gate_id: validate-b25-p13-c13-artifact-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 E2E Trust Closure
+  script: scripts/ci/validate_b25_p13_c13_artifact_closure.py
+  owning_phase: B2.5-P13-C13
+  protected_invariant: The deployed Bayesian image contains and imports its entire governed P13 dependency closure from image-owned paths.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: The static C13 validator proves workflow attachment; only this in-container trace proves the actual filesystem and import resolution of the built artifact.
+  negative_control_preserved_by: NC-XIII artifact dependency and host mount-shadow controls
+  local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate . && docker run --rm -i skeldir-bayesian:candidate python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py
+  risk_if_removed: CI can pass against repository or host files that the shipped image does not contain, repeating the artifact/proof split that allowed the one-chain defect.
 - gate_id: validate-b25-p13-c6-closure
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 E2E Trust Closure

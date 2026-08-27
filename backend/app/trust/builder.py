@@ -191,6 +191,14 @@ def _inference_provenance(projection: object) -> dict[str, object] | None:
         "diagnostic_policy_version": getattr(
             projection, "diagnostic_policy_version", None
         ),
+        "confidence_policy_version": getattr(
+            getattr(projection, "decision", None), "confidence_policy_version", None
+        ),
+        "confidence_semantics_version": getattr(
+            getattr(projection, "decision", None),
+            "confidence_semantics_version",
+            None,
+        ),
         # Both halves of the correspondence, so a verifier can check the claim
         # rather than take the producer's word that they matched.
         "authorized_chains": getattr(projection, "authorized_chains", None),
@@ -207,6 +215,8 @@ def _inference_provenance(projection: object) -> dict[str, object] | None:
         "runtime_policy_version",
         "sampling_policy_version",
         "diagnostic_policy_version",
+        "confidence_policy_version",
+        "confidence_semantics_version",
     )
     if any(not provenance.get(field) for field in required_versions):
         return None

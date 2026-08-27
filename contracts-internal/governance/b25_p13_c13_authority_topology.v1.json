@@ -1,0 +1,30 @@
+{
+  "schema_version": "b25-p13-c13-authority-topology-v1",
+  "p13_equivalence_authority": "CI_ONLY",
+  "authoritative_integration_workflow": ".github/workflows/b2_5-p13-e2e-trust-closure.yml",
+  "authoritative_bayesian_artifact": "backend/Dockerfile.bayesian",
+  "topologies": [
+    {"path":"backend/Dockerfile","classification":"PRODUCTION_AUTHORITY","p13_equivalent":false,"purpose":"API and non-Bayesian worker artifact"},
+    {"path":"backend/Dockerfile.bayesian","classification":"PRODUCTION_AUTHORITY","p13_equivalent":true,"purpose":"Bayesian execution and publisher artifact"},
+    {"path":"backend/mock_platform/Dockerfile","classification":"TEST_ONLY","p13_equivalent":false,"purpose":"external platform mock"},
+    {"path":"docker-compose.e2e.yml","classification":"PRODUCTION_ANALOGUE","p13_equivalent":false,"purpose":"broad E2E topology; P13 equivalence remains CI-only"},
+    {"path":"docker-compose.local.yml","classification":"SUPPORTED_LOCAL_DEVELOPMENT","p13_equivalent":false,"purpose":"reduced local API/non-Bayesian loop; never P13 evidence"},
+    {"path":"docker-compose.component-dev.yml","classification":"SUPPORTED_LOCAL_DEVELOPMENT","p13_equivalent":false,"purpose":"component development"},
+    {"path":"docker-compose.test.yml","classification":"TEST_ONLY","p13_equivalent":false,"purpose":"test harness"},
+    {"path":"docker-compose.mock.yml","classification":"TEST_ONLY","p13_equivalent":false,"purpose":"mock platform harness"},
+    {"path":"docs/forensics/archive/docker_tools/legacy_microservices/Dockerfile.attribution","classification":"LEGACY","p13_equivalent":false,"purpose":"archived pre-monolith artifact"},
+    {"path":"docs/forensics/archive/docker_tools/legacy_microservices/Dockerfile.auth","classification":"LEGACY","p13_equivalent":false,"purpose":"archived pre-monolith artifact"},
+    {"path":"docs/forensics/archive/docker_tools/legacy_microservices/Dockerfile.ingestion","classification":"LEGACY","p13_equivalent":false,"purpose":"archived pre-monolith artifact"},
+    {"path":"docs/forensics/archive/docker_tools/legacy_microservices/Dockerfile.webhooks","classification":"LEGACY","p13_equivalent":false,"purpose":"archived pre-monolith artifact"},
+    {"path":".github/workflows/b2_5-p13-e2e-trust-closure.yml","classification":"PRODUCTION_ANALOGUE","p13_equivalent":true,"purpose":"merge-blocking physical P13 integration"},
+    {"path":"Procfile","classification":"PRODUCTION_ANALOGUE","p13_equivalent":false,"purpose":"Replit/Foreman multiprocess analogue; not authoritative P13 artifact proof"},
+    {"path":"netlify.toml","classification":"PRODUCTION_AUTHORITY","p13_equivalent":false,"purpose":"marketing frontend deployment only"},
+    {"path":"Makefile","classification":"SUPPORTED_LOCAL_DEVELOPMENT","p13_equivalent":false,"purpose":"local command router"},
+    {"path":".env.example","classification":"SUPPORTED_LOCAL_DEVELOPMENT","p13_equivalent":false,"purpose":"credential-custody template"}
+  ],
+  "private_key_routes": [
+    {"path":"backend/app/trust/signing.py","domain":"TrustEnvelope","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"validate_envelope_policy_authority"},
+    {"path":"backend/app/trust/export_artifact.py","domain":"TrustExportArtifact","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"embedded TrustEnvelope verification"},
+    {"path":"backend/app/trust/query_continuation.py","domain":"TrustQueryContinuation","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"cursor payload validator"}
+  ]
+}

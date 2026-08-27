@@ -154,6 +154,8 @@ _MACHINE_AUTHORITY_CODE_FIELDS = frozenset(
         "benchmark_metadata.benchmark_hash",
         "confidence_metadata.bayesian_model_version",
         "confidence_metadata.inference_provenance.diagnostic_policy_version",
+        "confidence_metadata.inference_provenance.confidence_policy_version",
+        "confidence_metadata.inference_provenance.confidence_semantics_version",
         "confidence_metadata.inference_provenance.inference_profile_version",
         "confidence_metadata.inference_provenance.policy_bundle_hash",
         "confidence_metadata.inference_provenance.runtime_policy_version",

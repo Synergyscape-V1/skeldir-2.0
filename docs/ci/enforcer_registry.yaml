@@ -179,6 +179,52 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XII Report.md
+- id: validate-b25-p13-c13-closure
+  path: scripts/ci/validate_b25_p13_c13_closure.py
+  status: required
+  owning_phase: B2.5-P13-C13
+  protected_invariant: Every TrustEnvelope private-key route converges on current semantic policy validation before signing; historical bundles remain immutable and resolvable but cannot be reissued; every runtime topology is honestly classified; and the exact Bayesian image carries its governed dependency closure without host bind substitution.
+  command: python scripts/ci/validate_b25_p13_c13_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c13_closure.py --negative-control
+  expected_failure_meaning: A signer can mint semantically contradictory trust, a private-key route is unclassified, historical meaning was rewritten or made issuable, a reduced topology claims production equivalence, an image dependency is absent or shadowed, or a load-bearing proof left the required graph.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c13_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_step
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XIII Report.md
+- id: validate-b25-p13-c13-artifact-closure
+  path: scripts/ci/validate_b25_p13_c13_artifact_closure.py
+  status: required
+  owning_phase: B2.5-P13-C13
+  protected_invariant: The exact Dockerfile.bayesian image imports every governed runtime module and reads every governed contract from image-owned paths, resolves the producer and registry to one policy bundle, and rejects governed host bind mounts.
+  command: docker run --rm -i skeldir-bayesian:candidate python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 E2E Trust Closure
+  local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate . && docker run --rm -i skeldir-bayesian:candidate python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py
+  expected_failure_meaning: The shipped image lacks a governed module or contract, imports authority from outside the image, resolves a different bundle than the producer, or is being shadowed by a host mount.
+  first_diagnostic_command: docker image inspect skeldir-bayesian:candidate
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_step
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XIII Report.md
 - id: validate-b25-p13-c6-closure
   path: scripts/ci/validate_b25_p13_c6_closure.py
   status: required
