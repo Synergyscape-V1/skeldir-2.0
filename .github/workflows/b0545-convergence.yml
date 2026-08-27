@@ -40,7 +40,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
-      MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_METRICS_PORT: "9546"
@@ -75,10 +75,15 @@ jobs:
         run: |
           set -euo pipefail
           echo "Creating database roles and skeldir_validation database..."
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER migration_owner WITH PASSWORD 'migration_owner';"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_rw WITH PASSWORD 'app_rw';"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_ro WITH PASSWORD 'app_ro';"
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER app_user;"
+          # Historical migrations transfer materialized-view ownership to the
+          # runtime role; PostgreSQL requires the migration principal to be a
+          # member of that target role while preserving distinct login identities.
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER migration_owner;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_rw;"
