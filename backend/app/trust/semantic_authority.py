@@ -19,7 +19,10 @@ from app.inference_policy_registry import (
     validate_envelope_policy_authority,
 )
 from app.trust.audit_hash import audit_ref_from_identity, request_identity_hash
-from app.trust.canonicalization import canonicalize_envelope_payload
+from app.trust.canonicalization import (
+    canonicalize_envelope_payload,
+    encode_envelope_structure_snapshot,
+)
 from app.trust.hash_identity import compute_semantic_truth_hash, compute_signature_hash
 from app.trust.money_source_adapter import AuthoritativeMoneyMinor
 from app.trust.provenance import replace_audit_provenance_entries
@@ -126,6 +129,13 @@ def _expect_dict(payload: dict[str, Any], field_name: str) -> dict[str, Any]:
     return value
 
 
+def _expect_string(payload: dict[str, Any], field_name: str) -> str:
+    value = payload.get(field_name)
+    if not isinstance(value, str):
+        raise TrustSemanticAuthorityError(f"semantic_string_required:{field_name}")
+    return value
+
+
 def _validate_identity_correspondence(
     payload: dict[str, Any],
     *,
@@ -143,7 +153,7 @@ def _validate_identity_correspondence(
         raise TrustSemanticAuthorityError("subject_ref_hash_mismatch")
 
     subject_authority = _expect_dict(payload, "subject_authority")
-    definition = subject_authority_definition(str(payload["subject_type"]))
+    definition = subject_authority_definition(_expect_string(payload, "subject_type"))
     expected_subject = {
         "subject_type": payload["subject_type"],
         "subject_ref": payload["subject_ref"],
@@ -352,11 +362,14 @@ def _authorize_audited_trust_envelope(
         raise TrustSemanticAuthorityError("audited_payload_structure_mismatch")
 
     audience = _expect_dict(audited_payload, "audience_binding")
+    audience_id_hash = audience.get("audience_id_hash")
+    if not isinstance(audience_id_hash, str):
+        raise TrustSemanticAuthorityError("audience_id_hash_required")
     expected_identity = request_identity_hash(
         tenant_id_hash=witness.tenant_id_hash,
         subject_type=witness.subject_type,
         subject_ref_hash=witness.subject_ref_hash,
-        audience_id_hash=str(audience.get("audience_id_hash")),
+        audience_id_hash=audience_id_hash,
     )
     if audit_record.request_identity_hash != expected_identity:
         raise TrustSemanticAuthorityError("audit_request_identity_mismatch")
@@ -368,11 +381,7 @@ def _authorize_audited_trust_envelope(
         raise TrustSemanticAuthorityError("audit_reference_identity_mismatch")
 
     validate_trust_semantic_authority(audited_payload, build_result=build_result)
-    payload_snapshot = json.dumps(
-        audited_payload,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    payload_snapshot = encode_envelope_structure_snapshot(audited_payload)
     return AuthorizedTrustEnvelope(
         _payload_snapshot=payload_snapshot,
         authority_proof_hash=_authority_proof_hash(actual_bytes),

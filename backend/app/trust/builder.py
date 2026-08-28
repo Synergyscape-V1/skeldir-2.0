@@ -136,13 +136,29 @@ def _build_authority_witness(
     truth_authority = payload.get("truth_authority")
     if not isinstance(truth_authority, dict):
         raise TrustEnvelopeBuildError("builder_truth_authority_missing")
+    witness_fields: dict[str, str] = {}
+    for field_name in (
+        "tenant_id_hash",
+        "subject_type",
+        "subject_ref",
+        "subject_ref_hash",
+    ):
+        value = payload.get(field_name)
+        if not isinstance(value, str):
+            raise TrustEnvelopeBuildError(
+                f"builder_authority_string_required:{field_name}"
+            )
+        witness_fields[field_name] = value
+    source_snapshot_hash = truth_authority.get("source_snapshot_hash")
+    if not isinstance(source_snapshot_hash, str):
+        raise TrustEnvelopeBuildError("builder_source_snapshot_hash_required")
     return TrustEnvelopeBuildWitness(
         canonical_payload=canonicalize_envelope_payload(payload),
-        tenant_id_hash=str(payload["tenant_id_hash"]),
-        subject_type=str(payload["subject_type"]),
-        subject_ref=str(payload["subject_ref"]),
-        subject_ref_hash=str(payload["subject_ref_hash"]),
-        source_snapshot_hash=str(truth_authority["source_snapshot_hash"]),
+        tenant_id_hash=witness_fields["tenant_id_hash"],
+        subject_type=witness_fields["subject_type"],
+        subject_ref=witness_fields["subject_ref"],
+        subject_ref_hash=witness_fields["subject_ref_hash"],
+        source_snapshot_hash=source_snapshot_hash,
         field_authority_names=tuple(row.field_name for row in decisions),
         _seal=_BUILD_WITNESS_SEAL,
     )
