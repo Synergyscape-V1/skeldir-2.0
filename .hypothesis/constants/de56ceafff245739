@@ -1,4 +1,0 @@
-# file: C:\Users\ayewhy\II SKELDIR II\backend\app\schemas\webhooks_stripe.py
-# hypothesis_version: 6.148.2
-
-[400, 5000, 10000, 1609459200, 'Validation Error', '^[a-z]{3}$', '^ch_[a-zA-Z0-9]+$', '^pi_[a-zA-Z0-9]+$', 'ch_1234567890abcdefg', 'pi_1234567890abcdefg', 'succeeded', 'usd']

@@ -1,4 +1,0 @@
-# file: C:\Users\ayewhy\II SKELDIR II\backend\app\schemas\webhooks_woocommerce.py
-# hypothesis_version: 6.148.2
-
-[400, 1234, 5678, '149.99', '2025-11-10T14:30:00Z', '2025-11-10T15:30:00Z', '49.99', 'USD', 'Validation Error', '^[A-Z]{3}$', 'completed', 'processing']
