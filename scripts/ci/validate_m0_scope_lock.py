@@ -462,11 +462,6 @@ ALLOWED_M0_PATHS = [
     "tests/",
     "scripts/guard_no_docker.py",
     "graphify-out/",
-    # Domain separation (permanent architectural axiom): the marketing site is a
-    # separate deployment domain (Netlify) and is not governed by the backend M0
-    # scope lock. A backend validator failing on a marketing/ file is a pipeline
-    # defect, not a scope violation.
-    "marketing/",
     # CI throughput topology (see docs/ci/CI_TOPOLOGY_PHYSICS.md): concurrency
     # groups, merge_group triggers, and dependency caching were applied across every
     # workflow. Listed individually rather than allowing .github/workflows/ wholesale,
