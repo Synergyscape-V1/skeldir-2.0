@@ -1,0 +1,17 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-trust-probabilistic);
+  font-size: var(--sk-font-size-body);
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,0 +1,35 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+.text,
+.block,
+.row {
+  background: var(--sk-color-bg-muted);
+  border-radius: var(--sk-radius-sm);
+  animation: pulse var(--sk-motion-skeleton-pulse) infinite ease-in-out;
+}
+
+.text {
+  height: var(--sk-line-height-body);
+}
+
+.block {
+  height: var(--sk-space-12);
+}
+
+.row {
+  height: var(--sk-dimension-table-row-dense);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}

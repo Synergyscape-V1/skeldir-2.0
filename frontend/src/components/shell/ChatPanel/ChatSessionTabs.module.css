@@ -1,0 +1,212 @@
+.bar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  gap: var(--sk-space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--sk-dimension-header-height);
+  height: var(--sk-dimension-header-height);
+  max-height: var(--sk-dimension-header-height);
+  padding-inline: var(--sk-space-3);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-header);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.tablistViewport {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tablist {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--sk-space-2);
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.tablist::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbarTrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--sk-space-1);
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.tablistViewport:hover .scrollbarTrack {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scrollbarThumb {
+  height: 100%;
+  border-radius: var(--sk-space-1);
+  background: color-mix(in srgb, var(--sk-color-text-muted) 50%, transparent);
+  cursor: default;
+  touch-action: none;
+  transition: background-color 120ms ease;
+  will-change: transform;
+}
+
+.scrollbarThumb:active {
+  background: color-mix(in srgb, var(--sk-color-text-muted) 70%, transparent);
+}
+
+.tablistViewport:hover .scrollbarThumb {
+  background: color-mix(in srgb, var(--sk-color-text-muted) 62%, transparent);
+}
+
+.tabWrap {
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  max-width: 13rem;
+  border: var(--sk-dimension-border-width) solid transparent;
+  border-radius: var(--sk-space-1);
+  background: transparent;
+  overflow: hidden;
+}
+
+.tabWrapActive {
+  border-color: color-mix(in srgb, var(--sk-color-trust-probabilistic) 8%, transparent);
+  background: color-mix(in srgb, var(--sk-color-trust-probabilistic) 4%, transparent);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--sk-dimension-shell-control-min);
+  max-width: 100%;
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  cursor: pointer;
+}
+
+.tabWrapActive .tab {
+  color: var(--sk-color-text-primary);
+}
+
+.tabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab:focus,
+.tab:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.tabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  min-width: 0;
+  min-height: var(--sk-dimension-shell-control-min);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--sk-color-text-muted);
+  font-size: var(--sk-font-size-small);
+  line-height: 1;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+}
+
+.tabWrap:hover .tabClose,
+.tabWrap:focus-within .tabClose {
+  width: 1.5rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tabClose:focus,
+.tabClose:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.tabClose:hover {
+  color: var(--sk-color-text-primary);
+}
+
+.barActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-1);
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.barAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--sk-dimension-shell-control-min);
+  height: var(--sk-dimension-shell-control-min);
+  padding: 0;
+  border: none;
+  border-radius: var(--sk-radius-sm);
+  background: transparent;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.barActionIcon {
+  display: block;
+  width: var(--sk-space-4);
+  height: var(--sk-space-4);
+  opacity: 0.64;
+  transition: opacity 180ms ease;
+}
+
+.barAction:focus,
+.barAction:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.barAction:hover {
+  color: var(--sk-color-trust-probabilistic);
+}
+
+.barAction:hover .barActionIcon {
+  opacity: 0.76;
+}

@@ -1,0 +1,29 @@
+.nav {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow: hidden;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  margin: 0;
+  padding: var(--sk-space-2) var(--sk-space-2);
+  list-style: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.listItemWithSectionDivider::after {
+  content: '';
+  display: block;
+  margin: var(--sk-space-2) var(--sk-space-2) 0;
+  border-bottom: var(--sk-dimension-border-width) solid
+    color-mix(in srgb, var(--sk-color-text-muted) 22%, var(--sk-color-border-default));
+}

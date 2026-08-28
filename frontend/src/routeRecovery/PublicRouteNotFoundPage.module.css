@@ -1,0 +1,15 @@
+.panel {
+  max-width: var(--sk-dimension-modal-width);
+  margin: var(--sk-space-12) auto;
+  padding: var(--sk-space-6);
+  text-align: center;
+}
+
+.body {
+  margin: var(--sk-space-4) 0 var(--sk-space-6);
+  color: var(--sk-color-text-secondary);
+}
+
+.actionLink {
+  composes: primaryAction from '../styles/primaryAction.module.css';
+}

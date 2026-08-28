@@ -1,0 +1,93 @@
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--spacing-16);
+  align-items: center;
+  padding: var(--spacing-16) 0;
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.label {
+  font-weight: 500;
+}
+
+.configure {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-12);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  cursor: pointer;
+}
+
+.configure:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.constraints {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
+
+.overview {
+  margin-bottom: var(--spacing-24);
+}
+
+.modeLabel {
+  font-weight: 600;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.invalidBanner {
+  padding: var(--spacing-12);
+  margin-bottom: var(--spacing-16);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-muted);
+  color: var(--color-status-error);
+  font-weight: 600;
+}
+
+.selector {
+  border: none;
+  margin: 0 0 var(--spacing-16);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: var(--target-size-min);
+}
+
+.constraintsForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+  margin-bottom: var(--spacing-16);
+}
+
+.constraintsForm label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-small);
+}
+
+.constraintsForm input {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+}

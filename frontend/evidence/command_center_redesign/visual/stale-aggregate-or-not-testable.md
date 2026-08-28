@@ -1,0 +1,1 @@
+# Stale aggregate — PROVEN via stale fixture and status text.

@@ -1,0 +1,1 @@
+# Integration attention — PROVEN via integration_attention health banner fixture.

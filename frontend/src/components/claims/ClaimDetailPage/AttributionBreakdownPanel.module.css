@@ -1,0 +1,106 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+  padding-top: var(--sk-space-2);
+}
+
+.enter {
+  animation: attributionRise 480ms ease-out both;
+  animation-delay: 220ms;
+}
+
+.tier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-3);
+}
+
+.tierHeading {
+  margin: 0;
+  font-family: var(--sk-font-family-display);
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  color: var(--sk-color-text-primary);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+.table thead {
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+.table th {
+  padding: var(--sk-space-3) var(--sk-space-4);
+  text-align: left;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sk-color-text-primary);
+  border-bottom: none;
+}
+
+.table th:not(:first-child),
+.table td:not(:first-child) {
+  text-align: right;
+}
+
+.table td {
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  color: var(--sk-color-text-primary);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.numeric {
+  font-family: var(--sk-font-family-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.rowLink {
+  color: var(--sk-color-text-primary);
+  text-decoration: none;
+  font-weight: var(--sk-font-weight-body-strong);
+  border-bottom: 1px solid transparent;
+}
+
+.rowLink:hover {
+  border-bottom-color: var(--sk-color-text-primary);
+}
+
+.empty {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+  color: var(--sk-color-text-secondary);
+}
+
+@keyframes attributionRise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--sk-dimension-brand-lockup-wordmark-offset-y));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter {
+    animation: none;
+  }
+}

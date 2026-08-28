@@ -1,0 +1,31 @@
+.header {
+  composes: shellHeaderBar from '../../../styles/reflowLayout.module.css';
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--sk-space-3);
+  width: 100%;
+  padding-inline: 0;
+}
+
+.leading,
+.trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  flex-shrink: 0;
+  min-width: 0;
+  line-height: 0;
+}
+
+.leading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.trailing {
+  margin-left: auto;
+}
+
+.leading :global([data-interface-location]) {
+  line-height: var(--sk-line-height-body);
+}

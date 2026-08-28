@@ -1,0 +1,46 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.signal {
+  width: var(--sk-space-6);
+  height: var(--sk-space-6);
+}
+
+.icon {
+  width: var(--sk-space-6);
+  height: var(--sk-space-6);
+  display: block;
+}
+
+.imgTone {
+  width: var(--sk-dimension-icon-size);
+  height: var(--sk-dimension-icon-size);
+}
+
+.imgIcon {
+  width: var(--sk-dimension-icon-size);
+  height: var(--sk-dimension-icon-size);
+  object-fit: contain;
+}
+
+.tone_info .imgIcon {
+  filter: brightness(0) saturate(100%) invert(36%) sepia(86%) saturate(1200%) hue-rotate(196deg) brightness(96%)
+    contrast(95%);
+}
+
+.tone_success .imgIcon {
+  filter: brightness(0) saturate(100%) invert(38%) sepia(72%) saturate(638%) hue-rotate(107deg) brightness(92%)
+    contrast(88%);
+}
+
+.tone_error {
+  color: var(--sk-color-audit-activity-error);
+}
+
+.tone_refresh {
+  color: var(--sk-color-audit-activity-refresh);
+}

@@ -1,0 +1,24 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  margin-bottom: var(--sk-space-6);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-h3);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.mono {
+  font-family: var(--font-family-code);
+  font-size: var(--sk-font-size-small);
+  word-break: break-all;
+}

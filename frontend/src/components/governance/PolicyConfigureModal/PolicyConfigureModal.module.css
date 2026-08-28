@@ -1,0 +1,8 @@
+.error {
+  color: var(--color-status-error);
+  font-size: var(--font-size-small);
+}
+
+.save {
+  composes: primaryAction from '../../../styles/primaryAction.module.css';
+}

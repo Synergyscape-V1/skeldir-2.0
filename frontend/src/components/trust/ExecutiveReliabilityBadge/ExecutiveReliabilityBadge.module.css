@@ -1,0 +1,11 @@
+.icon {
+  width: var(--sk-dimension-icon-sm, 16px);
+  height: var(--sk-dimension-icon-sm, 16px);
+  flex-shrink: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-1);
+}

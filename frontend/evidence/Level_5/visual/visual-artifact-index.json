@@ -1,0 +1,365 @@
+{
+  "generatedAt": "2026-06-28T17:26:44.632Z",
+  "artifacts": [
+    {
+      "file": "diagnostics-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "diagnostics-default"
+    },
+    {
+      "file": "diagnostics-empty-mobile.png",
+      "viewport": "mobile",
+      "specimen": "diagnostics-empty"
+    },
+    {
+      "file": "diagnostics-permission-denied-mobile.png",
+      "viewport": "mobile",
+      "specimen": "diagnostics-permission-denied"
+    },
+    {
+      "file": "audit-ledger-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "audit-ledger-default"
+    },
+    {
+      "file": "audit-ledger-empty-mobile.png",
+      "viewport": "mobile",
+      "specimen": "audit-ledger-empty"
+    },
+    {
+      "file": "audit-ledger-permission-denied-mobile.png",
+      "viewport": "mobile",
+      "specimen": "audit-ledger-permission-denied"
+    },
+    {
+      "file": "artifact-drawer-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "artifact-drawer-default"
+    },
+    {
+      "file": "artifact-unavailable-mobile.png",
+      "viewport": "mobile",
+      "specimen": "artifact-unavailable"
+    },
+    {
+      "file": "artifact-corrupted-mobile.png",
+      "viewport": "mobile",
+      "specimen": "artifact-corrupted"
+    },
+    {
+      "file": "artifact-access-denied-mobile.png",
+      "viewport": "mobile",
+      "specimen": "artifact-access-denied"
+    },
+    {
+      "file": "health-operational-mobile.png",
+      "viewport": "mobile",
+      "specimen": "health-operational"
+    },
+    {
+      "file": "health-confidence-degraded-mobile.png",
+      "viewport": "mobile",
+      "specimen": "health-confidence-degraded"
+    },
+    {
+      "file": "health-api-paused-mobile.png",
+      "viewport": "mobile",
+      "specimen": "health-api-paused"
+    },
+    {
+      "file": "health-integration-attention-mobile.png",
+      "viewport": "mobile",
+      "specimen": "health-integration-attention"
+    },
+    {
+      "file": "health-unknown-mobile.png",
+      "viewport": "mobile",
+      "specimen": "health-unknown"
+    },
+    {
+      "file": "health-fetch-failed-mobile.png",
+      "viewport": "mobile",
+      "specimen": "health-fetch-failed"
+    },
+    {
+      "file": "shell-audit-health-mobile.png",
+      "viewport": "mobile",
+      "specimen": "shell-audit-health"
+    },
+    {
+      "file": "shell-diagnostics-mobile.png",
+      "viewport": "mobile",
+      "specimen": "shell-diagnostics"
+    },
+    {
+      "file": "diagnostics-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "diagnostics-default"
+    },
+    {
+      "file": "diagnostics-empty-tablet.png",
+      "viewport": "tablet",
+      "specimen": "diagnostics-empty"
+    },
+    {
+      "file": "diagnostics-permission-denied-tablet.png",
+      "viewport": "tablet",
+      "specimen": "diagnostics-permission-denied"
+    },
+    {
+      "file": "audit-ledger-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "audit-ledger-default"
+    },
+    {
+      "file": "audit-ledger-empty-tablet.png",
+      "viewport": "tablet",
+      "specimen": "audit-ledger-empty"
+    },
+    {
+      "file": "audit-ledger-permission-denied-tablet.png",
+      "viewport": "tablet",
+      "specimen": "audit-ledger-permission-denied"
+    },
+    {
+      "file": "artifact-drawer-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "artifact-drawer-default"
+    },
+    {
+      "file": "artifact-unavailable-tablet.png",
+      "viewport": "tablet",
+      "specimen": "artifact-unavailable"
+    },
+    {
+      "file": "artifact-corrupted-tablet.png",
+      "viewport": "tablet",
+      "specimen": "artifact-corrupted"
+    },
+    {
+      "file": "artifact-access-denied-tablet.png",
+      "viewport": "tablet",
+      "specimen": "artifact-access-denied"
+    },
+    {
+      "file": "health-operational-tablet.png",
+      "viewport": "tablet",
+      "specimen": "health-operational"
+    },
+    {
+      "file": "health-confidence-degraded-tablet.png",
+      "viewport": "tablet",
+      "specimen": "health-confidence-degraded"
+    },
+    {
+      "file": "health-api-paused-tablet.png",
+      "viewport": "tablet",
+      "specimen": "health-api-paused"
+    },
+    {
+      "file": "health-integration-attention-tablet.png",
+      "viewport": "tablet",
+      "specimen": "health-integration-attention"
+    },
+    {
+      "file": "health-unknown-tablet.png",
+      "viewport": "tablet",
+      "specimen": "health-unknown"
+    },
+    {
+      "file": "health-fetch-failed-tablet.png",
+      "viewport": "tablet",
+      "specimen": "health-fetch-failed"
+    },
+    {
+      "file": "shell-audit-health-tablet.png",
+      "viewport": "tablet",
+      "specimen": "shell-audit-health"
+    },
+    {
+      "file": "shell-diagnostics-tablet.png",
+      "viewport": "tablet",
+      "specimen": "shell-diagnostics"
+    },
+    {
+      "file": "diagnostics-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "diagnostics-default"
+    },
+    {
+      "file": "diagnostics-empty-desktop.png",
+      "viewport": "desktop",
+      "specimen": "diagnostics-empty"
+    },
+    {
+      "file": "diagnostics-permission-denied-desktop.png",
+      "viewport": "desktop",
+      "specimen": "diagnostics-permission-denied"
+    },
+    {
+      "file": "audit-ledger-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "audit-ledger-default"
+    },
+    {
+      "file": "audit-ledger-empty-desktop.png",
+      "viewport": "desktop",
+      "specimen": "audit-ledger-empty"
+    },
+    {
+      "file": "audit-ledger-permission-denied-desktop.png",
+      "viewport": "desktop",
+      "specimen": "audit-ledger-permission-denied"
+    },
+    {
+      "file": "artifact-drawer-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "artifact-drawer-default"
+    },
+    {
+      "file": "artifact-unavailable-desktop.png",
+      "viewport": "desktop",
+      "specimen": "artifact-unavailable"
+    },
+    {
+      "file": "artifact-corrupted-desktop.png",
+      "viewport": "desktop",
+      "specimen": "artifact-corrupted"
+    },
+    {
+      "file": "artifact-access-denied-desktop.png",
+      "viewport": "desktop",
+      "specimen": "artifact-access-denied"
+    },
+    {
+      "file": "health-operational-desktop.png",
+      "viewport": "desktop",
+      "specimen": "health-operational"
+    },
+    {
+      "file": "health-confidence-degraded-desktop.png",
+      "viewport": "desktop",
+      "specimen": "health-confidence-degraded"
+    },
+    {
+      "file": "health-api-paused-desktop.png",
+      "viewport": "desktop",
+      "specimen": "health-api-paused"
+    },
+    {
+      "file": "health-integration-attention-desktop.png",
+      "viewport": "desktop",
+      "specimen": "health-integration-attention"
+    },
+    {
+      "file": "health-unknown-desktop.png",
+      "viewport": "desktop",
+      "specimen": "health-unknown"
+    },
+    {
+      "file": "health-fetch-failed-desktop.png",
+      "viewport": "desktop",
+      "specimen": "health-fetch-failed"
+    },
+    {
+      "file": "shell-audit-health-desktop.png",
+      "viewport": "desktop",
+      "specimen": "shell-audit-health"
+    },
+    {
+      "file": "shell-diagnostics-desktop.png",
+      "viewport": "desktop",
+      "specimen": "shell-diagnostics"
+    },
+    {
+      "file": "diagnostics-default-wide.png",
+      "viewport": "wide",
+      "specimen": "diagnostics-default"
+    },
+    {
+      "file": "diagnostics-empty-wide.png",
+      "viewport": "wide",
+      "specimen": "diagnostics-empty"
+    },
+    {
+      "file": "diagnostics-permission-denied-wide.png",
+      "viewport": "wide",
+      "specimen": "diagnostics-permission-denied"
+    },
+    {
+      "file": "audit-ledger-default-wide.png",
+      "viewport": "wide",
+      "specimen": "audit-ledger-default"
+    },
+    {
+      "file": "audit-ledger-empty-wide.png",
+      "viewport": "wide",
+      "specimen": "audit-ledger-empty"
+    },
+    {
+      "file": "audit-ledger-permission-denied-wide.png",
+      "viewport": "wide",
+      "specimen": "audit-ledger-permission-denied"
+    },
+    {
+      "file": "artifact-drawer-default-wide.png",
+      "viewport": "wide",
+      "specimen": "artifact-drawer-default"
+    },
+    {
+      "file": "artifact-unavailable-wide.png",
+      "viewport": "wide",
+      "specimen": "artifact-unavailable"
+    },
+    {
+      "file": "artifact-corrupted-wide.png",
+      "viewport": "wide",
+      "specimen": "artifact-corrupted"
+    },
+    {
+      "file": "artifact-access-denied-wide.png",
+      "viewport": "wide",
+      "specimen": "artifact-access-denied"
+    },
+    {
+      "file": "health-operational-wide.png",
+      "viewport": "wide",
+      "specimen": "health-operational"
+    },
+    {
+      "file": "health-confidence-degraded-wide.png",
+      "viewport": "wide",
+      "specimen": "health-confidence-degraded"
+    },
+    {
+      "file": "health-api-paused-wide.png",
+      "viewport": "wide",
+      "specimen": "health-api-paused"
+    },
+    {
+      "file": "health-integration-attention-wide.png",
+      "viewport": "wide",
+      "specimen": "health-integration-attention"
+    },
+    {
+      "file": "health-unknown-wide.png",
+      "viewport": "wide",
+      "specimen": "health-unknown"
+    },
+    {
+      "file": "health-fetch-failed-wide.png",
+      "viewport": "wide",
+      "specimen": "health-fetch-failed"
+    },
+    {
+      "file": "shell-audit-health-wide.png",
+      "viewport": "wide",
+      "specimen": "shell-audit-health"
+    },
+    {
+      "file": "shell-diagnostics-wide.png",
+      "viewport": "wide",
+      "specimen": "shell-diagnostics"
+    }
+  ]
+}

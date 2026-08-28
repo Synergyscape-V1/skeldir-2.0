@@ -1,0 +1,14 @@
+.overlayBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  min-height: 12rem;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: var(--sk-space-4);
+  margin-bottom: var(--sk-space-2);
+  border-bottom: var(--sk-dimension-border-width) solid var(--color-border-default);
+}

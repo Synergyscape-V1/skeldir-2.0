@@ -1,0 +1,11 @@
+.you {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+}
+
+.denied {
+  display: block;
+  margin-top: var(--spacing-4);
+  color: var(--color-status-error);
+  font-size: var(--font-size-small);
+}

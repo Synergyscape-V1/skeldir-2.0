@@ -1,0 +1,27 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+}
+
+.pageHeaderStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  font-family: var(--sk-font-family-inter);
+  min-width: 0;
+}
+
+.pageHeaderStack .pageTitle {
+  font-family: var(--sk-font-family-display);
+  font-weight: 400;
+}
+
+.pageSubtitle {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+  line-height: var(--sk-line-height-body);
+  font-family: var(--sk-font-family-inter);
+  max-width: 47.5rem;
+}

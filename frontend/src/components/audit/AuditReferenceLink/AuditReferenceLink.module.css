@@ -1,0 +1,11 @@
+.link {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--sk-font-size-code);
+  line-height: var(--sk-space-5);
+  color: var(--color-text-link, var(--sk-color-trust-probabilistic));
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}

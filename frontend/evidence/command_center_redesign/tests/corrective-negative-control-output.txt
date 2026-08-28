@@ -1,0 +1,13 @@
+﻿
+> skeldir-ui@0.0.0 test
+> vitest run --run src/test/commandCenterCorrectiveAction.harness.test.tsx -t negative control
+
+
+ RUN  v4.1.9 C:/Users/ayewhy/Frontend_4/skeldir-ui
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 12 skipped (14)
+   Start at  14:34:52
+   Duration  4.11s (transform 1.79s, setup 282ms, import 2.27s, tests 6ms, environment 1.36s)
+

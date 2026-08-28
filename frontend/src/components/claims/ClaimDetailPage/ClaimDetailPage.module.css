@@ -1,0 +1,249 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+  padding-bottom: var(--sk-space-8);
+}
+
+/*
+ * Overview DNA card wrapper — border-first, neutral, no elevation/gradient.
+ * Replaces bespoke claim panels with the product-wide surface contract.
+ */
+.cardSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-card);
+  padding: var(--sk-space-6);
+  min-width: 0;
+}
+
+.cardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-3);
+}
+
+.cardTitle {
+  margin: 0;
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  letter-spacing: -0.01em;
+  color: var(--sk-color-text-primary);
+}
+
+.cardSubtitle {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+}
+
+.sectionEnter {
+  animation: claimRise 480ms ease-out both;
+}
+
+.emptyCopy {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+  color: var(--sk-color-text-secondary);
+}
+
+.eventList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+.eventItemConfirmed,
+.eventItemMissing {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--sk-space-3);
+  align-items: start;
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-subtle);
+  border-radius: var(--sk-radius-sm);
+  min-height: var(--sk-dimension-target-min);
+}
+
+.eventMarkerOk,
+.eventMarkerMiss {
+  width: var(--sk-dimension-icon-size-sm);
+  height: var(--sk-dimension-icon-size-sm);
+  margin-top: 0.25rem;
+  flex: 0 0 auto;
+  display: block;
+}
+
+.eventMarkerOk {
+  color: var(--sk-color-status-success);
+}
+
+.eventMarkerMiss {
+  color: var(--sk-color-status-error);
+}
+
+.eventMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  min-width: 0;
+}
+
+.eventLabel {
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--sk-color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.eventMeta {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.matchMatched,
+.matchUnmatched {
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  min-height: var(--sk-dimension-target-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+.matchMatched {
+  color: var(--sk-color-status-success);
+}
+
+.matchUnmatched {
+  color: var(--sk-color-status-error);
+}
+
+.unverifiedSection {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sk-space-4);
+  max-width: 36rem;
+  margin: var(--sk-space-4) 0;
+  padding: var(--sk-space-6);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-card);
+  animation: claimRise 420ms ease-out both;
+}
+
+.platformEyebrow {
+  margin: 0;
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sk-color-text-muted);
+}
+
+.unverifiedTitle {
+  margin: 0;
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-h2);
+  line-height: var(--sk-line-height-h2);
+  font-weight: var(--sk-font-weight-h2);
+  letter-spacing: -0.015em;
+  color: var(--sk-color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.unverifiedMessage {
+  margin: 0;
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+}
+
+.unverifiedSupport {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-secondary);
+}
+
+.excludeButton {
+  composes: primaryAction from '../../../styles/primaryAction.module.css';
+  margin-top: var(--sk-space-2);
+}
+
+.excludeFeedback {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-status-success);
+}
+
+.excludeError {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-status-error);
+}
+
+@keyframes claimRise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--sk-dimension-brand-lockup-wordmark-offset-y));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 767px) {
+  .eventItemConfirmed,
+  .eventItemMissing {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .matchMatched,
+  .matchUnmatched {
+    grid-column: 2;
+  }
+}
+
+.triageAdvance {
+  margin-top: var(--sk-space-6);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.triageAdvance button {
+  min-height: var(--sk-dimension-target-min);
+  min-width: var(--sk-dimension-target-min);
+  padding: 0 var(--sk-space-5);
+  border: none;
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-trust-deterministic, var(--sk-color-trust-deterministic));
+  color: var(--sk-color-bg-card);
+  font-weight: var(--sk-font-weight-body-strong);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sectionEnter,
+  .unverifiedSection {
+    animation: none;
+  }
+}

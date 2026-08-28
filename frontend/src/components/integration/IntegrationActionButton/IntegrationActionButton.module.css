@@ -1,0 +1,35 @@
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-nav-item-height);
+  min-width: var(--sk-dimension-nav-item-height);
+  max-width: 100%;
+  padding: 0 var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-small);
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color 120ms ease-out, transform 120ms ease-out, filter 120ms ease-out;
+}
+
+.actionButton:hover:not(:disabled) {
+  background: var(--sk-color-bg-muted);
+}
+
+.actionButton:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.primary {
+  composes: primaryAction from '../../../styles/primaryAction.module.css';
+}
+

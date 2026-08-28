@@ -1,0 +1,21 @@
+.slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sk-dimension-nav-icon-size);
+  height: var(--sk-dimension-nav-icon-size);
+  flex-shrink: 0;
+}
+
+.icon {
+  width: var(--sk-dimension-nav-icon-size);
+  height: var(--sk-dimension-nav-icon-size);
+  object-fit: contain;
+  opacity: 0.88;
+  filter: grayscale(0.2);
+}
+
+.active .icon {
+  opacity: 1;
+  filter: none;
+}

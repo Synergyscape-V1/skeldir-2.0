@@ -1,0 +1,57 @@
+[
+  {
+    "file": "priority-issues.png",
+    "fixture": "command-center-loaded",
+    "viewport": 1280
+  },
+  {
+    "file": "no-priority.png",
+    "fixture": "command-center-no-priority",
+    "viewport": 1280
+  },
+  {
+    "file": "trust-api-error.png",
+    "fixture": "command-center-trust-api-failed",
+    "viewport": 1280
+  },
+  {
+    "file": "kill-switch.png",
+    "fixture": "command-center-kill-switch",
+    "viewport": 1280
+  },
+  {
+    "file": "loading-delayed.png",
+    "fixture": "command-center-loading-delayed",
+    "viewport": 1280
+  },
+  {
+    "file": "partial-data.png",
+    "fixture": "command-center-partial",
+    "viewport": 1280
+  },
+  {
+    "file": "trend-unavailable.png",
+    "fixture": "command-center-trend-unavailable",
+    "viewport": 1280
+  },
+  {
+    "file": "trend-available.png",
+    "fixture": "command-center-trend-available",
+    "viewport": 1280
+  },
+  {
+    "file": "stale-aggregate.png",
+    "fixture": "command-center-stale",
+    "viewport": 1280
+  },
+  {
+    "file": "health-degraded.png",
+    "fixture": "command-center-health-degraded",
+    "viewport": 1280
+  },
+  {
+    "file": "integration-attention.png",
+    "fixture": "command-center-integration-attention",
+    "viewport": 1280
+  }
+]

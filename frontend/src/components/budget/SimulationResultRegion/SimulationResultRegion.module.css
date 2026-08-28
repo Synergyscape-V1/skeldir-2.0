@@ -1,0 +1,63 @@
+.region {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--sk-space-6);
+
+  width: 100%;
+
+  min-width: 0;
+
+}
+
+
+
+.regionTitle {
+
+  margin: 0;
+
+  font-size: var(--sk-font-size-h2);
+
+  line-height: var(--sk-line-height-h2);
+
+  font-weight: var(--sk-font-weight-h2);
+
+  color: var(--sk-color-text-primary);
+
+}
+
+
+
+.staleBanner {
+
+  padding: var(--sk-space-3) var(--sk-space-4);
+
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-warning);
+
+  border-radius: var(--sk-radius-sm);
+
+  background: color-mix(in srgb, var(--sk-color-status-warning) 8%, white);
+
+  color: var(--sk-color-text-primary);
+
+  font-size: var(--sk-font-size-body);
+
+}
+
+
+
+.outputStack {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--sk-space-4);
+
+  min-width: 0;
+
+}
+
+

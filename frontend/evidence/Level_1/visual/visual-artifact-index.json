@@ -1,0 +1,305 @@
+{
+  "generatedAt": "2026-06-27T16:39:03.283Z",
+  "artifacts": [
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "login-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-session-expired-mobile.png",
+      "viewport": "mobile",
+      "specimen": "login-session-expired"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "signup-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-invalid-credentials-mobile.png",
+      "viewport": "mobile",
+      "specimen": "login-invalid-credentials"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-network-failure-mobile.png",
+      "viewport": "mobile",
+      "specimen": "login-network-failure"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-oauth-pending-mobile.png",
+      "viewport": "mobile",
+      "specimen": "login-oauth-pending"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-oauth-error-mobile.png",
+      "viewport": "mobile",
+      "specimen": "login-oauth-error"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-unsafe-redirect-blocked-mobile.png",
+      "viewport": "mobile",
+      "specimen": "login-unsafe-redirect-blocked"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-invalid-business-email-mobile.png",
+      "viewport": "mobile",
+      "specimen": "signup-invalid-business-email"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-already-exists-mobile.png",
+      "viewport": "mobile",
+      "specimen": "signup-tenant-already-exists"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-creation-pending-mobile.png",
+      "viewport": "mobile",
+      "specimen": "signup-tenant-creation-pending"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-creation-failed-mobile.png",
+      "viewport": "mobile",
+      "specimen": "signup-tenant-creation-failed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-post-signup-handoff-mobile.png",
+      "viewport": "mobile",
+      "specimen": "signup-post-signup-handoff"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\oauth-button-states-mobile.png",
+      "viewport": "mobile",
+      "specimen": "oauth-button-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\business-email-input-states-mobile.png",
+      "viewport": "mobile",
+      "specimen": "business-email-input-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "login-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-session-expired-tablet.png",
+      "viewport": "tablet",
+      "specimen": "login-session-expired"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "signup-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-invalid-credentials-tablet.png",
+      "viewport": "tablet",
+      "specimen": "login-invalid-credentials"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-network-failure-tablet.png",
+      "viewport": "tablet",
+      "specimen": "login-network-failure"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-oauth-pending-tablet.png",
+      "viewport": "tablet",
+      "specimen": "login-oauth-pending"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-oauth-error-tablet.png",
+      "viewport": "tablet",
+      "specimen": "login-oauth-error"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-unsafe-redirect-blocked-tablet.png",
+      "viewport": "tablet",
+      "specimen": "login-unsafe-redirect-blocked"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-invalid-business-email-tablet.png",
+      "viewport": "tablet",
+      "specimen": "signup-invalid-business-email"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-already-exists-tablet.png",
+      "viewport": "tablet",
+      "specimen": "signup-tenant-already-exists"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-creation-pending-tablet.png",
+      "viewport": "tablet",
+      "specimen": "signup-tenant-creation-pending"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-creation-failed-tablet.png",
+      "viewport": "tablet",
+      "specimen": "signup-tenant-creation-failed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-post-signup-handoff-tablet.png",
+      "viewport": "tablet",
+      "specimen": "signup-post-signup-handoff"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\oauth-button-states-tablet.png",
+      "viewport": "tablet",
+      "specimen": "oauth-button-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\business-email-input-states-tablet.png",
+      "viewport": "tablet",
+      "specimen": "business-email-input-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "login-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-session-expired-desktop.png",
+      "viewport": "desktop",
+      "specimen": "login-session-expired"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "signup-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-invalid-credentials-desktop.png",
+      "viewport": "desktop",
+      "specimen": "login-invalid-credentials"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-network-failure-desktop.png",
+      "viewport": "desktop",
+      "specimen": "login-network-failure"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-oauth-pending-desktop.png",
+      "viewport": "desktop",
+      "specimen": "login-oauth-pending"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-oauth-error-desktop.png",
+      "viewport": "desktop",
+      "specimen": "login-oauth-error"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-unsafe-redirect-blocked-desktop.png",
+      "viewport": "desktop",
+      "specimen": "login-unsafe-redirect-blocked"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-invalid-business-email-desktop.png",
+      "viewport": "desktop",
+      "specimen": "signup-invalid-business-email"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-already-exists-desktop.png",
+      "viewport": "desktop",
+      "specimen": "signup-tenant-already-exists"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-creation-pending-desktop.png",
+      "viewport": "desktop",
+      "specimen": "signup-tenant-creation-pending"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-creation-failed-desktop.png",
+      "viewport": "desktop",
+      "specimen": "signup-tenant-creation-failed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-post-signup-handoff-desktop.png",
+      "viewport": "desktop",
+      "specimen": "signup-post-signup-handoff"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\oauth-button-states-desktop.png",
+      "viewport": "desktop",
+      "specimen": "oauth-button-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\business-email-input-states-desktop.png",
+      "viewport": "desktop",
+      "specimen": "business-email-input-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-default-wide.png",
+      "viewport": "wide",
+      "specimen": "login-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-session-expired-wide.png",
+      "viewport": "wide",
+      "specimen": "login-session-expired"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-default-wide.png",
+      "viewport": "wide",
+      "specimen": "signup-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-invalid-credentials-wide.png",
+      "viewport": "wide",
+      "specimen": "login-invalid-credentials"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-network-failure-wide.png",
+      "viewport": "wide",
+      "specimen": "login-network-failure"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-oauth-pending-wide.png",
+      "viewport": "wide",
+      "specimen": "login-oauth-pending"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-oauth-error-wide.png",
+      "viewport": "wide",
+      "specimen": "login-oauth-error"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\login-unsafe-redirect-blocked-wide.png",
+      "viewport": "wide",
+      "specimen": "login-unsafe-redirect-blocked"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-invalid-business-email-wide.png",
+      "viewport": "wide",
+      "specimen": "signup-invalid-business-email"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-already-exists-wide.png",
+      "viewport": "wide",
+      "specimen": "signup-tenant-already-exists"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-creation-pending-wide.png",
+      "viewport": "wide",
+      "specimen": "signup-tenant-creation-pending"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-tenant-creation-failed-wide.png",
+      "viewport": "wide",
+      "specimen": "signup-tenant-creation-failed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\signup-post-signup-handoff-wide.png",
+      "viewport": "wide",
+      "specimen": "signup-post-signup-handoff"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\oauth-button-states-wide.png",
+      "viewport": "wide",
+      "specimen": "oauth-button-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_1\\visual\\business-email-input-states-wide.png",
+      "viewport": "wide",
+      "specimen": "business-email-input-states"
+    }
+  ]
+}

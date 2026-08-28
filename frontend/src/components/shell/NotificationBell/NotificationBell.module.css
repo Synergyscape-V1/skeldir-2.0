@@ -1,0 +1,63 @@
+.bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sk-dimension-target-min);
+  height: var(--sk-dimension-target-min);
+  padding: 0;
+  border: var(--sk-dimension-border-width) solid transparent;
+  border-radius: var(--sk-radius-sm);
+  background: transparent;
+  color: var(--sk-color-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--sk-motion-button-hover), color var(--sk-motion-button-hover);
+}
+
+.bell:hover {
+  background: var(--sk-color-bg-muted);
+  color: var(--sk-color-text-primary);
+}
+
+.bellBrand {
+  width: 2rem;
+  height: 2rem;
+}
+
+.bellBrand .icon {
+  width: 1.1875rem;
+  height: 1.1875rem;
+}
+
+.bellBrand .badge {
+  top: 0;
+  right: 0;
+  bottom: auto;
+  transform: translate(28%, -32%);
+  min-width: 0.875rem;
+  height: 0.875rem;
+  padding: 0 0.1875rem;
+  font-size: var(--sk-font-size-micro);
+  line-height: 0.875rem;
+}
+
+.icon {
+  display: block;
+}
+
+.badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: translate(28%, -32%);
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 var(--sk-space-1);
+  border-radius: var(--sk-radius-pill);
+  background: color-mix(in srgb, var(--sk-color-status-info) 12%, transparent);
+  color: color-mix(in srgb, var(--sk-color-status-info) 55%, transparent);
+  font-size: 0.625rem;
+  font-weight: var(--sk-font-weight-small);
+  line-height: 1rem;
+  text-align: center;
+}

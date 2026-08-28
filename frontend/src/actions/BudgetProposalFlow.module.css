@@ -1,0 +1,56 @@
+.preview {
+  margin-bottom: var(--spacing-16);
+  padding: var(--spacing-16);
+  border-radius: var(--radius-card);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  background: var(--color-bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+.previewTitle {
+  margin: 0;
+  font-size: var(--font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--color-text-primary);
+}
+
+.previewFacts {
+  margin: 0;
+}
+
+.previewFact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.previewFact dt {
+  margin: 0;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--color-text-secondary);
+}
+
+.previewFact dd {
+  margin: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-8);
+  font-size: var(--font-size-h2);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.currencyMeta {
+  font-size: var(--font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--color-text-muted);
+  line-height: var(--sk-line-height-small);
+}

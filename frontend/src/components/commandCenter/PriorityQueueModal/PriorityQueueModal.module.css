@@ -1,0 +1,116 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  min-width: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-16) var(--spacing-24);
+  align-items: start;
+  padding: var(--spacing-24);
+  border: var(--sk-dimension-border-width) solid var(--color-border-subtle);
+  border-radius: 0;
+  background: var(--color-bg-page);
+}
+
+.rowResolved {
+  opacity: 0.7;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  min-width: 0;
+}
+
+.pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-8);
+}
+
+.title {
+  font-size: var(--font-size-body);
+  line-height: 1.4;
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--color-text-primary);
+}
+
+.explanation {
+  margin: 0;
+  font-size: var(--font-size-small);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  max-width: 42rem;
+}
+
+.action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 9.5rem;
+  padding-top: var(--spacing-4);
+}
+
+.actionLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--sk-dimension-nav-item-height);
+  min-width: var(--sk-dimension-target-min);
+  padding: 0 var(--spacing-16);
+  border-radius: var(--radius-button, var(--sk-space-2));
+  background: var(--color-trust-deterministic, var(--sk-color-trust-deterministic));
+  color: var(--color-bg-card);
+  text-decoration: none;
+  font-size: var(--font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  white-space: nowrap;
+}
+
+.approved {
+  color: var(--color-status-success);
+  font-size: var(--font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  white-space: nowrap;
+}
+
+.toast {
+  margin: 0;
+  padding: var(--spacing-12) var(--spacing-16);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-page);
+  border: var(--sk-dimension-border-width) solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-small);
+}
+
+@media (max-width: 767px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .action {
+    grid-column: 1 / -1;
+    min-width: 0;
+    justify-content: stretch;
+    padding-top: 0;
+  }
+
+  .actionLink {
+    width: 100%;
+  }
+}

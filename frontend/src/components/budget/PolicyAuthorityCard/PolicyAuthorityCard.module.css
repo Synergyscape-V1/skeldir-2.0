@@ -1,0 +1,37 @@
+.panel {
+
+  composes: elevatedPanel from '../budgetPanel.module.css';
+
+}
+
+
+
+.headerRow {
+
+  composes: governanceHeaderRow from '../budgetPanel.module.css';
+
+}
+
+
+
+.title {
+
+  composes: panelTitle from '../budgetPanel.module.css';
+
+}
+
+
+
+.body {
+
+  margin: 0;
+
+  font-size: var(--sk-font-size-body);
+
+  line-height: var(--sk-line-height-body);
+
+  color: var(--sk-color-text-secondary);
+
+}
+
+

@@ -1,0 +1,283 @@
+[
+  {
+    "step": 1,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "#shell-main-content",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 2,
+    "active": {
+      "tag": "BUTTON",
+      "role": null,
+      "ariaLabel": "Trust systems operational. View system health audit events",
+      "href": null,
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 3,
+    "active": {
+      "tag": "BUTTON",
+      "role": null,
+      "ariaLabel": "Notifications",
+      "href": null,
+      "data": {
+        "notification": "true",
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 4,
+    "active": {
+      "tag": "BUTTON",
+      "role": null,
+      "ariaLabel": "Open account menu",
+      "href": null,
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 5,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 6,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/claims",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 7,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/trust",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 8,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/channels",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 9,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/benchmarks",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 10,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/budget",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 11,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/exceptions",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 12,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/audit",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 13,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/agents",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 14,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/integrations",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 15,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/settings/team",
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 16,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/benchmarks",
+      "data": {
+        "notification": null,
+        "primary": "review_top_issue",
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 17,
+    "active": {
+      "tag": "BUTTON",
+      "role": null,
+      "ariaLabel": "Deterministic. Source authority: deterministic",
+      "href": null,
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 18,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/claims",
+      "data": {
+        "notification": null,
+        "drilldown": "verified_revenue",
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 19,
+    "active": {
+      "tag": "BUTTON",
+      "role": null,
+      "ariaLabel": "Deterministic. Source authority: deterministic",
+      "href": null,
+      "data": {
+        "notification": null,
+        "drilldown": null,
+        "audit": null
+      }
+    }
+  },
+  {
+    "step": 20,
+    "active": {
+      "tag": "A",
+      "role": null,
+      "ariaLabel": null,
+      "href": "/app/claims",
+      "data": {
+        "notification": null,
+        "drilldown": "claims_reconciled",
+        "audit": null
+      }
+    }
+  }
+]

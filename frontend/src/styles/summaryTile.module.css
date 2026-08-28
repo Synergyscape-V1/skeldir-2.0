@@ -1,0 +1,125 @@
+/**
+ * System summary-tile DNA — Overview Trust State Summary is the reference iteration.
+ * Compose these classes for every supervisory metric tile across the product.
+ */
+
+.section {
+  display: block;
+  min-width: 0;
+}
+
+.grid {
+  composes: tileGrid from './responsiveGrid.module.css';
+}
+
+.card {
+  composes: tileCard from './responsiveGrid.module.css';
+  background: var(--color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  padding: var(--spacing-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  flex: 1;
+  min-width: 0;
+}
+
+.topRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+}
+
+.label {
+  min-width: 0;
+  font-size: var(--font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-body);
+  color: var(--color-text-primary);
+}
+
+.chip {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.valueWarning {
+  color: var(--color-status-warning);
+}
+
+.valueError {
+  color: var(--color-status-error);
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--color-text-secondary);
+}
+
+.metaSuccess {
+  color: var(--color-status-success);
+}
+
+.metaError {
+  color: var(--color-status-error);
+}
+
+.metaWarning {
+  color: var(--color-status-warning);
+}
+
+.metaIcon {
+  width: var(--sk-font-size-h3);
+  height: var(--sk-font-size-h3);
+  flex-shrink: 0;
+}
+
+.actionFooter {
+  margin-top: auto;
+  padding-top: var(--spacing-12);
+  border-top: 1px solid rgba(226, 232, 240, 0.55);
+}
+
+.drillDown {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  font-size: var(--font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-link-primary);
+  text-decoration: none;
+}
+
+.drillDown:hover {
+  color: var(--sk-color-text-sidebar-active);
+  text-decoration: underline;
+}
+
+.drillDownChevron {
+  width: var(--sk-font-size-h3);
+  height: var(--sk-font-size-h3);
+  flex-shrink: 0;
+}

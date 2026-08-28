@@ -1,0 +1,11 @@
+{
+  "recentTrustEnvelopes": {
+    "marker": "data-recent-trust-envelopes",
+    "envelopeLink": "data-envelope-reconstruction-link"
+  },
+  "auditActivity": {
+    "marker": "data-audit-activity-strip",
+    "sourceLabel": "data-audit-source-label",
+    "chip": "data-audit-chip"
+  }
+}

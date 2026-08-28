@@ -1,0 +1,80 @@
+.card {
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+  padding: var(--sk-space-4);
+  background: var(--sk-color-bg-card);
+  margin-bottom: var(--sk-space-3);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sk-space-3);
+  margin-bottom: var(--sk-space-3);
+}
+
+.selection {
+  flex-shrink: 0;
+}
+
+.identity {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: var(--sk-font-weight-h3);
+  font-size: var(--sk-font-size-body);
+  word-break: break-word;
+}
+
+.status {
+  flex-shrink: 0;
+}
+
+.primaryList,
+.secondaryList {
+  margin: 0;
+  display: grid;
+  gap: var(--sk-space-2);
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) 1fr;
+  gap: var(--sk-space-2);
+  align-items: start;
+}
+
+.field dt {
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+  margin: 0;
+}
+
+.field dd {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+}
+
+.disclosure {
+  margin-top: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+  width: 100%;
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  font-size: var(--sk-font-size-body);
+  cursor: pointer;
+}
+
+.secondaryList {
+  margin-top: var(--sk-space-3);
+  padding-top: var(--sk-space-3);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+@media (max-width: 767px) {
+  .card {
+    display: block;
+  }
+}

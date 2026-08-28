@@ -1,0 +1,12 @@
+.nav {
+  padding: var(--sk-space-2) 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

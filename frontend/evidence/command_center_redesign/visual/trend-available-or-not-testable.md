@@ -1,0 +1,1 @@
+# Trend available in default loaded fixture (chart or unavailable panel present in DOM).

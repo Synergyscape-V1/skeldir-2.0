@@ -1,0 +1,366 @@
+import type { ExceptionCategory, ExceptionQueueRowDTO } from '../ledger/types';
+import type { PolicyAuthorityState } from '../lib/types';
+
+const FUTURE_DETAIL = 'detail_blocked_level_8' as const;
+const FUTURE_ACTION = 'action_blocked_level_9' as const;
+
+function minutesAgo(minutes: number): string {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
+}
+
+function hoursAgo(hours: number): string {
+  return new Date(Date.now() - hours * 3_600_000).toISOString();
+}
+
+interface ExceptionSeed {
+  category: ExceptionCategory;
+  severity: ExceptionQueueRowDTO['severity'];
+  summary: string;
+  affectedObjectLabel: string;
+  lastAuditEvent: string;
+  policyAuthority: PolicyAuthorityState;
+  actionKind: ExceptionQueueRowDTO['actionKind'];
+  sourceObjectType: NonNullable<ExceptionQueueRowDTO['sourceObjectType']>;
+  subject: string;
+  source: string;
+  createdAt: string;
+}
+
+const CANONICAL_EXCEPTION_SEEDS: ExceptionSeed[] = [
+  {
+    category: 'policy_approval_required',
+    severity: 'critical',
+    summary: 'Spend reallocation exceeds tenant approval threshold.',
+    affectedObjectLabel: 'Campaign Group / Q3 Paid Social',
+    lastAuditEvent: 'Budget policy check',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'campaign_group',
+    subject: 'campaign_group_q3_paid_social',
+    source: 'budget_simulation',
+    createdAt: minutesAgo(14),
+  },
+  {
+    category: 'signature_verification_failure',
+    severity: 'critical',
+    summary: 'Evidence bundle signature mismatch on attribution export.',
+    affectedObjectLabel: 'TrustEnvelope TE-22194',
+    lastAuditEvent: 'Signature verify',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'trust_envelope',
+    subject: 'TE-22194',
+    source: 'trust_export',
+    createdAt: minutesAgo(22),
+  },
+  {
+    category: 'integration_repair_needed',
+    severity: 'warning',
+    summary: 'Meta Ads token expired for channel sync.',
+    affectedObjectLabel: 'Channel / Meta Paid Social',
+    lastAuditEvent: 'Connector refresh',
+    policyAuthority: 'blocked',
+    actionKind: 'open',
+    sourceObjectType: 'channel',
+    subject: 'meta_paid_social',
+    source: 'meta_ads',
+    createdAt: minutesAgo(41),
+  },
+  {
+    category: 'benchmark_source_transition',
+    severity: 'info',
+    summary: 'Benchmark rolled from tenant-longitudinal to exact bucket.',
+    affectedObjectLabel: 'Segment / D2C Apparel',
+    lastAuditEvent: 'Benchmark refresh',
+    policyAuthority: 'simulation_only',
+    actionKind: 'review',
+    sourceObjectType: 'segment',
+    subject: 'segment_d2c_apparel',
+    source: 'benchmark_engine',
+    createdAt: hoursAgo(1),
+  },
+  {
+    category: 'agent_access_denied',
+    severity: 'warning',
+    summary: 'Agent token missing audit:read scope for export.',
+    affectedObjectLabel: 'Agent / reporting-bot',
+    lastAuditEvent: 'Scope check',
+    policyAuthority: 'proposal_required',
+    actionKind: 'review',
+    sourceObjectType: 'agent',
+    subject: 'reporting-bot',
+    source: 'agent_gateway',
+    createdAt: hoursAgo(2),
+  },
+  {
+    category: 'discrepancy_review',
+    severity: 'warning',
+    summary: 'Commerce-verified revenue differs from Meta claim by 14.2%.',
+    affectedObjectLabel: 'Claim CLM-88421',
+    lastAuditEvent: 'Match verdict',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'claim',
+    subject: 'CLM-88421',
+    source: 'meta_ads',
+    createdAt: hoursAgo(3),
+  },
+  {
+    category: 'policy_approval_required',
+    severity: 'warning',
+    summary: 'Budget proposal exceeds daily spend guardrail.',
+    affectedObjectLabel: 'Campaign Group / Search Brand',
+    lastAuditEvent: 'Budget policy check',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'campaign_group',
+    subject: 'campaign_group_search_brand',
+    source: 'budget_simulation',
+    createdAt: hoursAgo(4),
+  },
+  {
+    category: 'policy_approval_required',
+    severity: 'info',
+    summary: 'Google claim exceeds verified commerce revenue by 6.1%.',
+    affectedObjectLabel: 'Claim CLM-88302',
+    lastAuditEvent: 'Match verdict',
+    policyAuthority: 'proposal_required',
+    actionKind: 'review',
+    sourceObjectType: 'claim',
+    subject: 'CLM-88302',
+    source: 'google_ads',
+    createdAt: hoursAgo(5),
+  },
+  {
+    category: 'signature_verification_failure',
+    severity: 'critical',
+    summary: 'Audit artifact signature failed JWKS verification.',
+    affectedObjectLabel: 'TrustEnvelope TE-21988',
+    lastAuditEvent: 'Signature verify',
+    policyAuthority: 'blocked',
+    actionKind: 'review',
+    sourceObjectType: 'trust_envelope',
+    subject: 'TE-21988',
+    source: 'audit_export',
+    createdAt: hoursAgo(6),
+  },
+  {
+    category: 'integration_repair_needed',
+    severity: 'warning',
+    summary: 'Shopify webhook secret rotation requires operator repair.',
+    affectedObjectLabel: 'Channel / Shopify Commerce',
+    lastAuditEvent: 'Connector refresh',
+    policyAuthority: 'blocked',
+    actionKind: 'open',
+    sourceObjectType: 'channel',
+    subject: 'shopify_commerce',
+    source: 'shopify',
+    createdAt: hoursAgo(7),
+  },
+  {
+    category: 'benchmark_source_transition',
+    severity: 'info',
+    summary: 'Benchmark estimator moved from rolled-up to exact bucket.',
+    affectedObjectLabel: 'Segment / US Footwear',
+    lastAuditEvent: 'Benchmark refresh',
+    policyAuthority: 'simulation_only',
+    actionKind: 'review',
+    sourceObjectType: 'segment',
+    subject: 'segment_us_footwear',
+    source: 'benchmark_engine',
+    createdAt: hoursAgo(8),
+  },
+  {
+    category: 'agent_access_denied',
+    severity: 'info',
+    summary: 'Agent client attempted reserved propose_action scope.',
+    affectedObjectLabel: 'Agent / budget-optimizer',
+    lastAuditEvent: 'Scope check',
+    policyAuthority: 'blocked',
+    actionKind: 'review',
+    sourceObjectType: 'agent',
+    subject: 'budget-optimizer',
+    source: 'agent_gateway',
+    createdAt: hoursAgo(9),
+  },
+  {
+    category: 'policy_approval_required',
+    severity: 'critical',
+    summary: 'Exception suppression request requires tenant owner approval.',
+    affectedObjectLabel: 'Claim CLM-88110',
+    lastAuditEvent: 'Policy review',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'claim',
+    subject: 'CLM-88110',
+    source: 'exception_queue',
+    createdAt: hoursAgo(10),
+  },
+  {
+    category: 'discrepancy_review',
+    severity: 'warning',
+    summary: 'TikTok claim diverges from Stripe-verified revenue by 9.8%.',
+    affectedObjectLabel: 'Claim CLM-88044',
+    lastAuditEvent: 'Match verdict',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'claim',
+    subject: 'CLM-88044',
+    source: 'tiktok_ads',
+    createdAt: hoursAgo(11),
+  },
+  {
+    category: 'integration_repair_needed',
+    severity: 'critical',
+    summary: 'PayPal ingress paused after repeated signature failures.',
+    affectedObjectLabel: 'Channel / PayPal Commerce',
+    lastAuditEvent: 'Connector refresh',
+    policyAuthority: 'blocked',
+    actionKind: 'open',
+    sourceObjectType: 'channel',
+    subject: 'paypal_commerce',
+    source: 'paypal',
+    createdAt: hoursAgo(12),
+  },
+  {
+    category: 'signature_verification_failure',
+    severity: 'warning',
+    summary: 'Exported claim report signature hash mismatch detected.',
+    affectedObjectLabel: 'TrustEnvelope TE-21801',
+    lastAuditEvent: 'Signature verify',
+    policyAuthority: 'proposal_required',
+    actionKind: 'review',
+    sourceObjectType: 'trust_envelope',
+    subject: 'TE-21801',
+    source: 'claim_export',
+    createdAt: hoursAgo(13),
+  },
+  {
+    category: 'benchmark_source_transition',
+    severity: 'warning',
+    summary: 'Benchmark source transition suppressed action-ready context.',
+    affectedObjectLabel: 'Segment / EU Accessories',
+    lastAuditEvent: 'Benchmark refresh',
+    policyAuthority: 'simulation_only',
+    actionKind: 'review',
+    sourceObjectType: 'segment',
+    subject: 'segment_eu_accessories',
+    source: 'benchmark_engine',
+    createdAt: hoursAgo(14),
+  },
+  {
+    category: 'discrepancy_review',
+    severity: 'critical',
+    summary: 'LinkedIn claim exceeds verified revenue beyond tolerance.',
+    affectedObjectLabel: 'Claim CLM-87912',
+    lastAuditEvent: 'Match verdict',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'claim',
+    subject: 'CLM-87912',
+    source: 'linkedin_ads',
+    createdAt: hoursAgo(15),
+  },
+  {
+    category: 'discrepancy_review',
+    severity: 'warning',
+    summary: 'Simulation output requires approval before proposal export.',
+    affectedObjectLabel: 'Campaign Group / Retargeting',
+    lastAuditEvent: 'Budget policy check',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'campaign_group',
+    subject: 'campaign_group_retargeting',
+    source: 'budget_simulation',
+    createdAt: hoursAgo(16),
+  },
+  {
+    category: 'integration_repair_needed',
+    severity: 'info',
+    summary: 'WooCommerce webhook verification key requires connector repair.',
+    affectedObjectLabel: 'Channel / WooCommerce',
+    lastAuditEvent: 'Connector refresh',
+    policyAuthority: 'blocked',
+    actionKind: 'open',
+    sourceObjectType: 'channel',
+    subject: 'woocommerce',
+    source: 'woocommerce',
+    createdAt: hoursAgo(17),
+  },
+  {
+    category: 'discrepancy_review',
+    severity: 'info',
+    summary: 'Email claim under-reports verified revenue by 3.4%.',
+    affectedObjectLabel: 'Claim CLM-87801',
+    lastAuditEvent: 'Match verdict',
+    policyAuthority: 'simulation_only',
+    actionKind: 'review',
+    sourceObjectType: 'claim',
+    subject: 'CLM-87801',
+    source: 'email',
+    createdAt: hoursAgo(18),
+  },
+  {
+    category: 'discrepancy_review',
+    severity: 'info',
+    summary: 'Historical prior replaced by tenant-longitudinal benchmark.',
+    affectedObjectLabel: 'Segment / Subscription Box',
+    lastAuditEvent: 'Benchmark refresh',
+    policyAuthority: 'simulation_only',
+    actionKind: 'review',
+    sourceObjectType: 'segment',
+    subject: 'segment_subscription_box',
+    source: 'benchmark_engine',
+    createdAt: hoursAgo(19),
+  },
+  {
+    category: 'policy_approval_required',
+    severity: 'critical',
+    summary: 'Cross-channel budget shift requires explicit approval.',
+    affectedObjectLabel: 'Campaign Group / Performance Max',
+    lastAuditEvent: 'Budget policy check',
+    policyAuthority: 'approval_required',
+    actionKind: 'review',
+    sourceObjectType: 'campaign_group',
+    subject: 'campaign_group_pmax',
+    source: 'budget_simulation',
+    createdAt: hoursAgo(20),
+  },
+  {
+    category: 'integration_repair_needed',
+    severity: 'warning',
+    summary: 'Stripe payout webhook delivery failing tenant verification.',
+    affectedObjectLabel: 'Channel / Stripe Commerce',
+    lastAuditEvent: 'Connector refresh',
+    policyAuthority: 'blocked',
+    actionKind: 'open',
+    sourceObjectType: 'channel',
+    subject: 'stripe_commerce',
+    source: 'stripe',
+    createdAt: hoursAgo(21),
+  },
+];
+
+export function buildCanonicalExceptionFixtures(): ExceptionQueueRowDTO[] {
+  return CANONICAL_EXCEPTION_SEEDS.map((seed, index) => ({
+    exceptionId: `exc_${String(index + 1).padStart(4, '0')}`,
+    ...seed,
+    auditReference: `aud_exc_${String(index + 1).padStart(4, '0')}`,
+    status: 'open',
+    futureDetailAffordance: FUTURE_DETAIL,
+    futureActionAffordance: FUTURE_ACTION,
+  }));
+}
+
+export const CANONICAL_EXCEPTION_FIXTURES = buildCanonicalExceptionFixtures();
+
+function isoDateUtc(daysAgo: number): string {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Rolling window so relative fixture timestamps always remain in-range. */
+export const EXCEPTION_DEFAULT_DATE_FROM = isoDateUtc(30);
+export const EXCEPTION_DEFAULT_DATE_TO = isoDateUtc(0);

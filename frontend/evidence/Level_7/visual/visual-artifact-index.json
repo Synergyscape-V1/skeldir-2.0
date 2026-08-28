@@ -1,0 +1,162 @@
+[
+  {
+    "file": "claims-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "claims-loaded"
+  },
+  {
+    "file": "claims-empty-mobile.png",
+    "viewport": "mobile",
+    "specimen": "claims-empty"
+  },
+  {
+    "file": "trust-index-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "trust-index-loaded"
+  },
+  {
+    "file": "channels-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "channels-loaded"
+  },
+  {
+    "file": "benchmarks-unavailable-mobile.png",
+    "viewport": "mobile",
+    "specimen": "benchmarks-unavailable"
+  },
+  {
+    "file": "exceptions-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "exceptions-loaded"
+  },
+  {
+    "file": "budget-sparse-blocked-mobile.png",
+    "viewport": "mobile",
+    "specimen": "budget-sparse-blocked"
+  },
+  {
+    "file": "future-detail-blocked-mobile.png",
+    "viewport": "mobile",
+    "specimen": "future-detail-blocked"
+  },
+  {
+    "file": "claims-loaded-tablet.png",
+    "viewport": "tablet",
+    "specimen": "claims-loaded"
+  },
+  {
+    "file": "claims-empty-tablet.png",
+    "viewport": "tablet",
+    "specimen": "claims-empty"
+  },
+  {
+    "file": "trust-index-loaded-tablet.png",
+    "viewport": "tablet",
+    "specimen": "trust-index-loaded"
+  },
+  {
+    "file": "channels-loaded-tablet.png",
+    "viewport": "tablet",
+    "specimen": "channels-loaded"
+  },
+  {
+    "file": "benchmarks-unavailable-tablet.png",
+    "viewport": "tablet",
+    "specimen": "benchmarks-unavailable"
+  },
+  {
+    "file": "exceptions-loaded-tablet.png",
+    "viewport": "tablet",
+    "specimen": "exceptions-loaded"
+  },
+  {
+    "file": "budget-sparse-blocked-tablet.png",
+    "viewport": "tablet",
+    "specimen": "budget-sparse-blocked"
+  },
+  {
+    "file": "future-detail-blocked-tablet.png",
+    "viewport": "tablet",
+    "specimen": "future-detail-blocked"
+  },
+  {
+    "file": "claims-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "claims-loaded"
+  },
+  {
+    "file": "claims-empty-desktop.png",
+    "viewport": "desktop",
+    "specimen": "claims-empty"
+  },
+  {
+    "file": "trust-index-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "trust-index-loaded"
+  },
+  {
+    "file": "channels-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "channels-loaded"
+  },
+  {
+    "file": "benchmarks-unavailable-desktop.png",
+    "viewport": "desktop",
+    "specimen": "benchmarks-unavailable"
+  },
+  {
+    "file": "exceptions-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "exceptions-loaded"
+  },
+  {
+    "file": "budget-sparse-blocked-desktop.png",
+    "viewport": "desktop",
+    "specimen": "budget-sparse-blocked"
+  },
+  {
+    "file": "future-detail-blocked-desktop.png",
+    "viewport": "desktop",
+    "specimen": "future-detail-blocked"
+  },
+  {
+    "file": "claims-loaded-wide.png",
+    "viewport": "wide",
+    "specimen": "claims-loaded"
+  },
+  {
+    "file": "claims-empty-wide.png",
+    "viewport": "wide",
+    "specimen": "claims-empty"
+  },
+  {
+    "file": "trust-index-loaded-wide.png",
+    "viewport": "wide",
+    "specimen": "trust-index-loaded"
+  },
+  {
+    "file": "channels-loaded-wide.png",
+    "viewport": "wide",
+    "specimen": "channels-loaded"
+  },
+  {
+    "file": "benchmarks-unavailable-wide.png",
+    "viewport": "wide",
+    "specimen": "benchmarks-unavailable"
+  },
+  {
+    "file": "exceptions-loaded-wide.png",
+    "viewport": "wide",
+    "specimen": "exceptions-loaded"
+  },
+  {
+    "file": "budget-sparse-blocked-wide.png",
+    "viewport": "wide",
+    "specimen": "budget-sparse-blocked"
+  },
+  {
+    "file": "future-detail-blocked-wide.png",
+    "viewport": "wide",
+    "specimen": "future-detail-blocked"
+  }
+]

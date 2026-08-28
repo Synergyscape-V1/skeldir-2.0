@@ -1,0 +1,116 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  z-index: 1000;
+}
+
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(calc(100% - var(--sk-space-8)), var(--sk-dimension-modal-width));
+  max-height: calc(100vh - var(--sk-space-16));
+  background: var(--sk-color-bg-card);
+  border-radius: var(--sk-radius-md);
+  box-shadow: var(--sk-elevation-modal);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.wide {
+  width: min(calc(100% - var(--sk-space-8)), 960px);
+}
+
+.animate {
+  animation: modalIn var(--sk-motion-modal-open);
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (max-width: 767px) {
+  .modal {
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    width: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sk-space-4) var(--sk-space-6);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+.title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sk-space-2);
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  margin: 0;
+  min-width: 0;
+}
+
+.close {
+  min-width: var(--sk-dimension-target-min);
+  min-height: var(--sk-dimension-target-min);
+  border: none;
+  background: transparent;
+  font-size: var(--sk-font-size-h2);
+  cursor: pointer;
+}
+
+.body {
+  padding: var(--sk-space-6);
+  overflow-y: auto;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sk-space-3);
+  padding: var(--sk-space-4) var(--sk-space-6);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+.secondary,
+.destructive {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  cursor: pointer;
+  font-size: var(--sk-font-size-body);
+}
+
+.secondary {
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+}
+
+.destructive {
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-error);
+  background: var(--sk-color-status-error);
+  color: var(--sk-color-text-inverse);
+}

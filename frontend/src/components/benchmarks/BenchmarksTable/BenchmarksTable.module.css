@@ -1,0 +1,106 @@
+.tableCard {
+  composes: tableCard from '../../../styles/supervisoryTable.module.css';
+}
+
+.tableHeader {
+  composes: tableHeader from '../../../styles/supervisoryTable.module.css';
+}
+
+.sectionTitle {
+  composes: sectionTitle from '../../../styles/supervisoryTable.module.css';
+  flex: 0 0 auto;
+}
+
+.headerLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-16);
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.envelopeCount {
+  color: var(--color-text-secondary);
+  font-size: var(--sk-font-size-micro);
+  line-height: 1;
+  font-weight: var(--sk-font-weight-body);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.overflowMenu {
+  composes: overflowMenu from '../../../styles/supervisoryTable.module.css';
+}
+
+.tableWrapStandard {
+  composes: tableWrapStandard from '../../../styles/supervisoryTable.module.css';
+}
+
+.updatingBanner {
+  composes: updatingBanner from '../../../styles/supervisoryTable.module.css';
+}
+
+.paginationFooter {
+  composes: paginationFooter from '../../../styles/supervisoryTable.module.css';
+}
+
+.pageInfo {
+  composes: pageInfo from '../../../styles/supervisoryTable.module.css';
+}
+
+.pageControls {
+  composes: pageControls from '../../../styles/supervisoryTable.module.css';
+}
+
+.pageButton {
+  composes: pageButton from '../../../styles/supervisoryTable.module.css';
+}
+
+.staleRows {
+  composes: staleRows from '../../../styles/supervisoryTable.module.css';
+}
+
+.srOnly {
+  composes: srOnly from '../../../styles/supervisoryTable.module.css';
+}
+
+/* Proportional column widths — sums to 100% across full card width. */
+.colBenchmarkName {
+  width: 15%;
+  min-width: 9rem;
+}
+
+.colRawBenchmark {
+  width: 9%;
+}
+
+.colDecisionSafeBenchmark {
+  width: 10%;
+}
+
+.colEvidenceClass {
+  width: 11%;
+}
+
+.colCoverageClass {
+  width: 11%;
+}
+
+.colSuppressionReason {
+  width: 15%;
+  min-width: 8rem;
+}
+
+.colComparability {
+  width: 9%;
+}
+
+.colActionability {
+  width: 11%;
+  min-width: 5.5rem;
+}
+
+.colInspect {
+  width: 9%;
+  min-width: 6.5rem;
+}

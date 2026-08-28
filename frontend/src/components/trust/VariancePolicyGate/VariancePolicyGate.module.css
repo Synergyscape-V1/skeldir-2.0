@@ -1,0 +1,31 @@
+.gate {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-1) var(--sk-space-3);
+  border-radius: var(--sk-radius-badge);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+}
+
+.info {
+  background: color-mix(in srgb, var(--sk-color-trust-unavailable) 6%, transparent);
+  color: color-mix(in srgb, var(--sk-color-text-secondary) 82%, white);
+}
+
+.warning {
+  background: color-mix(in srgb, var(--sk-color-status-warning) 6%, transparent);
+  color: color-mix(in srgb, var(--sk-color-status-warning) 82%, white);
+}
+
+.icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.label {
+  overflow-wrap: anywhere;
+}

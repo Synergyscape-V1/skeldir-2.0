@@ -1,0 +1,21 @@
+.interval {
+  font-weight: var(--sk-font-weight-h3);
+}
+
+.method,
+.qualitative {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.error {
+  color: var(--sk-color-status-error);
+  font-size: var(--sk-font-size-small);
+}
+
+.shaped {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}

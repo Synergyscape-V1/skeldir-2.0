@@ -1,0 +1,38 @@
+[
+  {
+    "surface": "summaryCard",
+    "outerRadius": "12px",
+    "paddingGap": "24px",
+    "innerSurface": "proofSurfaceRow (lower cards)",
+    "innerRadius": "0px",
+    "classification": "A-nested-aligned",
+    "rule": "inner = max(0, outer - padding)"
+  },
+  {
+    "surface": "chartCard",
+    "outerRadius": "12px",
+    "paddingGap": "24px",
+    "innerSurface": "trendEmpty",
+    "innerRadius": "0px",
+    "classification": "A-nested-aligned",
+    "rule": "inner = max(0, outer - padding)"
+  },
+  {
+    "surface": "summaryCard",
+    "outerRadius": "12px",
+    "paddingGap": "24px",
+    "innerSurface": "DiscrepancyBadge / AuthorityBadge",
+    "innerRadius": "8px (--radius-sm)",
+    "classification": "B-independent-primitive",
+    "rule": "approved pill/badge token"
+  },
+  {
+    "surface": "primaryButton",
+    "outerRadius": "8px",
+    "paddingGap": "n/a",
+    "innerSurface": "n/a",
+    "innerRadius": "n/a",
+    "classification": "B-independent-primitive",
+    "rule": "CTA control primitive"
+  }
+]

@@ -1,0 +1,212 @@
+/**
+ * Reflow-first layout substrate — prevents viewport-shrink overlap by enforcing
+ * wrap, min-width floors, and stack breakpoints (never layout-purpose absolute).
+ */
+
+.pageHeaderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-16);
+  min-width: 0;
+  width: 100%;
+}
+
+.pageHeaderStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pageHeaderStack :where(h1, .pageTitle) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.headerActionColumn {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: var(--spacing-8);
+  margin-left: 0;
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.headerMetaStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-4);
+  text-align: right;
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 63.9375rem) {
+  .headerActionColumn {
+    align-items: flex-start;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .headerMetaStack {
+    align-items: flex-start;
+    text-align: left;
+    width: 100%;
+  }
+}
+
+@media (min-width: 64rem) {
+  .pageHeaderStack {
+    flex: 1 1 var(--sk-grid-dual-panel-min-width);
+    min-width: min(100%, var(--sk-grid-dual-panel-min-width));
+  }
+
+  .headerActionColumn {
+    flex: 1 1 var(--sk-grid-header-action-min-width);
+    min-width: min(100%, var(--sk-grid-header-action-min-width));
+    margin-left: auto;
+    width: auto;
+    max-width: 100%;
+  }
+}
+
+.shellHeaderBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: var(--sk-dimension-header-height);
+  gap: var(--sk-space-2);
+  padding-inline: 0;
+  box-sizing: border-box;
+}
+
+.shellHeaderCenter {
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.shellHeaderControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--sk-space-2);
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (min-width: 48rem) {
+  .shellHeaderCenter {
+    flex: 1 1 auto;
+    min-width: min(100%, var(--sk-grid-header-action-min-width));
+    max-width: 100%;
+  }
+
+  .shellHeaderControls {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    width: auto;
+    max-width: 100%;
+  }
+}
+
+.toolbarRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+  min-width: 0;
+  width: 100%;
+}
+
+.toolbarCluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sk-space-4);
+  min-width: 0;
+}
+
+.priorityIssueRow {
+  display: grid;
+  gap: var(--spacing-12);
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  align-items: start;
+  min-width: 0;
+}
+
+.priorityIssueRow > :nth-child(3),
+.priorityIssueRow > :nth-child(4) {
+  grid-column: 2;
+  justify-self: start;
+}
+
+@media (min-width: 64rem) {
+  .priorityIssueRow {
+    grid-template-columns:
+      auto
+      minmax(0, 1fr)
+      var(--sk-grid-priority-policy-column-width)
+      var(--sk-grid-priority-action-column-width);
+    grid-template-rows: auto;
+    align-items: center;
+  }
+
+  .priorityIssueRow > :nth-child(3),
+  .priorityIssueRow > :nth-child(4) {
+    grid-column: auto;
+  }
+
+  .priorityIssueRow > :nth-child(3) {
+    justify-self: stretch;
+  }
+
+  .priorityIssueRow > :nth-child(4) {
+    justify-self: stretch;
+  }
+}
+
+.reflowFieldRow {
+  display: grid;
+  gap: var(--sk-space-4);
+  grid-template-columns: minmax(min(100%, 9rem), 12rem) minmax(0, 1fr);
+  align-items: baseline;
+  min-width: 0;
+}
+
+@media (max-width: 47.9375rem) {
+  .reflowFieldRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.reflowHashRow {
+  display: grid;
+  gap: var(--sk-space-2);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  min-width: 0;
+}
+
+@media (min-width: 48rem) {
+  .reflowHashRow {
+    grid-template-columns: minmax(8rem, 10rem) minmax(0, 1fr) auto;
+    align-items: center;
+  }
+}

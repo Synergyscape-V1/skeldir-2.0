@@ -1,0 +1,60 @@
+.rail {
+  width: var(--sk-dimension-onboarding-rail-width);
+  flex-shrink: 0;
+  display: none;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  padding-right: var(--sk-space-6);
+  border-right: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+@media (min-width: 768px) {
+  .rail {
+    display: flex;
+  }
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  min-height: var(--sk-dimension-target-min);
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--sk-color-text-secondary);
+}
+
+.itemActive {
+  background: var(--sk-color-bg-muted);
+  color: var(--sk-color-text-primary);
+  font-weight: 600;
+}
+
+.itemComplete {
+  color: var(--sk-color-status-success);
+}
+
+.itemDisabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.itemFuture {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.stepNumber {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+}
+
+.futureLabel {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+  padding: var(--sk-space-3) var(--sk-space-4);
+}

@@ -1,0 +1,37 @@
+.valueRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  padding: var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+}
+
+.label {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+  font-weight: var(--sk-font-weight-small);
+}
+
+.amount {
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+}
+
+.unavailable {
+  padding: var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  border: var(--sk-dimension-border-width) dashed var(--sk-color-border-default);
+}
+
+.reason {
+  margin: var(--sk-space-2) 0;
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-secondary);
+}

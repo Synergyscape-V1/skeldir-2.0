@@ -1,0 +1,31 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-24);
+}
+
+.card {
+  padding: var(--space-16);
+}
+
+.label {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-small-size);
+  line-height: var(--font-small-line);
+  font-weight: var(--font-small-weight);
+  color: var(--color-text-secondary);
+}
+
+.value {
+  margin: 0;
+  font-size: var(--font-h3-size);
+  line-height: var(--font-h3-line);
+  font-weight: var(--font-h3-weight);
+  color: var(--color-text-primary);
+}
+
+.skeleton {
+  height: var(--space-48);
+  background: var(--color-bg-muted);
+  border-radius: var(--radius-8);
+}

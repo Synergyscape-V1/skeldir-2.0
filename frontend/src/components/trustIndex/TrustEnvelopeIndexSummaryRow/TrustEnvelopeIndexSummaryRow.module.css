@@ -1,0 +1,73 @@
+.section {
+  composes: section from '../../../styles/summaryTile.module.css';
+}
+
+.grid {
+  composes: grid from '../../../styles/summaryTile.module.css';
+}
+
+.card {
+  composes: card from '../../../styles/summaryTile.module.css';
+}
+
+.body {
+  composes: body from '../../../styles/summaryTile.module.css';
+}
+
+.topRow {
+  composes: topRow from '../../../styles/summaryTile.module.css';
+}
+
+.label {
+  composes: label from '../../../styles/summaryTile.module.css';
+}
+
+.chip {
+  composes: chip from '../../../styles/summaryTile.module.css';
+}
+
+.value {
+  composes: value from '../../../styles/summaryTile.module.css';
+}
+
+.valueWarning {
+  composes: valueWarning from '../../../styles/summaryTile.module.css';
+}
+
+.meta {
+  composes: meta from '../../../styles/summaryTile.module.css';
+}
+
+.metaSuccess {
+  composes: metaSuccess from '../../../styles/summaryTile.module.css';
+}
+
+.metaWarning {
+  composes: metaWarning from '../../../styles/summaryTile.module.css';
+}
+
+/** Single-line supervisory meta — peer tiles use one short clause; never multi-line wrap stacks. */
+.metaSingleLine {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metaIcon {
+  composes: metaIcon from '../../../styles/summaryTile.module.css';
+}
+
+.actionFooter {
+  composes: actionFooter from '../../../styles/summaryTile.module.css';
+}
+
+.drillDown {
+  composes: drillDown from '../../../styles/summaryTile.module.css';
+}
+
+.drillDownChevron {
+  composes: drillDownChevron from '../../../styles/summaryTile.module.css';
+}

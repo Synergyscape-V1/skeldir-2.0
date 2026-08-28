@@ -1,0 +1,28 @@
+.statePanel {
+  padding: var(--sk-space-6);
+  max-width: var(--sk-dimension-content-max);
+}
+
+.progress {
+  margin-top: var(--sk-space-4);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+}
+
+.returnLink {
+  display: inline-block;
+  margin-top: var(--sk-space-4);
+  min-height: var(--sk-dimension-target-min);
+  line-height: var(--sk-dimension-target-min);
+  color: var(--sk-color-trust-probabilistic);
+}
+
+.retry {
+  margin-top: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}

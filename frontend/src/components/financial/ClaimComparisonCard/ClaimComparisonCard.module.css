@@ -1,0 +1,91 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  padding: var(--sk-space-6);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-card);
+  box-shadow: var(--sk-elevation-card);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--sk-space-16), 1fr));
+  gap: var(--sk-space-4);
+}
+
+.difference {
+  padding: var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+.within_tolerance {
+  background: var(--sk-color-surface-success);
+  border-color: var(--sk-color-status-success);
+  color: var(--sk-color-status-success);
+}
+
+.flagged {
+  background: var(--sk-color-surface-warning);
+  border-color: var(--sk-color-status-warning);
+  color: var(--sk-color-status-warning);
+}
+
+.rejected {
+  background: var(--sk-color-surface-error);
+  border-color: var(--sk-color-status-error);
+  color: var(--sk-color-status-error);
+}
+
+.diffLabel {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+}
+
+.diffValue {
+  display: block;
+  margin-top: var(--sk-space-1);
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  font-family: var(--sk-font-family-code);
+}
+
+.diffHint {
+  display: block;
+  margin-top: var(--sk-space-2);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+}
+
+.tableDelta {
+  font-family: var(--sk-font-family-code);
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-small-strong);
+  line-height: var(--sk-line-height-body);
+  white-space: nowrap;
+}
+
+.tableDeltaSuccess {
+  color: var(--sk-color-status-success);
+}
+
+.tableDeltaWarning {
+  color: var(--sk-color-status-warning);
+}
+
+.tableDeltaError {
+  color: var(--sk-color-status-error);
+}

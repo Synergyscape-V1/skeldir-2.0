@@ -1,0 +1,45 @@
+﻿ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Scope and regression > Level 4 routes and components exist; Agent Access is absent 3ms
+ Γ£ô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Step 6 governance > Step 6 links to team settings for owner 316ms
+ Γ£ô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Step 6 governance > viewer cannot manage team; agent key creation remains fail-closed 1ms
+ Γ£ô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Step 6 governance > billing_only fails closed for team management and agent creation 0ms
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Summary transport boundary > accepts valid unavailable-confidence summary within byte budget
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Summary transport boundary > rejects oversized summary payload fail-closed
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Summary transport boundary > rejects forbidden full-payload fields before hydration
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Summary transport boundary > rejects naked scalar confidence without probabilistic shape
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Summary transport boundary > accepts available confidence with interval and method context
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Structural truth hierarchy > renders authority-tier regions in DOM order
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Structural truth hierarchy > uses heading hierarchy with primary h2 before subordinate h3 regions
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Structural truth hierarchy > renders probabilistic confidence shape when available
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Structural truth hierarchy > fails sabotaged hierarchy collapse probe on uniform row-only markup
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Generation failure phases > maps schema invalid to generation_schema_invalid phase
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Generation failure phases > maps oversized payload to generation_payload_oversized phase
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Generation failure phases > maps forbidden payload fields to generation_payload_rejected phase
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Generation failure phases > allows keyboard retry after network error
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Interaction accessibility > progress rail step buttons are keyboard focusable
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Interaction accessibility > mobile accordion exposes keyboard-operable controls
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Interaction accessibility > generation status uses live region semantics on error
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Secret scan coverage > includes evidence/Level_6 in secret scan roots
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Negative scope and sabotage > redirect guard still blocks Level 7+ routes
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Negative scope and sabotage > integrity sabotage probes pass on clean tree
+ Γåô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Negative scope and sabotage > string sabotage samples fail when injected
+ Γ£ô src/test/level6.harness.test.tsx > Level 6 Harness ΓÇö Negative scope and sabotage > secret sabotage probes detect controlled violations 0ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Governance routes > renders team settings 145ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Governance routes > does not expose Agent Access route or page 36ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Governance routes > renders policy settings 46ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Governance routes > redirect guard allows Level 4 routes and rejects removed agents alias 2ms
+ Γåô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Governance routes > redirect guard allows Level 7 claims route
+ Γåô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Governance routes > redirect guard allows audit route at Level 5
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Permissions and fail-closed > viewer cannot manage team 0ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Permissions and fail-closed > unknown role fails closed 30ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Permissions and fail-closed > PolicyAuthorityPill invalid auto-execute in design partner mode 3ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Permissions and fail-closed > reserved agent scopes remain non-issuable 1ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Sabotage controls > scope sabotage probes detect violations 0ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Sabotage controls > secret sabotage probes detect leaks 151ms
+ Γ£ô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Sabotage controls > governance client boundary ΓÇö no fetch in UI components 1ms
+ Γåô src/test/level4.harness.test.tsx > Level 4 Harness ΓÇö Permission hardening > viewer cannot configure policy rows
+
+ Test Files  2 passed (2)
+      Tests  20 passed | 35 skipped (55)
+   Start at  10:54:23
+   Duration  4.76s (transform 3.19s, setup 575ms, import 4.60s, tests 1.01s, environment 2.71s)
+

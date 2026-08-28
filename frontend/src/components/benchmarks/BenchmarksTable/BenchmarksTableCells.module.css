@@ -1,0 +1,98 @@
+.name {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.value {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.valueStrong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.muted {
+  composes: value;
+  color: var(--color-text-secondary);
+}
+
+.reason {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.metaCell {
+  composes: metaCell from '../../../styles/supervisoryTable.module.css';
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--spacing-4);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.metaCell [data-status-text],
+.metaCell [data-historical-prior-disclaimer] {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.unavailableValue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.naValue {
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--color-text-secondary);
+  cursor: help;
+}
+
+.checkmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-status-success);
+}
+
+.chipCell {
+  composes: metaCell;
+}
+
+.openButton {
+  composes: openButton from '../../../styles/supervisoryTable.module.css';
+}

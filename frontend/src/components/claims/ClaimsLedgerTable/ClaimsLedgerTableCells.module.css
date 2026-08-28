@@ -1,0 +1,124 @@
+.moneyAmount {
+  composes: moneyStrong from '../../../styles/supervisoryTable.module.css';
+}
+
+.verifiedRevenueCell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.authorityHint {
+  display: block;
+  margin-top: var(--sk-space-1);
+  font-size: var(--sk-font-size-micro);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceCell {
+  --sk-claims-source-logo-size: calc(var(--sk-font-size-small) * 1.75);
+  display: grid;
+  grid-template-columns: var(--sk-claims-source-logo-size) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sk-space-2);
+  min-width: 0;
+  font-size: var(--sk-font-size-small);
+}
+
+.platformSourceCell {
+  composes: sourceCell;
+}
+
+.platformSourceCell [data-channel-logo] {
+  width: var(--sk-claims-source-logo-size);
+  height: var(--sk-claims-source-logo-size);
+  object-fit: contain;
+  justify-self: start;
+}
+
+.dimensionLabel {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--sk-font-size-small);
+  line-height: 1.2;
+  color: var(--sk-color-text-primary);
+}
+
+.platformSourceCell .dimensionLabel {
+  font-weight: var(--sk-font-weight-small);
+}
+
+.claimTime {
+  display: block;
+  max-width: 100%;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.truncatedMetaText {
+  composes: truncatedMetaText from '../../../styles/supervisoryTable.module.css';
+}
+
+.openButton {
+  composes: openButton from '../../../styles/supervisoryTable.module.css';
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  min-height: var(--sk-dimension-table-chip-min-height);
+  min-width: auto;
+  padding: 0 var(--sk-space-2);
+}
+
+.confidenceCell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sk-space-1);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.confidenceInterval {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small-strong);
+  color: var(--sk-color-text-primary);
+  white-space: nowrap;
+}
+
+.confidenceTextSuccess {
+  composes: labelSuccess from '../../../styles/trustStatusText.module.css';
+}
+
+.confidenceTextProbabilistic {
+  composes: labelProbabilistic from '../../../styles/trustStatusText.module.css';
+}
+
+.confidenceTextInfo {
+  composes: labelInfo from '../../../styles/trustStatusText.module.css';
+}
+
+.confidenceTextWarning {
+  composes: labelWarning from '../../../styles/trustStatusText.module.css';
+}
+
+.confidenceTextError {
+  composes: labelError from '../../../styles/trustStatusText.module.css';
+}
+
+.confidenceTextNeutral {
+  composes: labelNeutral from '../../../styles/trustStatusText.module.css';
+}

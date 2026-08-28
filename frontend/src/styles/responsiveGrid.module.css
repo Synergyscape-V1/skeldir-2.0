@@ -1,0 +1,139 @@
+/**
+ * Product-wide responsive grid substrate.
+ * Tiles reflow via auto-fit + minmax() — never compress below --sk-grid-*-min-width.
+ */
+
+.tileGrid {
+  display: grid;
+  gap: var(--sk-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sk-grid-tile-min-width)), 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.tileCard {
+  min-width: min(100%, var(--sk-grid-tile-min-width));
+  min-height: var(--sk-grid-tile-min-height);
+}
+
+.filterGrid {
+  display: grid;
+  gap: var(--sk-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sk-grid-filter-field-min-width)), 1fr));
+  min-width: 0;
+  width: 100%;
+  align-items: end;
+}
+
+.filterGridWide {
+  display: grid;
+  gap: var(--sk-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sk-grid-filter-field-min-width-wide)), 1fr));
+  min-width: 0;
+  width: 100%;
+  align-items: end;
+}
+
+.dualPanelGrid {
+  display: grid;
+  gap: var(--sk-space-6);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sk-grid-dual-panel-min-width)), 1fr));
+  min-width: 0;
+  width: 100%;
+  align-items: start;
+}
+
+.supervisoryAlignedDualGrid {
+  display: grid;
+  gap: var(--sk-space-6);
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  width: 100%;
+  align-items: start;
+}
+
+@media (min-width: 56rem) {
+  .supervisoryAlignedDualGrid {
+    grid-template-columns:
+      minmax(var(--sk-grid-trend-panel-min-width), var(--sk-grid-supervisory-trend-column))
+      minmax(var(--sk-grid-activity-tile-min-width), var(--sk-grid-supervisory-activity-column));
+  }
+}
+
+.supervisoryGrid {
+  display: grid;
+  gap: var(--sk-space-6);
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  width: 100%;
+  align-items: start;
+}
+
+@media (min-width: 56rem) {
+  .supervisoryGrid {
+    grid-template-columns:
+      minmax(var(--sk-grid-trend-panel-min-width), var(--sk-grid-supervisory-trend-column))
+      minmax(var(--sk-grid-activity-tile-min-width), var(--sk-grid-supervisory-activity-column));
+    align-items: stretch;
+    min-height: var(--sk-dimension-command-center-supervisory-row-min-height);
+  }
+}
+
+.supervisoryPanel {
+  min-width: min(100%, var(--sk-grid-trend-panel-min-width));
+  min-height: var(--sk-grid-supervisory-panel-min-height);
+}
+
+.activityTileGrid {
+  display: grid;
+  gap: var(--spacing-12);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sk-grid-activity-tile-min-width)), 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.responsiveProofFieldGrid {
+  display: grid;
+  gap: var(--spacing-8);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sk-grid-proof-field-min-width)), 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.fieldPairGrid {
+  display: grid;
+  gap: var(--sk-space-4) var(--sk-space-6);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sk-grid-proof-field-min-width)), 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.metricColumnGrid {
+  display: grid;
+  gap: var(--sk-space-5);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sk-grid-metric-column-min-width)), 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.asymmetricSplitGrid {
+  display: grid;
+  gap: var(--sk-space-6);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  min-width: 0;
+  width: 100%;
+}
+
+@media (min-width: 56rem) {
+  .asymmetricSplitGrid {
+    grid-template-columns:
+      minmax(var(--sk-grid-panel-min-width), 3fr)
+      minmax(var(--sk-grid-panel-min-width), 2fr);
+  }
+}
+
+.panelCard {
+  min-width: min(100%, var(--sk-grid-panel-min-width));
+  min-height: var(--sk-grid-panel-min-height);
+}

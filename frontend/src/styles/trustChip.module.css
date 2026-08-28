@@ -1,0 +1,90 @@
+/* Shared trust-chip substrate — AuthorityBadge table size is the reference iteration */
+
+.chip {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  min-height: var(--sk-dimension-target-dense-min);
+  padding: var(--sk-space-1) var(--sk-space-3);
+  border-radius: var(--sk-radius-badge);
+  border: var(--sk-dimension-border-width) solid;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small-strong);
+  text-align: center;
+  white-space: nowrap;
+  width: fit-content;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+  cursor: default;
+}
+
+.table {
+  min-height: var(--sk-dimension-table-chip-min-height);
+  padding: var(--sk-space-1) var(--sk-space-2);
+  font-size: var(--sk-font-size-micro);
+  line-height: 1.2;
+  border-radius: var(--sk-radius-channel-trust-badge);
+  font-weight: var(--sk-font-weight-small-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact {
+  text-transform: none;
+  flex-shrink: 0;
+}
+
+.toneSuccess {
+  color: color-mix(in srgb, var(--sk-color-status-success) 82%, white);
+  background: color-mix(in srgb, var(--sk-color-status-success) 6%, transparent);
+  border-color: color-mix(in srgb, var(--sk-color-status-success) 16%, transparent);
+}
+
+.toneWarning {
+  color: color-mix(in srgb, var(--sk-color-status-warning) 82%, white);
+  background: color-mix(in srgb, var(--sk-color-status-warning) 6%, transparent);
+  border-color: color-mix(in srgb, var(--sk-color-status-warning) 16%, transparent);
+}
+
+.toneError {
+  color: color-mix(in srgb, var(--sk-color-status-error) 82%, white);
+  background: color-mix(in srgb, var(--sk-color-status-error) 6%, transparent);
+  border-color: color-mix(in srgb, var(--sk-color-status-error) 16%, transparent);
+}
+
+.toneInfo {
+  color: color-mix(in srgb, var(--sk-color-status-info) 82%, white);
+  background: color-mix(in srgb, var(--sk-color-status-info) 6%, transparent);
+  border-color: color-mix(in srgb, var(--sk-color-status-info) 16%, transparent);
+}
+
+.toneProbabilistic {
+  color: color-mix(in srgb, var(--sk-color-trust-probabilistic) 82%, white);
+  background: color-mix(in srgb, var(--sk-color-trust-probabilistic) 6%, transparent);
+  border-color: color-mix(in srgb, var(--sk-color-trust-probabilistic) 16%, transparent);
+}
+
+.toneBenchmark {
+  color: color-mix(in srgb, var(--sk-color-trust-benchmark) 82%, white);
+  background: color-mix(in srgb, var(--sk-color-trust-benchmark) 6%, transparent);
+  border-color: color-mix(in srgb, var(--sk-color-trust-benchmark) 16%, transparent);
+}
+
+.toneNeutral {
+  color: color-mix(in srgb, var(--sk-color-trust-unavailable) 82%, white);
+  background: color-mix(in srgb, var(--sk-color-trust-unavailable) 6%, transparent);
+  border-color: color-mix(in srgb, var(--sk-color-trust-unavailable) 16%, transparent);
+}
+
+.toneDeterministic {
+  color: color-mix(in srgb, var(--sk-color-status-success) 82%, white);
+  background: color-mix(in srgb, var(--sk-color-status-success) 6%, transparent);
+  border-color: color-mix(in srgb, var(--sk-color-status-success) 16%, transparent);
+}

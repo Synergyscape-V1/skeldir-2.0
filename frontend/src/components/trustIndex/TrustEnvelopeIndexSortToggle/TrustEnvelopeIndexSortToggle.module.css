@@ -1,0 +1,48 @@
+.sortToggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0;
+}
+
+.sortToggleButton {
+  box-sizing: border-box;
+  min-height: calc(var(--sk-dimension-target-min) / 2);
+  padding: var(--sk-space-1) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--color-bg-muted);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.sortToggleButton + .sortToggleButton {
+  margin-left: calc(-1 * var(--sk-dimension-border-width));
+}
+
+.sortToggleButton:not(.sortToggleButtonActive):hover:not(:disabled) {
+  color: var(--sk-color-text-primary);
+  background: color-mix(in srgb, var(--color-bg-muted) 88%, var(--color-bg-card));
+}
+
+.sortToggleButton:focus-visible {
+  outline: var(--sk-dimension-focus-ring-width, var(--sk-radius-badge)) solid var(--sk-color-focus-ring, var(--sk-color-link-primary));
+  outline-offset: -var(--sk-radius-badge);
+}
+
+.sortToggleButtonActive {
+  border-color: var(--color-border-default);
+  color: var(--sk-color-text-primary);
+  background: var(--color-bg-card);
+  margin-bottom: calc(-1 * var(--sk-dimension-border-width));
+  padding-bottom: calc(var(--sk-space-1) + var(--sk-dimension-border-width));
+}
+
+.sortToggleButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

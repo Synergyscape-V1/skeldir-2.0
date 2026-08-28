@@ -1,0 +1,11 @@
+.page {
+  display: block;
+}
+
+/* Preserve the block offset previously occupied by the page description <p>. */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+  margin-top: calc(2em + 1lh - var(--sk-space-3));
+}

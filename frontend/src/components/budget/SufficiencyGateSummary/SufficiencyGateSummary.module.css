@@ -1,0 +1,178 @@
+.panel {
+
+  composes: elevatedPanel from '../budgetPanel.module.css';
+
+}
+
+
+
+.insetPanel {
+
+  composes: insetSubPanel from '../budgetPanel.module.css';
+
+}
+
+
+
+.eligible {
+
+  border-color: var(--sk-color-status-success);
+
+}
+
+
+
+.blocked {
+
+  border-color: var(--sk-color-status-error);
+
+}
+
+
+
+.partial {
+
+  border-color: var(--sk-color-status-warning);
+
+}
+
+
+
+.neutral {
+
+  border-color: var(--sk-color-border-default);
+
+}
+
+
+
+.headerRow {
+
+  composes: governanceHeaderRow from '../budgetPanel.module.css';
+
+}
+
+
+
+.title {
+
+  composes: panelTitle from '../budgetPanel.module.css';
+
+}
+
+
+
+.gateCheckmark {
+  display: block;
+  flex-shrink: 0;
+  width: var(--sk-space-4);
+  height: var(--sk-space-4);
+}
+
+
+
+.emptyCopy,
+
+.loadingCopy,
+
+.errorCopy {
+
+  margin: 0;
+
+  font-size: var(--sk-font-size-body);
+
+  line-height: var(--sk-line-height-body);
+
+  color: var(--sk-color-text-secondary);
+
+}
+
+
+
+.errorCopy {
+
+  color: var(--sk-color-status-error);
+
+}
+
+
+
+.gateList {
+
+  list-style: none;
+
+  margin: 0;
+
+  padding: 0;
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--sk-space-3);
+
+}
+
+
+
+.gateRow {
+
+  display: grid;
+
+  grid-template-columns: minmax(0, 1.4fr) minmax(4.5rem, auto) minmax(0, 1fr);
+
+  align-items: center;
+
+  gap: var(--sk-space-3);
+
+}
+
+
+
+.gateLabelCell {
+
+  min-width: 0;
+
+}
+
+
+
+.gateLabel {
+
+  font-size: var(--sk-font-size-body);
+
+  color: var(--sk-color-text-primary);
+
+}
+
+
+
+.gateStatusCell {
+
+  font-size: var(--sk-font-size-small);
+
+  font-weight: var(--sk-font-weight-small);
+
+  color: var(--sk-color-status-success);
+
+  text-align: center;
+
+  white-space: nowrap;
+
+}
+
+
+
+.gateMetricCell {
+
+  font-size: var(--sk-font-size-small);
+
+  color: var(--sk-color-text-secondary);
+
+  text-align: right;
+
+  white-space: nowrap;
+
+}
+
+

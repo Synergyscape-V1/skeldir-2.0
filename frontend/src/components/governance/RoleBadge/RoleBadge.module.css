@@ -1,0 +1,14 @@
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+.select {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  font-size: var(--sk-font-size-body);
+}

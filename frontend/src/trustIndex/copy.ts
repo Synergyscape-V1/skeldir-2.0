@@ -1,0 +1,85 @@
+export const TRUST_ENVELOPE_INDEX_COPY = {
+  title: 'TrustEnvelopes',
+  subtitle:
+    'Canonical trust objects for verified revenue claims, attribution context, policy authority, and audit references.',
+  lastUpdated: (relative: string) => relative,
+  policyExportNotice: (authorityLabel: string) =>
+    `Policy mode: ${authorityLabel} for external artifact exports.`,
+  openLatest: 'Open latest TrustEnvelope',
+  openLatestDisabled: 'No TrustEnvelope generated yet',
+  exportSelected: 'Export selected artifacts',
+  exportSelectedDisabledNoSelection: 'Select TrustEnvelopes in the table to export artifacts.',
+  exportDisabledKillSwitch: 'External trust reads paused. Export is disabled.',
+  killSwitchBanner:
+    'External trust reads paused. Deterministic facts remain unchanged.',
+  summary: {
+    totalTrustEnvelopes: 'Total TrustEnvelopes',
+    addedLast24h: (count: number) => `${count} added in the last 24h`,
+    deterministicVerifiedRevenue: 'Verified revenue',
+    auditLinked: 'Audit records linked',
+    auditPendingReview: (count: number) => `${count} pending review`,
+    unavailableConfidence: 'Unavailable confidence',
+    unavailableConfidenceRatio: (unavailable: number, total: number) => `${unavailable} / ${total}`,
+    /** Shown when the index is already filtered to unavailable — avoid tautological N / N. */
+    unavailableConfidenceCountOnly: (unavailable: number) => String(unavailable),
+    unavailableConfidenceBoundaryTitle:
+      'Deterministic verification remains active. Confidence enrichment is separate from financial truth.',
+    unavailableConfidenceZeroMeta: 'All confidence available',
+    unavailableConfidenceColdStartMeta: 'Mostly expected cold start',
+    unavailableConfidenceComputationMeta: 'Timeouts may need review',
+    unavailableConfidenceMixedMeta: (coldStart: number, computation: number) =>
+      `${coldStart} cold start · ${computation} need review`,
+    unavailableConfidenceOtherMeta: 'Mixed unavailable causes',
+    viewUnavailableConfidence: 'View unavailable',
+    clearUnavailableConfidenceFilter: 'Clear filter',
+  },
+  filters: {
+    verificationStatus: 'Verification status',
+    discrepancyClass: 'Discrepancy class',
+    policyAuthority: 'Policy authority',
+    confidenceAvailability: 'Confidence availability',
+    benchmarkSource: 'Benchmark source',
+    clearFilters: 'Clear filters',
+  },
+  toolbar: {
+    sortLabel: 'Sort',
+  },
+  table: {
+    sectionTitle: 'TrustEnvelope index',
+    caption:
+      'Forensic TrustEnvelope index: claim time, claim source, claimed and verified revenue, discrepancy, match verdict, attribution model, confidence, policy authority, and audit trail.',
+    claimTime: 'Claim time',
+    claimSource: 'Claim source',
+    claimedRevenue: 'Claimed revenue',
+    verifiedRevenue: 'Verified revenue',
+    difference: 'Difference',
+    matchVerdict: 'Match verdict',
+    attributionModel: 'Attribution model',
+    confidence: 'Confidence',
+    policyAuthority: 'Policy authority',
+    audit: 'Audit',
+    auditLinkLabel: 'Audit',
+    openAuditRecord: (auditReference: string) => `Open audit record ${auditReference}`,
+    open: 'Open',
+    unavailable: 'Unavailable',
+    auditUnavailableReason: 'No forensic audit artifact is available for this TrustEnvelope.',
+    empty: 'No TrustEnvelopes available.',
+    filteredEmpty: 'No TrustEnvelopes match these filters.',
+    updating: 'Updating TrustEnvelope results…',
+    rowsPerPage: 'Rows per page',
+    paginationRange: (start: number, end: number, total: number) => `${start}–${end} of ${total}`,
+  },
+} as const;
+
+export const TRUST_ENVELOPE_INDEX_COLUMN_KEYS = [
+  'claimTime',
+  'claimSource',
+  'claimedRevenue',
+  'verifiedRevenue',
+  'difference',
+  'matchVerdict',
+  'attributionModel',
+  'confidence',
+  'policyAuthority',
+  'audit',
+] as const;

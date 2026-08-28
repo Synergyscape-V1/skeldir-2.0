@@ -1,0 +1,29 @@
+name: Level 0 Audit
+
+on:
+  push:
+    paths:
+      - 'skeldir-ui/**'
+      - '.github/workflows/level0-audit.yml'
+  pull_request:
+    paths:
+      - 'skeldir-ui/**'
+      - '.github/workflows/level0-audit.yml'
+
+defaults:
+  run:
+    working-directory: skeldir-ui
+
+jobs:
+  audit-level0:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: skeldir-ui/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run audit:level0

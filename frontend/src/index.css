@@ -1,0 +1,20 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--sk-font-family-base);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-primary);
+  background: var(--sk-color-bg-page);
+}

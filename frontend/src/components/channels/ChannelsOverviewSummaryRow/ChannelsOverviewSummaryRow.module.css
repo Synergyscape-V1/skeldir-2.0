@@ -1,0 +1,67 @@
+.section {
+  composes: section from '../../../styles/summaryTile.module.css';
+}
+
+.grid {
+  composes: grid from '../../../styles/summaryTile.module.css';
+}
+
+.card {
+  composes: card from '../../../styles/summaryTile.module.css';
+}
+
+.body {
+  composes: body from '../../../styles/summaryTile.module.css';
+}
+
+.topRow {
+  composes: topRow from '../../../styles/summaryTile.module.css';
+}
+
+.label {
+  composes: label from '../../../styles/summaryTile.module.css';
+}
+
+.chip {
+  composes: chip from '../../../styles/summaryTile.module.css';
+}
+
+.channelName {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  overflow-wrap: anywhere;
+}
+
+.value {
+  composes: value from '../../../styles/summaryTile.module.css';
+}
+
+.valueWarning {
+  composes: valueWarning from '../../../styles/summaryTile.module.css';
+}
+
+.valueError {
+  composes: valueError from '../../../styles/summaryTile.module.css';
+}
+
+.meta {
+  composes: meta from '../../../styles/summaryTile.module.css';
+}
+
+.metaSuccess {
+  composes: metaSuccess from '../../../styles/summaryTile.module.css';
+}
+
+.actionFooter {
+  composes: actionFooter from '../../../styles/summaryTile.module.css';
+}
+
+.drillDown {
+  composes: drillDown from '../../../styles/summaryTile.module.css';
+  gap: var(--spacing-4);
+}
+
+.drillDownChevron {
+  composes: drillDownChevron from '../../../styles/summaryTile.module.css';
+}

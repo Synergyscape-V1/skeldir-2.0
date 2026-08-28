@@ -1,0 +1,265 @@
+{
+  "[data-command-center-header]": {
+    "selector": "[data-command-center-header]",
+    "text": "Trust Command CenterWhat needs your attention, what is verified, and what can safely be acted on?Updated just now1 issue require review before action is safe.",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "padding": "0px",
+    "gap": "8px",
+    "minHeight": "auto",
+    "outline": "rgb(15, 23, 42) none 3px",
+    "boundingBox": {
+      "x": 296,
+      "y": 120,
+      "width": 392.4375,
+      "height": 118
+    }
+  },
+  "[data-command-center-last-updated]": {
+    "selector": "[data-command-center-last-updated]",
+    "text": "Updated just now",
+    "fontSize": "12px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(71, 85, 105)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outline": "rgb(71, 85, 105) none 3px",
+    "boundingBox": {
+      "x": 296,
+      "y": 222,
+      "width": 93.8125,
+      "height": 16
+    }
+  },
+  "[data-command-center-urgency]": {
+    "selector": "[data-command-center-urgency]",
+    "text": "1 issue require review before action is safe.",
+    "fontSize": "12px",
+    "lineHeight": "normal",
+    "fontWeight": "600",
+    "color": "rgb(185, 28, 28)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outline": "rgb(185, 28, 28) none 3px",
+    "boundingBox": {
+      "x": 401.8125,
+      "y": 222,
+      "width": 231.28125,
+      "height": 16
+    }
+  },
+  "[data-command-center-primary-action] a": {
+    "selector": "[data-command-center-primary-action] a",
+    "text": "Review top issue",
+    "fontSize": "14px",
+    "lineHeight": "normal",
+    "fontWeight": "600",
+    "color": "rgb(255, 255, 255)",
+    "backgroundColor": "rgb(29, 78, 216)",
+    "padding": "0px 20px",
+    "gap": "normal",
+    "minHeight": "44px",
+    "outline": "rgb(255, 255, 255) none 3px",
+    "boundingBox": {
+      "x": 1102.609375,
+      "y": 120,
+      "width": 145.390625,
+      "height": 44
+    }
+  },
+  "[data-summary-metric=\"verified_revenue\"] [class*=\"metricValue\"]": {
+    "selector": "[data-summary-metric=\"verified_revenue\"] [class*=\"metricValue\"]",
+    "text": "USD 0.00",
+    "fontSize": "24px",
+    "lineHeight": "28.8px",
+    "fontWeight": "600",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outline": "rgb(15, 23, 42) none 3px",
+    "boundingBox": {
+      "x": 321,
+      "y": 375,
+      "width": 176,
+      "height": 28.796875
+    }
+  },
+  "[data-summary-drilldown=\"verified_revenue\"]": {
+    "selector": "[data-summary-drilldown=\"verified_revenue\"]",
+    "text": "Open revenue details→",
+    "fontSize": "12px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outline": "rgb(15, 23, 42) none 3px",
+    "boundingBox": {
+      "x": 321,
+      "y": 435.796875,
+      "width": 176,
+      "height": 16
+    }
+  },
+  "[data-priority-queue]": {
+    "selector": "[data-priority-queue]",
+    "text": "Needs reviewBenchmark source transition detectedBenchmark source changed for this segment. Review before approving channel actions.AuthorityBlockedReview benchmarks",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "padding": "0px",
+    "gap": "16px",
+    "minHeight": "auto",
+    "outline": "rgb(15, 23, 42) none 3px",
+    "boundingBox": {
+      "x": 296,
+      "y": 500.796875,
+      "width": 952,
+      "height": 134
+    }
+  },
+  "[data-verified-revenue-chart], [data-trend-unavailable]": {
+    "selector": "[data-verified-revenue-chart], [data-trend-unavailable]",
+    "text": "No verified revenue trend yetConnect a commerce source or wait for verified commerce events to build a deterministic trend.Connect commerce source",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgb(241, 245, 249)",
+    "padding": "16px",
+    "gap": "8px",
+    "minHeight": "180px",
+    "outline": "rgb(15, 23, 42) none 3px",
+    "boundingBox": {
+      "x": 321,
+      "y": 839.796875,
+      "width": 414,
+      "height": 180
+    }
+  },
+  "[data-platform-claim-label]": {
+    "selector": "[data-platform-claim-label]",
+    "text": "Platform claim",
+    "fontSize": "12px",
+    "lineHeight": "18px",
+    "fontWeight": "600",
+    "color": "rgb(100, 116, 139)",
+    "backgroundColor": "rgba(100, 116, 139, 0.1)",
+    "padding": "3px 8px",
+    "gap": "6px",
+    "minHeight": "24px",
+    "outline": "rgb(100, 116, 139) none 3px",
+    "boundingBox": {
+      "x": 1011.484375,
+      "y": 804.796875,
+      "width": 97.234375,
+      "height": 26
+    }
+  },
+  "[data-discrepancy-badge]": {
+    "selector": "[data-discrepancy-badge]",
+    "text": "Flagged",
+    "fontSize": "12px",
+    "lineHeight": "18px",
+    "fontWeight": "600",
+    "color": "rgb(180, 83, 9)",
+    "backgroundColor": "rgba(180, 83, 9, 0.1)",
+    "padding": "3px 8px",
+    "gap": "6px",
+    "minHeight": "24px",
+    "outline": "rgb(180, 83, 9) none 3px",
+    "boundingBox": {
+      "x": 1152.484375,
+      "y": 782.796875,
+      "width": 61.5,
+      "height": 26
+    }
+  },
+  "[data-shell-brand]": {
+    "selector": "[data-shell-brand]",
+    "text": "Skeldir",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(0, 0, 0)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "padding": "16px",
+    "gap": "12px",
+    "minHeight": "64px",
+    "outline": "rgb(0, 0, 0) none 3px",
+    "boundingBox": {
+      "x": 16,
+      "y": 80,
+      "width": 231,
+      "height": 65
+    }
+  },
+  "[data-notification-bell]": {
+    "selector": "[data-notification-bell]",
+    "text": "",
+    "fontSize": "13.3333px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(71, 85, 105)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outline": "rgb(71, 85, 105) none 3px",
+    "boundingBox": {
+      "x": 1061.28125,
+      "y": 9.5,
+      "width": 44,
+      "height": 44
+    }
+  },
+  "[data-shell-sidebar] a[aria-current=\"page\"]": {
+    "selector": "[data-shell-sidebar] a[aria-current=\"page\"]",
+    "text": "Command Center",
+    "fontSize": "14px",
+    "lineHeight": "22px",
+    "fontWeight": "600",
+    "color": "rgb(29, 78, 216)",
+    "backgroundColor": "rgb(238, 244, 255)",
+    "padding": "0px 12px",
+    "gap": "12px",
+    "minHeight": "44px",
+    "outline": "rgb(29, 78, 216) none 3px",
+    "boundingBox": {
+      "x": 16,
+      "y": 145,
+      "width": 231,
+      "height": 44
+    }
+  },
+  "layout": {
+    "gridTemplateColumns": "464px 464px",
+    "gap": "24px",
+    "children": [
+      {
+        "width": 464,
+        "trend": "true",
+        "channel": null
+      },
+      {
+        "width": 464,
+        "trend": null,
+        "channel": "true"
+      }
+    ]
+  }
+}

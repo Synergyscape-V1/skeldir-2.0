@@ -1,0 +1,13 @@
+.bar {
+  composes: chips from '../../../styles/filterChip.module.css';
+}
+
+.tab {
+  cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
+}
+
+.tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,0 +1,27 @@
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  min-width: 20rem;
+}
+
+@media (min-width: 64rem) {
+  .column {
+    position: sticky;
+    top: var(--spacing-24);
+    align-self: start;
+  }
+}
+
+.submitButton {
+  composes: primaryAction from '../../../styles/primaryAction.module.css';
+  width: 100%;
+}
+
+.submitCaption {
+  margin: var(--spacing-8) 0 0 0;
+  text-align: center;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--color-text-muted);
+}

@@ -1,0 +1,18 @@
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sk-space-2);
+}
+
+.hiddenCanonical {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.exportIcon {
+  width: 1rem;
+  height: 1rem;
+}

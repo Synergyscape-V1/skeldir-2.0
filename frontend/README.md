@@ -1,30 +1,32 @@
-# Skeldir Comparative Storybook
+# React + TypeScript + Vite
 
-Aggregated Storybook workspace for side-by-side comparison of five design-agent iterations of:
-- Application Shell
-- Command Center Dashboard
-- Single Channel Detail
-- Channel Comparison
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-## Quick Start
-```bash
-npm install
-npm run storybook
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the Oxlint configuration
+
+If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
 ```
 
-## CI Build
-```bash
-npm run ci:compare
-```
-
-## Storybook Sprint 3
-- `Compare/Channel Comparison/Compare All` is the unified 5/5 evaluation surface.
-- Each agent has a Channel Comparison story group with 7 states: `Default`, `NoWinner`, `ThreeChannels`, `FourChannels`, `EmptyState`, `LoadingState`, `ErrorState`.
-
-## Required Logo
-Add this file before CI/build:
-
-`public/assets/Final_Skeldir_Logo__No_wording_.png`
-
-## CI Note
-This file includes a no-functional-impact touch to force Netlify preview status emission for protected-branch checks.
+See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.

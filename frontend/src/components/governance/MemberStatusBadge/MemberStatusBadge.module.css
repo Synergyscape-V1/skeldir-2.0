@@ -1,0 +1,5 @@
+.invite {
+  margin: var(--sk-space-4) 0 0;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+}

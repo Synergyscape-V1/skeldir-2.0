@@ -1,0 +1,392 @@
+{
+  "[data-viewport=\"app-shell\"] aside": {
+    "selector": "[data-viewport=\"app-shell\"] aside",
+    "text": "App frameCommand CenterRevenue ClaimsTrustEnvelopesChannelsBenchmarksBudget SimulationExceptionsAudit LedgerAgent AccessIntegrationsSettings",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(0, 0, 0)",
+    "backgroundColor": "rgb(255, 255, 255)",
+    "borderColor": "rgb(0, 0, 0) rgb(226, 232, 240) rgb(0, 0, 0) rgb(0, 0, 0)",
+    "borderRadius": "0px",
+    "padding": "16px",
+    "width": "264px",
+    "height": "1462px",
+    "display": "block",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 0,
+      "y": 64,
+      "width": 264,
+      "height": 1462
+    }
+  },
+  "[data-shell-sidebar]": {
+    "selector": "[data-shell-sidebar]",
+    "text": "App frameCommand CenterRevenue ClaimsTrustEnvelopesChannelsBenchmarksBudget SimulationExceptionsAudit LedgerAgent AccessIntegrationsSettings",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(0, 0, 0)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(0, 0, 0)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "231px",
+    "height": "1430px",
+    "display": "block",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 16,
+      "y": 80,
+      "width": 231,
+      "height": 1430
+    }
+  },
+  "[data-shell-sidebar] a[aria-current=\"page\"]": {
+    "selector": "[data-shell-sidebar] a[aria-current=\"page\"]",
+    "text": "App frame",
+    "fontSize": "14px",
+    "lineHeight": "22px",
+    "fontWeight": "600",
+    "color": "rgb(29, 78, 216)",
+    "backgroundColor": "rgb(238, 244, 255)",
+    "borderColor": "rgb(29, 78, 216)",
+    "borderRadius": "8px",
+    "padding": "0px 16px",
+    "width": "231px",
+    "height": "44px",
+    "display": "flex",
+    "gridTemplateColumns": "none",
+    "gap": "12px",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 16,
+      "y": 80,
+      "width": 231,
+      "height": 44
+    }
+  },
+  "[data-shell-header]": {
+    "selector": "[data-shell-header]",
+    "text": "SkeldirSuccessTrust systems operationalWorkspace: Acme RevOpsAccount menu",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(0, 0, 0)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(0, 0, 0)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "1216px",
+    "height": "44px",
+    "display": "flex",
+    "gridTemplateColumns": "none",
+    "gap": "16px",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 32,
+      "y": 9.5,
+      "width": 1216,
+      "height": 44
+    }
+  },
+  "[data-command-center-header] h1": {
+    "selector": "[data-command-center-header] h1",
+    "text": "Trust Command Center",
+    "fontSize": "32px",
+    "lineHeight": "40px",
+    "fontWeight": "700",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(15, 23, 42)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "526.922px",
+    "height": "40px",
+    "display": "block",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 296,
+      "y": 96,
+      "width": 526.921875,
+      "height": 40
+    }
+  },
+  "[data-command-center-last-updated]": {
+    "selector": "[data-command-center-last-updated]",
+    "text": "Last updated 6/30/2026, 11:29:55 AM",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(15, 23, 42)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "526.922px",
+    "height": "21px",
+    "display": "block",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 296,
+      "y": 173,
+      "width": 526.921875,
+      "height": 21
+    }
+  },
+  "[data-command-center-primary-action] a": {
+    "selector": "[data-command-center-primary-action] a",
+    "text": "Review top issue",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "600",
+    "color": "rgb(255, 255, 255)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(255, 255, 255)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "120.438px",
+    "height": "21px",
+    "display": "inline-flex",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 1127.5625,
+      "y": 96,
+      "width": 120.4375,
+      "height": 21
+    }
+  },
+  "[data-summary-metric=\"verified_revenue\"] .metricValue": null,
+  "[data-summary-metric=\"verified_revenue\"]": {
+    "selector": "[data-summary-metric=\"verified_revenue\"]",
+    "text": "Verified revenue (aggregate)USD 0.00AuthorityDeterministic",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(15, 23, 42)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "238px",
+    "height": "82px",
+    "display": "flex",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 296,
+      "y": 242,
+      "width": 238,
+      "height": 82
+    }
+  },
+  "[data-priority-queue]": {
+    "selector": "[data-priority-queue]",
+    "text": "Priority queueAuthorityBenchmark source transition detectedAuthorityBlockedNo defensible benchmark exists for this segment yet. Comparable_to_previous_value=false.Review benchmarks",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(15, 23, 42)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "952px",
+    "height": "146px",
+    "display": "flex",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 296,
+      "y": 324,
+      "width": 952,
+      "height": 146
+    }
+  },
+  "[data-verified-revenue-trend]": {
+    "selector": "[data-verified-revenue-trend]",
+    "text": "Verified revenue trendVerified revenue trend: 0 daily points totaling 0 in minor units from commerce-backed claims.Insufficient data for this operation.Verified revenue trend unavailable until claims ",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(15, 23, 42)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "184px",
+    "height": "626px",
+    "display": "flex",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 296,
+      "y": 470,
+      "width": 184,
+      "height": 626
+    }
+  },
+  "[data-channel-trust-table]": {
+    "selector": "[data-channel-trust-table]",
+    "text": "Channel trust snapshotChannelVerified revenueClaimed revenueDiscrepancy rateAttribution model agreementBayesian statusBenchmark statusAction authorityGoogle Ads — SearchUSD 205.03AuthorityDeterministi",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(15, 23, 42)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(15, 23, 42)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "768px",
+    "height": "626px",
+    "display": "flex",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 480,
+      "y": 470,
+      "width": 768,
+      "height": 626
+    }
+  },
+  "[data-system-status-pill]": {
+    "selector": "[data-system-status-pill]",
+    "text": "SuccessTrust systems operational",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(0, 0, 0)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(0, 0, 0)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "202.594px",
+    "height": "20px",
+    "display": "flex",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 749.515625,
+      "y": 21.5,
+      "width": 202.59375,
+      "height": 20
+    }
+  },
+  "[data-tenant-selector]": {
+    "selector": "[data-tenant-selector]",
+    "text": "Workspace: Acme RevOps",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(0, 0, 0)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(0, 0, 0)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "169.172px",
+    "height": "44px",
+    "display": "block",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 964.109375,
+      "y": 9.5,
+      "width": 169.171875,
+      "height": 44
+    }
+  },
+  "[data-user-menu]": {
+    "selector": "[data-user-menu]",
+    "text": "Account menu",
+    "fontSize": "16px",
+    "lineHeight": "normal",
+    "fontWeight": "400",
+    "color": "rgb(0, 0, 0)",
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "borderColor": "rgb(0, 0, 0)",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "width": "102.719px",
+    "height": "44px",
+    "display": "block",
+    "gridTemplateColumns": "none",
+    "gap": "normal",
+    "boxShadow": "none",
+    "boundingBox": {
+      "x": 1145.28125,
+      "y": 9.5,
+      "width": 102.71875,
+      "height": 44
+    }
+  },
+  "gridTwo": {
+    "gridTemplateColumns": "184px 768px",
+    "gap": "normal",
+    "parentWidth": 952,
+    "children": [
+      {
+        "width": 184,
+        "attrs": {
+          "trend": "true",
+          "channel": null
+        }
+      },
+      {
+        "width": 768,
+        "attrs": {
+          "trend": null,
+          "channel": "true"
+        }
+      }
+    ]
+  },
+  "navItems": [
+    "",
+    "App frame",
+    "",
+    "Command Center",
+    "",
+    "Revenue Claims",
+    "",
+    "TrustEnvelopes",
+    "",
+    "Channels",
+    "",
+    "Benchmarks",
+    "",
+    "Budget Simulation",
+    "",
+    "Exceptions",
+    "",
+    "Audit Ledger",
+    "",
+    "Agent Access",
+    "",
+    "Integrations",
+    "",
+    "Settings"
+  ],
+  "priorityCopy": [
+    {
+      "title": "Benchmark source transition detected",
+      "explanation": "No defensible benchmark exists for this segment yet. Comparable_to_previous_value=false."
+    }
+  ]
+}
