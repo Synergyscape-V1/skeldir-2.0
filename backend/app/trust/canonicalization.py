@@ -38,6 +38,22 @@ def _read_schema(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def encode_envelope_structure_snapshot(payload: dict[str, Any]) -> bytes:
+    """Encode an internal shape-preserving snapshot, never signature material.
+
+    Canonical Trust bytes deliberately normalize contract-declared set-like
+    arrays.  The issuance capability also preserves the exact P7 wire shape so
+    an unauthorized array reordering cannot be hidden by that normalization.
+    """
+
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
 def _expanded_trust_schema(schema_version: str) -> dict[str, Any]:
     try:
         schema_path = TRUST_SCHEMA_PATHS[schema_version]

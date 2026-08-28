@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -25,6 +25,11 @@ from app.api import trust_api, trust_keys
 from app.core.secrets import get_database_url, get_migration_database_url
 from app.db.dsn import to_asyncpg_postgres_dsn
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
+from app.trust.canonicalization import (
+    canonicalize_envelope_payload,
+    canonicalize_signature_material,
+)
+from app.trust.signing import encode_ed25519_signature, prepare_payload_for_signing
 from app.trust.audit import (
     TrustAuditRequest,
     record_trust_audit_event,
@@ -33,6 +38,8 @@ from app.trust.machine_auth import MachineCallerContext, _check_rate_limit
 from app.trust.machine_identity import AgentScope
 from app.trust.refusal import tagged_sha256, tenant_hash
 from app.trust.verification import verify_trust_envelope
+from app.trust.builder import build_unsigned_trust_envelope as production_builder
+from app.trust.source_adapters import MatchVerdictSource
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -79,6 +86,23 @@ def _unsigned_fixture() -> dict[str, object]:
     return payload
 
 
+def _cryptographically_sign_fixture(
+    payload: dict[str, object], registry: TrustKeyRegistry
+) -> dict[str, object]:
+    key = registry.active_signing_key()
+    prepared = prepare_payload_for_signing(
+        payload,
+        signing_key_id=key.kid,
+        signing_algorithm=key.algorithm,
+    )
+    assert key.private_key is not None
+    prepared["signature"] = encode_ed25519_signature(
+        key.private_key.sign(canonicalize_signature_material(prepared))
+    )
+    canonicalize_envelope_payload(prepared)
+    return prepared
+
+
 def _caller() -> MachineCallerContext:
     return MachineCallerContext(
         agent_client_id=uuid4(),
@@ -121,7 +145,7 @@ async def test_authorized_happy_path_returns_signed_verifiable_safe_envelope(
         return caller
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(unsigned_payload=_unsigned_fixture())
+        return SimpleNamespace(authorized_envelope=_unsigned_fixture())
 
     app.dependency_overrides[trust_api.get_machine_db_session] = fake_session
     app.dependency_overrides[trust_api.require_envelope_read_tenant_context] = (
@@ -136,6 +160,13 @@ async def test_authorized_happy_path_returns_signed_verifiable_safe_envelope(
         trust_api,
         "build_unsigned_trust_envelope_with_audit",
         fake_build,
+    )
+    monkeypatch.setattr(
+        trust_api,
+        "sign_trust_envelope",
+        lambda payload, *, key_registry: _cryptographically_sign_fixture(
+            payload, key_registry
+        ),
     )
 
     transport = ASGITransport(app=app)
@@ -525,13 +556,26 @@ async def test_postgres_before_after_snapshot_only_access_log_changes(
                 },
             )
 
-        async def fake_builder(*args, **kwargs):
-            return SimpleNamespace(
-                status="success",
-                unsigned_payload=_unsigned_fixture(),
-                refusal_payload=None,
-                reason_code=None,
+        async def fake_builder(_session, request, **_kwargs):
+            verdict_id = request.subject_ref.rsplit(":", 1)[1]
+            observed = request.request_context["created_at"] - timedelta(seconds=1)
+            source = MatchVerdictSource(
+                id=UUID(verdict_id),
+                tenant_id=request.tenant_id,
+                webhook_ingress_identity_id=None,
+                provider="shopify",
+                canonical_commerce_reference="p10-snapshot-order",
+                provider_native_event_reference="p10-snapshot-event",
+                provider_native_commerce_reference="p10-snapshot-order",
+                status="matched_confirmed",
+                match_quality="high",
+                canonical_net_verified_amount_minor=12345,
+                currency_code="USD",
+                last_transition_at=observed,
+                created_at=observed,
+                updated_at=observed,
             )
+            return await production_builder(object(), request, source=source)
 
         import app.trust.audit as audit_module
 

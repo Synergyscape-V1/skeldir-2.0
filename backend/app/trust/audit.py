@@ -34,6 +34,10 @@ from app.trust.provenance import replace_audit_provenance_entries
 from app.trust.reason_codes import ReasonCode
 from app.trust.reason_truth_matrix import assert_reason_known
 from app.trust.refusal import tenant_hash, utc_second
+from app.trust.semantic_authority import (
+    AuthorizedTrustEnvelope,
+    _authorize_audited_trust_envelope,
+)
 from app.trust.source_adapters import ConfidenceProjectionSource, MatchVerdictSource
 
 
@@ -123,6 +127,7 @@ class TrustEnvelopeAuditResult:
     build_result: TrustEnvelopeBuildResult
     audit_record: TrustAuditRecord
     unsigned_payload: dict[str, Any] | None
+    authorized_envelope: AuthorizedTrustEnvelope | None
     refusal_payload: dict[str, Any] | None
 
 
@@ -610,10 +615,26 @@ async def build_unsigned_trust_envelope_with_audit(
                     audit_record=persisted,
                     observed_at=observed_at,
                 )
+        if cpu_runner is None:
+            authorized_envelope = _authorize_audited_trust_envelope(
+                build_result=build_result,
+                audit_record=persisted,
+                audited_payload=updated_payload,
+                observed_at=observed_at,
+            )
+        else:
+            authorized_envelope = await cpu_runner(
+                _authorize_audited_trust_envelope,
+                build_result=build_result,
+                audit_record=persisted,
+                audited_payload=updated_payload,
+                observed_at=observed_at,
+            )
         return TrustEnvelopeAuditResult(
             build_result=build_result,
             audit_record=persisted,
             unsigned_payload=updated_payload,
+            authorized_envelope=authorized_envelope,
             refusal_payload=None,
         )
 
@@ -657,5 +678,6 @@ async def build_unsigned_trust_envelope_with_audit(
         build_result=build_result,
         audit_record=persisted,
         unsigned_payload=None,
+        authorized_envelope=None,
         refusal_payload=safe_refusal,
     )

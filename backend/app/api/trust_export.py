@@ -282,11 +282,11 @@ async def _issue_export_envelope(
         source=source,
         cpu_runner=asyncio.to_thread,
     )
-    if result.unsigned_payload is None:
+    if result.authorized_envelope is None:
         return None
     signed = await asyncio.to_thread(
         sign_trust_envelope,
-        result.unsigned_payload,
+        result.authorized_envelope,
         key_registry=key_registry,
     )
     _assert_external_payload_safe(signed)

@@ -225,6 +225,29 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XIII Report.md
+- id: validate-b25-p13-c14-closure
+  path: scripts/ci/validate_b25_p13_c14_closure.py
+  status: required
+  owning_phase: B2.5-P13-C14
+  protected_invariant: Every consequence-bearing TrustEnvelope field is an exact projection of its declared producing authority; the controlled P7 audit transform is the only pre-signing mutation; and only an immutable content-addressed issuance capability can reach the TrustEnvelope private key.
+  command: python scripts/ci/validate_b25_p13_c14_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 C14 Complete Semantic Issuance Authority
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c14_closure.py --negative-control
+  expected_failure_meaning: A caller-authored dictionary can reach the private key, the P5 witness or P7 transform can be forged, a tenant, subject, financial, source-window, confidence, or producing-policy claim lacks correspondence, a signed field lacks a declared authority, or the XIV proof is detached from the required aggregate context.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c14_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_job
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XIV Report.md
 - id: validate-b25-p13-c6-closure
   path: scripts/ci/validate_b25_p13_c6_closure.py
   status: required

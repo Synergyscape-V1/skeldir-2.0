@@ -23,7 +23,7 @@
     {"path":".env.example","classification":"SUPPORTED_LOCAL_DEVELOPMENT","p13_equivalent":false,"purpose":"credential-custody template"}
   ],
   "private_key_routes": [
-    {"path":"backend/app/trust/signing.py","domain":"TrustEnvelope","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"validate_envelope_policy_authority"},
+    {"path":"backend/app/trust/signing.py","domain":"TrustEnvelope","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"AuthorizedTrustEnvelope + validate_envelope_policy_authority"},
     {"path":"backend/app/trust/export_artifact.py","domain":"TrustExportArtifact","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"embedded TrustEnvelope verification"},
     {"path":"backend/app/trust/query_continuation.py","domain":"TrustQueryContinuation","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"cursor payload validator"}
   ]

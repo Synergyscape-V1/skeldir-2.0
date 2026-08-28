@@ -23,6 +23,10 @@ from app.trust.schema_verification import (
     validate_signature_algorithm,
     validate_signature_metadata_versions,
 )
+from app.trust.semantic_authority import (
+    AuthorizedTrustEnvelope,
+    TrustSemanticAuthorityError,
+)
 
 
 SIGNATURE_PREFIX = "ed25519:"
@@ -88,11 +92,17 @@ def prepare_payload_for_signing(
 
 
 def sign_trust_envelope(
-    payload: dict[str, Any],
+    authorized_envelope: AuthorizedTrustEnvelope,
     *,
     key_registry: TrustKeyRegistry,
 ) -> dict[str, Any]:
-    """Sign canonical P2 signature material with the active Ed25519 key."""
+    """Sign only a P5+P7-authorized claim with the active Ed25519 key."""
+    if not isinstance(authorized_envelope, AuthorizedTrustEnvelope):
+        raise TrustEnvelopeSigningError("issuance_capability_required")
+    try:
+        payload = authorized_envelope._validated_payload_copy()
+    except TrustSemanticAuthorityError as exc:
+        raise TrustEnvelopeSigningError(f"semantic_authority_refused:{exc}") from exc
     key = key_registry.active_signing_key()
     prepared = prepare_payload_for_signing(
         payload,

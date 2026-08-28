@@ -56,6 +56,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/schema_verification.py",
     "backend/app/trust/key_registry.py",
     "backend/app/trust/signing.py",
+    "backend/app/trust/semantic_authority.py",
     "backend/app/trust/verification.py",
     "backend/app/trust/jwks.py",
     "backend/app/trust/source_adapters.py",
@@ -111,6 +112,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p13_c11_semantic_authority.py",
     "backend/tests/trust/test_b25_p13_c12_authority_closure.py",
     "backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py",
+    "backend/tests/trust/test_b25_p13_c14_semantic_authority.py",
 )
 
 

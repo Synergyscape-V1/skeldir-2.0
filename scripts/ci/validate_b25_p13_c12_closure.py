@@ -33,6 +33,7 @@ LOAD_BEARING_JOBS = {
     "b2-5-p13-c9-positive-confidence",
     "b2-5-p13-c10-artifact-topology",
     "b2-5-p13-c13-semantic-history",
+    "b2-5-p13-c14-semantic-authority",
 }
 
 
@@ -68,7 +69,9 @@ def validate_authority_closure(
         fit_execution_text if fit_execution_text is not None else _read(FIT_EXECUTION)
     )
     outbox = outbox_text if outbox_text is not None else _read(DISPATCH_OUTBOX)
-    canonical = canonical_text if canonical_text is not None else _read(CANONICAL_SCHEMA)
+    canonical = (
+        canonical_text if canonical_text is not None else _read(CANONICAL_SCHEMA)
+    )
     upgrade = migration.split("def downgrade()", 1)[0]
 
     for token in (
@@ -149,7 +152,9 @@ def validate_merge_governing_graph(workflow_text: str | None = None) -> None:
         set(needs) == LOAD_BEARING_JOBS,
         "merge-governing aggregator lacks load-bearing dependencies",
     )
-    _require(gate.get("if") == "always()", "aggregator must evaluate failed dependencies")
+    _require(
+        gate.get("if") == "always()", "aggregator must evaluate failed dependencies"
+    )
     run = "\n".join(
         str(step.get("run", ""))
         for step in gate.get("steps", [])
@@ -225,9 +230,7 @@ def run_negative_controls() -> None:
         (
             "positive_composition_detached",
             lambda: validate_merge_governing_graph(
-                workflow.replace(
-                    "      - b2-5-p13-c9-positive-confidence\n", "", 1
-                )
+                workflow.replace("      - b2-5-p13-c9-positive-confidence\n", "", 1)
             ),
             "load-bearing dependencies",
         ),
