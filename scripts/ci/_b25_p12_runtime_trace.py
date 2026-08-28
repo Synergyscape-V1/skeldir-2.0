@@ -56,7 +56,10 @@ def _is_forbidden(module: str) -> bool:
 
 def _utc(value):
     return (
-        value.astimezone(_tz.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        value.astimezone(_tz.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
     )
 
 
@@ -81,7 +84,11 @@ def main() -> int:
         verify_export_artifact,
     )
     from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
-    from app.trust.signing import sign_trust_envelope
+    from app.trust.canonicalization import (
+        canonicalize_envelope_payload,
+        canonicalize_signature_material,
+    )
+    from app.trust.signing import encode_ed25519_signature, prepare_payload_for_signing
     from app.trust.verification import verify_trust_envelope
 
     private = Ed25519PrivateKey.from_private_bytes(
@@ -111,7 +118,18 @@ def main() -> int:
 
     executed: list[str] = []
 
-    signed = sign_trust_envelope(envelope, key_registry=registry)
+    key = registry.active_signing_key()
+    signed = prepare_payload_for_signing(
+        envelope,
+        signing_key_id=key.kid,
+        signing_algorithm=key.algorithm,
+    )
+    if key.private_key is None:
+        return _emit(baseline, executed, error="active_signing_key_missing_private")
+    signed["signature"] = encode_ed25519_signature(
+        key.private_key.sign(canonicalize_signature_material(signed))
+    )
+    canonicalize_envelope_payload(signed)
     executed.append("sign_envelope")
 
     verify_trust_envelope(signed, key_registry=registry.public_only())
@@ -129,18 +147,24 @@ def main() -> int:
 
     tampered = dict(artifact)
     tampered["generated_at"] = _utc(issued + timedelta(hours=1))
-    if verify_export_artifact(
-        tampered, key_registry=registry.public_only()
-    ).verification_status != "rejected":
+    if (
+        verify_export_artifact(
+            tampered, key_registry=registry.public_only()
+        ).verification_status
+        != "rejected"
+    ):
         return _emit(baseline, executed, error="tamper_not_rejected")
     executed.append("tampered_artifact_rejection")
 
     unsupported = dict(artifact)
     unsupported["artifact_schema_version"] = "b25-p11-export-artifact-v9"
     unsupported["canonicalization_version"] = "b25-p11-artifact-framing-v9"
-    if verify_export_artifact(
-        unsupported, key_registry=registry.public_only()
-    ).verification_status != "rejected":
+    if (
+        verify_export_artifact(
+            unsupported, key_registry=registry.public_only()
+        ).verification_status
+        != "rejected"
+    ):
         return _emit(baseline, executed, error="unsupported_not_rejected")
     executed.append("unsupported_protocol_refusal")
 

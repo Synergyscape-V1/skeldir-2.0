@@ -138,7 +138,14 @@ def build_live_artifact() -> dict[str, Any]:
         TrustKeyRegistry,
         TrustSigningKey,
     )  # noqa: PLC0415
-    from app.trust.signing import sign_trust_envelope  # noqa: PLC0415
+    from app.trust.canonicalization import (  # noqa: PLC0415
+        canonicalize_envelope_payload,
+        canonicalize_signature_material,
+    )
+    from app.trust.signing import (  # noqa: PLC0415
+        encode_ed25519_signature,
+        prepare_payload_for_signing,
+    )
 
     private = Ed25519PrivateKey.from_private_bytes(
         hashlib.sha256(b"b25-p12-contract-projection-probe").digest()
@@ -172,7 +179,17 @@ def build_live_artifact() -> dict[str, Any]:
     )
     envelope["created_at"] = _utc(issued)
     envelope["valid_until"] = _utc(issued + timedelta(days=1))
-    signed_envelope = sign_trust_envelope(envelope, key_registry=registry)
+    key = registry.active_signing_key()
+    signed_envelope = prepare_payload_for_signing(
+        envelope,
+        signing_key_id=key.kid,
+        signing_algorithm=key.algorithm,
+    )
+    _require(key.private_key is not None, "active_signing_key_missing_private_material")
+    signed_envelope["signature"] = encode_ed25519_signature(
+        key.private_key.sign(canonicalize_signature_material(signed_envelope))
+    )
+    canonicalize_envelope_payload(signed_envelope)
 
     unsigned = build_export_artifact(
         envelopes=[signed_envelope],

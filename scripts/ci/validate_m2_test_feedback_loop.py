@@ -101,6 +101,9 @@ ALLOWED_B24_P5_RUNTIME_MARKER_PATHS = {
     # Trust only serializes the governed producer model identifier as metadata;
     # it does not import or execute the Bayesian runtime.
     "backend/app/trust/builder.py",
+    # Pure issuance state-machine vocabulary; this module validates persisted
+    # producer identifiers but never imports or executes sampler libraries.
+    "backend/app/trust/semantic_authority.py",
     "backend/app/bayesian/runtime_policy.py",
     "backend/app/bayesian/inference_profile.py",
     "backend/app/bayesian/runtime_probe.py",

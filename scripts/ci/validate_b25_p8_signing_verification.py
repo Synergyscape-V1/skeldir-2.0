@@ -36,7 +36,6 @@ from app.trust.jwks import (  # noqa: E402
     registry_from_public_jwks,
 )
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey  # noqa: E402
-from app.trust.signing import sign_trust_envelope  # noqa: E402
 from app.trust.signing import (  # noqa: E402
     encode_ed25519_signature,
     prepare_payload_for_signing,
@@ -133,15 +132,38 @@ def _registry() -> TrustKeyRegistry:
     )
 
 
-def _fixture(name: str = "revenue_claim_valid_with_verified_revenue_minor.json") -> dict[str, Any]:
+def _fixture(
+    name: str = "revenue_claim_valid_with_verified_revenue_minor.json",
+) -> dict[str, Any]:
     payload = json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
     payload["created_at"] = "2026-06-24T10:00:02Z"
     payload["valid_until"] = "2026-06-25T10:00:02Z"
     return payload
 
 
-def _signed_payload(name: str = "revenue_claim_valid_with_verified_revenue_minor.json") -> dict[str, Any]:
-    return sign_trust_envelope(_fixture(name), key_registry=_registry())
+def _signed_payload(
+    name: str = "revenue_claim_valid_with_verified_revenue_minor.json",
+) -> dict[str, Any]:
+    return _cryptographically_sign_fixture(_fixture(name), _registry())
+
+
+def _cryptographically_sign_fixture(
+    payload: dict[str, Any], registry: TrustKeyRegistry
+) -> dict[str, Any]:
+    """Exercise P8 primitives without impersonating issuance authority."""
+
+    key = registry.active_signing_key()
+    prepared = prepare_payload_for_signing(
+        payload,
+        signing_key_id=key.kid,
+        signing_algorithm=key.algorithm,
+    )
+    material = canonicalize_signature_material(prepared)
+    if key.private_key is None:
+        raise B25P8ValidationError("active signing key lacks private material")
+    prepared["signature"] = encode_ed25519_signature(key.private_key.sign(material))
+    canonicalize_envelope_payload(prepared)
+    return prepared
 
 
 def _set_path(payload: dict[str, Any], path: str, value: Any) -> None:
@@ -158,7 +180,7 @@ def _set_path(payload: dict[str, Any], path: str, value: Any) -> None:
 
 def validate_positive_signing() -> tuple[int, int]:
     registry = _registry()
-    signed = sign_trust_envelope(_fixture(), key_registry=registry)
+    signed = _cryptographically_sign_fixture(_fixture(), registry)
     public_registry = registry_from_public_jwks(build_jwks_response(registry))
     result = verify_trust_envelope(
         signed,
@@ -177,11 +199,14 @@ def validate_positive_signing() -> tuple[int, int]:
 def validate_hmac_jwt_rejection() -> tuple[int, int]:
     signed = _signed_payload()
     hmac_fake = copy.deepcopy(signed)
-    hmac_fake["signature"] = "hmac-sha256:" + hmac.new(
-        b"secret",
-        json.dumps(signed, sort_keys=True).encode(),
-        hashlib.sha256,
-    ).hexdigest()
+    hmac_fake["signature"] = (
+        "hmac-sha256:"
+        + hmac.new(
+            b"secret",
+            json.dumps(signed, sort_keys=True).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+    )
     jwt_fake = copy.deepcopy(signed)
     jwt_fake["signature"] = jwt.encode(
         {"signature_hash": signed["signature_hash"]},
@@ -261,7 +286,7 @@ def validate_tamper_controls() -> tuple[int, int, int, int]:
     artifact_fixture = _fixture("artifact_pruned_degraded.json")
     artifact_fixture["artifact_ref"] = "urn:skeldir:artifact:p8_fixture"
     artifact_fixture["artifact_hash"] = compute_artifact_hash(b"artifact-p8")
-    artifact_signed = sign_trust_envelope(artifact_fixture, key_registry=_registry())
+    artifact_signed = _cryptographically_sign_fixture(artifact_fixture, _registry())
     for field, value in (
         ("artifact_ref", "urn:skeldir:artifact:tampered"),
         ("artifact_hash", compute_artifact_hash(b"artifact-tampered")),
@@ -284,8 +309,8 @@ def validate_tamper_controls() -> tuple[int, int, int, int]:
 def validate_key_rotation() -> tuple[int, int, int]:
     key_a = _key("kid:b25-p8-active-a", label="b25-p8-active-a")
     key_b = _key("kid:b25-p8-active-b", label="b25-p8-active-b")
-    signed_a = sign_trust_envelope(_fixture(), key_registry=TrustKeyRegistry((key_a,)))
-    signed_b = sign_trust_envelope(_fixture(), key_registry=TrustKeyRegistry((key_b,)))
+    signed_a = _cryptographically_sign_fixture(_fixture(), TrustKeyRegistry((key_a,)))
+    signed_b = _cryptographically_sign_fixture(_fixture(), TrustKeyRegistry((key_b,)))
     public_registry = TrustKeyRegistry((key_a.public_only(), key_b.public_only()))
     if signed_a["semantic_truth_hash"] != signed_b["semantic_truth_hash"]:
         raise B25P8ValidationError("key rotation changed semantic_truth_hash")
@@ -401,7 +426,10 @@ def validate_temporal_forgery_and_dos_controls() -> tuple[int, int, int]:
     )
     if forgery_result.verification_status != "rejected":
         raise B25P8ValidationError("retired key forged net-new envelope")
-    if forgery_result.reason_code != "temporal_forgery_rejected:created_after_key_retirement":
+    if (
+        forgery_result.reason_code
+        != "temporal_forgery_rejected:created_after_key_retirement"
+    ):
         raise B25P8ValidationError(
             f"temporal forgery wrong reason: {forgery_result.reason_code}"
         )
@@ -444,6 +472,7 @@ def validate_temporal_forgery_and_dos_controls() -> tuple[int, int, int]:
             return original_verify(public_key, signature, mat)
 
         import app.trust.verification as _vmod
+
         _orig_attr = _vmod.verify_ed25519_signature
         _vmod.verify_ed25519_signature = spy
         try:
@@ -459,13 +488,9 @@ def validate_temporal_forgery_and_dos_controls() -> tuple[int, int, int]:
         if result.verification_status != "rejected":
             raise B25P8ValidationError(f"invalid schema accepted: {bad_value}")
         if len(crypto_calls) != 0:
-            raise B25P8ValidationError(
-                f"crypto called for invalid schema: {bad_value}"
-            )
+            raise B25P8ValidationError(f"crypto called for invalid schema: {bad_value}")
         if elapsed_ms >= 1000:
-            raise B25P8ValidationError(
-                f"schema rejection too slow: {elapsed_ms}ms"
-            )
+            raise B25P8ValidationError(f"schema rejection too slow: {elapsed_ms}ms")
         dos_controls += 1
 
     return temporal_controls, historical_controls, dos_controls
@@ -534,7 +559,9 @@ def validate_scope_boundary() -> tuple[int, int, int, int]:
     )
     for token in FORBIDDEN_LATER_PHASE_RUNTIME_TOKENS:
         if token in runtime_text:
-            raise B25P8ValidationError(f"later-phase scope token in P8 runtime: {token}")
+            raise B25P8ValidationError(
+                f"later-phase scope token in P8 runtime: {token}"
+            )
     scope_controls += len(FORBIDDEN_LATER_PHASE_RUNTIME_TOKENS)
     for path in (P8_WORKFLOW, MAKEFILE, ENFORCER_REGISTRY, GATE_MATRIX, EVIDENCE_PACK):
         if not path.exists():
@@ -545,7 +572,13 @@ def validate_scope_boundary() -> tuple[int, int, int, int]:
 
 def run_pytest() -> int:
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "backend/tests/trust/test_b25_p8_signing_verification.py", "-q"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "backend/tests/trust/test_b25_p8_signing_verification.py",
+            "-q",
+        ],
         cwd=ROOT,
         text=True,
         capture_output=True,
