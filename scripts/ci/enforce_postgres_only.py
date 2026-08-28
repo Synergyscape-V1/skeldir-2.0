@@ -9,7 +9,6 @@ from pathlib import Path
 ALLOWED_PREFIXES = (
     ".hypothesis/",
     "docs/forensics/",
-    "artifacts_vt_run3/",
     "backend/validation/evidence/",
     "artifacts/",
     "graphify-out/",

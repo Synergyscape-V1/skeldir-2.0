@@ -1,10 +1,5 @@
 {
-  "timestamp": "2026-02-10T19:51:40.014626+00:00",
-  "steps": [
-    {
-      "name": "phase2_schema_closure",
-      "status": "success"
-    }
-  ],
-  "status": "success"
+  "status": "failure",
+  "timestamp": "2026-08-28T18:27:36.101273+00:00",
+  "error": "Command python scripts/ci/phase2_schema_closure_gate.py --evidence-dir C:\\Users\\ayewhy\\Documents\\Adversarial Forensic Audits\\skeldir-hygiene-work\\backend\\validation\\evidence\\database\\phase2_b03 failed (see C:\\Users\\ayewhy\\Documents\\Adversarial Forensic Audits\\skeldir-hygiene-work\\backend\\validation\\evidence\\database\\phase2_schema_closure_gate.log)"
 }

@@ -1,4 +1,0 @@
-# file: C:\Users\ayewhy\II SKELDIR II\backend\app\middleware\pii_stripping.py
-# hypothesis_version: 6.148.2
-
-['PATCH', 'POST', 'PUT', '[REDACTED]', 'address', 'application/json', 'billing_address', 'body', 'content-type', 'credit_card', 'customer_email', 'customer_phone', 'email', 'error', 'event_type', 'http.request', 'ip', 'method', 'passport', 'path', 'phone', 'pii_redaction', 'pii_redaction_error', 'redacted_keys', 'redaction_count', 'root', 'shipping_address', 'ssn', 'type', 'utf-8']
