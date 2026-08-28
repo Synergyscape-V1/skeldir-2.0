@@ -190,7 +190,9 @@ async def _authorized_result(monkeypatch, source):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", ["deterministic", "available", "degraded"])
+@pytest.mark.parametrize(
+    "state", ["deterministic", "available", "degraded", "temporal_downgrade"]
+)
 async def test_c14_legitimate_authoritative_states_sign_and_publicly_verify(
     monkeypatch, state: str
 ) -> None:
@@ -204,12 +206,25 @@ async def test_c14_legitimate_authoritative_states_sign_and_publicly_verify(
             available=True,
             reason=ConfidenceBucketReason.NARROW_INTERVAL,
         )
-    else:
+    elif state == "degraded":
         source = _confidence_source(
             tenant_id,
             uuid4(),
             available=False,
             reason=ConfidenceBucketReason.ARTIFACT_PRUNED,
+        )
+    else:
+        current = _confidence_source(
+            tenant_id,
+            uuid4(),
+            available=True,
+            reason=ConfidenceBucketReason.NARROW_INTERVAL,
+        )
+        source = ConfidenceProjectionSource(
+            projection=replace(
+                current.projection,
+                source_read_completed_at=NOW + timedelta(minutes=5),
+            )
         )
     result = await _authorized_result(monkeypatch, source)
     registry, private = _registry()
@@ -224,6 +239,14 @@ async def test_c14_legitimate_authoritative_states_sign_and_publicly_verify(
 
     assert verified.verification_status == "verified"
     assert private.sign_calls == 1
+    if state == "temporal_downgrade":
+        metadata = signed["confidence_metadata"]
+        assert metadata["confidence_status"] == "unavailable"
+        assert metadata["confidence_authority"] == "explicitly_unavailable"
+        assert metadata["bayesian_model_type"] == "pymc_marketing_mmm"
+        assert metadata["inference_provenance"] is not None
+        assert signed["artifact_ref"] is None
+        assert signed["artifact_hash"] is None
 
 
 @pytest.mark.asyncio

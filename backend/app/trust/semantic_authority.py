@@ -242,6 +242,27 @@ def _validate_confidence_state(payload: dict[str, Any]) -> None:
             and payload.get("artifact_ref") is None
             and payload.get("artifact_hash") is None
         )
+    elif (
+        status == "unavailable"
+        and authority == "explicitly_unavailable"
+        and model_type == "pymc_marketing_mmm"
+    ):
+        # A legacy fit whose evidence chronology is implausible is not allowed
+        # to become current truth, but retaining the producing model identity
+        # and policy tuple is valuable refusal provenance. The builder removes
+        # its artifact authority and marks the evidence insufficient.
+        valid = (
+            isinstance(model_version, str)
+            and diagnostics == "unavailable"
+            and reason == "confidence_unavailable"
+            and isinstance(provenance, dict)
+            and payload.get("truth_type") == "degraded_or_unavailable_truth"
+            and payload.get("data_completeness_status") == "insufficient_evidence"
+            and payload.get("fallback_applied") is True
+            and payload.get("fallback_reason") == "confidence_unavailable"
+            and payload.get("artifact_ref") is None
+            and payload.get("artifact_hash") is None
+        )
     elif status in {"degraded", "unavailable"}:
         valid = (
             authority == "explicitly_unavailable"
@@ -257,6 +278,7 @@ def _validate_confidence_state(payload: dict[str, Any]) -> None:
                 "unsupported_financial_context",
             }
             and payload.get("fallback_applied") is True
+            and provenance is None
         )
     else:
         valid = False

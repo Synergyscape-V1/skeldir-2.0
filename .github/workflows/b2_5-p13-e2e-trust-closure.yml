@@ -1720,7 +1720,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
             -q -s --no-header | tee /tmp/c14-semantic-authority.out
-          grep -E '13 passed' /tmp/c14-semantic-authority.out
+          grep -E '14 passed' /tmp/c14-semantic-authority.out
           python scripts/ci/validate_b25_p13_c14_closure.py --negative-control \
             | tee /tmp/c14-closure.out
           grep -q '^B25_P13_C14_CLOSURE_VALIDATION_PASS$' /tmp/c14-closure.out
