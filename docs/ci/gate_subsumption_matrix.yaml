@@ -173,6 +173,21 @@
   negative_control_preserved_by: NC-XIII artifact dependency and host mount-shadow controls
   local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate . && docker run --rm -i skeldir-bayesian:candidate python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py
   risk_if_removed: CI can pass against repository or host files that the shipped image does not contain, repeating the artifact/proof split that allowed the one-chain defect.
+- gate_id: validate-b25-p13-c14-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 C14 Complete Semantic Issuance Authority
+  script: scripts/ci/validate_b25_p13_c14_closure.py
+  owning_phase: B2.5-P13-C14
+  protected_invariant: Every signed TrustEnvelope semantic has a closed-world producing-authority declaration and exact P5-to-P7 correspondence before a capability-only private-key boundary.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C13 closes producing-policy provenance at signing and inventories key routes, but does not prove whole-envelope correspondence, controlled audit mutation, or capability-only access for all 41 signed fields.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c14_closure.py --negative-control plus NC-XIV-FINANCIAL, NC-XIV-IDENTITY, NC-XIV-SOURCE-WINDOW, NC-XIV-CONFIDENCE, and NC-XIV-BAYESIAN
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c14_closure.py --negative-control
+  risk_if_removed: Valid Ed25519 signatures could authenticate false money, foreign tenant or subject identity, detached snapshots or windows, dishonest confidence downgrades, or caller-selected producing-policy claims.
 - gate_id: validate-b25-p13-c6-closure
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 E2E Trust Closure
