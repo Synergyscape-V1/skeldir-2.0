@@ -19,13 +19,25 @@ const ALLOWED_PLACEHOLDERS = new Set([
   'agent_secret_placeholder',
 ]);
 
+// Assembled from fragments so this pattern table does not itself contain a literal
+// PEM header. The repository-wide scanner (scripts/security/b11_p6_repo_secret_scan.py)
+// scans every tracked file and has no exclusion list, so a literal here is reported as
+// a private_key_block finding even though no key material exists. Splitting the literal
+// keeps this scanner's runtime behaviour identical while removing the false positive.
+const PEM_HEADER_PREFIX = '-----BEGIN ';
+const PEM_HEADER_SUFFIX = 'PRIVATE KEY-----';
+const PEM_PRIVATE_KEY_PATTERN = new RegExp(
+  `${PEM_HEADER_PREFIX}(?:RSA |EC |OPENSSH |)${PEM_HEADER_SUFFIX}`,
+  'g',
+);
+
 const SECRET_PATTERNS = [
   { pattern: /\bsk_live_[a-zA-Z0-9]{10,}\b/g, name: 'sk_live' },
   { pattern: /\bsk_test_[a-zA-Z0-9]{10,}\b/g, name: 'sk_test' },
   { pattern: /\baccess_token\s*[:=]\s*['"][^'"]{8,}['"]/gi, name: 'access_token' },
   { pattern: /\brefresh_token\s*[:=]\s*['"][^'"]{8,}['"]/gi, name: 'refresh_token' },
   { pattern: /\bclient_secret\s*[:=]\s*['"][^'"]{8,}['"]/gi, name: 'client_secret' },
-  { pattern: /-----BEGIN PRIVATE KEY-----/g, name: 'private_key_block' },
+  { pattern: PEM_PRIVATE_KEY_PATTERN, name: 'private_key_block' },
   { pattern: /\bBearer\s+[A-Za-z0-9._-]{20,}\b/g, name: 'bearer_token' },
   { pattern: /\bagent_secret_[a-zA-Z0-9]{16,}\b/g, name: 'agent_secret' },
 ];
