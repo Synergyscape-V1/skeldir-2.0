@@ -278,7 +278,6 @@ def _validate_confidence_state(payload: dict[str, Any]) -> None:
                 "unsupported_financial_context",
             }
             and payload.get("fallback_applied") is True
-            and provenance is None
         )
     else:
         valid = False
