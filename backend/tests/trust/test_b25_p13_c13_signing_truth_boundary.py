@@ -23,7 +23,15 @@ from app.inference_policy_registry import (
 )
 from app.trust.jwks import build_jwks_response, registry_from_public_jwks
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
-from app.trust.signing import TrustEnvelopeSigningError, sign_trust_envelope
+from app.trust.canonicalization import (
+    canonicalize_envelope_payload,
+    canonicalize_signature_material,
+)
+from app.trust.signing import (
+    TrustEnvelopeSigningError,
+    encode_ed25519_signature,
+    prepare_payload_for_signing,
+)
 from app.trust.verification import verify_trust_envelope
 
 
@@ -81,7 +89,15 @@ def _available_payload() -> dict[str, object]:
 
 def test_c13_current_semantics_sign_and_verify_with_public_jwks() -> None:
     registry, private = _registry()
-    signed = sign_trust_envelope(_available_payload(), key_registry=registry)
+    prepared = prepare_payload_for_signing(
+        _available_payload(),
+        signing_key_id="kid:b25-p13-c13",
+    )
+    prepared["signature"] = encode_ed25519_signature(
+        private.sign(canonicalize_signature_material(prepared))
+    )
+    canonicalize_envelope_payload(prepared)
+    signed = prepared
     public = registry_from_public_jwks(build_jwks_response(registry))
 
     result = verify_trust_envelope(
@@ -116,10 +132,13 @@ def test_c13_direct_signer_refuses_semantic_forgery_before_crypto(
     payload = _available_payload()
     payload["confidence_metadata"]["inference_provenance"][field] = value
     original = deepcopy(payload)
-    registry, private = _registry()
+    _, private = _registry()
 
     with pytest.raises(TrustEnvelopeSigningError, match="policy_authority_refused"):
-        sign_trust_envelope(payload, key_registry=registry)
+        prepare_payload_for_signing(
+            payload,
+            signing_key_id="kid:b25-p13-c13",
+        )
 
     assert private.sign_calls == 0
     assert payload == original
@@ -128,7 +147,7 @@ def test_c13_direct_signer_refuses_semantic_forgery_before_crypto(
 def test_c13_reject_all_boundary_stops_the_only_trust_envelope_signer(
     monkeypatch,
 ) -> None:
-    registry, private = _registry()
+    _, private = _registry()
 
     def reject_all(_: object) -> None:
         raise PolicyRegistryError("c13_forced_reject_all")
@@ -137,7 +156,10 @@ def test_c13_reject_all_boundary_stops_the_only_trust_envelope_signer(
         "app.trust.signing.validate_envelope_policy_authority", reject_all
     )
     with pytest.raises(TrustEnvelopeSigningError, match="c13_forced_reject_all"):
-        sign_trust_envelope(_available_payload(), key_registry=registry)
+        prepare_payload_for_signing(
+            _available_payload(),
+            signing_key_id="kid:b25-p13-c13",
+        )
     assert private.sign_calls == 0
 
 
@@ -156,9 +178,12 @@ def test_c13_historical_p1_is_resolvable_but_not_reissuable() -> None:
     )
     payload = _available_payload()
     payload["confidence_metadata"]["inference_provenance"] = historical
-    registry, private = _registry()
+    _, private = _registry()
     with pytest.raises(TrustEnvelopeSigningError, match="not_issuable"):
-        sign_trust_envelope(payload, key_registry=registry)
+        prepare_payload_for_signing(
+            payload,
+            signing_key_id="kid:b25-p13-c13",
+        )
     assert private.sign_calls == 0
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import UUID
@@ -98,6 +98,54 @@ class TrustEnvelopeBuildResult:
     field_source_decisions: tuple[FieldSourceDecision, ...]
     money_authority_decision: MoneyAuthorityDecision | None
     read_only_observation: ReadOnlyObservation
+    authority_witness: TrustEnvelopeBuildWitness | None
+
+
+_BUILD_WITNESS_SEAL = object()
+
+
+@dataclass(frozen=True, slots=True)
+class TrustEnvelopeBuildWitness:
+    """Immutable proof that P5 produced these exact authoritative bytes."""
+
+    canonical_payload: bytes
+    tenant_id_hash: str
+    subject_type: str
+    subject_ref: str
+    subject_ref_hash: str
+    source_snapshot_hash: str
+    field_authority_names: tuple[str, ...]
+    _seal: object = field(repr=False, compare=False)
+
+    def assert_authoritative_payload(self, payload: dict[str, Any]) -> None:
+        """Reject fabricated witnesses and any mutation after P5 construction."""
+
+        if self._seal is not _BUILD_WITNESS_SEAL:
+            raise TrustEnvelopeBuildError("builder_authority_witness_invalid")
+        if canonicalize_envelope_payload(payload) != self.canonical_payload:
+            raise TrustEnvelopeBuildError("builder_authority_payload_mismatch")
+
+
+def _build_authority_witness(
+    *,
+    payload: dict[str, Any],
+    decisions: tuple[FieldSourceDecision, ...],
+) -> TrustEnvelopeBuildWitness:
+    """Mint the P5 witness at the point authority is still mechanically known."""
+
+    truth_authority = payload.get("truth_authority")
+    if not isinstance(truth_authority, dict):
+        raise TrustEnvelopeBuildError("builder_truth_authority_missing")
+    return TrustEnvelopeBuildWitness(
+        canonical_payload=canonicalize_envelope_payload(payload),
+        tenant_id_hash=str(payload["tenant_id_hash"]),
+        subject_type=str(payload["subject_type"]),
+        subject_ref=str(payload["subject_ref"]),
+        subject_ref_hash=str(payload["subject_ref_hash"]),
+        source_snapshot_hash=str(truth_authority["source_snapshot_hash"]),
+        field_authority_names=tuple(row.field_name for row in decisions),
+        _seal=_BUILD_WITNESS_SEAL,
+    )
 
 
 def _context_datetime(
@@ -1004,6 +1052,7 @@ async def build_unsigned_trust_envelope(
             field_source_decisions=decisions,
             money_authority_decision=None,
             read_only_observation=_read_only_observation(llm_modules=()),
+            authority_witness=None,
         )
 
     if source is not None:
@@ -1049,6 +1098,7 @@ async def build_unsigned_trust_envelope(
             field_source_decisions=decisions,
             money_authority_decision=None,
             read_only_observation=_read_only_observation(llm_modules=()),
+            authority_witness=None,
         )
 
     if isinstance(source, ConfidenceProjectionSource):
@@ -1074,6 +1124,10 @@ async def build_unsigned_trust_envelope(
             field_source_decisions=decisions,
             money_authority_decision=None,
             read_only_observation=_read_only_observation(llm_modules=llm_modules),
+            authority_witness=_build_authority_witness(
+                payload=payload,
+                decisions=decisions,
+            ),
         )
 
     money_decision = _money_decision_for_match_verdict(source)
@@ -1092,6 +1146,7 @@ async def build_unsigned_trust_envelope(
             field_source_decisions=decisions,
             money_authority_decision=money_decision,
             read_only_observation=_read_only_observation(llm_modules=()),
+            authority_witness=None,
         )
 
     if payload_runner is None:
@@ -1121,4 +1176,8 @@ async def build_unsigned_trust_envelope(
         field_source_decisions=decisions,
         money_authority_decision=money_decision,
         read_only_observation=_read_only_observation(llm_modules=llm_modules),
+        authority_witness=_build_authority_witness(
+            payload=payload,
+            decisions=decisions,
+        ),
     )

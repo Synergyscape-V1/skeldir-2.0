@@ -50,6 +50,8 @@ on:
       - 'backend/tests/trust/test_b25_p13_c11_semantic_authority.py'
       - 'backend/tests/trust/test_b25_p13_c12_authority_closure.py'
       - 'backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py'
+      - 'backend/tests/trust/test_b25_p13_c14_semantic_authority.py'
+      - 'backend/app/trust/semantic_authority.py'
       - 'backend/app/inference_policy_registry.py'
       - 'backend/app/tasks/bayesian_publisher.py'
       - 'backend/Dockerfile.bayesian'
@@ -79,12 +81,15 @@ on:
       - 'scripts/ci/validate_b25_p13_c12_closure.py'
       - 'scripts/ci/validate_b25_p13_c13_closure.py'
       - 'scripts/ci/validate_b25_p13_c13_artifact_closure.py'
+      - 'scripts/ci/validate_b25_p13_c14_closure.py'
       - 'contracts-internal/governance/b25_p13_c13_authority_topology.v1.json'
+      - 'contracts-internal/governance/b25_p13_c14_trust_semantic_authority.v1.json'
       - 'scripts/database/prepare_migration_authority_boundary.py'
       - '.github/actions/setup-postgres-ci/action.yml'
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation VI Report.md'
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation XII Report.md'
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation XIII Report.md'
+      - 'docs/forensics/B2.5-P13 Corrective Action Remediation XIV Report.md'
       - 'db/schema/canonical_schema.sql'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
@@ -1680,6 +1685,163 @@ jobs:
   # This job deliberately owns the branch-protection context name. It is a
   # mechanical AND over the core trust chain, the real positive posterior
   # journey, and executable production-artifact topology. A skipped or failed
+  b2-5-p13-c14-semantic-authority:
+    name: B2.5-P13 C14 Complete Semantic Issuance Authority
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p13_c14
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Complete production issuance authority physics
+        run: |
+          set -euo pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+            -q -s --no-header | tee /tmp/c14-semantic-authority.out
+          grep -E '13 passed' /tmp/c14-semantic-authority.out
+          python scripts/ci/validate_b25_p13_c14_closure.py --negative-control \
+            | tee /tmp/c14-closure.out
+          grep -q '^B25_P13_C14_CLOSURE_VALIDATION_PASS$' /tmp/c14-closure.out
+          grep -q '^c14_static_negative_controls_fired=7$' /tmp/c14-closure.out
+
+      - name: NC-XIV-FINANCIAL false money turns governing proof red
+        run: |
+          set -euo pipefail
+          cp backend/app/trust/semantic_authority.py /tmp/c14-authority.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/trust/semantic_authority.py')
+          source = path.read_text(encoding='utf-8')
+          old = 'if actual_bytes != expected_bytes:'
+          assert source.count(old) == 1
+          source = source.replace(old, 'if False and actual_bytes != expected_bytes:', 1)
+          source = source.replace('if audited_payload != expected:', 'if False and audited_payload != expected:', 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+              -q --no-header -k false_financial_semantics > /tmp/nc-xiv-financial.out 2>&1; then
+            echo 'NC-XIV-FINANCIAL did not fire'; exit 1
+          fi
+          grep -E 'failed' /tmp/nc-xiv-financial.out
+          cp /tmp/c14-authority.py backend/app/trust/semantic_authority.py
+          python -m pytest backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+            -q --no-header -k false_financial_semantics
+
+      - name: NC-XIV-IDENTITY foreign identity turns governing proof red
+        run: |
+          set -euo pipefail
+          cp backend/app/trust/semantic_authority.py /tmp/c14-authority.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/trust/semantic_authority.py')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace('if actual_bytes != expected_bytes:', 'if False and actual_bytes != expected_bytes:', 1)
+          source = source.replace('if audited_payload != expected:', 'if False and audited_payload != expected:', 1)
+          source = source.replace('_validate_identity_correspondence(payload, witness=witness)', 'None', 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+              -q --no-header -k foreign_tenant_and_subject > /tmp/nc-xiv-identity.out 2>&1; then
+            echo 'NC-XIV-IDENTITY did not fire'; exit 1
+          fi
+          grep -E 'failed' /tmp/nc-xiv-identity.out
+          cp /tmp/c14-authority.py backend/app/trust/semantic_authority.py
+          python -m pytest backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+            -q --no-header -k foreign_tenant_and_subject
+
+      - name: NC-XIV-SOURCE-WINDOW detached snapshot turns governing proof red
+        run: |
+          set -euo pipefail
+          cp backend/app/trust/semantic_authority.py /tmp/c14-authority.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/trust/semantic_authority.py')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace('if actual_bytes != expected_bytes:', 'if False and actual_bytes != expected_bytes:', 1)
+          source = source.replace('if audited_payload != expected:', 'if False and audited_payload != expected:', 1)
+          source = source.replace('_validate_source_window_correspondence(payload, witness=witness)', 'None', 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+              -q --no-header -k source_snapshot_and_evidence_window > /tmp/nc-xiv-source.out 2>&1; then
+            echo 'NC-XIV-SOURCE-WINDOW did not fire'; exit 1
+          fi
+          grep -E 'failed' /tmp/nc-xiv-source.out
+          cp /tmp/c14-authority.py backend/app/trust/semantic_authority.py
+          python -m pytest backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+            -q --no-header -k source_snapshot_and_evidence_window
+
+      - name: NC-XIV-CONFIDENCE dishonest downgrade turns governing proof red
+        run: |
+          set -euo pipefail
+          cp backend/app/trust/semantic_authority.py /tmp/c14-authority.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/trust/semantic_authority.py')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace('if actual_bytes != expected_bytes:', 'if False and actual_bytes != expected_bytes:', 1)
+          source = source.replace('if audited_payload != expected:', 'if False and audited_payload != expected:', 1)
+          source = source.replace('_validate_confidence_state(payload)', 'None', 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+              -q --no-header -k confidence_label_cannot > /tmp/nc-xiv-confidence.out 2>&1; then
+            echo 'NC-XIV-CONFIDENCE did not fire'; exit 1
+          fi
+          grep -E 'failed' /tmp/nc-xiv-confidence.out
+          cp /tmp/c14-authority.py backend/app/trust/semantic_authority.py
+          python -m pytest backend/tests/trust/test_b25_p13_c14_semantic_authority.py \
+            -q --no-header -k confidence_label_cannot
+
+      - name: NC-XIV-BAYESIAN producing-policy substitution stays red
+        run: |
+          set -euo pipefail
+          cp backend/app/trust/signing.py /tmp/c14-signing.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/trust/signing.py')
+          source = path.read_text(encoding='utf-8')
+          old = 'validate_envelope_policy_authority(payload)'
+          assert source.count(old) == 1
+          path.write_text(source.replace(old, 'None', 1), encoding='utf-8')
+          PY
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py \
+              -q --no-header -k direct_signer_refuses_semantic_forgery \
+              > /tmp/nc-xiv-bayesian.out 2>&1; then
+            echo 'NC-XIV-BAYESIAN did not fire'; exit 1
+          fi
+          grep -E 'failed' /tmp/nc-xiv-bayesian.out
+          cp /tmp/c14-signing.py backend/app/trust/signing.py
+          python -m pytest backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py \
+            -q --no-header -k direct_signer_refuses_semantic_forgery
+
   # load-bearing proof therefore cannot report the required context green.
   b25-p13-e2e-trust-closure:
     name: B2.5-P13 E2E Trust Closure
@@ -1689,6 +1851,7 @@ jobs:
       - b2-5-p13-c9-positive-confidence
       - b2-5-p13-c10-artifact-topology
       - b2-5-p13-c13-semantic-history
+      - b2-5-p13-c14-semantic-authority
     runs-on: ubuntu-latest
     steps:
       - name: Require every load-bearing P13 proof
@@ -1697,6 +1860,7 @@ jobs:
           POSITIVE_RESULT: ${{ needs['b2-5-p13-c9-positive-confidence'].result }}
           ARTIFACT_RESULT: ${{ needs['b2-5-p13-c10-artifact-topology'].result }}
           SEMANTIC_RESULT: ${{ needs['b2-5-p13-c13-semantic-history'].result }}
+          COMPLETE_AUTHORITY_RESULT: ${{ needs['b2-5-p13-c14-semantic-authority'].result }}
         run: |
           set -euo pipefail
           test "$CORE_RESULT" = success || {
@@ -1710,5 +1874,8 @@ jobs:
           }
           test "$SEMANTIC_RESULT" = success || {
             echo "b2-5-p13-c13-semantic-history=$SEMANTIC_RESULT"; exit 1;
+          }
+          test "$COMPLETE_AUTHORITY_RESULT" = success || {
+            echo "b2-5-p13-c14-semantic-authority=$COMPLETE_AUTHORITY_RESULT"; exit 1;
           }
           echo 'p13_load_bearing_proof_graph=green'

@@ -16,7 +16,10 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api import trust_export
-from app.trust.canonicalization import canonicalize_signature_material
+from app.trust.canonicalization import (
+    canonicalize_envelope_payload,
+    canonicalize_signature_material,
+)
 from app.trust.export_artifact import (
     ACTIVE_EXPORT_ARTIFACT_PROTOCOL,
     EXPORT_ARTIFACT_PROTOCOL_V1,
@@ -36,7 +39,8 @@ from app.trust.machine_identity import AgentScope
 from app.trust.refusal import tenant_hash
 from app.trust.signing import (
     TrustEnvelopeSigningError,
-    sign_trust_envelope,
+    encode_ed25519_signature,
+    prepare_payload_for_signing,
     verify_ed25519_signature,
 )
 from app.trust.source_adapters import MatchVerdictSource
@@ -73,14 +77,30 @@ def _registry() -> TrustKeyRegistry:
     )
 
 
+def _cryptographically_sign_fixture(
+    payload: dict[str, object], registry: TrustKeyRegistry
+) -> dict[str, object]:
+    now = datetime.now(timezone.utc)
+    payload["created_at"] = _utc(now)
+    payload["valid_until"] = _utc(now + timedelta(days=1))
+    key = registry.active_signing_key()
+    prepared = prepare_payload_for_signing(
+        payload,
+        signing_key_id=key.kid,
+        signing_algorithm=key.algorithm,
+    )
+    assert key.private_key is not None
+    material = canonicalize_signature_material(prepared)
+    prepared["signature"] = encode_ed25519_signature(key.private_key.sign(material))
+    canonicalize_envelope_payload(prepared)
+    return prepared
+
+
 def _signed_envelope(registry: TrustKeyRegistry) -> dict[str, object]:
     payload = json.loads(
         (EXAMPLES / "deterministic_only_verified.json").read_text(encoding="utf-8")
     )
-    now = datetime.now(timezone.utc)
-    payload["created_at"] = _utc(now)
-    payload["valid_until"] = _utc(now + timedelta(days=1))
-    return sign_trust_envelope(payload, key_registry=registry)
+    return _cryptographically_sign_fixture(payload, registry)
 
 
 def _signed_artifact(
@@ -535,7 +555,9 @@ async def test_machine_route_pages_at_two_and_emits_verifiable_artifacts(
         _ = session
         audit_modes.append(bool(kwargs["access_log_only"]))
         return SimpleNamespace(
-            unsigned_payload=_unsigned_for_route(request.tenant_id, request.subject_ref)
+            authorized_envelope=_unsigned_for_route(
+                request.tenant_id, request.subject_ref
+            )
         )
 
     app.dependency_overrides[trust_export.get_machine_export_db_session] = fake_session
@@ -546,6 +568,13 @@ async def test_machine_route_pages_at_two_and_emits_verifiable_artifacts(
         trust_export,
         "build_unsigned_trust_envelope_with_audit",
         fake_build,
+    )
+    monkeypatch.setattr(
+        trust_export,
+        "sign_trust_envelope",
+        lambda payload, *, key_registry: _cryptographically_sign_fixture(
+            payload, key_registry
+        ),
     )
 
     transport = ASGITransport(app=app)

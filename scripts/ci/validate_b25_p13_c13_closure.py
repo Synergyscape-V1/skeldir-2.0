@@ -52,6 +52,7 @@ LOAD_BEARING_JOBS = {
     "b2-5-p13-c9-positive-confidence",
     "b2-5-p13-c10-artifact-topology",
     "b2-5-p13-c13-semantic-history",
+    "b2-5-p13-c14-semantic-authority",
 }
 
 
@@ -115,7 +116,8 @@ def validate_route_inventory(manifest_text: str | None = None) -> None:
     ]
     _require(len(trust_routes) == 1, "trust_envelope_signer_not_unique")
     _require(
-        trust_routes[0]["semantic_boundary"] == "validate_envelope_policy_authority",
+        trust_routes[0]["semantic_boundary"]
+        == "AuthorizedTrustEnvelope + validate_envelope_policy_authority",
         "trust_envelope_route_bypasses_semantic_boundary",
     )
 

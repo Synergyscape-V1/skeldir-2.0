@@ -38,6 +38,11 @@ from app.trust.tenant_security import (
 )
 from app.trust.jwks import registry_from_public_jwks
 from app.trust.verification import verify_trust_envelope
+from app.trust.canonicalization import (
+    canonicalize_envelope_payload,
+    canonicalize_signature_material,
+)
+from app.trust.signing import encode_ed25519_signature, prepare_payload_for_signing
 
 
 def _utc(value: datetime) -> str:
@@ -116,6 +121,23 @@ def _unsigned_fixture() -> dict[str, object]:
     payload["created_at"] = _utc(now)
     payload["valid_until"] = _utc(now + timedelta(hours=1))
     return payload
+
+
+def _cryptographically_sign_fixture(
+    payload: dict[str, object], registry: TrustKeyRegistry
+) -> dict[str, object]:
+    key = registry.active_signing_key()
+    prepared = prepare_payload_for_signing(
+        payload,
+        signing_key_id=key.kid,
+        signing_algorithm=key.algorithm,
+    )
+    assert key.private_key is not None
+    prepared["signature"] = encode_ed25519_signature(
+        key.private_key.sign(canonicalize_signature_material(prepared))
+    )
+    canonicalize_envelope_payload(prepared)
+    return prepared
 
 
 def _caller(tenant_id: UUID | None = None) -> MachineCallerContext:
@@ -394,7 +416,7 @@ async def test_individual_wire_budget_fails_typed_before_response(
     caller = _caller()
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(unsigned_payload={"safe": True})
+        return SimpleNamespace(authorized_envelope={"safe": True})
 
     monkeypatch.setattr(
         trust_api,
@@ -688,7 +710,7 @@ async def test_client_visible_wire_verifies_through_published_jwks_and_mutation_
         return registry
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(unsigned_payload=_unsigned_fixture())
+        return SimpleNamespace(authorized_envelope=_unsigned_fixture())
 
     app.dependency_overrides[trust_api.get_machine_db_session] = (
         _fake_session_dependency
@@ -699,6 +721,13 @@ async def test_client_visible_wire_verifies_through_published_jwks_and_mutation_
         trust_api,
         "build_unsigned_trust_envelope_with_audit",
         fake_build,
+    )
+    monkeypatch.setattr(
+        trust_api,
+        "sign_trust_envelope",
+        lambda payload, *, key_registry: _cryptographically_sign_fixture(
+            payload, key_registry
+        ),
     )
     monkeypatch.setattr(
         trust_keys,

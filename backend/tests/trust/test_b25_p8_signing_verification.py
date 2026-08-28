@@ -25,7 +25,6 @@ from app.trust.jwks import (
     registry_from_public_jwks,
 )
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
-from app.trust.signing import sign_trust_envelope
 from app.trust.verification import verify_trust_envelope
 
 from app.trust.canonicalization import (
@@ -87,15 +86,37 @@ def _registry() -> TrustKeyRegistry:
     )
 
 
-def _fixture(name: str = "revenue_claim_valid_with_verified_revenue_minor.json") -> dict[str, Any]:
+def _fixture(
+    name: str = "revenue_claim_valid_with_verified_revenue_minor.json",
+) -> dict[str, Any]:
     payload = json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
     payload["created_at"] = "2026-06-24T10:00:02Z"
     payload["valid_until"] = "2026-06-25T10:00:02Z"
     return payload
 
 
-def _signed_payload(name: str = "revenue_claim_valid_with_verified_revenue_minor.json") -> dict[str, Any]:
-    return sign_trust_envelope(_fixture(name), key_registry=_registry())
+def _signed_payload(
+    name: str = "revenue_claim_valid_with_verified_revenue_minor.json",
+) -> dict[str, Any]:
+    return _cryptographically_sign_fixture(_fixture(name), _registry())
+
+
+def _cryptographically_sign_fixture(
+    payload: dict[str, Any], registry: TrustKeyRegistry
+) -> dict[str, Any]:
+    """Exercise P8 primitives without impersonating production issuance authority."""
+
+    key = registry.active_signing_key()
+    prepared = prepare_payload_for_signing(
+        payload,
+        signing_key_id=key.kid,
+        signing_algorithm=key.algorithm,
+    )
+    material = canonicalize_signature_material(prepared)
+    assert key.private_key is not None
+    prepared["signature"] = encode_ed25519_signature(key.private_key.sign(material))
+    canonicalize_envelope_payload(prepared)
+    return prepared
 
 
 def _set_path(payload: dict[str, Any], path: str, value: Any) -> None:
@@ -123,7 +144,7 @@ def _reverse_objects(value: Any) -> Any:
 
 def test_ed25519_signer_verifies_with_public_jwks_only() -> None:
     registry = _registry()
-    signed = sign_trust_envelope(_fixture(), key_registry=registry)
+    signed = _cryptographically_sign_fixture(_fixture(), registry)
     public_registry = registry_from_public_jwks(build_jwks_response(registry))
 
     result = verify_trust_envelope(
@@ -142,11 +163,14 @@ def test_ed25519_signer_verifies_with_public_jwks_only() -> None:
 def test_hmac_and_jwt_signature_confusion_fail_closed() -> None:
     signed = _signed_payload()
     hmac_fake = copy.deepcopy(signed)
-    hmac_fake["signature"] = "hmac-sha256:" + hmac.new(
-        b"secret",
-        json.dumps(signed, sort_keys=True).encode(),
-        hashlib.sha256,
-    ).hexdigest()
+    hmac_fake["signature"] = (
+        "hmac-sha256:"
+        + hmac.new(
+            b"secret",
+            json.dumps(signed, sort_keys=True).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+    )
     jwt_fake = copy.deepcopy(signed)
     jwt_fake["signature"] = jwt.encode(
         {"signature_hash": signed["signature_hash"]},
@@ -224,7 +248,7 @@ def test_artifact_ref_and_hash_are_signature_bound_when_present() -> None:
     fixture = _fixture("artifact_pruned_degraded.json")
     fixture["artifact_ref"] = "urn:skeldir:artifact:p8_fixture"
     fixture["artifact_hash"] = compute_artifact_hash(b"artifact-p8")
-    signed = sign_trust_envelope(fixture, key_registry=_registry())
+    signed = _cryptographically_sign_fixture(fixture, _registry())
 
     for field, value in (
         ("artifact_ref", "urn:skeldir:artifact:tampered"),
@@ -246,8 +270,8 @@ def test_key_rotation_preserves_semantic_truth_and_historical_verification() -> 
     registry_a = TrustKeyRegistry((key_a,))
     registry_b = TrustKeyRegistry((key_b,))
 
-    signed_a = sign_trust_envelope(_fixture(), key_registry=registry_a)
-    signed_b = sign_trust_envelope(_fixture(), key_registry=registry_b)
+    signed_a = _cryptographically_sign_fixture(_fixture(), registry_a)
+    signed_b = _cryptographically_sign_fixture(_fixture(), registry_b)
     public_registry = TrustKeyRegistry(
         (
             key_a.public_only(),
@@ -259,13 +283,15 @@ def test_key_rotation_preserves_semantic_truth_and_historical_verification() -> 
     assert signed_a["signature_hash"] != signed_b["signature_hash"]
     assert signed_a["signing_key_id"] != signed_b["signing_key_id"]
     assert (
-        verify_trust_envelope(signed_a, key_registry=public_registry, at_time=VERIFY_TIME)
-        .verification_status
+        verify_trust_envelope(
+            signed_a, key_registry=public_registry, at_time=VERIFY_TIME
+        ).verification_status
         == "verified"
     )
     assert (
-        verify_trust_envelope(signed_b, key_registry=public_registry, at_time=VERIFY_TIME)
-        .verification_status
+        verify_trust_envelope(
+            signed_b, key_registry=public_registry, at_time=VERIFY_TIME
+        ).verification_status
         == "verified"
     )
 
@@ -279,10 +305,15 @@ def test_revoked_expired_unknown_and_temporal_fail_closed() -> None:
         (_key("kid:b25-p8-active-a", label="b25-p8-active-a", state="expired"),)
     )
 
-    for registry in (revoked, expired, TrustKeyRegistry((_key("kid:b25-p8-other", label="x"),))):
+    for registry in (
+        revoked,
+        expired,
+        TrustKeyRegistry((_key("kid:b25-p8-other", label="x"),)),
+    ):
         assert (
-            verify_trust_envelope(signed, key_registry=registry.public_only(), at_time=VERIFY_TIME)
-            .verification_status
+            verify_trust_envelope(
+                signed, key_registry=registry.public_only(), at_time=VERIFY_TIME
+            ).verification_status
             == "rejected"
         )
     assert (
@@ -297,14 +328,15 @@ def test_revoked_expired_unknown_and_temporal_fail_closed() -> None:
 
 def test_canonical_ordering_produces_stable_signature_material() -> None:
     registry = _registry()
-    signed_a = sign_trust_envelope(_fixture(), key_registry=registry)
-    signed_b = sign_trust_envelope(_reverse_objects(_fixture()), key_registry=registry)
+    signed_a = _cryptographically_sign_fixture(_fixture(), registry)
+    signed_b = _cryptographically_sign_fixture(_reverse_objects(_fixture()), registry)
 
     assert signed_a["signature_hash"] == signed_b["signature_hash"]
     assert signed_a["signature"] == signed_b["signature"]
     assert (
-        verify_trust_envelope(signed_b, key_registry=registry.public_only(), at_time=VERIFY_TIME)
-        .verification_status
+        verify_trust_envelope(
+            signed_b, key_registry=registry.public_only(), at_time=VERIFY_TIME
+        ).verification_status
         == "verified"
     )
 
@@ -363,38 +395,55 @@ def test_retired_key_cannot_forge_net_new_envelope() -> None:
     payload["created_at"] = "2026-06-25T10:00:02Z"
     payload["valid_until"] = "2026-06-26T10:00:02Z"
     prepared = prepare_payload_for_signing(
-        payload, signing_key_id="kid:b25-p8-verify-old", signing_algorithm="ed25519",
+        payload,
+        signing_key_id="kid:b25-p8-verify-old",
+        signing_algorithm="ed25519",
     )
     material = canonicalize_signature_material(prepared)
     private_key = _private_key("b25-p8-verify-old")
     prepared["signature"] = encode_ed25519_signature(private_key.sign(material))
     canonicalize_envelope_payload(prepared)
-    verify_registry = TrustKeyRegistry((active_key.public_only(), retired_key.public_only()))
+    verify_registry = TrustKeyRegistry(
+        (active_key.public_only(), retired_key.public_only())
+    )
     result = verify_trust_envelope(
-        prepared, key_registry=verify_registry, at_time=datetime(2026, 6, 25, 10, 5, 0, tzinfo=timezone.utc),
+        prepared,
+        key_registry=verify_registry,
+        at_time=datetime(2026, 6, 25, 10, 5, 0, tzinfo=timezone.utc),
     )
     assert result.verification_status == "rejected"
-    assert result.reason_code == "temporal_forgery_rejected:created_after_key_retirement"
+    assert (
+        result.reason_code == "temporal_forgery_rejected:created_after_key_retirement"
+    )
 
 
 def test_historical_envelope_from_retired_key_still_verifies() -> None:
     """Envelopes created at or before retirement remain verifiable."""
     retired_key = _key(
-        "kid:b25-p8-verify-old", label="b25-p8-verify-old", state="verification_only", retired_at=SIGNING_TIME,
+        "kid:b25-p8-verify-old",
+        label="b25-p8-verify-old",
+        state="verification_only",
+        retired_at=SIGNING_TIME,
     )
     active_key = _key("kid:b25-p8-active-a", label="b25-p8-active-a")
     payload = _fixture()
     payload["created_at"] = "2026-06-24T10:00:02Z"
     payload["valid_until"] = "2026-06-25T10:00:02Z"
     prepared = prepare_payload_for_signing(
-        payload, signing_key_id="kid:b25-p8-verify-old", signing_algorithm="ed25519",
+        payload,
+        signing_key_id="kid:b25-p8-verify-old",
+        signing_algorithm="ed25519",
     )
     material = canonicalize_signature_material(prepared)
     private_key = _private_key("b25-p8-verify-old")
     prepared["signature"] = encode_ed25519_signature(private_key.sign(material))
     canonicalize_envelope_payload(prepared)
-    verify_registry = TrustKeyRegistry((active_key.public_only(), retired_key.public_only()))
-    result = verify_trust_envelope(prepared, key_registry=verify_registry, at_time=VERIFY_TIME)
+    verify_registry = TrustKeyRegistry(
+        (active_key.public_only(), retired_key.public_only())
+    )
+    result = verify_trust_envelope(
+        prepared, key_registry=verify_registry, at_time=VERIFY_TIME
+    )
     assert result.verification_status == "verified"
 
 
@@ -412,7 +461,9 @@ def test_invalid_schema_short_circuits_before_crypto() -> None:
 
     with patch("app.trust.verification.verify_ed25519_signature", spy):
         start = _time.perf_counter()
-        result = verify_trust_envelope(bad, key_registry=_registry().public_only(), at_time=VERIFY_TIME)
+        result = verify_trust_envelope(
+            bad, key_registry=_registry().public_only(), at_time=VERIFY_TIME
+        )
         elapsed_ms = (_time.perf_counter() - start) * 1000
     assert result.verification_status == "rejected"
     assert result.reason_code == "schema_version_unsupported:trust-envelope-schema-v999"
@@ -433,6 +484,8 @@ def test_missing_schema_short_circuits_before_crypto() -> None:
         return original_verify(public_key, signature, material)
 
     with patch("app.trust.verification.verify_ed25519_signature", spy):
-        result = verify_trust_envelope(bad, key_registry=_registry().public_only(), at_time=VERIFY_TIME)
+        result = verify_trust_envelope(
+            bad, key_registry=_registry().public_only(), at_time=VERIFY_TIME
+        )
     assert result.verification_status == "rejected"
     assert len(crypto_calls) == 0
