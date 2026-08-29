@@ -225,6 +225,29 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XIII Report.md
+- id: validate-b25-p13-c15-closure
+  path: scripts/ci/validate_b25_p13_c15_closure.py
+  status: required
+  owning_phase: B2.5-P13-C15
+  protected_invariant: TrustEnvelope signing capability is unforgeable outside a declared trusted computing base and carries no transplantable payload; durable audit history distinguishes an authorised issuance from a completed cryptographic one and the database refuses to record completion without the signature that justifies it; and the repository governs its own line endings so the documented bootstrap is executable on a clean clone.
+  command: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 C15 Issuance Capability and Audit Truth
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control
+  expected_failure_meaning: An importable seal or a caller-held payload has returned to the capability or the P5 witness, the ledger no longer restricts minting to the declared TCB, capability redemption is replayable, a route stopped finalising the durable issuance state, the database completion constraint was dropped or stopped binding the signature, the repository line-ending policy was weakened, the supported-environment matrix stopped declaring unsupported environments, or a C15 falsifier was deleted or detached from the required aggregate.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_job
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XV Report.md
 - id: validate-b25-p13-c14-closure
   path: scripts/ci/validate_b25_p13_c14_closure.py
   status: required

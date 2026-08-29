@@ -98,6 +98,10 @@ LOCAL_HOSTS = {"postgres", "localhost", "127.0.0.1", "::1"}
 EXTERNAL_MARKERS = ("neon.tech", "amazonaws.com", "rds.amazonaws.com", "supabase.co")
 
 ALLOWED_M1_PATH_PREFIXES = [
+    # B2.5-P13 Corrective XV: repository line-ending policy. Without it a
+    # stock Windows clone rewrites LF shell scripts to CRLF and the
+    # documented bootstrap is not executable.
+    ".gitattributes",
     # --- Hygiene remediation surface (exhaustive line-level hygiene audit) ---
     # Governance integration fix, not a product-semantics exemption, following the
     # precedent set for the Corrective XIV evidence report: the diff is still computed
