@@ -157,6 +157,11 @@ ALLOWED_M0_PATHS = [
     # signing, builder, governance-manifest, or C13/C14 enforcer path is included --
     # those remain outside this surface and untouched by the branch.
     ".gitignore",
+    # B2.5-P13 Corrective XV: repository line-ending policy. Without it a
+    # stock Windows clone rewrites LF shell scripts to CRLF and the
+    # documented bootstrap is not executable.
+    ".gitattributes",
+    "db/schema/canonical_schema.sql",
     ".hypothesis/",
     "artifacts/",
     "artifacts_vt_run3/",

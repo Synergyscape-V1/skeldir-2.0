@@ -102,6 +102,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     # stock Windows clone rewrites LF shell scripts to CRLF and the
     # documented bootstrap is not executable.
     ".gitattributes",
+    "db/schema/canonical_schema.sql",
     # --- Hygiene remediation surface (exhaustive line-level hygiene audit) ---
     # Governance integration fix, not a product-semantics exemption, following the
     # precedent set for the Corrective XIV evidence report: the diff is still computed
