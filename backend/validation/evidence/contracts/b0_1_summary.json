@@ -1,5 +1,26 @@
 {
-  "status": "failure",
-  "timestamp": "2026-08-28T18:26:02.466500+00:00",
-  "error": "Command C:\\Program Files\\Git\\bin\\bash.exe scripts/contracts/validate-contracts.sh failed (see C:\\Users\\ayewhy\\Documents\\Adversarial Forensic Audits\\skeldir-hygiene-work\\backend\\validation\\evidence\\contracts\\contract_validation.log)"
+  "timestamp": "2025-12-22T23:01:01.386184+00:00",
+  "steps": [
+    {
+      "name": "contract_validation",
+      "status": "success"
+    },
+    {
+      "name": "error_model",
+      "status": "success"
+    },
+    {
+      "name": "examples",
+      "status": "success"
+    },
+    {
+      "name": "models",
+      "status": "success"
+    },
+    {
+      "name": "contract_semantics",
+      "status": "success"
+    }
+  ],
+  "status": "success"
 }

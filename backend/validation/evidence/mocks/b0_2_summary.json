@@ -1,5 +1,30 @@
 {
-  "status": "failure",
-  "timestamp": "2026-08-28T18:27:34.331285+00:00",
-  "error": "Command C:\\Program Files\\Git\\bin\\bash.exe scripts/start-mocks.sh failed (see C:\\Users\\ayewhy\\Documents\\Adversarial Forensic Audits\\skeldir-hygiene-work\\backend\\validation\\evidence\\mocks\\start_mocks.log)"
+  "timestamp": "2025-12-22T23:01:38.040976+00:00",
+  "steps": [
+    {
+      "name": "config",
+      "status": "success"
+    },
+    {
+      "name": "toolchain",
+      "status": "success"
+    },
+    {
+      "name": "behavior",
+      "status": "success"
+    },
+    {
+      "name": "latency",
+      "status": "success"
+    },
+    {
+      "name": "error_simulation",
+      "status": "success"
+    },
+    {
+      "name": "frontend",
+      "status": "success"
+    }
+  ],
+  "status": "success"
 }

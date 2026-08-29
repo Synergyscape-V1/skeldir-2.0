@@ -1,6 +1,0 @@
-{
-  "phase": "B0.4",
-  "status": "failure",
-  "timestamp": "2026-08-28T18:27:43.580829+00:00",
-  "error": "Command python scripts/security/phase4_enforcement_probe.py failed (see C:\\Users\\ayewhy\\Documents\\Adversarial Forensic Audits\\skeldir-hygiene-work\\backend\\validation\\evidence\\phases\\b0_4_phase4_security_probe.log)"
-}

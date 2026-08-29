@@ -1,6 +1,0 @@
-{
-  "phase": "B0.6",
-  "status": "failure",
-  "timestamp": "2026-08-28T18:27:45.427287+00:00",
-  "error": "Command alembic upgrade skeldir_foundation@head failed (see C:\\Users\\ayewhy\\Documents\\Adversarial Forensic Audits\\skeldir-hygiene-work\\backend\\validation\\evidence\\phases\\b0_6_alembic.log)"
-}
