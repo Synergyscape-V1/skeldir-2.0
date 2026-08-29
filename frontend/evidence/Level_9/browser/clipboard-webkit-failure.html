@@ -1,0 +1,4346 @@
+<!DOCTYPE html><html lang="en"><head>
+    <script type="module">import { injectIntoGlobalHook } from "/@react-refresh";
+injectIntoGlobalHook(window);
+window.$RefreshReg$ = () => {};
+window.$RefreshSig$ = () => (type) => type;</script>
+
+    <script type="module" src="/@vite/client"></script>
+
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>skeldir-ui</title>
+  <style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/tokens/tokens.css">/**
+ * Skeldir Level 0 — Design Token Registry
+ * Raw visual values exist ONLY in this file.
+ * H-UI-05: Dark mode explicitly out of scope at Level 0.
+ */
+
+:root {
+  /* Color — background */
+  --sk-color-bg-page: #f8fafc;
+  --sk-color-bg-card: #ffffff;
+  --sk-color-bg-muted: #f1f5f9;
+
+  /* Color — text */
+  --sk-color-text-primary: #0f172a;
+  --sk-color-text-secondary: #475569;
+  --sk-color-text-muted: #64748b;
+  --sk-color-text-inverse: #ffffff;
+
+  /* Color — border */
+  --sk-color-border-default: #e2e8f0;
+
+  /* Color — trust authority */
+  --sk-color-trust-deterministic: #166534;
+  --sk-color-trust-probabilistic: #1d4ed8;
+  --sk-color-trust-benchmark: #7c3aed;
+  --sk-color-trust-prior: #475569;
+  --sk-color-trust-unavailable: #64748b;
+  --sk-color-trust-suppressed: #64748b;
+
+  /* Color — status */
+  --sk-color-status-success: #15803d;
+  --sk-color-status-warning: #b45309;
+  --sk-color-status-error: #b91c1c;
+  --sk-color-status-info: #0369a1;
+
+  /* Color — semantic surfaces */
+  --sk-color-surface-error: #fef2f2;
+  --sk-color-surface-warning: #fffbeb;
+  --sk-color-surface-info: #eff6ff;
+  --sk-color-surface-success: #f0fdf4;
+  --sk-color-surface-sidebar-active: #eef4ff;
+  --sk-color-text-sidebar-active: #1d4ed8;
+
+  /* Typography — family */
+  --sk-font-family-base: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --sk-font-family-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Typography — scale */
+  --sk-font-size-h1: 32px;
+  --sk-line-height-h1: 40px;
+  --sk-font-weight-h1: 700;
+
+  --sk-font-size-h2: 24px;
+  --sk-line-height-h2: 32px;
+  --sk-font-weight-h2: 700;
+
+  --sk-font-size-h3: 18px;
+  --sk-line-height-h3: 28px;
+  --sk-font-weight-h3: 600;
+
+  --sk-font-size-body: 14px;
+  --sk-line-height-body: 22px;
+  --sk-font-weight-body: 400;
+
+  --sk-font-size-small: 12px;
+  --sk-line-height-small: 18px;
+  --sk-font-weight-small: 500;
+
+  --sk-font-size-code: 13px;
+  --sk-line-height-code: 20px;
+  --sk-font-weight-code: 400;
+
+  /* Spacing — 4px-derived scale */
+  --sk-space-1: 4px;
+  --sk-space-2: 8px;
+  --sk-space-3: 12px;
+  --sk-space-4: 16px;
+  --sk-space-6: 24px;
+  --sk-space-8: 32px;
+  --sk-space-12: 48px;
+  --sk-space-16: 64px;
+
+  /* Radius */
+  --sk-radius-sm: 8px;
+  --sk-radius-md: 12px;
+
+  /* Elevation */
+  --sk-elevation-card: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --sk-elevation-drawer: 0 12px 32px rgba(15, 23, 42, 0.18);
+  --sk-elevation-modal: 0 20px 48px rgba(15, 23, 42, 0.22);
+
+  /* Layout dimensions */
+  --sk-dimension-sidebar-width: 264px;
+  --sk-dimension-header-height: 64px;
+  --sk-dimension-content-max-width: 1280px;
+  --sk-dimension-onboarding-panel-max: 720px;
+  --sk-dimension-onboarding-rail-width: 280px;
+  --sk-dimension-onboarding-panel-min-height: 400px;
+  --sk-dimension-modal-width: 560px;
+  --sk-dimension-nav-item-height: 44px;
+  --sk-dimension-checkbox-size: 20px;
+  --sk-dimension-icon-size-sm: 16px;
+  --sk-dimension-card-accent-width: 3px;
+  --sk-dimension-table-row-dense: 56px;
+  --sk-dimension-table-row-standard: 64px;
+  --sk-dimension-target-min: 44px;
+  --sk-dimension-target-dense-min: 40px;
+  --sk-dimension-border-width: 1px;
+  --sk-dimension-icon-size: 20px;
+  --sk-dimension-popover-min-width: 240px;
+
+  /* Breakpoints (for JS/media queries) */
+  --sk-breakpoint-mobile-max: 767px;
+  --sk-breakpoint-tablet-min: 768px;
+  --sk-breakpoint-tablet-max: 1023px;
+  --sk-breakpoint-desktop-min: 1024px;
+  --sk-breakpoint-desktop-max: 1439px;
+  --sk-breakpoint-wide-min: 1440px;
+
+  /* Motion */
+  --sk-motion-button-hover: 120ms ease-out;
+  --sk-motion-drawer-open: 180ms ease-out;
+  --sk-motion-modal-open: 220ms ease-out;
+  --sk-motion-toast: 240ms ease-out;
+  --sk-motion-number-update: 250ms ease-out;
+  --sk-motion-skeleton-pulse: 1500ms;
+
+  /* Focus */
+  --sk-focus-outline-width: 2px;
+  --sk-focus-outline-color: #2563eb;
+  --sk-focus-outline-offset: 3px;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/index.css">*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/Skeleton/Skeleton.module.css">._wrapper_n0iy4_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+._text_n0iy4_13,
+._block_n0iy4_15,
+._row_n0iy4_17 {
+  background: var(--sk-color-bg-muted);
+  border-radius: var(--sk-radius-sm);
+  animation: _pulse_n0iy4_1 var(--sk-motion-skeleton-pulse) infinite ease-in-out;
+}
+
+._text_n0iy4_13 {
+  height: var(--sk-line-height-body);
+}
+
+._block_n0iy4_15 {
+  height: var(--sk-space-12);
+}
+
+._row_n0iy4_17 {
+  height: var(--sk-dimension-table-row-dense);
+}
+
+@keyframes _pulse_n0iy4_1 {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/styles/shared.module.css">._focusVisible_1i8j1_1:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+
+._srOnly_1i8j1_11 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+._livePolite_1i8j1_35 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+._errorState_1i8j1_59 {
+  color: var(--sk-color-status-error);
+  background: var(--sk-color-surface-error);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-error);
+  border-radius: var(--sk-radius-sm);
+  padding: var(--sk-space-3) var(--sk-space-4);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+._iconWithLabel_1i8j1_79 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/ErrorBanner/ErrorBanner.module.css">._banner_17og0_1 {
+  padding: var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._label_17og0_13 {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  font-weight: var(--sk-font-weight-h3);
+}
+
+._detail_17og0_25 {
+  margin: var(--sk-space-2) 0 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+}
+
+._error_17og0_37,
+._permission_denied_17og0_39 {
+  background: var(--sk-color-surface-error);
+  border-color: var(--sk-color-status-error);
+  color: var(--sk-color-status-error);
+}
+
+._warning_17og0_51 {
+  background: var(--sk-color-surface-warning);
+  border-color: var(--sk-color-status-warning);
+  color: var(--sk-color-status-warning);
+}
+
+._info_17og0_63 {
+  background: var(--sk-color-surface-info);
+  border-color: var(--sk-color-status-info);
+  color: var(--sk-color-status-info);
+}
+
+._success_17og0_75 {
+  background: var(--sk-color-surface-success);
+  border-color: var(--sk-color-status-success);
+  color: var(--sk-color-status-success);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/PageSurface/PageSurface.module.css">._page_1wb18_1 {
+  min-height: 100vh;
+  background: var(--sk-color-bg-page);
+  color: var(--sk-color-text-primary);
+  font-family: var(--sk-font-family-base);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/Typography/Typography.module.css">._h1_diuvl_1 {
+  font-family: var(--sk-font-family-base);
+  font-size: var(--sk-font-size-h1);
+  line-height: var(--sk-line-height-h1);
+  font-weight: var(--sk-font-weight-h1);
+  color: var(--sk-color-text-primary);
+  margin: 0;
+}
+
+._h2_diuvl_19 {
+  font-family: var(--sk-font-family-base);
+  font-size: var(--sk-font-size-h2);
+  line-height: var(--sk-line-height-h2);
+  font-weight: var(--sk-font-weight-h2);
+  color: var(--sk-color-text-primary);
+  margin: 0;
+}
+
+._h3_diuvl_37 {
+  font-family: var(--sk-font-family-base);
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+  margin: 0;
+}
+
+._body_diuvl_55 {
+  font-family: var(--sk-font-family-base);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  font-weight: var(--sk-font-weight-body);
+  color: var(--sk-color-text-primary);
+  margin: 0;
+}
+
+._small_diuvl_73 {
+  font-family: var(--sk-font-family-base);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._code_diuvl_89 {
+  font-family: var(--sk-font-family-code);
+  font-size: var(--sk-font-size-code);
+  line-height: var(--sk-line-height-code);
+  font-weight: var(--sk-font-weight-code);
+  color: var(--sk-color-text-primary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/Card/Card.module.css">._card_phuf7_1 {
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+  box-shadow: var(--sk-elevation-card);
+  padding: var(--sk-space-6);
+}
+
+._title_phuf7_17 {
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  margin: 0 0 var(--sk-space-4);
+  color: var(--sk-color-text-primary);
+}
+
+._skeletonBody_phuf7_33 {
+  height: var(--sk-space-12);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  animation: _pulse_phuf7_1 var(--sk-motion-skeleton-pulse) infinite ease-in-out;
+}
+
+@keyframes _pulse_phuf7_1 {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+._progressCopy_phuf7_67 {
+  margin-top: var(--sk-space-3);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-secondary);
+}
+
+._retryButton_phuf7_81 {
+  margin-top: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  cursor: pointer;
+  transition: background var(--sk-motion-button-hover);
+}
+
+._retryButton_phuf7_81:hover {
+  background: var(--sk-color-bg-muted);
+}
+
+._message_phuf7_113 {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-secondary);
+  margin: 0;
+}
+
+._errorMessage_phuf7_127 {
+  color: var(--sk-color-status-error);
+  font-size: var(--sk-font-size-body);
+  margin: 0;
+}
+
+._disabled_phuf7_139 {
+  opacity: 0.7;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/trust/AuthorityBadge/AuthorityBadge.module.css">._badge_ez961_1 {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sk-space-1);
+  padding: var(--sk-space-1) var(--sk-space-2);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  position: relative;
+  min-height: var(--sk-dimension-target-dense-min);
+  cursor: default;
+  font-family: inherit;
+  text-align: left;
+}
+
+._label_ez961_37 {
+  color: inherit;
+}
+
+._tooltip_ez961_45 {
+  position: absolute;
+  top: calc(100% + var(--sk-space-1));
+  left: 0;
+  z-index: 10;
+  padding: var(--sk-space-2) var(--sk-space-3);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  box-shadow: var(--sk-elevation-card);
+  white-space: nowrap;
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-small);
+}
+
+._skeleton_ez961_75 {
+  display: inline-block;
+  width: var(--sk-space-16);
+  height: var(--sk-space-6);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  animation: _pulse_ez961_1 var(--sk-motion-skeleton-pulse) infinite ease-in-out;
+}
+
+@keyframes _pulse_ez961_1 {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+._deterministic_ez961_113 {
+  color: var(--sk-color-trust-deterministic);
+  border-color: var(--sk-color-trust-deterministic);
+  background: var(--sk-color-surface-success);
+}
+
+._probabilistic_ez961_125 {
+  color: var(--sk-color-trust-probabilistic);
+  border-color: var(--sk-color-trust-probabilistic);
+  background: var(--sk-color-surface-info);
+}
+
+._benchmark_ez961_137 {
+  color: var(--sk-color-trust-benchmark);
+  border-color: var(--sk-color-trust-benchmark);
+  background: var(--sk-color-bg-muted);
+}
+
+._prior_ez961_149,
+._unavailable_ez961_151,
+._suppressed_ez961_153 {
+  color: var(--sk-color-trust-unavailable);
+  border-color: var(--sk-color-trust-unavailable);
+  background: var(--sk-color-bg-muted);
+}
+
+._error_ez961_165 {
+  color: var(--sk-color-status-error);
+  border-color: var(--sk-color-status-error);
+  background: var(--sk-color-surface-error);
+}
+
+._diagnostic_ez961_177 {
+  font-size: var(--sk-font-size-small);
+  opacity: 0.9;
+}
+
+
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/trust/PolicyAuthorityPill/PolicyAuthorityPill.module.css">._pill_15w7k_1 {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  padding: var(--sk-space-1) var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  min-height: var(--sk-dimension-target-dense-min);
+}
+
+._blocked_15w7k_27 {
+  color: var(--sk-color-status-error);
+  border-color: var(--sk-color-status-error);
+  background: var(--sk-color-surface-error);
+}
+
+._simulation_only_15w7k_39 {
+  color: var(--sk-color-status-info);
+  border-color: var(--sk-color-status-info);
+  background: var(--sk-color-surface-info);
+}
+
+._proposal_required_15w7k_51,
+._approval_required_15w7k_53 {
+  color: var(--sk-color-status-warning);
+  border-color: var(--sk-color-status-warning);
+  background: var(--sk-color-surface-warning);
+}
+
+._auto_executable_within_policy_15w7k_65 {
+  color: var(--sk-color-status-success);
+  border-color: var(--sk-color-status-success);
+  background: var(--sk-color-surface-success);
+}
+
+._error_15w7k_77 {
+  color: var(--sk-color-status-error);
+  border-color: var(--sk-color-status-error);
+  background: var(--sk-color-surface-error);
+}
+
+._disabled_15w7k_89 {
+  opacity: 0.75;
+}
+
+._reason_15w7k_97 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._skeleton_15w7k_107 {
+  display: inline-block;
+  width: var(--sk-space-16);
+  height: var(--sk-space-6);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  visibility: hidden;
+}
+
+._actionRegion_15w7k_125 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-3);
+}
+
+._actionButton_15w7k_137 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background var(--sk-motion-button-hover);
+}
+
+._actionButton_15w7k_137:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/trust/DataUnavailablePanel/DataUnavailablePanel.module.css">._panel_ys513_1 {
+  padding: var(--sk-space-4);
+  border-radius: var(--sk-radius-md);
+  border: var(--sk-dimension-border-width) dashed var(--sk-color-border-default);
+  background: var(--sk-color-bg-muted);
+}
+
+._title_ys513_15 {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-primary);
+  margin: 0 0 var(--sk-space-2);
+  font-weight: var(--sk-font-weight-h3);
+}
+
+._reason_ys513_31,
+._meta_ys513_33 {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+  margin: 0 0 var(--sk-space-2);
+}
+
+._progress_ys513_47 {
+  margin-top: var(--sk-space-3);
+  font-size: var(--sk-font-size-body);
+  color: var(--sk-color-text-secondary);
+}
+
+._action_ys513_59 {
+  margin-top: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+
+._action_ys513_59:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+._authorityRow_ys513_89 {
+  margin-bottom: var(--sk-space-3);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/trust/EvidenceTimeline/EvidenceTimeline.module.css">._timeline_1itu5_1 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._item_1itu5_15 {
+  position: relative;
+  padding: 0 0 var(--sk-space-6) var(--sk-space-6);
+}
+
+._marker_1itu5_25 {
+  position: absolute;
+  left: calc(var(--sk-space-1) * -1);
+  top: var(--sk-space-1);
+  width: var(--sk-space-2);
+  height: var(--sk-space-2);
+  border-radius: 50%;
+  background: var(--sk-color-status-info);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-bg-card);
+}
+
+._content_1itu5_47 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+._timestamp_1itu5_59 {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-muted);
+}
+
+._eventType_1itu5_71 {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  font-weight: var(--sk-font-weight-h3);
+  margin: 0;
+  color: var(--sk-color-text-primary);
+}
+
+._meta_1itu5_87 {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+  margin: 0;
+}
+
+._refRow_1itu5_101 {
+  display: flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  flex-wrap: wrap;
+}
+
+._ref_1itu5_101 {
+  font-family: var(--sk-font-family-code);
+  font-size: var(--sk-font-size-code);
+  line-height: var(--sk-line-height-code);
+  background: var(--sk-color-bg-muted);
+  padding: var(--sk-space-1) var(--sk-space-2);
+  border-radius: var(--sk-radius-sm);
+}
+
+._copyButton_1itu5_133 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-1);
+  min-height: var(--sk-dimension-target-dense-min);
+  padding: var(--sk-space-1) var(--sk-space-2);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+  font-size: var(--sk-font-size-small);
+}
+
+._empty_1itu5_159 {
+  font-size: var(--sk-font-size-body);
+  color: var(--sk-color-text-secondary);
+  margin: 0;
+}
+
+._itemError_1itu5_171 {
+  padding: var(--sk-space-3);
+  margin-bottom: var(--sk-space-3);
+  color: var(--sk-color-status-error);
+  background: var(--sk-color-surface-error);
+  border-radius: var(--sk-radius-sm);
+  list-style: none;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/trust/TrustHashBlock/TrustHashBlock.module.css">._block_1e4jl_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  padding: var(--sk-space-4);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-card);
+}
+
+._row_1e4jl_21 {
+  display: grid;
+  grid-template-columns: minmax(var(--sk-space-16), auto) 1fr auto;
+  gap: var(--sk-space-3);
+  align-items: center;
+}
+
+._label_1e4jl_35 {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._value_1e4jl_49 {
+  font-family: var(--sk-font-family-code);
+  font-size: var(--sk-font-size-code);
+  line-height: var(--sk-line-height-code);
+  word-break: break-all;
+  background: var(--sk-color-bg-muted);
+  padding: var(--sk-space-2);
+  border-radius: var(--sk-radius-sm);
+}
+
+._copyButton_1e4jl_69 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-1);
+  min-height: var(--sk-dimension-target-min);
+  min-width: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+  font-size: var(--sk-font-size-small);
+}
+
+._rowError_1e4jl_97 {
+  padding: var(--sk-space-3);
+  color: var(--sk-color-status-error);
+  background: var(--sk-color-surface-error);
+  border-radius: var(--sk-radius-sm);
+  font-size: var(--sk-font-size-body);
+}
+
+._verificationFailed_1e4jl_113 {
+  color: var(--sk-color-status-error);
+  font-size: var(--sk-font-size-body);
+  margin: 0;
+}
+
+._verificationSuccess_1e4jl_125 {
+  color: var(--sk-color-status-success);
+  font-size: var(--sk-font-size-body);
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  ._row_1e4jl_21 {
+    grid-template-columns: 1fr;
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/ResponsiveShell/ResponsiveShell.module.css">._shell_11oe4_1 {
+  min-height: 100vh;
+  background: var(--sk-color-bg-page);
+}
+
+._header_11oe4_11 {
+  height: var(--sk-dimension-header-height);
+  padding: 0 var(--sk-space-8);
+  display: flex;
+  align-items: center;
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+}
+
+._body_11oe4_29 {
+  display: flex;
+  min-height: calc(100vh - var(--sk-dimension-header-height));
+}
+
+._sidebar_11oe4_39 {
+  width: var(--sk-dimension-sidebar-width);
+  padding: var(--sk-space-4);
+  background: var(--sk-color-bg-card);
+  border-right: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  flex-shrink: 0;
+}
+
+._main_11oe4_55 {
+  flex: 1;
+  max-width: var(--sk-dimension-content-max-width);
+  margin: 0 auto;
+  padding: var(--sk-space-8);
+  width: 100%;
+}
+
+@media (max-width: 767px) {
+  ._body_11oe4_29 {
+    flex-direction: column;
+  }
+
+  ._sidebar_11oe4_39 {
+    width: 100%;
+    border-right: none;
+    border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  }
+
+  ._main_11oe4_55 {
+    padding: var(--sk-space-4);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  ._sidebar_11oe4_39 {
+    width: var(--sk-space-16);
+  }
+}
+
+@media (min-width: 1440px) {
+  ._main_11oe4_55 {
+    padding: var(--sk-space-8) var(--sk-space-12);
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/financial/FinancialValue/FinancialValue.module.css">._valueRow_1tboa_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  padding: var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+}
+
+._label_1tboa_21 {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+  font-weight: var(--sk-font-weight-small);
+}
+
+._amount_1tboa_35 {
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+}
+
+._unavailable_1tboa_49 {
+  padding: var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  border: var(--sk-dimension-border-width) dashed var(--sk-color-border-default);
+}
+
+._reason_1tboa_63 {
+  margin: var(--sk-space-2) 0;
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-secondary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/financial/ClaimComparisonCard/ClaimComparisonCard.module.css">._card_wg653_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  padding: var(--sk-space-6);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-card);
+  box-shadow: var(--sk-elevation-card);
+}
+
+._title_wg653_23 {
+  margin: 0;
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+}
+
+._grid_wg653_39 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--sk-space-16), 1fr));
+  gap: var(--sk-space-4);
+}
+
+._difference_wg653_51 {
+  padding: var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._within_tolerance_wg653_63 {
+  background: var(--sk-color-surface-success);
+  border-color: var(--sk-color-status-success);
+  color: var(--sk-color-status-success);
+}
+
+._flagged_wg653_75 {
+  background: var(--sk-color-surface-warning);
+  border-color: var(--sk-color-status-warning);
+  color: var(--sk-color-status-warning);
+}
+
+._rejected_wg653_87 {
+  background: var(--sk-color-surface-error);
+  border-color: var(--sk-color-status-error);
+  color: var(--sk-color-status-error);
+}
+
+._diffLabel_wg653_99 {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+}
+
+._diffValue_wg653_113 {
+  display: block;
+  margin-top: var(--sk-space-1);
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  font-family: var(--sk-font-family-code);
+}
+
+._diffHint_wg653_131 {
+  display: block;
+  margin-top: var(--sk-space-2);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/EmptyState/EmptyState.module.css">._empty_re8xs_1 {
+  padding: var(--sk-space-8);
+  text-align: center;
+  background: var(--sk-color-bg-muted);
+  border-radius: var(--sk-radius-md);
+  border: var(--sk-dimension-border-width) dashed var(--sk-color-border-default);
+}
+
+._title_re8xs_17 {
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  margin: 0 0 var(--sk-space-2);
+  color: var(--sk-color-text-primary);
+}
+
+._description_re8xs_33 {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-secondary);
+  margin: 0 0 var(--sk-space-4);
+}
+
+._action_re8xs_47 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/Toast/Toast.module.css">._toast_6e57x_1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  box-shadow: var(--sk-elevation-card);
+  transition: opacity var(--sk-motion-toast);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+._desktop_6e57x_29 {
+  position: fixed;
+  top: var(--sk-space-4);
+  right: var(--sk-space-4);
+  max-width: var(--sk-dimension-modal-width);
+  z-index: 1000;
+}
+
+._mobile_6e57x_45 {
+  position: fixed;
+  bottom: var(--sk-space-4);
+  left: var(--sk-space-4);
+  right: var(--sk-space-4);
+  z-index: 1000;
+}
+
+._success_6e57x_61 {
+  background: var(--sk-color-surface-success);
+  color: var(--sk-color-status-success);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-success);
+}
+
+._error_6e57x_73 {
+  background: var(--sk-color-surface-error);
+  color: var(--sk-color-status-error);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-error);
+}
+
+._info_6e57x_85 {
+  background: var(--sk-color-surface-info);
+  color: var(--sk-color-status-info);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-info);
+}
+
+._warning_6e57x_97 {
+  background: var(--sk-color-surface-warning);
+  color: var(--sk-color-status-warning);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-warning);
+}
+
+._dismiss_6e57x_109 {
+  min-width: var(--sk-dimension-target-min);
+  min-height: var(--sk-dimension-target-min);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--sk-font-size-h3);
+  line-height: 1;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/dev/Level0SpecimenGallery.module.css">._gallery_1l8k8_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-8);
+  padding: var(--sk-space-8);
+  max-width: var(--sk-dimension-content-max-width);
+  margin: 0 auto;
+}
+
+._section_1l8k8_19 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  padding: var(--sk-space-6);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+}
+
+._row_1l8k8_39 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sk-space-3);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/form/FormField/FormField.module.css">._field_xygxo_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+._label_xygxo_13 {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._input_xygxo_27 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  transition: border-color var(--sk-motion-button-hover);
+}
+
+._input_xygxo_27:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+
+._inputInvalid_xygxo_61 {
+  border-color: var(--sk-color-status-error);
+}
+
+._error_xygxo_69 {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-status-error);
+}
+
+._hint_xygxo_83 {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-muted);
+}
+
+._disabled_xygxo_97 {
+  opacity: 0.7;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/form/SubmitButton/SubmitButton.module.css">._button_1chki_1 {
+  min-height: var(--sk-dimension-target-min);
+  width: 100%;
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-trust-probabilistic);
+  background: var(--sk-color-trust-probabilistic);
+  color: var(--sk-color-text-inverse);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  font-weight: var(--sk-font-weight-small);
+  cursor: pointer;
+  transition: opacity var(--sk-motion-button-hover);
+}
+
+._button_1chki_1:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+._button_1chki_1:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+
+._button_1chki_1:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+._secondary_1chki_59 {
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  border-color: var(--sk-color-border-default);
+}
+
+._oauth_1chki_71 {
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  border-color: var(--sk-color-border-default);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-2);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/auth/authForm.module.css">._form_1egkh_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+
+._oauthSection_1egkh_13 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-3);
+}
+
+._divider_1egkh_25 {
+  margin: 0;
+  text-align: center;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-muted);
+}
+
+._links_1egkh_41 {
+  display: flex;
+  justify-content: center;
+  gap: var(--sk-space-2);
+  font-size: var(--sk-font-size-small);
+}
+
+._links_1egkh_41 a {
+  color: var(--sk-color-trust-probabilistic);
+  text-decoration: none;
+}
+
+._links_1egkh_41 a:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+
+._statusLive_1egkh_75 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/app/authPages.module.css">._page_1byf2_1 {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sk-space-8) var(--sk-space-4);
+  background: var(--sk-color-bg-page);
+}
+
+._cardWrap_1byf2_19 {
+  width: 100%;
+  max-width: 480px;
+}
+
+._header_1byf2_29 {
+  margin-bottom: var(--sk-space-6);
+}
+
+._subtitle_1byf2_37 {
+  margin: var(--sk-space-2) 0 0;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+._handoffBody_1byf2_51 {
+  margin: 0;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+._specimenLayout_1byf2_65 {
+  display: grid;
+  grid-template-columns: var(--sk-dimension-onboarding-rail-width) 1fr;
+  gap: var(--sk-space-6);
+}
+
+._meta_1byf2_77 {
+  margin-top: var(--sk-space-4);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-muted);
+}
+
+._enterShell_1byf2_91 {
+  display: inline-flex;
+  align-items: center;
+  margin-top: var(--sk-space-6);
+  min-height: var(--sk-dimension-target-min);
+  padding: 0 var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-text-sidebar-active);
+  color: var(--sk-color-text-inverse);
+  text-decoration: none;
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-h3);
+}
+
+._enterShell_1byf2_91:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/shellNav.module.css">._navIcon_9xb9k_1 {
+  width: var(--sk-dimension-icon-size);
+  height: var(--sk-dimension-icon-size);
+  flex-shrink: 0;
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+}
+
+._navItem_9xb9k_17 {
+  display: flex;
+  align-items: center;
+  gap: var(--sk-space-3);
+  width: 100%;
+  min-height: var(--sk-dimension-nav-item-height);
+  padding: 0 var(--sk-space-4);
+  border: none;
+  border-radius: var(--sk-radius-sm);
+  background: transparent;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--sk-motion-button-hover);
+}
+
+._navItem_9xb9k_17:hover {
+  background: var(--sk-color-bg-muted);
+}
+
+._navItemActive_9xb9k_63 {
+  background: var(--sk-color-surface-sidebar-active);
+  color: var(--sk-color-text-sidebar-active);
+  font-weight: var(--sk-font-weight-h3);
+}
+
+._navItemBlocked_9xb9k_75 {
+  opacity: 0.92;
+}
+
+._navItemLabel_9xb9k_83 {
+  flex: 1;
+}
+
+._navItemMeta_9xb9k_91 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/Drawer/Drawer.module.css">._backdrop_2vpp2_1 {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 900;
+}
+
+._drawer_2vpp2_15 {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: min(100%, var(--sk-dimension-modal-width));
+  background: var(--sk-color-bg-card);
+  box-shadow: var(--sk-elevation-drawer);
+  z-index: 901;
+  display: flex;
+  flex-direction: column;
+}
+
+._right_2vpp2_39 {
+  right: 0;
+}
+
+._left_2vpp2_47 {
+  left: 0;
+}
+
+._animate_2vpp2_55 {
+  animation: _drawerIn_2vpp2_1 var(--sk-motion-drawer-open);
+}
+
+@keyframes _drawerIn_2vpp2_1 {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+._header_2vpp2_85 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sk-space-4);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  min-height: var(--sk-dimension-header-height);
+}
+
+._title_2vpp2_103 {
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  margin: 0;
+}
+
+._close_2vpp2_117 {
+  min-width: var(--sk-dimension-target-min);
+  min-height: var(--sk-dimension-target-min);
+  border: none;
+  background: transparent;
+  font-size: var(--sk-font-size-h2);
+  cursor: pointer;
+}
+
+._content_2vpp2_135 {
+  padding: var(--sk-space-6);
+  overflow-y: auto;
+  flex: 1;
+}
+
+._progress_2vpp2_147 {
+  margin-top: var(--sk-space-3);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/MoreNavigationSheet/MoreNavigationSheet.module.css">._nav_1v3ae_1 {
+  padding: var(--sk-space-2) 0;
+}
+
+._list_1v3ae_9 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/MobileBottomNavigation/MobileBottomNavigation.module.css">._bottomNav_1vwzh_1 {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-1) var(--sk-space-2) calc(var(--sk-space-1) + env(safe-area-inset-bottom, 0px));
+  background: var(--sk-color-bg-card);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._bottomItem_1vwzh_31 {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-1);
+  min-height: var(--sk-dimension-target-min);
+  min-width: var(--sk-dimension-target-min);
+  padding: var(--sk-space-1);
+  border: none;
+  border-radius: var(--sk-radius-sm);
+  background: transparent;
+  color: var(--sk-color-text-secondary);
+  text-decoration: none;
+  font-size: var(--sk-font-size-small);
+  cursor: pointer;
+}
+
+._bottomItemActive_1vwzh_69 {
+  color: var(--sk-color-text-sidebar-active);
+  background: var(--sk-color-surface-sidebar-active);
+}
+
+._bottomLabel_1vwzh_79 {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+}
+
+@media (min-width: 768px) {
+  ._bottomNav_1vwzh_1 {
+    display: none;
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/SidebarNavigation/SidebarNavigation.module.css">._nav_172es_1 {
+  height: 100%;
+}
+
+._list_172es_9 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/TenantSelector/TenantSelector.module.css">._wrap_1j74h_1 {
+  position: relative;
+}
+
+._label_1j74h_9 {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._trigger_1j74h_21 {
+  min-height: var(--sk-dimension-target-min);
+  padding: 0 var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  cursor: pointer;
+}
+
+._trigger_1j74h_21:disabled {
+  cursor: default;
+  color: var(--sk-color-text-secondary);
+}
+
+._list_1j74h_55 {
+  position: absolute;
+  top: calc(100% + var(--sk-space-2));
+  right: 0;
+  z-index: 20;
+  min-width: var(--sk-dimension-popover-min-width);
+  margin: 0;
+  padding: var(--sk-space-2);
+  list-style: none;
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  box-shadow: var(--sk-elevation-drawer);
+}
+
+._option_1j74h_85 {
+  width: 100%;
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: none;
+  border-radius: var(--sk-radius-sm);
+  background: transparent;
+  color: var(--sk-color-text-primary);
+  text-align: left;
+  font-size: var(--sk-font-size-body);
+  cursor: pointer;
+}
+
+._option_1j74h_85[aria-selected='true'] {
+  background: var(--sk-color-surface-sidebar-active);
+  color: var(--sk-color-text-sidebar-active);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/UserMenu/UserMenu.module.css">._wrap_1syka_1 {
+  position: relative;
+}
+
+._trigger_1syka_9 {
+  min-height: var(--sk-dimension-target-min);
+  min-width: var(--sk-dimension-target-min);
+  padding: 0 var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-small);
+  cursor: pointer;
+}
+
+._menu_1syka_33 {
+  position: absolute;
+  top: calc(100% + var(--sk-space-2));
+  right: 0;
+  z-index: 20;
+  min-width: var(--sk-dimension-popover-min-width);
+  padding: var(--sk-space-2);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  box-shadow: var(--sk-elevation-drawer);
+}
+
+._identity_1syka_59 {
+  margin: 0;
+  padding: var(--sk-space-2) var(--sk-space-3);
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._item_1syka_73 {
+  display: block;
+  width: 100%;
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: none;
+  border-radius: var(--sk-radius-sm);
+  background: transparent;
+  color: var(--sk-color-text-primary);
+  text-align: left;
+  font-size: var(--sk-font-size-body);
+  cursor: pointer;
+}
+
+._item_1syka_73:disabled {
+  color: var(--sk-color-text-muted);
+  cursor: not-allowed;
+}
+
+._signOut_1syka_111 {
+  color: var(--sk-color-status-error);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/GlobalSystemHealthStrip/SystemStatusPill.module.css">._pill_1ph3i_1 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--target-size-min);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-card);
+  font-size: var(--font-small-size);
+  line-height: var(--font-small-line);
+  font-weight: var(--font-small-weight);
+  cursor: pointer;
+}
+
+._pill_1ph3i_1:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+._operational_1ph3i_41 {
+  color: var(--color-status-success);
+}
+
+._warning_1ph3i_49 {
+  color: var(--color-status-warning);
+}
+
+._error_1ph3i_57 {
+  color: var(--color-status-error);
+}
+
+._unknown_1ph3i_65 {
+  color: var(--color-text-secondary);
+}
+
+._loading_1ph3i_73 {
+  color: var(--color-status-info);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/GlobalSystemHealthStrip/GlobalSystemHealthStrip.module.css">._strip_l5iqh_1 {
+  display: flex;
+  align-items: center;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/TopHeader/TopHeader.module.css">._header_813e9_1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: var(--sk-space-4);
+}
+
+._title_813e9_17 {
+  margin: 0;
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+._controls_813e9_39 {
+  display: flex;
+  align-items: center;
+  gap: var(--sk-space-3);
+  flex-shrink: 0;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/RouteContainer/RouteContainer.module.css">._container_1q7cb_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+  width: 100%;
+}
+
+._content_1q7cb_15 {
+  width: 100%;
+}
+
+._srTitle_1q7cb_23 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/AuthenticatedAppShell/AuthenticatedAppShell.module.css">._appShell_1wuk3_1 {
+  min-height: 100vh;
+  width: 100vw;
+  background: var(--sk-color-bg-page);
+}
+
+._skipLink_1wuk3_13 {
+  position: absolute;
+  left: var(--sk-space-4);
+  top: calc(-1 * var(--sk-dimension-target-min));
+  z-index: 100;
+  padding: var(--sk-space-2) var(--sk-space-4);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  border-radius: var(--sk-radius-sm);
+  text-decoration: none;
+}
+
+._skipLink_1wuk3_13:focus {
+  top: var(--sk-space-2);
+}
+
+._sidebarWrap_1wuk3_45 {
+  height: 100%;
+}
+
+@media (max-width: 767px) {
+  ._appShell_1wuk3_1 [data-viewport='app-shell'] aside,
+  ._appShell_1wuk3_1 [data-viewport='app-shell'] [aria-label='Sidebar primitive'] {
+    display: none;
+  }
+
+  ._appShell_1wuk3_1 main,
+  ._appShell_1wuk3_1 [aria-label='Main content primitive'] {
+    padding-bottom: calc(var(--sk-dimension-target-min) + var(--sk-space-6));
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  ._appShell_1wuk3_1 [data-viewport='app-shell'] aside {
+    width: var(--sk-dimension-sidebar-width);
+  }
+}
+
+@media (min-width: 1024px) {
+  ._appShell_1wuk3_1 [data-viewport='app-shell'] aside {
+    width: var(--sk-dimension-sidebar-width);
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/shell/ShellFallbackPanel/ShellFallbackPanel.module.css">._panel_zfbxj_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+  max-width: var(--sk-dimension-content-max-width);
+}
+
+._body_zfbxj_15 {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-secondary);
+}
+
+._meta_zfbxj_29 {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-muted);
+}
+
+._actionLink_zfbxj_43 {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--sk-dimension-target-min);
+  padding: 0 var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-text-sidebar-active);
+  color: var(--sk-color-text-inverse);
+  text-decoration: none;
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-h3);
+  width: fit-content;
+}
+
+._actionLink_zfbxj_43:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/OnboardingFooterControls/OnboardingFooterControls.module.css">._footer_1afm9_1 {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+  padding-top: var(--sk-space-6);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  margin-top: auto;
+}
+
+._blockedReason_1afm9_19 {
+  margin: 0 0 var(--sk-space-3);
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-status-warning);
+}
+
+._liveRegion_1afm9_31 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/OnboardingMobileProgressAccordion/OnboardingMobileProgressAccordion.module.css">._accordion_1kw6p_1 {
+  display: block;
+  margin-bottom: var(--sk-space-6);
+}
+
+@media (min-width: 768px) {
+  ._accordion_1kw6p_1 {
+    display: none;
+  }
+}
+
+._trigger_1kw6p_23 {
+  width: 100%;
+  min-height: var(--sk-dimension-target-min);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  cursor: pointer;
+}
+
+._panel_1kw6p_51 {
+  margin-top: var(--sk-space-2);
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+}
+
+._stepList_1kw6p_67 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+._stepItem_1kw6p_85 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._stepItemActive_1kw6p_95 {
+  color: var(--sk-color-text-primary);
+  font-weight: 600;
+}
+
+._chevron_1kw6p_105 {
+  transition: transform var(--sk-motion-button-hover) ease-out;
+}
+
+._chevronOpen_1kw6p_113 {
+  transform: rotate(180deg);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/OnboardingProgressRail/OnboardingProgressRail.module.css">._rail_u6g2e_1 {
+  width: var(--sk-dimension-onboarding-rail-width);
+  flex-shrink: 0;
+  display: none;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  padding-right: var(--sk-space-6);
+  border-right: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+@media (min-width: 768px) {
+  ._rail_u6g2e_1 {
+    display: flex;
+  }
+}
+
+._item_u6g2e_33 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  min-height: var(--sk-dimension-target-min);
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--sk-color-text-secondary);
+}
+
+._itemActive_u6g2e_61 {
+  background: var(--sk-color-bg-muted);
+  color: var(--sk-color-text-primary);
+  font-weight: 600;
+}
+
+._itemComplete_u6g2e_73 {
+  color: var(--sk-color-status-success);
+}
+
+._itemDisabled_u6g2e_81 {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+._itemFuture_u6g2e_91 {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+._stepNumber_u6g2e_101 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+}
+
+._futureLabel_u6g2e_111 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+  padding: var(--sk-space-3) var(--sk-space-4);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/integration/IntegrationActionButton/IntegrationActionButton.module.css">._actionButton_qvy7o_1 {
+  min-height: var(--sk-dimension-target-min);
+  min-width: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  cursor: pointer;
+  transition: background var(--sk-motion-button-hover);
+}
+
+._actionButton_qvy7o_1:hover:not(:disabled) {
+  background: var(--sk-color-bg-muted);
+}
+
+._actionButton_qvy7o_1:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+._primary_qvy7o_47 {
+  background: var(--sk-color-trust-probabilistic);
+  border-color: var(--sk-color-trust-probabilistic);
+  color: var(--sk-color-bg-card);
+}
+
+._primary_qvy7o_47:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/integration/IntegrationStatusBadge/IntegrationStatusBadge.module.css">._integrationStatus_13ty7_1 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._icon_13ty7_21 {
+  width: var(--sk-dimension-icon-size-sm);
+  height: var(--sk-dimension-icon-size-sm);
+  flex-shrink: 0;
+}
+
+._success_13ty7_33 {
+  color: var(--sk-color-status-success);
+}
+
+._warning_13ty7_41 {
+  color: var(--sk-color-status-warning);
+}
+
+._error_13ty7_49 {
+  color: var(--sk-color-status-error);
+}
+
+._info_13ty7_57 {
+  color: var(--sk-color-status-info, var(--sk-color-trust-probabilistic));
+}
+
+._muted_13ty7_65 {
+  color: var(--sk-color-text-muted);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/integration/IntegrationSourceCard/IntegrationSourceCard.module.css">._sourceCard_1h5vj_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+
+._header_1h5vj_13 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+._titleRow_1h5vj_25 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+}
+
+._title_1h5vj_25 {
+  margin: 0;
+}
+
+._authorityCopy_1h5vj_47 {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._metaGrid_1h5vj_61 {
+  display: grid;
+  gap: var(--sk-space-2);
+}
+
+._metaRow_1h5vj_71 {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+}
+
+._metaLabel_1h5vj_87 {
+  color: var(--sk-color-text-muted);
+}
+
+._metaValue_1h5vj_95 {
+  color: var(--sk-color-text-secondary);
+  text-align: right;
+}
+
+._actions_1h5vj_105 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sk-space-3);
+  align-items: center;
+}
+
+._commerceCard_1h5vj_119 {
+  border-left: var(--sk-dimension-card-accent-width) solid var(--sk-color-trust-deterministic);
+}
+
+._claimCard_1h5vj_127 {
+  border-left: var(--sk-dimension-card-accent-width) solid var(--sk-color-trust-benchmark);
+}
+
+._unknownError_1h5vj_135 {
+  color: var(--sk-color-status-error);
+  font-size: var(--sk-font-size-small);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/OnboardingStepPanel/OnboardingStepPanel.module.css">._panel_1ifik_1 {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  max-width: var(--sk-dimension-onboarding-panel-max);
+  width: 100%;
+  min-height: var(--sk-dimension-onboarding-panel-min-height);
+}
+
+._content_1ifik_19 {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+}
+
+._heading_1ifik_33 {
+  margin: 0;
+}
+
+._body_1ifik_41 {
+  margin: 0;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/PrivacyBoundaryAcknowledgement/PrivacyBoundaryAcknowledgement.module.css">._acknowledgement_9s1t4_1 {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+}
+
+._checkbox_9s1t4_15 {
+  width: var(--sk-dimension-checkbox-size);
+  height: var(--sk-dimension-checkbox-size);
+  margin-top: var(--sk-space-1);
+  flex-shrink: 0;
+}
+
+._label_9s1t4_29 {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-primary);
+  cursor: pointer;
+}
+
+._disabled_9s1t4_43 {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/FirstTrustEnvelopeSummary/FirstTrustEnvelopeSummary.module.css">._summary_bjxi6_1 {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-24);
+
+  padding: var(--spacing-24);
+
+  border: 1px solid var(--color-border-default);
+
+  border-radius: var(--radius-card);
+
+  background: var(--color-bg-card);
+
+}
+
+
+
+._primaryRegion_bjxi6_41 {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+  padding-bottom: var(--spacing-16);
+
+  border-bottom: var(--sk-dimension-card-accent-width) solid var(--color-trust-deterministic);
+
+}
+
+
+
+._primaryHeading_bjxi6_73 {
+
+  margin: 0;
+
+  font-size: var(--sk-font-size-h2);
+
+  line-height: var(--sk-line-height-h2);
+
+  font-weight: 600;
+
+  color: var(--color-text-primary);
+
+}
+
+
+
+._subordinateRegion_bjxi6_105,
+
+._governanceRegion_bjxi6_109,
+
+._auditRegion_bjxi6_113 {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+}
+
+
+
+._subordinateHeading_bjxi6_137 {
+
+  margin: 0;
+
+  font-size: var(--sk-font-size-h3);
+
+  line-height: var(--sk-line-height-h3);
+
+  font-weight: 500;
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+._metadataRegion_bjxi6_169 {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+  padding-top: var(--spacing-16);
+
+  border-top: 1px solid var(--color-border-muted);
+
+}
+
+
+
+._metadataHeading_bjxi6_201 {
+
+  margin: 0;
+
+  font-size: var(--font-size-small);
+
+  line-height: var(--line-height-small);
+
+  font-weight: 500;
+
+  color: var(--color-text-muted);
+
+}
+
+
+
+._label_bjxi6_233 {
+
+  font-size: var(--font-size-small);
+
+  line-height: var(--line-height-small);
+
+  font-weight: 500;
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+._value_bjxi6_261 {
+
+  font-size: var(--font-size-body);
+
+  line-height: var(--line-height-body);
+
+  color: var(--color-text-primary);
+
+}
+
+
+
+._mono_bjxi6_285 {
+
+  font-family: var(--font-family-code);
+
+  font-size: var(--font-size-code);
+
+  word-break: break-all;
+
+  color: var(--color-text-muted);
+
+}
+
+
+
+._subjectRef_bjxi6_313,
+
+._generatedAt_bjxi6_317 {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-4);
+
+}
+
+
+
+._attributionNote_bjxi6_341 {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-muted);
+
+}
+
+
+
+._auditLink_bjxi6_361 {
+
+  color: var(--color-trust-probabilistic);
+
+  text-decoration: underline;
+
+  min-height: var(--target-size-min);
+
+  display: inline-flex;
+
+  align-items: center;
+
+}
+
+
+
+._hashSection_bjxi6_393 {
+
+  margin-top: var(--spacing-8);
+
+}
+
+
+
+._confidenceShape_bjxi6_409 {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+}
+
+
+
+._confidenceReason_bjxi6_433 {
+
+  font-size: var(--font-size-body);
+
+  color: var(--color-text-primary);
+
+}
+
+
+
+._confidenceMeta_bjxi6_453 {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+._metaLabel_bjxi6_473 {
+
+  font-weight: 500;
+
+  margin-right: var(--spacing-4);
+
+}
+
+
+
+._interval_bjxi6_493,
+
+._intervalNumeric_bjxi6_497 {
+
+  font-size: var(--font-size-body);
+
+  font-weight: 500;
+
+  color: var(--color-trust-probabilistic);
+
+}
+
+
+
+._uncertainty_bjxi6_521,
+
+._qualitativeState_bjxi6_525 {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+[data-authority-tier='deterministic-primary'] {
+
+  order: 1;
+
+}
+
+
+
+[data-authority-tier='model-output'] {
+
+  order: 2;
+
+}
+
+
+
+[data-authority-tier='probabilistic-subordinate'] {
+
+  order: 3;
+
+}
+
+
+
+[data-authority-tier='benchmark-subordinate'] {
+
+  order: 4;
+
+}
+
+
+
+[data-authority-tier='policy-governance'] {
+
+  order: 5;
+
+}
+
+
+
+[data-authority-tier='audit-reference'] {
+
+  order: 6;
+
+}
+
+
+
+[data-authority-tier='metadata-subordinate'] {
+
+  order: 7;
+
+}
+
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/GenerateFirstTrustEnvelopeStep/GenerateFirstTrustEnvelopeStep.module.css">._panel_cj94e_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+}
+
+._actions_cj94e_13 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-12);
+}
+
+._generateButton_cj94e_25 {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-16);
+  border-radius: var(--radius-control);
+  border: none;
+  background: var(--color-trust-probabilistic);
+  color: var(--color-bg-card);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+._generateButton_cj94e_25:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+._status_cj94e_57 {
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
+}
+
+._waitingLink_cj94e_67 {
+  min-height: var(--target-size-min);
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-truth-probabilistic, var(--color-trust-probabilistic));
+}
+
+._claimWarning_cj94e_81 {
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+  border-left: var(--sk-dimension-card-accent-width) solid var(--color-status-warning);
+  padding-left: var(--spacing-12);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/AddHumansOrAgentsStep/AddHumansOrAgentsStep.module.css">._panel_u5lr1_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+}
+
+._card_u5lr1_13 {
+  padding: var(--spacing-24);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+._link_u5lr1_33 {
+  min-height: var(--target-size-min);
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-trust-probabilistic);
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+._linkDisabled_u5lr1_51 {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+._boundary_u5lr1_61 {
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border-default);
+  padding-top: var(--spacing-16);
+}
+
+._denied_u5lr1_75 {
+  color: var(--color-status-error);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/onboarding/OnboardingWizard/OnboardingWizard.module.css">._wizard_jxbz6_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+  width: 100%;
+}
+
+._layout_jxbz6_15 {
+  display: flex;
+  gap: var(--sk-space-8);
+  align-items: flex-start;
+  width: 100%;
+}
+
+._main_jxbz6_29 {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+._completePanel_jxbz6_43 {
+  max-width: var(--sk-dimension-onboarding-panel-max);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+
+._actionLink_jxbz6_57 {
+  color: var(--sk-color-trust-probabilistic);
+  text-decoration: underline;
+  min-height: var(--sk-dimension-target-min);
+  display: inline-flex;
+  align-items: center;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/integration/IntegrationGroup/IntegrationGroup.module.css">._group_l4qet_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+}
+
+._header_l4qet_13 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+._cards_l4qet_25 {
+  display: grid;
+  gap: var(--sk-space-6);
+}
+
+@media (min-width: 768px) {
+  ._cards_l4qet_25 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  ._cards_l4qet_25 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/integration/IntegrationReadinessSummary/IntegrationReadinessSummary.module.css">._summary_ql5tm_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  padding: var(--sk-space-4);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-muted);
+}
+
+._ready_ql5tm_19 {
+  margin: 0;
+  color: var(--sk-color-status-success);
+  font-size: var(--sk-font-size-small);
+}
+
+._missing_ql5tm_31 {
+  margin: 0;
+  color: var(--sk-color-status-warning);
+  font-size: var(--sk-font-size-small);
+}
+
+._warning_ql5tm_43 {
+  margin: 0;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-small);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/PermissionDeniedPanel/PermissionDeniedPanel.module.css">._panel_14f4m_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+}
+
+._body_14f4m_13 {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+._recovery_14f4m_27 {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-size-min);
+  color: var(--color-trust-probabilistic);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+._recovery_14f4m_27:hover {
+  text-decoration: underline;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/Table/Table.module.css">._wrapper_17qrf_1 {
+  width: 100%;
+  overflow-x: auto;
+}
+
+._table_17qrf_11 {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+}
+
+._caption_17qrf_27 {
+  caption-side: top;
+  text-align: left;
+  padding: var(--sk-space-3) var(--sk-space-4);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+}
+
+th,
+td {
+  padding: var(--sk-space-3) var(--sk-space-4);
+  text-align: left;
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+th {
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-secondary);
+  background: var(--sk-color-bg-muted);
+}
+
+._rowDense_17qrf_75 {
+  height: var(--sk-dimension-table-row-dense);
+}
+
+._rowStandard_17qrf_83 {
+  height: var(--sk-dimension-table-row-standard);
+}
+
+._interactive_17qrf_91 {
+  cursor: pointer;
+}
+
+._interactive_17qrf_91:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: calc(var(--sk-focus-outline-offset) * -1);
+}
+
+._progress_17qrf_109 {
+  margin-top: var(--sk-space-3);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+}
+
+._retry_17qrf_121 {
+  margin-top: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+
+._pagination_17qrf_141 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-3);
+  margin-top: var(--sk-space-3);
+  padding: 0 var(--sk-space-2);
+}
+
+._pageInfo_17qrf_159 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._pageControls_17qrf_169 {
+  display: flex;
+  gap: var(--sk-space-2);
+}
+
+._pageButton_17qrf_179 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+
+._pageButton_17qrf_179:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/RoleBadge/RoleBadge.module.css">._badge_1xrr8_1 {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-4) var(--spacing-8);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-small);
+  font-weight: 500;
+  line-height: var(--line-height-small);
+}
+
+._owner_1xrr8_21,
+._admin_1xrr8_23 {
+  background: var(--color-bg-muted);
+  color: var(--color-trust-probabilistic);
+}
+
+._manager_1xrr8_33 {
+  background: var(--color-bg-muted);
+  color: var(--color-text-primary);
+}
+
+._viewer_1xrr8_43,
+._billing_only_1xrr8_45 {
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+}
+
+._error_1xrr8_55 {
+  background: var(--color-bg-muted);
+  color: var(--color-status-error);
+}
+
+._control_1xrr8_65 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+._select_1xrr8_77 {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-12);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  font-size: var(--font-size-body);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/MemberStatusBadge/MemberStatusBadge.module.css">._badge_1cjbe_1 {
+  display: inline-flex;
+  padding: var(--spacing-4) var(--spacing-8);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-small);
+  font-weight: 500;
+}
+
+._active_1cjbe_17 {
+  color: var(--color-status-success);
+}
+
+._invited_1cjbe_25 {
+  color: var(--color-status-info, var(--color-trust-probabilistic));
+}
+
+._suspended_1cjbe_33,
+._removed_1cjbe_35 {
+  color: var(--color-text-muted);
+}
+
+._invite_1cjbe_25 {
+  margin: var(--spacing-16) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/TeamMembersTable/TeamMembersTable.module.css">._you_elps4_1 {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+}
+
+._denied_elps4_11 {
+  display: block;
+  margin-top: var(--spacing-4);
+  color: var(--color-status-error);
+  font-size: var(--font-size-small);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/TeamSettingsPage/TeamSettingsPage.module.css">._header_9x64n_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  margin-bottom: var(--spacing-24);
+}
+
+._description_9x64n_15 {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+._currentRole_9x64n_29 {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/AgentScopeSelector/AgentScopeSelector.module.css">._fieldset_1sexq_1 {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+._fieldset_1sexq_1 legend {
+  font-weight: 600;
+  font-size: var(--font-size-body);
+  margin-bottom: var(--spacing-8);
+}
+
+._list_1sexq_25 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+
+._label_1sexq_43 {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: var(--target-size-min);
+  cursor: pointer;
+}
+
+._reserved_1sexq_59 {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+._reservedMeta_1sexq_69 {
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+}
+
+._error_1sexq_79,
+._unknown_1sexq_81 {
+  color: var(--color-status-error);
+  font-size: var(--font-size-small);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/AgentAccessTable/AgentAccessTable.module.css">._revoke_1j1fm_1 {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-4) var(--spacing-12);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  cursor: pointer;
+  font-size: var(--font-size-small);
+}
+
+._revoke_1j1fm_1:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+._revokeFailed_1j1fm_31,
+._scopeError_1j1fm_33 {
+  display: block;
+  margin-top: var(--spacing-4);
+  color: var(--color-status-error);
+  font-size: var(--font-size-small);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/Modal/Modal.module.css">._backdrop_ks6fn_1 {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  z-index: 1000;
+}
+
+._modal_ks6fn_15 {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(calc(100% - var(--sk-space-8)), var(--sk-dimension-modal-width));
+  max-height: calc(100vh - var(--sk-space-16));
+  background: var(--sk-color-bg-card);
+  border-radius: var(--sk-radius-md);
+  box-shadow: var(--sk-elevation-modal);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+._animate_ks6fn_47 {
+  animation: _modalIn_ks6fn_1 var(--sk-motion-modal-open);
+}
+
+@keyframes _modalIn_ks6fn_1 {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (max-width: 767px) {
+  ._modal_ks6fn_15 {
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    width: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+
+._header_ks6fn_103 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sk-space-4) var(--sk-space-6);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._title_ks6fn_119 {
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  margin: 0;
+}
+
+._close_ks6fn_133 {
+  min-width: var(--sk-dimension-target-min);
+  min-height: var(--sk-dimension-target-min);
+  border: none;
+  background: transparent;
+  font-size: var(--sk-font-size-h2);
+  cursor: pointer;
+}
+
+._body_ks6fn_151 {
+  padding: var(--sk-space-6);
+  overflow-y: auto;
+}
+
+._footer_ks6fn_161 {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sk-space-3);
+  padding: var(--sk-space-4) var(--sk-space-6);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._secondary_ks6fn_177,
+._destructive_ks6fn_179 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  cursor: pointer;
+  font-size: var(--sk-font-size-body);
+}
+
+._secondary_ks6fn_177 {
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+}
+
+._destructive_ks6fn_179 {
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-error);
+  background: var(--sk-color-status-error);
+  color: var(--sk-color-text-inverse);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/AgentSecretShowOncePanel/AgentSecretShowOncePanel.module.css">._panel_1p5cv_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  padding: var(--spacing-16);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-muted);
+}
+
+._secret_1p5cv_21 {
+  display: block;
+  padding: var(--spacing-12);
+  font-family: var(--font-family-code);
+  font-size: var(--font-size-code);
+  word-break: break-all;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-sm);
+}
+
+._actions_1p5cv_41 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-12);
+}
+
+._copy_1p5cv_53,
+._dismiss_1p5cv_55 {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-16);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-card);
+  cursor: pointer;
+  font-size: var(--font-size-body);
+}
+
+._dismiss_1p5cv_55 {
+  background: var(--color-trust-probabilistic);
+  color: var(--sk-color-text-inverse);
+  border-color: transparent;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/AgentKeyCreationModal/AgentKeyCreationModal.module.css">._form_qcrmr_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+}
+
+._submit_qcrmr_13 {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-16);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-trust-probabilistic);
+  color: var(--sk-color-text-inverse);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+._submit_qcrmr_13:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+._createError_qcrmr_45 {
+  color: var(--color-status-error);
+  font-size: var(--font-size-small);
+  margin: 0;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/AgentAccessPage/AgentAccessPage.module.css">._header_25zk5_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  margin-bottom: var(--spacing-24);
+}
+
+._description_25zk5_15 {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+}
+
+._create_25zk5_27 {
+  align-self: flex-start;
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-16);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-trust-probabilistic);
+  color: var(--sk-color-text-inverse);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+._create_25zk5_27:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/PolicySettings/PolicySettingsComponents.module.css">._row_r6utf_1 {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--spacing-16);
+  align-items: center;
+  padding: var(--spacing-16) 0;
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+._label_r6utf_19 {
+  font-weight: 500;
+}
+
+._configure_r6utf_27 {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-12);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  cursor: pointer;
+}
+
+._configure_r6utf_27:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+._constraints_r6utf_55 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
+
+._overview_r6utf_71 {
+  margin-bottom: var(--spacing-24);
+}
+
+._modeLabel_r6utf_79 {
+  font-weight: 600;
+}
+
+._list_r6utf_87 {
+  display: flex;
+  flex-direction: column;
+}
+
+._invalidBanner_r6utf_97 {
+  padding: var(--spacing-12);
+  margin-bottom: var(--spacing-16);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-muted);
+  color: var(--color-status-error);
+  font-weight: 600;
+}
+
+._selector_r6utf_115 {
+  border: none;
+  margin: 0 0 var(--spacing-16);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+
+._radioLabel_r6utf_133 {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: var(--target-size-min);
+}
+
+._constraintsForm_r6utf_147 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+  margin-bottom: var(--spacing-16);
+}
+
+._constraintsForm_r6utf_147 label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-small);
+}
+
+._constraintsForm_r6utf_147 input {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/PolicyConfigureModal/PolicyConfigureModal.module.css">._error_1brmd_1 {
+  color: var(--color-status-error);
+  font-size: var(--font-size-small);
+}
+
+._save_1brmd_11 {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-16);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-trust-probabilistic);
+  color: var(--sk-color-text-inverse);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+._save_1brmd_11:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/governance/PolicySettingsPage/PolicySettingsPage.module.css">._header_1ma8t_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  margin-bottom: var(--spacing-24);
+}
+
+._description_1ma8t_15 {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/app/routes/GovernanceRoutes.module.css">._subnav_1av5p_1 {
+  display: flex;
+  gap: var(--spacing-16);
+  margin-bottom: var(--spacing-16);
+}
+
+._subnavLink_1av5p_13 {
+  min-height: var(--target-size-min);
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-trust-probabilistic);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+._subnavLink_1av5p_13:hover {
+  text-decoration: underline;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/operational/OperationalDiagnosticSummary/OperationalDiagnosticSummary.module.css">._grid_mjsuo_1 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-24);
+}
+
+._card_mjsuo_13 {
+  padding: var(--space-16);
+}
+
+._label_mjsuo_21 {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-small-size);
+  line-height: var(--font-small-line);
+  font-weight: var(--font-small-weight);
+  color: var(--color-text-secondary);
+}
+
+._value_mjsuo_37 {
+  margin: 0;
+  font-size: var(--font-h3-size);
+  line-height: var(--font-h3-line);
+  font-weight: var(--font-h3-weight);
+  color: var(--color-text-primary);
+}
+
+._skeleton_mjsuo_53 {
+  height: var(--space-48);
+  background: var(--color-bg-muted);
+  border-radius: var(--radius-8);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/operational/OperationalIssueStatusBadge/OperationalIssueStatusBadge.module.css">._badge_1wley_1 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-8);
+  font-size: var(--font-small-size);
+  line-height: var(--font-small-line);
+  font-weight: var(--font-small-weight);
+}
+
+._error_1wley_23 {
+  background: var(--color-status-error-bg);
+  color: var(--color-status-error);
+}
+
+._warning_1wley_33 {
+  background: var(--color-status-warning-bg);
+  color: var(--color-status-warning);
+}
+
+._info_1wley_43 {
+  background: var(--color-status-info-bg);
+  color: var(--color-status-info);
+}
+
+._unknown_1wley_53 {
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/operational/DLQEventTable/DLQEventTable.module.css">._status_18su8_1 {
+  text-transform: capitalize;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/operational/OperationalRepairContextPanel/OperationalRepairContextPanel.module.css">._panel_1smk0_1 {
+  padding: var(--space-24);
+  margin-top: var(--space-24);
+}
+
+._title_1smk0_11 {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-h3-size);
+  line-height: var(--font-h3-line);
+  font-weight: var(--font-h3-weight);
+}
+
+._body_1smk0_25 {
+  margin: 0;
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  color: var(--color-text-secondary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/operational/OperationalDiagnosticsPage/OperationalDiagnosticsPage.module.css">._header_1lach_1 {
+  margin-bottom: var(--space-24);
+}
+
+._description_1lach_9 {
+  margin: var(--space-8) 0 0;
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  color: var(--color-text-secondary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/audit/AuditLedgerFilters/AuditLedgerFilters.module.css">._filters_2rbf4_1 {
+  border: none;
+  margin: 0 0 var(--space-24);
+  padding: 0;
+}
+
+._legend_2rbf4_13 {
+  font-size: var(--font-h3-size);
+  line-height: var(--font-h3-line);
+  font-weight: var(--font-h3-weight);
+  margin-bottom: var(--space-16);
+}
+
+._grid_2rbf4_27 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--space-16);
+}
+
+._field_2rbf4_39 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--font-small-size);
+  color: var(--color-text-secondary);
+}
+
+._control_2rbf4_55 {
+  min-height: var(--target-size-min);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  font-size: var(--font-body-size);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/audit/AuditLedgerTable/AuditLedgerTable.module.css">._openButton_1kymv_1 {
+  min-height: var(--target-size-min);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  font-size: var(--font-small-size);
+  cursor: pointer;
+}
+
+._invalidSignature_1kymv_23 {
+  color: var(--color-status-error);
+  font-weight: var(--font-small-weight);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/actions/GovernedActionControl.module.css">._button_1r5t7_1 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-body);
+  cursor: pointer;
+}
+
+._button_1r5t7_1:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+._srOnly_1r5t7_39 {
+  position: absolute;
+  width: var(--sk-dimension-border-width);
+  height: var(--sk-dimension-border-width);
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+._confirmBody_1r5t7_63 {
+  margin-top: var(--sk-space-3);
+}
+
+._outcome_1r5t7_71 {
+  margin-top: var(--sk-space-2);
+  padding: var(--sk-space-2);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  font-size: var(--sk-font-size-small);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/actions/AuditExportFlow.module.css">._wrap_1sfax_1 {
+  margin-top: var(--sk-space-4);
+}
+
+._preview_1sfax_9 {
+  margin-bottom: var(--sk-space-3);
+  padding: var(--sk-space-3);
+  border-radius: var(--sk-radius-md);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  max-height: 320px;
+  overflow: auto;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/audit/AuditArtifactMetadataPanel/AuditArtifactMetadataPanel.module.css">._panel_wox7q_1 {
+  display: grid;
+  gap: var(--space-12);
+  margin: 0 0 var(--space-24);
+}
+
+._panel_wox7q_1 div {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: var(--space-8);
+}
+
+dt {
+  margin: 0;
+  font-size: var(--font-small-size);
+  color: var(--color-text-secondary);
+}
+
+dd {
+  margin: 0;
+  font-size: var(--font-body-size);
+  color: var(--color-text-primary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/audit/AuditArtifactJsonPreview/AuditArtifactJsonPreview.module.css">._section_1hs7p_1 {
+  margin-top: var(--space-24);
+}
+
+._label_1hs7p_9 {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-h3-size);
+  line-height: var(--font-h3-line);
+  font-weight: var(--font-h3-weight);
+}
+
+._pre_1hs7p_23 {
+  margin: 0;
+  padding: var(--space-16);
+  background: var(--color-bg-muted);
+  border-radius: var(--radius-8);
+  overflow-x: auto;
+  font-family: var(--font-code-family);
+  font-size: var(--font-code-size);
+  line-height: var(--font-code-line);
+}
+
+._hidden_1hs7p_45 {
+  margin: var(--space-16) 0 0;
+  font-size: var(--font-small-size);
+  color: var(--color-text-secondary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/audit/AuditArtifactUnavailablePanel/AuditArtifactUnavailablePanel.module.css">._copy_842cf_1 {
+  margin: var(--space-12) 0 0;
+  font-size: var(--font-body-size);
+  color: var(--color-text-secondary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/audit/AuditLedgerPage/AuditLedgerPage.module.css">._header_1lach_1 {
+  margin-bottom: var(--space-24);
+}
+
+._description_1lach_9 {
+  margin: var(--space-8) 0 0;
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  color: var(--color-text-secondary);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/claims/ClaimsLedgerFilters/ClaimsLedgerFilters.module.css">._form_gme5e_1 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--sk-space-4);
+  margin-bottom: var(--sk-space-6);
+}
+
+._field_gme5e_15 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._input_gme5e_33 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  font-size: var(--sk-font-size-body);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/ledger/ConfidenceCell/ConfidenceCell.module.css">._interval_f7e2g_1 {
+  font-weight: var(--sk-font-weight-h3);
+}
+
+._method_f7e2g_9,
+._qualitative_f7e2g_11 {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._error_f7e2g_23 {
+  color: var(--sk-color-status-error);
+  font-size: var(--sk-font-size-small);
+}
+
+._shaped_f7e2g_33 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/ledger/CompactLedgerRow/CompactLedgerRow.module.css">._card_129ie_1 {
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+  padding: var(--sk-space-4);
+  background: var(--sk-color-bg-card);
+  margin-bottom: var(--sk-space-3);
+}
+
+._header_129ie_17 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sk-space-3);
+  margin-bottom: var(--sk-space-3);
+}
+
+._identity_129ie_33 {
+  font-weight: var(--sk-font-weight-h3);
+  font-size: var(--sk-font-size-body);
+  word-break: break-word;
+}
+
+._status_129ie_45 {
+  flex-shrink: 0;
+}
+
+._primaryList_129ie_53,
+._secondaryList_129ie_55 {
+  margin: 0;
+  display: grid;
+  gap: var(--sk-space-2);
+}
+
+._field_129ie_67 {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) 1fr;
+  gap: var(--sk-space-2);
+  align-items: start;
+}
+
+._field_129ie_67 dt {
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+  margin: 0;
+}
+
+._field_129ie_67 dd {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+}
+
+._disclosure_129ie_105 {
+  margin-top: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+  width: 100%;
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  font-size: var(--sk-font-size-body);
+  cursor: pointer;
+}
+
+._secondaryList_129ie_55 {
+  margin-top: var(--sk-space-3);
+  padding-top: var(--sk-space-3);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+@media (max-width: 767px) {
+  ._card_129ie_1 {
+    display: block;
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/ledger/DetailNavigationAffordance.module.css">._button_30srs_1 {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-trust-probabilistic);
+  font-size: var(--sk-font-size-body);
+  cursor: pointer;
+}
+
+._button_30srs_1:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/claims/ClaimsLedgerTable/ClaimsLedgerTable.module.css">._platformClaim_167tk_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+._claimLabel_167tk_13 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._claimAmount_167tk_23 {
+  font-weight: var(--sk-font-weight-small);
+}
+
+._discrepancy_167tk_31 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+._discrepancyMeta_167tk_43 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+}
+
+._desktopTable_167tk_53 {
+  display: block;
+}
+
+._mobileList_167tk_61 {
+  display: none;
+}
+
+._updatingBanner_167tk_69 {
+  margin: 0 0 var(--sk-space-3);
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._staleRows_167tk_81 {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  ._desktopTable_167tk_53 {
+    display: none;
+  }
+  ._mobileList_167tk_61 {
+    display: block;
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/claims/ClaimsLedgerPage/ClaimsLedgerPage.module.css">._header_1fa5f_1 {
+  margin-bottom: var(--sk-space-6);
+}
+
+._description_1fa5f_9 {
+  margin: var(--sk-space-2) 0 0;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  max-width: var(--sk-dimension-onboarding-panel-max);
+}
+
+._queryMeta_1fa5f_25 {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+  margin-top: var(--sk-space-2);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/detail/DetailReturnLink.module.css">._link_f1qgx_1 {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--sk-dimension-target-min);
+  margin-bottom: var(--sk-space-4);
+  color: var(--sk-color-trust-probabilistic);
+  font-size: var(--sk-font-size-body);
+}
+
+._srOnly_f1qgx_10 {
+  position: absolute;
+  width: var(--sk-dimension-border-width);
+  height: var(--sk-dimension-border-width);
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/detail/DetailStateView.module.css">._statePanel_1kldn_1 {
+  padding: var(--sk-space-6);
+  max-width: var(--sk-dimension-content-max);
+}
+
+._progress_1kldn_6 {
+  margin-top: var(--sk-space-4);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+}
+
+._returnLink_1kldn_12 {
+  display: inline-block;
+  margin-top: var(--sk-space-4);
+  min-height: var(--sk-dimension-target-min);
+  line-height: var(--sk-dimension-target-min);
+  color: var(--sk-color-trust-probabilistic);
+}
+
+._retry_1kldn_20 {
+  margin-top: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/actions/ClaimExportFlow.module.css">._wrap_1iflr_1 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  max-height: 480px;
+  overflow: auto;
+}
+
+._legend_1iflr_25 {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+._row_1iflr_35 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+._actions_1iflr_49 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/layout/Tabs/Tabs.module.css">._tabs_1kx1h_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+
+._tablist_1kx1h_13 {
+  display: flex;
+  gap: var(--sk-space-2);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._tab_1kx1h_1 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border: none;
+  background: transparent;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  cursor: pointer;
+  border-bottom: var(--sk-focus-outline-width) solid transparent;
+  margin-bottom: calc(var(--sk-dimension-border-width) * -1);
+  transition: color var(--sk-motion-button-hover);
+}
+
+._tab_1kx1h_1[aria-selected='true'] {
+  color: var(--sk-color-text-sidebar-active);
+  border-bottom-color: var(--sk-color-text-sidebar-active);
+  font-weight: var(--sk-font-weight-h3);
+}
+
+._tab_1kx1h_1:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+._panel_1kx1h_75 {
+  padding: var(--sk-space-4) 0;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/ledger/BenchmarkCell/BenchmarkCell.module.css">._meta_1fv5o_1 {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._value_1fv5o_13 {
+  font-weight: var(--sk-font-weight-h3);
+}
+
+._reason_1fv5o_21 {
+  font-size: var(--sk-font-size-small);
+  margin: var(--sk-space-1) 0 0;
+}
+
+._transition_1fv5o_31 {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-status-warning);
+  margin-top: var(--sk-space-1);
+}
+
+._available_1fv5o_45 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/claims/ClaimDetailPage/ClaimDetailPage.module.css">._header_2yw43_1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sk-space-3);
+  margin-bottom: var(--sk-space-4);
+}
+
+._title_2yw43_9 {
+  font-size: var(--sk-font-size-h2);
+  line-height: var(--sk-line-height-h2);
+  font-weight: var(--sk-font-weight-h2);
+  margin: 0;
+}
+
+._statusBadge_2yw43_16 {
+  padding: var(--sk-space-1) var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  font-size: var(--sk-font-size-small);
+  text-transform: capitalize;
+}
+
+._topPanel_2yw43_24 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--sk-space-4);
+  padding: var(--sk-space-4);
+  margin-bottom: var(--sk-space-4);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._label_2yw43_35 {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+  margin-bottom: var(--sk-space-1);
+}
+
+._meta_2yw43_42 {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-muted);
+}
+
+._boundaryCopy_2yw43_48 {
+  margin: 0 0 var(--sk-space-6);
+  padding: var(--sk-space-3);
+  border-left: 3px solid var(--sk-color-trust-probabilistic);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+}
+
+._level9Row_2yw43_56 {
+  margin-top: var(--sk-space-6);
+}
+
+@media (max-width: 767px) {
+  ._topPanel_2yw43_24 {
+    grid-template-columns: 1fr;
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/trustIndex/TrustEnvelopeIndexTable/TrustEnvelopeIndexTable.module.css">._auditLink_15xyc_1 {
+  color: var(--sk-color-link);
+  text-decoration: underline;
+}
+
+._desktopTable_15xyc_11 {
+  display: block;
+}
+
+._mobileList_15xyc_19 {
+  display: none;
+}
+
+._updatingBanner_15xyc_27 {
+  margin: 0 0 var(--sk-space-3);
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+._staleRows_15xyc_39 {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  ._desktopTable_15xyc_11 {
+    display: none;
+  }
+  ._mobileList_15xyc_19 {
+    display: block;
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/trustIndex/TrustEnvelopeIndexPage/TrustEnvelopeIndexPage.module.css">._page_1nl1b_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/actions/TrustEnvelopeActions.module.css">._row_4q5z3_1 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sk-space-2);
+}
+
+._hiddenCanonical_4q5z3_13 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/detail/TrustEnvelopeJsonViewer/TrustEnvelopeJsonViewer.module.css">._viewer_123uw_1 {
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-muted);
+  overflow: hidden;
+}
+
+._toolbar_123uw_8 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sk-space-3);
+  padding: var(--sk-space-3);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+}
+
+._searchLabel_123uw_17 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  font-size: var(--sk-font-size-small);
+  flex: 1;
+  min-width: 12rem;
+}
+
+._search_123uw_17 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  font-family: var(--sk-font-family-mono);
+  font-size: var(--sk-font-size-code);
+}
+
+._collapseBtn_123uw_35 {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+
+._pre_123uw_44 {
+  margin: 0;
+  max-height: 28rem;
+  overflow: auto;
+}
+
+._code_123uw_50 {
+  display: block;
+  font-family: var(--sk-font-family-mono);
+  font-size: var(--sk-font-size-code);
+  line-height: var(--sk-line-height-code);
+}
+
+._line_123uw_57 {
+  display: flex;
+  gap: var(--sk-space-3);
+  padding: 0 var(--sk-space-3);
+}
+
+._lineNumber_123uw_63 {
+  flex: 0 0 2.5rem;
+  text-align: right;
+  color: var(--sk-color-text-muted);
+  user-select: none;
+}
+
+._lineContent_123uw_70 {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+._collapsedHint_123uw_76 {
+  padding: var(--sk-space-4);
+  color: var(--sk-color-text-secondary);
+}
+
+._error_123uw_81 {
+  padding: var(--sk-space-4);
+  color: var(--sk-color-status-error);
+}
+
+._lineMatch_123uw_86 {
+  background: var(--sk-color-bg-highlight, rgba(255, 220, 100, 0.25));
+}
+
+._summaryList_123uw_90 {
+  margin: var(--sk-space-3) 0;
+  padding: 0 var(--sk-space-4);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/trustIndex/TrustEnvelopeDetailPage/TrustEnvelopeDetailPage.module.css">._split_73wna_1 {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: var(--sk-space-6);
+}
+
+._header_73wna_7 {
+  margin-bottom: var(--sk-space-6);
+}
+
+._subtitle_73wna_11 {
+  font-family: var(--sk-font-family-mono);
+  color: var(--sk-color-text-secondary);
+}
+
+._status_73wna_16 {
+  display: inline-block;
+  margin-right: var(--sk-space-3);
+  padding: var(--sk-space-1) var(--sk-space-2);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  text-transform: capitalize;
+}
+
+._panels_73wna_25 section {
+  margin-bottom: var(--sk-space-5);
+  padding: var(--sk-space-4);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._panels_73wna_25 h2 {
+  font-size: var(--sk-font-size-h3);
+  margin: 0 0 var(--sk-space-3);
+}
+
+._jsonColumn_73wna_38 h2 {
+  font-size: var(--sk-font-size-h3);
+  margin-bottom: var(--sk-space-3);
+}
+
+._level9Row_73wna_43 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sk-space-2);
+  margin-top: var(--sk-space-4);
+}
+
+@media (max-width: 767px) {
+  ._split_73wna_1 {
+    grid-template-columns: 1fr;
+  }
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/channels/ChannelDetailPage/ChannelDetailPage.module.css">._header_mj136_1 {
+  margin-bottom: var(--sk-space-6);
+}
+
+._authority_mj136_5 {
+  color: var(--sk-color-text-secondary);
+}
+
+._boundary_mj136_9 {
+  margin-bottom: var(--sk-space-4);
+  padding: var(--sk-space-3);
+  border-left: 3px solid var(--sk-color-trust-probabilistic);
+  color: var(--sk-color-text-secondary);
+}
+
+._timeSeries_mj136_16 {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+._timeSeries_mj136_16 li {
+  padding: var(--sk-space-2) 0;
+}
+
+section {
+  margin-bottom: var(--sk-space-6);
+}
+
+section h2 {
+  font-size: var(--sk-font-size-h3);
+  margin-bottom: var(--sk-space-3);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/actions/ExceptionActionControls.module.css">._grid_83ws4_1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/exceptions/ExceptionDetailDrawer/ExceptionDetailDrawer.module.css">._summary_822jk_1 {
+  margin: var(--sk-space-4) 0;
+  color: var(--sk-color-text-secondary);
+}
+
+._actions_822jk_6 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  margin-top: var(--sk-space-6);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/exceptions/ExceptionsQueuePage/ExceptionsQueuePage.module.css">._inspectButton_n34bm_1 {
+  min-height: var(--sk-dimension-target-min);
+  margin-top: var(--sk-space-2);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+
+._disabledAction_n34bm_21 {
+  min-height: var(--sk-dimension-target-min);
+  margin-top: var(--sk-space-2);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/budget/BudgetInputPage/BudgetInputPage.module.css">._disclaimer_1r9wb_1 {
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+}
+
+._blocked_1r9wb_11 {
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  margin: var(--sk-space-4) 0;
+}
+
+._form_1r9wb_25 {
+  display: grid;
+  gap: var(--sk-space-4);
+  max-width: var(--sk-dimension-modal-width);
+}
+
+._input_1r9wb_37 {
+  display: block;
+  width: 100%;
+  min-height: var(--sk-dimension-target-min);
+  margin-top: var(--sk-space-1);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+}
+
+._disabledSubmit_1r9wb_57 {
+  min-height: var(--sk-dimension-target-min);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/actions/BudgetProposalFlow.module.css">._preview_375f3_1 {
+  margin-bottom: var(--sk-space-3);
+  padding: var(--sk-space-3);
+  border-radius: var(--sk-radius-md);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/components/budget/BudgetSimulationDetailPage/BudgetSimulationDetailPage.module.css">._header_owlw3_1 {
+  margin-bottom: var(--sk-space-6);
+}
+
+section {
+  margin-bottom: var(--sk-space-5);
+}
+
+section h2 {
+  font-size: var(--sk-font-size-h3);
+  margin-bottom: var(--sk-space-2);
+}
+
+._level9Row_owlw3_14 {
+  margin-top: var(--sk-space-6);
+}
+</style><style type="text/css" data-vite-dev-id="C:/Users/ayewhy/Frontend_4/skeldir-ui/src/ledger/BlockedDetailAffordance.module.css">._button_rm1xj_1 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  cursor: pointer;
+}
+
+._futureLabel_rm1xj_29 {
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-muted);
+}
+
+._srOnly_rm1xj_41 {
+  position: absolute;
+  width: var(--sk-dimension-border-width);
+  height: var(--sk-dimension-border-width);
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+._panel_rm1xj_65 {
+  max-width: var(--sk-dimension-modal-width);
+  margin: var(--sk-space-6) auto;
+  padding: var(--sk-space-6);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+._panelTitle_rm1xj_83 {
+  font-size: var(--sk-font-size-h2);
+  line-height: var(--sk-line-height-h2);
+  font-weight: var(--sk-font-weight-h2);
+  margin: 0 0 var(--sk-space-3);
+}
+
+._returnLink_rm1xj_97 {
+  display: inline-block;
+  margin-top: var(--sk-space-4);
+  min-height: var(--sk-dimension-target-min);
+  line-height: var(--sk-dimension-target-min);
+  color: var(--sk-color-trust-probabilistic);
+}
+</style></head>
+  <body>
+    <div id="root"><div class="_appShell_1wuk3_1" data-authenticated-app-shell="true" data-route="/app"><a href="#shell-main-content" class="_skipLink_1wuk3_13 _focusVisible_1i8j1_1">Skip to main content</a><div class="_shell_11oe4_1" data-viewport="app-shell"><header class="_header_11oe4_11" aria-label="Header primitive"><div class="_header_813e9_1" data-shell-header="true"><h1 class="_title_813e9_17">Skeldir</h1><div class="_controls_813e9_39"><div class="_strip_l5iqh_1" data-global-system-health-strip="true" aria-live="polite"><button type="button" class="_pill_1ph3i_1 _operational_1ph3i_41 _focusVisible_1i8j1_1" aria-label="Trust systems operational. View system health audit events" title="Operational dependencies are available. Deterministic truth may remain readable while confidence compute is delayed." data-system-health-state="operational" data-system-status-pill="true"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Success</title><circle cx="10" cy="10" r="9" fill="currentColor" opacity="0.15"></circle><path d="M6 10.5l2.5 2.5L14 7.5" stroke="currentColor" stroke-width="2" fill="none"></path></svg><span>Trust systems operational</span></button></div><div class="_wrap_1j74h_1" data-tenant-selector="single"><button type="button" class="_trigger_1j74h_21 _focusVisible_1i8j1_1" aria-label="Active workspace" disabled="">Workspace: Acme RevOps</button></div><div class="_wrap_1syka_1" data-user-menu="closed"><button type="button" class="_trigger_1syka_9 _focusVisible_1i8j1_1" aria-label="Open account menu" aria-haspopup="menu" aria-expanded="false">Account menu</button></div></div></div></header><div class="_body_11oe4_29"><aside class="_sidebar_11oe4_39" aria-label="Sidebar primitive"><div class="_sidebarWrap_1wuk3_45" data-shell-sidebar-desktop="true"><nav class="_nav_172es_1" aria-label="Primary navigation" data-shell-sidebar="true"><ul class="_list_172es_9"><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">App frame</span></a></li><li><a aria-disabled="true" class="_navItem_9xb9k_17 _navItemBlocked_9xb9k_75 _focusVisible_1i8j1_1" href="/app/nav/command-center" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Command Center</span><span class="_navItemMeta_9xb9k_91">Blocked</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/claims" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Revenue Claims</span></a></li><li><a aria-current="page" class="_navItem_9xb9k_17 _focusVisible_1i8j1_1 _navItemActive_9xb9k_63" href="/app/trust" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">TrustEnvelopes</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/channels" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Channels</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/benchmarks" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Benchmarks</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/budget" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Budget Simulation</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/exceptions" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Exceptions</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/audit" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Audit Ledger</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/agents" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Agent Access</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/integrations" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Integrations</span></a></li><li><a class="_navItem_9xb9k_17 _focusVisible_1i8j1_1" href="/app/settings/team" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_navItemLabel_9xb9k_83">Settings</span></a></li></ul></nav></div></aside><main class="_main_11oe4_55" aria-label="Main content primitive"><div class="_container_1q7cb_1" data-shell-route-container="true"><h2 class="_srTitle_1q7cb_23">Skeldir</h2><div class="_content_1q7cb_15"><div id="shell-main-content" tabindex="-1"><div class="_page_1wb18_1" data-trust-envelope-detail-page="true" data-trust-envelope-detail-loaded="true"><a class="_link_f1qgx_1 _focusVisible_1i8j1_1" data-detail-return-link="true" href="/app/trust" data-discover="true">Return to TrustEnvelope index</a><header class="_header_73wna_7"><h1>TrustEnvelope</h1><p class="_subtitle_73wna_11">env_0001</p><span class="_status_73wna_16" data-envelope-status="active">active</span><time datetime="2026-06-01T10:00:12Z">Created 6/1/2026, 5:00:12 AM</time></header><div class="_split_73wna_1"><div class="_panels_73wna_25" data-trust-human-panels="true"><section data-panel="subject"><h2>Subject</h2><p>subject_env_0001</p><p>verified_revenue_claim</p></section><section data-panel="deterministic-truth"><h2>Deterministic truth</h2><div class="_valueRow_1tboa_1" role="group" aria-label="Verified revenue"><span class="_label_1tboa_21">Verified revenue</span><span class="_amount_1tboa_35" data-field="amount_minor" title="125000 minor units">USD 1250.00</span><button type="button" class="_badge_ez961_1 _deterministic_ez961_113" aria-label="Deterministic. Source authority: deterministic"><span class="_iconWithLabel_1i8j1_79"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Authority</title><path d="M10 2l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V5l7-3z" fill="currentColor" opacity="0.15"></path><path d="M10 2l7 3v5c0 4-3 7-7 8" stroke="currentColor" stroke-width="1.5" fill="none"></path></svg><span class="_label_ez961_37">Deterministic</span></span></button></div><p>Match verdict: verified</p></section><section data-panel="attribution"><h2>Attribution model</h2><p>last_touch</p><p>Non-causal heuristic</p><p>Attribution models are deterministic heuristics. They do not prove causal lift.</p></section><section data-panel="confidence"><h2>Confidence metadata</h2><div data-confidence-cell="shaped" class="_shaped_f7e2g_33"><span class="_interval_f7e2g_1">0.81–0.93</span><span class="_method_f7e2g_9">Artifact-backed posterior</span></div></section><section data-panel="benchmark"><h2>Benchmark metadata</h2><div data-benchmark-cell="available" class="_available_1fv5o_45"><span class="_meta_1fv5o_1">Evidence: tenant_longitudinal</span><span class="_meta_1fv5o_1">Coverage: rolled_up</span><span class="_value_1fv5o_13">12.0%</span></div></section><section data-panel="policy"><h2>Policy authority</h2><span class="_pill_15w7k_1 _proposal_required_15w7k_51" role="status"><span class="_iconWithLabel_1i8j1_79"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Authority</title><path d="M10 2l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V5l7-3z" fill="currentColor" opacity="0.15"></path><path d="M10 2l7 3v5c0 4-3 7-7 8" stroke="currentColor" stroke-width="1.5" fill="none"></path></svg><span>Proposal required</span></span></span></section><section data-panel="provenance"><h2>Provenance chain</h2><ol><li>commerce_ingress</li><li>match_verdict</li><li>envelope_builder</li></ol></section><section data-panel="audit"><h2>Audit and signature</h2><p>Audit ref: aud_env_0001</p><div class="_block_1e4jl_1"><div class="_srOnly_1i8j1_11" aria-live="polite"></div><div class="_row_1e4jl_21"><span class="_label_1e4jl_35">Semantic truth hash</span><code class="_value_1e4jl_49">sem_env_0001</code><button type="button" class="_copyButton_1e4jl_69 _focusVisible_1i8j1_1" aria-label="Copy semantic truth hash"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><title>Copy</title><rect x="5" y="5" width="9" height="9" rx="1" stroke="currentColor" fill="none"></rect><path d="M3 11V3h8" stroke="currentColor" fill="none"></path></svg><span>Copy</span></button></div><div class="_rowError_1e4jl_97" role="alert">Missing required prop: Artifact hash</div><div class="_rowError_1e4jl_97" role="alert">Missing required prop: Signature hash</div></div></section></div><div class="_jsonColumn_73wna_38" data-trust-json-column="true"><h2>JSON viewer</h2><div data-trust-envelope-json-viewer="true" data-json-mounted-dom-nodes="31" data-json-total-lines="31" class="_viewer_123uw_1"><div class="_toolbar_123uw_8"><label class="_searchLabel_123uw_17">Search JSON<input class="_search_123uw_17 _focusVisible_1i8j1_1" aria-controls="trust-envelope-json-lines" data-json-search-input="true" type="search" value="" style=""></label><button type="button" class="_collapseBtn_123uw_35 _focusVisible_1i8j1_1" aria-expanded="true" data-json-collapse-toggle="true">Collapse JSON</button></div><pre class="_pre_123uw_44" id="trust-envelope-json-lines"><code class="_code_123uw_50"><div class="_line_123uw_57" data-json-line="1"><span class="_lineNumber_123uw_63" aria-hidden="true">1</span><span class="_lineContent_123uw_70">{</span></div><div class="_line_123uw_57" data-json-line="2"><span class="_lineNumber_123uw_63" aria-hidden="true">2</span><span class="_lineContent_123uw_70">  "subject_ref": "subject_env_0001",</span></div><div class="_line_123uw_57" data-json-line="3"><span class="_lineNumber_123uw_63" aria-hidden="true">3</span><span class="_lineContent_123uw_70">  "tenant_id": "tenant_test_001",</span></div><div class="_line_123uw_57" data-json-line="4"><span class="_lineNumber_123uw_63" aria-hidden="true">4</span><span class="_lineContent_123uw_70">  "truth_type": "verified_revenue_claim",</span></div><div class="_line_123uw_57" data-json-line="5"><span class="_lineNumber_123uw_63" aria-hidden="true">5</span><span class="_lineContent_123uw_70">  "verified_revenue_minor": 125000,</span></div><div class="_line_123uw_57" data-json-line="6"><span class="_lineNumber_123uw_63" aria-hidden="true">6</span><span class="_lineContent_123uw_70">  "match_verdict_status": "verified",</span></div><div class="_line_123uw_57" data-json-line="7"><span class="_lineNumber_123uw_63" aria-hidden="true">7</span><span class="_lineContent_123uw_70">  "attribution_model": "last_touch",</span></div><div class="_line_123uw_57" data-json-line="8"><span class="_lineNumber_123uw_63" aria-hidden="true">8</span><span class="_lineContent_123uw_70">  "model_assumption": "Non-causal heuristic",</span></div><div class="_line_123uw_57" data-json-line="9"><span class="_lineNumber_123uw_63" aria-hidden="true">9</span><span class="_lineContent_123uw_70">  "causal_status": "correlational_only",</span></div><div class="_line_123uw_57" data-json-line="10"><span class="_lineNumber_123uw_63" aria-hidden="true">10</span><span class="_lineContent_123uw_70">  "confidence_status": "available",</span></div><div class="_line_123uw_57" data-json-line="11"><span class="_lineNumber_123uw_63" aria-hidden="true">11</span><span class="_lineContent_123uw_70">  "fallback_reason": null,</span></div><div class="_line_123uw_57" data-json-line="12"><span class="_lineNumber_123uw_63" aria-hidden="true">12</span><span class="_lineContent_123uw_70">  "benchmark_metadata": {</span></div><div class="_line_123uw_57" data-json-line="13"><span class="_lineNumber_123uw_63" aria-hidden="true">13</span><span class="_lineContent_123uw_70">    "coverage_class": "rolled_up",</span></div><div class="_line_123uw_57" data-json-line="14"><span class="_lineNumber_123uw_63" aria-hidden="true">14</span><span class="_lineContent_123uw_70">    "evidence_class": "tenant_longitudinal"</span></div><div class="_line_123uw_57" data-json-line="15"><span class="_lineNumber_123uw_63" aria-hidden="true">15</span><span class="_lineContent_123uw_70">  },</span></div><div class="_line_123uw_57" data-json-line="16"><span class="_lineNumber_123uw_63" aria-hidden="true">16</span><span class="_lineContent_123uw_70">  "policy_action_authority": "proposal_required",</span></div><div class="_line_123uw_57" data-json-line="17"><span class="_lineNumber_123uw_63" aria-hidden="true">17</span><span class="_lineContent_123uw_70">  "audit_ref": "aud_env_0001",</span></div><div class="_line_123uw_57" data-json-line="18"><span class="_lineNumber_123uw_63" aria-hidden="true">18</span><span class="_lineContent_123uw_70">  "artifact_ref": null,</span></div><div class="_line_123uw_57" data-json-line="19"><span class="_lineNumber_123uw_63" aria-hidden="true">19</span><span class="_lineContent_123uw_70">  "artifact_hash": null,</span></div><div class="_line_123uw_57" data-json-line="20"><span class="_lineNumber_123uw_63" aria-hidden="true">20</span><span class="_lineContent_123uw_70">  "signature": null,</span></div><div class="_line_123uw_57" data-json-line="21"><span class="_lineNumber_123uw_63" aria-hidden="true">21</span><span class="_lineContent_123uw_70">  "signature_algorithm": null,</span></div><div class="_line_123uw_57" data-json-line="22"><span class="_lineNumber_123uw_63" aria-hidden="true">22</span><span class="_lineContent_123uw_70">  "key_id": null,</span></div><div class="_line_123uw_57" data-json-line="23"><span class="_lineNumber_123uw_63" aria-hidden="true">23</span><span class="_lineContent_123uw_70">  "canonicalization_version": "v1",</span></div><div class="_line_123uw_57" data-json-line="24"><span class="_lineNumber_123uw_63" aria-hidden="true">24</span><span class="_lineContent_123uw_70">  "schema_version": "1.0",</span></div><div class="_line_123uw_57" data-json-line="25"><span class="_lineNumber_123uw_63" aria-hidden="true">25</span><span class="_lineContent_123uw_70">  "semantic_truth_hash": "sem_env_0001",</span></div><div class="_line_123uw_57" data-json-line="26"><span class="_lineNumber_123uw_63" aria-hidden="true">26</span><span class="_lineContent_123uw_70">  "provenance_chain": [</span></div><div class="_line_123uw_57" data-json-line="27"><span class="_lineNumber_123uw_63" aria-hidden="true">27</span><span class="_lineContent_123uw_70">    "commerce_ingress",</span></div><div class="_line_123uw_57" data-json-line="28"><span class="_lineNumber_123uw_63" aria-hidden="true">28</span><span class="_lineContent_123uw_70">    "match_verdict",</span></div><div class="_line_123uw_57" data-json-line="29"><span class="_lineNumber_123uw_63" aria-hidden="true">29</span><span class="_lineContent_123uw_70">    "envelope_builder"</span></div><div class="_line_123uw_57" data-json-line="30"><span class="_lineNumber_123uw_63" aria-hidden="true">30</span><span class="_lineContent_123uw_70">  ]</span></div><div class="_line_123uw_57" data-json-line="31"><span class="_lineNumber_123uw_63" aria-hidden="true">31</span><span class="_lineContent_123uw_70">}</span></div></code></pre></div><div class="_level9Row_73wna_43"><div class="_row_4q5z3_1" data-trust-envelope-actions="true" data-canonical-copy-source="canonical-object"><button type="button" class="_button_1r5t7_1 _focusVisible_1i8j1_1" data-level9-action="true" data-level9-phase="success" aria-label="Copy JSON" aria-busy="false">Copy JSON</button><div class="_outcome_1r5t7_71" data-level9-outcome="true" data-level9-outcome-status="success" role="status" aria-live="polite"><p>Canonical TrustEnvelope JSON copied.</p><p>Action: copy_json_0001</p><p>Audit: aud_action_copy_json_0002</p></div><button type="button" class="_button_1r5t7_1 _focusVisible_1i8j1_1" data-level9-action="true" data-level9-phase="idle" aria-label="Export artifact" aria-busy="false">Export artifact</button><button type="button" class="_button_1r5t7_1 _focusVisible_1i8j1_1" data-level9-action="true" data-level9-phase="idle" aria-label="Verify signature" aria-busy="false">Verify signature</button><span class="_hiddenCanonical_4q5z3_13" data-canonical-json-preview="true" aria-hidden="true">{
+  "subject_ref": "subject_env_0001",
+  "tenant_id": "tenant_test_001",
+  "truth_type": "verified_revenue_claim",
+  "verified_revenue_minor": 125000,
+  "match_verdict_status": "verified",
+  "attribution_model": "last_touch",
+  "model_assumption": "Non-causal heuristic",
+  "causal_status": "correlational_only",
+  "confidence_status": "available",
+  "fallback_reason": null,
+  "benchmark_metadata": {
+    "coverage_class": "rolled_up",
+    "evidence_class": "tenant_longitudinal"
+  },
+  "policy_action_authority": "proposal_required",
+  "audit_ref": "aud_env_0001",
+  "artifact_ref": null,
+  "artifact_hash": null,
+  "signature": null,
+  "signature_algorithm": null,
+  "key_id": null,
+  "canonicalization_version": "v1",
+  "schema_version": "1.0",
+  "semantic_truth_hash": "sem_env_0001",
+  "provenance_chain": [
+    "commerce_ingress",
+    "envelope_builder",
+    "match_verdict"
+  ]
+}</span></div></div></div></div></div></div></div></div></main></div></div><nav class="_bottomNav_1vwzh_1" aria-label="Mobile primary navigation" data-shell-bottom-nav="true"><a class="_bottomItem_1vwzh_31 _focusVisible_1i8j1_1" href="/app/nav/command-center" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_bottomLabel_1vwzh_79">Command</span></a><a class="_bottomItem_1vwzh_31 _focusVisible_1i8j1_1" href="/app/claims" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_bottomLabel_1vwzh_79">Revenue</span></a><a class="_bottomItem_1vwzh_31 _focusVisible_1i8j1_1" href="/app/channels" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_bottomLabel_1vwzh_79">Channels</span></a><a class="_bottomItem_1vwzh_31 _focusVisible_1i8j1_1" href="/app/audit" data-discover="true"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_bottomLabel_1vwzh_79">Audit</span></a><button type="button" class="_bottomItem_1vwzh_31 _focusVisible_1i8j1_1" aria-label="More navigation" aria-expanded="false" aria-haspopup="dialog"><span class="_navIcon_9xb9k_1" aria-hidden="true"></span><span class="_bottomLabel_1vwzh_79">More</span></button></nav></div></div>
+    <script type="module" src="/src/main.tsx?t=1782755778569"></script>
+  
+
+</body></html>

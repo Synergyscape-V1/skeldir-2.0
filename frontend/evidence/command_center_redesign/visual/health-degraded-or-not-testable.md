@@ -1,0 +1,1 @@
+# Health degraded — PROVEN via confidence_degraded banner fixture.

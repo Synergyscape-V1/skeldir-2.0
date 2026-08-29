@@ -1,0 +1,32 @@
+.button {
+  composes: primaryAction from '../../../styles/primaryAction.module.css';
+  width: 100%;
+}
+
+.secondary,
+.oauth {
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  filter: none;
+}
+
+.secondary:hover:not(:disabled),
+.oauth:hover:not(:disabled) {
+  filter: none;
+  background: var(--sk-color-bg-muted);
+}
+
+.secondary:disabled,
+.oauth:disabled {
+  background: var(--sk-color-bg-muted);
+  color: var(--sk-color-text-secondary);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  opacity: 1;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.oauth {
+  gap: var(--sk-space-2);
+}

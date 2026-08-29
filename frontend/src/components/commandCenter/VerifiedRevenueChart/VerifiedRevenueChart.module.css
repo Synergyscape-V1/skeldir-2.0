@@ -1,0 +1,187 @@
+.wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+  min-height: var(--sk-dimension-verified-revenue-chart-height);
+  margin: 0;
+  overflow: visible;
+}
+
+.svg {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  vertical-align: top;
+}
+
+.grid {
+  stroke: var(--sk-color-border-default);
+  stroke-opacity: 0.7;
+}
+
+.line {
+  stroke: var(--sk-color-chart-revenue-line);
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 2;
+}
+
+.area {
+  opacity: 1;
+}
+
+.fillStopTop {
+  stop-color: var(--sk-color-chart-revenue-fill-top);
+}
+
+.fillStopBottom {
+  stop-color: var(--sk-color-chart-revenue-fill-bottom);
+}
+
+.point {
+  fill: var(--sk-color-bg-card);
+  stroke: var(--sk-color-chart-revenue-line);
+  outline: none;
+}
+
+.labelMarker {
+  fill: color-mix(in srgb, var(--sk-color-text-primary) 28%, transparent);
+  stroke: none;
+  pointer-events: none;
+}
+
+.point:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+
+.axisLabel {
+  font-family: var(--sk-font-family-base);
+  font-weight: var(--sk-font-weight-body-strong);
+  fill: var(--sk-color-text-secondary);
+}
+
+.xAxisLabel {
+  font-family: var(--sk-font-family-base);
+  font-weight: var(--sk-font-weight-body);
+  fill: var(--sk-color-text-secondary);
+}
+
+.plotHitArea {
+  fill: transparent;
+  stroke: none;
+  cursor: crosshair;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--sk-color-bg-card) 78%, transparent);
+  border: var(--sk-dimension-border-width) solid color-mix(in srgb, var(--sk-color-border-default) 70%, transparent);
+  border-radius: var(--sk-radius-sm);
+  box-shadow: var(--sk-elevation-popover);
+  backdrop-filter: blur(var(--sk-dimension-backdrop-blur));
+  padding: var(--sk-space-2) var(--sk-space-3);
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body);
+  color: var(--sk-color-text-primary);
+  max-width: 16rem;
+  white-space: normal;
+}
+
+.tooltipPrimary {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+}
+
+.tooltipMeta {
+  margin: 0 0 var(--sk-space-1);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-small);
+}
+
+.tooltipMeta:last-child,
+.tooltipPrimary:last-child {
+  margin-bottom: 0;
+}
+
+.legend {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sk-space-2) var(--sk-space-3);
+  margin: 0 0 var(--sk-space-1);
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-1);
+}
+
+.legendSwatchDeterministic {
+  width: 1rem;
+  height: 0;
+  border-top: var(--sk-radius-badge) solid var(--sk-color-chart-revenue-line);
+}
+
+.legendSwatchClaimed {
+  width: 1rem;
+  height: 0;
+  border-top: var(--sk-radius-badge) dashed var(--sk-color-status-warning);
+}
+
+.claimedLine {
+  stroke: var(--sk-color-status-warning);
+  stroke-dasharray: 4 3;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+}
+
+.gapMarker {
+  fill: var(--sk-color-bg-card);
+  stroke: var(--sk-color-status-error);
+  stroke-dasharray: 2 2;
+}
+
+.gapLabel {
+  fill: var(--sk-color-status-error);
+  font-family: var(--sk-font-family-base);
+  font-weight: var(--sk-font-weight-body-strong);
+  pointer-events: none;
+}
+
+.zeroPoint {
+  fill: var(--sk-color-chart-revenue-line);
+  stroke: var(--sk-color-chart-revenue-line);
+}
+
+.tooltipAbove {
+  transform: translate(-50%, calc(-100% - var(--sk-space-2)));
+}
+
+.tooltipBelow {
+  transform: translate(-50%, var(--sk-space-2));
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,0 +1,66 @@
+{
+  "verified_revenue": {
+    "selector": "[data-summary-metric-value=\"verified_revenue\"]",
+    "fontSize": "24px",
+    "fontWeight": "600",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outlineWidth": "3px",
+    "boundingBox": {
+      "x": 321,
+      "y": 375,
+      "width": 176,
+      "height": 28.796875
+    }
+  },
+  "claims_reconciled": {
+    "selector": "[data-summary-metric-value=\"claims_reconciled\"]",
+    "fontSize": "24px",
+    "fontWeight": "600",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outlineWidth": "3px",
+    "boundingBox": {
+      "x": 563,
+      "y": 375,
+      "width": 176,
+      "height": 28.796875
+    }
+  },
+  "action_authority": {
+    "selector": "[data-summary-metric-value=\"action_authority\"]",
+    "fontSize": "24px",
+    "fontWeight": "600",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outlineWidth": "3px",
+    "boundingBox": {
+      "x": 805,
+      "y": 375,
+      "width": 176,
+      "height": 57.59375
+    }
+  },
+  "open_exceptions": {
+    "selector": "[data-summary-metric-value=\"open_exceptions\"]",
+    "fontSize": "24px",
+    "fontWeight": "600",
+    "borderRadius": "0px",
+    "padding": "0px",
+    "gap": "normal",
+    "minHeight": "auto",
+    "outlineWidth": "3px",
+    "boundingBox": {
+      "x": 1047,
+      "y": 375,
+      "width": 176,
+      "height": 28.796875
+    }
+  }
+}

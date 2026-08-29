@@ -1,0 +1,32 @@
+.panelHeading {
+  margin: 0;
+}
+
+.guidance {
+  margin: 0 0 var(--sk-space-4);
+  color: var(--color-text-secondary, var(--sk-color-text-secondary));
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+.fieldGrid {
+  margin: 0;
+}
+
+.fieldCell {
+  display: grid;
+  gap: var(--sk-space-1);
+}
+
+.fieldLabel {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-font-size-h3);
+  font-weight: 500;
+  color: var(--color-text-muted, var(--sk-color-text-muted));
+}
+
+.error {
+  margin: 0;
+  color: var(--color-status-error, var(--sk-color-status-error));
+}

@@ -1,0 +1,176 @@
+.appShell {
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+  background: var(--sk-color-bg-page);
+}
+
+.skipLink {
+  position: absolute;
+  left: var(--sk-space-4);
+  top: calc(-1 * var(--sk-dimension-target-min));
+  z-index: 100;
+  padding: var(--sk-space-2) var(--sk-space-4);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  border-radius: var(--sk-radius-sm);
+  text-decoration: none;
+}
+
+.skipLink:focus {
+  top: var(--sk-space-2);
+}
+
+.sidebarWrap {
+  height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.appShell[data-shell-sidebar-collapsed='true'] :global([data-viewport='app-shell'] [data-shell-sidebar-column]) {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-right-width: 0;
+  visibility: hidden;
+}
+
+.appShell[data-shell-chat-open='false'] :global([data-viewport='app-shell'] [data-shell-chat-column]) {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-left-width: 0;
+  visibility: hidden;
+}
+
+.appShell[data-shell-chat-layout='overlay'] :global([data-viewport='app-shell'] [data-shell-main-column]) {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: 100%;
+}
+
+/* Overlay — chat floats above content; main column keeps full width. */
+.appShell[data-shell-chat-layout='overlay'] :global([data-viewport='app-shell'] [data-shell-chat-column]) {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: var(--shell-chat-panel-current-width, var(--sk-dimension-chat-panel-width));
+  min-width: var(--shell-chat-panel-current-width, var(--sk-dimension-chat-panel-width));
+  height: 100vh;
+  z-index: 900;
+  visibility: visible;
+  overflow: visible;
+  border-left: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  box-shadow: var(--sk-elevation-drawer);
+}
+
+/* Docked — chat shares the horizontal row when main content retains supervisory width. */
+.appShell[data-shell-chat-layout='docked'] :global([data-viewport='app-shell'] [data-shell-chat-column]) {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  width: var(--shell-chat-panel-current-width, var(--sk-dimension-chat-panel-width));
+  min-width: var(--shell-chat-panel-current-width, var(--sk-dimension-chat-panel-width));
+  height: 100vh;
+  z-index: auto;
+  visibility: visible;
+  overflow: visible;
+  border-left: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  box-shadow: none;
+}
+
+.chatShell {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  cursor: default;
+}
+
+@media (max-width: 767px) {
+  .appShell[data-shell-chat-open='false'] :global([data-viewport='app-shell'] [data-shell-chat-column]) {
+    display: none;
+  }
+
+  .appShell[data-shell-chat-layout='mobile'] :global([data-viewport='app-shell'] [data-shell-chat-column]) {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    z-index: 920;
+    visibility: visible;
+    overflow: visible;
+    border-left-width: 0;
+    box-shadow: none;
+  }
+}
+
+.chatBackdrop {
+  display: none;
+}
+
+.appShell[data-shell-chat-layout='overlay'] .chatBackdrop,
+.appShell[data-shell-chat-layout='mobile'] .chatBackdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 890;
+  border: none;
+  padding: 0;
+  background: rgba(15, 23, 42, 0.4);
+  cursor: pointer;
+}
+
+.appShell[data-shell-chat-layout='mobile'] .chatBackdrop {
+  z-index: 910;
+}
+
+.mobileNotification {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobileNotification {
+    display: block;
+    position: fixed;
+    top: var(--sk-space-2);
+    right: var(--sk-space-2);
+    z-index: 25;
+  }
+}
+
+.appShell :global(main:has([data-command-center-page])),
+.appShell :global(main:has([data-claims-ledger-page])) {
+  padding-top: var(--sk-space-2);
+}
+
+@media (max-width: 767px) {
+  .appShell :global([data-viewport='app-shell']) :global(aside),
+  .appShell :global([data-viewport='app-shell']) :global([aria-label='Sidebar primitive']) {
+    display: none;
+  }
+
+  .appShell :global(main),
+  .appShell :global([aria-label='Main content primitive']) {
+    padding-bottom: calc(var(--sk-dimension-target-min) + var(--sk-space-6));
+  }
+
+  .appShell :global(main:has([data-command-center-page])),
+  .appShell :global(main:has([data-claims-ledger-page])) {
+    padding-top: var(--sk-space-2);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .appShell :global([data-viewport='app-shell']) :global(aside) {
+    width: var(--sk-dimension-sidebar-width);
+  }
+}
+
+@media (min-width: 1024px) {
+  .appShell :global([data-viewport='app-shell']) :global(aside) {
+    width: var(--sk-dimension-sidebar-width);
+  }
+}

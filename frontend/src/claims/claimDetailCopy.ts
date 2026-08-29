@@ -1,0 +1,42 @@
+export const CLAIM_DETAIL_COPY = {
+  pageQuestion: 'Did this ad platform’s numbers hold up?',
+  financialSummary: {
+    claimedLabel: 'Platform claim',
+    claimedSublabel: 'What the ad platform reported',
+    verifiedLabel: 'Confirmed revenue',
+    verifiedSublabel: 'What payment records show',
+    differenceLabel: 'Discrepancy',
+    differenceSublabelMatch: 'Within tolerance',
+    differenceSublabelGap: 'Needs a budget decision',
+  },
+  verdict: {
+    verified: 'Numbers match',
+    discrepancy: "Numbers don't match",
+    label: 'Result',
+  },
+  attribution: {
+    paidHeading: 'Verified Paid Media',
+    paidPlatformClass: 'Platform & Class',
+    paidRevenue: 'Verified Revenue',
+    paidShare: 'Share of Verified',
+    paidEmpty: 'No verified paid media attribution is available for this claim.',
+    journeyHeading: 'Non-Paid Journey Origins',
+    journeyRail: 'Commerce Rail',
+    journeyRevenue: 'Revenue Present',
+    journeyEmpty: 'No non-paid journey origins were present for this claim.',
+    empty: 'No attribution breakdown is available for this claim.',
+  },
+  events: {
+    heading: 'Platform events',
+    matched: 'Confirmed',
+    unmatched: 'No receipt',
+    empty: 'No platform events are available for this claim.',
+  },
+  unverified: {
+    message: 'Unverified Claim: No matching commerce receipt found.',
+    support: 'This claim cannot defend spend to finance. Remove it from budget planning.',
+    excludeButton: 'Exclude from Budget Simulator',
+    excludeSuccess: 'Excluded from budget simulator.',
+    excludeError: 'Unable to exclude this claim from the budget simulator.',
+  },
+} as const;

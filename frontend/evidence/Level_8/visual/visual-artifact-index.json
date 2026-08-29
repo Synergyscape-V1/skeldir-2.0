@@ -1,0 +1,142 @@
+[
+  {
+    "file": "claim-detail-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "claim-detail-loaded"
+  },
+  {
+    "file": "claim-detail-error-mobile.png",
+    "viewport": "mobile",
+    "specimen": "claim-detail-error"
+  },
+  {
+    "file": "trust-detail-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "trust-detail-loaded"
+  },
+  {
+    "file": "channel-detail-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "channel-detail-loaded"
+  },
+  {
+    "file": "budget-detail-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "budget-detail-loaded"
+  },
+  {
+    "file": "exceptions-queue-mobile.png",
+    "viewport": "mobile",
+    "specimen": "exceptions-queue"
+  },
+  {
+    "file": "level9-blocked-actions-mobile.png",
+    "viewport": "mobile",
+    "specimen": "level9-blocked-actions"
+  },
+  {
+    "file": "claim-detail-loaded-tablet.png",
+    "viewport": "tablet",
+    "specimen": "claim-detail-loaded"
+  },
+  {
+    "file": "claim-detail-error-tablet.png",
+    "viewport": "tablet",
+    "specimen": "claim-detail-error"
+  },
+  {
+    "file": "trust-detail-loaded-tablet.png",
+    "viewport": "tablet",
+    "specimen": "trust-detail-loaded"
+  },
+  {
+    "file": "channel-detail-loaded-tablet.png",
+    "viewport": "tablet",
+    "specimen": "channel-detail-loaded"
+  },
+  {
+    "file": "budget-detail-loaded-tablet.png",
+    "viewport": "tablet",
+    "specimen": "budget-detail-loaded"
+  },
+  {
+    "file": "exceptions-queue-tablet.png",
+    "viewport": "tablet",
+    "specimen": "exceptions-queue"
+  },
+  {
+    "file": "level9-blocked-actions-tablet.png",
+    "viewport": "tablet",
+    "specimen": "level9-blocked-actions"
+  },
+  {
+    "file": "claim-detail-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "claim-detail-loaded"
+  },
+  {
+    "file": "claim-detail-error-desktop.png",
+    "viewport": "desktop",
+    "specimen": "claim-detail-error"
+  },
+  {
+    "file": "trust-detail-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "trust-detail-loaded"
+  },
+  {
+    "file": "channel-detail-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "channel-detail-loaded"
+  },
+  {
+    "file": "budget-detail-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "budget-detail-loaded"
+  },
+  {
+    "file": "exceptions-queue-desktop.png",
+    "viewport": "desktop",
+    "specimen": "exceptions-queue"
+  },
+  {
+    "file": "level9-blocked-actions-desktop.png",
+    "viewport": "desktop",
+    "specimen": "level9-blocked-actions"
+  },
+  {
+    "file": "claim-detail-loaded-wide.png",
+    "viewport": "wide",
+    "specimen": "claim-detail-loaded"
+  },
+  {
+    "file": "claim-detail-error-wide.png",
+    "viewport": "wide",
+    "specimen": "claim-detail-error"
+  },
+  {
+    "file": "trust-detail-loaded-wide.png",
+    "viewport": "wide",
+    "specimen": "trust-detail-loaded"
+  },
+  {
+    "file": "channel-detail-loaded-wide.png",
+    "viewport": "wide",
+    "specimen": "channel-detail-loaded"
+  },
+  {
+    "file": "budget-detail-loaded-wide.png",
+    "viewport": "wide",
+    "specimen": "budget-detail-loaded"
+  },
+  {
+    "file": "exceptions-queue-wide.png",
+    "viewport": "wide",
+    "specimen": "exceptions-queue"
+  },
+  {
+    "file": "level9-blocked-actions-wide.png",
+    "viewport": "wide",
+    "specimen": "level9-blocked-actions"
+  }
+]

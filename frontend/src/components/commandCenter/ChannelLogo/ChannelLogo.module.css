@@ -1,0 +1,31 @@
+.logo {
+  display: block;
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  object-fit: contain;
+}
+
+.logo[data-channel-logo='shopify'] {
+  width: 1.4em;
+  height: 1.4em;
+}
+
+.logo[data-channel-logo='meta_ads'],
+.logo[data-channel-logo='google_ads'],
+.logo[data-channel-logo='stripe'],
+.logo[data-channel-logo='tiktok_ads'],
+.logo[data-channel-logo='linkedin_ads'] {
+  width: 1.3em;
+  height: 1.3em;
+}
+
+.logo[data-channel-logo='woocommerce'] {
+  width: 1.75em;
+  height: 1.05em;
+}
+
+.logo[data-channel-logo='paypal'] {
+  width: 1.1em;
+  height: 1.35em;
+}

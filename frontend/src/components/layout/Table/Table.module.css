@@ -1,0 +1,246 @@
+.wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.wrapperEmbedded {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: visible;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+}
+
+.tableEmbedded {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.caption {
+  caption-side: top;
+  text-align: left;
+  padding: var(--sk-space-3) var(--sk-space-4);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+}
+
+th,
+td {
+  padding: var(--sk-dimension-table-cell-padding-block) var(--sk-dimension-table-cell-padding-inline);
+  text-align: left;
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+.tableEmbedded :is(th, td) {
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--spacing-8) var(--spacing-4);
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  vertical-align: middle;
+  border-bottom: var(--sk-dimension-border-width) solid var(--color-border-default);
+}
+
+.tableEmbedded :is(th, td):not(:last-child) {
+  border-right: var(--sk-dimension-border-width) solid var(--color-border-default);
+}
+
+.tableEmbedded th {
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-secondary);
+  background: transparent;
+}
+
+.tableEmbedded td {
+  color: var(--sk-color-text-primary);
+}
+
+/* Children must truncate inside the content box so cell padding stays as gutter. */
+.tableEmbedded :is(th, td) > * {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.tableEmbedded :is(th, td) time,
+.tableEmbedded :is(th, td) code,
+.tableEmbedded :is(th, td) a,
+.tableEmbedded :is(th, td) button,
+.tableEmbedded :is(th, td) span,
+.tableEmbedded :is(th, td) [data-status-text] {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Audit Open must stay one line — never character-stack inside narrow columns. */
+.tableEmbedded :is(th, td):has([data-audit-open-affordance='navigate']) {
+  overflow-wrap: normal;
+}
+
+.tableEmbedded :is(th, td) [data-audit-open-affordance='navigate'] {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  max-width: none;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.tableEmbedded [data-trust-chip] {
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Revenue Reliability header must stay fully legible — never ellipsis or character-stack. */
+.tableEmbedded th:has([data-revenue-reliability-column-header]),
+.tableEmbedded th:has([data-revenue-reliability-column-header]) > *,
+.tableEmbedded th:has([data-revenue-reliability-column-header]) span {
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  max-width: none;
+}
+
+th {
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-secondary);
+  background: var(--sk-color-bg-muted);
+}
+
+.rowDense {
+  height: var(--sk-dimension-table-row-dense);
+}
+
+.rowStandard {
+  height: var(--sk-dimension-table-row-standard);
+}
+
+.interactive {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .interactive:hover > td,
+  .interactive:hover {
+    background: var(--sk-color-bg-muted);
+  }
+
+  .interactive:active > td,
+  .interactive:active {
+    background: color-mix(in srgb, var(--sk-color-bg-muted) 78%, var(--sk-color-border-default));
+  }
+}
+
+.interactive:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: calc(var(--sk-focus-outline-offset) * -1);
+}
+
+.progress {
+  margin-top: var(--sk-space-3);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+}
+
+.retry {
+  margin-top: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-3);
+  margin-top: var(--sk-space-3);
+  padding: 0 var(--sk-space-2);
+}
+
+.pageInfo {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.pageControls {
+  display: flex;
+  gap: var(--sk-space-2);
+}
+
+.pageButton {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+}
+
+.pageButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rowExpanded {
+  background: var(--sk-color-bg-muted);
+}
+
+.expandedRow {
+  background: var(--sk-color-bg-muted);
+}
+
+/**
+ * Expansion host reset — expanded cells are surfaces, not data cells.
+ * Neutralizes .tableEmbedded dense Small type + child shrink rules.
+ */
+.expandedCell {
+  width: 100%;
+  padding: var(--spacing-24) !important;
+  overflow: visible !important;
+  vertical-align: top !important;
+  font-size: var(--font-size-body) !important;
+  line-height: var(--sk-line-height-body) !important;
+  border-bottom: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-right: none !important;
+}
+
+.tableEmbedded td.expandedCell {
+  overflow: visible !important;
+}
+
+.tableEmbedded td.expandedCell > * {
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+}

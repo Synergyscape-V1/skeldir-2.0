@@ -1,0 +1,126 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.table {
+  gap: var(--sk-radius-badge);
+  line-height: 1.2;
+  width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.hero {
+  gap: var(--sk-space-2);
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table .amount {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: 1.25;
+}
+
+.percent {
+  font-variant-numeric: tabular-nums;
+  color: var(--sk-color-text-secondary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table .percent {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body);
+  line-height: 1.25;
+}
+
+.statusText {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--sk-font-size-micro);
+  line-height: 1.25;
+  font-weight: var(--sk-font-weight-small);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.toneSuccess .statusText {
+  color: var(--sk-color-status-success);
+}
+
+.toneWarning .statusText {
+  color: var(--sk-color-status-warning);
+}
+
+.toneError .statusText {
+  color: var(--sk-color-status-error);
+}
+
+.toneNeutral .statusText {
+  color: var(--sk-color-text-secondary);
+}
+
+.hero .amount {
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-h2);
+  line-height: 1.2;
+  font-weight: var(--sk-font-weight-h2);
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-overflow: unset;
+}
+
+.hero .percent {
+  font-family: var(--sk-font-family-display);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-muted);
+  white-space: normal;
+  text-overflow: unset;
+}
+
+.thresholdContext {
+  font-size: var(--sk-font-size-micro);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-muted);
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sk-space-1);
+}
+
+.toneSuccess .amount {
+  color: var(--sk-color-status-success);
+}
+
+.toneWarning .amount {
+  color: var(--sk-color-status-warning);
+}
+
+.toneError .amount {
+  color: var(--sk-color-status-error);
+}
+
+.toneNeutral .amount {
+  color: var(--sk-color-text-secondary);
+}

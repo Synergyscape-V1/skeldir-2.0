@@ -1,0 +1,49 @@
+/**
+ * Budget Simulation panel DNA — aligned to Overview summary-tile / supervisory card grammar.
+ * Border-first surfaces; no parallel elevation system; no hover shadow lift on static panels.
+ */
+
+.elevatedPanel {
+  padding: var(--spacing-24);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-card);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  min-width: 0;
+  width: 100%;
+}
+
+.insetSubPanel {
+  padding: var(--spacing-16);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+  min-width: 0;
+}
+
+.governanceHeaderRow {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-16);
+  margin-bottom: var(--spacing-8);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: var(--font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--color-text-primary);
+  min-width: 0;
+  letter-spacing: -0.01em;
+  font-family: var(--sk-font-family-inter);
+}

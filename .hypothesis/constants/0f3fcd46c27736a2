@@ -1,4 +1,0 @@
-# file: C:\Users\ayewhy\II SKELDIR II\backend\app\schemas\webhooks_paypal.py
-# hypothesis_version: 6.148.2
-
-[400, '2025-11-10T15:30:00Z', '39.99', 'PAY-123456789', 'RF123456789', 'USD', 'Validation Error', '^[A-Z]{3}$', 'completed', 'pending']

@@ -1,0 +1,165 @@
+.panel {
+  composes: banner from '../../../styles/boundaryBanner.module.css';
+  align-items: flex-start;
+  background: var(--sk-color-surface-warning);
+  border-color: var(--sk-color-warning-subtle-border);
+}
+
+.icon {
+  composes: icon from '../../../styles/boundaryBanner.module.css';
+  margin-top: var(--sk-space-1);
+  color: var(--sk-color-status-warning);
+}
+
+.content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+
+.copy {
+  composes: copy from '../../../styles/boundaryBanner.module.css';
+}
+
+.lead {
+  color: var(--sk-color-text-primary);
+  font-weight: var(--sk-font-weight-body-strong);
+}
+
+.gapSummary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  padding: var(--sk-space-3);
+  background: var(--sk-color-bg-card);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-warning-subtle-border);
+}
+
+.gapItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+.gapLabel {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--sk-color-text-primary);
+}
+
+.gapSublabel {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.details {
+  margin: 0;
+  display: grid;
+  gap: var(--sk-space-3) var(--sk-space-5);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+}
+
+.details div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+.details dt {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+  font-weight: var(--sk-font-weight-small);
+}
+
+.details dd {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-primary);
+  font-weight: var(--sk-font-weight-small-strong);
+}
+
+.details dd.deficit {
+  color: var(--sk-color-status-warning);
+}
+
+.policyRow {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  padding-top: var(--sk-space-2);
+  border-top: 1px solid var(--sk-color-warning-subtle-border);
+}
+
+.policyRow dt {
+  margin: 0;
+}
+
+/* Loading skeleton states */
+.skeleton {
+  display: flex;
+  gap: var(--sk-space-4);
+  align-items: flex-start;
+}
+
+.skeletonIcon {
+  width: var(--sk-space-5);
+  height: var(--sk-space-5);
+  border-radius: 50%;
+  background: var(--sk-color-bg-muted);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.skeletonContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-3);
+}
+
+.skeletonTitle {
+  height: var(--sk-space-5);
+  width: 60%;
+  background: var(--sk-color-bg-muted);
+  border-radius: var(--sk-radius-sm);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.skeletonLine {
+  height: var(--sk-space-4);
+  width: 100%;
+  background: var(--sk-color-bg-muted);
+  border-radius: var(--sk-radius-sm);
+  animation: pulse 1.5s ease-in-out infinite;
+  animation-delay: 0.2s;
+}
+
+.skeletonGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sk-space-3);
+}
+
+.skeletonItem {
+  height: var(--sk-space-8);
+  background: var(--sk-color-bg-muted);
+  border-radius: var(--sk-radius-sm);
+  animation: pulse 1.5s ease-in-out infinite;
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

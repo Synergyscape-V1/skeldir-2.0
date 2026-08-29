@@ -1,0 +1,25 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+}
+
+.body {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.recovery {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-size-min);
+  color: var(--color-trust-probabilistic);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.recovery:hover {
+  text-decoration: underline;
+}

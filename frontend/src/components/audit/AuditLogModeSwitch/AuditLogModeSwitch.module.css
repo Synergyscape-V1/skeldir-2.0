@@ -1,0 +1,68 @@
+.switch {
+  border: none;
+  margin: 0 0 var(--sk-space-6);
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.legend {
+  font-size: var(--sk-font-size-h3);
+  line-height: var(--sk-line-height-h3);
+  font-weight: var(--sk-font-weight-h3);
+  margin-bottom: var(--sk-space-3);
+  color: var(--sk-color-text-primary);
+}
+
+.options {
+  display: grid;
+  gap: var(--sk-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+}
+
+.option {
+  display: flex;
+  gap: var(--sk-space-3);
+  align-items: flex-start;
+  padding: var(--sk-space-4);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-color-bg-card);
+  cursor: pointer;
+  min-height: var(--sk-dimension-target-min);
+}
+
+.option:has(input:checked) {
+  background: var(--sk-color-bg-muted);
+}
+
+.option input {
+  margin-top: var(--sk-space-1);
+}
+
+.option input:focus {
+  outline: none;
+}
+
+.option:has(input:focus-visible) {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+
+.optionBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+.optionTitle {
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+}
+
+.optionDescription {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+}

@@ -1,0 +1,345 @@
+{
+  "generatedAt": "2026-06-27T18:05:22.029Z",
+  "artifacts": [
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\shell-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "shell-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-single-mobile.png",
+      "viewport": "mobile",
+      "specimen": "tenant-selector-single"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-loading-mobile.png",
+      "viewport": "mobile",
+      "specimen": "tenant-selector-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-error-mobile.png",
+      "viewport": "mobile",
+      "specimen": "tenant-selector-error"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-open-mobile.png",
+      "viewport": "mobile",
+      "specimen": "tenant-selector-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\user-menu-closed-mobile.png",
+      "viewport": "mobile",
+      "specimen": "user-menu-closed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\user-menu-open-mobile.png",
+      "viewport": "mobile",
+      "specimen": "user-menu-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-command-center-mobile.png",
+      "viewport": "mobile",
+      "specimen": "blocked-command-center"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-claims-mobile.png",
+      "viewport": "mobile",
+      "specimen": "blocked-claims"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-integrations-mobile.png",
+      "viewport": "mobile",
+      "specimen": "blocked-integrations"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\unknown-route-mobile.png",
+      "viewport": "mobile",
+      "specimen": "unknown-route"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\mobile-bottom-nav-mobile.png",
+      "viewport": "mobile",
+      "specimen": "mobile-bottom-nav"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\mobile-more-open-mobile.png",
+      "viewport": "mobile",
+      "specimen": "mobile-more-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\session-missing-guard-mobile.png",
+      "viewport": "mobile",
+      "specimen": "session-missing-guard"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-missing-guard-mobile.png",
+      "viewport": "mobile",
+      "specimen": "tenant-missing-guard"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\shell-loading-mobile.png",
+      "viewport": "mobile",
+      "specimen": "shell-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\sidebar-blocked-item-mobile.png",
+      "viewport": "mobile",
+      "specimen": "sidebar-blocked-item"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\shell-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "shell-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-single-tablet.png",
+      "viewport": "tablet",
+      "specimen": "tenant-selector-single"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-loading-tablet.png",
+      "viewport": "tablet",
+      "specimen": "tenant-selector-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-error-tablet.png",
+      "viewport": "tablet",
+      "specimen": "tenant-selector-error"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-open-tablet.png",
+      "viewport": "tablet",
+      "specimen": "tenant-selector-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\user-menu-closed-tablet.png",
+      "viewport": "tablet",
+      "specimen": "user-menu-closed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\user-menu-open-tablet.png",
+      "viewport": "tablet",
+      "specimen": "user-menu-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-command-center-tablet.png",
+      "viewport": "tablet",
+      "specimen": "blocked-command-center"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-claims-tablet.png",
+      "viewport": "tablet",
+      "specimen": "blocked-claims"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-integrations-tablet.png",
+      "viewport": "tablet",
+      "specimen": "blocked-integrations"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\unknown-route-tablet.png",
+      "viewport": "tablet",
+      "specimen": "unknown-route"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\mobile-bottom-nav-tablet.png",
+      "viewport": "tablet",
+      "specimen": "mobile-bottom-nav"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\mobile-more-open-tablet.png",
+      "viewport": "tablet",
+      "specimen": "mobile-more-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\session-missing-guard-tablet.png",
+      "viewport": "tablet",
+      "specimen": "session-missing-guard"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-missing-guard-tablet.png",
+      "viewport": "tablet",
+      "specimen": "tenant-missing-guard"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\shell-loading-tablet.png",
+      "viewport": "tablet",
+      "specimen": "shell-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\sidebar-blocked-item-tablet.png",
+      "viewport": "tablet",
+      "specimen": "sidebar-blocked-item"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\shell-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "shell-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-single-desktop.png",
+      "viewport": "desktop",
+      "specimen": "tenant-selector-single"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-loading-desktop.png",
+      "viewport": "desktop",
+      "specimen": "tenant-selector-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-error-desktop.png",
+      "viewport": "desktop",
+      "specimen": "tenant-selector-error"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-open-desktop.png",
+      "viewport": "desktop",
+      "specimen": "tenant-selector-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\user-menu-closed-desktop.png",
+      "viewport": "desktop",
+      "specimen": "user-menu-closed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\user-menu-open-desktop.png",
+      "viewport": "desktop",
+      "specimen": "user-menu-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-command-center-desktop.png",
+      "viewport": "desktop",
+      "specimen": "blocked-command-center"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-claims-desktop.png",
+      "viewport": "desktop",
+      "specimen": "blocked-claims"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-integrations-desktop.png",
+      "viewport": "desktop",
+      "specimen": "blocked-integrations"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\unknown-route-desktop.png",
+      "viewport": "desktop",
+      "specimen": "unknown-route"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\mobile-bottom-nav-desktop.png",
+      "viewport": "desktop",
+      "specimen": "mobile-bottom-nav"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\mobile-more-open-desktop.png",
+      "viewport": "desktop",
+      "specimen": "mobile-more-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\session-missing-guard-desktop.png",
+      "viewport": "desktop",
+      "specimen": "session-missing-guard"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-missing-guard-desktop.png",
+      "viewport": "desktop",
+      "specimen": "tenant-missing-guard"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\shell-loading-desktop.png",
+      "viewport": "desktop",
+      "specimen": "shell-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\sidebar-blocked-item-desktop.png",
+      "viewport": "desktop",
+      "specimen": "sidebar-blocked-item"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\shell-default-wide.png",
+      "viewport": "wide",
+      "specimen": "shell-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-single-wide.png",
+      "viewport": "wide",
+      "specimen": "tenant-selector-single"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-loading-wide.png",
+      "viewport": "wide",
+      "specimen": "tenant-selector-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-error-wide.png",
+      "viewport": "wide",
+      "specimen": "tenant-selector-error"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-selector-open-wide.png",
+      "viewport": "wide",
+      "specimen": "tenant-selector-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\user-menu-closed-wide.png",
+      "viewport": "wide",
+      "specimen": "user-menu-closed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\user-menu-open-wide.png",
+      "viewport": "wide",
+      "specimen": "user-menu-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-command-center-wide.png",
+      "viewport": "wide",
+      "specimen": "blocked-command-center"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-claims-wide.png",
+      "viewport": "wide",
+      "specimen": "blocked-claims"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\blocked-integrations-wide.png",
+      "viewport": "wide",
+      "specimen": "blocked-integrations"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\unknown-route-wide.png",
+      "viewport": "wide",
+      "specimen": "unknown-route"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\mobile-bottom-nav-wide.png",
+      "viewport": "wide",
+      "specimen": "mobile-bottom-nav"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\mobile-more-open-wide.png",
+      "viewport": "wide",
+      "specimen": "mobile-more-open"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\session-missing-guard-wide.png",
+      "viewport": "wide",
+      "specimen": "session-missing-guard"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\tenant-missing-guard-wide.png",
+      "viewport": "wide",
+      "specimen": "tenant-missing-guard"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\shell-loading-wide.png",
+      "viewport": "wide",
+      "specimen": "shell-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_2\\visual\\sidebar-blocked-item-wide.png",
+      "viewport": "wide",
+      "specimen": "sidebar-blocked-item"
+    }
+  ]
+}

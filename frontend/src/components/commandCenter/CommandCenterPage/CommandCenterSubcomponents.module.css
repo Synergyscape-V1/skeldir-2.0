@@ -1,0 +1,2845 @@
+.panel {
+
+  background: var(--color-bg-card);
+
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+  border-radius: var(--radius-card);
+
+  padding: var(--spacing-24);
+
+}
+
+
+
+.section {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-16);
+
+}
+
+
+
+.sectionTitle {
+
+  font-size: var(--font-size-h3);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  color: var(--color-text-primary);
+
+  margin: 0;
+
+}
+
+
+
+.meta {
+
+  color: var(--color-text-secondary);
+
+  font-size: var(--font-size-small);
+
+  margin: 0;
+
+}
+
+
+
+.pageHeaderStack {
+
+  composes: pageHeaderStack from '../../../styles/reflowLayout.module.css';
+
+  font-family: var(--sk-font-family-inter);
+
+}
+
+
+
+.pageHeaderStack .pageTitle {
+
+  font-family: var(--sk-font-family-display);
+
+  font-weight: 400;
+
+  overflow-wrap: anywhere;
+
+  word-break: break-word;
+
+  max-width: 100%;
+
+}
+
+
+
+.pageQuestion {
+
+  margin: 0;
+
+  color: var(--color-text-secondary);
+
+  font-size: var(--font-size-body);
+
+  line-height: var(--sk-line-height-body);
+
+  font-family: var(--sk-font-family-inter);
+
+  overflow-wrap: anywhere;
+
+}
+
+
+
+.pageLastUpdated {
+
+  margin: 0;
+
+  color: var(--color-text-muted);
+
+  font-size: var(--font-size-small);
+
+  line-height: var(--sk-line-height-small);
+
+  font-family: var(--sk-font-family-inter);
+
+  overflow-wrap: anywhere;
+
+}
+
+
+
+.headerActionColumn {
+
+  composes: headerActionColumn from '../../../styles/reflowLayout.module.css';
+
+  font-family: var(--sk-font-family-inter);
+
+}
+
+
+
+.headerMetaStack {
+
+  composes: headerMetaStack from '../../../styles/reflowLayout.module.css';
+
+  font-family: var(--sk-font-family-inter);
+
+}
+
+
+
+.headerMetaStack .urgency {
+
+  font-family: var(--sk-font-family-inter);
+
+}
+
+
+
+.urgency {
+
+  margin: 0;
+
+  color: var(--color-status-error);
+
+  font-size: var(--font-size-small);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+}
+
+
+.urgencyClear {
+
+  margin: 0;
+
+  color: var(--color-status-success);
+
+  font-size: var(--font-size-small);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+}
+
+
+
+.statusText {
+
+  color: var(--color-text-secondary);
+
+  font-size: var(--font-size-small);
+
+  margin: 0;
+
+}
+
+
+
+.headerRow {
+
+  composes: pageHeaderRow from '../../../styles/reflowLayout.module.css';
+
+}
+
+
+
+.errorBanner {
+
+  background: var(--sk-color-surface-error);
+
+  border: var(--sk-dimension-border-width) solid var(--color-status-error);
+
+  border-radius: var(--radius-card);
+
+  color: var(--color-status-error);
+
+  padding: var(--spacing-16);
+
+}
+
+
+
+.warningBanner {
+
+  background: var(--sk-color-surface-warning);
+
+  border: var(--sk-dimension-border-width) solid var(--color-status-warning);
+
+  border-radius: var(--radius-card);
+
+  color: var(--color-status-warning);
+
+  padding: var(--spacing-16);
+
+}
+
+
+
+.primaryButton {
+
+  composes: primaryAction from '../../../styles/primaryAction.module.css';
+
+}
+
+
+
+.secondaryButton {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  min-height: var(--target-size-min);
+
+  padding: var(--spacing-8) var(--spacing-16);
+
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+  border-radius: var(--radius-sm);
+
+  text-decoration: none;
+
+  color: var(--color-text-primary);
+
+}
+
+
+
+.summarySection {
+  composes: section from '../../../styles/summaryTile.module.css';
+}
+
+.bifurcatedSummarySection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  min-width: 0;
+}
+
+/*
+ * TriagePlane — compact supervisory-health strip below the SummaryPlane.
+ * Slimmer padding/type so it does not overtake verified revenue / claims tiles.
+ * Left accent rail carries the blocker signal without relying on color alone.
+ */
+.triagePlane {
+  background: color-mix(in srgb, var(--color-bg-muted) 72%, var(--color-bg-card));
+  border: none;
+  border-left: var(--sk-dimension-border-width) solid var(--color-status-warning);
+  border-radius: 0;
+  padding: var(--spacing-12) var(--spacing-16);
+}
+
+.triagePlaneGrid {
+  display: grid;
+  gap: var(--sk-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  min-width: 0;
+  width: 100%;
+}
+
+.triagePlane [data-summary-tile-kind='supervisory_health'] {
+  min-height: 0;
+  padding: var(--spacing-12) var(--spacing-16);
+  gap: var(--spacing-4);
+}
+
+.triagePlane [data-summary-tile-kind='supervisory_health'] .summaryBody {
+  gap: var(--spacing-4);
+}
+
+.triagePlane [data-summary-metric-value] {
+  margin-top: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+.triagePlane .summaryActionFooter {
+  padding-top: var(--spacing-8);
+}
+
+/*
+ * SummaryPlane — retrospective routine metrics. Subordinate position (below
+ * TriagePlane). When blockers exist, dimmed to signal "read-only until resolved"
+ * without removing the financial truth from the DOM.
+ */
+.summaryPlane {
+  min-width: 0;
+}
+
+.summaryPlaneDimmed {
+  opacity: 0.8;
+  transition: opacity 150ms ease-out;
+}
+
+.summaryGrid {
+  composes: grid from '../../../styles/summaryTile.module.css';
+}
+
+.summaryCard {
+  composes: card from '../../../styles/summaryTile.module.css';
+}
+
+.summaryTopRow {
+  composes: topRow from '../../../styles/summaryTile.module.css';
+}
+
+.summaryBody {
+  composes: body from '../../../styles/summaryTile.module.css';
+}
+
+.summaryLabel {
+  composes: label from '../../../styles/summaryTile.module.css';
+}
+
+.summaryChip {
+  composes: chip from '../../../styles/summaryTile.module.css';
+}
+
+.metricValue {
+  composes: value from '../../../styles/summaryTile.module.css';
+}
+
+.metricValueLong {
+  composes: value from '../../../styles/summaryTile.module.css';
+  word-break: break-word;
+}
+
+.metricValueWarning {
+  composes: valueWarning from '../../../styles/summaryTile.module.css';
+}
+
+.metricValueError {
+  composes: valueError from '../../../styles/summaryTile.module.css';
+}
+
+.metricValueSuccess {
+  composes: value from '../../../styles/summaryTile.module.css';
+  color: var(--color-status-success);
+}
+
+.supervisoryMetricValue {
+  display: block;
+  margin-top: calc(var(--spacing-8) + 1px);
+  font-size: calc(var(--font-size-h3) + 1px);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: 1.35;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.supervisoryMetricValueWarning {
+  composes: supervisoryMetricValue;
+  color: var(--color-status-warning);
+}
+
+.supervisoryMetricValueError {
+  composes: supervisoryMetricValue;
+  color: var(--color-status-error);
+}
+
+.supervisoryMetricValueSuccess {
+  composes: supervisoryMetricValue;
+  color: var(--color-status-success);
+}
+
+.summarySubLabel {
+  composes: meta from '../../../styles/summaryTile.module.css';
+  color: var(--color-text-secondary);
+}
+
+.trendRow {
+  composes: meta from '../../../styles/summaryTile.module.css';
+}
+
+.summaryTrendIcon {
+  composes: metaIcon from '../../../styles/summaryTile.module.css';
+}
+
+.summaryDrillDownChevron {
+  composes: drillDownChevron from '../../../styles/summaryTile.module.css';
+}
+
+.trendPositive {
+  composes: metaSuccess from '../../../styles/summaryTile.module.css';
+}
+
+.trendNegative {
+  composes: metaError from '../../../styles/summaryTile.module.css';
+}
+
+.trendNeutral {
+  color: var(--color-text-muted);
+}
+
+.drillDown {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-small);
+  color: var(--color-link-default);
+  text-decoration: none;
+}
+
+.drillDown:hover {
+  text-decoration: underline;
+}
+
+.summaryActionFooter {
+  composes: actionFooter from '../../../styles/summaryTile.module.css';
+}
+
+.summaryDrillDown {
+  composes: drillDown from '../../../styles/summaryTile.module.css';
+}
+
+
+
+.prioritySection {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-16);
+
+}
+
+
+
+.priorityHeader {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: var(--spacing-12);
+
+}
+
+
+
+.priorityTitle {
+
+  font-size: var(--font-size-h3);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  margin: 0;
+
+}
+
+
+
+.priorityList {
+
+  list-style: none;
+
+  margin: 0;
+
+  padding: 0;
+
+  display: flex;
+
+  flex-direction: column;
+
+  background: var(--color-bg-card);
+
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+  border-radius: var(--radius-card);
+
+  overflow: hidden;
+
+}
+
+
+
+.priorityRow {
+
+  composes: priorityIssueRow from '../../../styles/reflowLayout.module.css';
+
+  padding: var(--spacing-24);
+
+  border-bottom: var(--sk-dimension-border-width) solid var(--color-border-subtle);
+
+}
+
+
+.priorityRowResolved {
+
+  opacity: 0.62;
+
+}
+
+.priorityRank {
+
+  font-size: var(--font-size-body);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  color: var(--color-text-secondary);
+
+  min-width: 1.5rem;
+
+}
+
+
+
+.priorityRow:last-child {
+
+  border-bottom: none;
+
+}
+
+
+
+.priorityTextBlock {
+
+  min-width: 0;
+
+}
+
+
+
+.priorityRowTitle {
+
+  display: block;
+
+  font-size: var(--font-size-body);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+}
+
+
+
+.priorityExplanation {
+
+  margin: var(--spacing-4) 0 0;
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+.priorityPolicyCell {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: flex-start;
+
+  min-width: 0;
+
+}
+
+
+
+.priorityActionCell {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: flex-end;
+
+  min-width: 0;
+
+}
+
+
+
+.priorityAction {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  min-height: var(--sk-dimension-nav-item-height);
+
+  padding: 0 var(--sk-space-3);
+
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+  border-radius: var(--sk-radius-sm);
+
+  text-decoration: none;
+
+  font-size: var(--sk-font-size-small);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  color: var(--color-text-primary);
+
+  white-space: nowrap;
+
+}
+
+
+
+.priorityEmpty {
+
+  background: var(--color-bg-muted);
+
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+  border-radius: var(--radius-card);
+
+  padding: var(--spacing-24);
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-12);
+
+}
+
+
+
+.chartCard,
+
+.tableCard {
+
+  composes: supervisoryPanel from '../../../styles/responsiveGrid.module.css';
+
+  background: var(--color-bg-card);
+
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+  border-radius: var(--radius-card);
+
+  padding: var(--spacing-24) var(--spacing-16);
+
+  min-width: 0;
+
+  width: 100%;
+
+  height: 100%;
+
+  align-self: stretch;
+
+  box-sizing: border-box;
+
+}
+
+
+
+.chartCard {
+
+  position: relative;
+
+  width: 100%;
+
+  padding-bottom: var(--spacing-24);
+
+  min-width: 0;
+
+}
+
+
+
+.chartCardCompact {
+
+  composes: chartCard;
+
+  gap: var(--spacing-12);
+
+}
+
+
+
+.chartHeader {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  align-items: flex-start;
+
+  justify-content: space-between;
+
+  gap: var(--spacing-12);
+
+}
+
+
+
+.chartHeaderPrimary {
+
+  min-width: 0;
+
+  flex: 1 1 12rem;
+
+}
+
+
+
+.chartMeta {
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: flex-end;
+
+  gap: var(--spacing-4);
+
+  flex-shrink: 0;
+
+}
+
+
+
+.chartPlotRegion {
+
+  flex: 1 1 auto;
+
+  min-height: var(--sk-dimension-verified-revenue-chart-height);
+
+  min-width: 0;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: stretch;
+
+  padding-bottom: var(--sk-space-2);
+
+  overflow: visible;
+
+}
+
+
+
+.chartPlotRegion > * {
+
+  flex: 1 1 auto;
+
+  width: 100%;
+
+  height: 100%;
+
+  min-height: var(--sk-dimension-verified-revenue-chart-height);
+
+}
+
+
+
+.trendEmpty {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+  padding: var(--spacing-12);
+
+  background: var(--color-bg-muted);
+
+  border-radius: 0;
+
+  min-height: calc(var(--sk-space-16) + var(--sk-space-8));
+
+  justify-content: center;
+
+}
+
+
+
+.trendEmptyTitle {
+
+  margin: 0;
+
+  font-size: var(--font-size-body);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+}
+
+
+
+.channelTableWrap {
+
+  max-width: 100%;
+
+  overflow-x: visible;
+
+}
+
+
+
+@media (min-width: 1024px) {
+
+  .channelTableWrap {
+
+    flex: 1 1 auto;
+
+    min-height: 0;
+
+    display: flex;
+
+    flex-direction: column;
+
+  }
+
+
+
+  .channelTable {
+
+    flex: 1 1 auto;
+
+    height: 100%;
+
+    min-height: 0;
+
+  }
+
+
+
+  .channelTable tbody {
+
+    height: 100%;
+
+  }
+
+
+
+  .channelTable tbody tr {
+
+    height: calc(
+      (100% - var(--sk-dimension-channel-trust-thead-block)) /
+        var(--sk-dimension-channel-trust-snapshot-row-count)
+    );
+
+    min-height: calc(
+      (100% - var(--sk-dimension-channel-trust-thead-block)) /
+        var(--sk-dimension-channel-trust-snapshot-row-count)
+    );
+
+  }
+
+
+
+  .channelTable :is(th, td) {
+
+    padding: var(--spacing-24) var(--spacing-12);
+
+    font-size: var(--font-size-body);
+
+    line-height: 1.4;
+
+  }
+
+
+
+  .colDiscrepancyCell {
+
+    padding-inline-end: var(--spacing-12);
+
+  }
+
+
+
+  :is([data-verified-revenue-trend], [data-channel-trust-table], [data-recent-trust-envelopes]) {
+
+    padding: var(--spacing-24);
+
+    gap: var(--spacing-16);
+
+  }
+
+
+
+  :is([data-verified-revenue-trend], [data-channel-trust-table], [data-recent-trust-envelopes]) h2 {
+
+    font-size: var(--sk-dimension-icon-size);
+
+    line-height: 1.35;
+
+  }
+
+
+
+  :is([data-channel-trust-table], [data-recent-trust-envelopes]) [data-trust-chip] {
+
+    font-size: var(--font-size-small);
+
+    line-height: 1.35;
+
+    padding: var(--sk-focus-outline-offset) var(--sk-space-2);
+
+  }
+
+
+
+  .trendEmpty {
+
+    flex: 1 1 auto;
+
+    min-height: 0;
+
+  }
+
+}
+
+
+
+.channelTable {
+
+  width: 100%;
+
+  border-collapse: separate;
+
+  border-spacing: 0;
+
+  table-layout: fixed;
+
+  background: var(--color-bg-card);
+
+}
+
+
+
+.channelTable :is(th, td) {
+  text-align: center;
+  padding: var(--spacing-12) var(--spacing-12);
+  border-bottom: var(--sk-dimension-border-width) solid var(--color-border-default);
+  vertical-align: middle;
+  font-size: var(--font-size-small);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.channelTable :is(th, td) > * {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.channelTable td {
+  overflow: hidden;
+}
+
+
+
+/* Column widths — six-column channel trust snapshot (sums to 100%). */
+.colAxis {
+  width: 18%;
+  min-width: 7.25rem;
+}
+
+.colVerifiedRevenue {
+  width: 16%;
+  min-width: 8rem;
+}
+
+.colDiscrepancy {
+  width: 12%;
+  min-width: 5.5rem;
+}
+
+.colRevenueReliability {
+  width: 14%;
+  min-width: 7.75rem;
+}
+
+.colBenchmarkContext {
+  width: 22%;
+  min-width: 9rem;
+}
+
+.colPolicy {
+  width: 18%;
+  min-width: 7rem;
+}
+
+/* Legacy aliases — retained for envelope table colgroup */
+.colChannel {
+  composes: colAxis;
+}
+
+.colMoney {
+  width: 10%;
+}
+
+.colAttribution {
+  width: 7%;
+  min-width: 7.25rem;
+}
+
+.colBayesian {
+  width: 15%;
+}
+
+.colBenchmark {
+  width: 14%;
+}
+
+
+
+@media (max-width: 1279px) {
+  .colAxis {
+    width: 20%;
+  }
+
+  .colVerifiedRevenue {
+    width: 18%;
+  }
+
+  .colDiscrepancy {
+    width: 14%;
+  }
+
+  .colPolicy {
+    width: 20%;
+  }
+
+  .colRevenueReliability,
+  .colBenchmarkContext {
+    width: 14%;
+  }
+}
+
+
+
+@media (max-width: 767px) {
+
+  .colChannel {
+
+    width: 20%;
+
+  }
+
+
+
+  .colMoney {
+
+    width: 22%;
+
+  }
+
+
+
+  .colClaimed {
+
+    width: 0;
+
+    visibility: collapse;
+
+  }
+
+
+
+  .colDiscrepancy {
+
+    width: 30%;
+
+  }
+
+
+
+  .colPolicy {
+
+    width: 28%;
+
+  }
+
+}
+
+
+
+.channelTable :is(th, td):not(:last-child) {
+
+  border-right: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+}
+
+
+
+.channelTable tbody tr {
+
+  min-height: var(--sk-dimension-table-row-standard);
+
+}
+
+
+
+.channelTrustInteractiveRow {
+
+  composes: interactiveRow from '../../../styles/supervisoryTable.module.css';
+
+}
+
+
+
+.channelValueCell,
+
+.channelPolicyCell {
+
+  display: flex;
+
+  flex-direction: row;
+
+  align-items: center;
+
+  justify-content: center;
+
+  flex-wrap: wrap;
+
+  gap: var(--sk-space-2);
+
+  min-width: 0;
+
+  max-width: 100%;
+
+  width: 100%;
+
+  margin-inline: auto;
+
+}
+
+
+
+.channelTableMeta {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  width: 100%;
+
+  max-width: 100%;
+
+  flex-shrink: 1;
+
+  min-width: 0;
+
+  margin-inline: auto;
+
+}
+
+
+
+.channelTable td:has([data-trust-chip]),
+.channelTable td:has([data-status-text]),
+.envelopeTable td:has([data-trust-chip]),
+.envelopeTable td:has([data-status-text]) {
+  overflow: hidden;
+}
+
+
+
+.channelTableMeta > :is(button, [role='status']) {
+  white-space: nowrap;
+  width: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-inline: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+
+.channelTableMeta:has([data-trust-chip]),
+.channelTableMeta:has([data-status-text]) {
+
+  justify-content: center;
+
+}
+
+
+
+.colDiscrepancyCell {
+  text-align: left;
+  padding-inline-start: var(--spacing-2);
+  padding-inline-end: var(--spacing-12);
+}
+
+
+
+.channelDiscrepancyCell {
+
+  display: inline-grid;
+
+  grid-template-columns: auto auto;
+
+  align-items: center;
+
+  column-gap: var(--spacing-8);
+
+  width: auto;
+
+  max-width: 100%;
+
+  min-width: 0;
+
+  box-sizing: border-box;
+
+  margin-inline-start: var(--spacing-2);
+
+  padding-inline-end: 0;
+
+}
+
+
+
+.channelDiscrepancyCell [data-discrepancy-badge] {
+
+  flex-shrink: 0;
+
+  justify-self: start;
+
+  max-width: 100%;
+
+  box-sizing: border-box;
+
+}
+
+
+
+.channelTableMeta :is([data-bayesian-status], [data-benchmark-status]) {
+
+  flex-shrink: 1;
+
+  max-width: 100%;
+
+}
+
+
+
+.attributionValue {
+
+  display: block;
+
+  font-size: var(--font-size-body);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  color: var(--color-text-primary);
+
+  white-space: normal;
+
+  text-align: center;
+
+  margin-inline: auto;
+
+  max-width: 100%;
+
+  line-height: 1.4;
+
+}
+
+
+
+.channelTable th {
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--color-text-primary);
+  background: var(--color-bg-card);
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.channelTable th:has([data-revenue-reliability-column-header]),
+.channelTable th:has([data-revenue-reliability-column-header]) > *,
+.channelTable th:has([data-revenue-reliability-column-header]) span {
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  max-width: none;
+}
+
+
+
+.channelTable tbody td {
+
+  background: var(--color-bg-card);
+
+}
+
+
+
+@media (hover: hover) {
+
+  :is(.channelTable, .envelopeTable) tbody tr[data-table-row-interactive]:hover > td {
+
+    background: var(--sk-color-bg-muted);
+
+  }
+
+
+
+  :is(.channelTable, .envelopeTable) tbody tr[data-table-row-interactive]:active > td {
+
+    background: color-mix(in srgb, var(--sk-color-bg-muted) 78%, var(--color-border-default));
+
+  }
+
+}
+
+
+
+.colLabelShort {
+
+  display: none;
+
+}
+
+
+
+.colLabelFull {
+
+  display: inline-block;
+
+  width: 100%;
+
+  white-space: normal;
+
+  overflow: visible;
+
+  text-align: center;
+
+}
+
+
+
+.colHeaderLine {
+
+  display: block;
+
+  line-height: 1.25;
+
+  white-space: nowrap;
+
+  overflow: visible;
+
+  text-align: center;
+
+}
+
+
+
+@media (max-width: 1279px) {
+
+  .colSecondary {
+
+    display: none;
+
+  }
+
+
+
+  .colLabelFull {
+
+    display: none;
+
+  }
+
+
+
+  .colLabelShort {
+
+    display: inline;
+
+  }
+
+}
+
+
+
+@media (min-width: var(--sk-dimension-content-max-width)) {
+
+  .channelTableHint {
+
+    display: none;
+
+  }
+
+}
+
+
+
+@media (max-width: 767px) {
+
+  .colClaimed {
+
+    display: none;
+
+  }
+
+}
+
+
+
+.colChannelCell,
+.colAxisCell {
+  text-align: left;
+  overflow: hidden;
+  min-width: 7.25rem;
+}
+
+.channelTable td.colAxisCell {
+  overflow: hidden;
+}
+
+.channelTrustShell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.channelTrustTableHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sk-space-3);
+}
+
+.channelTrustTabStrip {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  min-height: calc(var(--sk-dimension-target-min) / 2);
+  padding-inline: var(--spacing-16);
+  margin-bottom: calc(-1 * var(--sk-dimension-border-width));
+  box-sizing: border-box;
+}
+
+.channelTrustSection {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.recentEnvelopeTableHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sk-space-3);
+  margin-left: auto;
+}
+
+.recentEnvelopeTablePager {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+}
+
+.recentEnvelopeTablePagerStatus {
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.recentEnvelopeTablePagerButtons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-1);
+}
+
+.recentEnvelopeTablePagerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--sk-dimension-target-min);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-1);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-secondary);
+  cursor: pointer;
+}
+
+.recentEnvelopeTablePagerButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.recentEnvelopeTablePagerButton:not(:disabled):hover {
+  color: var(--sk-color-text-primary);
+  background: var(--sk-color-bg-muted);
+}
+
+.recentEnvelopeTablePagerIconPrevious {
+  transform: rotate(180deg);
+}
+
+.recentEnvelopeTablePagerIconNext,
+.recentEnvelopeTablePagerIconPrevious {
+  display: block;
+}
+
+.channelTrustGroupBy {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0;
+}
+
+.channelTrustGroupByButton {
+  box-sizing: border-box;
+  min-height: calc(var(--sk-dimension-target-min) / 2);
+  padding: var(--sk-space-1) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--color-bg-muted);
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  cursor: pointer;
+}
+
+.channelTrustGroupByButton + .channelTrustGroupByButton {
+  margin-left: calc(-1 * var(--sk-dimension-border-width));
+}
+
+.channelTrustGroupByButton:not(.channelTrustGroupByButtonActive):hover {
+  color: var(--sk-color-text-primary);
+  background: color-mix(in srgb, var(--color-bg-muted) 88%, var(--color-bg-card));
+}
+
+.channelTrustGroupByButton:focus-visible {
+  outline: var(--sk-dimension-focus-ring-width, var(--sk-radius-badge)) solid var(--sk-color-focus-ring, var(--sk-color-link-primary));
+  outline-offset: -var(--sk-radius-badge);
+}
+
+.channelTrustGroupByButtonActive {
+  border-color: var(--color-border-default);
+  color: var(--sk-color-text-primary);
+  background: var(--color-bg-card);
+  margin-bottom: calc(-1 * var(--sk-dimension-border-width));
+  padding-bottom: calc(var(--sk-space-1) + var(--sk-dimension-border-width));
+}
+
+.channelIdentity {
+
+  display: grid;
+
+  grid-template-columns: var(--sk-dimension-channel-trust-logo-size) minmax(0, 1fr);
+
+  align-items: center;
+
+  column-gap: var(--spacing-8);
+
+  width: 100%;
+
+  min-width: 0;
+
+  max-width: 100%;
+
+}
+
+.channelAxisLogoSpacer {
+  width: var(--sk-dimension-channel-trust-logo-size);
+  height: var(--sk-dimension-channel-trust-logo-size);
+  justify-self: start;
+}
+
+.colAxisHeader {
+  text-align: left;
+}
+
+.channelAxisLabel {
+  text-align: left;
+  color: var(--sk-color-text-primary);
+}
+
+.channelVerifiedRevenueCell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-1);
+}
+
+.channelBenchmarkCell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-1);
+  min-width: 0;
+}
+
+[data-channel-trust-table] .channelTrustWrapCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-1);
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+[data-channel-trust-table] .channelTrustWrapCell [data-status-text],
+[data-channel-trust-table] .channelTrustWrapCell .benchmarkValue {
+  display: block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.35;
+}
+
+[data-channel-trust-table] td:has(.channelTrustWrapCell) {
+  overflow: hidden;
+}
+
+.benchmarkValue {
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-small-strong);
+  color: var(--sk-color-text-primary);
+}
+
+.modelAgreementValue {
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-small-strong);
+}
+
+.discrepancyTierGreen {
+  color: var(--sk-color-status-success);
+}
+
+.discrepancyTierAmber {
+  color: var(--sk-color-status-warning);
+}
+
+.discrepancyTierRed {
+  color: var(--sk-color-status-error);
+}
+
+.discrepancyTierUnavailable {
+  color: var(--sk-color-text-muted);
+}
+
+.channelIdentity [data-channel-logo] {
+
+  width: var(--sk-dimension-channel-trust-logo-size);
+
+  height: var(--sk-dimension-channel-trust-logo-size);
+
+  object-fit: contain;
+
+  flex-shrink: 0;
+
+  justify-self: start;
+
+}
+
+
+
+.channelTableHint {
+
+  margin: 0;
+
+}
+
+
+
+.attributionCompact {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+.srOnlySummary {
+
+  position: absolute;
+
+  width: 1px;
+
+  height: 1px;
+
+  padding: 0;
+
+  margin: -1px;
+
+  overflow: hidden;
+
+  clip: rect(0, 0, 0, 0);
+
+  white-space: nowrap;
+
+  border: 0;
+
+}
+
+
+
+.channelName {
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  display: block;
+
+  min-width: 0;
+
+  max-width: 100%;
+
+  white-space: nowrap;
+
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+
+  line-height: 1.35;
+
+}
+
+
+
+.channelLink {
+  display: block;
+  color: var(--color-link-default);
+  text-decoration: none;
+  text-align: left;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+
+.channelLink:hover {
+
+  text-decoration: underline;
+
+}
+
+
+
+.moneyStrong {
+
+  display: block;
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  margin-bottom: 0;
+
+  white-space: nowrap;
+
+  text-align: center;
+
+  margin-inline: auto;
+
+}
+
+
+
+.discrepancyValue {
+
+  font-size: var(--font-size-body);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  color: var(--color-text-primary);
+
+  white-space: nowrap;
+
+  text-align: left;
+
+  justify-self: start;
+
+  line-height: 1.4;
+
+}
+
+
+
+.envelopeList {
+
+  list-style: none;
+
+  margin: 0;
+
+  padding: 0;
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-12);
+
+}
+
+
+
+.envelopeTableWrap {
+
+  composes: channelTableWrap;
+
+  min-width: 0;
+
+  overflow-x: visible;
+
+}
+
+
+
+.envelopeTableCard {
+
+  composes: tableCard;
+
+}
+
+
+
+.envelopeTableHeader {
+
+  composes: channelTrustTableHeader;
+
+}
+
+
+
+.envelopeWindowMeta {
+
+  margin: 0;
+
+  font-size: var(--font-size-small);
+
+  line-height: var(--sk-line-height-small);
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+.recentEnvelopeTable .colRecentSubject {
+
+  width: 28%;
+
+  min-width: 12rem;
+
+}
+
+
+
+.recentEnvelopeTable .colRecentVerifiedRevenue {
+
+  width: 16%;
+
+  min-width: 0;
+
+}
+
+
+
+.recentEnvelopeTable .colRecentMatchVerdict {
+
+  width: 14%;
+
+  min-width: 0;
+
+}
+
+
+
+.recentEnvelopeTable .colRecentPolicy {
+
+  width: 12%;
+
+  min-width: 0;
+
+}
+
+
+
+.recentEnvelopeTable .colRecentSignal {
+
+  width: 14%;
+
+  min-width: 0;
+
+}
+
+
+
+.recentEnvelopeTable .colRecentSubjectCell {
+
+  width: 28%;
+
+  white-space: normal;
+
+  text-align: left;
+
+  padding: 0;
+
+  vertical-align: top;
+
+}
+
+
+
+.recentEnvelopeTable .colRecentPolicyCell {
+
+  width: 12%;
+
+  white-space: nowrap;
+
+}
+
+
+
+.recentEnvelopeTable .colRecentSignalCell {
+
+  width: 14%;
+
+  white-space: nowrap;
+
+}
+
+
+
+.recentEnvelopeTable :is(
+  .colRecentSubjectCell,
+  .colRecentVerifiedRevenueCell,
+  .colRecentMatchVerdictCell,
+  .colRecentPolicyCell,
+  .colRecentSignalCell
+) {
+
+  vertical-align: top;
+
+}
+
+
+
+.recentEnvelopeTable :is(.colRecentVerifiedRevenueCell, .colRecentMatchVerdictCell) {
+
+  overflow-wrap: anywhere;
+
+  word-break: break-word;
+
+}
+
+
+
+.recentEnvelopeTable.envelopeTable tbody tr {
+
+  height: auto;
+
+  min-height: 0;
+
+}
+
+
+
+.recentEnvelopeTable.envelopeTable :is(th, td) {
+
+  padding-block: var(--sk-space-2);
+
+  padding-inline: var(--spacing-8);
+
+  vertical-align: middle;
+
+}
+
+
+
+.envelopeTable {
+
+  width: 100%;
+
+  min-width: 0;
+
+  height: auto;
+
+  table-layout: fixed;
+
+}
+
+
+
+.envelopeTable tbody {
+
+  height: auto;
+
+}
+
+
+
+.envelopeTable tbody tr {
+
+  height: auto;
+
+  min-height: var(--sk-dimension-table-row-dense);
+
+}
+
+
+
+.envelopeTable :is(th, td) {
+  padding: var(--spacing-12) var(--spacing-12);
+  text-align: left;
+  vertical-align: middle;
+  font-size: var(--font-size-small);
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.envelopeTable :is(th, td) > * {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.envelopeTable td {
+  overflow: hidden;
+}
+
+
+
+.envelopeTable .colEnvelopeSubjectCell {
+
+  overflow: hidden;
+
+  max-width: 0;
+
+}
+
+
+
+.colEnvelopeStatusCell,
+.colEnvelopeCreatedCell {
+
+  overflow: hidden;
+
+  max-width: 0;
+
+}
+
+
+
+.colEnvelopeStatusCell [data-envelope-status] {
+
+  display: inline-flex;
+
+  max-width: 100%;
+
+  box-sizing: border-box;
+
+  white-space: normal;
+
+  text-align: center;
+
+  justify-content: center;
+
+  overflow-wrap: anywhere;
+
+}
+
+
+
+.colEnvelopeCreatedCell .envelopeCreated {
+
+  display: block;
+
+  max-width: 100%;
+
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+
+}
+
+
+
+.envelopeTable .channelTableMeta:not(:has([data-trust-chip])) {
+
+  justify-content: flex-start;
+
+}
+
+
+
+@media (min-width: 1024px) {
+
+  .envelopeTable {
+
+    flex: none;
+
+    height: auto;
+
+  }
+
+
+
+  .envelopeTable tbody {
+
+    height: auto;
+
+  }
+
+
+
+  .envelopeTable tbody tr {
+
+    height: auto;
+
+    min-height: auto;
+
+  }
+
+
+
+  .envelopeTable :is(th, td) {
+
+    padding: var(--spacing-12) var(--spacing-8);
+
+  }
+
+
+
+  .recentEnvelopeTable.envelopeTable tbody tr {
+
+    height: auto;
+
+    min-height: 0;
+
+  }
+
+
+
+  .recentEnvelopeTable.envelopeTable :is(th, td) {
+
+    padding-block: var(--sk-space-2);
+
+    padding-inline: var(--spacing-8);
+
+    font-size: var(--font-size-small);
+
+    line-height: var(--sk-line-height-small);
+
+  }
+
+}
+
+
+
+.colEnvelopeId {
+
+  width: 12%;
+
+  min-width: 0;
+
+}
+
+
+
+.colEnvelopeSubject {
+
+  width: 28%;
+
+  min-width: 0;
+
+}
+
+
+
+.colEnvelopeStatus {
+
+  width: 14%;
+
+  min-width: 0;
+
+}
+
+
+
+.colEnvelopeCreated {
+
+  width: 12%;
+
+  min-width: 0;
+
+}
+
+
+
+.colEnvelopeAuthority {
+
+  width: 16%;
+
+  min-width: 0;
+
+}
+
+
+
+.colEnvelopeAudit {
+
+  width: 18%;
+
+  min-width: 0;
+
+}
+
+
+
+.colEnvelopeIdCell,
+
+.colEnvelopeSubjectCell {
+
+  text-align: left;
+
+}
+
+
+
+.envelopeTableLink {
+
+  color: var(--sk-color-link-primary);
+
+  text-decoration: none;
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  white-space: nowrap;
+
+}
+
+
+
+.envelopeTableLink:hover {
+
+  text-decoration: underline;
+
+}
+
+
+
+.envelopeSubject {
+
+  display: block;
+
+  text-align: left;
+
+  color: var(--color-text-primary);
+
+  font-size: var(--font-size-small);
+
+  line-height: 1.4;
+
+  white-space: nowrap;
+
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+
+}
+
+
+
+.envelopeCreated {
+
+  color: var(--color-text-secondary);
+
+  font-size: var(--font-size-small);
+
+  white-space: nowrap;
+
+}
+
+
+
+.auditStrip {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  gap: var(--spacing-8);
+
+  max-width: 100%;
+
+}
+
+
+
+.auditActivityCard {
+
+  align-self: stretch;
+
+  height: auto;
+
+  min-height: var(--sk-grid-supervisory-panel-min-height);
+
+  min-width: min(100%, var(--sk-grid-activity-tile-min-width));
+
+  overflow: hidden;
+
+}
+
+
+
+.auditActivityHeader {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: var(--spacing-12);
+
+}
+
+
+
+.auditLedgerLink {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: var(--spacing-4);
+
+  color: var(--sk-color-link-primary);
+
+  text-decoration: none;
+
+  font-size: var(--font-size-body);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  white-space: nowrap;
+
+}
+
+
+
+.auditLedgerLink:hover {
+
+  text-decoration: underline;
+
+}
+
+
+
+.auditActivityTableWrap {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.auditActivityTable {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.auditActivityColTimestamp {
+  width: 30%;
+}
+
+.auditActivityColActor {
+  width: 22%;
+}
+
+.auditActivityColAction {
+  width: 28%;
+}
+
+.auditActivityColTarget {
+  width: 20%;
+}
+
+.auditActivityCaption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.auditActivityTable th {
+  text-align: left;
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--text-secondary);
+  padding: var(--spacing-8) var(--spacing-8);
+  border-bottom: 1px solid var(--border-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditActivityTable td {
+  padding: var(--spacing-8) var(--spacing-8);
+  border-bottom: 1px solid var(--border-default);
+  vertical-align: middle;
+  height: var(--sk-dimension-table-row-standard);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.auditActivityRow {
+  cursor: pointer;
+}
+
+.auditActivityRow:hover {
+  background: var(--bg-muted, var(--color-bg-page));
+}
+
+.auditActivityRow:focus-visible {
+  outline: var(--sk-radius-badge) solid var(--focus-color, var(--sk-color-focus-ring));
+  outline-offset: -var(--sk-radius-badge);
+}
+
+.auditActivityRowLinkSr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.auditOpenHeaderSr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.auditActivityRowLink {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.auditActivityRowLink:hover {
+  color: var(--sk-color-link-primary);
+  text-decoration: underline;
+}
+
+.auditTargetCell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.auditEntryOpenLink {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Row height already meets ≥var(--sk-dimension-target-min) target; avoid fixed min-width that clips in fixed columns. */
+  padding: var(--spacing-4) 0;
+  margin: 0;
+  color: var(--sk-color-link-primary);
+  text-decoration: none;
+  font-size: var(--font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.auditEntryOpenLink:hover {
+  text-decoration: underline;
+}
+
+.auditActorLabel {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditActionLabel {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditTimestamp {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditTargetRef {
+  flex: 1 1 auto;
+  display: block;
+  min-width: 0;
+  font-family: var(--font-family-code);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Target cell must not clip the Open affordance — ellipsis stays on the ref span only. */
+.auditActivityTable td[data-audit-target] {
+  overflow: visible;
+}
+
+
+
+@media (min-width: 56rem) {
+
+  [data-proof-surface-band] [data-audit-activity-strip] .auditActivityGrid {
+
+    grid-template-columns: minmax(0, 1fr);
+
+  }
+
+}
+
+
+
+.auditActivityGridItem {
+
+  min-width: 0;
+
+  min-height: 0;
+
+  display: flex;
+
+}
+
+
+
+.auditActivityTile {
+
+  display: grid;
+
+  grid-template-columns: auto minmax(0, 1fr) auto;
+
+  align-items: center;
+
+  gap: var(--spacing-12);
+
+  width: 100%;
+
+  height: 100%;
+
+  min-height: var(--sk-dimension-nav-item-height);
+
+  padding: var(--spacing-16);
+
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+  border-radius: var(--radius-card);
+
+  background: var(--color-bg-card);
+
+  text-decoration: none;
+
+  color: inherit;
+
+  box-sizing: border-box;
+
+}
+
+
+
+.auditActivityTile:hover {
+
+  border-color: var(--color-border-strong, var(--color-border-default));
+
+}
+
+
+
+.auditActivityBody {
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: flex-start;
+
+  gap: var(--spacing-4);
+
+  min-width: 0;
+
+}
+
+
+
+.auditActivityEventName {
+
+  font-size: var(--font-size-body);
+
+  font-weight: var(--sk-font-weight-body-strong);
+
+  color: var(--color-text-primary);
+
+  line-height: 1.35;
+
+  word-break: break-word;
+
+}
+
+
+
+.auditActivityMeta {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-secondary);
+
+  line-height: 1.35;
+
+}
+
+
+
+.auditActivityArtifact {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-muted);
+
+  line-height: 1.35;
+
+}
+
+
+
+.auditActivityChevron {
+
+  flex-shrink: 0;
+
+  color: var(--color-text-muted);
+
+  font-size: 1.25rem;
+
+  line-height: 1;
+
+}
+
+
+
+.auditChip {
+
+  background: var(--color-bg-card);
+
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+
+  border-radius: var(--radius-card);
+
+  padding: var(--spacing-12);
+
+  min-height: var(--target-size-min);
+
+  font-size: var(--font-size-small);
+
+}
+
+
+
+.emptyState {
+
+  color: var(--color-text-muted);
+
+  font-size: var(--font-size-body);
+
+}
+
+
+
+.skeletonBlock {
+
+  min-height: calc(var(--sk-space-12) + var(--sk-space-16));
+
+}
+
+
+
+.loadingSkeletonGrid {
+  composes: tileGrid from '../../../styles/responsiveGrid.module.css';
+}
+
+
+
+.loadingSkeletonRow {
+
+  min-height: calc(var(--sk-space-16) + var(--sk-space-2));
+
+  border-radius: 0;
+
+}
+
+.proofSurfaceCard {
+  background: var(--color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  padding: var(--spacing-24);
+  min-width: 0;
+}
+
+.proofSurfaceHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-12);
+}
+
+.proofSurfaceList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+.proofSurfaceRow {
+  padding: var(--spacing-16);
+  background: var(--color-bg-muted);
+  border-radius: 0;
+  min-width: 0;
+}
+
+.proofSurfaceRowTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+  margin-bottom: var(--spacing-8);
+}
+
+.proofFieldGrid {
+  composes: responsiveProofFieldGrid from '../../../styles/responsiveGrid.module.css';
+  margin: 0;
+}
+
+.proofFieldLabel {
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+}
+
+.proofFieldValue {
+  margin: var(--spacing-4) 0 0;
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
+}
+
+.proofSurfaceLink {
+  color: var(--color-link-default);
+  text-decoration: none;
+  font-weight: var(--sk-font-weight-body-strong);
+}
+
+.proofSurfaceLink:hover {
+  text-decoration: underline;
+}
+
+

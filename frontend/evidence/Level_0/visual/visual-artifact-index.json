@@ -1,0 +1,261 @@
+{
+  "generatedAt": "2026-06-26T21:40:26.658Z",
+  "artifacts": [
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\specimen-gallery-mobile.png",
+      "viewport": "mobile"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\typography-mobile.png",
+      "viewport": "mobile",
+      "specimen": "typography"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\authority-badge-mobile.png",
+      "viewport": "mobile",
+      "specimen": "authority-badge"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\policy-pill-mobile.png",
+      "viewport": "mobile",
+      "specimen": "policy-pill"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\unavailable-panel-mobile.png",
+      "viewport": "mobile",
+      "specimen": "unavailable-panel"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\financial-value-mobile.png",
+      "viewport": "mobile",
+      "specimen": "financial-value"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\claim-comparison-mobile.png",
+      "viewport": "mobile",
+      "specimen": "claim-comparison"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\evidence-timeline-mobile.png",
+      "viewport": "mobile",
+      "specimen": "evidence-timeline"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\trust-hash-block-mobile.png",
+      "viewport": "mobile",
+      "specimen": "trust-hash-block"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\layout-states-mobile.png",
+      "viewport": "mobile",
+      "specimen": "layout-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\policy-conflict-mobile.png",
+      "viewport": "mobile",
+      "specimen": "policy-conflict"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\error-banner-mobile.png",
+      "viewport": "mobile",
+      "specimen": "error-banner"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\responsive-shell-mobile.png",
+      "viewport": "mobile",
+      "specimen": "responsive-shell"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\specimen-gallery-tablet.png",
+      "viewport": "tablet"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\typography-tablet.png",
+      "viewport": "tablet",
+      "specimen": "typography"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\authority-badge-tablet.png",
+      "viewport": "tablet",
+      "specimen": "authority-badge"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\policy-pill-tablet.png",
+      "viewport": "tablet",
+      "specimen": "policy-pill"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\unavailable-panel-tablet.png",
+      "viewport": "tablet",
+      "specimen": "unavailable-panel"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\financial-value-tablet.png",
+      "viewport": "tablet",
+      "specimen": "financial-value"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\claim-comparison-tablet.png",
+      "viewport": "tablet",
+      "specimen": "claim-comparison"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\evidence-timeline-tablet.png",
+      "viewport": "tablet",
+      "specimen": "evidence-timeline"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\trust-hash-block-tablet.png",
+      "viewport": "tablet",
+      "specimen": "trust-hash-block"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\layout-states-tablet.png",
+      "viewport": "tablet",
+      "specimen": "layout-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\policy-conflict-tablet.png",
+      "viewport": "tablet",
+      "specimen": "policy-conflict"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\error-banner-tablet.png",
+      "viewport": "tablet",
+      "specimen": "error-banner"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\responsive-shell-tablet.png",
+      "viewport": "tablet",
+      "specimen": "responsive-shell"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\specimen-gallery-desktop.png",
+      "viewport": "desktop"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\typography-desktop.png",
+      "viewport": "desktop",
+      "specimen": "typography"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\authority-badge-desktop.png",
+      "viewport": "desktop",
+      "specimen": "authority-badge"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\policy-pill-desktop.png",
+      "viewport": "desktop",
+      "specimen": "policy-pill"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\unavailable-panel-desktop.png",
+      "viewport": "desktop",
+      "specimen": "unavailable-panel"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\financial-value-desktop.png",
+      "viewport": "desktop",
+      "specimen": "financial-value"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\claim-comparison-desktop.png",
+      "viewport": "desktop",
+      "specimen": "claim-comparison"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\evidence-timeline-desktop.png",
+      "viewport": "desktop",
+      "specimen": "evidence-timeline"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\trust-hash-block-desktop.png",
+      "viewport": "desktop",
+      "specimen": "trust-hash-block"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\layout-states-desktop.png",
+      "viewport": "desktop",
+      "specimen": "layout-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\policy-conflict-desktop.png",
+      "viewport": "desktop",
+      "specimen": "policy-conflict"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\error-banner-desktop.png",
+      "viewport": "desktop",
+      "specimen": "error-banner"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\responsive-shell-desktop.png",
+      "viewport": "desktop",
+      "specimen": "responsive-shell"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\specimen-gallery-wide.png",
+      "viewport": "wide"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\typography-wide.png",
+      "viewport": "wide",
+      "specimen": "typography"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\authority-badge-wide.png",
+      "viewport": "wide",
+      "specimen": "authority-badge"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\policy-pill-wide.png",
+      "viewport": "wide",
+      "specimen": "policy-pill"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\unavailable-panel-wide.png",
+      "viewport": "wide",
+      "specimen": "unavailable-panel"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\financial-value-wide.png",
+      "viewport": "wide",
+      "specimen": "financial-value"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\claim-comparison-wide.png",
+      "viewport": "wide",
+      "specimen": "claim-comparison"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\evidence-timeline-wide.png",
+      "viewport": "wide",
+      "specimen": "evidence-timeline"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\trust-hash-block-wide.png",
+      "viewport": "wide",
+      "specimen": "trust-hash-block"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\layout-states-wide.png",
+      "viewport": "wide",
+      "specimen": "layout-states"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\policy-conflict-wide.png",
+      "viewport": "wide",
+      "specimen": "policy-conflict"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\error-banner-wide.png",
+      "viewport": "wide",
+      "specimen": "error-banner"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_0\\visual\\responsive-shell-wide.png",
+      "viewport": "wide",
+      "specimen": "responsive-shell"
+    }
+  ]
+}

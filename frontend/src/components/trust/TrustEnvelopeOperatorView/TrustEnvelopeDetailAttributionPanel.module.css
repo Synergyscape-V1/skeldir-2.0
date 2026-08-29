@@ -1,0 +1,83 @@
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-3);
+  margin-bottom: var(--sk-space-4);
+}
+
+.panelHeading {
+  margin: 0;
+}
+
+.attributionIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--sk-radius-pill);
+  background: color-mix(in srgb, var(--sk-color-trust-benchmark) 12%, transparent);
+  border: var(--sk-dimension-border-width) solid color-mix(in srgb, var(--sk-color-trust-benchmark) 28%, transparent);
+}
+
+.attributionIcon {
+  width: 1rem;
+  height: 1rem;
+  color: var(--sk-color-trust-benchmark);
+}
+
+.fieldGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-3);
+  margin: 0;
+}
+
+.fieldRow {
+  composes: reflowFieldRow from '../../../styles/reflowLayout.module.css';
+}
+
+.fieldLabel {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--color-text-secondary);
+}
+
+.fieldValue,
+.fieldValueWithChip {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--color-text-primary);
+}
+
+.fieldValueWithChip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sk-space-2);
+}
+
+.boundaryNote {
+  margin: var(--sk-space-4) 0 0;
+  padding: var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-warning-subtle-border);
+  background: var(--sk-color-warning-subtle-bg);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  font-style: normal;
+  color: var(--sk-color-status-warning);
+}
+
+@media (max-width: 767px) {
+  .fieldRow {
+    grid-template-columns: 1fr;
+    gap: var(--sk-space-1);
+  }
+}

@@ -1,0 +1,40 @@
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+
+.tablist {
+  display: flex;
+  gap: var(--sk-space-2);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+.tab {
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-2) var(--sk-space-4);
+  border: none;
+  background: transparent;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  cursor: pointer;
+  border-bottom: var(--sk-focus-outline-width) solid transparent;
+  margin-bottom: calc(var(--sk-dimension-border-width) * -1);
+  transition: color var(--sk-motion-button-hover);
+}
+
+.tab[aria-selected='true'] {
+  color: var(--sk-color-text-sidebar-active);
+  border-bottom-color: var(--sk-color-text-sidebar-active);
+  font-weight: var(--sk-font-weight-h3);
+}
+
+.tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.panel {
+  padding: var(--sk-space-4) 0;
+}

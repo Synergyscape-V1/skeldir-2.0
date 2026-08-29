@@ -1,0 +1,129 @@
+.panel {
+
+  composes: elevatedPanel from '../budgetPanel.module.css';
+
+}
+
+
+
+.headerRow {
+
+  composes: governanceHeaderRow from '../budgetPanel.module.css';
+
+}
+
+
+
+.title {
+
+  composes: panelTitle from '../budgetPanel.module.css';
+
+}
+
+
+
+.statusTag {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  flex-shrink: 0;
+
+  min-height: var(--sk-dimension-target-min);
+
+  padding: 0 var(--sk-space-3);
+
+  border-radius: var(--sk-radius-badge);
+
+  font-size: var(--sk-font-size-small);
+
+  background: color-mix(in srgb, var(--sk-color-status-success) 6%, transparent);
+
+  color: color-mix(in srgb, var(--sk-color-status-success) 82%, white);
+
+}
+
+
+
+.hashRow {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  align-items: center;
+
+  gap: var(--sk-space-2);
+
+}
+
+
+
+.hashLabel {
+
+  font-size: var(--sk-font-size-small);
+
+  color: var(--sk-color-text-secondary);
+
+  width: 100%;
+
+}
+
+
+
+.hashValue {
+
+  flex: 1 1 auto;
+
+  min-width: 0;
+
+  font-family: var(--sk-font-family-mono);
+
+  font-size: var(--sk-font-size-code);
+
+  color: var(--sk-color-text-primary);
+
+  word-break: break-all;
+
+}
+
+
+
+.copyButton {
+
+  min-width: var(--sk-dimension-target-min);
+
+  min-height: var(--sk-dimension-target-min);
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+
+  border-radius: var(--sk-radius-sm);
+
+  background: var(--sk-color-bg-card);
+
+  cursor: pointer;
+
+}
+
+
+
+.caption {
+
+  margin: 0;
+
+  font-size: var(--sk-font-size-small);
+
+  line-height: var(--sk-line-height-small);
+
+  color: var(--sk-color-text-secondary);
+
+}
+
+

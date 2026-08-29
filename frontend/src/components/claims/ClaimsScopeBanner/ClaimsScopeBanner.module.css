@@ -1,0 +1,139 @@
+/*
+ * Scope bar + active-filter chips share filterChip DNA with ExceptionsCategoryTabs
+ * (rectangular supervisory chips, zero radius, blue-tint active fill).
+ */
+
+.banner {
+  border: none;
+  background: transparent;
+  min-height: 0;
+}
+
+.unfiltered {
+  display: flex;
+  align-items: center;
+}
+
+.filtered {
+  display: block;
+}
+
+.row {
+  composes: chipRow from '../../../styles/filterChip.module.css';
+}
+
+.summary {
+  font-size: var(--font-size-small);
+  line-height: 1.25;
+  font-weight: var(--sk-font-weight-body);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.unfiltered .summary {
+  font-size: var(--font-size-small);
+  line-height: 1.25;
+  font-weight: var(--sk-font-weight-body);
+  color: var(--color-text-secondary);
+}
+
+.chips {
+  composes: chips from '../../../styles/filterChip.module.css';
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.chipItem {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.chip {
+  composes: chip from '../../../styles/filterChip.module.css';
+}
+
+.chipDenied {
+  background: color-mix(in srgb, var(--sk-color-status-error) 10%, var(--sk-color-bg-card));
+  border-color: color-mix(in srgb, var(--sk-color-status-error) 40%, transparent);
+  color: var(--sk-color-status-error);
+}
+
+.chipLogo {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+  flex: none;
+}
+
+.chipRemove {
+  composes: chipRemove from '../../../styles/filterChip.module.css';
+}
+
+.deniedBadge {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+}
+
+.deniedIcon {
+  width: var(--sk-font-size-body);
+  height: var(--sk-font-size-body);
+}
+
+.deniedTooltip {
+  position: absolute;
+  top: calc(100% + var(--sk-space-2));
+  left: 0;
+  z-index: 20;
+  background-color: var(--sk-color-text-primary);
+  color: var(--sk-color-text-inverse);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  white-space: nowrap;
+}
+
+.clearAll {
+  flex-shrink: 0;
+  min-height: 0;
+  padding: var(--spacing-8) var(--spacing-12);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-radius: 0;
+  background: var(--color-bg-card);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-small);
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.clearAll:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
+}
+
+@media (max-width: 767px) {
+  .row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .chips {
+    width: 100%;
+  }
+
+  .summary {
+    white-space: normal;
+  }
+
+  .clearAll {
+    width: 100%;
+    text-align: center;
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "generatedAt": "2026-07-16T15:52:31.166Z",
+  "artifacts": [
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "team-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-loading-mobile.png",
+      "viewport": "mobile",
+      "specimen": "team-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-permission-denied-mobile.png",
+      "viewport": "mobile",
+      "specimen": "team-permission-denied"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "policy-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-blocked-mobile.png",
+      "viewport": "mobile",
+      "specimen": "policy-blocked"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-invalid-auto-execute-mobile.png",
+      "viewport": "mobile",
+      "specimen": "policy-invalid-auto-execute"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\shell-team-mobile.png",
+      "viewport": "mobile",
+      "specimen": "shell-team"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\shell-policy-mobile.png",
+      "viewport": "mobile",
+      "specimen": "shell-policy"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "team-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-loading-tablet.png",
+      "viewport": "tablet",
+      "specimen": "team-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-permission-denied-tablet.png",
+      "viewport": "tablet",
+      "specimen": "team-permission-denied"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "policy-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-blocked-tablet.png",
+      "viewport": "tablet",
+      "specimen": "policy-blocked"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-invalid-auto-execute-tablet.png",
+      "viewport": "tablet",
+      "specimen": "policy-invalid-auto-execute"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\shell-team-tablet.png",
+      "viewport": "tablet",
+      "specimen": "shell-team"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\shell-policy-tablet.png",
+      "viewport": "tablet",
+      "specimen": "shell-policy"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "team-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-loading-desktop.png",
+      "viewport": "desktop",
+      "specimen": "team-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-permission-denied-desktop.png",
+      "viewport": "desktop",
+      "specimen": "team-permission-denied"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "policy-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-blocked-desktop.png",
+      "viewport": "desktop",
+      "specimen": "policy-blocked"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-invalid-auto-execute-desktop.png",
+      "viewport": "desktop",
+      "specimen": "policy-invalid-auto-execute"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\shell-team-desktop.png",
+      "viewport": "desktop",
+      "specimen": "shell-team"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\shell-policy-desktop.png",
+      "viewport": "desktop",
+      "specimen": "shell-policy"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-default-wide.png",
+      "viewport": "wide",
+      "specimen": "team-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-loading-wide.png",
+      "viewport": "wide",
+      "specimen": "team-loading"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\team-permission-denied-wide.png",
+      "viewport": "wide",
+      "specimen": "team-permission-denied"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-default-wide.png",
+      "viewport": "wide",
+      "specimen": "policy-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-blocked-wide.png",
+      "viewport": "wide",
+      "specimen": "policy-blocked"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\policy-invalid-auto-execute-wide.png",
+      "viewport": "wide",
+      "specimen": "policy-invalid-auto-execute"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\shell-team-wide.png",
+      "viewport": "wide",
+      "specimen": "shell-team"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_4\\visual\\shell-policy-wide.png",
+      "viewport": "wide",
+      "specimen": "shell-policy"
+    }
+  ]
+}

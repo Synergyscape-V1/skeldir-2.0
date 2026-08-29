@@ -1,0 +1,62 @@
+/**
+ * Active-filter chip DNA — BenchmarksFilters is the reference iteration.
+ * Compose for removable filter chips and category tab toggles across supervisory pages.
+ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--spacing-8) var(--spacing-12);
+  border-radius: 0;
+  background: rgba(29, 78, 216, 0.08);
+  border: var(--sk-dimension-border-width) solid rgba(29, 78, 216, 0.24);
+  color: var(--sk-color-text-sidebar-active);
+  font-size: var(--font-size-small);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.chipInactive {
+  composes: chip;
+  background: var(--color-bg-card);
+  border-color: var(--color-border-default);
+  color: var(--color-text-secondary);
+}
+
+.chipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: var(--sk-font-weight-body);
+  line-height: 1;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sk-space-3);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-12);
+}
+
+.count {
+  font-weight: var(--sk-font-weight-body-strong);
+}

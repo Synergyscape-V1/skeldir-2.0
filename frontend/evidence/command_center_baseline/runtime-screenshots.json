@@ -1,0 +1,46 @@
+[
+  {
+    "file": "app-loaded-mobile.png",
+    "viewport": "mobile",
+    "width": 375,
+    "height": 812,
+    "url": "http://127.0.0.1:5211/app",
+    "timestamp": "2026-06-30T16:29:54.278Z",
+    "dataState": "loaded-default-fixture",
+    "browser": "chromium-playwright",
+    "route": "real /app after Level10 specimen session bootstrap"
+  },
+  {
+    "file": "app-loaded-tablet.png",
+    "viewport": "tablet",
+    "width": 768,
+    "height": 1024,
+    "url": "http://127.0.0.1:5211/app",
+    "timestamp": "2026-06-30T16:29:55.244Z",
+    "dataState": "loaded-default-fixture",
+    "browser": "chromium-playwright",
+    "route": "real /app after Level10 specimen session bootstrap"
+  },
+  {
+    "file": "app-loaded-desktop.png",
+    "viewport": "desktop",
+    "width": 1280,
+    "height": 900,
+    "url": "http://127.0.0.1:5211/app",
+    "timestamp": "2026-06-30T16:29:56.214Z",
+    "dataState": "loaded-default-fixture",
+    "browser": "chromium-playwright",
+    "route": "real /app after Level10 specimen session bootstrap"
+  },
+  {
+    "file": "app-loaded-wide.png",
+    "viewport": "wide",
+    "width": 1440,
+    "height": 900,
+    "url": "http://127.0.0.1:5211/app",
+    "timestamp": "2026-06-30T16:29:57.172Z",
+    "dataState": "loaded-default-fixture",
+    "browser": "chromium-playwright",
+    "route": "real /app after Level10 specimen session bootstrap"
+  }
+]

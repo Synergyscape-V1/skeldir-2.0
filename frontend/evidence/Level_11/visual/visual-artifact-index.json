@@ -1,0 +1,22 @@
+[
+  {
+    "file": "billing-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "billing-loaded"
+  },
+  {
+    "file": "route-recovery-mobile.png",
+    "viewport": "mobile",
+    "specimen": "route-recovery"
+  },
+  {
+    "file": "billing-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "billing-loaded"
+  },
+  {
+    "file": "route-recovery-desktop.png",
+    "viewport": "desktop",
+    "specimen": "route-recovery"
+  }
+]

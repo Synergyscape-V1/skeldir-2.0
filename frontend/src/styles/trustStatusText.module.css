@@ -1,0 +1,54 @@
+/**
+ * Text-only trust status labels — same semantic colors as trustChip tones without pill chrome.
+ */
+
+.textLabel {
+  display: inline-block;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0;
+  border: none;
+  background: transparent;
+  min-height: 0;
+  vertical-align: baseline;
+}
+
+.labelSuccess {
+  composes: textLabel;
+  color: var(--sk-color-status-success);
+}
+
+.labelWarning {
+  composes: textLabel;
+  color: var(--sk-color-status-warning);
+}
+
+.labelError {
+  composes: textLabel;
+  color: var(--sk-color-status-error);
+}
+
+.labelInfo {
+  composes: textLabel;
+  color: var(--sk-color-status-info);
+}
+
+.labelProbabilistic {
+  composes: textLabel;
+  color: var(--sk-color-trust-probabilistic);
+}
+
+.labelBenchmark {
+  composes: textLabel;
+  color: var(--sk-color-trust-benchmark);
+}
+
+.labelNeutral {
+  composes: textLabel;
+  color: var(--sk-color-trust-unavailable);
+}

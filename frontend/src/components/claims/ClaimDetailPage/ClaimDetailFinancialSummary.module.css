@@ -1,0 +1,44 @@
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  margin-bottom: var(--sk-space-2);
+}
+
+.summaryGrid {
+  gap: var(--sk-space-4);
+  align-items: stretch;
+}
+
+/* Label + sublabel glued together — sublabel reads as caption under the term. */
+.labelStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sk-space-1);
+  min-width: 0;
+}
+
+/*
+ * Gap tile — border-first surface (Overview DNA).
+ * Holds the delta amount/percent/badge (tile variant) at the same vertical
+ * rhythm as the claimed/verified tiles. Context strip (threshold/policy/CTA)
+ * intentionally removed — magnitude lives here only.
+ */
+.gapTile {
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-card);
+  padding: var(--sk-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-8);
+}
+
+/* Tile-variant delta block: value-only, no prose, aligned with sibling tiles. */
+.gapTile :global([data-delta-variant='tile']) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  padding: 0;
+}

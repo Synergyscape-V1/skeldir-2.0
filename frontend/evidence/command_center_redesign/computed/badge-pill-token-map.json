@@ -1,0 +1,26 @@
+{
+  "discrepancyBadge": {
+    "rejected": { "bg": "var(--sk-color-surface-error)", "text": "var(--color-status-error)" },
+    "flagged": { "bg": "var(--sk-color-surface-warning)", "text": "var(--color-status-warning)" },
+    "within_tolerance": { "bg": "var(--sk-color-surface-success)", "text": "var(--color-status-success)" },
+    "unavailable": { "bg": "var(--sk-color-neutral-subtle-bg)", "text": "var(--color-text-muted)" }
+  },
+  "bayesianBadge": {
+    "healthy": "var(--color-trust-deterministic)",
+    "low_confidence": "var(--color-status-warning)",
+    "unavailable": "var(--color-text-muted)",
+    "delayed": "var(--color-status-warning)"
+  },
+  "benchmarkBadge": {
+    "stable": "var(--color-trust-deterministic)",
+    "transitioning": "var(--sk-color-trust-prior)",
+    "unavailable": "var(--color-text-muted)",
+    "suppressed": "var(--sk-color-trust-suppressed)"
+  },
+  "platformClaim": {
+    "label": "Platform claim",
+    "authorityClass": "non-deterministic platform claim"
+  },
+  "policyAuthorityPill": "reused existing PolicyAuthorityPill component",
+  "authorityBadge": "reused existing AuthorityBadge component"
+}

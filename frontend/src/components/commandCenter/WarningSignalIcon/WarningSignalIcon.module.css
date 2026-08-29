@@ -1,0 +1,13 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.icon {
+  display: block;
+  width: var(--sk-space-6);
+  height: var(--sk-space-6);
+}

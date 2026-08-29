@@ -1,0 +1,373 @@
+.wrap {
+  --trend-plot-height: var(--sk-dimension-trend-plot-height);
+  --trend-x-gutter: var(--sk-space-6);
+  --trend-y-gutter: 3.25rem;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+  min-width: 0;
+}
+
+.cluster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--sk-space-1) var(--sk-space-2);
+  width: 100%;
+  min-height: 1.25rem;
+  padding-left: calc(var(--trend-y-gutter) + var(--sk-space-2));
+  box-sizing: border-box;
+}
+
+.deltaChip {
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-micro);
+  line-height: 1.2;
+  font-weight: var(--sk-font-weight-small-strong);
+}
+
+.deltaSuccess {
+  color: var(--sk-color-status-success);
+}
+
+.deltaError {
+  color: var(--sk-color-status-error);
+}
+
+.deltaNeutral {
+  color: var(--sk-color-text-muted);
+}
+
+.hoverReadout {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--sk-space-1) var(--sk-space-2);
+  max-width: 100%;
+  font-family: var(--sk-font-family-inter);
+  line-height: 1.2;
+}
+
+.hoverPeriod {
+  font-size: var(--sk-font-size-micro);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.hoverValue {
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  font-variant-numeric: tabular-nums;
+  color: var(--sk-color-text-primary);
+}
+
+.hoverDelta {
+  font-size: var(--sk-font-size-micro);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-muted);
+}
+
+.chartFrame {
+  display: grid;
+  grid-template-columns: var(--trend-y-gutter) auto;
+  column-gap: var(--sk-space-2);
+  align-items: stretch;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.yAxis {
+  position: relative;
+  height: var(--trend-plot-height);
+  min-width: 0;
+}
+
+.ySpine {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: var(--trend-x-gutter);
+  border-right: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  pointer-events: none;
+}
+
+.yTick {
+  position: absolute;
+  right: var(--sk-space-1);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-micro);
+  line-height: 1.2;
+  font-weight: var(--sk-font-weight-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--sk-color-text-muted);
+  text-align: right;
+  pointer-events: none;
+}
+
+.yTickMax {
+  top: 0;
+  transform: none;
+}
+
+.yTickMid {
+  top: calc((100% - var(--trend-x-gutter)) / 2);
+  transform: translateY(-50%);
+}
+
+.yTickZero {
+  top: calc(100% - var(--trend-x-gutter));
+  transform: translateY(-50%);
+}
+
+.yTickSkeleton {
+  width: 2.25rem;
+  height: var(--sk-dimension-brand-lockup-wordmark-offset-y);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  animation: trendShimmer 1.2s ease-in-out infinite;
+}
+
+.plotPane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.plot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  height: var(--trend-plot-height);
+  min-width: 0;
+  padding-top: 0;
+}
+
+.guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc((100% - var(--trend-x-gutter)) / 2);
+  border-top: var(--sk-dimension-border-width) solid
+    color-mix(in srgb, var(--sk-color-border-subtle) 70%, transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.xSpine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--trend-x-gutter);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.baselineDashed {
+  border-top-style: dashed;
+}
+
+.columns {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: var(--sk-space-2);
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  height: 100%;
+  min-width: 0;
+}
+
+.column {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sk-space-2);
+  width: 2.5rem;
+  height: 100%;
+}
+
+.hit {
+  appearance: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: calc(100% - var(--trend-x-gutter));
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bar {
+  display: block;
+  width: var(--sk-space-3);
+  max-width: var(--sk-space-3);
+  border-radius: 0;
+  background: var(--sk-color-chart-revenue-line);
+  transition:
+    height 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms ease-out,
+    filter 120ms ease-out,
+    box-shadow 120ms ease-out;
+  transform-origin: bottom center;
+}
+
+.barPrior {
+  opacity: 0.88;
+}
+
+.barLatest {
+  opacity: 1;
+}
+
+.barHairline {
+  height: var(--sk-radius-badge);
+  opacity: 0.4;
+}
+
+.barActive {
+  opacity: 1;
+  filter: brightness(0.92);
+  box-shadow: inset 0 0 0 1px var(--sk-color-chart-revenue-line);
+}
+
+.xTick {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-micro);
+  line-height: 1.2;
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-muted);
+  text-align: center;
+}
+
+.xTickSelected {
+  color: var(--sk-color-chart-revenue-line);
+  box-shadow: inset 0 -var(--sk-radius-badge) 0 var(--sk-color-chart-revenue-line);
+}
+
+.skeletonBar {
+  display: block;
+  width: var(--sk-space-3);
+  max-width: var(--sk-space-3);
+  border-radius: 0;
+  background: var(--sk-color-bg-muted);
+  animation: trendShimmer 1.2s ease-in-out infinite;
+}
+
+.skeletonLabel {
+  display: block;
+  width: var(--sk-line-height-h3);
+  height: var(--sk-dimension-brand-lockup-wordmark-offset-y);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  animation: trendShimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes trendShimmer {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.emptyPlot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-3);
+  width: 100%;
+  height: var(--trend-plot-height);
+  min-width: 0;
+}
+
+.emptyPlot .xSpine {
+  bottom: 50%;
+}
+
+.stateCopy {
+  margin: 0;
+  max-width: 18rem;
+  text-align: center;
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  font-weight: var(--sk-font-weight-body);
+  color: var(--sk-color-text-secondary);
+}
+
+.retry {
+  appearance: none;
+  margin: 0;
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-body);
+  cursor: pointer;
+}
+
+@media (max-width: 359px) {
+  .wrap {
+    --trend-plot-height: var(--sk-dimension-trend-plot-height-compact);
+    --trend-y-gutter: 2.5rem;
+  }
+
+  .guide {
+    display: none;
+  }
+
+  .bar,
+  .skeletonBar {
+    width: var(--sk-space-2);
+    max-width: var(--sk-space-2);
+  }
+
+  .column {
+    width: 2rem;
+  }
+}

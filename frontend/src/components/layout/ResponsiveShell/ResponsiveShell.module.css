@@ -1,0 +1,123 @@
+.shell {
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+  background: var(--sk-color-bg-page);
+}
+
+.body {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+}
+
+.sidebar {
+  width: var(--sk-dimension-sidebar-width);
+  padding: 0;
+  background: var(--sk-color-bg-sidebar);
+  border-right: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  flex-shrink: 0;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+}
+
+.mainColumn {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100vh;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  flex-shrink: 0;
+  width: 100%;
+  padding: 0 var(--sk-dimension-main-padding-inline) 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: visible;
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  background: var(--sk-color-bg-header);
+}
+
+.header > * {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: var(--sk-dimension-main-padding-block) var(--sk-dimension-main-padding-inline);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.main > * {
+  width: 100%;
+  max-width: var(--sk-dimension-content-max-width);
+}
+
+.main [data-page-content-rail] {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
+}
+
+.main > [data-page-content-rail] {
+  max-width: none;
+}
+
+.trailing {
+  width: var(--shell-chat-panel-current-width, var(--sk-dimension-chat-panel-width));
+  flex-shrink: 0;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    min-height: 0;
+    border-right: none;
+    border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  }
+
+  .mainColumn {
+    min-height: 0;
+  }
+
+  .main {
+    padding: var(--sk-space-4);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .sidebar {
+    width: var(--sk-dimension-sidebar-width);
+  }
+}
+
+@media (min-width: 1440px) {
+  .main {
+    padding: var(--sk-dimension-main-padding-block) var(--sk-space-8);
+  }
+}

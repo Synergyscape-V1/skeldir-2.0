@@ -1,4 +1,0 @@
-# file: C:\Users\ayewhy\II SKELDIR II\backend\app\main.py
-# hypothesis_version: 6.148.2
-
-[8000, '*', '/', '/api/attribution', '/api/auth', '/docs', '/health', '/openapi.json', '/redoc', '0.0.0.0', '1.0.0', 'Attribution', 'Authentication', '__main__', 'docs', 'healthy', 'message', 'openapi', 'service', 'skeldir-api', 'status']

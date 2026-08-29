@@ -1,0 +1,40 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+}
+
+.card {
+  padding: var(--spacing-24);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+.link {
+  min-height: var(--target-size-min);
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-trust-probabilistic);
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.linkDisabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.boundary {
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border-default);
+  padding-top: var(--spacing-16);
+}
+
+.denied {
+  color: var(--color-status-error);
+}

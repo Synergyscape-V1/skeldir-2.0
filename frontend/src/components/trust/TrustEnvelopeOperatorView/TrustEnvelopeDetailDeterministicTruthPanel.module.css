@@ -1,0 +1,165 @@
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-3);
+  margin-bottom: var(--sk-space-4);
+}
+
+.panelHeading {
+  margin: 0;
+}
+
+.verifiedStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--sk-radius-pill);
+  background: var(--sk-color-success-subtle-bg);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-success-subtle-border);
+}
+
+.verifiedIcon {
+  width: 1rem;
+  height: 1rem;
+  color: var(--sk-color-status-success);
+}
+
+.heroRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sk-space-3);
+  margin-bottom: var(--sk-space-5);
+}
+
+.heroAmount {
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-h2);
+  line-height: var(--sk-line-height-h2);
+  font-weight: var(--sk-font-weight-h2);
+  letter-spacing: -0.02em;
+  color: var(--sk-color-trust-deterministic);
+}
+
+.fieldGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-3);
+  margin: 0;
+}
+
+.fieldRow {
+  composes: reflowFieldRow from '../../../styles/reflowLayout.module.css';
+  align-items: baseline;
+}
+
+.fieldLabel {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--color-text-secondary);
+}
+
+.fieldValue,
+.fieldValueMono {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--color-text-primary);
+}
+
+.fieldValueMono {
+  font-family: var(--sk-font-family-mono);
+  word-break: break-all;
+}
+
+.labelWithHint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-1);
+}
+
+.hintButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: help;
+}
+
+.comparisonSection {
+  margin-top: var(--sk-space-4);
+  padding-top: var(--sk-space-3);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-subtle);
+}
+
+.comparisonHeading {
+  margin: 0 0 var(--sk-space-3);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--color-text-primary);
+}
+
+.comparisonGrid {
+  composes: metricColumnGrid from '../../../styles/responsiveGrid.module.css';
+}
+
+.comparisonColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sk-space-2);
+  min-width: 0;
+}
+
+.comparisonLabel {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--color-text-secondary);
+}
+
+.comparisonAmount {
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  white-space: nowrap;
+}
+
+.comparisonAmount_prior {
+  color: var(--sk-color-trust-benchmark);
+}
+
+.comparisonAmount_verified {
+  color: var(--sk-color-trust-deterministic);
+}
+
+.comparisonAmount_difference {
+  color: var(--sk-color-status-error);
+}
+
+@media (max-width: 767px) {
+  .fieldRow {
+    grid-template-columns: 1fr;
+    gap: var(--sk-space-1);
+  }
+
+  .comparisonGrid {
+    grid-template-columns: 1fr;
+    gap: var(--sk-space-4);
+  }
+
+  .comparisonAmount {
+    white-space: normal;
+  }
+}

@@ -1,0 +1,120 @@
+.attributionChannelCell {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.channelLink {
+  display: block;
+  width: 100%;
+  color: var(--color-trust-probabilistic);
+  text-decoration: none;
+  font-weight: var(--sk-font-weight-body-strong);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channelExpandButton {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  min-height: var(--sk-dimension-target-min);
+}
+
+.channelLink:hover {
+  text-decoration: underline;
+}
+
+.claimSourceCell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.claimSourceLabel {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channelIdentity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-2);
+  min-width: 0;
+}
+
+.moneyCell {
+  composes: moneyCell from '../../../styles/supervisoryTable.module.css';
+}
+
+.moneyStrong {
+  composes: moneyStrong from '../../../styles/supervisoryTable.module.css';
+}
+
+.discrepancyCell {
+  composes: discrepancyCell from '../../../styles/supervisoryTable.module.css';
+}
+
+.discrepancyCell [data-status-text] {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metaCell {
+  composes: metaCell from '../../../styles/supervisoryTable.module.css';
+  flex-wrap: nowrap;
+  gap: var(--spacing-8);
+  overflow: hidden;
+}
+
+.metaCell [data-status-text] {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metaText {
+  composes: metaText from '../../../styles/supervisoryTable.module.css';
+}
+
+.truncatedMetaText {
+  composes: truncatedMetaText from '../../../styles/supervisoryTable.module.css';
+}
+
+.openButton {
+  composes: openButton from '../../../styles/supervisoryTable.module.css';
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  min-width: 5.5rem;
+}
+
+.sortableHeader {
+  composes: sortableHeader from '../../../styles/supervisoryTable.module.css';
+}
+
+.sortIndicator {
+  composes: sortIndicator from '../../../styles/supervisoryTable.module.css';
+}
+
+.srOnly {
+  composes: srOnly from '../../../styles/supervisoryTable.module.css';
+}

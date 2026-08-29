@@ -1,0 +1,48 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+  width: 100%;
+}
+
+.inputStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  min-width: 0;
+  width: 100%;
+}
+
+.generateButton {
+  composes: primaryAction from '../../../styles/primaryAction.module.css';
+  width: 100%;
+}
+
+.pageGrid {
+  display: grid;
+  gap: var(--spacing-24);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  width: 100%;
+}
+
+@media (min-width: 64rem) {
+  .pageGrid {
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 22.5rem);
+  }
+}
+
+.mainColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  min-width: 0;
+}
+
+.blockedInline {
+  padding: var(--spacing-12) var(--spacing-16);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body);
+}

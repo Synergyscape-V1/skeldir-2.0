@@ -1,0 +1,23 @@
+.section {
+  composes: section from '../../../styles/summaryTile.module.css';
+}
+
+.grid {
+  composes: grid from '../../../styles/summaryTile.module.css';
+}
+
+.card {
+  composes: card from '../../../styles/summaryTile.module.css';
+}
+
+.body {
+  composes: body from '../../../styles/summaryTile.module.css';
+}
+
+.label {
+  composes: label from '../../../styles/summaryTile.module.css';
+}
+
+.value {
+  composes: value from '../../../styles/summaryTile.module.css';
+}

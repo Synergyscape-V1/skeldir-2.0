@@ -1,0 +1,30 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  min-width: 0;
+  padding: var(--sk-space-4) 0;
+}
+
+.label {
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sk-color-text-secondary);
+}
+
+.reviewCta {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--sk-dimension-target-min);
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--sk-color-trust-probabilistic, var(--sk-color-trust-probabilistic));
+  text-decoration: none;
+}
+
+.reviewCta:hover {
+  text-decoration: underline;
+}

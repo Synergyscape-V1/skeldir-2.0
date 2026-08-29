@@ -1,0 +1,62 @@
+/**
+ * Enterprise compact density — B2B supervisory / ledger viewport profile.
+ * Activated via data-density="enterprise-compact" on authenticated app shell.
+ * Comfortable defaults remain on :root in tokens.css.
+ */
+
+[data-density='enterprise-compact'] {
+  /* Typography */
+  --sk-font-size-h1: 24px;
+  --sk-line-height-h1: 30px;
+  --sk-font-size-h2: 20px;
+  --sk-line-height-h2: 26px;
+  --sk-font-size-h3: 14px;
+  --sk-line-height-h3: 20px;
+  --sk-font-size-body: 13px;
+  --sk-line-height-body: 18px;
+  --sk-font-size-small: 11px;
+  --sk-line-height-small: 16px;
+  --sk-font-size-micro: 10px;
+  --sk-font-size-code: 12px;
+  --sk-line-height-code: 18px;
+
+  /* Spacing rhythm — page/card gaps */
+  --sk-space-6: 16px;
+  --sk-space-8: 24px;
+  --sk-space-12: 40px;
+
+  /* Layout chrome */
+  --sk-dimension-sidebar-width: 240px;
+  --sk-dimension-chat-panel-width: 380px;
+  --sk-dimension-header-height: 42px;
+  --sk-dimension-shell-control-min: 32px;
+  --sk-dimension-main-padding-inline: var(--sk-space-4);
+  --sk-dimension-main-padding-block: var(--sk-space-4);
+  --sk-dimension-nav-item-height: 34px;
+  --sk-dimension-nav-icon-size: 18px;
+  --sk-dimension-sidebar-brand-shield-size: 44px;
+  --sk-dimension-sidebar-brand-wordmark-height: 20px;
+  --sk-dimension-sidebar-brand-wordmark-max-width: 90px;
+  --sk-dimension-sidebar-brand-lockup-pull: 0px;
+  --sk-dimension-sidebar-brand-lockup-wordmark-offset-y: 0px;
+  --sk-dimension-brand-shield-size: 48px;
+  --sk-dimension-brand-wordmark-height: 22px;
+  --sk-dimension-brand-wordmark-max-width: 96px;
+
+  /* Data surfaces */
+  --sk-dimension-table-row-standard: 44px;
+  --sk-dimension-table-row-dense: 40px;
+  --sk-dimension-table-cell-padding-block: var(--sk-space-2);
+  --sk-dimension-table-cell-padding-inline: var(--sk-space-3);
+
+  /* Command Center supervisory band — chart height is a floor; plot region grows to fill card */
+  --sk-dimension-command-center-supervisory-row-min-height: 360px;
+  --sk-dimension-verified-revenue-chart-height: 240px;
+  --sk-dimension-channel-trust-thead-block: 72px;
+}
+
+@media (min-width: 1440px) {
+  [data-density='enterprise-compact'] {
+    --sk-dimension-main-padding-inline: var(--sk-space-5);
+  }
+}

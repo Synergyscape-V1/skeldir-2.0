@@ -1,0 +1,225 @@
+{
+  "generatedAt": "2026-06-27T19:04:00.176Z",
+  "artifacts": [
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-1-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "onboarding-step-1-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-2-no-commerce-mobile.png",
+      "viewport": "mobile",
+      "specimen": "onboarding-step-2-no-commerce"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-3-no-claims-mobile.png",
+      "viewport": "mobile",
+      "specimen": "onboarding-step-3-no-claims"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-3-skip-warning-mobile.png",
+      "viewport": "mobile",
+      "specimen": "onboarding-step-3-skip-warning"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-4-unconfirmed-mobile.png",
+      "viewport": "mobile",
+      "specimen": "onboarding-step-4-unconfirmed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-4-confirmed-mobile.png",
+      "viewport": "mobile",
+      "specimen": "onboarding-step-4-confirmed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\integrations-default-mobile.png",
+      "viewport": "mobile",
+      "specimen": "integrations-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\commerce-card-connected-mobile.png",
+      "viewport": "mobile",
+      "specimen": "commerce-card-connected"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\claim-card-connected-mobile.png",
+      "viewport": "mobile",
+      "specimen": "claim-card-connected"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\shell-onboarding-step-1-mobile.png",
+      "viewport": "mobile",
+      "specimen": "shell-onboarding-step-1"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\shell-integrations-mobile.png",
+      "viewport": "mobile",
+      "specimen": "shell-integrations"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-1-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "onboarding-step-1-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-2-no-commerce-tablet.png",
+      "viewport": "tablet",
+      "specimen": "onboarding-step-2-no-commerce"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-3-no-claims-tablet.png",
+      "viewport": "tablet",
+      "specimen": "onboarding-step-3-no-claims"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-3-skip-warning-tablet.png",
+      "viewport": "tablet",
+      "specimen": "onboarding-step-3-skip-warning"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-4-unconfirmed-tablet.png",
+      "viewport": "tablet",
+      "specimen": "onboarding-step-4-unconfirmed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-4-confirmed-tablet.png",
+      "viewport": "tablet",
+      "specimen": "onboarding-step-4-confirmed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\integrations-default-tablet.png",
+      "viewport": "tablet",
+      "specimen": "integrations-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\commerce-card-connected-tablet.png",
+      "viewport": "tablet",
+      "specimen": "commerce-card-connected"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\claim-card-connected-tablet.png",
+      "viewport": "tablet",
+      "specimen": "claim-card-connected"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\shell-onboarding-step-1-tablet.png",
+      "viewport": "tablet",
+      "specimen": "shell-onboarding-step-1"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\shell-integrations-tablet.png",
+      "viewport": "tablet",
+      "specimen": "shell-integrations"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-1-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "onboarding-step-1-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-2-no-commerce-desktop.png",
+      "viewport": "desktop",
+      "specimen": "onboarding-step-2-no-commerce"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-3-no-claims-desktop.png",
+      "viewport": "desktop",
+      "specimen": "onboarding-step-3-no-claims"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-3-skip-warning-desktop.png",
+      "viewport": "desktop",
+      "specimen": "onboarding-step-3-skip-warning"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-4-unconfirmed-desktop.png",
+      "viewport": "desktop",
+      "specimen": "onboarding-step-4-unconfirmed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-4-confirmed-desktop.png",
+      "viewport": "desktop",
+      "specimen": "onboarding-step-4-confirmed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\integrations-default-desktop.png",
+      "viewport": "desktop",
+      "specimen": "integrations-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\commerce-card-connected-desktop.png",
+      "viewport": "desktop",
+      "specimen": "commerce-card-connected"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\claim-card-connected-desktop.png",
+      "viewport": "desktop",
+      "specimen": "claim-card-connected"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\shell-onboarding-step-1-desktop.png",
+      "viewport": "desktop",
+      "specimen": "shell-onboarding-step-1"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\shell-integrations-desktop.png",
+      "viewport": "desktop",
+      "specimen": "shell-integrations"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-1-default-wide.png",
+      "viewport": "wide",
+      "specimen": "onboarding-step-1-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-2-no-commerce-wide.png",
+      "viewport": "wide",
+      "specimen": "onboarding-step-2-no-commerce"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-3-no-claims-wide.png",
+      "viewport": "wide",
+      "specimen": "onboarding-step-3-no-claims"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-3-skip-warning-wide.png",
+      "viewport": "wide",
+      "specimen": "onboarding-step-3-skip-warning"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-4-unconfirmed-wide.png",
+      "viewport": "wide",
+      "specimen": "onboarding-step-4-unconfirmed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\onboarding-step-4-confirmed-wide.png",
+      "viewport": "wide",
+      "specimen": "onboarding-step-4-confirmed"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\integrations-default-wide.png",
+      "viewport": "wide",
+      "specimen": "integrations-default"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\commerce-card-connected-wide.png",
+      "viewport": "wide",
+      "specimen": "commerce-card-connected"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\claim-card-connected-wide.png",
+      "viewport": "wide",
+      "specimen": "claim-card-connected"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\shell-onboarding-step-1-wide.png",
+      "viewport": "wide",
+      "specimen": "shell-onboarding-step-1"
+    },
+    {
+      "file": "C:\\Users\\ayewhy\\Frontend_4\\skeldir-ui\\evidence\\Level_3\\visual\\shell-integrations-wide.png",
+      "viewport": "wide",
+      "specimen": "shell-integrations"
+    }
+  ]
+}

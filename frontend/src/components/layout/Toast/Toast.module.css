@@ -1,0 +1,85 @@
+.toast {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-target-min);
+  padding: var(--sk-space-3) var(--sk-space-4);
+  border-radius: var(--sk-radius-sm);
+  box-shadow: var(--sk-elevation-card);
+  transition: opacity var(--sk-motion-toast);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}
+
+.toastBody {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+}
+
+.progressTrack {
+  width: 100%;
+  height: var(--sk-space-1);
+  border-radius: var(--sk-radius-pill);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  overflow: hidden;
+}
+
+.progressBar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  transition: width 80ms linear;
+}
+
+.desktop {
+  position: fixed;
+  top: var(--sk-space-4);
+  right: var(--sk-space-4);
+  max-width: var(--sk-dimension-modal-width);
+  z-index: 1100;
+}
+
+.mobile {
+  position: fixed;
+  bottom: var(--sk-space-4);
+  left: var(--sk-space-4);
+  right: var(--sk-space-4);
+  z-index: 1100;
+}
+
+.success {
+  background: var(--sk-color-surface-success);
+  color: var(--sk-color-status-success);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-success);
+}
+
+.error {
+  background: var(--sk-color-surface-error);
+  color: var(--sk-color-status-error);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-error);
+}
+
+.info {
+  background: var(--sk-color-surface-info);
+  color: var(--sk-color-status-info);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-info);
+}
+
+.warning {
+  background: var(--sk-color-surface-warning);
+  color: var(--sk-color-status-warning);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-status-warning);
+}
+
+.dismiss {
+  min-width: var(--sk-dimension-target-min);
+  min-height: var(--sk-dimension-target-min);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--sk-font-size-h3);
+  line-height: 1;
+}

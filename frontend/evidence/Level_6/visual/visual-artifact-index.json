@@ -1,0 +1,262 @@
+[
+  {
+    "file": "step5-locked-commerce-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-locked-commerce"
+  },
+  {
+    "file": "step5-waiting-event-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-waiting-event"
+  },
+  {
+    "file": "step5-ready-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-ready"
+  },
+  {
+    "file": "step5-generation-success-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-generation-success"
+  },
+  {
+    "file": "step5-generation-failed-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-generation-failed"
+  },
+  {
+    "file": "step5-payload-oversized-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-payload-oversized"
+  },
+  {
+    "file": "step5-schema-invalid-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-schema-invalid"
+  },
+  {
+    "file": "step5-confidence-available-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-confidence-available"
+  },
+  {
+    "file": "step5-already-generated-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step5-already-generated"
+  },
+  {
+    "file": "step6-default-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step6-default"
+  },
+  {
+    "file": "step6-permission-denied-mobile.png",
+    "viewport": "mobile",
+    "specimen": "step6-permission-denied"
+  },
+  {
+    "file": "shell-onboarding-step5-mobile.png",
+    "viewport": "mobile",
+    "specimen": "shell-onboarding-step5"
+  },
+  {
+    "file": "shell-onboarding-step6-mobile.png",
+    "viewport": "mobile",
+    "specimen": "shell-onboarding-step6"
+  },
+  {
+    "file": "step5-locked-commerce-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-locked-commerce"
+  },
+  {
+    "file": "step5-waiting-event-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-waiting-event"
+  },
+  {
+    "file": "step5-ready-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-ready"
+  },
+  {
+    "file": "step5-generation-success-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-generation-success"
+  },
+  {
+    "file": "step5-generation-failed-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-generation-failed"
+  },
+  {
+    "file": "step5-payload-oversized-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-payload-oversized"
+  },
+  {
+    "file": "step5-schema-invalid-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-schema-invalid"
+  },
+  {
+    "file": "step5-confidence-available-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-confidence-available"
+  },
+  {
+    "file": "step5-already-generated-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step5-already-generated"
+  },
+  {
+    "file": "step6-default-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step6-default"
+  },
+  {
+    "file": "step6-permission-denied-tablet.png",
+    "viewport": "tablet",
+    "specimen": "step6-permission-denied"
+  },
+  {
+    "file": "shell-onboarding-step5-tablet.png",
+    "viewport": "tablet",
+    "specimen": "shell-onboarding-step5"
+  },
+  {
+    "file": "shell-onboarding-step6-tablet.png",
+    "viewport": "tablet",
+    "specimen": "shell-onboarding-step6"
+  },
+  {
+    "file": "step5-locked-commerce-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-locked-commerce"
+  },
+  {
+    "file": "step5-waiting-event-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-waiting-event"
+  },
+  {
+    "file": "step5-ready-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-ready"
+  },
+  {
+    "file": "step5-generation-success-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-generation-success"
+  },
+  {
+    "file": "step5-generation-failed-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-generation-failed"
+  },
+  {
+    "file": "step5-payload-oversized-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-payload-oversized"
+  },
+  {
+    "file": "step5-schema-invalid-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-schema-invalid"
+  },
+  {
+    "file": "step5-confidence-available-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-confidence-available"
+  },
+  {
+    "file": "step5-already-generated-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step5-already-generated"
+  },
+  {
+    "file": "step6-default-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step6-default"
+  },
+  {
+    "file": "step6-permission-denied-desktop.png",
+    "viewport": "desktop",
+    "specimen": "step6-permission-denied"
+  },
+  {
+    "file": "shell-onboarding-step5-desktop.png",
+    "viewport": "desktop",
+    "specimen": "shell-onboarding-step5"
+  },
+  {
+    "file": "shell-onboarding-step6-desktop.png",
+    "viewport": "desktop",
+    "specimen": "shell-onboarding-step6"
+  },
+  {
+    "file": "step5-locked-commerce-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-locked-commerce"
+  },
+  {
+    "file": "step5-waiting-event-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-waiting-event"
+  },
+  {
+    "file": "step5-ready-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-ready"
+  },
+  {
+    "file": "step5-generation-success-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-generation-success"
+  },
+  {
+    "file": "step5-generation-failed-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-generation-failed"
+  },
+  {
+    "file": "step5-payload-oversized-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-payload-oversized"
+  },
+  {
+    "file": "step5-schema-invalid-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-schema-invalid"
+  },
+  {
+    "file": "step5-confidence-available-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-confidence-available"
+  },
+  {
+    "file": "step5-already-generated-wide.png",
+    "viewport": "wide",
+    "specimen": "step5-already-generated"
+  },
+  {
+    "file": "step6-default-wide.png",
+    "viewport": "wide",
+    "specimen": "step6-default"
+  },
+  {
+    "file": "step6-permission-denied-wide.png",
+    "viewport": "wide",
+    "specimen": "step6-permission-denied"
+  },
+  {
+    "file": "shell-onboarding-step5-wide.png",
+    "viewport": "wide",
+    "specimen": "shell-onboarding-step5"
+  },
+  {
+    "file": "shell-onboarding-step6-wide.png",
+    "viewport": "wide",
+    "specimen": "shell-onboarding-step6"
+  }
+]

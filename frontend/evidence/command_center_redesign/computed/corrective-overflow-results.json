@@ -1,0 +1,42 @@
+{
+  "mobile-375": {
+    "clientWidth": 375,
+    "scrollWidth": 375,
+    "hasHorizontalOverflow": false
+  },
+  "tablet-768": {
+    "clientWidth": 768,
+    "scrollWidth": 768,
+    "hasHorizontalOverflow": false
+  },
+  "intermediate-1024": {
+    "clientWidth": 1024,
+    "scrollWidth": 1024,
+    "hasHorizontalOverflow": false
+  },
+  "intermediate-1100": {
+    "clientWidth": 1100,
+    "scrollWidth": 1100,
+    "hasHorizontalOverflow": false
+  },
+  "intermediate-1180": {
+    "clientWidth": 1180,
+    "scrollWidth": 1180,
+    "hasHorizontalOverflow": false
+  },
+  "intermediate-1279": {
+    "clientWidth": 1279,
+    "scrollWidth": 1279,
+    "hasHorizontalOverflow": false
+  },
+  "desktop-1280": {
+    "clientWidth": 1280,
+    "scrollWidth": 1280,
+    "hasHorizontalOverflow": false
+  },
+  "wide-1440": {
+    "clientWidth": 1440,
+    "scrollWidth": 1440,
+    "hasHorizontalOverflow": false
+  }
+}

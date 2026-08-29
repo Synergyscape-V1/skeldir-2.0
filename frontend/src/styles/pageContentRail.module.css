@@ -1,0 +1,5 @@
+.rail {
+  width: 100%;
+  max-width: var(--sk-dimension-content-max-width);
+  margin-inline: auto;
+}

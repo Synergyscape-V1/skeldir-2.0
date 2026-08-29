@@ -1,4 +1,0 @@
-# file: C:\Users\ayewhy\II SKELDIR II\backend\app\schemas\webhooks_shopify.py
-# hypothesis_version: 6.148.2
-
-[400, 1234567890, 9876543210, '129.99', '2025-11-10T14:30:00Z', '2025-11-10T15:30:00Z', '29.99', 'USD', 'Validation Error', '^[A-Z]{3}$', 'paid', 'partially_paid']

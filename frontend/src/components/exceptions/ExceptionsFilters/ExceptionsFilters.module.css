@@ -1,0 +1,121 @@
+.panel {
+  padding: var(--spacing-24);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  box-shadow: var(--sk-elevation-card);
+}
+
+.primaryRow {
+  composes: filterGrid from '../../../styles/responsiveGrid.module.css';
+}
+
+.secondaryRow {
+  composes: filterGrid from '../../../styles/responsiveGrid.module.css';
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  min-width: 0;
+}
+
+.fieldLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sk-space-1);
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.fieldIcon {
+  flex-shrink: 0;
+  color: var(--sk-color-text-muted);
+}
+
+.control {
+  min-height: var(--sk-dimension-target-min);
+  width: 100%;
+  padding: var(--sk-space-2) var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  font-size: var(--sk-font-size-body);
+  color: var(--sk-color-text-primary);
+  background: var(--sk-color-bg-card);
+}
+
+.searchField {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  min-width: 0;
+  grid-column: span 2;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--sk-space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--sk-color-text-muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  min-height: var(--sk-dimension-target-min);
+  width: 100%;
+  padding: var(--sk-space-2) var(--sk-space-3) var(--sk-space-2) calc(var(--sk-space-3) + 1.25rem);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  font-size: var(--sk-font-size-body);
+  color: var(--sk-color-text-primary);
+  background: var(--sk-color-bg-card);
+}
+
+.clearFilters {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-target-min);
+  padding: 0 var(--sk-space-4);
+  border: var(--sk-dimension-border-width) solid var(--color-border-default);
+  border-radius: var(--sk-radius-sm);
+  background: var(--color-bg-card);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-small);
+  cursor: pointer;
+  justify-self: end;
+}
+
+.clearIcon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.chipRow {
+  composes: chipRow from '../../../styles/filterChip.module.css';
+}
+
+.chips {
+  composes: chips from '../../../styles/filterChip.module.css';
+}
+
+.chip {
+  composes: chip from '../../../styles/filterChip.module.css';
+}
+
+.chipRemove {
+  composes: chipRemove from '../../../styles/filterChip.module.css';
+}
+
+.visuallyHidden {
+  composes: srOnly from '../../../styles/supervisoryTable.module.css';
+}

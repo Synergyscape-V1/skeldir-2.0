@@ -1,0 +1,127 @@
+.badge {
+  composes: chip from '../../../styles/trustChip.module.css';
+}
+
+.table {
+  composes: table from '../../../styles/trustChip.module.css';
+}
+
+.compact {
+  composes: compact from '../../../styles/trustChip.module.css';
+}
+
+.rejected {
+  composes: toneError from '../../../styles/trustChip.module.css';
+}
+
+.flagged {
+  composes: toneWarning from '../../../styles/trustChip.module.css';
+}
+
+.within_tolerance {
+  composes: toneSuccess from '../../../styles/trustChip.module.css';
+}
+
+.unavailable,
+.platformClaim {
+  composes: toneNeutral from '../../../styles/trustChip.module.css';
+}
+
+.bayesian_healthy {
+  composes: toneSuccess from '../../../styles/trustChip.module.css';
+}
+
+.bayesian_low_confidence {
+  composes: toneWarning from '../../../styles/trustChip.module.css';
+}
+
+.bayesian_unavailable {
+  composes: toneNeutral from '../../../styles/trustChip.module.css';
+}
+
+.bayesian_delayed {
+  composes: toneInfo from '../../../styles/trustChip.module.css';
+}
+
+.benchmark_stable {
+  composes: toneProbabilistic from '../../../styles/trustChip.module.css';
+}
+
+.benchmark_transitioning {
+  composes: toneBenchmark from '../../../styles/trustChip.module.css';
+}
+
+.benchmark_unavailable,
+.benchmark_suppressed {
+  composes: toneNeutral from '../../../styles/trustChip.module.css';
+}
+
+.envelope_verified {
+  composes: toneSuccess from '../../../styles/trustChip.module.css';
+}
+
+.envelope_pending_approval {
+  composes: toneWarning from '../../../styles/trustChip.module.css';
+}
+
+.envelope_transitioning {
+  composes: toneBenchmark from '../../../styles/trustChip.module.css';
+}
+
+.rejectedText {
+  composes: labelError from '../../../styles/trustStatusText.module.css';
+}
+
+.flaggedText {
+  composes: labelWarning from '../../../styles/trustStatusText.module.css';
+}
+
+.within_toleranceText {
+  composes: labelSuccess from '../../../styles/trustStatusText.module.css';
+}
+
+.unavailableText,
+.platformClaimText {
+  composes: labelNeutral from '../../../styles/trustStatusText.module.css';
+}
+
+.bayesian_healthyText {
+  composes: labelSuccess from '../../../styles/trustStatusText.module.css';
+}
+
+.bayesian_low_confidenceText {
+  composes: labelWarning from '../../../styles/trustStatusText.module.css';
+}
+
+.bayesian_unavailableText {
+  composes: labelNeutral from '../../../styles/trustStatusText.module.css';
+}
+
+.bayesian_delayedText {
+  composes: labelInfo from '../../../styles/trustStatusText.module.css';
+}
+
+.benchmark_stableText {
+  composes: labelProbabilistic from '../../../styles/trustStatusText.module.css';
+}
+
+.benchmark_transitioningText {
+  composes: labelBenchmark from '../../../styles/trustStatusText.module.css';
+}
+
+.benchmark_unavailableText,
+.benchmark_suppressedText {
+  composes: labelNeutral from '../../../styles/trustStatusText.module.css';
+}
+
+.envelope_verifiedText {
+  composes: labelSuccess from '../../../styles/trustStatusText.module.css';
+}
+
+.envelope_pending_approvalText {
+  composes: labelWarning from '../../../styles/trustStatusText.module.css';
+}
+
+.envelope_transitioningText {
+  composes: labelBenchmark from '../../../styles/trustStatusText.module.css';
+}

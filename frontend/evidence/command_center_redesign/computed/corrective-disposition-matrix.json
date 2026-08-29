@@ -1,0 +1,74 @@
+{
+  "command-center-loaded": {
+    "wait": "[data-command-center-loaded=\"true\"]",
+    "present": true,
+    "screenshot": "priority-issues.png",
+    "timestamp": "2026-06-30T20:32:47.215Z"
+  },
+  "command-center-no-priority": {
+    "wait": "[data-command-center-loaded=\"true\"]",
+    "present": true,
+    "screenshot": "no-priority.png",
+    "timestamp": "2026-06-30T20:32:47.881Z"
+  },
+  "command-center-trust-api-failed": {
+    "wait": "[data-command-center-trust-api-error]",
+    "present": true,
+    "screenshot": "trust-api-error.png",
+    "timestamp": "2026-06-30T20:32:48.618Z"
+  },
+  "command-center-kill-switch": {
+    "wait": "[data-command-center-kill-switch-banner]",
+    "present": true,
+    "screenshot": "kill-switch.png",
+    "timestamp": "2026-06-30T20:32:49.387Z"
+  },
+  "command-center-loading-delayed": {
+    "wait": "[data-command-center-loading=\"true\"]",
+    "present": true,
+    "screenshot": "loading-delayed.png",
+    "timestamp": "2026-06-30T20:32:49.985Z"
+  },
+  "command-center-partial": {
+    "wait": "[data-command-center-loaded=\"true\"]",
+    "present": true,
+    "screenshot": "partial-data.png",
+    "timestamp": "2026-06-30T20:32:50.689Z"
+  },
+  "command-center-trend-unavailable": {
+    "wait": "[data-trend-unavailable]",
+    "present": true,
+    "screenshot": "trend-unavailable.png",
+    "timestamp": "2026-06-30T20:32:51.397Z"
+  },
+  "command-center-trend-available": {
+    "wait": "[data-verified-revenue-chart]",
+    "present": true,
+    "screenshot": "trend-available.png",
+    "timestamp": "2026-06-30T20:32:52.052Z"
+  },
+  "command-center-empty-tenant": {
+    "wait": "[data-command-center-page]",
+    "present": false,
+    "error": "page.waitForSelector: Timeout 90000ms exceeded.\nCall log:\n  - waiting for locator('[data-command-center-page]') to be visible\n",
+    "timestamp": "2026-06-30T20:34:22.411Z"
+  },
+  "command-center-stale": {
+    "wait": "[data-command-center-status-text]",
+    "present": true,
+    "screenshot": "stale-aggregate.png",
+    "timestamp": "2026-06-30T20:34:23.072Z"
+  },
+  "command-center-health-degraded": {
+    "wait": "[data-command-center-health-banner][data-health-state=\"confidence_degraded\"]",
+    "present": true,
+    "screenshot": "health-degraded.png",
+    "timestamp": "2026-06-30T20:34:23.756Z"
+  },
+  "command-center-integration-attention": {
+    "wait": "[data-command-center-health-banner][data-health-state=\"integration_attention\"]",
+    "present": true,
+    "screenshot": "integration-attention.png",
+    "timestamp": "2026-06-30T20:34:24.395Z"
+  }
+}

@@ -1,0 +1,52 @@
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-header-height);
+  padding: var(--sk-space-2);
+  border-bottom: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  flex-shrink: 0;
+}
+
+.lockup {
+  display: flex;
+  align-items: center;
+  gap: var(--sk-dimension-brand-lockup-gap);
+  min-width: 0;
+  flex: 1;
+}
+
+.logoSlot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sk-dimension-sidebar-brand-shield-size);
+  height: var(--sk-dimension-sidebar-brand-shield-size);
+  flex-shrink: 0;
+}
+
+.shield {
+  display: block;
+  width: var(--sk-dimension-sidebar-brand-shield-size);
+  height: var(--sk-dimension-sidebar-brand-shield-size);
+  object-fit: contain;
+  object-position: center;
+}
+
+.wordmarkSvg {
+  display: block;
+  width: auto;
+  height: var(--sk-dimension-sidebar-brand-wordmark-height);
+  max-width: var(--sk-dimension-sidebar-brand-wordmark-max-width);
+  object-fit: contain;
+  object-position: left center;
+  margin-left: calc(-1 * var(--sk-dimension-sidebar-brand-lockup-pull));
+  margin-top: var(--sk-dimension-sidebar-brand-lockup-wordmark-offset-y);
+}
+
+.bellCorner {
+  flex-shrink: 0;
+  align-self: center;
+  line-height: 0;
+}

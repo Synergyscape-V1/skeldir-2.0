@@ -1,0 +1,12 @@
+[
+  {
+    "file": "command-center-loaded-mobile.png",
+    "viewport": "mobile",
+    "specimen": "command-center-loaded"
+  },
+  {
+    "file": "command-center-loaded-desktop.png",
+    "viewport": "desktop",
+    "specimen": "command-center-loaded"
+  }
+]

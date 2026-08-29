@@ -1,0 +1,29 @@
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--sk-space-4);
+}
+
+.lockup {
+  display: flex;
+  align-items: center;
+  gap: var(--sk-dimension-brand-lockup-gap);
+}
+
+.shield {
+  display: block;
+  width: var(--sk-dimension-brand-shield-size);
+  height: var(--sk-dimension-brand-shield-size);
+  object-fit: contain;
+}
+
+.wordmark {
+  display: block;
+  width: auto;
+  height: var(--sk-dimension-brand-wordmark-height);
+  max-width: var(--sk-dimension-brand-wordmark-max-width);
+  object-fit: contain;
+  margin-left: calc(-1 * var(--sk-dimension-brand-lockup-pull));
+  margin-top: var(--sk-dimension-brand-lockup-wordmark-offset-y);
+}

@@ -1,0 +1,22 @@
+{
+  "mobile": {
+    "scrollWidth": 784,
+    "clientWidth": 375,
+    "hasHorizontalOverflow": true
+  },
+  "tablet": {
+    "scrollWidth": 1064,
+    "clientWidth": 768,
+    "hasHorizontalOverflow": true
+  },
+  "desktop": {
+    "scrollWidth": 1280,
+    "clientWidth": 1280,
+    "hasHorizontalOverflow": false
+  },
+  "wide": {
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "hasHorizontalOverflow": false
+  }
+}

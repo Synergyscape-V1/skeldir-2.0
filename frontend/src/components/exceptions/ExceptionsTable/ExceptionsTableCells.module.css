@@ -1,0 +1,45 @@
+.chipCell {
+  composes: metaCell from '../../../styles/supervisoryTable.module.css';
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  max-width: 100%;
+}
+
+.chipCell [data-trust-chip],
+.chipCell [data-status-text] {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metaText {
+  composes: metaText from '../../../styles/supervisoryTable.module.css';
+}
+
+.truncatedMetaText {
+  composes: truncatedMetaText from '../../../styles/supervisoryTable.module.css';
+}
+
+.summaryText {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.openButton {
+  composes: openButton from '../../../styles/supervisoryTable.module.css';
+}
+
+.openButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

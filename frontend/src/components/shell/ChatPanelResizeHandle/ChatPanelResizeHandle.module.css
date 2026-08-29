@@ -1,0 +1,27 @@
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: var(--sk-space-2);
+  margin: 0;
+  padding: 0 var(--sk-space-2);
+  border: none;
+  transform: translateX(-50%);
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.handle:focus,
+.handle:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+@media (max-width: 767px) {
+  .handle {
+    display: none;
+  }
+}

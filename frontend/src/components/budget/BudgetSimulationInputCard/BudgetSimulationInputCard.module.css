@@ -1,0 +1,233 @@
+.card {
+
+  composes: elevatedPanel from '../budgetPanel.module.css';
+
+  gap: var(--sk-space-6);
+
+}
+
+
+
+.srOnly {
+
+  composes: srOnly from '../../../styles/shared.module.css';
+
+}
+
+
+
+.fieldGrid {
+
+  composes: filterGrid from '../../../styles/responsiveGrid.module.css';
+
+}
+
+
+
+.field {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--sk-space-1);
+
+  min-width: 0;
+
+  border: 0;
+
+  margin: 0;
+
+  padding: 0;
+
+}
+
+
+
+.fieldLabel {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  flex-wrap: wrap;
+
+  gap: var(--sk-space-1);
+
+  font-size: var(--sk-font-size-small);
+
+  font-weight: var(--sk-font-weight-small);
+
+  color: var(--sk-color-text-primary);
+
+}
+
+
+
+.fieldIcon {
+
+  color: var(--sk-color-text-muted);
+
+}
+
+
+
+.control {
+
+  min-height: var(--sk-dimension-target-min);
+
+  width: 100%;
+
+  padding: var(--sk-space-2) var(--sk-space-3);
+
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+
+  border-radius: var(--sk-radius-sm);
+
+  font-size: var(--sk-font-size-body);
+
+  color: var(--sk-color-text-primary);
+
+  background: var(--sk-color-bg-card);
+
+}
+
+
+
+.fullWidthField {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--sk-space-2);
+
+}
+
+
+
+.chipRow {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  align-items: center;
+
+  gap: var(--sk-space-3);
+
+}
+
+
+
+.chips {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  gap: var(--sk-space-3);
+
+}
+
+
+
+.chip {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: var(--sk-space-2);
+
+  width: fit-content;
+
+  max-width: 100%;
+
+  padding: var(--sk-space-2) var(--sk-space-3);
+
+  border-radius: var(--sk-radius-sm);
+
+  background: color-mix(in srgb, var(--sk-color-text-sidebar-active) 8%, transparent);
+
+  border: var(--sk-dimension-border-width) solid color-mix(in srgb, var(--sk-color-text-sidebar-active) 24%, transparent);
+
+  color: var(--sk-color-text-sidebar-active);
+
+  font-size: var(--sk-font-size-small);
+
+  line-height: 1.25;
+
+  white-space: nowrap;
+
+}
+
+
+
+.chipRemove {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  flex-shrink: 0;
+
+  width: 1.125rem;
+
+  height: 1.125rem;
+
+  border: none;
+
+  background: transparent;
+
+  color: inherit;
+
+  cursor: pointer;
+
+  padding: 0;
+
+  margin: 0;
+
+  font-size: 1.125rem;
+
+  font-weight: var(--sk-font-weight-body);
+
+  line-height: 1;
+
+}
+
+
+
+.chipOption {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  width: fit-content;
+
+  max-width: 100%;
+
+  padding: var(--sk-space-2) var(--sk-space-3);
+
+  border-radius: var(--sk-radius-sm);
+
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+
+  background: var(--sk-color-bg-card);
+
+  color: var(--sk-color-text-secondary);
+
+  font-size: var(--sk-font-size-small);
+
+  line-height: 1.25;
+
+  white-space: nowrap;
+
+  cursor: pointer;
+
+}
+
+

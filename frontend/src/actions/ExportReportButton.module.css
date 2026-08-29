@@ -1,0 +1,17 @@
+.row,
+.headerRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.primaryAction {
+  composes: primaryAction from '../styles/primaryAction.module.css';
+  white-space: nowrap;
+}
+
+.actionIcon {
+  width: 1rem;
+  height: 1rem;
+}

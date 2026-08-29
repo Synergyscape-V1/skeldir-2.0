@@ -1,0 +1,45 @@
+/**
+ * System primary CTA DNA — Overview "Review top issue" is the reference iteration.
+ * Compose this class for every filled trust-probabilistic action control.
+ */
+.primaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-nav-item-height);
+  max-width: 100%;
+  padding: 0 var(--sk-space-3);
+  border: none;
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-trust-probabilistic);
+  color: var(--sk-color-text-inverse);
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-small);
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color 120ms ease-out, transform 120ms ease-out, filter 120ms ease-out;
+}
+
+.primaryAction:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.primaryAction:focus-visible {
+  outline: var(--sk-focus-outline-width) solid var(--sk-focus-outline-color);
+  outline-offset: var(--sk-focus-outline-offset);
+}
+
+.primaryAction:disabled {
+  background: var(--sk-color-bg-muted);
+  color: var(--sk-color-text-secondary);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  opacity: 1;
+  cursor: not-allowed;
+  filter: none;
+}

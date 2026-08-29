@@ -1,0 +1,9 @@
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+.summary p {
+  margin: 0;
+}

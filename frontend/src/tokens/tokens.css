@@ -1,0 +1,287 @@
+/**
+ * Skeldir Level 0 — Design Token Registry
+ * Raw visual values exist ONLY in this file.
+ * H-UI-05: Dark mode explicitly out of scope at Level 0.
+ */
+
+:root {
+  /* Color — background (warm ivory parchment palette) */
+  --sk-color-bg-page: #faf9f5;
+  --sk-color-bg-sidebar: #f6f4ef;
+  --sk-color-bg-header: #faf9f5;
+  --sk-color-bg-card: #ffffff;
+  --sk-color-bg-muted: #f0ede6;
+
+  /* Color — text */
+  --sk-color-text-primary: #0f172a;
+  --sk-color-text-secondary: #475569;
+  --sk-color-text-muted: #64748b;
+  --sk-color-text-inverse: #ffffff;
+
+  /* Color — border */
+  --sk-color-border-default: #e5e1d8;
+  --sk-color-border-subtle: #ede9e2;
+
+  /* Color — trust authority */
+  --sk-color-trust-deterministic: #166534;
+  --sk-color-trust-probabilistic: #1d4ed8;
+  --sk-color-trust-benchmark: #7c3aed;
+  --sk-color-trust-prior: #92400e;
+  --sk-color-trust-unavailable: #64748b;
+  --sk-color-trust-suppressed: #334155;
+
+  /* Color — links & chart */
+  --sk-color-link-primary: #2563eb;
+  --sk-color-chart-revenue-line: #2563eb;
+  --sk-color-chart-revenue-fill-top: rgba(37, 99, 235, 0.14);
+  --sk-color-chart-revenue-fill-bottom: rgba(37, 99, 235, 0);
+  --sk-color-focus-ring: #2563eb;
+
+  /* Subtle status surfaces */
+  --sk-color-success-subtle-bg: rgba(21, 128, 61, 0.1);
+  --sk-color-success-subtle-border: rgba(21, 128, 61, 0.24);
+  --sk-color-warning-subtle-bg: rgba(180, 83, 9, 0.1);
+  --sk-color-warning-subtle-border: rgba(180, 83, 9, 0.24);
+  --sk-color-error-subtle-bg: rgba(185, 28, 28, 0.1);
+  --sk-color-error-subtle-border: rgba(185, 28, 28, 0.24);
+  --sk-color-info-subtle-bg: rgba(3, 105, 161, 0.1);
+  --sk-color-info-subtle-border: rgba(3, 105, 161, 0.24);
+  --sk-color-benchmark-subtle-bg: rgba(124, 58, 237, 0.1);
+  --sk-color-benchmark-subtle-border: rgba(124, 58, 237, 0.24);
+  --sk-color-neutral-subtle-bg: rgba(100, 116, 139, 0.1);
+  --sk-color-neutral-subtle-border: rgba(100, 116, 139, 0.24);
+
+  /* Color — status */
+  --sk-color-status-success: #15803d;
+  --sk-color-status-warning: #b45309;
+  --sk-color-status-error: #b91c1c;
+  --sk-color-status-info: #0369a1;
+  /* Priority severity signals — supervisory queue chromatic physics */
+  --sk-color-severity-discrepancy-imperial: #e63946;
+  --sk-color-severity-discrepancy-imperial-glow: rgba(230, 57, 70, 0.38);
+  --sk-color-severity-policy-approval: #f97316;
+  --sk-color-severity-confidence-unavailable: #64748b;
+  --sk-color-severity-benchmark-transition: #7c3aed;
+  --sk-color-severity-integration-degraded: #0284c7;
+  /* Audit activity card signals — ledger event chromatic physics */
+  --sk-color-audit-activity-info: #2563eb;
+  --sk-color-audit-activity-error: #e63946;
+  --sk-color-audit-activity-success: #16a34a;
+  --sk-color-audit-activity-refresh: #0284c7;
+
+  /* Color — semantic surfaces */
+  --sk-color-surface-error: #fef2f2;
+  --sk-color-surface-warning: #fffbeb;
+  --sk-color-surface-info: #eff6ff;
+  --sk-color-surface-success: #f0fdf4;
+  --sk-color-surface-sidebar-active: #ebe6dc;
+  --sk-color-text-sidebar-active: #1d4ed8;
+
+  /* Typography — family */
+  --sk-font-family-base: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --sk-font-family-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /** Command Center page title — 72 Regular with Inter fallback only. */
+  --sk-font-family-display: '72', Inter;
+  /** Command Center header supporting copy — Inter only. */
+  --sk-font-family-inter: Inter;
+
+  /* Typography — scale */
+  --sk-font-size-h1: 32px;
+  --sk-line-height-h1: 40px;
+  --sk-font-weight-h1: 700;
+
+  --sk-font-size-h2: 24px;
+  --sk-line-height-h2: 32px;
+  --sk-font-weight-h2: 700;
+
+  --sk-font-size-h3: 18px;
+  --sk-line-height-h3: 28px;
+  --sk-font-weight-h3: 600;
+
+  --sk-font-size-body: 14px;
+  --sk-line-height-body: 22px;
+  --sk-font-weight-body: 400;
+
+  --sk-font-size-small: 12px;
+  --sk-font-size-micro: 11px;
+  --sk-line-height-small: 18px;
+  --sk-font-weight-small: 500;
+  --sk-font-weight-body-strong: 600;
+  --sk-font-weight-small-strong: 600;
+
+  --sk-font-size-code: 13px;
+  --sk-line-height-code: 20px;
+  --sk-font-weight-code: 400;
+
+  /* Spacing — 4px-derived scale */
+  --sk-space-1: 4px;
+  --sk-space-2: 8px;
+  --sk-space-3: 12px;
+  --sk-space-4: 16px;
+  --sk-space-5: 20px;
+  --sk-space-6: 24px;
+  --sk-space-8: 32px;
+  --sk-space-12: 48px;
+  --sk-space-16: 64px;
+
+  /* Radius — tile surfaces use sharp 5px corners platform-wide */
+  --sk-radius-sm: 5px;
+  --sk-radius-md: 5px;
+  --sk-radius-card: var(--sk-radius-md);
+  /* Status / trust badges: subtle corner, not capsule */
+  --sk-radius-badge: 2px;
+  --sk-radius-channel-trust-badge: var(--sk-radius-badge);
+  --sk-radius-pill: 9999px;
+
+  /* Elevation */
+  --sk-elevation-card: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --sk-elevation-popover: 0 8px 24px rgba(15, 23, 42, 0.14);
+  --sk-elevation-drawer: 0 12px 32px rgba(15, 23, 42, 0.18);
+  --sk-elevation-modal: 0 20px 48px rgba(15, 23, 42, 0.22);
+
+  /* Layout dimensions */
+  --sk-dimension-sidebar-width: 264px;
+  --sk-dimension-header-height: 44px;
+  --sk-dimension-shell-control-min: 36px;
+  --sk-dimension-content-max-width: 1280px;
+  --sk-dimension-brand-shield-size: 60px;
+  --sk-dimension-brand-wordmark-height: 26px;
+  --sk-dimension-brand-wordmark-max-width: 108px;
+  --sk-dimension-brand-lockup-gap: 4px;
+  --sk-dimension-brand-lockup-pull: 12px;
+  --sk-dimension-brand-lockup-wordmark-offset-y: 10px;
+  /* Component plot/axis dimensions. Values are unchanged from the literals they
+     replace, so tokenisation is purely a discipline change with no visual effect. */
+  --sk-dimension-allocation-axis-min-width: 120px;
+  --sk-dimension-allocation-label-min-width: 140px;
+  --sk-dimension-allocation-plot-height: 200px;
+  --sk-dimension-allocation-plot-height-compact: 180px;
+  --sk-dimension-trend-plot-height: 200px;
+  --sk-dimension-trend-plot-height-compact: 160px;
+  --sk-dimension-backdrop-blur: 6px;
+  --sk-dimension-main-padding-inline: var(--sk-space-6);
+  --sk-dimension-main-padding-block: var(--sk-space-6);
+  --sk-dimension-onboarding-panel-max: 720px;
+  --sk-dimension-onboarding-rail-width: 280px;
+  --sk-dimension-onboarding-panel-min-height: 400px;
+  --sk-dimension-modal-width: 560px;
+  --sk-dimension-chat-panel-width: 400px;
+  --sk-dimension-verified-revenue-chart-height: 280px;
+  --sk-dimension-channel-trust-snapshot-row-count: 5;
+  --sk-dimension-channel-trust-thead-block: 88px;
+  --sk-dimension-channel-trust-logo-size: 1.4em;
+  --sk-dimension-command-center-supervisory-row-min-height: 440px;
+  --sk-dimension-nav-item-height: 40px;
+  --sk-dimension-nav-icon-size: 20px;
+  --sk-dimension-sidebar-brand-shield-size: 52px;
+  --sk-dimension-sidebar-brand-wordmark-height: 24px;
+  --sk-dimension-sidebar-brand-wordmark-max-width: 102px;
+  --sk-dimension-sidebar-brand-lockup-pull: 0px;
+  --sk-dimension-sidebar-brand-lockup-wordmark-offset-y: 0px;
+  --sk-dimension-checkbox-size: 20px;
+  --sk-dimension-icon-size-sm: 16px;
+  --sk-dimension-card-accent-width: 3px;
+  --sk-dimension-table-row-dense: 56px;
+  --sk-dimension-table-row-standard: 64px;
+  --sk-dimension-table-cell-padding-block: var(--sk-space-3);
+  --sk-dimension-table-cell-padding-inline: var(--sk-space-4);
+  --sk-dimension-target-min: 44px;
+  --sk-dimension-target-dense-min: 40px;
+  --sk-dimension-border-width: 1px;
+  --sk-dimension-icon-size: 20px;
+  --sk-dimension-table-chip-min-height: calc(var(--sk-font-size-micro) * 1.2 + var(--sk-space-2));
+  --sk-dimension-popover-min-width: 240px;
+
+  /* Responsive grid — minimum tile/card dimensions (reflow via auto-fit) */
+  --sk-grid-tile-min-width: 14rem;
+  --sk-grid-tile-min-height: 9rem;
+  --sk-grid-filter-field-min-width: 11.25rem;
+  --sk-grid-filter-field-min-width-wide: 10rem;
+  --sk-grid-dual-panel-min-width: 18rem;
+  --sk-grid-trend-panel-min-width: 22rem;
+  --sk-grid-channel-panel-min-width: 28rem;
+  --sk-grid-supervisory-trend-column: 11fr;
+  --sk-grid-supervisory-activity-column: 10fr;
+  --sk-grid-supervisory-panel-min-height: 20rem;
+  --sk-grid-activity-tile-min-width: 20rem;
+  --sk-grid-proof-field-min-width: 12rem;
+  --sk-grid-metric-column-min-width: 9.5rem;
+  --sk-grid-panel-min-width: 16rem;
+  --sk-grid-panel-min-height: 8rem;
+  --sk-grid-supervisory-stack-breakpoint: 56rem;
+  --sk-grid-header-action-min-width: 14rem;
+  --sk-grid-priority-policy-column-width: 7.5rem;
+  --sk-grid-priority-action-column-width: 9rem;
+  --sk-reflow-stack-breakpoint-tablet: 64rem;
+
+  /* Breakpoints (for JS/media queries) */
+  --sk-breakpoint-mobile-max: 767px;
+  --sk-breakpoint-tablet-min: 768px;
+  --sk-breakpoint-tablet-max: 1023px;
+  --sk-breakpoint-desktop-min: 1024px;
+  --sk-breakpoint-desktop-max: 1439px;
+  --sk-breakpoint-wide-min: 1440px;
+
+  /* Motion */
+  --sk-motion-button-hover: 120ms ease-out;
+  --sk-motion-focus: 120ms ease-out;
+  --sk-motion-tooltip: 120ms ease-out;
+  --sk-motion-drawer-open: 180ms ease-out;
+  --sk-motion-modal-open: 220ms ease-out;
+  --sk-motion-toast: 240ms ease-out;
+  --sk-motion-number-update: 250ms ease-out;
+  --sk-motion-skeleton-pulse: 1500ms;
+
+  /* Focus */
+  --sk-focus-outline-width: 2px;
+  --sk-focus-outline-color: #2563eb;
+  --sk-focus-outline-offset: 3px;
+
+  /* Legacy aliases → canonical tokens (Command Center remediation) */
+  --color-bg-page: var(--sk-color-bg-page);
+  --color-bg-sidebar: var(--sk-color-bg-sidebar);
+  --color-bg-header: var(--sk-color-bg-header);
+  --color-bg-card: var(--sk-color-bg-card);
+  --color-bg-muted: var(--sk-color-bg-muted);
+  --color-text-primary: var(--sk-color-text-primary);
+  --color-text-secondary: var(--sk-color-text-secondary);
+  --color-text-muted: var(--sk-color-text-muted);
+  --color-border-default: var(--sk-color-border-default);
+  --color-border-subtle: var(--sk-color-border-subtle);
+  --color-trust-deterministic: var(--sk-color-trust-deterministic);
+  --color-trust-probabilistic: var(--sk-color-trust-probabilistic);
+  --color-trust-benchmark: var(--sk-color-trust-benchmark);
+  --color-trust-unavailable: var(--sk-color-trust-unavailable);
+  --color-status-success: var(--sk-color-status-success);
+  --color-status-warning: var(--sk-color-status-warning);
+  --color-status-error: var(--sk-color-status-error);
+  --color-status-info: var(--sk-color-status-info);
+  --color-severity-discrepancy-imperial: var(--sk-color-severity-discrepancy-imperial);
+  --color-severity-policy-approval: var(--sk-color-severity-policy-approval);
+  --color-severity-confidence-unavailable: var(--sk-color-severity-confidence-unavailable);
+  --color-severity-benchmark-transition: var(--sk-color-severity-benchmark-transition);
+  --color-severity-integration-degraded: var(--sk-color-severity-integration-degraded);
+  --color-audit-activity-info: var(--sk-color-audit-activity-info);
+  --color-audit-activity-error: var(--sk-color-audit-activity-error);
+  --color-audit-activity-success: var(--sk-color-audit-activity-success);
+  --color-audit-activity-refresh: var(--sk-color-audit-activity-refresh);
+  --spacing-8: var(--sk-space-2);
+  --spacing-12: var(--sk-space-3);
+  --spacing-16: var(--sk-space-4);
+  --spacing-20: var(--sk-space-5);
+  --spacing-24: var(--sk-space-6);
+  --radius-card: var(--sk-radius-md);
+  --radius-sm: var(--sk-radius-sm);
+  --radius-8: var(--sk-radius-sm);
+  --font-size-h1: var(--sk-font-size-h1);
+  --font-size-h2: var(--sk-font-size-h2);
+  --font-size-h3: var(--sk-font-size-h3);
+  --font-size-body: var(--sk-font-size-body);
+  --font-size-small: var(--sk-font-size-small);
+  --target-size-min: var(--sk-dimension-target-min);
+  --space-8: var(--sk-space-2);
+  --space-12: var(--sk-space-3);
+  --font-small-size: var(--sk-font-size-small);
+  --font-small-line: var(--sk-line-height-small);
+  --font-small-weight: var(--sk-font-weight-small);
+}

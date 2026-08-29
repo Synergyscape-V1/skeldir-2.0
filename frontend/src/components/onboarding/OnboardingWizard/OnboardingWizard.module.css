@@ -1,0 +1,35 @@
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+  width: 100%;
+}
+
+.layout {
+  display: flex;
+  gap: var(--sk-space-8);
+  align-items: flex-start;
+  width: 100%;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.completePanel {
+  max-width: var(--sk-dimension-onboarding-panel-max);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+
+.actionLink {
+  color: var(--sk-color-trust-probabilistic);
+  text-decoration: underline;
+  min-height: var(--sk-dimension-target-min);
+  display: inline-flex;
+  align-items: center;
+}

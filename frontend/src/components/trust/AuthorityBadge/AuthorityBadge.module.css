@@ -1,0 +1,114 @@
+.badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sk-space-1);
+  padding: var(--sk-space-1) var(--sk-space-2);
+  border-radius: var(--sk-radius-badge);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small);
+  position: relative;
+  min-height: var(--sk-dimension-target-dense-min);
+  cursor: default;
+  font-family: inherit;
+  text-align: left;
+}
+
+.label {
+  color: inherit;
+  line-height: 1;
+  text-align: center;
+}
+
+.tooltip {
+  position: absolute;
+  top: calc(100% + var(--sk-space-1));
+  left: 0;
+  z-index: 10;
+  padding: var(--sk-space-2) var(--sk-space-3);
+  background: var(--sk-color-bg-card);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  box-shadow: var(--sk-elevation-card);
+  white-space: nowrap;
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-small);
+}
+
+.skeleton {
+  display: inline-block;
+  width: var(--sk-space-16);
+  height: var(--sk-space-6);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  animation: pulse var(--sk-motion-skeleton-pulse) infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+.deterministic {
+  color: color-mix(in srgb, var(--sk-color-trust-deterministic) 82%, white);
+  border-color: color-mix(in srgb, var(--sk-color-trust-deterministic) 16%, transparent);
+  background: color-mix(in srgb, var(--sk-color-trust-deterministic) 6%, transparent);
+}
+
+.probabilistic {
+  color: color-mix(in srgb, var(--sk-color-trust-probabilistic) 82%, white);
+  border-color: color-mix(in srgb, var(--sk-color-trust-probabilistic) 16%, transparent);
+  background: color-mix(in srgb, var(--sk-color-trust-probabilistic) 6%, transparent);
+}
+
+.benchmark {
+  color: color-mix(in srgb, var(--sk-color-trust-benchmark) 82%, white);
+  border-color: color-mix(in srgb, var(--sk-color-trust-benchmark) 16%, transparent);
+  background: color-mix(in srgb, var(--sk-color-trust-benchmark) 6%, transparent);
+}
+
+.prior,
+.unavailable,
+.suppressed {
+  color: color-mix(in srgb, var(--sk-color-trust-unavailable) 82%, white);
+  border-color: color-mix(in srgb, var(--sk-color-trust-unavailable) 16%, transparent);
+  background: color-mix(in srgb, var(--sk-color-trust-unavailable) 6%, transparent);
+}
+
+.error {
+  color: color-mix(in srgb, var(--sk-color-status-error) 82%, white);
+  border-color: color-mix(in srgb, var(--sk-color-status-error) 16%, transparent);
+  background: color-mix(in srgb, var(--sk-color-status-error) 6%, transparent);
+}
+
+.badge.pillShape {
+  display: inline-grid;
+  place-items: center;
+  gap: 0;
+  border-radius: var(--sk-radius-badge);
+  padding: var(--sk-space-1) var(--sk-space-3);
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+  width: auto;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.pillShape .label {
+  white-space: nowrap;
+}
+
+.diagnostic {
+  font-size: var(--sk-font-size-small);
+  opacity: 0.9;
+}
+
+

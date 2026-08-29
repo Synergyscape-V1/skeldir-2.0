@@ -1,0 +1,10 @@
+.header {
+  margin-bottom: var(--space-24);
+}
+
+.description {
+  margin: var(--space-8) 0 0;
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  color: var(--color-text-secondary);
+}

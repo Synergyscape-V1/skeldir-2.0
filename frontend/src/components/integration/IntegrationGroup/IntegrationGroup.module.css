@@ -1,0 +1,19 @@
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+.header p {
+  margin: 0;
+}
+
+.cards {
+  composes: dualPanelGrid from '../../../styles/responsiveGrid.module.css';
+}

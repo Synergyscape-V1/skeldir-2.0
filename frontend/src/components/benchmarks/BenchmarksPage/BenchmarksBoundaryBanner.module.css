@@ -1,0 +1,7 @@
+.banner {
+  composes: banner from '../../../styles/boundaryBanner.module.css';
+}
+
+.copy {
+  composes: copy from '../../../styles/boundaryBanner.module.css';
+}

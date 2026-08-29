@@ -1,0 +1,18 @@
+.subnav {
+  display: flex;
+  gap: var(--spacing-16);
+  margin-bottom: var(--spacing-16);
+}
+
+.subnavLink {
+  min-height: var(--target-size-min);
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-trust-probabilistic);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.subnavLink:hover {
+  text-decoration: underline;
+}

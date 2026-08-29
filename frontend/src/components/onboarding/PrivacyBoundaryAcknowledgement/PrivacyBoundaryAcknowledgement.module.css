@@ -1,0 +1,25 @@
+.acknowledgement {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sk-space-3);
+  min-height: var(--sk-dimension-target-min);
+}
+
+.checkbox {
+  width: var(--sk-dimension-checkbox-size);
+  height: var(--sk-dimension-checkbox-size);
+  margin-top: var(--sk-space-1);
+  flex-shrink: 0;
+}
+
+.label {
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-primary);
+  cursor: pointer;
+}
+
+.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

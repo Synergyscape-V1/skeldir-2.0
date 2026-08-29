@@ -1,0 +1,9 @@
+﻿
+ RUN  v4.1.9 C:/Users/ayewhy/Frontend_4/skeldir-ui
+
+
+ Test Files  3 passed (3)
+      Tests  13 passed | 113 skipped (126)
+   Start at  15:32:18
+   Duration  6.44s (transform 7.20s, setup 987ms, import 9.80s, tests 1.87s, environment 4.87s)
+

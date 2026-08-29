@@ -1,0 +1,135 @@
+.gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-3);
+  min-width: 0;
+}
+
+.compact {
+  gap: var(--sk-space-2);
+}
+
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sk-space-2);
+  flex-wrap: wrap;
+}
+
+.label {
+  font-size: var(--font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-body);
+  color: var(--color-text-primary);
+}
+
+.amount {
+  font-size: var(--font-size-h2);
+  font-weight: var(--sk-font-weight-h2);
+  line-height: 1.2;
+  color: var(--color-text-primary);
+}
+
+.amountVerified {
+  color: var(--color-text-primary);
+  font-weight: var(--sk-font-weight-h2);
+}
+
+.amountEstimated {
+  color: var(--color-text-muted);
+  font-weight: var(--sk-font-weight-body-strong);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 0.2em;
+}
+
+.amountPending {
+  color: var(--color-text-muted);
+  font-weight: var(--sk-font-weight-body-strong);
+}
+
+.amountUnavailable {
+  color: var(--color-text-muted);
+  font-weight: var(--sk-font-weight-body-strong);
+}
+
+.amountDiscrepancy {
+  color: var(--sk-color-status-error);
+  font-weight: var(--sk-font-weight-h2);
+}
+
+.alert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+  padding: var(--sk-space-3);
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-color-bg-muted);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+/*
+ * Discrepancy inline alert — footnote treatment inside the financial tile.
+ * No red surface, no border, no icon: purely textual, small and light, so it
+ * reads as a subordinate caveat beneath the verified revenue figure rather than
+ * an alarm. Trust-safety content is preserved (headline + body + aria-live).
+ */
+.alertDiscrepancy {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.alertTitleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sk-space-2);
+}
+
+.alertIcon {
+  width: var(--sk-dimension-icon-sm, 16px);
+  height: var(--sk-dimension-icon-sm, 16px);
+  color: var(--sk-color-status-warning);
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.alertIconWarning {
+  color: var(--sk-color-status-warning);
+}
+
+.alertHeadline {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-body);
+  color: var(--color-text-primary);
+}
+
+/* Footnote-scale headline for the discrepancy caveat. */
+.alertHeadlineFootnote {
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-muted);
+}
+
+.alertBody {
+  margin: 0;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--color-text-secondary);
+}
+
+.repairLink {
+  align-self: flex-start;
+  font-size: var(--font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--sk-color-link-primary);
+  text-decoration: none;
+}
+
+.repairLink:hover {
+  text-decoration: underline;
+}

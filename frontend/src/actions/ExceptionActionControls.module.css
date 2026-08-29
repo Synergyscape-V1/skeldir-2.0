@@ -1,0 +1,192 @@
+.actionPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+  width: 100%;
+}
+
+.panelHeader,
+.groupCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+  min-width: 0;
+}
+
+.panelHeading,
+.groupHeading,
+.panelIntro,
+.groupBody {
+  margin: 0;
+}
+
+.panelHeading {
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-body);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-body);
+}
+
+.panelIntro,
+.groupBody {
+  max-width: 42rem;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+}
+
+.groupHeading {
+  color: var(--sk-color-text-primary);
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-small);
+}
+
+.primaryRow,
+.actionGroup,
+.followUpGroup {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.9fr) minmax(20rem, 1.1fr);
+  gap: var(--sk-space-4);
+  align-items: center;
+}
+
+.primaryRow,
+.actionGroup,
+.followUpGroup {
+  padding-top: var(--sk-space-4);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+}
+
+.primaryRow > [data-governed-action-control] {
+  align-items: flex-end;
+}
+
+.buttonGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sk-space-2);
+  min-width: 0;
+}
+
+.buttonGrid [data-governed-action-control] {
+  height: 100%;
+}
+
+.buttonGrid > [data-governed-action-control] > button {
+  width: 100%;
+  height: 100%;
+}
+
+/* Same filled CTA substrate as Command Center “Review issues”. */
+.primaryAction {
+  composes: primaryAction from '../styles/primaryAction.module.css';
+}
+
+.secondaryAction,
+.quietAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sk-space-2);
+  min-height: var(--sk-dimension-target-min);
+  max-width: 100%;
+  padding: 0 var(--sk-space-3);
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  border-radius: var(--sk-radius-sm);
+  font-family: var(--sk-font-family-inter);
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  line-height: var(--sk-line-height-small);
+  text-align: center;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.secondaryAction {
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+}
+
+.secondaryAction:hover:not(:disabled) {
+  background: var(--sk-color-bg-muted);
+  border-color: var(--sk-color-text-secondary);
+}
+
+.quietAction {
+  border-color: transparent;
+  background: transparent;
+  color: var(--sk-color-text-secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--sk-color-border-default);
+  text-underline-offset: var(--sk-space-1);
+}
+
+.quietAction:hover:not(:disabled) {
+  border-color: var(--sk-color-border-default);
+  background: var(--sk-color-bg-card);
+  color: var(--sk-color-text-primary);
+  text-decoration-color: currentColor;
+}
+
+.secondaryAction:disabled,
+.quietAction:disabled {
+  border-color: var(--sk-color-border-default);
+  background: var(--sk-color-bg-muted);
+  color: var(--sk-color-text-secondary);
+  opacity: 1;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+@media (max-width: 767px) {
+  .primaryRow,
+  .actionGroup,
+  .followUpGroup {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .primaryRow > [data-governed-action-control] {
+    align-items: stretch;
+  }
+
+  .primaryAction {
+    width: 100%;
+    min-height: var(--sk-dimension-target-min);
+  }
+
+  .buttonGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.grid {
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: flex-start;
+
+  gap: var(--sk-space-2);
+
+}
+
+
+
+/**
+
+ * Same filled CTA DNA as Command Center GlobalPrimaryActionButton
+
+ * (`styles/primaryAction.module.css` / Overview “Review issues”).
+
+ */
+
+.primaryAction {
+
+  composes: primaryAction from '../styles/primaryAction.module.css';
+
+}
+
+

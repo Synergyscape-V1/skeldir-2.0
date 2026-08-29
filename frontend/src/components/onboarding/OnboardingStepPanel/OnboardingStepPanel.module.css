@@ -1,0 +1,26 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  max-width: var(--sk-dimension-onboarding-panel-max);
+  width: 100%;
+  min-height: var(--sk-dimension-onboarding-panel-min-height);
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-6);
+}
+
+.heading {
+  margin: 0;
+}
+
+.body {
+  margin: 0;
+  color: var(--sk-color-text-secondary);
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+}

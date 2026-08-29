@@ -1,0 +1,27 @@
+.section {
+  margin-top: var(--space-24);
+}
+
+.label {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-h3-size);
+  line-height: var(--font-h3-line);
+  font-weight: var(--font-h3-weight);
+}
+
+.pre {
+  margin: 0;
+  padding: var(--space-16);
+  background: var(--color-bg-muted);
+  border-radius: var(--radius-8);
+  overflow-x: auto;
+  font-family: var(--font-code-family);
+  font-size: var(--font-code-size);
+  line-height: var(--font-code-line);
+}
+
+.hidden {
+  margin: var(--space-16) 0 0;
+  font-size: var(--font-small-size);
+  color: var(--color-text-secondary);
+}

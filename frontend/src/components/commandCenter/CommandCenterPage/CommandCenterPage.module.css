@@ -1,0 +1,79 @@
+.CommandCenterPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+}
+
+.contentRail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+  width: 100%;
+  min-width: 0;
+}
+
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+.headerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-16);
+}
+
+.permissionDenied {
+  padding: var(--spacing-24);
+}
+
+.retryButton {
+  min-height: var(--target-size-min);
+  padding: var(--spacing-8) var(--spacing-16);
+}
+
+.skeletonBlock {
+  min-height: calc(var(--sk-space-12) + var(--sk-space-16));
+}
+
+.proofSurfaceBand {
+  display: grid;
+  gap: var(--sk-space-8);
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+}
+
+.proofSurfaceTopRow {
+  composes: supervisoryGrid from '../../../styles/responsiveGrid.module.css';
+  min-width: 0;
+}
+
+.proofEnvelopesSlot,
+.proofChannelSlot {
+  min-width: 0;
+}
+
+.proofChannelSlot {
+  margin-top: var(--sk-space-3);
+}
+
+@media (min-width: 56rem) {
+  .proofSurfaceBand {
+    grid-template-columns:
+      minmax(var(--sk-grid-trend-panel-min-width), 2fr)
+      minmax(var(--sk-grid-channel-panel-min-width), 3.5fr);
+  }
+
+  .proofSurfaceTopRow {
+    grid-column: 1 / -1;
+  }
+
+  .proofEnvelopesSlot,
+  .proofChannelSlot {
+    grid-column: 1 / -1;
+  }
+}

@@ -1,0 +1,8 @@
+.card {
+  composes: elevatedPanel from '../budgetPanel.module.css';
+}
+
+.grid {
+  composes: dualPanelGrid from '../../../styles/responsiveGrid.module.css';
+}
+

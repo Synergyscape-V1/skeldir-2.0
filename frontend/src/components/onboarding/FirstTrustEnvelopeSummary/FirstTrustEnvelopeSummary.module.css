@@ -1,0 +1,326 @@
+.summary {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-24);
+
+  padding: var(--spacing-24);
+
+  border: 1px solid var(--color-border-default);
+
+  border-radius: var(--radius-card);
+
+  background: var(--color-bg-card);
+
+}
+
+
+
+.primaryRegion {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+  padding-bottom: var(--spacing-16);
+
+  border-bottom: var(--sk-dimension-card-accent-width) solid var(--color-trust-deterministic);
+
+}
+
+
+
+.primaryHeading {
+
+  margin: 0;
+
+  font-size: var(--sk-font-size-h2);
+
+  line-height: var(--sk-line-height-h2);
+
+  font-weight: 600;
+
+  color: var(--color-text-primary);
+
+}
+
+
+
+.subordinateRegion,
+
+.governanceRegion,
+
+.auditRegion {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+}
+
+
+
+.subordinateHeading {
+
+  margin: 0;
+
+  font-size: var(--sk-font-size-h3);
+
+  line-height: var(--sk-line-height-h3);
+
+  font-weight: 500;
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+.metadataRegion {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+  padding-top: var(--spacing-16);
+
+  border-top: 1px solid var(--color-border-muted);
+
+}
+
+
+
+.metadataHeading {
+
+  margin: 0;
+
+  font-size: var(--font-size-small);
+
+  line-height: var(--line-height-small);
+
+  font-weight: 500;
+
+  color: var(--color-text-muted);
+
+}
+
+
+
+.label {
+
+  font-size: var(--font-size-small);
+
+  line-height: var(--line-height-small);
+
+  font-weight: 500;
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+.value {
+
+  font-size: var(--font-size-body);
+
+  line-height: var(--line-height-body);
+
+  color: var(--color-text-primary);
+
+}
+
+
+
+.mono {
+
+  font-family: var(--font-family-code);
+
+  font-size: var(--font-size-code);
+
+  word-break: break-all;
+
+  color: var(--color-text-muted);
+
+}
+
+
+
+.subjectRef,
+
+.generatedAt {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-4);
+
+}
+
+
+
+.attributionNote {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-muted);
+
+}
+
+
+
+.auditLink {
+
+  color: var(--color-trust-probabilistic);
+
+  text-decoration: underline;
+
+  min-height: var(--target-size-min);
+
+  display: inline-flex;
+
+  align-items: center;
+
+}
+
+
+
+.hashSection {
+
+  margin-top: var(--spacing-8);
+
+}
+
+
+
+.confidenceShape {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: var(--spacing-8);
+
+}
+
+
+
+.confidenceReason {
+
+  font-size: var(--font-size-body);
+
+  color: var(--color-text-primary);
+
+}
+
+
+
+.confidenceMeta {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+.metaLabel {
+
+  font-weight: 500;
+
+  margin-right: var(--spacing-4);
+
+}
+
+
+
+.interval,
+
+.intervalNumeric {
+
+  font-size: var(--font-size-body);
+
+  font-weight: 500;
+
+  color: var(--color-trust-probabilistic);
+
+}
+
+
+
+.uncertainty,
+
+.qualitativeState {
+
+  font-size: var(--font-size-small);
+
+  color: var(--color-text-secondary);
+
+}
+
+
+
+[data-authority-tier='deterministic-primary'] {
+
+  order: 1;
+
+}
+
+
+
+[data-authority-tier='model-output'] {
+
+  order: 2;
+
+}
+
+
+
+[data-authority-tier='probabilistic-subordinate'] {
+
+  order: 3;
+
+}
+
+
+
+[data-authority-tier='benchmark-subordinate'] {
+
+  order: 4;
+
+}
+
+
+
+[data-authority-tier='policy-governance'] {
+
+  order: 5;
+
+}
+
+
+
+[data-authority-tier='audit-reference'] {
+
+  order: 6;
+
+}
+
+
+
+[data-authority-tier='metadata-subordinate'] {
+
+  order: 7;
+
+}
+

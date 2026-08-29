@@ -1,0 +1,16 @@
+{
+  "gridTemplateColumns": "464px 464px",
+  "gap": "24px",
+  "children": [
+    {
+      "width": 464,
+      "trend": "true",
+      "channel": null
+    },
+    {
+      "width": 464,
+      "trend": null,
+      "channel": "true"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+.panel {
+  display: grid;
+  gap: var(--sk-space-2);
+}
+
+.label {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-font-size-h3);
+  font-weight: 500;
+  color: var(--color-text-muted, var(--sk-color-text-muted));
+}

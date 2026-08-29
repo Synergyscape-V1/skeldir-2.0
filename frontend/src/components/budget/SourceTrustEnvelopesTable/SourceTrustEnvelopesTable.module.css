@@ -1,0 +1,59 @@
+.panel {
+
+  composes: elevatedPanel from '../budgetPanel.module.css';
+
+  padding: 0;
+
+  gap: 0;
+
+  overflow: hidden;
+
+}
+
+
+
+.code {
+
+  font-family: var(--sk-font-family-mono);
+
+  font-size: var(--sk-font-size-code);
+
+}
+
+
+
+.channelDot {
+
+  width: var(--sk-space-2);
+
+  height: var(--sk-space-2);
+
+  border-radius: 50%;
+
+  flex-shrink: 0;
+
+}
+
+
+
+.openButton {
+
+  min-height: var(--sk-dimension-target-min);
+
+  padding: 0 var(--sk-space-3);
+
+  border: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+
+  border-radius: var(--sk-radius-sm);
+
+  background: var(--sk-color-bg-card);
+
+  color: var(--sk-color-trust-probabilistic);
+
+  font-size: var(--sk-font-size-small);
+
+  cursor: pointer;
+
+}
+
+

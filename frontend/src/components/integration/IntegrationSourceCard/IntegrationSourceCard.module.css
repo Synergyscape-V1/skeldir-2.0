@@ -1,0 +1,87 @@
+.sourceCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-4);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-2);
+}
+
+.titleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--sk-space-3);
+  min-width: 0;
+}
+
+.identity [data-channel-logo] {
+  width: var(--sk-dimension-channel-trust-logo-size);
+  height: var(--sk-dimension-channel-trust-logo-size);
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.identity [data-channel-logo='woocommerce'] {
+  width: 2.1em;
+  height: 1.25em;
+}
+
+.identity [data-channel-logo='paypal'] {
+  width: 1.15em;
+  height: 1.4em;
+}
+
+.title {
+  margin: 0;
+}
+
+.authorityCopy {
+  margin: 0;
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.metaGrid {
+  display: grid;
+  gap: var(--sk-space-2);
+}
+
+.metaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+  font-size: var(--sk-font-size-small);
+  line-height: var(--sk-line-height-small);
+}
+
+.metaLabel {
+  color: var(--sk-color-text-muted);
+}
+
+.metaValue {
+  color: var(--sk-color-text-secondary);
+  text-align: right;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sk-space-3);
+  align-items: center;
+}
+
+.unknownError {
+  color: var(--sk-color-status-error);
+  font-size: var(--sk-font-size-small);
+}

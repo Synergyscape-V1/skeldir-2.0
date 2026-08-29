@@ -1,0 +1,33 @@
+.meta {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.value {
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.valueStrong {
+  font-weight: var(--sk-font-weight-h3);
+  color: var(--sk-color-text-primary);
+}
+
+.reason {
+  font-size: var(--sk-font-size-small);
+  margin: var(--sk-space-1) 0 0;
+}
+
+.transition {
+  display: block;
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-status-warning);
+  margin-top: var(--sk-space-1);
+}
+
+.available {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}

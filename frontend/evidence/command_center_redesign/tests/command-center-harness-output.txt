@@ -1,0 +1,13 @@
+﻿
+> skeldir-ui@0.0.0 test
+> vitest run --run src/test/commandCenterRedesign.harness.test.tsx
+
+
+ RUN  v4.1.9 C:/Users/ayewhy/Frontend_4/skeldir-ui
+
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  12:59:24
+   Duration  6.19s (transform 2.61s, setup 345ms, import 3.15s, tests 878ms, environment 1.57s)
+

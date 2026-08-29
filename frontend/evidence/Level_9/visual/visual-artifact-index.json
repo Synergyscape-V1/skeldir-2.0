@@ -1,0 +1,52 @@
+[
+  {
+    "file": "claim-export-flow-mobile.png",
+    "viewport": "mobile",
+    "specimen": "claim-export-flow"
+  },
+  {
+    "file": "trust-envelope-actions-mobile.png",
+    "viewport": "mobile",
+    "specimen": "trust-envelope-actions"
+  },
+  {
+    "file": "audit-export-flow-mobile.png",
+    "viewport": "mobile",
+    "specimen": "audit-export-flow"
+  },
+  {
+    "file": "budget-proposal-flow-mobile.png",
+    "viewport": "mobile",
+    "specimen": "budget-proposal-flow"
+  },
+  {
+    "file": "exceptions-queue-mobile.png",
+    "viewport": "mobile",
+    "specimen": "exceptions-queue"
+  },
+  {
+    "file": "claim-export-flow-desktop.png",
+    "viewport": "desktop",
+    "specimen": "claim-export-flow"
+  },
+  {
+    "file": "trust-envelope-actions-desktop.png",
+    "viewport": "desktop",
+    "specimen": "trust-envelope-actions"
+  },
+  {
+    "file": "audit-export-flow-desktop.png",
+    "viewport": "desktop",
+    "specimen": "audit-export-flow"
+  },
+  {
+    "file": "budget-proposal-flow-desktop.png",
+    "viewport": "desktop",
+    "specimen": "budget-proposal-flow"
+  },
+  {
+    "file": "exceptions-queue-desktop.png",
+    "viewport": "desktop",
+    "specimen": "exceptions-queue"
+  }
+]

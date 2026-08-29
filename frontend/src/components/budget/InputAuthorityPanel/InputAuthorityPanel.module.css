@@ -1,0 +1,62 @@
+.panel {
+  composes: elevatedPanel from '../budgetPanel.module.css';
+  min-width: 20rem;
+}
+
+.eligible {
+  border-color: var(--sk-color-status-success);
+}
+
+.partial {
+  border-color: var(--sk-color-status-warning);
+}
+
+.blocked {
+  border-color: var(--sk-color-status-error);
+}
+
+.loading,
+.neutral {
+  border-color: var(--sk-color-border-default);
+}
+
+.headerRow {
+  composes: governanceHeaderRow from '../budgetPanel.module.css';
+}
+
+.title {
+  composes: panelTitle from '../budgetPanel.module.css';
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-secondary);
+}
+
+.details {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-3);
+}
+
+.details div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sk-space-1);
+}
+
+.details dt {
+  font-size: var(--sk-font-size-small);
+  font-weight: var(--sk-font-weight-small);
+  color: var(--sk-color-text-secondary);
+}
+
+.details dd {
+  margin: 0;
+  font-size: var(--sk-font-size-body);
+  line-height: var(--sk-line-height-body);
+  color: var(--sk-color-text-primary);
+}

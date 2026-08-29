@@ -1,0 +1,22 @@
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sk-space-4);
+  padding-top: var(--sk-space-6);
+  border-top: var(--sk-dimension-border-width) solid var(--sk-color-border-default);
+  margin-top: auto;
+}
+
+.blockedReason {
+  margin: 0 0 var(--sk-space-3);
+  font-size: var(--sk-font-size-small);
+  color: var(--sk-color-status-warning);
+}
+
+.liveRegion {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

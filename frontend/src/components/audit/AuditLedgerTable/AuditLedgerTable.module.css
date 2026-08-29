@@ -1,0 +1,57 @@
+.openButton {
+  min-height: var(--target-size-min);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  font-size: var(--font-small-size);
+  cursor: pointer;
+}
+
+.invalidSignature {
+  color: var(--color-status-error);
+  font-weight: var(--font-small-weight);
+}
+
+.tableCard {
+  composes: tableCard from '../../../styles/supervisoryTable.module.css';
+}
+
+.tableHeader {
+  composes: tableHeader from '../../../styles/supervisoryTable.module.css';
+  align-items: flex-start;
+}
+
+.tableHeading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-width: 0;
+}
+
+.sectionTitle {
+  composes: sectionTitle from '../../../styles/supervisoryTable.module.css';
+}
+
+.sectionSubtitle {
+  margin: 0;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--font-weight-body);
+  color: var(--color-text-secondary);
+}
+
+.tableWrap {
+  composes: tableWrapStandard from '../../../styles/supervisoryTable.module.css';
+}
+
+.selectedRow {
+  background: var(--color-bg-muted);
+}
+
+@media (hover: hover) {
+  .selectedRow:hover {
+    background: color-mix(in srgb, var(--color-bg-muted) 82%, var(--color-border-default));
+  }
+}

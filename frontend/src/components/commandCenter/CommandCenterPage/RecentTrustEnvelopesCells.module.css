@@ -1,0 +1,83 @@
+.subjectRef {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  font-family: var(--sk-font-family-code);
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  letter-spacing: 0.01em;
+  color: var(--color-text-primary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.verifiedRevenue {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-body-strong);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.matchVerdict {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small-strong);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.policyCell {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.policyCell [data-status-text] {
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trustSignalBlank {
+  display: inline-block;
+  min-height: 1.125rem;
+  min-width: 0;
+}
+
+.trustSignalUnavailable {
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+  line-height: var(--sk-line-height-small);
+  font-weight: var(--sk-font-weight-small-strong);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trustSignalTransition {
+  composes: trustSignalUnavailable;
+  color: var(--color-status-error);
+}
+
+.interactiveRow {
+  composes: interactiveRow from '../../../styles/supervisoryTable.module.css';
+}

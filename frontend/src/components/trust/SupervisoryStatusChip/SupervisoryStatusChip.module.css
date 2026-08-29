@@ -1,0 +1,19 @@
+.success {
+  composes: toneSuccess from '../../../styles/trustChip.module.css';
+}
+
+.error {
+  composes: toneError from '../../../styles/trustChip.module.css';
+}
+
+.warning {
+  composes: toneWarning from '../../../styles/trustChip.module.css';
+}
+
+.neutral {
+  composes: toneNeutral from '../../../styles/trustChip.module.css';
+}
+
+.chip {
+  composes: chip table compact from '../../../styles/trustChip.module.css';
+}
