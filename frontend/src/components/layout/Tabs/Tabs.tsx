@@ -20,23 +20,11 @@ export interface TabsProps {
 export function Tabs({ items, activeId, onChange, unknownType }: TabsProps) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  if (unknownType) {
-    return (
-      <div className={shared.errorState} role="alert">
-        {ERROR_COPY.configurationError}
-      </div>
-    );
-  }
-
-  if (!items.length) {
-    return (
-      <div className={shared.errorState} role="alert">
-        {ERROR_COPY.missingRequiredProp('items')}
-      </div>
-    );
-  }
-
-  const resolvedActive = activeId && items.some((i) => i.id === activeId) ? activeId : items[0].id;
+  // Derived values and the key handler are established before any early return so
+  // the hook order is identical on every render (React rules-of-hooks). Both are
+  // safe for an empty items array; the empty case still returns early below.
+  const resolvedActive =
+    activeId && items.some((i) => i.id === activeId) ? activeId : items[0]?.id;
   const activeIndex = items.findIndex((i) => i.id === resolvedActive);
 
   const focusTab = (index: number) => {
@@ -45,6 +33,7 @@ export function Tabs({ items, activeId, onChange, unknownType }: TabsProps) {
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
+      if (!items.length) return;
       if (event.key === 'ArrowRight') {
         event.preventDefault();
         const next = (activeIndex + 1) % items.length;
@@ -67,6 +56,22 @@ export function Tabs({ items, activeId, onChange, unknownType }: TabsProps) {
     },
     [activeIndex, items, onChange],
   );
+
+  if (unknownType) {
+    return (
+      <div className={shared.errorState} role="alert">
+        {ERROR_COPY.configurationError}
+      </div>
+    );
+  }
+
+  if (!items.length) {
+    return (
+      <div className={shared.errorState} role="alert">
+        {ERROR_COPY.missingRequiredProp('items')}
+      </div>
+    );
+  }
 
   const activePanel = items.find((i) => i.id === resolvedActive);
 

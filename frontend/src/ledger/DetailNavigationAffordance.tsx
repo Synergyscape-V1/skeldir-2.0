@@ -35,6 +35,10 @@ export function DetailNavigationAffordance({
   detailPath,
   disabled = false,
 }: DetailNavigationAffordanceProps) {
+  // Called before the early return so hook order is identical on every render
+  // (React rules-of-hooks); the branch below reads the value instead of calling.
+  const inRouter = useInRouterContext();
+
   if (disabled) {
     return (
       <button
@@ -49,7 +53,7 @@ export function DetailNavigationAffordance({
     );
   }
 
-  if (useInRouterContext()) {
+  if (inRouter) {
     return (
       <DetailNavigationLink
         surfaceLabel={surfaceLabel}

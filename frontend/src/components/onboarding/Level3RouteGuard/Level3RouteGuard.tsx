@@ -24,9 +24,12 @@ export interface Level3RouteGuardProps {
 
 export function Level3RouteGuard({ children, mode }: Level3RouteGuardProps) {
 
-  if (mode === 'onboarding-step') {
+  // Read route params unconditionally so hook order is identical on every render
+  // (React rules-of-hooks). useParams only reads router context, so calling it in
+  // the 'integrations' mode is harmless; the branch below is unchanged.
+  const { step } = useParams<{ step: string }>();
 
-    const { step } = useParams<{ step: string }>();
+  if (mode === 'onboarding-step') {
 
     const parsed = parseOnboardingStep(step);
 
