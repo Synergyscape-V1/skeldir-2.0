@@ -113,6 +113,11 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p13_c12_authority_closure.py",
     "backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py",
     "backend/tests/trust/test_b25_p13_c14_semantic_authority.py",
+    # B2.5-P13 Corrective XV: the issuance-authority ledger and its
+    # falsifiers. Declared here for the same reason as the C14 surface --
+    # they are post-P1 trust closure, not P1 runtime drift.
+    "backend/app/trust/issuance_authority_ledger.py",
+    "backend/tests/trust/test_b25_p13_c15_issuance_truth.py",
 )
 
 

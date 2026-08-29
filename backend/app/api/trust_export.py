@@ -20,7 +20,11 @@ from app.api.trust_api import (
     machine_bearer,
 )
 from app.db import session as db_session
-from app.trust.audit import build_unsigned_trust_envelope_with_audit
+from app.trust.audit import (
+    build_unsigned_trust_envelope_with_audit,
+    record_trust_issuance_completed,
+    record_trust_issuance_failed,
+)
 from app.trust.builder import TrustEnvelopeBuildRequest
 from app.trust.export_artifact import build_export_artifact, sign_export_artifact
 from app.trust.key_registry import TrustKeyRegistry
@@ -284,12 +288,26 @@ async def _issue_export_envelope(
     )
     if result.authorized_envelope is None:
         return None
-    signed = await asyncio.to_thread(
-        sign_trust_envelope,
-        result.authorized_envelope,
-        key_registry=key_registry,
+    # B2.5-P13 Corrective XV (H-XV-02/03): the durable record says 'authorized'
+    # until a signature physically exists, on the export path as on the read path.
+    try:
+        signed = await asyncio.to_thread(
+            sign_trust_envelope,
+            result.authorized_envelope,
+            key_registry=key_registry,
+        )
+        _assert_external_payload_safe(signed)
+    except BaseException:
+        await record_trust_issuance_failed(
+            tenant_id=caller.tenant_id,
+            audit_ref=result.audit_record.audit_ref,
+        )
+        raise
+    await record_trust_issuance_completed(
+        tenant_id=caller.tenant_id,
+        audit_ref=result.audit_record.audit_ref,
+        signed_envelope=signed,
     )
-    _assert_external_payload_safe(signed)
     return signed
 
 

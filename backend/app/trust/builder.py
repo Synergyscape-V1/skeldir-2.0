@@ -17,6 +17,11 @@ from app.confidence_projection.policy import (
 from app.trust.benchmark_defaults import unavailable_benchmark_metadata
 from app.trust.canonicalization import canonicalize_envelope_payload
 from app.trust.hash_identity import compute_semantic_truth_hash, compute_signature_hash
+from app.trust.issuance_authority_ledger import (
+    IssuanceAuthorityLedgerError,
+    mint_build_witness_authority,
+    redeem_build_witness_authority,
+)
 from app.trust.money_source_adapter import (
     AuthoritativeMoneyMinor,
     MoneyAuthorityDecision,
@@ -101,28 +106,42 @@ class TrustEnvelopeBuildResult:
     authority_witness: TrustEnvelopeBuildWitness | None
 
 
-_BUILD_WITNESS_SEAL = object()
-
-
 @dataclass(frozen=True, slots=True)
 class TrustEnvelopeBuildWitness:
-    """Immutable proof that P5 produced these exact authoritative bytes."""
+    """Immutable proof that P5 produced these exact authoritative bytes.
 
-    canonical_payload: bytes
+    B2.5-P13 Corrective XV (H-XV-01): ``canonical_payload`` is no longer carried
+    on the instance. It lives in the closure-private ledger and is addressed by
+    ``_authority_handle``, a 256-bit value the ledger issued. A witness
+    fabricated by ``object.__new__``, by the constructor, or by transplanting an
+    attribute off a donor therefore resolves to nothing and fails closed --
+    where the previous module-level ``object()`` seal was importable and
+    ``getattr``-retrievable, and so proved only that the caller had read the
+    module.
+    """
+
     tenant_id_hash: str
     subject_type: str
     subject_ref: str
     subject_ref_hash: str
     source_snapshot_hash: str
     field_authority_names: tuple[str, ...]
-    _seal: object = field(repr=False, compare=False)
+    _authority_handle: str = field(repr=False, compare=False)
+
+    @property
+    def canonical_payload(self) -> bytes:
+        """Resolve the authoritative P5 bytes from the issuing ledger."""
+
+        return redeem_build_witness_authority(self._authority_handle, consume=False)
 
     def assert_authoritative_payload(self, payload: dict[str, Any]) -> None:
         """Reject fabricated witnesses and any mutation after P5 construction."""
 
-        if self._seal is not _BUILD_WITNESS_SEAL:
-            raise TrustEnvelopeBuildError("builder_authority_witness_invalid")
-        if canonicalize_envelope_payload(payload) != self.canonical_payload:
+        try:
+            authoritative = self.canonical_payload
+        except IssuanceAuthorityLedgerError as exc:
+            raise TrustEnvelopeBuildError("builder_authority_witness_invalid") from exc
+        if canonicalize_envelope_payload(payload) != authoritative:
             raise TrustEnvelopeBuildError("builder_authority_payload_mismatch")
 
 
@@ -153,14 +172,15 @@ def _build_authority_witness(
     if not isinstance(source_snapshot_hash, str):
         raise TrustEnvelopeBuildError("builder_source_snapshot_hash_required")
     return TrustEnvelopeBuildWitness(
-        canonical_payload=canonicalize_envelope_payload(payload),
         tenant_id_hash=witness_fields["tenant_id_hash"],
         subject_type=witness_fields["subject_type"],
         subject_ref=witness_fields["subject_ref"],
         subject_ref_hash=witness_fields["subject_ref_hash"],
         source_snapshot_hash=source_snapshot_hash,
         field_authority_names=tuple(row.field_name for row in decisions),
-        _seal=_BUILD_WITNESS_SEAL,
+        _authority_handle=mint_build_witness_authority(
+            canonicalize_envelope_payload(payload)
+        ),
     )
 
 

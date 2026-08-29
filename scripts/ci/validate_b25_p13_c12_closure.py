@@ -34,6 +34,9 @@ LOAD_BEARING_JOBS = {
     "b2-5-p13-c10-artifact-topology",
     "b2-5-p13-c13-semantic-history",
     "b2-5-p13-c14-semantic-authority",
+    # B2.5-P13 Corrective XV: issuance-capability inescapability, durable
+    # audit truth, and historical HTTP serviceability are merge-governing.
+    "b2-5-p13-c15-issuance-truth",
 }
 
 

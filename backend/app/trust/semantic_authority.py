@@ -24,6 +24,11 @@ from app.trust.canonicalization import (
     encode_envelope_structure_snapshot,
 )
 from app.trust.hash_identity import compute_semantic_truth_hash, compute_signature_hash
+from app.trust.issuance_authority_ledger import (
+    IssuanceAuthorityLedgerError,
+    mint_issuance_capability,
+    redeem_issuance_capability,
+)
 from app.trust.money_source_adapter import AuthoritativeMoneyMinor
 from app.trust.provenance import replace_audit_provenance_entries
 from app.trust.refusal import tagged_sha256
@@ -82,28 +87,44 @@ TRUST_ENVELOPE_AUTHORITY_FIELDS = frozenset(
     }
 )
 
-_CAPABILITY_SEAL = object()
-
-
 class TrustSemanticAuthorityError(ValueError):
     """Raised before crypto when a Trust claim lacks semantic authority."""
 
 
 @dataclass(frozen=True, slots=True)
 class AuthorizedTrustEnvelope:
-    """Immutable, content-addressed capability required by the private signer."""
+    """Single-use capability required by the private signer.
 
-    _payload_snapshot: bytes = field(repr=False)
+    B2.5-P13 Corrective XV (H-XV-01). The previous shape carried
+    ``_payload_snapshot`` on the instance and validated it against
+    ``authority_proof_hash`` -- a hash of the very bytes the holder supplied.
+    That proved self-consistency, not provenance: any caller could author a
+    payload, compute the matching hash with the importable
+    ``_authority_proof_hash``, attach the importable ``_CAPABILITY_SEAL``, and
+    obtain a real signature over fabricated money. Three independent
+    constructions were shown to do exactly that.
+
+    The capability now carries **no payload at all**. ``_authority_handle``
+    addresses bytes held in the closure-private issuance ledger, so the signer
+    reads the authoritative claim from the mint record rather than from the
+    object it was handed. Redemption is single-use, which makes one authorised
+    mint physically redeemable exactly once.
+    """
+
     authority_proof_hash: str
     authority_manifest_version: str
-    _seal: object = field(repr=False, compare=False)
+    _authority_handle: str = field(repr=False, compare=False)
 
-    def _validated_payload_copy(self) -> dict[str, Any]:
-        if self._seal is not _CAPABILITY_SEAL:
-            raise TrustSemanticAuthorityError("issuance_capability_invalid")
+    def _resolve_authoritative_payload(self, *, consume: bool) -> dict[str, Any]:
         if self.authority_manifest_version != AUTHORITY_MANIFEST_VERSION:
             raise TrustSemanticAuthorityError("issuance_capability_manifest_mismatch")
-        decoded = json.loads(self._payload_snapshot.decode("utf-8"))
+        try:
+            snapshot = redeem_issuance_capability(
+                self._authority_handle, consume=consume
+            )
+        except IssuanceAuthorityLedgerError as exc:
+            raise TrustSemanticAuthorityError("issuance_capability_invalid") from exc
+        decoded = json.loads(snapshot.decode("utf-8"))
         if not isinstance(decoded, dict):
             raise TrustSemanticAuthorityError("issuance_capability_payload_invalid")
         expected = _authority_proof_hash(canonicalize_envelope_payload(decoded))
@@ -111,10 +132,18 @@ class AuthorizedTrustEnvelope:
             raise TrustSemanticAuthorityError("issuance_capability_content_mismatch")
         return decoded
 
-    def external_payload_copy(self) -> dict[str, Any]:
-        """Return an isolated projection; mutations cannot alter this capability."""
+    def _validated_payload_copy(self) -> dict[str, Any]:
+        """Redeem for the private-key boundary. Single use, by construction."""
 
-        return self._validated_payload_copy()
+        return self._resolve_authoritative_payload(consume=True)
+
+    def external_payload_copy(self) -> dict[str, Any]:
+        """Return an isolated projection; mutations cannot alter this capability.
+
+        Non-consuming: reading the claim must not spend the right to sign it.
+        """
+
+        return self._resolve_authoritative_payload(consume=False)
 
 
 def _authority_proof_hash(canonical_payload: bytes) -> str:
@@ -404,8 +433,7 @@ def _authorize_audited_trust_envelope(
     validate_trust_semantic_authority(audited_payload, build_result=build_result)
     payload_snapshot = encode_envelope_structure_snapshot(audited_payload)
     return AuthorizedTrustEnvelope(
-        _payload_snapshot=payload_snapshot,
         authority_proof_hash=_authority_proof_hash(actual_bytes),
         authority_manifest_version=AUTHORITY_MANIFEST_VERSION,
-        _seal=_CAPABILITY_SEAL,
+        _authority_handle=mint_issuance_capability(payload_snapshot),
     )

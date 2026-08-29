@@ -1842,6 +1842,195 @@ jobs:
           python -m pytest backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py \
             -q --no-header -k direct_signer_refuses_semantic_forgery
 
+  # B2.5-P13 Corrective XV. Three properties were falsified against protected
+  # main at 0941d3599 and are now merge-governing: signing capability could be
+  # minted outside the authorised P5->P7 path over a caller-authored payload
+  # carrying fabricated money (H-XV-01); durable audit history claimed completed
+  # issuance for requests whose signature never physically existed (H-XV-02/03);
+  # and historical serviceability over the real HTTP boundary was never probed
+  # (H-XV-10). This job needs real PostgreSQL because the durable-truth and
+  # historical journeys are physical claims, not source-shape claims.
+  b2-5-p13-c15-issuance-truth:
+    name: B2.5-P13 C15 Issuance Capability and Audit Truth
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p13_c15
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c15
+      B24_DISPATCH_PUBLISHER_DATABASE_URL: postgresql://app_dispatch_publisher:app_dispatch_publisher@127.0.0.1:5432/skeldir_b25_p13_c15
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      SKELDIR_B25_P13_E2E_PROOF: "1"
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Provision least-privilege database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p13_c15
+
+      # Asserted, not assumed: a superuser connection would make the tenant
+      # containment leg of the historical journey pass for the wrong reason.
+      - name: Assert the runtime identity cannot bypass RLS
+        run: |
+          set -o pipefail
+          bypass=$(psql "$DATABASE_URL" -tAc "SELECT COALESCE((SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user), true)")
+          echo "runtime_role_bypassrls=$bypass"
+          test "$bypass" = "f"
+
+      - name: C15 issuance capability, audit truth, and historical serviceability
+        run: |
+          set -o pipefail
+          python -m pytest backend/tests/trust/test_b25_p13_c15_issuance_truth.py \
+            -q -s --no-header | tee /tmp/c15-issuance-truth.out
+          grep -E '13 passed' /tmp/c15-issuance-truth.out
+
+          # Pinned exactly. A falsifier that stops being exercised must turn this
+          # red rather than quietly shrink a number nobody reads.
+          grep -E '^c15_capability_bypass_refusals=7$' /tmp/c15-issuance-truth.out
+          grep -E '^c15_issuance_truth_observations=6$' /tmp/c15-issuance-truth.out
+          grep -E '^c15_issuance_states=\{"failed": 2, "issued": 1\}$' /tmp/c15-issuance-truth.out
+          grep -E '^c15_db_completion_constraint_enforced=1$' /tmp/c15-issuance-truth.out
+          grep -E '^c15_retry_lineage_rows=1$' /tmp/c15-issuance-truth.out
+          grep -E '^c15_historical_serviceability_observations=8$' /tmp/c15-issuance-truth.out
+          grep -E '^c15_historical_tamper_rejected=1$' /tmp/c15-issuance-truth.out
+
+      - name: C15 static closure and open-world negative controls
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p13_c15_closure.py --negative-control \
+            | tee /tmp/c15-closure.out
+          grep -q '^B25_P13_C15_CLOSURE_VALIDATION_PASS$' /tmp/c15-closure.out
+          grep -q '^c15_static_negative_controls_fired=19$' /tmp/c15-closure.out
+
+      - name: NC-XV-CAPABILITY removing the TCB boundary turns the proof red
+        run: |
+          set -euo pipefail
+          cp backend/app/trust/issuance_authority_ledger.py /tmp/c15-ledger.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/trust/issuance_authority_ledger.py')
+          source = path.read_text(encoding='utf-8')
+          old = '        _assert_trusted_caller(f"mint:{label}", 1)'
+          assert source.count(old) == 1, source.count(old)
+          path.write_text(source.replace(old, '        pass', 1), encoding='utf-8')
+          PY
+          if python -m pytest backend/tests/trust/test_b25_p13_c15_issuance_truth.py \
+              -q --no-header -k ledger_mint_outside > /tmp/nc-xv-capability.out 2>&1; then
+            echo 'NC-XV-CAPABILITY did not fire'; exit 1
+          fi
+          grep -E 'failed' /tmp/nc-xv-capability.out
+          cp /tmp/c15-ledger.py backend/app/trust/issuance_authority_ledger.py
+          python -m pytest backend/tests/trust/test_b25_p13_c15_issuance_truth.py \
+            -q --no-header -k ledger_mint_outside
+
+      # Open-world rule: a different mechanism from the defect originally
+      # discovered. The original bypass forged the P8 capability; this one makes
+      # the P5 witness trust a caller-authored payload when the ledger does not
+      # recognise it -- the same class (unbacked bytes reaching authority)
+      # reached by another road, one layer earlier.
+      - name: NC-XV-WITNESS unbacked witness acceptance turns the proof red
+        run: |
+          set -euo pipefail
+          cp backend/app/trust/builder.py /tmp/c15-builder.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/trust/builder.py')
+          source = path.read_text(encoding='utf-8')
+          old = (
+              '        except IssuanceAuthorityLedgerError as exc:\n'
+              '            raise TrustEnvelopeBuildError("builder_authority_witness_invalid") from exc'
+          )
+          assert source.count(old) == 1, source.count(old)
+          source = source.replace(
+              old,
+              '        except IssuanceAuthorityLedgerError:\n'
+              '            authoritative = canonicalize_envelope_payload(payload)',
+              1,
+          )
+          path.write_text(source, encoding='utf-8')
+          PY
+          if python -m pytest backend/tests/trust/test_b25_p13_c15_issuance_truth.py \
+              -q --no-header -k forged_build_witness \
+              > /tmp/nc-xv-witness.out 2>&1; then
+            echo 'NC-XV-WITNESS did not fire'; exit 1
+          fi
+          grep -E 'failed|error' /tmp/nc-xv-witness.out
+          cp /tmp/c15-builder.py backend/app/trust/builder.py
+          python -m pytest backend/tests/trust/test_b25_p13_c15_issuance_truth.py \
+            -q --no-header -k forged_build_witness
+
+      - name: NC-XV-AUDIT-TRUTH pre-sign completion claim turns the proof red
+        run: |
+          set -euo pipefail
+          cp backend/app/api/trust_api.py /tmp/c15-api.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/api/trust_api.py')
+          source = path.read_text(encoding='utf-8')
+          old = '        await record_trust_issuance_failed('
+          assert source.count(old) == 1
+          source = source.replace(old, '        await _skipped_failure_record(', 1)
+          source = source.replace(
+              'from app.trust.audit import (',
+              'async def _skipped_failure_record(**kwargs):\n'
+              '    return None\n\n\n'
+              'from app.trust.audit import (',
+              1,
+          )
+          path.write_text(source, encoding='utf-8')
+          PY
+          if python -m pytest backend/tests/trust/test_b25_p13_c15_issuance_truth.py \
+              -q --no-header -k durable_history_never_overstates \
+              > /tmp/nc-xv-audit.out 2>&1; then
+            echo 'NC-XV-AUDIT-TRUTH did not fire'; exit 1
+          fi
+          grep -E 'failed|error' /tmp/nc-xv-audit.out
+          cp /tmp/c15-api.py backend/app/api/trust_api.py
+          python -m pytest backend/tests/trust/test_b25_p13_c15_issuance_truth.py \
+            -q --no-header -k durable_history_never_overstates
+
+      - name: NC-XV-MANIFEST broken phase reference turns the proof red
+        run: |
+          set -euo pipefail
+          python scripts/phase_gates/validate_manifest.py
+          mv backend/validation/evidence/contracts/b0_1_summary.json /tmp/b0_1.json
+          if python scripts/phase_gates/validate_manifest.py > /tmp/nc-xv-manifest.out 2>&1; then
+            echo 'NC-XV-MANIFEST did not fire'; exit 1
+          fi
+          grep -E 'absent from the working tree' /tmp/nc-xv-manifest.out
+          mv /tmp/b0_1.json backend/validation/evidence/contracts/b0_1_summary.json
+          python scripts/phase_gates/validate_manifest.py
+
   # load-bearing proof therefore cannot report the required context green.
   b25-p13-e2e-trust-closure:
     name: B2.5-P13 E2E Trust Closure
@@ -1852,6 +2041,7 @@ jobs:
       - b2-5-p13-c10-artifact-topology
       - b2-5-p13-c13-semantic-history
       - b2-5-p13-c14-semantic-authority
+      - b2-5-p13-c15-issuance-truth
     runs-on: ubuntu-latest
     steps:
       - name: Require every load-bearing P13 proof
@@ -1861,6 +2051,7 @@ jobs:
           ARTIFACT_RESULT: ${{ needs['b2-5-p13-c10-artifact-topology'].result }}
           SEMANTIC_RESULT: ${{ needs['b2-5-p13-c13-semantic-history'].result }}
           COMPLETE_AUTHORITY_RESULT: ${{ needs['b2-5-p13-c14-semantic-authority'].result }}
+          ISSUANCE_TRUTH_RESULT: ${{ needs['b2-5-p13-c15-issuance-truth'].result }}
         run: |
           set -euo pipefail
           test "$CORE_RESULT" = success || {
@@ -1877,5 +2068,8 @@ jobs:
           }
           test "$COMPLETE_AUTHORITY_RESULT" = success || {
             echo "b2-5-p13-c14-semantic-authority=$COMPLETE_AUTHORITY_RESULT"; exit 1;
+          }
+          test "$ISSUANCE_TRUTH_RESULT" = success || {
+            echo "b2-5-p13-c15-issuance-truth=$ISSUANCE_TRUTH_RESULT"; exit 1;
           }
           echo 'p13_load_bearing_proof_graph=green'

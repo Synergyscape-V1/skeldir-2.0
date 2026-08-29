@@ -266,21 +266,23 @@ async def test_c14_raw_or_post_validation_mutation_cannot_reach_crypto(
         sign_trust_envelope(exposed, key_registry=registry)  # type: ignore[arg-type]
     assert private.sign_calls == 0
 
-    # Even deliberate Python-level corruption of the frozen object is detected
-    # by its content address before the private key is selected.
-    corrupted_snapshot = bytearray(result.authorized_envelope._payload_snapshot)
-    tenant_hash_start = corrupted_snapshot.index(b'"tenant_id_hash":"sha256:')
-    first_hex = tenant_hash_start + len(b'"tenant_id_hash":"sha256:')
-    corrupted_snapshot[first_hex] = (
-        ord("0") if corrupted_snapshot[first_hex] != ord("0") else ord("1")
-    )
-    object.__setattr__(
-        result.authorized_envelope,
-        "_payload_snapshot",
-        bytes(corrupted_snapshot),
-    )
+    # Corrective XV (H-XV-01): the capability no longer carries the claim, so
+    # there is no payload attribute left on the object for an attacker to edit.
+    assert not hasattr(result.authorized_envelope, "_payload_snapshot")
+
+    # The only mutable surfaces are the ledger handle and the proof hash. Both
+    # fail closed before the private key is selected.
+    capability = result.authorized_envelope
+    original_handle = capability._authority_handle
+    object.__setattr__(capability, "_authority_handle", "not-a-minted-handle")
+    with pytest.raises(TrustEnvelopeSigningError, match="issuance_capability_invalid"):
+        sign_trust_envelope(capability, key_registry=registry)
+    assert private.sign_calls == 0
+
+    object.__setattr__(capability, "_authority_handle", original_handle)
+    object.__setattr__(capability, "authority_proof_hash", "sha256:" + ("0" * 64))
     with pytest.raises(TrustEnvelopeSigningError, match="content_mismatch"):
-        sign_trust_envelope(result.authorized_envelope, key_registry=registry)
+        sign_trust_envelope(capability, key_registry=registry)
     assert private.sign_calls == 0
 
 

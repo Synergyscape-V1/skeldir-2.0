@@ -35,6 +35,15 @@ pytestmark = pytest.mark.skipif(
     reason="B2.5-P11 PostgreSQL physics proofs are opt-in for local runs",
 )
 
+# Client-observed latency = server handler time + ASGI transport + JSON
+# serialization + event-loop scheduling. The server's own contract is enforced
+# by the 200-vs-503 assertion; this budget bounds the transport the client
+# additionally measures, so a shared hosted runner cannot report a product
+# regression it did not observe. Sized against the measured local margin
+# (~1160 ms handler against a 1500 ms deadline) rather than chosen to make a
+# red run green.
+CLIENT_TRANSPORT_OVERHEAD_BUDGET_MS = 500.0
+
 
 def _registry() -> TrustKeyRegistry:
     private = Ed25519PrivateKey.from_private_bytes(
@@ -721,6 +730,22 @@ async def test_postgres_maximum_export_resource_envelope() -> None:
         latencies = [value[1] for value in results]
         response_bytes = [len(value.content) for value in responses]
         artifacts = [value.json() for value in responses]
+
+        # B2.5-P13 Corrective XV (H-XV-07). This assertion used to live *below*
+        # the envelope-size computation, and that ordering is the whole story
+        # behind the historical `KeyError: 'envelopes'`. When the handler
+        # exceeds EXPORT_HANDLER_DEADLINE_SECONDS it returns its contract-correct
+        # 503 `{"status": "refused", "reason_code":
+        # "export_handler_deadline_exceeded"}` -- a body with no `envelopes`
+        # key. Indexing that body raised an opaque KeyError that named neither
+        # the deadline nor the refusal, so a capacity event was indistinguishable
+        # from an export-composition defect and a retry laundered it away.
+        # Asserting the contract first makes the real cause legible.
+        assert all(response.status_code == 200 for response in responses), [
+            (response.status_code, response.text[:200]) for response in responses
+        ]
+        assert all("envelopes" in artifact for artifact in artifacts), artifacts
+
         envelope_bytes = [
             len(json.dumps(envelope, separators=(",", ":")).encode("utf-8"))
             for artifact in artifacts
@@ -761,7 +786,21 @@ async def test_postgres_maximum_export_resource_envelope() -> None:
             len(response.content) <= trust_export.MAX_EXPORT_ARTIFACT_BYTES
             for response in responses
         )
-        assert max(latencies) <= trust_export.EXPORT_HANDLER_DEADLINE_SECONDS * 1000
+        # B2.5-P13 Corrective XV (H-XV-07). The load-bearing product invariant is
+        # "the handler completed inside its declared deadline", and the 200s
+        # above already prove it: exceeding EXPORT_HANDLER_DEADLINE_SECONDS is
+        # exactly what makes the route return 503 instead. Comparing a *client*
+        # wall-clock measurement against a *server* handler deadline is unsound
+        # -- client latency additionally carries ASGI transport, JSON
+        # serialization and event-loop scheduling, so it is always >= the server
+        # figure and can fail while the server honoured its contract perfectly.
+        # That is the recorded 1518.735 ms flake. The end-to-end bound is kept,
+        # with the transport overhead it actually measures made explicit.
+        client_budget_ms = (
+            trust_export.EXPORT_HANDLER_DEADLINE_SECONDS * 1000
+            + CLIENT_TRANSPORT_OVERHEAD_BUDGET_MS
+        )
+        assert max(latencies) <= client_budget_ms, metrics
         assert runtime_engine.pool.checkedout() == 0
     finally:
         await _delete_tenant(migration_engine, tenant_id)
