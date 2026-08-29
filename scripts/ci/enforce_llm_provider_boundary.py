@@ -17,6 +17,7 @@ ALLOWED_PATHS = {
 ALLOWED_PREFIXES = (
     "docs/forensics/",
     "artifacts/",
+    "artifacts_vt_run3/",
 )
 
 # Future-facing: these imports must remain inside the provider boundary wrapper.
