@@ -1,4 +1,0 @@
-# file: C:\Users\ayewhy\II SKELDIR II\backend\app\api\auth.py
-# hypothesis_version: 6.148.2
-
-[200, 3600, '/login', '/logout', '/refresh', 'Bearer', 'Logout successful', 'Refresh access token', 'X-Correlation-ID', 'login', 'logout', 'refreshToken']

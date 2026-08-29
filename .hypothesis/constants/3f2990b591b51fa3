@@ -1,4 +1,0 @@
-# file: C:\Users\ayewhy\II SKELDIR II\backend\app\schemas\auth.py
-# hypothesis_version: 6.148.2
-
-[400, 3600, 'Bearer', 'Logout successful', 'Validation Error', 'securePassword123', 'user@example.com']

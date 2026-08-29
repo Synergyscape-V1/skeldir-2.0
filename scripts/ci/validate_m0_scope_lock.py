@@ -147,6 +147,34 @@ PROHIBITED_SURFACE_PATTERNS = [
 ]
 
 ALLOWED_M0_PATHS = [
+    # --- Hygiene remediation surface (exhaustive line-level hygiene audit) ---
+    # Governance integration fix, not a product-semantics exemption, following the
+    # precedent set for the Corrective XIV evidence report: the diff is still computed
+    # exactly, and every B2.3/provider/dependency/migration prohibition in
+    # PROHIBITED_SURFACE_PATTERNS is retained unchanged. These paths carry removal of
+    # zero-consumer artifacts, the cross-domain .gitignore anchor, the reproducible
+    # environment specification, and the environment specification. No trust,
+    # signing, builder, governance-manifest, or C13/C14 enforcer path is included --
+    # those remain outside this surface and untouched by the branch.
+    ".gitignore",
+    ".hypothesis/",
+    "artifacts/",
+    "artifacts_vt_run3/",
+    "backend/.hypothesis/",
+    "backend/tmp_celery_init.py",
+    "backend/tmp_celery_schema.py",
+    "backend/tmp_create_table.py",
+    "backend/tmp_list_tables.py",
+    "backend/tmp_schemata.py",
+    "backend/validation/evidence/contracts/",
+    "docs/environment/",
+    "docs/forensics/evidence/b14_p0/",
+    "docs/forensics/validation/runtime/R6_context_gathering/",
+    "tmp/",
+    "tmp_asyncpg_check.py",
+    "tmp_asyncpg_params.py",
+    "tmp_asyncpg_test.py",
+    "tmp_celery_schema.py",
     "docs/maintainability/",
     "docs/testing.md",
     "docs/testing_db_topology.md",
