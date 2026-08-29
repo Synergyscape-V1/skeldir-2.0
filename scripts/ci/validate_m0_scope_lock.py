@@ -153,7 +153,7 @@ ALLOWED_M0_PATHS = [
     # exactly, and every B2.3/provider/dependency/migration prohibition in
     # PROHIBITED_SURFACE_PATTERNS is retained unchanged. These paths carry removal of
     # zero-consumer artifacts, the cross-domain .gitignore anchor, the reproducible
-    # environment specification, and the standalone frontend replacement. No trust,
+    # environment specification, and the environment specification. No trust,
     # signing, builder, governance-manifest, or C13/C14 enforcer path is included --
     # those remain outside this surface and untouched by the branch.
     ".gitignore",
@@ -170,7 +170,6 @@ ALLOWED_M0_PATHS = [
     "docs/environment/",
     "docs/forensics/evidence/b14_p0/",
     "docs/forensics/validation/runtime/R6_context_gathering/",
-    "frontend/",
     "tmp/",
     "tmp_asyncpg_check.py",
     "tmp_asyncpg_params.py",
