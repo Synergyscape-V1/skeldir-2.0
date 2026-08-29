@@ -11,7 +11,6 @@ ALLOWED_PREFIXES = (
     "docs/forensics/",
     "backend/validation/evidence/",
     "artifacts/",
-    "graphify-out/",
 )
 ALLOWED_PATHS = {
     "AGENTS.md",

@@ -423,7 +423,6 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/testing_b24_persistence_entry_gate.md",
     "docs/testing_parallel_isolation.md",
     "docs/maintainability/",
-    "graphify-out/",
     "contracts/internal/",
     "M2 Remediation Evidence Pack.md",
     "tests/",
