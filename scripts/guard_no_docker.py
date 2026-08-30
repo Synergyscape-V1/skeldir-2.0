@@ -73,6 +73,11 @@ ALLOWED_DOCKER_PATHS = {
     # P13 C13 inventories and validates the already-authorized Bayesian image
     # and Compose topology; it does not introduce a new container substrate.
     Path("scripts/ci/validate_b25_p13_c13_closure.py"),
+    # P13 C16's independent production-topology proof builds and runs that same
+    # already-authorized Bayesian image so an auditor who did not implement C16
+    # can observe real four-chain sampling. Same reason as C13: it executes the
+    # authorized substrate, it does not introduce a new one.
+    Path("scripts/ci/run_b25_p13_c16_production_topology_proof.sh"),
     Path("scripts/ci/validate_m0_scope_lock.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),
