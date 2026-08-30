@@ -133,22 +133,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Reversal removes only what this revision added. No pre-existing audit
+    # history is touched: `status`, `audit_hash` and every column that feeds the
+    # signed envelope are untouched by both directions of this migration.
     op.execute("DROP INDEX IF EXISTS public.ix_trust_access_log_issuance_state")
+    table = "public.trust_access_log"
     for constraint in (
         "ck_trust_access_log_unissued_has_no_crypto",
         "ck_trust_access_log_issued_requires_crypto",
         "ck_trust_access_log_issuance_state_event",
         "ck_trust_access_log_issuance_state",
     ):
-        op.execute(
-            f"ALTER TABLE public.trust_access_log DROP CONSTRAINT IF EXISTS {constraint}"
-        )
-    op.execute(
-        """
-        ALTER TABLE public.trust_access_log
-            DROP COLUMN IF EXISTS issued_signature_hash,
-            DROP COLUMN IF EXISTS issued_signing_key_id,
-            DROP COLUMN IF EXISTS issued_at,
-            DROP COLUMN IF EXISTS issuance_state
-        """
-    )
+        op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}")  # CI:DESTRUCTIVE_OK - Downgrade rollback of constraints this revision added
+    for column in (
+        "issued_signature_hash",
+        "issued_signing_key_id",
+        "issued_at",
+        "issuance_state",
+    ):
+        op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {column}")  # CI:DESTRUCTIVE_OK - Downgrade rollback of columns this revision added
