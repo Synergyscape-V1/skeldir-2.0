@@ -65,6 +65,17 @@ def upgrade() -> None:
     # Non-issuance events (refusal, scope_denial, replay) never reach a signer,
     # so they carry an explicit terminal marker rather than a misleading
     # 'authorized'.
+    #
+    # trust_access_log runs FORCE ROW LEVEL SECURITY, which subjects even the
+    # table owner to its tenant policies. A backfill executed as the
+    # least-privilege migration principal with no app.current_tenant_id set
+    # therefore matches zero rows, while the CHECK constraint added immediately
+    # below still validates every row -- so the migration would fail on any
+    # database that already holds audit history. FORCE is lifted for the
+    # backfill and restored immediately, the same idiom used by
+    # 202512171500_force_rls_recompute_jobs and
+    # 202602281100_b12_p2_users_registry_least_privilege.
+    op.execute("ALTER TABLE public.trust_access_log NO FORCE ROW LEVEL SECURITY")
     op.execute(
         """
         UPDATE public.trust_access_log
@@ -72,6 +83,7 @@ def upgrade() -> None:
         WHERE event_type <> 'issuance'
         """
     )
+    op.execute("ALTER TABLE public.trust_access_log FORCE ROW LEVEL SECURITY")
     op.execute(
         """
         ALTER TABLE public.trust_access_log
