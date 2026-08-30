@@ -68,8 +68,15 @@ def _stub_issuance_finalisation(monkeypatch, module) -> None:
     async def _noop(**kwargs):
         return None
 
-    monkeypatch.setattr(module, "record_trust_issuance_completed", _noop)
-    monkeypatch.setattr(module, "record_trust_issuance_failed", _noop)
+    # The export route finalises once per request via the batch write; the read
+    # route finalises per envelope. Stub whichever this module actually uses.
+    for name in (
+        "record_trust_issuance_completed",
+        "record_trust_issuance_batch_completed",
+        "record_trust_issuance_failed",
+    ):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, _noop)
 
 
 def _utc(value: datetime) -> str:

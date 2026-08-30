@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from copy import deepcopy
 from dataclasses import asdict, dataclass
@@ -611,6 +611,90 @@ async def record_trust_issuance_failed(
         signed_envelope=None,
         audit_session_factory=audit_session_factory,
     )
+
+
+async def record_trust_issuance_batch_completed(
+    *,
+    tenant_id: UUID,
+    completions: Sequence[tuple[str, dict[str, Any]]],
+    audit_session_factory: AuditSessionFactory | None = None,
+) -> None:
+    """Finalize every envelope issued for one request in a single transaction.
+
+    The export route signs several envelopes per HTTP request. Opening one
+    durable session per envelope put N committed transactions inside a handler
+    that must answer within ``EXPORT_HANDLER_DEADLINE_SECONDS``, which is both
+    needless cost and the wrong granularity: the consequence boundary is the
+    request, not the loop iteration. One transaction per request keeps the same
+    truth -- ``issued`` still requires the signature that justifies it, enforced
+    by ``ck_trust_access_log_issued_requires_crypto`` -- at one round trip.
+    """
+
+    if not completions:
+        return
+    if audit_session_factory is None:
+        from app.db.session import AsyncSessionLocal
+
+        audit_session_factory = AsyncSessionLocal
+
+    rows: list[dict[str, Any]] = []
+    for audit_ref, signed_envelope in completions:
+        signing_key_id = signed_envelope.get("signing_key_id")
+        signature_hash = signed_envelope.get("signature_hash")
+        if not isinstance(signing_key_id, str) or not isinstance(signature_hash, str):
+            raise TrustAuditError("issuance_completion_requires_signature_identity")
+        rows.append(
+            {
+                "audit_ref": audit_ref,
+                "signing_key_id": signing_key_id,
+                "signature_hash": signature_hash,
+            }
+        )
+
+    statement = text(
+        """
+        UPDATE public.trust_access_log AS log
+        SET issuance_state = 'issued',
+            issued_at = now(),
+            issued_signing_key_id = completion.signing_key_id,
+            issued_signature_hash = completion.signature_hash,
+            updated_at = now()
+        FROM (
+            SELECT
+                unnest(CAST(:audit_refs AS text[])) AS audit_ref,
+                unnest(CAST(:signing_key_ids AS text[])) AS signing_key_id,
+                unnest(CAST(:signature_hashes AS text[])) AS signature_hash
+        ) AS completion
+        WHERE log.tenant_id = :tenant_id
+          AND log.audit_ref = completion.audit_ref
+          AND log.event_type = 'issuance'
+          AND log.issuance_state IN ('authorized', 'failed')
+        """
+    )
+    params = {
+        "tenant_id": str(tenant_id),
+        "audit_refs": [row["audit_ref"] for row in rows],
+        "signing_key_ids": [row["signing_key_id"] for row in rows],
+        "signature_hashes": [row["signature_hash"] for row in rows],
+    }
+
+    async with audit_session_factory() as audit_session:
+        begin = getattr(audit_session, "begin", None)
+        if callable(begin):
+            async with begin():
+                await audit_session.execute(
+                    text(
+                        "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
+                    ),
+                    {"tenant_id": str(tenant_id)},
+                )
+                await audit_session.execute(statement, params)
+                return
+        await audit_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await audit_session.execute(statement, params)
 
 
 def attach_audit_to_unsigned_payload(

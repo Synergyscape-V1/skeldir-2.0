@@ -146,9 +146,17 @@ def validate_issuance_state_model(audit: str, api: str, export: str) -> None:
         "THEN 'authorized' ELSE 'not_applicable' END" in audit,
         "c15_pre_sign_row_does_not_record_authorized_state",
     )
+    _require(
+        audit.count("issuance_completion_requires_signature_identity") >= 2,
+        "c15_batch_completion_does_not_require_signature_identity",
+    )
+    # The read route finalises per envelope; the export route signs several per
+    # request and finalises them in one transaction. Either shape counts as
+    # finalisation, but a route with neither does not.
     for source, label in ((api, "api"), (export, "export")):
         _require(
-            "record_trust_issuance_completed(" in source,
+            "record_trust_issuance_completed(" in source
+            or "record_trust_issuance_batch_completed(" in source,
             f"c15_{label}_does_not_finalize_completed_issuance",
         )
         _require(
@@ -357,6 +365,26 @@ def run_negative_controls() -> None:
             lambda: validate_issuance_state_model(
                 audit,
                 api.replace("record_trust_issuance_completed(", "_skip_completion("),
+                export,
+            ),
+        ),
+        (
+            "export_stops_finalizing_completion",
+            lambda: validate_issuance_state_model(
+                audit,
+                api,
+                export.replace("record_trust_issuance_batch_completed(", "_skip("),
+            ),
+        ),
+        (
+            "batch_completion_stops_requiring_signature_identity",
+            lambda: validate_issuance_state_model(
+                audit.replace(
+                    "issuance_completion_requires_signature_identity",
+                    "issuance_completion_unchecked",
+                    2,
+                ),
+                api,
                 export,
             ),
         ),

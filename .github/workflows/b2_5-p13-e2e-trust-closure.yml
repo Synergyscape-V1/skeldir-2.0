@@ -1930,7 +1930,7 @@ jobs:
           python scripts/ci/validate_b25_p13_c15_closure.py --negative-control \
             | tee /tmp/c15-closure.out
           grep -q '^B25_P13_C15_CLOSURE_VALIDATION_PASS$' /tmp/c15-closure.out
-          grep -q '^c15_static_negative_controls_fired=19$' /tmp/c15-closure.out
+          grep -q '^c15_static_negative_controls_fired=21$' /tmp/c15-closure.out
 
       - name: NC-XV-CAPABILITY removing the TCB boundary turns the proof red
         run: |

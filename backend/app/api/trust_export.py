@@ -22,7 +22,7 @@ from app.api.trust_api import (
 from app.db import session as db_session
 from app.trust.audit import (
     build_unsigned_trust_envelope_with_audit,
-    record_trust_issuance_completed,
+    record_trust_issuance_batch_completed,
     record_trust_issuance_failed,
 )
 from app.trust.builder import TrustEnvelopeBuildRequest
@@ -268,7 +268,7 @@ async def _issue_export_envelope(
     key_registry: TrustKeyRegistry,
     issued_at: datetime,
     source: MatchVerdictSource,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any], str] | None:
     result = await build_unsigned_trust_envelope_with_audit(
         session,
         TrustEnvelopeBuildRequest(
@@ -303,12 +303,10 @@ async def _issue_export_envelope(
             audit_ref=result.audit_record.audit_ref,
         )
         raise
-    await record_trust_issuance_completed(
-        tenant_id=caller.tenant_id,
-        audit_ref=result.audit_record.audit_ref,
-        signed_envelope=signed,
-    )
-    return signed
+    # Completion is finalised once per request by the caller, not once per
+    # envelope: the consequence boundary is the request, and N durable
+    # transactions inside a deadline-bounded handler is the wrong granularity.
+    return signed, result.audit_record.audit_ref
 
 
 async def _create_export_with_capacity(
@@ -390,6 +388,7 @@ async def _create_export_with_capacity(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     envelopes: list[dict[str, Any]] = []
+    issuance_completions: list[tuple[str, dict[str, Any]]] = []
     for page_offset, subject_ref in enumerate(page_refs):
         verdict_id = parse_match_verdict_subject_ref(subject_ref)
         source = sources_by_id.get(verdict_id)
@@ -398,7 +397,7 @@ async def _create_export_with_capacity(
                 ReasonCode.SUBJECT_NOT_FOUND,
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
-        envelope = await _issue_export_envelope(
+        issued = await _issue_export_envelope(
             session=session,
             caller=caller,
             subject_ref=subject_ref,
@@ -410,12 +409,14 @@ async def _create_export_with_capacity(
             issued_at=now,
             source=source,
         )
-        if envelope is None:
+        if issued is None:
             return _typed_error_response(
                 ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
+        envelope, envelope_audit_ref = issued
         envelopes.append(envelope)
+        issuance_completions.append((envelope_audit_ref, envelope))
     if len(envelopes) > MAX_SIGNED_EXPORT_ENVELOPES:
         raise RuntimeError("p11_signed_envelope_ceiling_breached")
 
@@ -436,6 +437,14 @@ async def _create_export_with_capacity(
             ReasonCode.RESPONSE_BUDGET_EXCEEDED,
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
         )
+
+    # B2.5-P13 Corrective XV (H-XV-02/03). Every envelope in this artifact now
+    # has a signature that physically exists, so durable history may say so --
+    # in one transaction for the whole request rather than one per envelope.
+    await record_trust_issuance_batch_completed(
+        tenant_id=caller.tenant_id,
+        completions=issuance_completions,
+    )
 
     remaining_count = accepted_count - end_position
     response.headers["X-Export-Accepted-Count"] = str(accepted_count)
