@@ -45,6 +45,28 @@ from app.trust.canonicalization import (
 from app.trust.signing import encode_ed25519_signature, prepare_payload_for_signing
 
 
+def _stub_audit_record():
+    """Minimal P7 identity for route-level unit tests.
+
+    B2.5-P13 Corrective XV: the route now finalises the durable issuance state
+    after signing, so a stubbed P7 layer must still present the audit identity
+    that finalisation addresses. These tests exercise wire behaviour, not the
+    audit lifecycle -- that has its own live-PostgreSQL proofs in
+    ``test_b25_p13_c15_issuance_truth.py`` -- so the finalisation writes
+    themselves are stubbed alongside the builder.
+    """
+
+    return SimpleNamespace(audit_ref="urn:skeldir:audit:route-unit-stub")
+
+
+def _stub_issuance_finalisation(monkeypatch, module) -> None:
+    async def _noop(**kwargs):
+        return None
+
+    monkeypatch.setattr(module, "record_trust_issuance_completed", _noop)
+    monkeypatch.setattr(module, "record_trust_issuance_failed", _noop)
+
+
 def _utc(value: datetime) -> str:
     return (
         value.astimezone(timezone.utc)
@@ -416,13 +438,14 @@ async def test_individual_wire_budget_fails_typed_before_response(
     caller = _caller()
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(authorized_envelope={"safe": True})
+        return SimpleNamespace(audit_record=_stub_audit_record(), authorized_envelope={"safe": True})
 
     monkeypatch.setattr(
         trust_api,
         "build_unsigned_trust_envelope_with_audit",
         fake_build,
     )
+    _stub_issuance_finalisation(monkeypatch, trust_api)
     monkeypatch.setattr(
         trust_api,
         "sign_trust_envelope",
@@ -710,7 +733,7 @@ async def test_client_visible_wire_verifies_through_published_jwks_and_mutation_
         return registry
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(authorized_envelope=_unsigned_fixture())
+        return SimpleNamespace(audit_record=_stub_audit_record(), authorized_envelope=_unsigned_fixture())
 
     app.dependency_overrides[trust_api.get_machine_db_session] = (
         _fake_session_dependency
@@ -722,6 +745,7 @@ async def test_client_visible_wire_verifies_through_published_jwks_and_mutation_
         "build_unsigned_trust_envelope_with_audit",
         fake_build,
     )
+    _stub_issuance_finalisation(monkeypatch, trust_api)
     monkeypatch.setattr(
         trust_api,
         "sign_trust_envelope",

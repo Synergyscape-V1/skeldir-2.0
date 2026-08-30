@@ -173,6 +173,21 @@
   negative_control_preserved_by: NC-XIII artifact dependency and host mount-shadow controls
   local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate . && docker run --rm -i skeldir-bayesian:candidate python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py
   risk_if_removed: CI can pass against repository or host files that the shipped image does not contain, repeating the artifact/proof split that allowed the one-chain defect.
+- gate_id: validate-b25-p13-c15-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 C15 Issuance Capability and Audit Truth
+  script: scripts/ci/validate_b25_p13_c15_closure.py
+  owning_phase: B2.5-P13-C15
+  protected_invariant: Signing capability is unforgeable outside a declared TCB, durable audit history never overstates physical issuance, and the documented bootstrap is executable on a clean clone.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C14 proves whole-envelope correspondence and capability-only private-key access, but its capability check was satisfied by a hash of the caller's own bytes; three same-process constructions minted a capability over fabricated money and obtained a verifiable signature. C14 also says nothing about durable issuance state after P8 failure, nor about line-ending portability.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control plus NC-XV-CAPABILITY, NC-XV-WITNESS, NC-XV-AUDIT-TRUTH, and NC-XV-MANIFEST
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control
+  risk_if_removed: Arbitrary same-process code could mint TrustEnvelope signing authority over a self-authored claim, durable history could record completed issuance for envelopes that were never signed, and the documented bootstrap could silently stop working on a supported platform.
 - gate_id: validate-b25-p13-c14-closure
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 C14 Complete Semantic Issuance Authority

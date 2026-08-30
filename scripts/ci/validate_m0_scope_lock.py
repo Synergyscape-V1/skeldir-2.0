@@ -157,6 +157,11 @@ ALLOWED_M0_PATHS = [
     # signing, builder, governance-manifest, or C13/C14 enforcer path is included --
     # those remain outside this surface and untouched by the branch.
     ".gitignore",
+    # B2.5-P13 Corrective XV: repository line-ending policy. Without it a
+    # stock Windows clone rewrites LF shell scripts to CRLF and the
+    # documented bootstrap is not executable.
+    ".gitattributes",
+    "db/schema/canonical_schema.sql",
     ".hypothesis/",
     "artifacts/",
     "artifacts_vt_run3/",
@@ -221,6 +226,20 @@ ALLOWED_M0_PATHS = [
     "backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py",
     "backend/tests/trust/test_b25_p13_c14_semantic_authority.py",
     "alembic/versions/007_skeldir_foundation/202608271200_b25_p13_c13_signing_authority.py",
+    # --- B2.5-P13 Corrective XV surface (issuance capability, audit truth) ---
+    # Governance integration for the corrective action, following the precedent
+    # set for the Corrective XIV evidence report. Every B2.3/provider/dependency
+    # prohibition below is retained unchanged; the migration is declared
+    # explicitly rather than by loosening the alembic prohibition.
+    "scripts/ci/validate_b25_p13_c15_closure.py",
+    "backend/tests/trust/test_b25_p13_c15_issuance_truth.py",
+    "backend/app/trust/issuance_authority_ledger.py",
+    "alembic/versions/007_skeldir_foundation/202608291200_b25_p13_c15_issuance_completion_state.py",
+    "docs/security/b25_p13_c15_trusted_computing_base.md",
+    "docs/environment/SUPPORTED_ENVIRONMENTS.md",
+    "docs/environment/INFRASTRUCTURE_EVIDENCE_CAPSULES.md",
+    "scripts/phase_gates/validate_manifest.py",
+    "docs/forensics/B2.5-P13 Corrective Action Remediation XV Report.md",
     "docker-compose.local.yml",
     "DEVELOPMENT.md",
     "scripts/ci/validate_b24_artifact_topology.py",

@@ -50,6 +50,35 @@ ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = ROOT / "contracts/trust-api/examples"
 
 
+def _stub_audit_record():
+    """Minimal P7 identity for route-level unit tests.
+
+    B2.5-P13 Corrective XV: the route now finalises the durable issuance state
+    after signing, so a stubbed P7 layer must still present the audit identity
+    that finalisation addresses. These tests exercise wire behaviour, not the
+    audit lifecycle -- that has its own live-PostgreSQL proofs in
+    ``test_b25_p13_c15_issuance_truth.py`` -- so the finalisation writes
+    themselves are stubbed alongside the builder.
+    """
+
+    return SimpleNamespace(audit_ref="urn:skeldir:audit:route-unit-stub")
+
+
+def _stub_issuance_finalisation(monkeypatch, module) -> None:
+    async def _noop(**kwargs):
+        return None
+
+    # The export route finalises once per request via the batch write; the read
+    # route finalises per envelope. Stub whichever this module actually uses.
+    for name in (
+        "record_trust_issuance_completed",
+        "record_trust_issuance_batch_completed",
+        "record_trust_issuance_failed",
+    ):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, _noop)
+
+
 def _utc(value: datetime) -> str:
     return (
         value.astimezone(timezone.utc)
@@ -555,6 +584,7 @@ async def test_machine_route_pages_at_two_and_emits_verifiable_artifacts(
         _ = session
         audit_modes.append(bool(kwargs["access_log_only"]))
         return SimpleNamespace(
+            audit_record=_stub_audit_record(),
             authorized_envelope=_unsigned_for_route(
                 request.tenant_id, request.subject_ref
             )
@@ -569,6 +599,7 @@ async def test_machine_route_pages_at_two_and_emits_verifiable_artifacts(
         "build_unsigned_trust_envelope_with_audit",
         fake_build,
     )
+    _stub_issuance_finalisation(monkeypatch, trust_export)
     monkeypatch.setattr(
         trust_export,
         "sign_trust_envelope",

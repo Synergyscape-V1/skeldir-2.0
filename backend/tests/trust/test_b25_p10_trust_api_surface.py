@@ -48,6 +48,28 @@ P10_RUNTIME_PATH = ROOT / "backend/app/api/trust_api.py"
 P9_AUTH_PATH = ROOT / "backend/app/trust/machine_auth.py"
 
 
+def _stub_audit_record():
+    """Minimal P7 identity for route-level unit tests.
+
+    B2.5-P13 Corrective XV: the route now finalises the durable issuance state
+    after signing, so a stubbed P7 layer must still present the audit identity
+    that finalisation addresses. These tests exercise wire behaviour, not the
+    audit lifecycle -- that has its own live-PostgreSQL proofs in
+    ``test_b25_p13_c15_issuance_truth.py`` -- so the finalisation writes
+    themselves are stubbed alongside the builder.
+    """
+
+    return SimpleNamespace(audit_ref="urn:skeldir:audit:route-unit-stub")
+
+
+def _stub_issuance_finalisation(monkeypatch, module) -> None:
+    async def _noop(**kwargs):
+        return None
+
+    monkeypatch.setattr(module, "record_trust_issuance_completed", _noop)
+    monkeypatch.setattr(module, "record_trust_issuance_failed", _noop)
+
+
 def _utc(value: datetime) -> str:
     return (
         value.astimezone(timezone.utc)
@@ -145,7 +167,7 @@ async def test_authorized_happy_path_returns_signed_verifiable_safe_envelope(
         return caller
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(authorized_envelope=_unsigned_fixture())
+        return SimpleNamespace(audit_record=_stub_audit_record(), authorized_envelope=_unsigned_fixture())
 
     app.dependency_overrides[trust_api.get_machine_db_session] = fake_session
     app.dependency_overrides[trust_api.require_envelope_read_tenant_context] = (
@@ -161,6 +183,7 @@ async def test_authorized_happy_path_returns_signed_verifiable_safe_envelope(
         "build_unsigned_trust_envelope_with_audit",
         fake_build,
     )
+    _stub_issuance_finalisation(monkeypatch, trust_api)
     monkeypatch.setattr(
         trust_api,
         "sign_trust_envelope",

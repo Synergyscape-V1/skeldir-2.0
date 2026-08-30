@@ -1,0 +1,70 @@
+# Repository line-ending policy.
+#
+# B2.5-P13 Corrective XV, H-XV-09 / RC-XV-09.
+#
+# Until this file existed the repository declared no line-ending policy at all,
+# so what landed in a working tree depended on each developer's Git config.
+# Git for Windows ships `core.autocrlf=true` in its *system* config, which means
+# a fresh clone on a stock Windows host silently rewrote every checked-in LF
+# shell script to CRLF. The documented canonical bootstrap then failed on line
+# two:
+#
+#     scripts/ci/run_m1_onboarding_bootstrap.sh: line 1:
+#     set: pipefail: invalid option name        (exit 2)
+#
+# because `set -euo pipefail\r` passes `pipefail\r` to `set -o`. That was
+# reproduced deterministically under bash 5.2, and it is a broken supported
+# build path, not a user error: nothing the operator did caused it and nothing
+# in the repository warned them.
+#
+# `text=auto` normalizes to LF in the object database; the explicit `eol=lf`
+# rules below force LF into the working tree regardless of `core.autocrlf`, for
+# every artifact whose interpreter or format requires it.
+
+* text=auto
+
+# Executable shell and its fixtures: CRLF here is a hard runtime failure.
+*.sh            text eol=lf
+*.bash          text eol=lf
+*.zsh           text eol=lf
+
+# Container and process entry points read line-by-line by a shell or init.
+Dockerfile      text eol=lf
+Dockerfile.*    text eol=lf
+Procfile        text eol=lf
+Makefile        text eol=lf
+*.mk            text eol=lf
+.env.*example   text eol=lf
+
+# Formats whose consumers or hashes are newline-sensitive.
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.json          text eol=lf
+*.py            text eol=lf
+*.sql           text eol=lf
+*.toml          text eol=lf
+*.cfg           text eol=lf
+*.ini           text eol=lf
+
+# Windows-native scripts keep CRLF: PowerShell and cmd are the consumers.
+*.ps1           text eol=crlf
+*.psm1          text eol=crlf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
+# Binary artifacts must never be newline-translated.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.zip           binary
+*.gz            binary
+*.woff          binary
+*.woff2         binary
+*.exe           binary
+*.dll           binary
+*.so            binary
+*.dylib         binary
+*.nc            binary

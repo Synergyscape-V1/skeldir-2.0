@@ -24,7 +24,11 @@ from pydantic import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import session as db_session
-from app.trust.audit import build_unsigned_trust_envelope_with_audit
+from app.trust.audit import (
+    build_unsigned_trust_envelope_with_audit,
+    record_trust_issuance_completed,
+    record_trust_issuance_failed,
+)
 from app.trust.builder import TrustEnvelopeBuildRequest
 from app.trust.key_registry import TrustKeyRegistry
 from app.trust.machine_auth import MachineCallerContext, authenticate_machine_caller
@@ -525,14 +529,30 @@ async def _issue_signed_envelope(
     )
     if result.authorized_envelope is None:
         return None
-    signed = await asyncio.to_thread(
-        sign_trust_envelope,
-        result.authorized_envelope,
-        key_registry=key_registry,
+    # B2.5-P13 Corrective XV (H-XV-02/03). Everything from here to the durable
+    # completion write is a consequence boundary the durable record must not
+    # pre-empt: the audit row currently says 'authorized', and it may only say
+    # 'issued' once a signature physically exists.
+    try:
+        signed = await asyncio.to_thread(
+            sign_trust_envelope,
+            result.authorized_envelope,
+            key_registry=key_registry,
+        )
+        _assert_external_payload_safe(signed)
+        if len(JSONResponse(content=signed).body) > MAX_SERIALIZED_ENVELOPE_BYTES:
+            raise TrustResponseBudgetExceeded("individual_envelope_budget_exceeded")
+    except BaseException:
+        await record_trust_issuance_failed(
+            tenant_id=caller.tenant_id,
+            audit_ref=result.audit_record.audit_ref,
+        )
+        raise
+    await record_trust_issuance_completed(
+        tenant_id=caller.tenant_id,
+        audit_ref=result.audit_record.audit_ref,
+        signed_envelope=signed,
     )
-    _assert_external_payload_safe(signed)
-    if len(JSONResponse(content=signed).body) > MAX_SERIALIZED_ENVELOPE_BYTES:
-        raise TrustResponseBudgetExceeded("individual_envelope_budget_exceeded")
     return signed
 
 

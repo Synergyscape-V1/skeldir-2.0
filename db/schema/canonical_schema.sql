@@ -6741,11 +6741,19 @@ CREATE TABLE public.trust_access_log (
     last_replayed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    issuance_state text DEFAULT 'authorized'::text NOT NULL,
+    issued_at timestamp with time zone,
+    issued_signing_key_id text,
+    issued_signature_hash text,
     CONSTRAINT ck_trust_access_log_audit_ref CHECK ((audit_ref ~ '^urn:skeldir:audit:[A-Za-z0-9._:-]+$'::text)),
     CONSTRAINT ck_trust_access_log_event_type CHECK ((event_type = ANY (ARRAY['issuance'::text, 'refusal'::text, 'scope_denial'::text, 'replay'::text]))),
     CONSTRAINT ck_trust_access_log_hashes CHECK (((request_identity_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (idempotency_key_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (audit_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND ((subject_ref_hash IS NULL) OR (subject_ref_hash ~ '^sha256:[0-9a-f]{64}$'::text)) AND ((envelope_hash IS NULL) OR (envelope_hash ~ '^sha256:[0-9a-f]{64}$'::text)) AND ((semantic_truth_hash IS NULL) OR (semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text)))),
+    CONSTRAINT ck_trust_access_log_issuance_state CHECK ((issuance_state = ANY (ARRAY['authorized'::text, 'issued'::text, 'failed'::text, 'not_applicable'::text]))),
+    CONSTRAINT ck_trust_access_log_issuance_state_event CHECK ((((event_type = 'issuance'::text) AND (issuance_state <> 'not_applicable'::text)) OR ((event_type <> 'issuance'::text) AND (issuance_state = 'not_applicable'::text)))),
+    CONSTRAINT ck_trust_access_log_issued_requires_crypto CHECK (((issuance_state <> 'issued'::text) OR ((issued_at IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (envelope_hash IS NOT NULL)))),
     CONSTRAINT ck_trust_access_log_refusal_no_evidence CHECK (((event_type <> ALL (ARRAY['refusal'::text, 'scope_denial'::text])) OR (evidence_refs_allowed = false))),
-    CONSTRAINT ck_trust_access_log_status CHECK ((status = ANY (ARRAY['success'::text, 'refused'::text, 'degraded'::text, 'replayed'::text])))
+    CONSTRAINT ck_trust_access_log_status CHECK ((status = ANY (ARRAY['success'::text, 'refused'::text, 'degraded'::text, 'replayed'::text]))),
+    CONSTRAINT ck_trust_access_log_unissued_has_no_crypto CHECK (((issuance_state = 'issued'::text) OR ((issued_at IS NULL) AND (issued_signing_key_id IS NULL) AND (issued_signature_hash IS NULL))))
 );
 
 ALTER TABLE ONLY public.trust_access_log FORCE ROW LEVEL SECURITY;
@@ -8396,6 +8404,8 @@ CREATE INDEX ix_public_celery_task_failures_task_id ON public.worker_failed_jobs
 CREATE INDEX ix_public_celery_task_failures_task_name ON public.worker_failed_jobs USING btree (task_name);
 
 CREATE INDEX ix_public_celery_task_failures_tenant_id ON public.worker_failed_jobs USING btree (tenant_id);
+
+CREATE INDEX ix_trust_access_log_issuance_state ON public.trust_access_log USING btree (tenant_id, issuance_state);
 
 CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
 
