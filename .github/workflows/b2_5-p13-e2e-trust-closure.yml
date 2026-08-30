@@ -2124,11 +2124,15 @@ jobs:
             "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname = current_user")
           test "$flags" = "false:false" || test "$flags" = "f:f"
           # Least privilege: the issuance principal may not read tenant business
-          # data, only the audit ledger it transitions.
-          if psql "$TRUST_ISSUANCE_DATABASE_URL" -v ON_ERROR_STOP=1 \
-              -c "SELECT 1 FROM public.b23_match_verdicts LIMIT 1" >/dev/null 2>&1; then
-            echo "issuance principal can read deterministic revenue source"; exit 1
-          fi
+          # data, only the audit ledger it transitions. The refusal is matched on
+          # its exact cause so this cannot pass for the wrong reason -- an unset
+          # tenant GUC also errors, and that is not the property being claimed.
+          denial=$(psql "$TRUST_ISSUANCE_DATABASE_URL" \
+            -c "SELECT 1 FROM public.b23_match_verdicts LIMIT 1" 2>&1 || true)
+          echo "$denial" | grep -q 'permission denied for table b23_match_verdicts'
+          granted=$(psql "$MIGRATION_DATABASE_URL" -tAc \
+            "SELECT string_agg(table_name || ':' || privilege_type, ',' ORDER BY table_name, privilege_type) FROM information_schema.table_privileges WHERE grantee = 'app_trust_issuer'")
+          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE"
           guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.trust_access_log'::regclass AND tgname = 'trg_trust_access_log_issuance_authority_guard'")
           test "$guard" = "1"
