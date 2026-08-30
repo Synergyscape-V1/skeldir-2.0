@@ -91,6 +91,23 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "options": {"expires": 600},
         },
     }
+    if os.getenv("SKELDIR_B25_DISABLE_TRUST_ISSUANCE_RECONCILER_JOB") != "1":
+        trust_interval = _positive_int_env(
+            "B25_TRUST_ISSUANCE_RECONCILE_INTERVAL_SECONDS", 60
+        )
+        schedule["b25-p13-trust-issuance-reconciler"] = {
+            "task": "app.tasks.maintenance.reconcile_trust_issuance_all_tenants",
+            "schedule": float(trust_interval),
+            "options": {"expires": trust_interval * 2},
+            "kwargs": {
+                "stale_seconds": _positive_int_env(
+                    "B25_TRUST_ISSUANCE_STALE_SECONDS", 900
+                ),
+                "batch_size": _positive_int_env(
+                    "B25_TRUST_ISSUANCE_RECONCILE_BATCH_SIZE", 100
+                ),
+            },
+        }
     if os.getenv("SKELDIR_B24_DISABLE_FIT_PLANNER_JOB") != "1":
         schedule["b24-fit-planner"] = {
             "task": "app.tasks.bayesian.plan_due_fit_intents",

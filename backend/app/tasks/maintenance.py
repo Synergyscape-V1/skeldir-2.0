@@ -30,6 +30,7 @@ from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.context import run_in_worker_loop
 from app.tasks.enqueue import enqueue_tenant_task
 from app.tasks.tenant_base import TenantTask, task_tenant_id
+from app.trust.audit import reconcile_stale_trust_issuance_states
 
 logger = logging.getLogger(__name__)
 _IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
@@ -39,6 +40,8 @@ _DENYLIST_GC_SINGLEFLIGHT_LOCK_KEY = 1205001
 _DEFAULT_EPHEMERAL_RESOLUTION_GC_BATCH_SIZE = 2000
 _DEFAULT_RAW_EVENT_PAYLOAD_GC_BATCH_SIZE = 2000
 _DEFAULT_PROVIDER_REFRESH_BATCH_SIZE = 100
+_DEFAULT_TRUST_ISSUANCE_STALE_SECONDS = 900
+_DEFAULT_TRUST_ISSUANCE_RECONCILE_BATCH_SIZE = 100
 
 
 def _validated_matview_identifier(
@@ -295,6 +298,100 @@ async def _fetch_all_tenant_ids() -> List[UUID]:
     async with engine.begin() as conn:
         result = await conn.execute(text("SELECT id FROM public.tenants ORDER BY id"))
         return [UUID(str(row[0])) for row in result.fetchall()]
+
+
+@celery_app.task(
+    bind=True,
+    base=TenantTask,
+    name="app.tasks.maintenance.reconcile_trust_issuance_for_tenant",
+    routing_key="maintenance.task",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def reconcile_trust_issuance_for_tenant(
+    self,
+    stale_seconds: int = _DEFAULT_TRUST_ISSUANCE_STALE_SECONDS,
+    batch_size: int = _DEFAULT_TRUST_ISSUANCE_RECONCILE_BATCH_SIZE,
+    correlation_id: Optional[str] = None,
+) -> Dict[str, int]:
+    """Bound one tenant's stale authorization and signing states."""
+    tenant_id = task_tenant_id(self)
+    correlation_id = correlation_id or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    set_tenant_id(tenant_id)
+    bounded_stale_seconds = max(1, min(stale_seconds, 86_400))
+    bounded_batch_size = max(1, min(batch_size, 1_000))
+    stale_before = datetime.now(timezone.utc) - timedelta(
+        seconds=bounded_stale_seconds
+    )
+    try:
+        result = run_in_worker_loop(
+            reconcile_stale_trust_issuance_states(
+                tenant_id=tenant_id,
+                stale_before=stale_before,
+                batch_size=bounded_batch_size,
+            )
+        )
+        logger.info(
+            "trust_issuance_reconciliation_completed",
+            extra={
+                "tenant_id": str(tenant_id),
+                "correlation_id": correlation_id,
+                "event_type": "trust_issuance_reconciliation",
+                **result,
+            },
+        )
+        return result
+    except Exception as exc:
+        logger.error(
+            "trust_issuance_reconciliation_failed",
+            exc_info=exc,
+            extra={
+                "tenant_id": str(tenant_id),
+                "correlation_id": correlation_id,
+                "event_type": "trust_issuance_reconciliation",
+            },
+        )
+        raise self.retry(exc=exc, countdown=60)
+    finally:
+        set_request_correlation_id(None)
+        set_tenant_id(None)
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.maintenance.reconcile_trust_issuance_all_tenants",
+    routing_key="maintenance.task",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def reconcile_trust_issuance_all_tenants(
+    self,
+    stale_seconds: int = _DEFAULT_TRUST_ISSUANCE_STALE_SECONDS,
+    batch_size: int = _DEFAULT_TRUST_ISSUANCE_RECONCILE_BATCH_SIZE,
+) -> Dict[str, int]:
+    """Dispatch the bounded reconciler through tenant-authority envelopes."""
+    correlation_id = getattr(self.request, "correlation_id", None) or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    try:
+        tenant_ids = run_in_worker_loop(_fetch_all_tenant_ids())
+        for tenant_id in tenant_ids:
+            enqueue_tenant_task(
+                reconcile_trust_issuance_for_tenant,
+                envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+                kwargs={
+                    "stale_seconds": stale_seconds,
+                    "batch_size": batch_size,
+                    "correlation_id": correlation_id,
+                },
+                correlation_id=correlation_id,
+            )
+        return {
+            "tenant_count": len(tenant_ids),
+            "tasks_dispatched": len(tenant_ids),
+        }
+    finally:
+        set_request_correlation_id(None)
 
 
 @celery_app.task(

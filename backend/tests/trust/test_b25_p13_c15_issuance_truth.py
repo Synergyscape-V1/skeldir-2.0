@@ -47,12 +47,12 @@ from app.trust.issuance_authority_ledger import (
     mint_build_witness_authority,
     mint_issuance_capability,
 )
+from app.trust.issuance_session import trust_issuance_database_url
 from app.trust.jwks import build_jwks_response
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
 from app.trust.machine_identity import AgentScope
 from app.trust.semantic_authority import AuthorizedTrustEnvelope
 from app.trust.signing import TrustEnvelopeSigningError, sign_trust_envelope
-from app.trust.verification import verify_trust_envelope
 
 from test_b25_p13_e2e_trust_closure import (
     SIGNING_KID,
@@ -150,7 +150,6 @@ def test_c15_declared_trusted_computing_base_is_explicit() -> None:
         {
             "app.trust.builder",
             "app.trust.semantic_authority",
-            "app.trust.signing",
         }
     )
     doc = ROOT / "docs/security/b25_p13_c15_trusted_computing_base.md"
@@ -294,7 +293,9 @@ async def _issuance_rows(engine, tenant_id: UUID) -> list[dict]:
                 """
                 SELECT audit_ref, event_type, status, issuance_state,
                        envelope_hash, issued_signing_key_id,
-                       issued_signature_hash, issued_at, replay_count
+                       issued_signature_hash, issued_signature, issued_at,
+                       issuance_attempted_at, issuance_outcome_unknown_at,
+                       replay_count
                 FROM public.trust_access_log
                 WHERE tenant_id = :t AND event_type = 'issuance'
                 ORDER BY created_at
@@ -342,9 +343,12 @@ def _configure_signing(monkeypatch, *, kid: str = SIGNING_KID, seed: bytes) -> N
 async def test_c15_durable_history_never_overstates_physical_issuance(
     monkeypatch,
 ) -> None:
-    """Force failure at each consequence boundary after durable P7 audit.
+    """Force two pre-return failures after durable P7 authorization.
 
-    Before Corrective XV every one of these left a row reading
+    These injection points replace the signer and therefore do not prove a
+    post-signature boundary. Corrective XVI's dedicated suite separately wraps
+    the genuine signer and fails only the completion write. Before Corrective XV
+    every one of these left a row reading
     ``event_type='issuance', status='success'`` carrying an ``envelope_hash``,
     for a request whose signature never physically existed.
     """
@@ -396,31 +400,43 @@ async def test_c15_durable_history_never_overstates_physical_issuance(
 
         rows = await _issuance_rows(engine, tenant_id)
         issued = [row for row in rows if row["issuance_state"] == "issued"]
-        failed = [row for row in rows if row["issuance_state"] == "failed"]
+        unknown = [
+            row
+            for row in rows
+            if row["issuance_state"] == "signature_outcome_unknown"
+        ]
 
         # THE GOVERNING INVARIANT: AUDIT HISTORY = PHYSICAL EVENT HISTORY.
         assert len(issued) == signed_envelopes_delivered, rows
-        assert len(failed) == len(boundaries), rows
+        assert len(unknown) == len(boundaries), rows
 
         # A completed-issuance row must carry the cryptographic evidence of it.
         for row in issued:
             assert row["issued_signing_key_id"], row
             assert row["issued_signature_hash"], row
+            assert len(row["issued_signature"]) == 64, row
             assert row["issued_at"] is not None, row
             ISSUANCE_TRUTH_OBSERVATIONS.append("issued_row_carries_signature_identity")
 
-        # An abandoned issuance must carry none.
-        for row in failed:
+        # Entering the signer makes the exact outcome unknowable on exception.
+        for row in unknown:
             assert row["issued_signing_key_id"] is None, row
             assert row["issued_signature_hash"] is None, row
+            assert row["issued_signature"] is None, row
             assert row["issued_at"] is None, row
-            ISSUANCE_TRUTH_OBSERVATIONS.append("failed_row_carries_no_signature")
+            assert row["issuance_attempted_at"] is not None, row
+            assert row["issuance_outcome_unknown_at"] is not None, row
+            ISSUANCE_TRUTH_OBSERVATIONS.append("unknown_row_is_explicit")
 
         print("\nc15_issuance_truth_observations=" + str(
             len(ISSUANCE_TRUTH_OBSERVATIONS)
         ))
         print("c15_issuance_states=" + json.dumps(
-            {"issued": len(issued), "failed": len(failed)}, sort_keys=True
+            {
+                "issued": len(issued),
+                "signature_outcome_unknown": len(unknown),
+            },
+            sort_keys=True,
         ))
     finally:
         await engine.dispose()
@@ -436,6 +452,12 @@ async def test_c15_database_physically_refuses_unbacked_completion_claim(
     A future code path that forgets to finalise cannot fabricate completed
     issuance, because PostgreSQL rejects an ``issued`` row without a key id and
     a signature hash.
+
+    B2.5-P13 Corrective XVI narrowed *who* may attempt such a write at all, so
+    this proof now has two halves: an ordinary runtime principal is refused
+    before the constraint is ever consulted, and the constraint itself is still
+    proven load-bearing by driving the same mutation under the one principal
+    that does hold issuance authority.
     """
 
     _configure_signing(monkeypatch, seed=b"b25-p13-e2e-signing-key")
@@ -456,35 +478,77 @@ async def test_c15_database_physically_refuses_unbacked_completion_claim(
         rows = await _issuance_rows(engine, tenant_id)
         audit_ref = rows[0]["audit_ref"]
 
-        with pytest.raises(Exception) as excinfo:
+        unbacked_completion = text(
+            """
+            UPDATE public.trust_access_log
+            SET issuance_state = 'issued',
+                issued_at = now(),
+                issued_signing_key_id = NULL,
+                issued_signature_hash = NULL
+            WHERE tenant_id = :t AND audit_ref = :a
+            """
+        )
+
+        with pytest.raises(Exception) as ordinary_error:
             async with engine.begin() as connection:
                 await connection.execute(
                     text("SELECT set_config('app.current_tenant_id', :t, true)"),
                     {"t": str(tenant_id)},
                 )
                 await connection.execute(
-                    text(
-                        """
-                        UPDATE public.trust_access_log
-                        SET issuance_state = 'issued',
-                            issued_at = now(),
-                            issued_signing_key_id = NULL,
-                            issued_signature_hash = NULL
-                        WHERE tenant_id = :t AND audit_ref = :a
-                        """
-                    ),
+                    unbacked_completion,
                     {"t": str(tenant_id), "a": audit_ref},
                 )
-        assert "ck_trust_access_log_issued_requires_crypto" in str(excinfo.value)
+        assert "trust_issuance_authority_violation" in str(ordinary_error.value)
+
+        issuer_engine = create_async_engine(
+            to_asyncpg_postgres_dsn(trust_issuance_database_url()), future=True
+        )
+        try:
+            with pytest.raises(Exception) as authority_error:
+                async with issuer_engine.begin() as connection:
+                    await connection.execute(
+                        text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                        {"t": str(tenant_id)},
+                    )
+                    # Reach the constraint by transitioning a row that is legally
+                    # allowed to become issued, so the refusal below is the
+                    # constraint's doing rather than the transition graph's.
+                    await connection.execute(
+                        text(
+                            """
+                            UPDATE public.trust_access_log
+                            SET issuance_state = 'signing',
+                                issuance_attempted_at = now(),
+                                issuance_attempt_count = issuance_attempt_count + 1
+                            WHERE tenant_id = :t AND audit_ref = :a
+                              AND issuance_state <> 'issued'
+                            """
+                        ),
+                        {"t": str(tenant_id), "a": audit_ref},
+                    )
+                    await connection.execute(
+                        unbacked_completion,
+                        {"t": str(tenant_id), "a": audit_ref},
+                    )
+            message = str(authority_error.value)
+            assert (
+                "ck_trust_access_log_issued_requires_crypto" in message
+                or "trust_issuance_authority_violation:terminal" in message
+            ), message
+        finally:
+            await issuer_engine.dispose()
+
         ISSUANCE_TRUTH_OBSERVATIONS.append("db_refuses_unbacked_completion")
         print("\nc15_db_completion_constraint_enforced=1")
+        print("c15_ordinary_principal_completion_refused=1")
     finally:
         await engine.dispose()
 
 
 @_DB_PROOF
 @pytest.mark.asyncio
-async def test_c15_retry_after_failure_yields_one_coherent_lineage(
+async def test_c15_retry_after_indeterminate_yields_one_coherent_lineage(
     monkeypatch,
 ) -> None:
     """One logical issuance request keeps one explainable lineage."""
@@ -523,7 +587,9 @@ async def test_c15_retry_after_failure_yields_one_coherent_lineage(
                 idempotency_key=idempotency_key,
             )
         after_failure = await _issuance_rows(engine, tenant_id)
-        assert [row["issuance_state"] for row in after_failure] == ["failed"]
+        assert [row["issuance_state"] for row in after_failure] == [
+            "signature_outcome_unknown"
+        ]
 
         # Same logical request, retried after the transient is gone.
         monkeypatch.setattr(trust_api, "sign_trust_envelope", original_signer)

@@ -11,7 +11,7 @@ tenant_id_var: ContextVar[Optional[str]] = ContextVar("tenant_id", default=None)
 user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
 
 
-def set_request_correlation_id(value: str) -> None:
+def set_request_correlation_id(value: Optional[str]) -> None:
     correlation_id_request_var.set(value)
 
 

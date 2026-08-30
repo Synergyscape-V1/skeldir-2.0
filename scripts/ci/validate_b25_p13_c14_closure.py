@@ -43,6 +43,9 @@ LOAD_BEARING_JOBS = {
     # B2.5-P13 Corrective XV: issuance-capability inescapability, durable
     # audit truth, and historical HTTP serviceability are merge-governing.
     "b2-5-p13-c15-issuance-truth",
+    # Corrective XVI: physical signature history is conserved in both
+    # directions and nullable CHECK semantics are surveyed exhaustively.
+    "b2-5-p13-c16-bidirectional-truth",
 }
 
 

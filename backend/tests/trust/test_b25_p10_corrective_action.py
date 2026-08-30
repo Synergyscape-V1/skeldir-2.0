@@ -63,8 +63,12 @@ def _stub_issuance_finalisation(monkeypatch, module) -> None:
     async def _noop(**kwargs):
         return None
 
-    monkeypatch.setattr(module, "record_trust_issuance_completed", _noop)
-    monkeypatch.setattr(module, "record_trust_issuance_failed", _noop)
+    for name in (
+        "record_trust_issuance_attempt_started",
+        "record_trust_issuance_completed",
+        "record_trust_issuance_outcome_unknown",
+    ):
+        monkeypatch.setattr(module, name, _noop)
 
 
 def _utc(value: datetime) -> str:
@@ -526,7 +530,7 @@ async def test_tenant_context_assertion_accepts_exact_non_bypass_identity() -> N
 
     class Result:
         def first(self):
-            return (str(caller.tenant_id), False)
+            return (str(caller.tenant_id), False, False)
 
     class Session:
         async def execute(self, statement):
@@ -539,18 +543,20 @@ async def test_tenant_context_assertion_accepts_exact_non_bypass_identity() -> N
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "guc_value,bypass",
+    "guc_value,bypass,superuser",
     [
-        (None, False),
-        ("", False),
-        (str(uuid4()), False),
-        ("not-a-uuid", False),
-        (None, True),
+        (None, False, False),
+        ("", False, False),
+        (str(uuid4()), False, False),
+        ("not-a-uuid", False, False),
+        (None, True, False),
+        (None, False, True),
     ],
 )
 async def test_missing_invalid_mismatched_or_bypass_tenant_context_fails_hard(
     guc_value: str | None,
     bypass: bool,
+    superuser: bool,
 ) -> None:
     caller = _caller()
     request = SimpleNamespace(
@@ -565,7 +571,7 @@ async def test_missing_invalid_mismatched_or_bypass_tenant_context_fails_hard(
 
     class Result:
         def first(self):
-            return (guc_value, bypass)
+            return (guc_value, bypass, superuser)
 
     class Session:
         async def execute(self, statement):
@@ -586,7 +592,7 @@ async def test_tenant_context_handler_invokes_autonomous_audit_and_sanitizes_res
     async def session():
         class Result:
             def first(self):
-                return (None, False)
+                return (None, False, False)
 
         class MissingGucSession:
             async def execute(self, statement):

@@ -120,6 +120,14 @@ async def assert_authenticated_tenant_context(
                             WHERE rolname = current_user
                         ),
                         false
+                    ),
+                    COALESCE(
+                        (
+                            SELECT rolsuper
+                            FROM pg_catalog.pg_roles
+                            WHERE rolname = current_user
+                        ),
+                        false
                     )
                 """
             )
@@ -128,7 +136,7 @@ async def assert_authenticated_tenant_context(
     except Exception:
         raise _tenant_context_exception(request, caller) from None
 
-    if row is None or bool(row[1]):
+    if row is None or bool(row[1]) or bool(row[2]):
         raise _tenant_context_exception(request, caller)
     try:
         transaction_tenant = UUID(str(row[0]))

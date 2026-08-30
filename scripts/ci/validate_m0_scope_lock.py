@@ -240,6 +240,20 @@ ALLOWED_M0_PATHS = [
     "docs/environment/INFRASTRUCTURE_EVIDENCE_CAPSULES.md",
     "scripts/phase_gates/validate_manifest.py",
     "docs/forensics/B2.5-P13 Corrective Action Remediation XV Report.md",
+    # --- B2.5-P13 Corrective XVI surface (bidirectional issuance truth) ---
+    # Same precedent again: the C16 migration, its gate, its falsifier, the
+    # issuance-consequence database custody module, and the evidence pack are
+    # declared explicitly rather than by loosening the alembic prohibition.
+    "scripts/ci/validate_b25_p13_c16_closure.py",
+    "scripts/ci/run_b25_p13_c16_production_topology_proof.sh",
+    "backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py",
+    "backend/app/trust/issuance_session.py",
+    "alembic/versions/007_skeldir_foundation/202608301200_b25_p13_c16_bidirectional_issuance_truth.py",
+    "docs/forensics/B2.5-P13 Corrective Action Remediation XVI Report.md",
+    "docs/forensics/B2.5-P13 XVI CHECK Constraint NULL Semantics Survey.md",
+    "docs/environment/B2.5-P13 INDEPENDENT PRODUCTION TOPOLOGY REPRODUCTION.md",
+    "scripts/database/prepare_migration_authority_boundary.py",
+    ".github/actions/setup-postgres-ci/action.yml",
     "docker-compose.local.yml",
     "DEVELOPMENT.md",
     "scripts/ci/validate_b24_artifact_topology.py",

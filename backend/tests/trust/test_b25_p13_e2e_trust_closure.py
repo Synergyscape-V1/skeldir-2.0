@@ -1563,14 +1563,19 @@ async def _seed_confidence_fits(connection, *, tenant_id: UUID) -> dict[str, str
     #
     # Those triggers stamp observed_at with the database's now(), and the
     # freshness predicate compares it against this fit's source_read_started_at.
-    # Taking this timestamp in Python compares two different clocks, and on a
-    # machine where they agree closely the ordering is decided by whichever
-    # happens to be a few microseconds ahead -- so the multi-currency fit
-    # intermittently came back degraded rather than unavailable, for a reason
-    # that had nothing to do with currencies. clock_timestamp() advances within
-    # a transaction, so this is strictly later than the trigger writes above.
+    # Taking this timestamp in Python compares two different clocks. Relying on
+    # clock_timestamp() alone is also insufficient on Windows-hosted Docker:
+    # the container wall clock can be corrected backwards while PostgreSQL's
+    # transaction timestamp remains fixed. Bound against both database clock
+    # authorities, then advance by one microsecond, so this fixture timestamp is
+    # causally later than the trigger writes even across a backward correction.
     post_source_seed = (
-        await connection.execute(text("SELECT clock_timestamp()"))
+        await connection.execute(
+            text(
+                "SELECT GREATEST(clock_timestamp(), transaction_timestamp()) "
+                "+ interval '1 microsecond'"
+            )
+        )
     ).scalar_one()
     cases = {
         "available": {
