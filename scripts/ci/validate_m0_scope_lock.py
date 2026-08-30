@@ -254,6 +254,10 @@ ALLOWED_M0_PATHS = [
     "docs/environment/B2.5-P13 INDEPENDENT PRODUCTION TOPOLOGY REPRODUCTION.md",
     "scripts/database/prepare_migration_authority_boundary.py",
     ".github/actions/setup-postgres-ci/action.yml",
+    # The bounded issuance reconciler and the Optional correlation-id typing it
+    # requires: both are Corrective XVI trust-closure surfaces, not M0/M1 scope.
+    "backend/app/tasks/maintenance.py",
+    "backend/app/observability/context.py",
     "docker-compose.local.yml",
     "DEVELOPMENT.md",
     "scripts/ci/validate_b24_artifact_topology.py",
