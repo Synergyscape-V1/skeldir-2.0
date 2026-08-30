@@ -188,6 +188,21 @@
   negative_control_preserved_by: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control plus NC-XV-CAPABILITY, NC-XV-WITNESS, NC-XV-AUDIT-TRUTH, and NC-XV-MANIFEST
   local_reproduction_command: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control
   risk_if_removed: Arbitrary same-process code could mint TrustEnvelope signing authority over a self-authored claim, durable history could record completed issuance for envelopes that were never signed, and the documented bootstrap could silently stop working on a supported platform.
+- gate_id: validate-b25-p13-c16-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 C16 Bidirectional Issuance Truth
+  script: scripts/ci/validate_b25_p13_c16_closure.py
+  owning_phase: B2.5-P13-C16
+  protected_invariant: Audit event history and physical signing-event history are bidirectionally equal, with database-enforced issuance transition authority that no ordinary runtime principal holds, reconstructable issued evidence, explicit uncertainty after the irreversible boundary, bounded stale states, NULL-safe database predicates, least-privilege RLS evidence, and serialized production schema deployment.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C15 proves that a completed audit row cannot be written without signature metadata and that pre-sign failures do not overstate issuance. It does not prove the converse after a real signer return, retain the raw public signature, classify export early exits, bound crashed attempts, survey three-valued CHECK behavior, reject superuser evidence, or serialize both deployment triggers.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control plus the six PostgreSQL-backed C16 behavioral falsifiers
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control
+  risk_if_removed: Any holder of the ordinary application database credentials can stamp a fabricated completed issuance, a real signature can exist without a corresponding durable event, an issued record can be non-reconstructable, a crashed attempt can remain authorized indefinitely, a NULL can bypass a consequence-bearing constraint, privileged test identity can invalidate RLS evidence, or concurrent deployment triggers can race the migration chain while all earlier gates remain green.
 - gate_id: validate-b25-p13-c14-closure
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 C14 Complete Semantic Issuance Authority

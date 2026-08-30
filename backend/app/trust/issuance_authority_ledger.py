@@ -65,7 +65,6 @@ TRUSTED_ISSUANCE_MODULES = frozenset(
     {
         "app.trust.builder",
         "app.trust.semantic_authority",
-        "app.trust.signing",
     }
 )
 

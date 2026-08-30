@@ -22,8 +22,10 @@ from app.api.trust_api import (
 from app.db import session as db_session
 from app.trust.audit import (
     build_unsigned_trust_envelope_with_audit,
+    record_trust_issuance_attempt_started,
     record_trust_issuance_batch_completed,
-    record_trust_issuance_failed,
+    record_trust_issuance_batch_outcome_unknown,
+    record_trust_issuance_outcome_unknown,
 )
 from app.trust.builder import TrustEnvelopeBuildRequest
 from app.trust.export_artifact import build_export_artifact, sign_export_artifact
@@ -288,25 +290,52 @@ async def _issue_export_envelope(
     )
     if result.authorized_envelope is None:
         return None
-    # B2.5-P13 Corrective XV (H-XV-02/03): the durable record says 'authorized'
-    # until a signature physically exists, on the export path as on the read path.
+    await record_trust_issuance_attempt_started(
+        tenant_id=caller.tenant_id,
+        audit_ref=result.audit_record.audit_ref,
+    )
     try:
         signed = await asyncio.to_thread(
             sign_trust_envelope,
             result.authorized_envelope,
             key_registry=key_registry,
         )
-        _assert_external_payload_safe(signed)
     except BaseException:
-        await record_trust_issuance_failed(
+        # Once the signer is entered, an exception alone cannot prove whether
+        # the private key returned before the exception occurred.
+        await record_trust_issuance_outcome_unknown(
             tenant_id=caller.tenant_id,
             audit_ref=result.audit_record.audit_ref,
         )
         raise
-    # Completion is finalised once per request by the caller, not once per
-    # envelope: the consequence boundary is the request, and N durable
-    # transactions inside a deadline-bounded handler is the wrong granularity.
+    # B2.5-P13 Corrective XVI (XVI-C). Externalisation safety is a delivery
+    # property, not a signing outcome. The read path evaluates it strictly
+    # after the durable completion write; the export path must record the same
+    # issuance truth for the same physical consequence, so this check moved out
+    # of the signing boundary and is applied by the caller once the page's
+    # signatures are durably recorded.
     return signed, result.audit_record.audit_ref
+
+
+async def _finalize_export_issuance_completions(
+    *,
+    tenant_id: UUID,
+    completions: list[tuple[str, dict[str, Any]]],
+) -> None:
+    """Commit signed page evidence or retain an explicit unknown outcome."""
+    if not completions:
+        return
+    try:
+        await record_trust_issuance_batch_completed(
+            tenant_id=tenant_id,
+            completions=completions,
+        )
+    except BaseException:
+        await record_trust_issuance_batch_outcome_unknown(
+            tenant_id=tenant_id,
+            audit_refs=[audit_ref for audit_ref, _ in completions],
+        )
+        raise
 
 
 async def _create_export_with_capacity(
@@ -389,34 +418,57 @@ async def _create_export_with_capacity(
         )
     envelopes: list[dict[str, Any]] = []
     issuance_completions: list[tuple[str, dict[str, Any]]] = []
-    for page_offset, subject_ref in enumerate(page_refs):
-        verdict_id = parse_match_verdict_subject_ref(subject_ref)
-        source = sources_by_id.get(verdict_id)
-        if source is None:
-            return _typed_error_response(
-                ReasonCode.SUBJECT_NOT_FOUND,
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+    deferred_refusal: JSONResponse | None = None
+    try:
+        for page_offset, subject_ref in enumerate(page_refs):
+            verdict_id = parse_match_verdict_subject_ref(subject_ref)
+            source = sources_by_id.get(verdict_id)
+            if source is None:
+                deferred_refusal = _typed_error_response(
+                    ReasonCode.SUBJECT_NOT_FOUND,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                )
+                break
+            issued = await _issue_export_envelope(
+                session=session,
+                caller=caller,
+                subject_ref=subject_ref,
+                idempotency_key=(
+                    f"{idempotency_key}:export:"
+                    f"{binding_hash.removeprefix('sha256:')}:"
+                    f"{start_position + page_offset}"
+                ),
+                key_registry=key_registry,
+                issued_at=now,
+                source=source,
             )
-        issued = await _issue_export_envelope(
-            session=session,
-            caller=caller,
-            subject_ref=subject_ref,
-            idempotency_key=(
-                f"{idempotency_key}:export:{binding_hash.removeprefix('sha256:')}:"
-                f"{start_position + page_offset}"
-            ),
-            key_registry=key_registry,
-            issued_at=now,
-            source=source,
+            if issued is None:
+                deferred_refusal = _typed_error_response(
+                    ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                )
+                break
+            envelope, envelope_audit_ref = issued
+            envelopes.append(envelope)
+            issuance_completions.append((envelope_audit_ref, envelope))
+    except BaseException:
+        await _finalize_export_issuance_completions(
+            tenant_id=caller.tenant_id,
+            completions=issuance_completions,
         )
-        if issued is None:
-            return _typed_error_response(
-                ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            )
-        envelope, envelope_audit_ref = issued
-        envelopes.append(envelope)
-        issuance_completions.append((envelope_audit_ref, envelope))
+        raise
+
+    # No ceiling, artifact construction, safety assertion, size check,
+    # continuation, or response delivery may occur while a real page signature
+    # remains only in memory.
+    await _finalize_export_issuance_completions(
+        tenant_id=caller.tenant_id,
+        completions=issuance_completions,
+    )
+    for envelope in envelopes:
+        _assert_external_payload_safe(envelope)
+    if deferred_refusal is not None:
+        return deferred_refusal
     if len(envelopes) > MAX_SIGNED_EXPORT_ENVELOPES:
         raise RuntimeError("p11_signed_envelope_ceiling_breached")
 
@@ -437,14 +489,6 @@ async def _create_export_with_capacity(
             ReasonCode.RESPONSE_BUDGET_EXCEEDED,
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
         )
-
-    # B2.5-P13 Corrective XV (H-XV-02/03). Every envelope in this artifact now
-    # has a signature that physically exists, so durable history may say so --
-    # in one transaction for the whole request rather than one per envelope.
-    await record_trust_issuance_batch_completed(
-        tenant_id=caller.tenant_id,
-        completions=issuance_completions,
-    )
 
     remaining_count = accepted_count - end_position
     response.headers["X-Export-Accepted-Count"] = str(accepted_count)

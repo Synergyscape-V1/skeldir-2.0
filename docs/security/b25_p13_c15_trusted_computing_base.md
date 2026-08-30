@@ -25,7 +25,7 @@ hash function were module-level importables.
 
 ## Trusted computing base
 
-Exactly three modules may mint or redeem TrustEnvelope issuance authority. The
+Exactly two modules may mint or redeem TrustEnvelope issuance authority. The
 list is enforced in code at
 `backend/app/trust/issuance_authority_ledger.py::TRUSTED_ISSUANCE_MODULES`, and
 pinned by test, so it cannot drift silently:
@@ -33,8 +33,7 @@ pinned by test, so it cannot drift silently:
 | Module | Authority |
 |---|---|
 | `app.trust.builder` | Mints the P5 build witness from authoritative tenant-scoped rows |
-| `app.trust.semantic_authority` | Mints the P7-authorised issuance capability after full semantic correspondence |
-| `app.trust.signing` | Redeems the capability at the private-key boundary |
+| `app.trust.semantic_authority` | Mints the P7-authorised issuance capability after full semantic correspondence and redeems it when the signer invokes the capability's private payload resolver |
 
 Two physical properties, not naming conventions, carry the boundary:
 
@@ -51,9 +50,29 @@ Capability handles are single-use, so one authorised mint is redeemable exactly
 once. That is also the anti-replay property behind one-logical-issuance /
 one-lineage.
 
+## Database-layer issuance authority (Corrective XVI)
+
+The application-layer TCB above governs who may *mint and redeem* signing
+authority in-process. It cannot govern who may *assert, in durable history*,
+that a signature happened, because that assertion is a database write and any
+holder of the application's database credentials can attempt one.
+
+Corrective XVI therefore adds a second, independent boundary at the database:
+
+| Principal | Issuance-consequence authority |
+|---|---|
+| `app_user` (API, generic workers) | None. Every transition into or out of a consequence-bearing state, and every write of crypto evidence or lineage counters, raises `trust_issuance_authority_violation`. |
+| `app_worker`, `app_dispatch_publisher` | None, by the same guard. |
+| `app_trust_issuer` | May perform legal transitions only, and remains bound by the transition graph, terminal immutability, tenant binding, monotonic lineage, and the evidence CHECK constraints. It holds no INSERT privilege. |
+| `migration_owner` (schema owner) | Migration authority, which is out of runtime scope by definition. |
+
+The guard keys on `session_user`, not `current_user`, so membership and
+`SET ROLE` cannot reach it: obtaining issuance authority requires a separate
+login with a separate credential.
+
 ## Inside the threat model
 
-Every production-reachable caller outside the three modules above. All of the
+Every production-reachable caller outside the two modules above. All of the
 following fail closed, and each is exercised as a negative control in
 `backend/tests/trust/test_b25_p13_c15_issuance_truth.py`:
 

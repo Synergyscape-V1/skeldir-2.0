@@ -71,9 +71,11 @@ def _stub_issuance_finalisation(monkeypatch, module) -> None:
     # The export route finalises once per request via the batch write; the read
     # route finalises per envelope. Stub whichever this module actually uses.
     for name in (
+        "record_trust_issuance_attempt_started",
         "record_trust_issuance_completed",
         "record_trust_issuance_batch_completed",
-        "record_trust_issuance_failed",
+        "record_trust_issuance_batch_outcome_unknown",
+        "record_trust_issuance_outcome_unknown",
     ):
         if hasattr(module, name):
             monkeypatch.setattr(module, name, _noop)

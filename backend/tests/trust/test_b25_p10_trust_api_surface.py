@@ -66,8 +66,12 @@ def _stub_issuance_finalisation(monkeypatch, module) -> None:
     async def _noop(**kwargs):
         return None
 
-    monkeypatch.setattr(module, "record_trust_issuance_completed", _noop)
-    monkeypatch.setattr(module, "record_trust_issuance_failed", _noop)
+    for name in (
+        "record_trust_issuance_attempt_started",
+        "record_trust_issuance_completed",
+        "record_trust_issuance_outcome_unknown",
+    ):
+        monkeypatch.setattr(module, name, _noop)
 
 
 def _utc(value: datetime) -> str:

@@ -118,6 +118,11 @@ ALLOWED_NON_RUNTIME_PATHS = (
     # they are post-P1 trust closure, not P1 runtime drift.
     "backend/app/trust/issuance_authority_ledger.py",
     "backend/tests/trust/test_b25_p13_c15_issuance_truth.py",
+    # B2.5-P13 Corrective XVI: the issuance-consequence database custody
+    # boundary and its falsifiers. Same reason again -- these are post-P1
+    # trust closure surfaces, not P1 runtime drift.
+    "backend/app/trust/issuance_session.py",
+    "backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py",
 )
 
 

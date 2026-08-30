@@ -33,7 +33,7 @@ TRUST_API = Path("backend/app/api/trust_api.py")
 TRUST_EXPORT = Path("backend/app/api/trust_export.py")
 MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/"
-    "202608291200_b25_p13_c15_issuance_completion_state.py"
+    "202608301200_b25_p13_c16_bidirectional_issuance_truth.py"
 )
 TESTS = Path("backend/tests/trust/test_b25_p13_c15_issuance_truth.py")
 TCB_DOC = Path("docs/security/b25_p13_c15_trusted_computing_base.md")
@@ -44,7 +44,6 @@ WORKFLOW = Path(".github/workflows/b2_5-p13-e2e-trust-closure.yml")
 EXPECTED_TCB = {
     "app.trust.builder",
     "app.trust.semantic_authority",
-    "app.trust.signing",
 }
 
 
@@ -74,7 +73,7 @@ def validate_capability_inescapability(
 
     declared = set(re.findall(r'"(app\.trust\.[a-z_]+)"', ledger))
     _require(
-        EXPECTED_TCB.issubset(declared),
+        declared == EXPECTED_TCB,
         "c15_tcb_declaration_missing",
     )
     _require(
@@ -128,15 +127,15 @@ def validate_capability_inescapability(
 
 
 def validate_issuance_state_model(audit: str, api: str, export: str) -> None:
-    """Authorisation and completed issuance must be separate durable facts."""
+    """Authorization, private-key entry, uncertainty, and completion are distinct."""
 
     _require(
         "async def record_trust_issuance_completed" in audit,
         "c15_no_issuance_completion_record",
     )
     _require(
-        "async def record_trust_issuance_failed" in audit,
-        "c15_no_issuance_failure_record",
+        "async def record_trust_issuance_attempt_started" in audit,
+        "c15_no_write_ahead_signing_record",
     )
     _require(
         "issuance_completion_requires_signature_identity" in audit,
@@ -147,8 +146,16 @@ def validate_issuance_state_model(audit: str, api: str, export: str) -> None:
         "c15_pre_sign_row_does_not_record_authorized_state",
     )
     _require(
-        audit.count("issuance_completion_requires_signature_identity") >= 2,
-        "c15_batch_completion_does_not_require_signature_identity",
+        "async def record_trust_issuance_outcome_unknown" in audit,
+        "c15_no_indeterminate_issuance_record",
+    )
+    _require(
+        "async def record_trust_issuance_batch_outcome_unknown" in audit,
+        "c15_no_batch_indeterminate_issuance_record",
+    )
+    _require(
+        "issuance_completion_requires_valid_signature_bytes" in audit,
+        "c15_completion_does_not_retain_signature_evidence",
     )
     # The read route finalises per envelope; the export route signs several per
     # request and finalises them in one transaction. Either shape counts as
@@ -160,8 +167,13 @@ def validate_issuance_state_model(audit: str, api: str, export: str) -> None:
             f"c15_{label}_does_not_finalize_completed_issuance",
         )
         _require(
-            "record_trust_issuance_failed(" in source,
-            f"c15_{label}_does_not_record_issuance_failure",
+            "record_trust_issuance_attempt_started(" in source,
+            f"c15_{label}_does_not_write_ahead_before_signing",
+        )
+        _require(
+            "record_trust_issuance_outcome_unknown(" in source
+            or "record_trust_issuance_batch_outcome_unknown(" in source,
+            f"c15_{label}_does_not_record_indeterminate_issuance",
         )
 
 
@@ -173,11 +185,20 @@ def validate_database_enforces_completion(migration: str) -> None:
         "c15_no_database_completion_constraint",
     )
     _require(
+        "issued_signature_hash IS NOT NULL" in migration,
+        "c15_completion_constraint_allows_null_hash",
+    )
+    _require(
         "issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'" in migration,
         "c15_completion_constraint_does_not_bind_signature",
     )
     _require(
-        "ck_trust_access_log_unissued_has_no_crypto" in migration,
+        "issued_signature IS NOT NULL" in migration
+        and "octet_length(issued_signature) = 64" in migration,
+        "c15_completion_constraint_lacks_signature_bytes",
+    )
+    _require(
+        "ck_trust_access_log_nonissued_has_no_crypto" in migration,
         "c15_unissued_rows_may_carry_signature_evidence",
     )
 
@@ -226,7 +247,7 @@ def validate_proof_wiring(tests: str, workflow: str) -> None:
         "test_c15_raw_caller_dictionary_still_cannot_sign",
         "test_c15_durable_history_never_overstates_physical_issuance",
         "test_c15_database_physically_refuses_unbacked_completion_claim",
-        "test_c15_retry_after_failure_yields_one_coherent_lineage",
+        "test_c15_retry_after_indeterminate_yields_one_coherent_lineage",
         "test_c15_historical_envelope_serviceable_over_http_after_key_rotation",
     ):
         _require(marker in tests, f"c15_missing_falsifier:{marker}")
@@ -380,20 +401,24 @@ def run_negative_controls() -> None:
             "batch_completion_stops_requiring_signature_identity",
             lambda: validate_issuance_state_model(
                 audit.replace(
-                    "issuance_completion_requires_signature_identity",
+                    "issuance_completion_requires_valid_signature_bytes",
                     "issuance_completion_unchecked",
-                    2,
                 ),
                 api,
                 export,
             ),
         ),
         (
-            "export_stops_recording_failure",
+            "export_stops_recording_indeterminate_outcome",
             lambda: validate_issuance_state_model(
                 audit,
                 api,
-                export.replace("record_trust_issuance_failed(", "_skip_failure("),
+                export.replace(
+                    "record_trust_issuance_outcome_unknown(", "_skip_unknown("
+                ).replace(
+                    "record_trust_issuance_batch_outcome_unknown(",
+                    "_skip_batch_unknown(",
+                ),
             ),
         ),
         (

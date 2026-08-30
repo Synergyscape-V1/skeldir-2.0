@@ -2566,6 +2566,139 @@ CREATE FUNCTION public.reject_reserved_trust_action_scope() RETURNS trigger
         END;
         $$;
 
+CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            table_owner text;
+            has_authority boolean;
+            consequence_changed boolean;
+        BEGIN
+            SELECT r.rolname INTO table_owner
+            FROM pg_class c
+            JOIN pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'trust_access_log'::regclass;
+
+            has_authority := session_user IN ('app_trust_issuer', table_owner);
+
+            IF TG_OP = 'INSERT' THEN
+
+                IF NEW.event_type = 'issuance' THEN
+                    IF NEW.issuance_state <> 'authorized' THEN
+                        RAISE EXCEPTION
+                            'trust_issuance_authority_violation:insert_state:%',
+                            NEW.issuance_state USING ERRCODE = '42501';
+                    END IF;
+                ELSIF NEW.issuance_state <> 'not_applicable' THEN
+                    RAISE EXCEPTION
+                        'trust_issuance_authority_violation:insert_state:%',
+                        NEW.issuance_state USING ERRCODE = '42501';
+                END IF;
+                IF NEW.issued_at IS NOT NULL
+                   OR NEW.issuance_attempted_at IS NOT NULL
+                   OR NEW.issuance_outcome_unknown_at IS NOT NULL
+                   OR NEW.issued_signing_key_id IS NOT NULL
+                   OR NEW.issued_signature_hash IS NOT NULL
+                   OR NEW.issued_signature IS NOT NULL
+                   OR COALESCE(NEW.issuance_attempt_count, 0) <> 0
+                   OR COALESCE(NEW.issuance_unknown_outcome_count, 0) <> 0 THEN
+                    RAISE EXCEPTION
+                        'trust_issuance_authority_violation:insert_evidence'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN NEW;
+            END IF;
+
+            IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
+                RAISE EXCEPTION
+                    'trust_issuance_authority_violation:tenant_rebind'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            consequence_changed :=
+                NEW.issuance_state IS DISTINCT FROM OLD.issuance_state
+                OR NEW.issued_at IS DISTINCT FROM OLD.issued_at
+                OR NEW.issuance_attempted_at
+                    IS DISTINCT FROM OLD.issuance_attempted_at
+                OR NEW.issuance_outcome_unknown_at
+                    IS DISTINCT FROM OLD.issuance_outcome_unknown_at
+                OR NEW.issued_signing_key_id
+                    IS DISTINCT FROM OLD.issued_signing_key_id
+                OR NEW.issued_signature_hash
+                    IS DISTINCT FROM OLD.issued_signature_hash
+                OR NEW.issued_signature IS DISTINCT FROM OLD.issued_signature
+                OR NEW.issuance_attempt_count
+                    IS DISTINCT FROM OLD.issuance_attempt_count
+                OR NEW.issuance_unknown_outcome_count
+                    IS DISTINCT FROM OLD.issuance_unknown_outcome_count;
+
+            IF NOT consequence_changed THEN
+                RETURN NEW;
+            END IF;
+
+            IF NOT has_authority THEN
+                RAISE EXCEPTION
+                    'trust_issuance_authority_violation:principal:%',
+                    session_user USING ERRCODE = '42501';
+            END IF;
+
+            IF OLD.issuance_state IN (
+                'issued', 'issued_legacy', 'not_applicable'
+            ) THEN
+                RAISE EXCEPTION
+                    'trust_issuance_authority_violation:terminal:%',
+                    OLD.issuance_state USING ERRCODE = '42501';
+            END IF;
+
+            IF NEW.issuance_state <> OLD.issuance_state THEN
+                IF NOT (
+                    (OLD.issuance_state = 'authorized'
+                        AND NEW.issuance_state IN ('signing', 'failed'))
+                    OR (OLD.issuance_state IN (
+                            'failed', 'signature_outcome_unknown'
+                        )
+                        AND NEW.issuance_state = 'signing')
+                    OR (OLD.issuance_state = 'signing'
+                        AND NEW.issuance_state IN (
+                            'issued', 'signature_outcome_unknown'
+                        ))
+                ) THEN
+                    RAISE EXCEPTION
+                        'trust_issuance_authority_violation:transition:%->%',
+                        OLD.issuance_state, NEW.issuance_state
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+
+            IF NEW.issuance_attempt_count < OLD.issuance_attempt_count
+               OR NEW.issuance_unknown_outcome_count
+                    < OLD.issuance_unknown_outcome_count THEN
+                RAISE EXCEPTION
+                    'trust_issuance_authority_violation:lineage_regression'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.issuance_state = 'signing'
+               AND OLD.issuance_state <> 'signing'
+               AND NEW.issuance_attempt_count
+                    <> OLD.issuance_attempt_count + 1 THEN
+                RAISE EXCEPTION
+                    'trust_issuance_authority_violation:attempt_not_counted'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.issuance_state = 'signature_outcome_unknown'
+               AND OLD.issuance_state <> 'signature_outcome_unknown'
+               AND NEW.issuance_unknown_outcome_count
+                    <> OLD.issuance_unknown_outcome_count + 1 THEN
+                RAISE EXCEPTION
+                    'trust_issuance_authority_violation:unknown_not_counted'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$;
+
 CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETURNS TABLE(tenant_id uuid, tenant_updated_at timestamp with time zone, shopify_webhook_secret_ciphertext bytea, shopify_webhook_secret_key_id text, stripe_webhook_secret_ciphertext bytea, stripe_webhook_secret_key_id text, paypal_webhook_secret_ciphertext bytea, paypal_webhook_secret_key_id text, woocommerce_webhook_secret_ciphertext bytea, woocommerce_webhook_secret_key_id text)
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -3143,7 +3276,7 @@ CREATE TABLE public.b24_fit_dispatch_outbox (
     assignment_reason text,
     CONSTRAINT ck_b24_fit_dispatch_outbox_assignment_generation_non_negative CHECK ((assignment_generation >= 0)),
     CONSTRAINT ck_b24_fit_dispatch_outbox_attempt_count CHECK ((attempt_count >= 0)),
-    CONSTRAINT ck_b24_fit_dispatch_outbox_claim_capability_digest_sha256 CHECK ((claim_capability_digest ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_b24_fit_dispatch_outbox_claim_capability_digest_sha256 CHECK (((claim_capability_digest IS NULL) OR (claim_capability_digest ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_b24_fit_dispatch_outbox_claim_count_non_negative CHECK ((claim_count >= 0)),
     CONSTRAINT ck_b24_fit_dispatch_outbox_claim_epoch_non_negative CHECK ((claim_epoch >= 0)),
     CONSTRAINT ck_b24_fit_dispatch_outbox_dispatch_key_not_blank CHECK ((char_length(TRIM(BOTH FROM dispatch_key)) > 0)),
@@ -4120,7 +4253,7 @@ CREATE TABLE public.bayesian_model_fits (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -4223,7 +4356,7 @@ CREATE TABLE public.bayesian_model_fits_p00 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -4326,7 +4459,7 @@ CREATE TABLE public.bayesian_model_fits_p01 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -4429,7 +4562,7 @@ CREATE TABLE public.bayesian_model_fits_p02 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -4532,7 +4665,7 @@ CREATE TABLE public.bayesian_model_fits_p03 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -4635,7 +4768,7 @@ CREATE TABLE public.bayesian_model_fits_p04 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -4738,7 +4871,7 @@ CREATE TABLE public.bayesian_model_fits_p05 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -4841,7 +4974,7 @@ CREATE TABLE public.bayesian_model_fits_p06 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -4944,7 +5077,7 @@ CREATE TABLE public.bayesian_model_fits_p07 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -5047,7 +5180,7 @@ CREATE TABLE public.bayesian_model_fits_p08 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -5150,7 +5283,7 @@ CREATE TABLE public.bayesian_model_fits_p09 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -5253,7 +5386,7 @@ CREATE TABLE public.bayesian_model_fits_p10 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -5356,7 +5489,7 @@ CREATE TABLE public.bayesian_model_fits_p11 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -5459,7 +5592,7 @@ CREATE TABLE public.bayesian_model_fits_p12 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -5562,7 +5695,7 @@ CREATE TABLE public.bayesian_model_fits_p13 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -5665,7 +5798,7 @@ CREATE TABLE public.bayesian_model_fits_p14 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -5768,7 +5901,7 @@ CREATE TABLE public.bayesian_model_fits_p15 (
     CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
     CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
-    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_available_interval_requires_passed_diagn CHECK ((((credible_interval_status)::text <> 'available'::text) OR (((diagnostic_status)::text = 'passed'::text) AND (fallback_applied = false) AND (r_hat_max IS NOT NULL) AND (r_hat_max <= (1.01)::double precision) AND (ess_min IS NOT NULL) AND (ess_min >= (400)::double precision) AND (divergence_count IS NOT NULL) AND (divergence_count = 0) AND (hdi_lower IS NOT NULL) AND (hdi_upper IS NOT NULL) AND (interval_element_count IS NOT NULL) AND (interval_element_count > 0) AND (diagnostic_policy_version IS NOT NULL) AND (diagnostic_target_filter_version IS NOT NULL) AND (interval_policy_version IS NOT NULL)))),
     CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
     CONSTRAINT ck_bayesian_model_fits_confidence_currency_count_nonnegative CHECK (((confidence_currency_count IS NULL) OR (confidence_currency_count >= 0))),
     CONSTRAINT ck_bayesian_model_fits_confidence_row_count_nonnegative CHECK (((confidence_deterministic_row_count IS NULL) OR (confidence_deterministic_row_count >= 0))),
@@ -6029,7 +6162,7 @@ CREATE TABLE public.explanation_cache (
     citations jsonb NOT NULL,
     cache_hit_count integer DEFAULT 0,
     ci_validation_test boolean DEFAULT false,
-    CONSTRAINT explanation_cache_cache_hit_count_check CHECK ((cache_hit_count >= 0))
+    CONSTRAINT explanation_cache_cache_hit_count_check CHECK (((cache_hit_count IS NULL) OR (cache_hit_count >= 0)))
 );
 
 ALTER TABLE ONLY public.explanation_cache FORCE ROW LEVEL SECURITY;
@@ -6745,15 +6878,23 @@ CREATE TABLE public.trust_access_log (
     issued_at timestamp with time zone,
     issued_signing_key_id text,
     issued_signature_hash text,
+    issuance_attempted_at timestamp with time zone,
+    issuance_outcome_unknown_at timestamp with time zone,
+    issued_signature bytea,
+    issuance_attempt_count integer DEFAULT 0 NOT NULL,
+    issuance_unknown_outcome_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_trust_access_log_attempt_state_shape CHECK ((((issuance_state = ANY (ARRAY['signing'::text, 'issued'::text, 'issued_legacy'::text, 'signature_outcome_unknown'::text])) AND (issuance_attempted_at IS NOT NULL)) OR ((issuance_state = ANY (ARRAY['authorized'::text, 'failed'::text, 'not_applicable'::text])) AND (issuance_attempted_at IS NULL)))),
     CONSTRAINT ck_trust_access_log_audit_ref CHECK ((audit_ref ~ '^urn:skeldir:audit:[A-Za-z0-9._:-]+$'::text)),
     CONSTRAINT ck_trust_access_log_event_type CHECK ((event_type = ANY (ARRAY['issuance'::text, 'refusal'::text, 'scope_denial'::text, 'replay'::text]))),
     CONSTRAINT ck_trust_access_log_hashes CHECK (((request_identity_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (idempotency_key_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (audit_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND ((subject_ref_hash IS NULL) OR (subject_ref_hash ~ '^sha256:[0-9a-f]{64}$'::text)) AND ((envelope_hash IS NULL) OR (envelope_hash ~ '^sha256:[0-9a-f]{64}$'::text)) AND ((semantic_truth_hash IS NULL) OR (semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text)))),
-    CONSTRAINT ck_trust_access_log_issuance_state CHECK ((issuance_state = ANY (ARRAY['authorized'::text, 'issued'::text, 'failed'::text, 'not_applicable'::text]))),
+    CONSTRAINT ck_trust_access_log_issuance_state CHECK ((issuance_state = ANY (ARRAY['authorized'::text, 'signing'::text, 'issued'::text, 'issued_legacy'::text, 'failed'::text, 'signature_outcome_unknown'::text, 'not_applicable'::text]))),
     CONSTRAINT ck_trust_access_log_issuance_state_event CHECK ((((event_type = 'issuance'::text) AND (issuance_state <> 'not_applicable'::text)) OR ((event_type <> 'issuance'::text) AND (issuance_state = 'not_applicable'::text)))),
-    CONSTRAINT ck_trust_access_log_issued_requires_crypto CHECK (((issuance_state <> 'issued'::text) OR ((issued_at IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (envelope_hash IS NOT NULL)))),
+    CONSTRAINT ck_trust_access_log_issued_requires_crypto CHECK (((issuance_state <> 'issued'::text) OR ((issued_at IS NOT NULL) AND (issuance_attempted_at IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (issued_signature IS NOT NULL) AND (octet_length(issued_signature) = 64) AND (envelope_hash IS NOT NULL)))),
+    CONSTRAINT ck_trust_access_log_legacy_issued_evidence CHECK (((issuance_state <> 'issued_legacy'::text) OR ((issued_at IS NOT NULL) AND (issuance_attempted_at IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (issued_signature IS NULL) AND (envelope_hash IS NOT NULL)))),
+    CONSTRAINT ck_trust_access_log_nonissued_has_no_crypto CHECK (((issuance_state = ANY (ARRAY['issued'::text, 'issued_legacy'::text])) OR ((issued_at IS NULL) AND (issued_signing_key_id IS NULL) AND (issued_signature_hash IS NULL) AND (issued_signature IS NULL)))),
     CONSTRAINT ck_trust_access_log_refusal_no_evidence CHECK (((event_type <> ALL (ARRAY['refusal'::text, 'scope_denial'::text])) OR (evidence_refs_allowed = false))),
     CONSTRAINT ck_trust_access_log_status CHECK ((status = ANY (ARRAY['success'::text, 'refused'::text, 'degraded'::text, 'replayed'::text]))),
-    CONSTRAINT ck_trust_access_log_unissued_has_no_crypto CHECK (((issuance_state = 'issued'::text) OR ((issued_at IS NULL) AND (issued_signing_key_id IS NULL) AND (issued_signature_hash IS NULL))))
+    CONSTRAINT ck_trust_access_log_unknown_state_shape CHECK ((((issuance_state = 'signature_outcome_unknown'::text) AND (issuance_outcome_unknown_at IS NOT NULL)) OR ((issuance_state <> 'signature_outcome_unknown'::text) AND (issuance_outcome_unknown_at IS NULL))))
 );
 
 ALTER TABLE ONLY public.trust_access_log FORCE ROW LEVEL SECURITY;
@@ -7313,7 +7454,7 @@ ALTER TABLE public.b23_match_verdicts
     ADD CONSTRAINT ck_b23_match_verdicts_matched_requires_attribution_event CHECK ((((status)::text <> ALL ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) OR (attribution_event_id IS NOT NULL))) NOT VALID;
 
 ALTER TABLE public.bayesian_model_fits
-    ADD CONSTRAINT ck_bayesian_model_fits_available_confidence_complete CHECK ((((confidence_bucket)::text <> ALL ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying])::text[])) OR (((status)::text = 'succeeded'::text) AND ((data_completeness_status)::text = 'complete'::text) AND (fallback_applied = false) AND ((diagnostic_status)::text = 'passed'::text) AND ((credible_interval_status)::text = 'available'::text) AND (artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND (confidence_currency_count <= 1) AND (confidence_classified_at IS NOT NULL) AND (confidence_classified_at >= source_read_completed_at) AND (source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at) AND ((((confidence_bucket)::text = 'high'::text) AND ((confidence_bucket_reason)::text = 'narrow_interval'::text)) OR (((confidence_bucket)::text = 'medium'::text) AND ((confidence_bucket_reason)::text = 'moderate_interval'::text)) OR (((confidence_bucket)::text = 'low'::text) AND ((confidence_bucket_reason)::text = 'wide_interval'::text)))))) NOT VALID;
+    ADD CONSTRAINT ck_bayesian_model_fits_available_confidence_complete CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text <> ALL ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying])::text[])) OR (((status)::text = 'succeeded'::text) AND ((data_completeness_status)::text = 'complete'::text) AND (fallback_applied = false) AND ((diagnostic_status)::text = 'passed'::text) AND ((credible_interval_status)::text = 'available'::text) AND (artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL) AND (confidence_evidence_snapshot_hash IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND (confidence_currency_count <= 1) AND (confidence_classified_at IS NOT NULL) AND (confidence_classified_at >= source_read_completed_at) AND (source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at) AND (confidence_bucket_reason IS NOT NULL) AND ((((confidence_bucket)::text = 'high'::text) AND ((confidence_bucket_reason)::text = 'narrow_interval'::text)) OR (((confidence_bucket)::text = 'medium'::text) AND ((confidence_bucket_reason)::text = 'moderate_interval'::text)) OR (((confidence_bucket)::text = 'low'::text) AND ((confidence_bucket_reason)::text = 'wide_interval'::text)))))) NOT VALID;
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_available_policy_bundle CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text <> ALL (ARRAY['low'::text, 'medium'::text, 'high'::text])) OR ((inference_profile_version IS NOT NULL) AND (runtime_policy_version IS NOT NULL) AND (sampling_policy_version IS NOT NULL) AND (diagnostic_policy_version IS NOT NULL) AND (policy_bundle_hash IS NOT NULL) AND (char_length((policy_bundle_hash)::text) = 64) AND (authorized_chains IS NOT NULL) AND (authorized_posterior_draws_total IS NOT NULL) AND (n_chains IS NOT NULL) AND (n_samples_actual IS NOT NULL) AND (n_chains = authorized_chains) AND (n_samples_actual = authorized_posterior_draws_total)))) NOT VALID;
@@ -8980,6 +9121,8 @@ CREATE TRIGGER trg_pii_guardrail_dead_events BEFORE INSERT ON public.dead_events
 CREATE TRIGGER trg_pii_guardrail_revenue_ledger BEFORE INSERT ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
 
 CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.revenue_ledger FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_revenue_state_change();
+
+CREATE TRIGGER trg_trust_access_log_issuance_authority_guard BEFORE INSERT OR UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_issuance_authority_guard();
 
 CREATE TRIGGER trg_y_b24_c11_policy_provenance BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_c11_policy_provenance();
 

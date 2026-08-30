@@ -38,6 +38,8 @@ from app.trust.semantic_authority import (
     AuthorizedTrustEnvelope,
     _authorize_audited_trust_envelope,
 )
+from app.trust.issuance_session import trust_issuance_session_factory
+from app.trust.signing import decode_ed25519_signature
 from app.trust.source_adapters import ConfidenceProjectionSource, MatchVerdictSource
 
 
@@ -492,90 +494,102 @@ async def record_trust_audit_event_durable(
         )
 
 
-async def _finalize_issuance_state(
+async def _execute_durable_issuance_update(
     *,
     tenant_id: UUID,
-    audit_ref: str,
-    issuance_state: str,
-    signed_envelope: dict[str, Any] | None,
+    statement: Any,
+    params: dict[str, Any],
+    expected_rows: int,
+    failure_reason: str,
     audit_session_factory: AuditSessionFactory | None,
 ) -> None:
-    """Record the physical outcome of an authorised issuance.
+    """Execute one tenant-scoped issuance transition and prove its cardinality.
 
-    B2.5-P13 Corrective XV (H-XV-02/03). The pre-sign audit row records that an
-    issuance was *authorised*. This is the second, separate durable write that
-    records whether cryptographic issuance actually happened. It runs in its own
-    committed transaction so the completion fact survives independently of the
-    request transaction, exactly as the authorisation write does.
-
-    ``ck_trust_access_log_issued_requires_crypto`` means PostgreSQL rejects an
-    ``issued`` row that lacks a key id and signature hash, so this function
-    cannot claim completion it did not witness.
+    B2.5-P13 Corrective XVI (XVI-B). Consequence-bearing transitions run under
+    the dedicated ``app_trust_issuer`` principal, never the ordinary runtime
+    DSN. The database enforces the same separation independently, so passing an
+    ordinary session here fails closed at the trigger rather than silently
+    writing issuance history with ordinary authority.
     """
-
     if audit_session_factory is None:
-        from app.db.session import AsyncSessionLocal
+        audit_session_factory = trust_issuance_session_factory()
+    params = {**params, "tenant_id": str(tenant_id)}
 
-        audit_session_factory = AsyncSessionLocal
-
-    if issuance_state == "issued":
-        if not isinstance(signed_envelope, dict):
-            raise TrustAuditError("issuance_completion_requires_signed_envelope")
-        signing_key_id = signed_envelope.get("signing_key_id")
-        signature_hash = signed_envelope.get("signature_hash")
-        if not isinstance(signing_key_id, str) or not isinstance(signature_hash, str):
-            raise TrustAuditError("issuance_completion_requires_signature_identity")
-    else:
-        signing_key_id = None
-        signature_hash = None
-
-    # A retry of the same logical request may complete an issuance that
-    # previously failed, so 'failed' -> 'issued' is permitted: one logical
-    # issuance keeps one lineage that ends at the truth. The reverse is not.
-    # 'issued' is terminal, so a later failure cannot un-issue real history.
-    permitted_previous = (
-        ("authorized", "failed") if issuance_state == "issued" else ("authorized",)
-    )
-    params = {
-        "tenant_id": str(tenant_id),
-        "audit_ref": audit_ref,
-        "issuance_state": issuance_state,
-        "signing_key_id": signing_key_id,
-        "signature_hash": signature_hash,
-        "permitted_previous": list(permitted_previous),
-    }
-    statement = text(
-        """
-        UPDATE public.trust_access_log
-        SET issuance_state = :issuance_state,
-            issued_at = CASE WHEN :issuance_state = 'issued' THEN now() ELSE NULL END,
-            issued_signing_key_id = :signing_key_id,
-            issued_signature_hash = :signature_hash,
-            updated_at = now()
-        WHERE tenant_id = :tenant_id
-          AND audit_ref = :audit_ref
-          AND event_type = 'issuance'
-          AND issuance_state = ANY(:permitted_previous)
-        """
-    )
+    async def execute(audit_session: AsyncSession) -> None:
+        await audit_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        result = await audit_session.execute(statement, params)
+        observed_rows = int(getattr(result, "rowcount", -1))
+        if observed_rows != expected_rows:
+            raise TrustAuditError(
+                f"{failure_reason}:expected={expected_rows}:observed={observed_rows}"
+            )
 
     async with audit_session_factory() as audit_session:
         begin = getattr(audit_session, "begin", None)
         if callable(begin):
             async with begin():
-                await audit_session.execute(
-                    text(
-                        "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
-                    ),
-                    {"tenant_id": str(tenant_id)},
-                )
-                await audit_session.execute(statement, params)
+                await execute(audit_session)
                 return
-        await audit_session.execute(
-            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-            {"tenant_id": str(tenant_id)},
-        )
-        await audit_session.execute(statement, params)
+        await execute(audit_session)
+
+
+def _issuance_crypto_evidence(
+    signed_envelope: dict[str, Any],
+) -> tuple[str, str, bytes]:
+    """Extract the retained public cryptographic evidence for an issued row."""
+    if not isinstance(signed_envelope, dict):
+        raise TrustAuditError("issuance_completion_requires_signed_envelope")
+    signing_key_id = signed_envelope.get("signing_key_id")
+    signature_hash = signed_envelope.get("signature_hash")
+    encoded_signature = signed_envelope.get("signature")
+    if not isinstance(signing_key_id, str):
+        raise TrustAuditError("issuance_completion_requires_signature_identity")
+    if not isinstance(signature_hash, str):
+        raise TrustAuditError("issuance_completion_requires_signature_identity")
+    if not isinstance(encoded_signature, str):
+        raise TrustAuditError("issuance_completion_requires_signature_identity")
+    try:
+        signature = decode_ed25519_signature(encoded_signature)
+    except Exception as exc:
+        raise TrustAuditError("issuance_completion_requires_valid_signature_bytes") from exc
+    if len(signature) != 64:
+        raise TrustAuditError("issuance_completion_requires_valid_signature_bytes")
+    return signing_key_id, signature_hash, signature
+
+
+async def record_trust_issuance_attempt_started(
+    *,
+    tenant_id: UUID,
+    audit_ref: str,
+    audit_session_factory: AuditSessionFactory | None = None,
+) -> None:
+    """Durably cross the write-ahead boundary before any private-key use."""
+    await _execute_durable_issuance_update(
+        tenant_id=tenant_id,
+        statement=text(
+            """
+            UPDATE public.trust_access_log
+            SET issuance_state = 'signing',
+                issuance_attempted_at = now(),
+                issuance_outcome_unknown_at = NULL,
+                issuance_attempt_count = issuance_attempt_count + 1,
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND audit_ref = :audit_ref
+              AND event_type = 'issuance'
+              AND issuance_state IN (
+                  'authorized', 'failed', 'signature_outcome_unknown'
+              )
+            """
+        ),
+        params={"audit_ref": audit_ref},
+        expected_rows=1,
+        failure_reason="issuance_attempt_transition_refused",
+        audit_session_factory=audit_session_factory,
+    )
 
 
 async def record_trust_issuance_completed(
@@ -585,13 +599,36 @@ async def record_trust_issuance_completed(
     signed_envelope: dict[str, Any],
     audit_session_factory: AuditSessionFactory | None = None,
 ) -> None:
-    """Durably record that a signature for this authorisation physically exists."""
-
-    await _finalize_issuance_state(
+    """Retain the signature evidence before any downstream consequence occurs."""
+    signing_key_id, signature_hash, signature = _issuance_crypto_evidence(
+        signed_envelope
+    )
+    await _execute_durable_issuance_update(
         tenant_id=tenant_id,
-        audit_ref=audit_ref,
-        issuance_state="issued",
-        signed_envelope=signed_envelope,
+        statement=text(
+            """
+            UPDATE public.trust_access_log
+            SET issuance_state = 'issued',
+                issued_at = now(),
+                issued_signing_key_id = :signing_key_id,
+                issued_signature_hash = :signature_hash,
+                issued_signature = :signature,
+                issuance_outcome_unknown_at = NULL,
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND audit_ref = :audit_ref
+              AND event_type = 'issuance'
+              AND issuance_state = 'signing'
+            """
+        ),
+        params={
+            "audit_ref": audit_ref,
+            "signing_key_id": signing_key_id,
+            "signature_hash": signature_hash,
+            "signature": signature,
+        },
+        expected_rows=1,
+        failure_reason="issuance_completion_transition_refused",
         audit_session_factory=audit_session_factory,
     )
 
@@ -602,13 +639,52 @@ async def record_trust_issuance_failed(
     audit_ref: str,
     audit_session_factory: AuditSessionFactory | None = None,
 ) -> None:
-    """Durably record that an authorised issuance never produced a signature."""
-
-    await _finalize_issuance_state(
+    """Abandon an authorization that never crossed the signing boundary."""
+    await _execute_durable_issuance_update(
         tenant_id=tenant_id,
-        audit_ref=audit_ref,
-        issuance_state="failed",
-        signed_envelope=None,
+        statement=text(
+            """
+            UPDATE public.trust_access_log
+            SET issuance_state = 'failed', updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND audit_ref = :audit_ref
+              AND event_type = 'issuance'
+              AND issuance_state = 'authorized'
+            """
+        ),
+        params={"audit_ref": audit_ref},
+        expected_rows=1,
+        failure_reason="issuance_failure_transition_refused",
+        audit_session_factory=audit_session_factory,
+    )
+
+
+async def record_trust_issuance_outcome_unknown(
+    *,
+    tenant_id: UUID,
+    audit_ref: str,
+    audit_session_factory: AuditSessionFactory | None = None,
+) -> None:
+    """Record that private-key use began but physical completion is unknowable."""
+    await _execute_durable_issuance_update(
+        tenant_id=tenant_id,
+        statement=text(
+            """
+            UPDATE public.trust_access_log
+            SET issuance_state = 'signature_outcome_unknown',
+                issuance_outcome_unknown_at = now(),
+                issuance_unknown_outcome_count =
+                    issuance_unknown_outcome_count + 1,
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND audit_ref = :audit_ref
+              AND event_type = 'issuance'
+              AND issuance_state = 'signing'
+            """
+        ),
+        params={"audit_ref": audit_ref},
+        expected_rows=1,
+        failure_reason="issuance_unknown_transition_refused",
         audit_session_factory=audit_session_factory,
     )
 
@@ -632,22 +708,18 @@ async def record_trust_issuance_batch_completed(
 
     if not completions:
         return
-    if audit_session_factory is None:
-        from app.db.session import AsyncSessionLocal
-
-        audit_session_factory = AsyncSessionLocal
 
     rows: list[dict[str, Any]] = []
     for audit_ref, signed_envelope in completions:
-        signing_key_id = signed_envelope.get("signing_key_id")
-        signature_hash = signed_envelope.get("signature_hash")
-        if not isinstance(signing_key_id, str) or not isinstance(signature_hash, str):
-            raise TrustAuditError("issuance_completion_requires_signature_identity")
+        signing_key_id, signature_hash, signature = _issuance_crypto_evidence(
+            signed_envelope
+        )
         rows.append(
             {
                 "audit_ref": audit_ref,
                 "signing_key_id": signing_key_id,
                 "signature_hash": signature_hash,
+                "signature": signature,
             }
         )
 
@@ -658,17 +730,20 @@ async def record_trust_issuance_batch_completed(
             issued_at = now(),
             issued_signing_key_id = completion.signing_key_id,
             issued_signature_hash = completion.signature_hash,
+            issued_signature = completion.signature,
+            issuance_outcome_unknown_at = NULL,
             updated_at = now()
         FROM (
             SELECT
                 unnest(CAST(:audit_refs AS text[])) AS audit_ref,
                 unnest(CAST(:signing_key_ids AS text[])) AS signing_key_id,
-                unnest(CAST(:signature_hashes AS text[])) AS signature_hash
+                unnest(CAST(:signature_hashes AS text[])) AS signature_hash,
+                unnest(CAST(:signatures AS bytea[])) AS signature
         ) AS completion
         WHERE log.tenant_id = :tenant_id
           AND log.audit_ref = completion.audit_ref
           AND log.event_type = 'issuance'
-          AND log.issuance_state IN ('authorized', 'failed')
+          AND log.issuance_state = 'signing'
         """
     )
     params = {
@@ -676,25 +751,123 @@ async def record_trust_issuance_batch_completed(
         "audit_refs": [row["audit_ref"] for row in rows],
         "signing_key_ids": [row["signing_key_id"] for row in rows],
         "signature_hashes": [row["signature_hash"] for row in rows],
+        "signatures": [row["signature"] for row in rows],
     }
+    await _execute_durable_issuance_update(
+        tenant_id=tenant_id,
+        statement=statement,
+        params=params,
+        expected_rows=len(rows),
+        failure_reason="issuance_batch_completion_transition_refused",
+        audit_session_factory=audit_session_factory,
+    )
 
+
+async def record_trust_issuance_batch_outcome_unknown(
+    *,
+    tenant_id: UUID,
+    audit_refs: Sequence[str],
+    audit_session_factory: AuditSessionFactory | None = None,
+) -> None:
+    """Mark every in-flight export signature as physically indeterminate."""
+    refs = list(dict.fromkeys(audit_refs))
+    if not refs:
+        return
+    await _execute_durable_issuance_update(
+        tenant_id=tenant_id,
+        statement=text(
+            """
+            UPDATE public.trust_access_log
+            SET issuance_state = 'signature_outcome_unknown',
+                issuance_outcome_unknown_at = now(),
+                issuance_unknown_outcome_count =
+                    issuance_unknown_outcome_count + 1,
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND audit_ref = ANY(:audit_refs)
+              AND event_type = 'issuance'
+              AND issuance_state = 'signing'
+            """
+        ),
+        params={"audit_refs": refs},
+        expected_rows=len(refs),
+        failure_reason="issuance_batch_unknown_transition_refused",
+        audit_session_factory=audit_session_factory,
+    )
+
+
+async def reconcile_stale_trust_issuance_states(
+    *,
+    tenant_id: UUID,
+    stale_before: datetime,
+    batch_size: int,
+    audit_session_factory: AuditSessionFactory | None = None,
+) -> dict[str, int]:
+    """Bound stale pre-sign rows and in-flight signing rows to truthful states."""
+    if batch_size < 1:
+        raise ValueError("batch_size_must_be_positive")
+    if audit_session_factory is None:
+        audit_session_factory = trust_issuance_session_factory()
+    statements = {
+        "authorized_to_failed": text(
+            """
+            WITH candidates AS (
+                SELECT id
+                FROM public.trust_access_log
+                WHERE tenant_id = :tenant_id
+                  AND event_type = 'issuance'
+                  AND issuance_state = 'authorized'
+                  AND updated_at < :stale_before
+                ORDER BY updated_at, id
+                LIMIT :batch_size
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE public.trust_access_log AS log
+            SET issuance_state = 'failed', updated_at = now()
+            FROM candidates
+            WHERE log.id = candidates.id
+            """
+        ),
+        "signing_to_unknown": text(
+            """
+            WITH candidates AS (
+                SELECT id
+                FROM public.trust_access_log
+                WHERE tenant_id = :tenant_id
+                  AND event_type = 'issuance'
+                  AND issuance_state = 'signing'
+                  AND updated_at < :stale_before
+                ORDER BY updated_at, id
+                LIMIT :batch_size
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE public.trust_access_log AS log
+            SET issuance_state = 'signature_outcome_unknown',
+                issuance_outcome_unknown_at = now(),
+                issuance_unknown_outcome_count =
+                    log.issuance_unknown_outcome_count + 1,
+                updated_at = now()
+            FROM candidates
+            WHERE log.id = candidates.id
+            """
+        ),
+    }
+    params = {
+        "tenant_id": str(tenant_id),
+        "stale_before": stale_before,
+        "batch_size": batch_size,
+    }
+    counts: dict[str, int] = {}
     async with audit_session_factory() as audit_session:
-        begin = getattr(audit_session, "begin", None)
-        if callable(begin):
-            async with begin():
-                await audit_session.execute(
-                    text(
-                        "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
-                    ),
-                    {"tenant_id": str(tenant_id)},
-                )
-                await audit_session.execute(statement, params)
-                return
-        await audit_session.execute(
-            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-            {"tenant_id": str(tenant_id)},
-        )
-        await audit_session.execute(statement, params)
+        async with audit_session.begin():
+            await audit_session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            for label, statement in statements.items():
+                result = await audit_session.execute(statement, params)
+                counts[label] = max(int(getattr(result, "rowcount", -1)), 0)
+    return counts
 
 
 def attach_audit_to_unsigned_payload(

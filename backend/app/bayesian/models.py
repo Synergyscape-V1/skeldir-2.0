@@ -336,7 +336,7 @@ class BayesianModelFit(Base, TenantMixin):
             "AND fallback_applied = false "
             "AND r_hat_max IS NOT NULL AND r_hat_max <= 1.01 "
             "AND ess_min IS NOT NULL AND ess_min >= 400 "
-            "AND divergence_count = 0 "
+            "AND divergence_count IS NOT NULL AND divergence_count = 0 "
             "AND hdi_lower IS NOT NULL AND hdi_upper IS NOT NULL "
             "AND interval_element_count IS NOT NULL AND interval_element_count > 0 "
             "AND diagnostic_policy_version IS NOT NULL "
@@ -399,13 +399,15 @@ class BayesianModelFit(Base, TenantMixin):
             name="ck_bayesian_model_fits_confidence_classification_state",
         ),
         CheckConstraint(
-            "confidence_bucket NOT IN ('low', 'medium', 'high') OR ("
+            "confidence_bucket IS NULL "
+            "OR confidence_bucket NOT IN ('low', 'medium', 'high') OR ("
             "status = 'succeeded' "
             "AND data_completeness_status = 'complete' "
             "AND fallback_applied = false "
             "AND diagnostic_status = 'passed' "
             "AND credible_interval_status = 'available' "
             "AND artifact_ref IS NOT NULL AND artifact_hash IS NOT NULL "
+            "AND confidence_evidence_snapshot_hash IS NOT NULL "
             "AND confidence_evidence_snapshot_hash = source_snapshot_hash "
             "AND confidence_deterministic_revenue_minor IS NOT NULL "
             "AND confidence_deterministic_row_count IS NOT NULL "
@@ -417,6 +419,7 @@ class BayesianModelFit(Base, TenantMixin):
             "AND source_read_started_at IS NOT NULL "
             "AND source_read_completed_at IS NOT NULL "
             "AND source_read_completed_at >= source_read_started_at "
+            "AND confidence_bucket_reason IS NOT NULL "
             "AND ((confidence_bucket = 'high' "
             "AND confidence_bucket_reason = 'narrow_interval') "
             "OR (confidence_bucket = 'medium' "

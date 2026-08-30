@@ -248,6 +248,29 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XV Report.md
+- id: validate-b25-p13-c16-closure
+  path: scripts/ci/validate_b25_p13_c16_closure.py
+  status: required
+  owning_phase: B2.5-P13-C16
+  protected_invariant: Every successful Ed25519 operation has a durable, reconstructable issuance-history event; an attempted operation can never remain authorized; completion requires the retained raw signature and its hash; only the dedicated app_trust_issuer principal may transition issuance consequence, and it remains bounded by the transition graph, terminal immutability, tenant binding and monotonic lineage; post-sign failures become signature_outcome_unknown; stale nonterminal states are bounded; nullable CHECK policy is explicit; runtime principals are neither superuser nor BYPASSRLS; and the C16 proof remains attached to the required aggregate and serialized schema deployment.
+  command: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 C16 Bidirectional Issuance Truth
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control
+  expected_failure_meaning: An ordinary runtime database principal can manufacture completed-issuance history, a signing attempt can escape durable classification, an issued row can lack reconstructable signature evidence, a route can cross the irreversible signer boundary before durable attempt or completion state, a stale issuance can remain unbounded, a nullable CHECK can accept an unintended unknown predicate, a privileged runtime identity can defeat RLS evidence, the deployment lock can split by trigger, or the C16 behavioral gate can be detached from the required aggregate.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_job
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XVI Report.md
 - id: validate-b25-p13-c14-closure
   path: scripts/ci/validate_b25_p13_c14_closure.py
   status: required

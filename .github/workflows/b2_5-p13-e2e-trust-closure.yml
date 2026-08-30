@@ -51,6 +51,8 @@ on:
       - 'backend/tests/trust/test_b25_p13_c12_authority_closure.py'
       - 'backend/tests/trust/test_b25_p13_c13_signing_truth_boundary.py'
       - 'backend/tests/trust/test_b25_p13_c14_semantic_authority.py'
+      - 'backend/tests/trust/test_b25_p13_c15_issuance_truth.py'
+      - 'backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py'
       - 'backend/app/trust/semantic_authority.py'
       - 'backend/app/inference_policy_registry.py'
       - 'backend/app/tasks/bayesian_publisher.py'
@@ -82,6 +84,11 @@ on:
       - 'scripts/ci/validate_b25_p13_c13_closure.py'
       - 'scripts/ci/validate_b25_p13_c13_artifact_closure.py'
       - 'scripts/ci/validate_b25_p13_c14_closure.py'
+      - 'scripts/ci/validate_b25_p13_c15_closure.py'
+      - 'scripts/ci/validate_b25_p13_c16_closure.py'
+      - 'backend/app/trust/issuance_session.py'
+      - 'scripts/database/prepare_migration_authority_boundary.py'
+      - '.github/actions/setup-postgres-ci/action.yml'
       - 'contracts-internal/governance/b25_p13_c13_authority_topology.v1.json'
       - 'contracts-internal/governance/b25_p13_c14_trust_semantic_authority.v1.json'
       - 'scripts/database/prepare_migration_authority_boundary.py'
@@ -90,6 +97,10 @@ on:
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation XII Report.md'
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation XIII Report.md'
       - 'docs/forensics/B2.5-P13 Corrective Action Remediation XIV Report.md'
+      - 'docs/forensics/B2.5-P13 Corrective Action Remediation XV Report.md'
+      - 'docs/forensics/B2.5-P13 Corrective Action Remediation XVI Report.md'
+      - 'docs/forensics/B2.5-P13 XVI CHECK Constraint NULL Semantics Survey.md'
+      - 'docs/environment/INFRASTRUCTURE_EVIDENCE_CAPSULES.md'
       - 'db/schema/canonical_schema.sql'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
   workflow_dispatch:
@@ -1166,7 +1177,7 @@ jobs:
           echo "p13_preservation_validators_passed=4"
 
   b2-5-p13-c13-semantic-history:
-    name: B2.5-P13 C13 Semantic Signing and Historical Replay
+    name: B2.5-P13 C13 Semantic Signing and Policy-History Replay
     runs-on: ubuntu-latest
     env:
       # The shared pytest bootstrap requires an explicit localhost DSN in CI even
@@ -1193,7 +1204,7 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Production signer boundary and historical replay physics
+      - name: Production signer boundary and policy-semantic history replay
         run: |
           set -euo pipefail
           python -m pytest \
@@ -1918,7 +1929,7 @@ jobs:
           # red rather than quietly shrink a number nobody reads.
           grep -E '^c15_capability_bypass_refusals=7$' /tmp/c15-issuance-truth.out
           grep -E '^c15_issuance_truth_observations=6$' /tmp/c15-issuance-truth.out
-          grep -E '^c15_issuance_states=\{"failed": 2, "issued": 1\}$' /tmp/c15-issuance-truth.out
+          grep -E '^c15_issuance_states=\{"issued": 1, "signature_outcome_unknown": 2\}$' /tmp/c15-issuance-truth.out
           grep -E '^c15_db_completion_constraint_enforced=1$' /tmp/c15-issuance-truth.out
           grep -E '^c15_retry_lineage_rows=1$' /tmp/c15-issuance-truth.out
           grep -E '^c15_historical_serviceability_observations=8$' /tmp/c15-issuance-truth.out
@@ -1997,12 +2008,12 @@ jobs:
           from pathlib import Path
           path = Path('backend/app/api/trust_api.py')
           source = path.read_text(encoding='utf-8')
-          old = '        await record_trust_issuance_failed('
-          assert source.count(old) == 1
-          source = source.replace(old, '        await _skipped_failure_record(', 1)
+          old = '    await record_trust_issuance_attempt_started('
+          assert source.count(old) == 1, source.count(old)
+          source = source.replace(old, '    await _skipped_attempt_record(', 1)
           source = source.replace(
               'from app.trust.audit import (',
-              'async def _skipped_failure_record(**kwargs):\n'
+              'async def _skipped_attempt_record(**kwargs):\n'
               '    return None\n\n\n'
               'from app.trust.audit import (',
               1,
@@ -2031,6 +2042,193 @@ jobs:
           mv /tmp/b0_1.json backend/validation/evidence/contracts/b0_1_summary.json
           python scripts/phase_gates/validate_manifest.py
 
+  # B2.5-P13 Corrective XVI. The predecessor could sign physically while its
+  # durable row remained `authorized`, export could sign before a 413/early
+  # return, and PostgreSQL CHECK NULL semantics admitted fabricated completion.
+  # This job crosses the genuine Ed25519 boundary, injects only the subsequent
+  # completion failure, surveys every public CHECK, and proves bounded repair of
+  # both non-terminal issuance states on a least-privilege PostgreSQL 15 role.
+  b2-5-p13-c16-bidirectional-truth:
+    name: B2.5-P13 C16 Bidirectional Issuance Truth
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p13_c16
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c16
+      B24_DISPATCH_PUBLISHER_DATABASE_URL: postgresql://app_dispatch_publisher:app_dispatch_publisher@127.0.0.1:5432/skeldir_b25_p13_c16
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      SKELDIR_B25_P13_E2E_PROOF: "1"
+      SKELDIR_B25_P13_C16_DB_PROOF: "1"
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Provision least-privilege database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p13_c16
+
+      - name: Prove migration reversibility as the non-superuser owner
+        run: |
+          set -euo pipefail
+          role_flags=$(psql "$MIGRATION_DATABASE_URL" -tAc \
+            "SELECT rolbypassrls::text || ':' || rolsuper::text FROM pg_roles WHERE rolname = current_user")
+          test "$role_flags" = "false:false" || test "$role_flags" = "f:f"
+          python -m alembic downgrade 202608291200
+          python -m alembic upgrade 202608301200
+          python -m alembic current | grep -q '202608301200 (head)'
+          echo 'c16_migration_non_super_round_trip=1' >> "$GITHUB_STEP_SUMMARY"
+
+      # XVI-B. The issuance principal is the whole point of the remediation, so
+      # its physical properties are asserted, not assumed: it exists, it is
+      # least-privilege, it is a different login from the runtime role, and the
+      # guard that keys on it is actually installed.
+      - name: Assert narrowed issuance authority is physically provisioned
+        run: |
+          set -euo pipefail
+          test -n "${TRUST_ISSUANCE_DATABASE_URL:-}"
+          issuer=$(psql "$TRUST_ISSUANCE_DATABASE_URL" -tAc "SELECT current_user")
+          test "$issuer" = "app_trust_issuer"
+          runtime=$(psql "$DATABASE_URL" -tAc "SELECT current_user")
+          test "$runtime" = "app_user"
+          flags=$(psql "$TRUST_ISSUANCE_DATABASE_URL" -tAc \
+            "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname = current_user")
+          test "$flags" = "false:false" || test "$flags" = "f:f"
+          # Least privilege: the issuance principal may not read tenant business
+          # data, only the audit ledger it transitions. The refusal is matched on
+          # its exact cause so this cannot pass for the wrong reason -- an unset
+          # tenant GUC also errors, and that is not the property being claimed.
+          if denial=$(psql "$TRUST_ISSUANCE_DATABASE_URL" -v ON_ERROR_STOP=1 \
+              -c "SELECT 1 FROM public.b23_match_verdicts LIMIT 1" 2>&1); then
+            echo "issuance principal can read the deterministic revenue source"
+            exit 1
+          fi
+          echo "$denial" | grep -q 'permission denied for table b23_match_verdicts'
+          granted=$(psql "$MIGRATION_DATABASE_URL" -tAc \
+            "SELECT string_agg(table_name || ':' || privilege_type, ',' ORDER BY table_name, privilege_type) FROM information_schema.table_privileges WHERE grantee = 'app_trust_issuer'")
+          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE"
+          guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
+            "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.trust_access_log'::regclass AND tgname = 'trg_trust_access_log_issuance_authority_guard'")
+          test "$guard" = "1"
+          echo 'c16_issuance_authority_topology_asserted=1'
+
+      - name: C16 bidirectional history and nullable-CHECK physics
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py \
+            -q -s --no-header | tee /tmp/c16-bidirectional-truth.out
+          grep -E '6 passed' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_post_signature_boundary_observations=4$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_export_boundary_observations=4$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_ordinary_principal_completion_refusals=10$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_issuer_principal_bounded_refusals=10$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_fabricated_insert_refused=1$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_retained_retry_lineage=2:1$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_nullable_check_candidates=0$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_nullable_check_mutations_refused=2$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_reconciled_nonterminal_states=2$' /tmp/c16-bidirectional-truth.out
+          grep -E '^c16_reconciler_schedule_observations=3$' /tmp/c16-bidirectional-truth.out
+
+      - name: C16 static closure and semantic negative controls
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p13_c16_closure.py --negative-control \
+            | tee /tmp/c16-closure.out
+          grep -q '^B25_P13_C16_CLOSURE_VALIDATION_PASS$' /tmp/c16-closure.out
+          grep -q '^c16_static_negative_controls_fired=27$' /tmp/c16-closure.out
+
+      # NC-C16-DB. A guard nobody can break is a guard nobody has tested. Each
+      # control removes one physical property from the live database, proves the
+      # matrix falsifier turns RED, restores it, and proves GREEN again.
+      - name: NC-C16-DB non-vacuity of the issuance authority boundary
+        run: |
+          set -euo pipefail
+          run_matrix() {
+            python -m pytest \
+              backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_database_refuses_every_weak_principal_completion_claim \
+              -q --no-header -p no:randomly > /tmp/c16-nc.out 2>&1
+          }
+
+          # Baseline: the control must be able to pass before it can fail.
+          run_matrix
+          grep -qE '1 passed' /tmp/c16-nc.out
+
+          fired=0
+
+          # NC-C16-01: remove the trigger entirely.
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "DROP TRIGGER trg_trust_access_log_issuance_authority_guard ON public.trust_access_log"
+          if run_matrix; then echo 'NC-C16-01 did not fire'; exit 1; fi
+          fired=$((fired + 1))
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "CREATE TRIGGER trg_trust_access_log_issuance_authority_guard BEFORE INSERT OR UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_issuance_authority_guard()"
+          run_matrix
+          grep -qE '1 passed' /tmp/c16-nc.out
+
+          # NC-C16-02: widen the principal check to admit the ordinary role.
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE OR REPLACE FUNCTION public.trust_access_log_issuance_authority_guard()
+          RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public
+          AS $NC$
+          BEGIN
+              RETURN NEW;
+          END;
+          $NC$;
+          SQL
+          if run_matrix; then echo 'NC-C16-02 did not fire'; exit 1; fi
+          fired=$((fired + 1))
+          python -m alembic downgrade 202608291200
+          python -m alembic upgrade 202608301200
+          run_matrix
+          grep -qE '1 passed' /tmp/c16-nc.out
+
+          # NC-C16-03: hand issuance custody back to the ordinary runtime DSN.
+          # The application must fail closed rather than write issuance history
+          # under ordinary authority.
+          if TRUST_ISSUANCE_DATABASE_URL="$DATABASE_URL" python -m pytest \
+              backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_post_signature_completion_failure_is_explicitly_unknown \
+              -q --no-header -p no:randomly > /tmp/c16-nc3.out 2>&1; then
+            echo 'NC-C16-03 did not fire'; exit 1
+          fi
+          fired=$((fired + 1))
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_post_signature_completion_failure_is_explicitly_unknown \
+            -q --no-header -p no:randomly | tee /tmp/c16-nc3-restored.out
+          grep -qE '1 passed' /tmp/c16-nc3-restored.out
+
+          test "$fired" = "3"
+          echo "c16_runtime_negative_controls_fired=$fired"
+
   # load-bearing proof therefore cannot report the required context green.
   b25-p13-e2e-trust-closure:
     name: B2.5-P13 E2E Trust Closure
@@ -2042,6 +2240,7 @@ jobs:
       - b2-5-p13-c13-semantic-history
       - b2-5-p13-c14-semantic-authority
       - b2-5-p13-c15-issuance-truth
+      - b2-5-p13-c16-bidirectional-truth
     runs-on: ubuntu-latest
     steps:
       - name: Require every load-bearing P13 proof
@@ -2052,6 +2251,7 @@ jobs:
           SEMANTIC_RESULT: ${{ needs['b2-5-p13-c13-semantic-history'].result }}
           COMPLETE_AUTHORITY_RESULT: ${{ needs['b2-5-p13-c14-semantic-authority'].result }}
           ISSUANCE_TRUTH_RESULT: ${{ needs['b2-5-p13-c15-issuance-truth'].result }}
+          BIDIRECTIONAL_TRUTH_RESULT: ${{ needs['b2-5-p13-c16-bidirectional-truth'].result }}
         run: |
           set -euo pipefail
           test "$CORE_RESULT" = success || {
@@ -2071,5 +2271,8 @@ jobs:
           }
           test "$ISSUANCE_TRUTH_RESULT" = success || {
             echo "b2-5-p13-c15-issuance-truth=$ISSUANCE_TRUTH_RESULT"; exit 1;
+          }
+          test "$BIDIRECTIONAL_TRUTH_RESULT" = success || {
+            echo "b2-5-p13-c16-bidirectional-truth=$BIDIRECTIONAL_TRUTH_RESULT"; exit 1;
           }
           echo 'p13_load_bearing_proof_graph=green'

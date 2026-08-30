@@ -26,8 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import session as db_session
 from app.trust.audit import (
     build_unsigned_trust_envelope_with_audit,
+    record_trust_issuance_attempt_started,
     record_trust_issuance_completed,
-    record_trust_issuance_failed,
+    record_trust_issuance_outcome_unknown,
 )
 from app.trust.builder import TrustEnvelopeBuildRequest
 from app.trust.key_registry import TrustKeyRegistry
@@ -529,30 +530,46 @@ async def _issue_signed_envelope(
     )
     if result.authorized_envelope is None:
         return None
-    # B2.5-P13 Corrective XV (H-XV-02/03). Everything from here to the durable
-    # completion write is a consequence boundary the durable record must not
-    # pre-empt: the audit row currently says 'authorized', and it may only say
-    # 'issued' once a signature physically exists.
+    # Corrective XVI writes ahead of private-key use. A process death anywhere
+    # after this commit leaves `signing`, which the bounded reconciler converts
+    # to the explicit `signature_outcome_unknown` state rather than silently
+    # conflating it with "never attempted".
+    await record_trust_issuance_attempt_started(
+        tenant_id=caller.tenant_id,
+        audit_ref=result.audit_record.audit_ref,
+    )
     try:
         signed = await asyncio.to_thread(
             sign_trust_envelope,
             result.authorized_envelope,
             key_registry=key_registry,
         )
-        _assert_external_payload_safe(signed)
-        if len(JSONResponse(content=signed).body) > MAX_SERIALIZED_ENVELOPE_BYTES:
-            raise TrustResponseBudgetExceeded("individual_envelope_budget_exceeded")
     except BaseException:
-        await record_trust_issuance_failed(
+        # Once the signer is entered, an exception alone cannot prove whether
+        # the private key returned before the exception occurred.
+        await record_trust_issuance_outcome_unknown(
             tenant_id=caller.tenant_id,
             audit_ref=result.audit_record.audit_ref,
         )
         raise
-    await record_trust_issuance_completed(
-        tenant_id=caller.tenant_id,
-        audit_ref=result.audit_record.audit_ref,
-        signed_envelope=signed,
-    )
+    try:
+        await record_trust_issuance_completed(
+            tenant_id=caller.tenant_id,
+            audit_ref=result.audit_record.audit_ref,
+            signed_envelope=signed,
+        )
+    except BaseException:
+        await record_trust_issuance_outcome_unknown(
+            tenant_id=caller.tenant_id,
+            audit_ref=result.audit_record.audit_ref,
+        )
+        raise
+
+    # Delivery validation is downstream of physical issuance. A refusal here
+    # must not rewrite a signature that already exists as a failed issuance.
+    _assert_external_payload_safe(signed)
+    if len(JSONResponse(content=signed).body) > MAX_SERIALIZED_ENVELOPE_BYTES:
+        raise TrustResponseBudgetExceeded("individual_envelope_budget_exceeded")
     return signed
 
 

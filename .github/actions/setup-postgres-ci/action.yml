@@ -49,6 +49,14 @@ inputs:
     description: Dedicated fit-dispatch publisher password.
     required: false
     default: app_dispatch_publisher
+  trust-issuer-user:
+    description: Dedicated Trust issuance-consequence principal.
+    required: false
+    default: app_trust_issuer
+  trust-issuer-password:
+    description: Dedicated Trust issuance-consequence password.
+    required: false
+    default: app_trust_issuer
   migration-command:
     description: Alembic migration command.
     required: false
@@ -76,7 +84,18 @@ runs:
           --worker-user "${{ inputs.worker-user }}" \
           --worker-password "${{ inputs.worker-password }}" \
           --publisher-user "${{ inputs.publisher-user }}" \
-          --publisher-password "${{ inputs.publisher-password }}"
+          --publisher-password "${{ inputs.publisher-password }}" \
+          --trust-issuer-user "${{ inputs.trust-issuer-user }}" \
+          --trust-issuer-password "${{ inputs.trust-issuer-password }}"
+
+    # B2.5-P13 Corrective XVI (XVI-B). Every job that provisions this boundary
+    # gets the issuance DSN automatically, so no job can silently run the Trust
+    # API with issuance-consequence authority folded back into the ordinary
+    # runtime principal.
+    - name: Export Trust issuance custody DSN
+      shell: bash
+      run: |
+        echo "TRUST_ISSUANCE_DATABASE_URL=postgresql://${{ inputs.trust-issuer-user }}:${{ inputs.trust-issuer-password }}@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
 
     - name: Run Alembic migrations
       shell: bash

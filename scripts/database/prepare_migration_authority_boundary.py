@@ -68,6 +68,8 @@ class AuthorityConfig:
     worker_password: str
     publisher_user: str
     publisher_password: str
+    trust_issuer_user: str = "app_trust_issuer"
+    trust_issuer_password: str = "app_trust_issuer"
     rotate_existing_credentials: bool = False
 
 
@@ -91,6 +93,8 @@ def _parse_args() -> AuthorityConfig:
     parser.add_argument("--worker-password", default="app_worker")
     parser.add_argument("--publisher-user", default="app_dispatch_publisher")
     parser.add_argument("--publisher-password", default="app_dispatch_publisher")
+    parser.add_argument("--trust-issuer-user", default="app_trust_issuer")
+    parser.add_argument("--trust-issuer-password", default="app_trust_issuer")
     parser.add_argument(
         "--rotate-existing-credentials",
         action="store_true",
@@ -115,6 +119,8 @@ def _parse_args() -> AuthorityConfig:
         worker_password=args.worker_password,
         publisher_user=args.publisher_user,
         publisher_password=args.publisher_password,
+        trust_issuer_user=args.trust_issuer_user,
+        trust_issuer_password=args.trust_issuer_password,
         rotate_existing_credentials=bool(args.rotate_existing_credentials),
     )
 
@@ -217,6 +223,21 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                 cursor,
                 config.publisher_user,
                 config.publisher_password,
+                rotate_existing=rotate,
+            )
+            # B2.5-P13 Corrective XVI. Recording a completed issuance is the
+            # act of asserting that a private key physically produced a
+            # signature. That authority is narrowed to its own login principal
+            # so that the ordinary runtime DSN -- the credential most exposed to
+            # leak, insider use, or a compromise elsewhere in the application --
+            # physically cannot manufacture completed-issuance history. Like the
+            # dispatch publisher, this login is deliberately not a member of
+            # app_rw, app_ro, app_user, or app_worker: its only table privilege
+            # is granted by the C16 migration, on trust_access_log alone.
+            _create_or_alter_login_role(
+                cursor,
+                config.trust_issuer_user,
+                config.trust_issuer_password,
                 rotate_existing=rotate,
             )
             # The migration principal must be a member of the worker role:
