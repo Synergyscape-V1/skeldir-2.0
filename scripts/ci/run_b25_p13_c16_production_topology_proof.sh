@@ -19,6 +19,7 @@ admin_dsn="postgresql://${admin_user}:${admin_password}@${db_host}:${db_port}/po
 migration_dsn="postgresql://migration_owner:migration_owner@${db_host}:${db_port}/${db_name}"
 worker_dsn="postgresql://app_worker:app_worker@${db_host}:${db_port}/${db_name}"
 publisher_dsn="postgresql://app_dispatch_publisher:app_dispatch_publisher@${db_host}:${db_port}/${db_name}"
+issuer_dsn="postgresql://app_trust_issuer:app_trust_issuer@${db_host}:${db_port}/${db_name}"
 
 beat_pid=""
 cleanup() {
@@ -41,7 +42,9 @@ python scripts/database/prepare_migration_authority_boundary.py \
   --worker-user app_worker \
   --worker-password app_worker \
   --publisher-user app_dispatch_publisher \
-  --publisher-password app_dispatch_publisher
+  --publisher-password app_dispatch_publisher \
+  --trust-issuer-user app_trust_issuer \
+  --trust-issuer-password app_trust_issuer
 
 DATABASE_URL="$migration_dsn" MIGRATION_DATABASE_URL="$migration_dsn" \
   ENVIRONMENT=local python -m alembic upgrade head
@@ -49,6 +52,14 @@ DATABASE_URL="$migration_dsn" MIGRATION_DATABASE_URL="$migration_dsn" \
 role_flags=$(PGPASSWORD=app_worker psql "$worker_dsn" -tAc \
   "SELECT rolbypassrls::text || ':' || rolsuper::text FROM pg_roles WHERE rolname = current_user")
 [[ "$role_flags" == "false:false" || "$role_flags" == "f:f" ]]
+
+# B2.5-P13 Corrective XVI. Issuance-consequence authority is a separate login,
+# so the auditor observes it here rather than inferring it from configuration.
+issuer_identity=$(PGPASSWORD=app_trust_issuer psql "$issuer_dsn" -tAc "SELECT current_user")
+[[ "$issuer_identity" == "app_trust_issuer" ]]
+issuer_flags=$(PGPASSWORD=app_trust_issuer psql "$issuer_dsn" -tAc \
+  "SELECT rolbypassrls::text || ':' || rolsuper::text FROM pg_roles WHERE rolname = current_user")
+[[ "$issuer_flags" == "false:false" || "$issuer_flags" == "f:f" ]]
 
 docker build -f backend/Dockerfile.bayesian -t "$image" .
 image_id=$(docker image inspect "$image" --format '{{.Id}}')
@@ -101,6 +112,7 @@ grep -q 'B24_ARTIFACT_CONTAINMENT_PASS' <<<"$containment_output"
 export DATABASE_URL="$worker_dsn"
 export MIGRATION_DATABASE_URL="$migration_dsn"
 export B24_DISPATCH_PUBLISHER_DATABASE_URL="$publisher_dsn"
+export TRUST_ISSUANCE_DATABASE_URL="$issuer_dsn"
 export CELERY_BROKER_URL="sqla+${worker_dsn}"
 export CELERY_RESULT_BACKEND="db+${worker_dsn}"
 export PYTHONPATH="$repo_root:$repo_root/backend"
