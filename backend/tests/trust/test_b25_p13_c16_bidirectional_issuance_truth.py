@@ -126,7 +126,7 @@ async def test_c16_post_signature_completion_failure_is_explicitly_unknown(
             "write_ahead_attempt_retained",
             "unknown_outcome_explicit",
         ]
-        print("c16_post_signature_boundary_observations=" + str(len(observations)))
+        print("\nc16_post_signature_boundary_observations=" + str(len(observations)))
     finally:
         await engine.dispose()
 
@@ -206,7 +206,7 @@ async def test_c16_export_413_occurs_after_durable_signature_completion(
             "issued_state_durable_before_413",
             "raw_signature_evidence_retained",
         ]
-        print("c16_export_boundary_observations=" + str(len(observations)))
+        print("\nc16_export_boundary_observations=" + str(len(observations)))
     finally:
         await engine.dispose()
 
@@ -471,7 +471,8 @@ async def test_c16_database_refuses_every_weak_principal_completion_claim(
         assert lineage["issuance_unknown_outcome_count"] == 1
 
         print(
-            "c16_ordinary_principal_completion_refusals=" + str(ordinary_refusals)
+            "\nc16_ordinary_principal_completion_refusals="
+            + str(ordinary_refusals)
         )
         print("c16_issuer_principal_bounded_refusals=" + str(issuer_refusals))
         print("c16_fabricated_insert_refused=1")
@@ -598,7 +599,7 @@ async def test_c16_catalog_survey_has_no_implicit_nullable_check_operands(
                     )
             refused.append("available_interval_without_divergence_count")
 
-        print("c16_nullable_check_candidates=" + str(len(surveyed)))
+        print("\nc16_nullable_check_candidates=" + str(len(surveyed)))
         print("c16_nullable_check_mutations_refused=" + str(len(refused)))
     finally:
         await engine.dispose()
@@ -678,7 +679,7 @@ async def test_c16_reconciler_bounds_authorized_and_signing_states(
             row["issuance_state"] for row in await _issuance_rows(engine, tenant_id)
         )
         assert states == ["failed", "signature_outcome_unknown"], states
-        print("c16_reconciled_nonterminal_states=" + str(sum(result.values())))
+        print("\nc16_reconciled_nonterminal_states=" + str(sum(result.values())))
     finally:
         await engine.dispose()
 
@@ -693,4 +694,4 @@ def test_c16_reconciler_is_registered_in_beat_schedule() -> None:
     assert float(entry["schedule"]) <= 60.0
     assert entry["kwargs"]["stale_seconds"] == 900
     assert entry["kwargs"]["batch_size"] == 100
-    print("c16_reconciler_schedule_observations=" + str(len(observations)))
+    print("\nc16_reconciler_schedule_observations=" + str(len(observations)))
