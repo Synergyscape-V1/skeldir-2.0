@@ -123,7 +123,14 @@ def trust_issuance_session_factory() -> async_sessionmaker[AsyncSession]:
         engine_kwargs["pool_timeout"] = settings.DATABASE_POOL_TIMEOUT_SECONDS
 
     if _issuance_engine is not None:
-        _issuance_engine.sync_engine.dispose()
+        # Only reachable when the configured DSN changes at runtime, which in
+        # practice means a test or a CI negative control. Disposal must never be
+        # the reason issuance fails, so a failure here is dropped rather than
+        # raised: the replacement engine below is what issuance will use.
+        try:
+            _issuance_engine.sync_engine.dispose()
+        except Exception:  # pragma: no cover - defensive
+            pass
 
     _issuance_engine = create_async_engine(async_url, **engine_kwargs)
     factory = async_sessionmaker(
