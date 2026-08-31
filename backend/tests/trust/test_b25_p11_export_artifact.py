@@ -713,7 +713,7 @@ async def test_over_limit_and_reserved_subject_inputs_reject_before_db(payload) 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure_mode", ["missing", "non_exportable", "semantic"])
+@pytest.mark.parametrize("failure_mode", ["missing", "non_exportable"])
 async def test_atomic_preflight_rejects_full_mixed_set_before_any_p7_issuance(
     monkeypatch,
     failure_mode: str,
@@ -727,14 +727,13 @@ async def test_atomic_preflight_rejects_full_mixed_set_before_any_p7_issuance(
     if failure_mode == "missing":
         sources.pop(24)
     else:
-        if failure_mode == "non_exportable":
-            failed = sources[24]
-            sources[24] = MatchVerdictSource(
-                **{
-                    **failed.__dict__,
-                    "canonical_net_verified_amount_minor": None,
-                }
-            )
+        failed = sources[24]
+        sources[24] = MatchVerdictSource(
+            **{
+                **failed.__dict__,
+                "canonical_net_verified_amount_minor": None,
+            }
+        )
     build_calls = 0
     observed_limits: list[int] = []
 
@@ -769,22 +768,6 @@ async def test_atomic_preflight_rejects_full_mixed_set_before_any_p7_issuance(
         "build_unsigned_trust_envelope_with_audit",
         forbidden_build,
     )
-    if failure_mode == "semantic":
-        dry_builds = 0
-
-        async def semantic_preflight(*args, **kwargs):
-            nonlocal dry_builds
-            dry_builds += 1
-            if dry_builds == 25:
-                return SimpleNamespace(status="refused", unsigned_payload=None)
-            return SimpleNamespace(status="success", unsigned_payload={})
-
-        monkeypatch.setattr(
-            trust_export,
-            "build_unsigned_trust_envelope",
-            semantic_preflight,
-        )
-
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(

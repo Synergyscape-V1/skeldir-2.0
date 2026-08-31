@@ -271,6 +271,29 @@
   replacement: ''
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XVI Report.md
+- id: validate-b25-p13-c17-closure
+  path: scripts/ci/validate_b25_p13_c17_closure.py
+  status: required
+  owning_phase: B2.5-P13-C17
+  protected_invariant: Durable completed issuance exists only as a projection of an exact signer-produced attempt. The app_trust_signer principal alone can establish signature_known with real signature material; the app_trust_issuer principal alone can begin, abandon or finalize an attempt; the completion guard requires exact correspondence between the projected key id, signature hash, signature bytes and signed envelope and the attempt row that carries them; completion re-verifies the retained artifact against public key authority; pre-XVII completions stay issued_pre_xvii rather than being elevated; retry lineage is reconstructable and a known signature is never degraded to generic uncertainty; the export wrapper carries the same durable consequence history and a full-set preflight precedes the first private-key call; the public API process holds neither the signer DSN nor the private seed; the scheduled reconciler is dispatchable through the tenant-task allowlist; and the C17 proof remains attached to the required P13 aggregate.
+  command: python scripts/ci/validate_b25_p13_c17_closure.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 C17 Consequence Lineage
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c17_closure.py --negative-control
+  expected_failure_meaning: The issuance principal can manufacture a completed issuance without the cryptographic consequence it claims, a definitely-known signature can be lost to generic uncertainty, attempt lineage can be erased by retry, the signed export wrapper can exist with no durable consequence history, the public API can regain private-key or signer-database custody, the production reconciler can become undispatchable, a historical completion can be silently elevated to consequence-coupled status, or the C17 behavioral gate can be detached from the required aggregate.
+  first_diagnostic_command: python scripts/ci/validate_b25_p13_c17_closure.py --negative-control
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  deprecation_reason: ''
+  subsumed_by: ''
+  ci_visibility: named_job
+  default_execution: true
+  execution_cohort: b2-5-p13-e2e-trust-closure
+  replacement: ''
+  registry_action: keep
+  evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation XVII Report.md
 - id: validate-b25-p13-c14-closure
   path: scripts/ci/validate_b25_p13_c14_closure.py
   status: required

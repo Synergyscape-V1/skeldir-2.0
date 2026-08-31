@@ -16,6 +16,8 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -29,6 +31,7 @@ from app.trust.issuance_session import dispose_trust_issuance_engine
 from app.trust.signer_session import dispose_trust_signer_engine
 from app.trust.signer_session import trust_signer_database_url
 from app.trust.jwks import build_jwks_response
+from app.trust.machine_identity import AgentScope
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
 from app.trust.runtime_keys import load_runtime_signing_registry
 from app.trust.signer_gateway import (
@@ -38,6 +41,8 @@ from app.trust.signer_gateway import (
 from app.trust.signer_service import assert_signer_process_custody
 from test_b25_p13_c15_issuance_truth import (
     _configure_signing,
+    _grant_scope,
+    _issuance_rows,
     _query_envelope,
     _seed_tenant,
 )
@@ -601,3 +606,105 @@ def test_c17_process_custody_guards_fail_closed(monkeypatch) -> None:
     ):
         assert_signer_process_custody()
     print("\nc17_process_custody_guards=2")
+
+
+@_DB_PROOF
+@pytest.mark.asyncio
+async def test_c17_export_refusal_leaves_no_unreachable_issued_row(monkeypatch) -> None:
+    """A durably issued export envelope stays reachable after a late refusal.
+
+    Audit 59 established the reverse: a page could sign, durably commit
+    ``issued``, then be discarded by a later refusal, and no retry could ever
+    recover it because the attempt transition refused to re-enter a terminal
+    row. The invariant is reachability, so this proves reachability directly
+    rather than proving that one anticipated refusal class is prevented.
+    """
+    _configure_signing(monkeypatch, seed=b"b25-p13-c17-export-reservice")
+    engine = create_async_engine(to_asyncpg_postgres_dsn(_worker_database_url()))
+    try:
+        tenant_id, token, subject_urn = await _seed_tenant(engine, "c17-reservice")
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                {"t": str(tenant_id)},
+            )
+            client_id = (
+                await connection.execute(
+                    text(
+                        "SELECT id FROM public.agent_clients "
+                        "WHERE tenant_id = :t ORDER BY created_at LIMIT 1"
+                    ),
+                    {"t": str(tenant_id)},
+                )
+            ).scalar_one()
+            await _grant_scope(
+                connection,
+                tenant_id=tenant_id,
+                agent_client_id=client_id,
+                scope=AgentScope.EXPORT_CREATE_LIMITED.value,
+            )
+
+        from app.api import trust_export
+
+        signings = 0
+        original_signer = trust_export.request_trust_envelope_signature
+
+        async def counted_signer(**kwargs):
+            nonlocal signings
+            signings += 1
+            return await original_signer(**kwargs)
+
+        monkeypatch.setattr(
+            trust_export, "request_trust_envelope_signature", counted_signer
+        )
+
+        idempotency_key = f"c17-reservice-{uuid4().hex}"
+
+        def _headers() -> dict[str, str]:
+            return {
+                "Authorization": f"Bearer {token}",
+                "X-Tenant-ID": str(tenant_id),
+                "X-Trust-Nonce": f"c17-reservice-{uuid4().hex}",
+                "X-Correlation-ID": str(uuid4()),
+                "X-Idempotency-Key": idempotency_key,
+            }
+
+        app = FastAPI()
+        app.include_router(trust_export.router, prefix="/api")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # A refusal that lands after per-envelope issuance is durable.
+            monkeypatch.setattr(trust_export, "MAX_EXPORT_ARTIFACT_BYTES", 1)
+            refused = await client.post(
+                "/api/trust/v1/exports/match-verdicts",
+                headers=_headers(),
+                json={"subject_refs": [subject_urn]},
+            )
+            assert refused.status_code == 413, refused.text
+            rows = await _issuance_rows(engine, tenant_id)
+            assert len(rows) == 1, rows
+            assert rows[0]["issuance_state"] == "issued", rows
+            signings_after_refusal = signings
+
+            # The same request, retried once the refusal condition is gone,
+            # must serve that exact durable artifact instead of failing closed,
+            # and must not produce a second cryptographic consequence.
+            monkeypatch.setattr(trust_export, "MAX_EXPORT_ARTIFACT_BYTES", 5_000_000)
+            recovered = await client.post(
+                "/api/trust/v1/exports/match-verdicts",
+                headers=_headers(),
+                json={"subject_refs": [subject_urn]},
+            )
+
+        assert recovered.status_code == 200, recovered.text
+        served = recovered.json()["envelopes"][0]
+        assert signings == signings_after_refusal, "retry re-signed a durable artifact"
+        log, attempts = await _lineage(engine, tenant_id)
+        assert log["issuance_state"] == "issued"
+        assert log["issued_envelope"] == served
+        assert len(attempts) == 1, attempts
+        assert attempts[0]["attempt_state"] == "issued"
+        print("\nc17_durable_export_reservice=1")
+    finally:
+        await engine.dispose()

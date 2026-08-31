@@ -2010,13 +2010,19 @@ jobs:
           from pathlib import Path
           path = Path('backend/app/api/trust_api.py')
           source = path.read_text(encoding='utf-8')
-          old = '    await record_trust_issuance_attempt_started('
+          old = '    attempt_id = await record_trust_issuance_attempt_started('
           assert source.count(old) == 1, source.count(old)
-          source = source.replace(old, '    await _skipped_attempt_record(', 1)
+          source = source.replace(
+              old, '    attempt_id = await _skipped_attempt_record(', 1
+          )
+          # The mutation removes only the durable write-ahead, not the shape of
+          # its result, so the red is caused by the missing durable attempt and
+          # not by a type error downstream.
           source = source.replace(
               'from app.trust.audit import (',
               'async def _skipped_attempt_record(**kwargs):\n'
-              '    return None\n\n\n'
+              '    from uuid import uuid4\n\n'
+              '    return uuid4()\n\n\n'
               'from app.trust.audit import (',
               1,
           )
@@ -2171,7 +2177,7 @@ jobs:
           set -o pipefail
           python scripts/ci/validate_b25_p13_c16_closure.py --negative-control             | tee /tmp/c16-closure.out
           grep -q '^B25_P13_C16_CLOSURE_VALIDATION_PASS$' /tmp/c16-closure.out
-          grep -q '^c16_compatibility_negative_controls_fired=26$' /tmp/c16-closure.out
+          grep -q '^c16_compatibility_negative_controls_fired=27$' /tmp/c16-closure.out
 
       # NC-C16-DB. A guard nobody can break is a guard nobody has tested. Each
       # control removes one physical property from the live database, proves the
@@ -2371,7 +2377,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c17_consequence_lineage.py \
             -q -s --no-header | tee /tmp/c17-lineage.out
-          grep -E '8 passed' /tmp/c17-lineage.out
+          grep -E '9 passed' /tmp/c17-lineage.out
           grep -q '^c17_exact_consequence_correspondence=1$' /tmp/c17-lineage.out
           grep -q '^c17_strongest_known_fact_retry=1$' /tmp/c17-lineage.out
           grep -q '^c17_issuer_fabrication_refusals=4$' /tmp/c17-lineage.out
@@ -2381,6 +2387,7 @@ jobs:
           grep -q '^c17_reconciler_dispatch_authorized=1$' /tmp/c17-lineage.out
           grep -q '^c17_real_process_custody_boundary=1$' /tmp/c17-lineage.out
           grep -q '^c17_process_custody_guards=2$' /tmp/c17-lineage.out
+          grep -q '^c17_durable_export_reservice=1$' /tmp/c17-lineage.out
           python -m pytest \
             backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_export_413_occurs_after_durable_signature_completion \
             -q -s --no-header | tee /tmp/c17-export-wrapper.out
@@ -2396,7 +2403,7 @@ jobs:
           python scripts/ci/validate_b25_p13_c17_closure.py --negative-control \
             | tee /tmp/c17-closure.out
           grep -q '^B25_P13_C17_CLOSURE_VALIDATION_PASS$' /tmp/c17-closure.out
-          grep -q '^c17_static_negative_controls_fired=26$' /tmp/c17-closure.out
+          grep -q '^c17_static_negative_controls_fired=27$' /tmp/c17-closure.out
 
       - name: C17 live Beat broker worker recovery topology
         env:
@@ -2462,7 +2469,11 @@ jobs:
             --pidfile= --schedule=/tmp/c17-beat-schedule \
             > /tmp/c17-beat.log 2>&1 &
           beat_pid=$!
-          cleanup() { kill "$beat_pid" "$worker_pid" 2>/dev/null || true; }
+          cleanup() {
+            set +e
+            kill "$beat_pid" "$worker_pid" 2>/dev/null
+            set -e
+          }
           trap cleanup EXIT
 
           # A live issuance attempt is started while the reconciler is actively

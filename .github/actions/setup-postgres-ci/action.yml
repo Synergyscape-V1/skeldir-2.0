@@ -57,14 +57,6 @@ inputs:
     description: Dedicated Trust issuance-consequence password.
     required: false
     default: app_trust_issuer
-  trust-signer-user:
-    description: Dedicated signer-produced consequence principal.
-    required: false
-    default: app_trust_signer
-  trust-signer-password:
-    description: Dedicated signer-produced consequence password.
-    required: false
-    default: app_trust_signer
   migration-command:
     description: Alembic migration command.
     required: false
@@ -95,8 +87,8 @@ runs:
           --publisher-password "${{ inputs.publisher-password }}" \
           --trust-issuer-user "${{ inputs.trust-issuer-user }}" \
           --trust-issuer-password "${{ inputs.trust-issuer-password }}" \
-          --trust-signer-user "${{ inputs.trust-signer-user }}" \
-          --trust-signer-password "${{ inputs.trust-signer-password }}"
+          --trust-signer-user app_trust_signer \
+          --trust-signer-password app_trust_signer
 
     # B2.5-P13 Corrective XVI (XVI-B). Every job that provisions this boundary
     # gets the issuance DSN automatically, so no job can silently run the Trust
@@ -106,7 +98,7 @@ runs:
       shell: bash
       run: |
         echo "TRUST_ISSUANCE_DATABASE_URL=postgresql://${{ inputs.trust-issuer-user }}:${{ inputs.trust-issuer-password }}@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
-        echo "TRUST_SIGNER_DATABASE_URL=postgresql://${{ inputs.trust-signer-user }}:${{ inputs.trust-signer-password }}@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
+        echo "TRUST_SIGNER_DATABASE_URL=postgresql://app_trust_signer:app_trust_signer@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
 
     - name: Run Alembic migrations
       shell: bash

@@ -33,7 +33,7 @@ from app.trust.audit import (
     record_trust_export_attempt_started,
     record_trust_export_attempt_unknown,
 )
-from app.trust.builder import TrustEnvelopeBuildRequest, build_unsigned_trust_envelope
+from app.trust.builder import TrustEnvelopeBuildRequest
 from app.trust.export_artifact import build_export_artifact, verify_export_artifact
 from app.trust.key_registry import TrustKeyRegistry
 from app.trust.machine_auth import MachineCallerContext, authenticate_machine_caller
@@ -513,37 +513,16 @@ async def _create_export_with_capacity(
             ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
-    # C17 Model A preflights the complete accepted set through the production
-    # semantic builder without P7 persistence. This is deliberately broader
-    # than the current two-item page: an invalid later page cannot be learned
-    # only after an earlier page has produced signatures or authorized rows.
-    for subject_ref in export_request.subject_refs:
-        source = sources_by_id.get(parse_match_verdict_subject_ref(subject_ref))
-        if source is None:
-            return _typed_error_response(
-                ReasonCode.SUBJECT_NOT_FOUND,
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            )
-        preflight = await build_unsigned_trust_envelope(
-            session,
-            TrustEnvelopeBuildRequest(
-                tenant_id=caller.tenant_id,
-                subject_type="match_verdict",
-                subject_ref=subject_ref,
-                request_context={
-                    "audience_id": caller.audience,
-                    "created_at": now,
-                    "created_at_source": "request_issuance_context",
-                },
-            ),
-            source=source,
-            payload_runner=asyncio.to_thread,
-        )
-        if preflight.status != "success" or preflight.unsigned_payload is None:
-            return _typed_error_response(
-                ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            )
+    # The reachability invariant this used to defend is now carried by two
+    # cheaper mechanisms that hold for every refusal class, not just the ones a
+    # preflight can anticipate: page members are all prepared before any of
+    # them is signed, so a page-local refusal precedes the first private-key
+    # call; and an already-issued row is re-served from durable evidence rather
+    # than failing closed, so a refusal on a later page can never strand an
+    # earlier page's signatures. Rebuilding every accepted reference through
+    # the semantic builder on every page added no reachability guarantee and
+    # cost more than the export handler's whole deadline at the declared
+    # maximum reference count.
     envelopes: list[dict[str, Any]] = []
     issuance_completions: list[tuple[str, UUID]] = []
     prepared_envelopes: list[_PreparedExportEnvelope] = []

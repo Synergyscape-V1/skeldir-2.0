@@ -203,6 +203,21 @@
   negative_control_preserved_by: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control plus the six PostgreSQL-backed C16 behavioral falsifiers
   local_reproduction_command: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control
   risk_if_removed: Any holder of the ordinary application database credentials can stamp a fabricated completed issuance, a real signature can exist without a corresponding durable event, an issued record can be non-reconstructable, a crashed attempt can remain authorized indefinitely, a NULL can bypass a consequence-bearing constraint, privileged test identity can invalidate RLS evidence, or concurrent deployment triggers can race the migration chain while all earlier gates remain green.
+- gate_id: validate-b25-p13-c17-closure
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 C17 Consequence Lineage
+  script: scripts/ci/validate_b25_p13_c17_closure.py
+  owning_phase: B2.5-P13-C17
+  protected_invariant: Completed issuance is a projection of an exact signer-produced attempt, not a claim a credential can make; the signer and issuer principals are disjoint, the completion guard enforces exact evidence correspondence and public-key verification, attempt lineage is reconstructable across retry and restart, the signed export wrapper carries durable consequence history, and the scheduled reconciler is reachable through its production dispatch path.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  decision: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: C16 proves who may write issuance state and what shape that state may have, but its authority model is possession-based; an independent audit drove authorized to signing to issued under the legitimate app_trust_issuer credential with fabricated 64-byte evidence and no Ed25519 operation, while every required P13 context stayed green. C16 also cannot distinguish a definitely-produced signature from an unknowable one, cannot reconstruct multiple attempts, leaves the export wrapper signature untracked, and never exercises the reconciler dispatch path.
+  negative_control_preserved_by: python scripts/ci/validate_b25_p13_c17_closure.py --negative-control plus the eight PostgreSQL-backed C17 falsifiers, the live Beat to broker to worker recovery topology proof, and three runtime controls that drop each database guard and observe the falsifier turn red
+  local_reproduction_command: python scripts/ci/validate_b25_p13_c17_closure.py --negative-control
+  risk_if_removed: A holder of the legitimate issuance credential can record a durably issued, publicly-verifiable-shaped TrustEnvelope history with a signature no private key ever produced; a real signature can be silently discarded when its completion write fails; retry can erase the evidence that earlier attempts produced signatures; an authoritative signed export artifact can exist with no durable lineage; and the scheduled reconciler can stop running while all earlier gates remain green.
 - gate_id: validate-b25-p13-c14-closure
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P13 C14 Complete Semantic Issuance Authority

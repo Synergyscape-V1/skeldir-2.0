@@ -191,18 +191,37 @@ def validate_all(overrides: Mapping[Path, str] | None = None) -> None:
     create_export = _between(
         export, "async def _create_export_with_capacity(", "@router.post("
     )
-    preflight = create_export.find("for subject_ref in export_request.subject_refs:")
+    # Reachability of a durably issued export envelope rests on two orderings.
+    # The complete accepted set is resolved and money-checked before anything
+    # is signed, and every member of a page is prepared before any member of
+    # that page is signed, so a page-local refusal precedes the first
+    # private-key call. Re-service closes the remaining case.
     signing_position = create_export.find("await _sign_prepared_export_envelope(")
-    _require(0 <= preflight < signing_position, "full_set_preflight_not_before_signing")
+    resolution = create_export.find("if len(sources) != accepted_count:")
+    _require(
+        0 <= resolution < signing_position,
+        "full_set_resolution_not_before_signing",
+    )
+    preparation = create_export.find(
+        "for page_offset, subject_ref in enumerate(page_refs):"
+    )
+    signing_loop = create_export.find("for prepared in prepared_envelopes:")
+    _require(
+        0 <= preparation < signing_loop <= signing_position,
+        "page_preparation_not_before_page_signing",
+    )
     for token in (
-        "build_unsigned_trust_envelope(",
+        "load_durable_trust_issuance_replay(",
         "load_durable_trust_export_artifact(",
         "record_trust_export_attempt_started(",
         "request_trust_export_artifact_signature(",
         "artifact_verification = verify_export_artifact(",
         "MAX_EXPORT_ARTIFACT_BYTES",
     ):
-        _require(token in create_export, f"export_consequence_closure_missing:{token}")
+        _require(
+            token in export or token in create_export,
+            f"export_consequence_closure_missing:{token}",
+        )
 
     _require(
         '"app.tasks.maintenance.reconcile_trust_issuance_for_tenant"' in tests
@@ -224,6 +243,7 @@ def validate_all(overrides: Mapping[Path, str] | None = None) -> None:
         "c17_reconciler_dispatch_authorized=1",
         "c17_real_process_custody_boundary=1",
         "c17_process_custody_guards=2",
+        "c17_durable_export_reservice=1",
     ):
         _require(token in tests, f"runtime_falsifier_missing:{token}")
 
@@ -354,8 +374,13 @@ def run_negative_controls() -> int:
         ),
         (
             TRUST_EXPORT,
-            "for subject_ref in export_request.subject_refs:",
-            "for subject_ref in page_refs:",
+            "if len(sources) != accepted_count:",
+            "if False:",
+        ),
+        (
+            TRUST_EXPORT,
+            "for page_offset, subject_ref in enumerate(page_refs):",
+            "for page_offset, subject_ref in enumerate([]):",
         ),
         (
             TRUST_EXPORT,

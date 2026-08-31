@@ -7,7 +7,6 @@ from contextlib import AbstractAsyncContextManager
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-import json
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -25,7 +24,10 @@ from app.trust.builder import (
     TrustEnvelopeBuildResult,
     build_unsigned_trust_envelope,
 )
-from app.trust.canonicalization import canonicalize_envelope_payload
+from app.trust.canonicalization import (
+    canonicalize_envelope_payload,
+    canonicalize_json_document,
+)
 from app.trust.hash_identity import (
     compute_envelope_payload_hash,
     compute_semantic_truth_hash,
@@ -41,7 +43,10 @@ from app.trust.semantic_authority import (
 )
 from app.trust.issuance_session import trust_issuance_session_factory
 from app.trust.key_registry import TrustKeyRegistry
-from app.trust.runtime_keys import load_runtime_verification_registry
+from app.trust.runtime_keys import (
+    RuntimeTrustKeyConfigurationError,
+    load_runtime_verification_registry,
+)
 from app.trust.signer_session import trust_signer_session_factory
 from app.trust.signing import decode_ed25519_signature
 from app.trust.signing_consequence import (
@@ -770,7 +775,9 @@ async def record_trust_signature_consequence(
                         "signature_hash": signature_hash,
                         "signature": signature,
                         "signed_envelope_hash": signed_envelope_hash,
-                        "signed_envelope": json.dumps(material.signed_envelope),
+                        "signed_envelope": canonicalize_json_document(
+                            material.signed_envelope
+                        ).decode("utf-8"),
                     },
                 )
             ).scalar_one_or_none()
@@ -845,12 +852,24 @@ async def record_trust_issuance_completed(
             ).scalar_one_or_none()
             if artifact is None:
                 raise TrustAuditError("issuance_completion_attempt_missing")
+            # Completion never projects an unverified artifact, but a process
+            # with no configured public verification authority must fail for
+            # that reason only when it has no other authority to verify with.
+            # Resolving the runtime registry eagerly turned "no JWKS
+            # configured" into "issuance is impossible" for every caller that
+            # supplied its own key material.
             verification_registries = []
             if key_registry is not None:
                 verification_registries.append(key_registry.public_only())
-            verification_registries.append(
-                load_runtime_verification_registry().public_only()
-            )
+            try:
+                verification_registries.append(
+                    load_runtime_verification_registry().public_only()
+                )
+            except RuntimeTrustKeyConfigurationError:
+                if not verification_registries:
+                    raise TrustAuditError(
+                        "issuance_completion_verification_authority_unavailable"
+                    ) from None
             verification = None
             for registry in verification_registries:
                 candidate = verify_trust_envelope(
@@ -1172,7 +1191,9 @@ async def record_trust_export_artifact_issued(
                     "signing_key_id": artifact["signing_key_id"],
                     "signature_hash": artifact["signature_hash"],
                     "signature": signature,
-                    "signed_artifact": json.dumps(artifact),
+                    "signed_artifact": canonicalize_json_document(artifact).decode(
+                        "utf-8"
+                    ),
                 },
             )
             if int(getattr(result, "rowcount", -1)) != 1:

@@ -10,6 +10,7 @@ from uuid import UUID
 
 import httpx
 
+from app.trust.canonicalization import canonicalize_json_document
 from app.trust.key_registry import TrustKeyRegistry
 from app.trust.signer_service import (
     SignContinuationRequest,
@@ -66,11 +67,15 @@ def _signer_secret() -> str:
 async def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     assert_public_api_signer_isolation()
     try:
+        body = canonicalize_json_document(payload)
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
                 _signer_url() + path,
-                json=payload,
-                headers={"Authorization": f"Bearer {_signer_secret()}"},
+                content=body,
+                headers={
+                    "Authorization": f"Bearer {_signer_secret()}",
+                    "Content-Type": "application/json",
+                },
             )
         response.raise_for_status()
         decoded = response.json()
@@ -102,7 +107,12 @@ async def request_trust_envelope_signature(
         )
     return await _post(
         "/internal/trust/v1/sign-envelope",
-        request.model_dump(mode="json"),
+        {
+            "tenant_id": str(tenant_id),
+            "audit_ref": audit_ref,
+            "attempt_id": str(attempt_id),
+            "unsigned_envelope": unsigned_envelope,
+        },
     )
 
 
@@ -125,7 +135,11 @@ async def request_trust_export_artifact_signature(
         )
     return await _post(
         "/internal/trust/v1/sign-export-artifact",
-        request.model_dump(mode="json"),
+        {
+            "tenant_id": str(tenant_id),
+            "attempt_id": str(attempt_id),
+            "unsigned_artifact": unsigned_artifact,
+        },
     )
 
 
@@ -150,7 +164,12 @@ async def request_trust_continuation_signature(
         )
     decoded = await _post(
         "/internal/trust/v1/sign-continuation",
-        request.model_dump(mode="json"),
+        {
+            "binding_hash": binding_hash,
+            "next_position": next_position,
+            "total_accepted": total_accepted,
+            "expires_at": expires_at.isoformat(),
+        },
     )
     token = decoded.get("continuation_token")
     if not isinstance(token, str):
