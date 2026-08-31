@@ -265,6 +265,7 @@ ALLOWED_M0_PATHS = [
     "backend/app/trust/consequence_verification.py",
     "scripts/ci/enforce_runtime_hermeticity.py",
     "alembic/versions/007_skeldir_foundation/202608311200_b25_p13_c17_consequence_lineage.py",
+    "alembic/versions/007_skeldir_foundation/202608312100_b25_p13_c17b_guard_order_independence.py",
     "docs/forensics/B2.5-P13 Corrective Action Remediation XVII Report.md",
     # The bounded issuance reconciler and the Optional correlation-id typing it
     # requires: both are Corrective XVI trust-closure surfaces, not M0/M1 scope.
