@@ -79,23 +79,12 @@ def _to_async_dsn(raw_url: str) -> tuple[str, dict]:
     return sanitized, connect_args
 
 
-def trust_issuance_session_factory() -> async_sessionmaker[AsyncSession]:
-    """Return the process-wide issuance session factory, building it once.
-
-    Construction is lazy so that a test or CI job can set
-    ``TRUST_ISSUANCE_DATABASE_URL`` after import, and so that a process which
-    never issues never opens a connection under the issuance principal.
-    """
-    global _issuance_engine, _issuance_session_factory
-
-    resolved_url = trust_issuance_database_url()
-    if (
-        _issuance_session_factory is not None
-        and getattr(_issuance_session_factory, "_skeldir_source_dsn", None)
-        == resolved_url
-    ):
-        return _issuance_session_factory
-
+def _build_session_factory(
+    resolved_url: str,
+    *,
+    previous_engine=None,
+) -> tuple[object, async_sessionmaker[AsyncSession]]:
+    """Build one short-lived consequence-custody pool."""
     async_url, connect_args = _to_async_dsn(resolved_url)
     force_pooling = os.getenv("DATABASE_FORCE_POOLING", "0").strip().lower() in {
         "1",
@@ -115,32 +104,48 @@ def trust_issuance_session_factory() -> async_sessionmaker[AsyncSession]:
     if use_null_pool:
         engine_kwargs["poolclass"] = NullPool
     else:
-        # Issuance writes are short, serial, and rare relative to reads, so this
-        # custody boundary intentionally holds a small pool of its own rather
-        # than borrowing the API pool's sizing.
         engine_kwargs["pool_size"] = 5
         engine_kwargs["max_overflow"] = 5
         engine_kwargs["pool_timeout"] = settings.DATABASE_POOL_TIMEOUT_SECONDS
 
-    if _issuance_engine is not None:
-        # Only reachable when the configured DSN changes at runtime, which in
-        # practice means a test or a CI negative control. Disposal must never be
-        # the reason issuance fails, so a failure here is dropped rather than
-        # raised: the replacement engine below is what issuance will use.
+    if previous_engine is not None:
         try:
-            _issuance_engine.sync_engine.dispose()
+            previous_engine.sync_engine.dispose()
         except Exception:  # pragma: no cover - defensive
             pass
 
-    _issuance_engine = create_async_engine(async_url, **engine_kwargs)
+    engine = create_async_engine(async_url, **engine_kwargs)
     factory = async_sessionmaker(
-        bind=_issuance_engine,
+        bind=engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
     factory._skeldir_source_dsn = resolved_url  # type: ignore[attr-defined]
-    _issuance_session_factory = factory
-    return factory
+    return engine, factory
+
+
+def trust_issuance_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Return the process-wide issuance session factory, building it once.
+
+    Construction is lazy so that a test or CI job can set
+    ``TRUST_ISSUANCE_DATABASE_URL`` after import, and so that a process which
+    never issues never opens a connection under the issuance principal.
+    """
+    global _issuance_engine, _issuance_session_factory
+
+    resolved_url = trust_issuance_database_url()
+    if (
+        _issuance_session_factory is not None
+        and getattr(_issuance_session_factory, "_skeldir_source_dsn", None)
+        == resolved_url
+    ):
+        return _issuance_session_factory
+
+    _issuance_engine, _issuance_session_factory = _build_session_factory(
+        resolved_url,
+        previous_engine=_issuance_engine,
+    )
+    return _issuance_session_factory
 
 
 async def dispose_trust_issuance_engine() -> None:

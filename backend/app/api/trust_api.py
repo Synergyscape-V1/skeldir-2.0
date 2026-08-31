@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncGenerator
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Annotated, Any
@@ -26,6 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import session as db_session
 from app.trust.audit import (
     build_unsigned_trust_envelope_with_audit,
+    load_durable_trust_issuance_artifact,
+    load_durable_trust_issuance_replay,
     record_trust_issuance_attempt_started,
     record_trust_issuance_completed,
     record_trust_issuance_outcome_unknown,
@@ -38,7 +42,6 @@ from app.trust.query_continuation import (
     MAX_CURSOR_TOKEN_BYTES,
     TrustQueryContinuationError,
     continuation_expiry,
-    issue_trust_query_continuation,
     trust_query_binding_hash,
     verify_trust_query_continuation,
 )
@@ -48,7 +51,10 @@ from app.trust.runtime_keys import (
     load_runtime_signing_registry,
     load_runtime_verification_registry,
 )
-from app.trust.signing import sign_trust_envelope
+from app.trust.signer_gateway import (
+    request_trust_continuation_signature,
+    request_trust_envelope_signature,
+)
 from app.trust.source_adapters import (
     SUPPORTED_P5_SUBJECT_TYPES,
     ConfidenceProjectionSource,
@@ -133,6 +139,16 @@ if {
 
 class TrustResponseBudgetExceeded(RuntimeError):
     """A governed response exceeded a fixed P10 serialization budget."""
+
+
+def _signer_request_payload(authorized_envelope: Any) -> dict[str, Any]:
+    """Serialize authority without permitting production caller-authored JSON."""
+    projector = getattr(authorized_envelope, "external_payload_copy", None)
+    if callable(projector):
+        return projector()
+    if os.getenv("TESTING") == "1" and isinstance(authorized_envelope, dict):
+        return deepcopy(authorized_envelope)
+    raise RuntimeError("serialized_signing_authority_required")
 
 
 class TrustRequestBoundaryException(HTTPException):
@@ -433,9 +449,18 @@ async def require_envelope_verify_tenant_context(
 
 
 async def get_runtime_signing_registry() -> TrustKeyRegistry:
-    """FastAPI seam for secret-backed signing authority and test overrides."""
+    """Compatibility seam returning public verification authority only.
+
+    Corrective XVII moved private-key authority to the signer process.  The
+    name remains temporarily stable for dependency overrides in older tests.
+    """
     try:
-        return load_runtime_signing_registry()
+        if (
+            os.getenv("TESTING") == "1"
+            and os.getenv("SKELDIR_TRUST_SIGNER_FORCE_REMOTE_TEST") != "1"
+        ):
+            return load_runtime_signing_registry()
+        return load_runtime_verification_registry()
     except RuntimeTrustKeyConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -510,6 +535,24 @@ async def _issue_signed_envelope(
     issued_at: datetime,
     source: MatchVerdictSource | ConfidenceProjectionSource | None = None,
 ) -> dict[str, Any] | None:
+    replay = await load_durable_trust_issuance_replay(
+        tenant_id=caller.tenant_id,
+        subject_type=subject_type,
+        subject_ref=subject_ref,
+        audience_id=caller.audience,
+        idempotency_key=idempotency_key,
+    )
+    if replay is not None:
+        audit_ref, replay_state, attempt_id, signed = replay
+        if replay_state == "signature_known":
+            await record_trust_issuance_completed(
+                tenant_id=caller.tenant_id,
+                audit_ref=audit_ref,
+                attempt_id=attempt_id,
+                key_registry=key_registry,
+            )
+        _assert_external_payload_safe(signed)
+        return signed
     build_request = TrustEnvelopeBuildRequest(
         tenant_id=caller.tenant_id,
         subject_type=subject_type,
@@ -530,40 +573,56 @@ async def _issue_signed_envelope(
     )
     if result.authorized_envelope is None:
         return None
+    durable = await load_durable_trust_issuance_artifact(
+        tenant_id=caller.tenant_id,
+        audit_ref=result.audit_record.audit_ref,
+    )
+    if durable is not None:
+        durable_state, attempt_id, signed = durable
+        if durable_state == "signature_known":
+            await record_trust_issuance_completed(
+                tenant_id=caller.tenant_id,
+                audit_ref=result.audit_record.audit_ref,
+                attempt_id=attempt_id,
+                key_registry=key_registry,
+            )
+        _assert_external_payload_safe(signed)
+        return signed
     # Corrective XVI writes ahead of private-key use. A process death anywhere
     # after this commit leaves `signing`, which the bounded reconciler converts
     # to the explicit `signature_outcome_unknown` state rather than silently
     # conflating it with "never attempted".
-    await record_trust_issuance_attempt_started(
+    attempt_id = await record_trust_issuance_attempt_started(
         tenant_id=caller.tenant_id,
         audit_ref=result.audit_record.audit_ref,
     )
     try:
-        signed = await asyncio.to_thread(
-            sign_trust_envelope,
-            result.authorized_envelope,
-            key_registry=key_registry,
+        signed = await request_trust_envelope_signature(
+            tenant_id=caller.tenant_id,
+            audit_ref=result.audit_record.audit_ref,
+            attempt_id=attempt_id,
+            unsigned_envelope=_signer_request_payload(result.authorized_envelope),
+            test_signing_registry=key_registry,
         )
     except BaseException:
-        # Once the signer is entered, an exception alone cannot prove whether
-        # the private key returned before the exception occurred.
-        await record_trust_issuance_outcome_unknown(
+        # A lost signer response may follow a committed signature_known write.
+        # Consult durable evidence before recording the weaker unknown state.
+        durable_after_failure = await load_durable_trust_issuance_artifact(
             tenant_id=caller.tenant_id,
             audit_ref=result.audit_record.audit_ref,
         )
+        if durable_after_failure is None:
+            await record_trust_issuance_outcome_unknown(
+                tenant_id=caller.tenant_id,
+                audit_ref=result.audit_record.audit_ref,
+            )
         raise
-    try:
-        await record_trust_issuance_completed(
-            tenant_id=caller.tenant_id,
-            audit_ref=result.audit_record.audit_ref,
-            signed_envelope=signed,
-        )
-    except BaseException:
-        await record_trust_issuance_outcome_unknown(
-            tenant_id=caller.tenant_id,
-            audit_ref=result.audit_record.audit_ref,
-        )
-        raise
+    await record_trust_issuance_completed(
+        tenant_id=caller.tenant_id,
+        audit_ref=result.audit_record.audit_ref,
+        attempt_id=attempt_id,
+        key_registry=key_registry,
+    )
 
     # Delivery validation is downstream of physical issuance. A refusal here
     # must not rewrite a signature that already exists as a failed issuance.
@@ -788,12 +847,12 @@ async def _query_trust_envelopes_with_capacity(
     complete = remaining_count == 0
     continuation_token = None
     if not complete:
-        continuation_token = issue_trust_query_continuation(
-            key_registry=key_registry,
+        continuation_token = await request_trust_continuation_signature(
             binding_hash=binding_hash,
             next_position=end_position,
             total_accepted=accepted_count,
             expires_at=expires_at,
+            test_signing_registry=key_registry,
         )
     response_model = TrustQueryResponse(
         envelopes=envelopes,

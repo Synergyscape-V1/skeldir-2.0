@@ -20,6 +20,7 @@ migration_dsn="postgresql://migration_owner:migration_owner@${db_host}:${db_port
 worker_dsn="postgresql://app_worker:app_worker@${db_host}:${db_port}/${db_name}"
 publisher_dsn="postgresql://app_dispatch_publisher:app_dispatch_publisher@${db_host}:${db_port}/${db_name}"
 issuer_dsn="postgresql://app_trust_issuer:app_trust_issuer@${db_host}:${db_port}/${db_name}"
+signer_dsn="postgresql://app_trust_signer:app_trust_signer@${db_host}:${db_port}/${db_name}"
 
 beat_pid=""
 cleanup() {
@@ -44,7 +45,9 @@ python scripts/database/prepare_migration_authority_boundary.py \
   --publisher-user app_dispatch_publisher \
   --publisher-password app_dispatch_publisher \
   --trust-issuer-user app_trust_issuer \
-  --trust-issuer-password app_trust_issuer
+  --trust-issuer-password app_trust_issuer \
+  --trust-signer-user app_trust_signer \
+  --trust-signer-password app_trust_signer
 
 DATABASE_URL="$migration_dsn" MIGRATION_DATABASE_URL="$migration_dsn" \
   ENVIRONMENT=local python -m alembic upgrade head
@@ -60,6 +63,12 @@ issuer_identity=$(PGPASSWORD=app_trust_issuer psql "$issuer_dsn" -tAc "SELECT cu
 issuer_flags=$(PGPASSWORD=app_trust_issuer psql "$issuer_dsn" -tAc \
   "SELECT rolbypassrls::text || ':' || rolsuper::text FROM pg_roles WHERE rolname = current_user")
 [[ "$issuer_flags" == "false:false" || "$issuer_flags" == "f:f" ]]
+
+signer_identity=$(PGPASSWORD=app_trust_signer psql "$signer_dsn" -tAc "SELECT current_user")
+[[ "$signer_identity" == "app_trust_signer" ]]
+signer_flags=$(PGPASSWORD=app_trust_signer psql "$signer_dsn" -tAc \
+  "SELECT rolbypassrls::text || ':' || rolsuper::text FROM pg_roles WHERE rolname = current_user")
+[[ "$signer_flags" == "false:false" || "$signer_flags" == "f:f" ]]
 
 docker build -f backend/Dockerfile.bayesian -t "$image" .
 image_id=$(docker image inspect "$image" --format '{{.Id}}')
@@ -113,6 +122,7 @@ export DATABASE_URL="$worker_dsn"
 export MIGRATION_DATABASE_URL="$migration_dsn"
 export B24_DISPATCH_PUBLISHER_DATABASE_URL="$publisher_dsn"
 export TRUST_ISSUANCE_DATABASE_URL="$issuer_dsn"
+export TRUST_SIGNER_DATABASE_URL="$signer_dsn"
 export CELERY_BROKER_URL="sqla+${worker_dsn}"
 export CELERY_RESULT_BACKEND="db+${worker_dsn}"
 export PYTHONPATH="$repo_root:$repo_root/backend"

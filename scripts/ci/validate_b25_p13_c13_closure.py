@@ -59,6 +59,7 @@ LOAD_BEARING_JOBS = {
     # Corrective XVI: physical signature history is conserved in both
     # directions and nullable CHECK semantics are surveyed exhaustively.
     "b2-5-p13-c16-bidirectional-truth",
+    "b2-5-p13-c17-consequence-lineage",
 }
 
 

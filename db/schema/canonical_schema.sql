@@ -1596,14 +1596,10 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
         DECLARE
             v_complete boolean;
         BEGIN
-            -- plpgsql, not sql, so the body is resolved when it runs.
-            -- canonical_schema.sql emits functions before tables, and a
-            -- LANGUAGE sql body is resolved at CREATE, so this function
-            -- alone could not be applied to a bare database. The query is
-            -- unchanged.
+
             WITH fit AS (
                 SELECT policy_replan_count
-                FROM public.bayesian_model_fits
+                FROM bayesian_model_fits
                 WHERE tenant_id = p_tenant_id AND id = p_fit_id
             ), ordered AS (
                 SELECT transition_sequence,
@@ -1612,7 +1608,7 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
                        lag(to_policy_bundle_hash) OVER (
                            ORDER BY transition_sequence
                        ) AS prior_to
-                FROM public.b24_fit_policy_replan_lineage
+                FROM b24_fit_policy_replan_lineage
                 WHERE tenant_id = p_tenant_id AND fit_id = p_fit_id
             ), summary AS (
                 SELECT count(*)::integer AS row_count,
@@ -2572,129 +2568,217 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
     AS $$
         DECLARE
             table_owner text;
-            has_authority boolean;
             consequence_changed boolean;
+            attempt public.trust_issuance_attempts%ROWTYPE;
         BEGIN
             SELECT r.rolname INTO table_owner
             FROM pg_class c
             JOIN pg_roles r ON r.oid = c.relowner
             WHERE c.oid = 'trust_access_log'::regclass;
-
-            has_authority := session_user IN ('app_trust_issuer', table_owner);
-
             IF TG_OP = 'INSERT' THEN
-
-                IF NEW.event_type = 'issuance' THEN
-                    IF NEW.issuance_state <> 'authorized' THEN
-                        RAISE EXCEPTION
-                            'trust_issuance_authority_violation:insert_state:%',
-                            NEW.issuance_state USING ERRCODE = '42501';
-                    END IF;
-                ELSIF NEW.issuance_state <> 'not_applicable' THEN
-                    RAISE EXCEPTION
-                        'trust_issuance_authority_violation:insert_state:%',
+                IF (NEW.event_type = 'issuance' AND NEW.issuance_state <> 'authorized')
+                   OR (NEW.event_type <> 'issuance'
+                       AND NEW.issuance_state <> 'not_applicable') THEN
+                    RAISE EXCEPTION 'trust_issuance_authority_violation:insert_state:%',
                         NEW.issuance_state USING ERRCODE = '42501';
-                END IF;
-                IF NEW.issued_at IS NOT NULL
-                   OR NEW.issuance_attempted_at IS NOT NULL
-                   OR NEW.issuance_outcome_unknown_at IS NOT NULL
-                   OR NEW.issued_signing_key_id IS NOT NULL
-                   OR NEW.issued_signature_hash IS NOT NULL
-                   OR NEW.issued_signature IS NOT NULL
-                   OR COALESCE(NEW.issuance_attempt_count, 0) <> 0
-                   OR COALESCE(NEW.issuance_unknown_outcome_count, 0) <> 0 THEN
-                    RAISE EXCEPTION
-                        'trust_issuance_authority_violation:insert_evidence'
-                        USING ERRCODE = '42501';
                 END IF;
                 RETURN NEW;
             END IF;
-
             IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
-                RAISE EXCEPTION
-                    'trust_issuance_authority_violation:tenant_rebind'
+                RAISE EXCEPTION 'trust_issuance_authority_violation:tenant_rebind'
                     USING ERRCODE = '42501';
             END IF;
-
             consequence_changed :=
                 NEW.issuance_state IS DISTINCT FROM OLD.issuance_state
                 OR NEW.issued_at IS DISTINCT FROM OLD.issued_at
-                OR NEW.issuance_attempted_at
-                    IS DISTINCT FROM OLD.issuance_attempted_at
-                OR NEW.issuance_outcome_unknown_at
-                    IS DISTINCT FROM OLD.issuance_outcome_unknown_at
-                OR NEW.issued_signing_key_id
-                    IS DISTINCT FROM OLD.issued_signing_key_id
-                OR NEW.issued_signature_hash
-                    IS DISTINCT FROM OLD.issued_signature_hash
+                OR NEW.issuance_attempted_at IS DISTINCT FROM OLD.issuance_attempted_at
+                OR NEW.issuance_outcome_unknown_at IS DISTINCT FROM OLD.issuance_outcome_unknown_at
+                OR NEW.known_signature_at IS DISTINCT FROM OLD.known_signature_at
+                OR NEW.issued_attempt_id IS DISTINCT FROM OLD.issued_attempt_id
+                OR NEW.issued_signing_key_id IS DISTINCT FROM OLD.issued_signing_key_id
+                OR NEW.issued_signature_hash IS DISTINCT FROM OLD.issued_signature_hash
                 OR NEW.issued_signature IS DISTINCT FROM OLD.issued_signature
-                OR NEW.issuance_attempt_count
-                    IS DISTINCT FROM OLD.issuance_attempt_count
-                OR NEW.issuance_unknown_outcome_count
-                    IS DISTINCT FROM OLD.issuance_unknown_outcome_count;
-
-            IF NOT consequence_changed THEN
-                RETURN NEW;
-            END IF;
-
-            IF NOT has_authority THEN
-                RAISE EXCEPTION
-                    'trust_issuance_authority_violation:principal:%',
-                    session_user USING ERRCODE = '42501';
-            END IF;
-
+                OR NEW.issued_envelope IS DISTINCT FROM OLD.issued_envelope
+                OR NEW.issuance_attempt_count IS DISTINCT FROM OLD.issuance_attempt_count
+                OR NEW.issuance_unknown_outcome_count IS DISTINCT FROM OLD.issuance_unknown_outcome_count;
+            IF NOT consequence_changed THEN RETURN NEW; END IF;
             IF OLD.issuance_state IN (
-                'issued', 'issued_legacy', 'not_applicable'
+                'issued', 'issued_pre_xvii', 'issued_legacy', 'not_applicable'
             ) THEN
-                RAISE EXCEPTION
-                    'trust_issuance_authority_violation:terminal:%',
+                RAISE EXCEPTION 'trust_issuance_authority_violation:terminal:%',
                     OLD.issuance_state USING ERRCODE = '42501';
             END IF;
-
-            IF NEW.issuance_state <> OLD.issuance_state THEN
-                IF NOT (
-                    (OLD.issuance_state = 'authorized'
-                        AND NEW.issuance_state IN ('signing', 'failed'))
-                    OR (OLD.issuance_state IN (
-                            'failed', 'signature_outcome_unknown'
-                        )
-                        AND NEW.issuance_state = 'signing')
-                    OR (OLD.issuance_state = 'signing'
-                        AND NEW.issuance_state IN (
-                            'issued', 'signature_outcome_unknown'
-                        ))
-                ) THEN
-                    RAISE EXCEPTION
-                        'trust_issuance_authority_violation:transition:%->%',
-                        OLD.issuance_state, NEW.issuance_state
+            IF OLD.issuance_state = 'signing'
+               AND NEW.issuance_state = 'signature_known' THEN
+                IF session_user NOT IN ('app_trust_signer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_issuance_authority_violation:signer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+                SELECT * INTO attempt FROM trust_issuance_attempts
+                WHERE tenant_id = NEW.tenant_id AND audit_ref = NEW.audit_ref
+                  AND id = NEW.issued_attempt_id
+                  AND attempt_state = 'signature_known';
+                IF NOT FOUND OR NEW.known_signature_at IS DISTINCT FROM attempt.signature_known_at THEN
+                    RAISE EXCEPTION 'trust_issuance_authority_violation:known_attempt'
                         USING ERRCODE = '42501';
                 END IF;
+            ELSIF OLD.issuance_state = 'signature_known'
+                  AND NEW.issuance_state = 'issued' THEN
+                IF session_user NOT IN ('app_trust_issuer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_issuance_authority_violation:issuer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+                SELECT * INTO attempt FROM trust_issuance_attempts
+                WHERE tenant_id = NEW.tenant_id AND audit_ref = NEW.audit_ref
+                  AND id = OLD.issued_attempt_id
+                  AND attempt_state = 'signature_known';
+                IF NOT FOUND
+                   OR NEW.issued_attempt_id IS DISTINCT FROM attempt.id
+                   OR NEW.issued_signing_key_id IS DISTINCT FROM attempt.signing_key_id
+                   OR NEW.issued_signature_hash IS DISTINCT FROM attempt.signature_hash
+                   OR NEW.issued_signature IS DISTINCT FROM attempt.signature
+                   OR NEW.issued_envelope IS DISTINCT FROM attempt.signed_envelope THEN
+                    RAISE EXCEPTION 'trust_issuance_authority_violation:evidence_correspondence'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF OLD.issuance_state = 'signing'
+                  AND NEW.issuance_state = 'signature_outcome_unknown' THEN
+                IF session_user NOT IN ('app_trust_issuer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_issuance_authority_violation:issuer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+            ELSIF OLD.issuance_state = 'authorized'
+                  AND NEW.issuance_state IN ('signing', 'failed')
+                  OR OLD.issuance_state IN ('failed', 'signature_outcome_unknown')
+                     AND NEW.issuance_state = 'signing' THEN
+                IF session_user NOT IN ('app_trust_issuer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_issuance_authority_violation:issuer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                RAISE EXCEPTION 'trust_issuance_authority_violation:transition:%->%',
+                    OLD.issuance_state, NEW.issuance_state USING ERRCODE = '42501';
             END IF;
-
             IF NEW.issuance_attempt_count < OLD.issuance_attempt_count
-               OR NEW.issuance_unknown_outcome_count
-                    < OLD.issuance_unknown_outcome_count THEN
-                RAISE EXCEPTION
-                    'trust_issuance_authority_violation:lineage_regression'
+               OR NEW.issuance_unknown_outcome_count < OLD.issuance_unknown_outcome_count THEN
+                RAISE EXCEPTION 'trust_issuance_authority_violation:lineage_regression'
                     USING ERRCODE = '42501';
             END IF;
-            IF NEW.issuance_state = 'signing'
-               AND OLD.issuance_state <> 'signing'
-               AND NEW.issuance_attempt_count
-                    <> OLD.issuance_attempt_count + 1 THEN
-                RAISE EXCEPTION
-                    'trust_issuance_authority_violation:attempt_not_counted'
+            IF NEW.issuance_state = 'signing' AND OLD.issuance_state <> 'signing'
+               AND NEW.issuance_attempt_count <> OLD.issuance_attempt_count + 1 THEN
+                RAISE EXCEPTION 'trust_issuance_authority_violation:attempt_not_counted'
                     USING ERRCODE = '42501';
             END IF;
             IF NEW.issuance_state = 'signature_outcome_unknown'
                AND OLD.issuance_state <> 'signature_outcome_unknown'
-               AND NEW.issuance_unknown_outcome_count
-                    <> OLD.issuance_unknown_outcome_count + 1 THEN
-                RAISE EXCEPTION
-                    'trust_issuance_authority_violation:unknown_not_counted'
+               AND NEW.issuance_unknown_outcome_count <> OLD.issuance_unknown_outcome_count + 1 THEN
+                RAISE EXCEPTION 'trust_issuance_authority_violation:unknown_not_counted'
                     USING ERRCODE = '42501';
             END IF;
+            RETURN NEW;
+        END;
+        $$;
 
+CREATE FUNCTION public.trust_export_artifact_attempt_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE table_owner text;
+        BEGIN
+            SELECT r.rolname INTO table_owner
+            FROM pg_class c
+            JOIN pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'trust_export_artifact_attempts'::regclass;
+            IF TG_OP = 'INSERT' THEN
+                IF session_user NOT IN ('app_trust_issuer', table_owner)
+                   OR NEW.attempt_state <> 'signing' THEN
+                    RAISE EXCEPTION 'trust_export_attempt_authority_violation:insert:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+                RETURN NEW;
+            END IF;
+            IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+               OR NEW.id IS DISTINCT FROM OLD.id
+               OR NEW.request_binding_hash IS DISTINCT FROM OLD.request_binding_hash
+               OR NEW.page_start IS DISTINCT FROM OLD.page_start
+               OR NEW.attempt_number IS DISTINCT FROM OLD.attempt_number THEN
+                RAISE EXCEPTION 'trust_export_attempt_authority_violation:identity'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.attempt_state <> 'signing' THEN
+                RAISE EXCEPTION 'trust_export_attempt_authority_violation:terminal:%',
+                    OLD.attempt_state USING ERRCODE = '42501';
+            END IF;
+            IF NEW.attempt_state = 'issued' THEN
+                IF session_user NOT IN ('app_trust_signer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_export_attempt_authority_violation:signer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+            ELSIF NEW.attempt_state = 'signature_outcome_unknown' THEN
+                IF session_user NOT IN ('app_trust_issuer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_export_attempt_authority_violation:issuer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                RAISE EXCEPTION 'trust_export_attempt_authority_violation:transition:%->%',
+                    OLD.attempt_state, NEW.attempt_state USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+
+CREATE FUNCTION public.trust_issuance_attempt_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE table_owner text;
+        BEGIN
+            SELECT r.rolname INTO table_owner
+            FROM pg_class c
+            JOIN pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'trust_issuance_attempts'::regclass;
+            IF TG_OP = 'INSERT' THEN
+                IF session_user NOT IN ('app_trust_issuer', table_owner)
+                   OR NEW.attempt_state <> 'signing' THEN
+                    RAISE EXCEPTION 'trust_attempt_authority_violation:insert:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+                RETURN NEW;
+            END IF;
+            IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+               OR NEW.audit_ref IS DISTINCT FROM OLD.audit_ref
+               OR NEW.id IS DISTINCT FROM OLD.id
+               OR NEW.attempt_number IS DISTINCT FROM OLD.attempt_number
+               OR NEW.started_at IS DISTINCT FROM OLD.started_at THEN
+                RAISE EXCEPTION 'trust_attempt_authority_violation:identity'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.attempt_state IN ('signature_outcome_unknown', 'issued') THEN
+                RAISE EXCEPTION 'trust_attempt_authority_violation:terminal:%',
+                    OLD.attempt_state USING ERRCODE = '42501';
+            END IF;
+            IF OLD.attempt_state = 'signing'
+               AND NEW.attempt_state = 'signature_known' THEN
+                IF session_user NOT IN ('app_trust_signer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_attempt_authority_violation:signer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+            ELSIF OLD.attempt_state = 'signing'
+                  AND NEW.attempt_state = 'signature_outcome_unknown' THEN
+                IF session_user NOT IN ('app_trust_issuer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_attempt_authority_violation:issuer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+            ELSIF OLD.attempt_state = 'signature_known'
+                  AND NEW.attempt_state = 'issued' THEN
+                IF session_user NOT IN ('app_trust_issuer', table_owner) THEN
+                    RAISE EXCEPTION 'trust_attempt_authority_violation:issuer:%',
+                        session_user USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                RAISE EXCEPTION 'trust_attempt_authority_violation:transition:%->%',
+                    OLD.attempt_state, NEW.attempt_state USING ERRCODE = '42501';
+            END IF;
             RETURN NEW;
         END;
         $$;
@@ -6883,15 +6967,20 @@ CREATE TABLE public.trust_access_log (
     issued_signature bytea,
     issuance_attempt_count integer DEFAULT 0 NOT NULL,
     issuance_unknown_outcome_count integer DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_trust_access_log_attempt_state_shape CHECK ((((issuance_state = ANY (ARRAY['signing'::text, 'issued'::text, 'issued_legacy'::text, 'signature_outcome_unknown'::text])) AND (issuance_attempted_at IS NOT NULL)) OR ((issuance_state = ANY (ARRAY['authorized'::text, 'failed'::text, 'not_applicable'::text])) AND (issuance_attempted_at IS NULL)))),
+    known_signature_at timestamp with time zone,
+    issued_attempt_id uuid,
+    issued_envelope jsonb,
+    CONSTRAINT ck_trust_access_log_attempt_state_shape CHECK ((((issuance_state = ANY (ARRAY['signing'::text, 'signature_known'::text, 'issued'::text, 'issued_pre_xvii'::text, 'issued_legacy'::text, 'signature_outcome_unknown'::text])) AND (issuance_attempted_at IS NOT NULL)) OR ((issuance_state = ANY (ARRAY['authorized'::text, 'failed'::text, 'not_applicable'::text])) AND (issuance_attempted_at IS NULL)))),
     CONSTRAINT ck_trust_access_log_audit_ref CHECK ((audit_ref ~ '^urn:skeldir:audit:[A-Za-z0-9._:-]+$'::text)),
     CONSTRAINT ck_trust_access_log_event_type CHECK ((event_type = ANY (ARRAY['issuance'::text, 'refusal'::text, 'scope_denial'::text, 'replay'::text]))),
     CONSTRAINT ck_trust_access_log_hashes CHECK (((request_identity_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (idempotency_key_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (audit_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND ((subject_ref_hash IS NULL) OR (subject_ref_hash ~ '^sha256:[0-9a-f]{64}$'::text)) AND ((envelope_hash IS NULL) OR (envelope_hash ~ '^sha256:[0-9a-f]{64}$'::text)) AND ((semantic_truth_hash IS NULL) OR (semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text)))),
-    CONSTRAINT ck_trust_access_log_issuance_state CHECK ((issuance_state = ANY (ARRAY['authorized'::text, 'signing'::text, 'issued'::text, 'issued_legacy'::text, 'failed'::text, 'signature_outcome_unknown'::text, 'not_applicable'::text]))),
+    CONSTRAINT ck_trust_access_log_issuance_state CHECK ((issuance_state = ANY (ARRAY['authorized'::text, 'signing'::text, 'signature_known'::text, 'issued'::text, 'issued_pre_xvii'::text, 'issued_legacy'::text, 'failed'::text, 'signature_outcome_unknown'::text, 'not_applicable'::text]))),
     CONSTRAINT ck_trust_access_log_issuance_state_event CHECK ((((event_type = 'issuance'::text) AND (issuance_state <> 'not_applicable'::text)) OR ((event_type <> 'issuance'::text) AND (issuance_state = 'not_applicable'::text)))),
-    CONSTRAINT ck_trust_access_log_issued_requires_crypto CHECK (((issuance_state <> 'issued'::text) OR ((issued_at IS NOT NULL) AND (issuance_attempted_at IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (issued_signature IS NOT NULL) AND (octet_length(issued_signature) = 64) AND (envelope_hash IS NOT NULL)))),
-    CONSTRAINT ck_trust_access_log_legacy_issued_evidence CHECK (((issuance_state <> 'issued_legacy'::text) OR ((issued_at IS NOT NULL) AND (issuance_attempted_at IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (issued_signature IS NULL) AND (envelope_hash IS NOT NULL)))),
-    CONSTRAINT ck_trust_access_log_nonissued_has_no_crypto CHECK (((issuance_state = ANY (ARRAY['issued'::text, 'issued_legacy'::text])) OR ((issued_at IS NULL) AND (issued_signing_key_id IS NULL) AND (issued_signature_hash IS NULL) AND (issued_signature IS NULL)))),
+    CONSTRAINT ck_trust_access_log_issued_requires_crypto CHECK (((issuance_state <> 'issued'::text) OR ((issued_at IS NOT NULL) AND (issuance_attempted_at IS NOT NULL) AND (known_signature_at IS NOT NULL) AND (issued_attempt_id IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (issued_signature IS NOT NULL) AND (octet_length(issued_signature) = 64) AND (envelope_hash IS NOT NULL) AND (issued_envelope IS NOT NULL) AND (jsonb_typeof(issued_envelope) = 'object'::text)))),
+    CONSTRAINT ck_trust_access_log_known_state_shape CHECK ((((issuance_state = ANY (ARRAY['signature_known'::text, 'issued'::text])) AND (known_signature_at IS NOT NULL) AND (issued_attempt_id IS NOT NULL)) OR ((issuance_state <> ALL (ARRAY['signature_known'::text, 'issued'::text])) AND (known_signature_at IS NULL) AND (issued_attempt_id IS NULL)))),
+    CONSTRAINT ck_trust_access_log_legacy_issued_evidence CHECK (((issuance_state <> 'issued_legacy'::text) OR ((issued_at IS NOT NULL) AND (issuance_attempted_at IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (issued_signature IS NULL) AND (envelope_hash IS NOT NULL) AND (known_signature_at IS NULL) AND (issued_attempt_id IS NULL) AND (issued_envelope IS NULL)))),
+    CONSTRAINT ck_trust_access_log_nonissued_has_no_crypto CHECK (((issuance_state = ANY (ARRAY['issued'::text, 'issued_pre_xvii'::text, 'issued_legacy'::text])) OR ((issued_at IS NULL) AND (issued_signing_key_id IS NULL) AND (issued_signature_hash IS NULL) AND (issued_signature IS NULL) AND (issued_envelope IS NULL)))),
+    CONSTRAINT ck_trust_access_log_pre_xvii_evidence CHECK (((issuance_state <> 'issued_pre_xvii'::text) OR ((issued_at IS NOT NULL) AND (issuance_attempted_at IS NOT NULL) AND (issued_signing_key_id IS NOT NULL) AND (issued_signature_hash IS NOT NULL) AND (issued_signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (issued_signature IS NOT NULL) AND (octet_length(issued_signature) = 64) AND (envelope_hash IS NOT NULL) AND (known_signature_at IS NULL) AND (issued_attempt_id IS NULL) AND (issued_envelope IS NULL)))),
     CONSTRAINT ck_trust_access_log_refusal_no_evidence CHECK (((event_type <> ALL (ARRAY['refusal'::text, 'scope_denial'::text])) OR (evidence_refs_allowed = false))),
     CONSTRAINT ck_trust_access_log_status CHECK ((status = ANY (ARRAY['success'::text, 'refused'::text, 'degraded'::text, 'replayed'::text]))),
     CONSTRAINT ck_trust_access_log_unknown_state_shape CHECK ((((issuance_state = 'signature_outcome_unknown'::text) AND (issuance_outcome_unknown_at IS NOT NULL)) OR ((issuance_state <> 'signature_outcome_unknown'::text) AND (issuance_outcome_unknown_at IS NULL))))
@@ -6918,6 +7007,59 @@ CREATE TABLE public.trust_envelope_issuance_log (
 );
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.trust_export_artifact_attempts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    request_binding_hash text NOT NULL,
+    page_start integer NOT NULL,
+    attempt_number integer NOT NULL,
+    attempt_state text NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    outcome_unknown_at timestamp with time zone,
+    issued_at timestamp with time zone,
+    artifact_hash text,
+    signing_key_id text,
+    signature_hash text,
+    signature bytea,
+    signed_artifact jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_trust_export_artifact_attempt_evidence CHECK ((((attempt_state = 'issued'::text) AND (issued_at IS NOT NULL) AND (artifact_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (signing_key_id IS NOT NULL) AND (signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (octet_length(signature) = 64) AND (jsonb_typeof(signed_artifact) = 'object'::text)) OR ((attempt_state = ANY (ARRAY['signing'::text, 'signature_outcome_unknown'::text])) AND (issued_at IS NULL) AND (artifact_hash IS NULL) AND (signing_key_id IS NULL) AND (signature_hash IS NULL) AND (signature IS NULL) AND (signed_artifact IS NULL)))),
+    CONSTRAINT ck_trust_export_artifact_attempt_unknown CHECK ((((attempt_state = 'signature_outcome_unknown'::text) AND (outcome_unknown_at IS NOT NULL)) OR ((attempt_state <> 'signature_outcome_unknown'::text) AND (outcome_unknown_at IS NULL)))),
+    CONSTRAINT trust_export_artifact_attempts_attempt_number_check CHECK ((attempt_number > 0)),
+    CONSTRAINT trust_export_artifact_attempts_attempt_state_check CHECK ((attempt_state = ANY (ARRAY['signing'::text, 'signature_outcome_unknown'::text, 'issued'::text]))),
+    CONSTRAINT trust_export_artifact_attempts_page_start_check CHECK ((page_start >= 0)),
+    CONSTRAINT trust_export_artifact_attempts_request_binding_hash_check CHECK ((request_binding_hash ~ '^sha256:[0-9a-f]{64}$'::text))
+);
+
+ALTER TABLE ONLY public.trust_export_artifact_attempts FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.trust_issuance_attempts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    audit_ref text NOT NULL,
+    attempt_number integer NOT NULL,
+    attempt_state text NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    outcome_unknown_at timestamp with time zone,
+    signature_known_at timestamp with time zone,
+    issued_at timestamp with time zone,
+    signing_key_id text,
+    signature_hash text,
+    signature bytea,
+    signed_envelope_hash text,
+    signed_envelope jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_trust_issuance_attempt_evidence CHECK ((((attempt_state = ANY (ARRAY['signature_known'::text, 'issued'::text])) AND (signature_known_at IS NOT NULL) AND (signing_key_id IS NOT NULL) AND (signature_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (octet_length(signature) = 64) AND (signed_envelope_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (jsonb_typeof(signed_envelope) = 'object'::text)) OR ((attempt_state = ANY (ARRAY['signing'::text, 'signature_outcome_unknown'::text])) AND (signature_known_at IS NULL) AND (signing_key_id IS NULL) AND (signature_hash IS NULL) AND (signature IS NULL) AND (signed_envelope_hash IS NULL) AND (signed_envelope IS NULL)))),
+    CONSTRAINT ck_trust_issuance_attempt_issued CHECK ((((attempt_state = 'issued'::text) AND (issued_at IS NOT NULL)) OR ((attempt_state <> 'issued'::text) AND (issued_at IS NULL)))),
+    CONSTRAINT ck_trust_issuance_attempt_unknown CHECK ((((attempt_state = 'signature_outcome_unknown'::text) AND (outcome_unknown_at IS NOT NULL)) OR ((attempt_state <> 'signature_outcome_unknown'::text) AND (outcome_unknown_at IS NULL)))),
+    CONSTRAINT trust_issuance_attempts_attempt_number_check CHECK ((attempt_number > 0)),
+    CONSTRAINT trust_issuance_attempts_attempt_state_check CHECK ((attempt_state = ANY (ARRAY['signing'::text, 'signature_outcome_unknown'::text, 'signature_known'::text, 'issued'::text])))
+);
+
+ALTER TABLE ONLY public.trust_issuance_attempts FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.trust_rate_limit_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -7621,6 +7763,12 @@ ALTER TABLE ONLY public.trust_access_log
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT trust_envelope_issuance_log_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.trust_export_artifact_attempts
+    ADD CONSTRAINT trust_export_artifact_attempts_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.trust_issuance_attempts
+    ADD CONSTRAINT trust_issuance_attempts_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT trust_rate_limit_state_pkey PRIMARY KEY (id);
 
@@ -7734,6 +7882,15 @@ ALTER TABLE ONLY public.trust_access_log
 
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT uq_trust_access_log_idempotency UNIQUE (tenant_id, event_type, idempotency_key_hash);
+
+ALTER TABLE ONLY public.trust_export_artifact_attempts
+    ADD CONSTRAINT uq_trust_export_artifact_attempt UNIQUE (tenant_id, request_binding_hash, page_start, attempt_number);
+
+ALTER TABLE ONLY public.trust_issuance_attempts
+    ADD CONSTRAINT uq_trust_issuance_attempt_identity UNIQUE (tenant_id, audit_ref, id);
+
+ALTER TABLE ONLY public.trust_issuance_attempts
+    ADD CONSTRAINT uq_trust_issuance_attempt_number UNIQUE (tenant_id, audit_ref, attempt_number);
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT uq_trust_issuance_envelope UNIQUE (tenant_id, envelope_hash);
@@ -8548,6 +8705,12 @@ CREATE INDEX ix_public_celery_task_failures_tenant_id ON public.worker_failed_jo
 
 CREATE INDEX ix_trust_access_log_issuance_state ON public.trust_access_log USING btree (tenant_id, issuance_state);
 
+CREATE INDEX ix_trust_export_artifact_attempts_lookup ON public.trust_export_artifact_attempts USING btree (tenant_id, request_binding_hash, page_start, attempt_number DESC);
+
+CREATE INDEX ix_trust_issuance_attempts_recovery ON public.trust_issuance_attempts USING btree (tenant_id, attempt_state, updated_at, id);
+
+CREATE INDEX ix_trust_issuance_attempts_tenant_audit ON public.trust_issuance_attempts USING btree (tenant_id, audit_ref, attempt_number DESC);
+
 CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
 
 CREATE UNIQUE INDEX uq_b24_fit_dispatch_outbox_attempt ON public.b24_fit_dispatch_outbox USING btree (tenant_id, attempt_id);
@@ -9124,6 +9287,10 @@ CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.re
 
 CREATE TRIGGER trg_trust_access_log_issuance_authority_guard BEFORE INSERT OR UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_issuance_authority_guard();
 
+CREATE TRIGGER trg_trust_export_artifact_attempt_guard BEFORE INSERT OR UPDATE ON public.trust_export_artifact_attempts FOR EACH ROW EXECUTE FUNCTION public.trust_export_artifact_attempt_guard();
+
+CREATE TRIGGER trg_trust_issuance_attempt_guard BEFORE INSERT OR UPDATE ON public.trust_issuance_attempts FOR EACH ROW EXECUTE FUNCTION public.trust_issuance_attempt_guard();
+
 CREATE TRIGGER trg_y_b24_c11_policy_provenance BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_c11_policy_provenance();
 
 CREATE TRIGGER trg_z_b24_policy_bundle_write_authority BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
@@ -9317,6 +9484,9 @@ ALTER TABLE ONLY public.kombu_message
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT fk_tenant_membership_roles_membership_tenant FOREIGN KEY (membership_id, tenant_id) REFERENCES public.tenant_memberships(id, tenant_id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.trust_issuance_attempts
+    ADD CONSTRAINT fk_trust_issuance_attempt_audit FOREIGN KEY (tenant_id, audit_ref) REFERENCES public.trust_access_log(tenant_id, audit_ref) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT investigation_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -9424,6 +9594,12 @@ ALTER TABLE ONLY public.trust_access_log
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT trust_envelope_issuance_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.trust_export_artifact_attempts
+    ADD CONSTRAINT trust_export_artifact_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.trust_issuance_attempts
+    ADD CONSTRAINT trust_issuance_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT trust_rate_limit_state_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
@@ -9862,6 +10038,10 @@ CREATE POLICY tenant_isolation_policy_trust_access_log ON public.trust_access_lo
 
 CREATE POLICY tenant_isolation_policy_trust_envelope_issuance_log ON public.trust_envelope_issuance_log USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy_trust_export_artifact_attempts ON public.trust_export_artifact_attempts USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
+
+CREATE POLICY tenant_isolation_policy_trust_issuance_attempts ON public.trust_issuance_attempts USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
+
 CREATE POLICY tenant_isolation_policy_trust_rate_limit_state ON public.trust_rate_limit_state USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_trust_replay_events ON public.trust_replay_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
@@ -9883,6 +10063,10 @@ ALTER TABLE public.tenant_memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trust_access_log ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.trust_envelope_issuance_log ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.trust_export_artifact_attempts ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.trust_issuance_attempts ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.trust_rate_limit_state ENABLE ROW LEVEL SECURITY;
 

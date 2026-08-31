@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from copy import deepcopy
 from typing import Any
+from uuid import UUID
 
 from cryptography.exceptions import InvalidSignature
 
@@ -26,6 +27,16 @@ from app.trust.schema_verification import (
 from app.trust.semantic_authority import (
     AuthorizedTrustEnvelope,
     TrustSemanticAuthorityError,
+)
+from app.trust.signing_consequence import (
+    SignedTrustEnvelopeConsequence,
+    SigningConsequenceMaterial,
+    mint_signing_consequence,
+)
+from app.trust.signing_authorization import (
+    DurableSigningAuthorization,
+    DurableSigningAuthorizationError,
+    redeem_durable_signing_authorization,
 )
 
 
@@ -96,13 +107,20 @@ def sign_trust_envelope(
     *,
     key_registry: TrustKeyRegistry,
 ) -> dict[str, Any]:
-    """Sign only a P5+P7-authorized claim with the active Ed25519 key."""
+    """Sign only a process-local P5+P7 authority capability."""
     if not isinstance(authorized_envelope, AuthorizedTrustEnvelope):
         raise TrustEnvelopeSigningError("issuance_capability_required")
     try:
         payload = authorized_envelope._validated_payload_copy()
     except TrustSemanticAuthorityError as exc:
         raise TrustEnvelopeSigningError(f"semantic_authority_refused:{exc}") from exc
+    return _sign_validated_payload(payload, key_registry=key_registry)
+
+
+def _sign_validated_payload(
+    payload: dict[str, Any], *, key_registry: TrustKeyRegistry
+) -> dict[str, Any]:
+    """Apply the governed key only after an authority boundary supplied bytes."""
     key = key_registry.active_signing_key()
     prepared = prepare_payload_for_signing(
         payload,
@@ -119,6 +137,78 @@ def sign_trust_envelope(
     signed["signature"] = encode_ed25519_signature(signature)
     canonicalize_envelope_payload(signed)
     return signed
+
+
+def sign_durable_trust_authorization(
+    authorization: DurableSigningAuthorization,
+    *,
+    key_registry: TrustKeyRegistry,
+) -> SignedTrustEnvelopeConsequence:
+    """Sign authority re-established from PostgreSQL by the signer process."""
+    try:
+        material = redeem_durable_signing_authorization(authorization)
+    except DurableSigningAuthorizationError as exc:
+        raise TrustEnvelopeSigningError(str(exc)) from exc
+    signed = _sign_validated_payload(
+        material.unsigned_envelope,
+        key_registry=key_registry,
+    )
+    return bind_verified_signing_consequence(
+        signed,
+        key_registry=key_registry,
+        tenant_id=material.tenant_id,
+        audit_ref=material.audit_ref,
+        attempt_id=material.attempt_id,
+    )
+
+
+def sign_trust_envelope_consequence(
+    authorized_envelope: AuthorizedTrustEnvelope,
+    *,
+    key_registry: TrustKeyRegistry,
+    tenant_id: UUID,
+    audit_ref: str,
+    attempt_id: UUID,
+) -> SignedTrustEnvelopeConsequence:
+    """Sign once and mint an opaque tenant/attempt-bound consequence handle."""
+    signed = sign_trust_envelope(authorized_envelope, key_registry=key_registry)
+    return bind_verified_signing_consequence(
+        signed,
+        key_registry=key_registry,
+        tenant_id=tenant_id,
+        audit_ref=audit_ref,
+        attempt_id=attempt_id,
+    )
+
+
+def bind_verified_signing_consequence(
+    signed_envelope: dict[str, Any],
+    *,
+    key_registry: TrustKeyRegistry,
+    tenant_id: UUID,
+    audit_ref: str,
+    attempt_id: UUID,
+) -> SignedTrustEnvelopeConsequence:
+    """Mint consequence custody only for an independently verified artifact."""
+    # Runtime import avoids the signing <-> verification module cycle.
+    from app.trust.verification import verify_trust_envelope
+
+    verification = verify_trust_envelope(
+        signed_envelope,
+        key_registry=key_registry.public_only(),
+    )
+    if verification.verification_status != "verified":
+        raise TrustEnvelopeSigningError(
+            f"signing_consequence_verification_refused:{verification.reason_code}"
+        )
+    return mint_signing_consequence(
+        SigningConsequenceMaterial(
+            tenant_id=tenant_id,
+            audit_ref=audit_ref,
+            attempt_id=attempt_id,
+            signed_envelope=signed_envelope,
+        )
+    )
 
 
 def verify_ed25519_signature(public_key: Any, signature: str, material: bytes) -> None:

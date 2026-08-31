@@ -30,7 +30,18 @@ EXPECTED_PRIVATE_KEY_ROUTES = {
     "backend/app/trust/export_artifact.py",
     "backend/app/trust/query_continuation.py",
 }
+# Corrective XVII removed the private key from the public API process. The
+# process-local capability entry point therefore has exactly one referencing
+# module, and the API reaches a real consequence only through the credential-
+# isolated signer service. Both inventories are asserted so that reintroducing
+# an in-process signing call, or widening the signer surface, fails closed.
 EXPECTED_TRUST_SIGN_CALLERS = {
+    "backend/app/trust/signing.py",
+}
+EXPECTED_DURABLE_SIGN_CALLERS = {
+    "backend/app/trust/signer_service.py",
+}
+EXPECTED_SIGNER_GATEWAY_CALLERS = {
     "backend/app/api/trust_api.py",
     "backend/app/api/trust_export.py",
 }
@@ -46,6 +57,7 @@ LOAD_BEARING_JOBS = {
     # Corrective XVI: physical signature history is conserved in both
     # directions and nullable CHECK semantics are surveyed exhaustively.
     "b2-5-p13-c16-bidirectional-truth",
+    "b2-5-p13-c17-consequence-lineage",
 }
 
 
@@ -206,6 +218,16 @@ def validate_capability_graph() -> None:
     _require(
         _name_reference_files("sign_trust_envelope") == EXPECTED_TRUST_SIGN_CALLERS,
         "trust_signing_caller_inventory_drift",
+    )
+    _require(
+        _name_reference_files("sign_durable_trust_authorization")
+        == EXPECTED_DURABLE_SIGN_CALLERS,
+        "durable_signing_caller_inventory_drift",
+    )
+    _require(
+        _name_reference_files("request_trust_envelope_signature")
+        == EXPECTED_SIGNER_GATEWAY_CALLERS,
+        "signer_gateway_caller_inventory_drift",
     )
     actual_private: set[str] = set()
     for path in (ROOT / "backend/app").rglob("*.py"):

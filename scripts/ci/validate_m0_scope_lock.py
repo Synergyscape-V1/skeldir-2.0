@@ -254,6 +254,16 @@ ALLOWED_M0_PATHS = [
     "docs/environment/B2.5-P13 INDEPENDENT PRODUCTION TOPOLOGY REPRODUCTION.md",
     "scripts/database/prepare_migration_authority_boundary.py",
     ".github/actions/setup-postgres-ci/action.yml",
+    # --- B2.5-P13 Corrective XVII surface (consequence lineage) ---
+    "scripts/ci/validate_b25_p13_c17_closure.py",
+    "backend/tests/trust/test_b25_p13_c17_consequence_lineage.py",
+    "backend/app/trust/signer_session.py",
+    "backend/app/trust/signer_service.py",
+    "backend/app/trust/signer_gateway.py",
+    "backend/app/trust/signing_authorization.py",
+    "backend/app/trust/signing_consequence.py",
+    "alembic/versions/007_skeldir_foundation/202608311200_b25_p13_c17_consequence_lineage.py",
+    "docs/forensics/B2.5-P13 Corrective Action Remediation XVII Report.md",
     # The bounded issuance reconciler and the Optional correlation-id typing it
     # requires: both are Corrective XVI trust-closure surfaces, not M0/M1 scope.
     "backend/app/tasks/maintenance.py",

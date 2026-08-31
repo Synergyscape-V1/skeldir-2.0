@@ -994,6 +994,18 @@ tables:
       last_replayed_at: {type: TIMESTAMPTZ, nullable: true}
       created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
       updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      issuance_state: {type: TEXT, nullable: false, default: "authorized", values: [authorized, signing, signature_known, issued, issued_pre_xvii, issued_legacy, failed, signature_outcome_unknown]}
+      issued_at: {type: TIMESTAMPTZ, nullable: true}
+      issued_signing_key_id: {type: TEXT, nullable: true}
+      issued_signature_hash: {type: TEXT, nullable: true, format: "sha256:<hex64>"}
+      issuance_attempted_at: {type: TIMESTAMPTZ, nullable: true}
+      issuance_outcome_unknown_at: {type: TIMESTAMPTZ, nullable: true}
+      issued_signature: {type: BYTEA, nullable: true, size_bytes: 64}
+      issuance_attempt_count: {type: INTEGER, nullable: false, default: 0}
+      issuance_unknown_outcome_count: {type: INTEGER, nullable: false, default: 0}
+      known_signature_at: {type: TIMESTAMPTZ, nullable: true}
+      issued_attempt_id: {type: UUID, nullable: true}
+      issued_envelope: {type: JSONB, nullable: true}
     constraints:
       - {name: trust_access_log_pkey, type: PRIMARY KEY, columns: [id]}
       - {name: trust_access_log_tenant_id_fkey, type: FOREIGN KEY, columns: [tenant_id], references: "tenants(id)", on_delete: CASCADE}
@@ -1011,6 +1023,65 @@ tables:
       name: tenant_isolation_policy_trust_access_log
       using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
       with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  trust_issuance_attempts:
+    purpose: "C17 append-only attempt lineage and exact signer-produced TrustEnvelope consequence evidence"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      audit_ref: {type: TEXT, nullable: false}
+      attempt_number: {type: INTEGER, nullable: false}
+      attempt_state: {type: TEXT, nullable: false, values: [signing, signature_outcome_unknown, signature_known, issued]}
+      started_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      outcome_unknown_at: {type: TIMESTAMPTZ, nullable: true}
+      signature_known_at: {type: TIMESTAMPTZ, nullable: true}
+      issued_at: {type: TIMESTAMPTZ, nullable: true}
+      signing_key_id: {type: TEXT, nullable: true}
+      signature_hash: {type: TEXT, nullable: true, format: "sha256:<hex64>"}
+      signature: {type: BYTEA, nullable: true, size_bytes: 64}
+      signed_envelope_hash: {type: TEXT, nullable: true, format: "sha256:<hex64>"}
+      signed_envelope: {type: JSONB, nullable: true}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: uq_trust_issuance_attempt_number, type: UNIQUE, columns: [tenant_id, audit_ref, attempt_number]}
+      - {name: fk_trust_issuance_attempt_audit, type: FOREIGN KEY, columns: [tenant_id, audit_ref], references: "trust_access_log(tenant_id, audit_ref)", on_delete: CASCADE}
+      - {name: ck_trust_issuance_attempt_evidence, type: CHECK, definition: "known and issued states require the exact 64-byte signature and signed envelope"}
+    rls_policy:
+      name: tenant_isolation_policy_trust_issuance_attempts
+      using: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+
+  trust_export_artifact_attempts:
+    purpose: "C17 write-ahead lineage and exact signed outer export artifacts"
+    rls_enabled: true
+    force_rls: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      request_binding_hash: {type: TEXT, nullable: false, format: "sha256:<hex64>"}
+      page_start: {type: INTEGER, nullable: false}
+      attempt_number: {type: INTEGER, nullable: false}
+      attempt_state: {type: TEXT, nullable: false, values: [signing, signature_outcome_unknown, issued]}
+      started_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      outcome_unknown_at: {type: TIMESTAMPTZ, nullable: true}
+      issued_at: {type: TIMESTAMPTZ, nullable: true}
+      artifact_hash: {type: TEXT, nullable: true, format: "sha256:<hex64>"}
+      signing_key_id: {type: TEXT, nullable: true}
+      signature_hash: {type: TEXT, nullable: true, format: "sha256:<hex64>"}
+      signature: {type: BYTEA, nullable: true, size_bytes: 64}
+      signed_artifact: {type: JSONB, nullable: true}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: uq_trust_export_attempt_number, type: UNIQUE, columns: [tenant_id, request_binding_hash, page_start, attempt_number]}
+      - {name: ck_trust_export_artifact_attempt_evidence, type: CHECK, definition: "issued state requires the exact signed artifact and 64-byte signature"}
+    rls_policy:
+      name: tenant_isolation_policy_trust_export_artifact_attempts
+      using: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id')::UUID"
 
   trust_envelope_issuance_log:
     purpose: "B2.5-P7 immutable successful TrustEnvelope issuance audit authority"

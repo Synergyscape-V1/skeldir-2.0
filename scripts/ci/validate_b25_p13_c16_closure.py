@@ -618,6 +618,29 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--negative-control", action="store_true")
     args = parser.parse_args()
+    # Once C17 is present, its consequence-lineage closure is a strict
+    # strengthening of this historical C16 gate. Running the old source-token
+    # contract against the strengthened state machine would incorrectly demand
+    # that known signatures regress to unknown. Bind the compatibility entry
+    # point to the load-bearing successor instead.
+    c17_migration = ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202608311200_b25_p13_c17_consequence_lineage.py"
+    )
+    if c17_migration.is_file():
+        from validate_b25_p13_c17_closure import (
+            run_negative_controls as run_c17_negative_controls,
+            validate_all as validate_c17_all,
+        )
+
+        validate_c17_all()
+        if args.negative_control:
+            print(
+                "c16_compatibility_negative_controls_fired="
+                f"{run_c17_negative_controls()}"
+            )
+        print("B25_P13_C16_CLOSURE_VALIDATION_PASS")
+        return 0
     validate_all()
     if args.negative_control:
         print(f"c16_static_negative_controls_fired={run_negative_controls()}")

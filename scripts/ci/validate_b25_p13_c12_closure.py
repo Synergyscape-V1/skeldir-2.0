@@ -40,6 +40,9 @@ LOAD_BEARING_JOBS = {
     # Corrective XVI: physical signature history is conserved in both
     # directions and nullable CHECK semantics are surveyed exhaustively.
     "b2-5-p13-c16-bidirectional-truth",
+    # Corrective XVII: completed issuance is an exact projection of durable
+    # signer-produced attempt evidence, with reconstructable recovery.
+    "b2-5-p13-c17-consequence-lineage",
 }
 
 

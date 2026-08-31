@@ -75,7 +75,9 @@ def _qualified_matview_identifier(
     """
     Return schema-qualified, safely quoted matview identifier.
     """
-    quoted_view = _validated_matview_identifier(view_name, task_id=task_id, tenant_id=tenant_id)
+    quoted_view = _validated_matview_identifier(
+        view_name, task_id=task_id, tenant_id=tenant_id
+    )
     return f"{_PUBLIC_SCHEMA}.{quoted_view}"
 
 
@@ -154,7 +156,9 @@ def refresh_matview_for_tenant(
     set_tenant_id(tenant_id)
 
     try:
-        _qualified_matview_identifier(view_name, task_id=self.request.id, tenant_id=tenant_id)
+        _qualified_matview_identifier(
+            view_name, task_id=self.request.id, tenant_id=tenant_id
+        )
         result = refresh_single(view_name, tenant_id, correlation_id)
         logger.info(
             "tenant_matview_refresh_completed",
@@ -191,7 +195,9 @@ def refresh_matview_for_tenant(
 async def _validate_db_connection_for_tenant(tenant_id: UUID) -> str:
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
-        res = await conn.execute(text("SELECT current_setting('app.current_tenant_id')"))
+        res = await conn.execute(
+            text("SELECT current_setting('app.current_tenant_id')")
+        )
         return res.scalar() or ""
 
 
@@ -217,19 +223,29 @@ def scan_for_pii_contamination_task(
         current = run_in_worker_loop(_validate_db_connection_for_tenant(tenant_id))
         logger.info(
             "pii_scan_stub_completed",
-            extra={"tenant_id": str(tenant_id), "task_id": self.request.id, "correlation_id": correlation_id},
+            extra={
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+            },
         )
         return {"status": "ok", "tenant_id": str(tenant_id), "guc": current}
     except Exception as exc:
         logger.error(
             "pii_scan_stub_failed",
             exc_info=exc,
-            extra={"tenant_id": str(tenant_id), "task_id": self.request.id, "correlation_id": correlation_id},
+            extra={
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+            },
         )
         raise self.retry(exc=exc, countdown=60)
 
 
-async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: datetime) -> Dict[str, int]:
+async def _enforce_retention(
+    tenant_id: UUID, cutoff_90: datetime, cutoff_30: datetime
+) -> Dict[str, int]:
     """
     Enforce data retention policy by purging old data.
 
@@ -240,9 +256,10 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
         dead_events_payload_redacted = (
-            await conn.execute(
-                text(
-                    """
+            (
+                await conn.execute(
+                    text(
+                        """
                     UPDATE dead_events
                     SET raw_payload = '{}'::jsonb,
                         error_detail = '{}'::jsonb
@@ -252,14 +269,17 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
                         OR error_detail <> '{}'::jsonb
                       )
                     """
-                ),
-                {"cutoff": cutoff_90},
-            )
-        ).rowcount or 0
+                    ),
+                    {"cutoff": cutoff_90},
+                )
+            ).rowcount
+            or 0
+        )
         quarantine_payload_redacted = (
-            await conn.execute(
-                text(
-                    """
+            (
+                await conn.execute(
+                    text(
+                        """
                     UPDATE dead_events_quarantine
                     SET raw_payload = '{}'::jsonb,
                         error_detail = '{}'::jsonb
@@ -270,22 +290,27 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
                         OR error_detail <> '{}'::jsonb
                       )
                     """
-                ),
-                {"tenant_id": tenant_id, "cutoff": cutoff_90},
-            )
-        ).rowcount or 0
+                    ),
+                    {"tenant_id": tenant_id, "cutoff": cutoff_90},
+                )
+            ).rowcount
+            or 0
+        )
         dead_events_deleted = (
-            await conn.execute(
-                text(
-                    """
+            (
+                await conn.execute(
+                    text(
+                        """
                     DELETE FROM dead_events
                     WHERE remediation_status IN ('resolved', 'abandoned')
                     AND resolved_at < :cutoff
                     """
-                ),
-                {"cutoff": cutoff_30},
-            )
-        ).rowcount or 0
+                    ),
+                    {"cutoff": cutoff_30},
+                )
+            ).rowcount
+            or 0
+        )
         return {
             "allocations_deleted": 0,
             "dead_events_payload_redacted": dead_events_payload_redacted,
@@ -321,17 +346,39 @@ def reconcile_trust_issuance_for_tenant(
     set_tenant_id(tenant_id)
     bounded_stale_seconds = max(1, min(stale_seconds, 86_400))
     bounded_batch_size = max(1, min(batch_size, 1_000))
-    stale_before = datetime.now(timezone.utc) - timedelta(
-        seconds=bounded_stale_seconds
-    )
+    stale_before = datetime.now(timezone.utc) - timedelta(seconds=bounded_stale_seconds)
     try:
-        result = run_in_worker_loop(
-            reconcile_stale_trust_issuance_states(
-                tenant_id=tenant_id,
-                stale_before=stale_before,
-                batch_size=bounded_batch_size,
-            )
-        )
+
+        async def exhaust_stale_rows() -> Dict[str, int]:
+            totals = {
+                "authorized_to_failed": 0,
+                "signing_to_unknown": 0,
+                "signature_known_to_issued": 0,
+                "batches": 0,
+            }
+            # A single task exhausts more than one batch. The cap is a liveness
+            # guard; remaining rows are picked up by the next Beat tick.
+            for _ in range(100):
+                batch = await reconcile_stale_trust_issuance_states(
+                    tenant_id=tenant_id,
+                    stale_before=stale_before,
+                    batch_size=bounded_batch_size,
+                )
+                totals["batches"] += 1
+                changed = 0
+                for label in (
+                    "authorized_to_failed",
+                    "signing_to_unknown",
+                    "signature_known_to_issued",
+                ):
+                    count = int(batch.get(label, 0))
+                    totals[label] += count
+                    changed += count
+                if changed == 0:
+                    break
+            return totals
+
+        result = run_in_worker_loop(exhaust_stale_rows())
         logger.info(
             "trust_issuance_reconciliation_completed",
             extra={
@@ -415,7 +462,9 @@ def enforce_data_retention_task(
     cutoff_90_day = datetime.now(timezone.utc) - timedelta(days=90)
     cutoff_30_day = datetime.now(timezone.utc) - timedelta(days=30)
     try:
-        results = run_in_worker_loop(_enforce_retention(tenant_id, cutoff_90_day, cutoff_30_day))
+        results = run_in_worker_loop(
+            _enforce_retention(tenant_id, cutoff_90_day, cutoff_30_day)
+        )
         logger.info(
             "retention_enforced",
             extra={
@@ -430,7 +479,11 @@ def enforce_data_retention_task(
         logger.error(
             "retention_enforcement_failed",
             exc_info=exc,
-            extra={"tenant_id": str(tenant_id), "task_id": self.request.id, "correlation_id": correlation_id},
+            extra={
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+            },
         )
         raise self.retry(exc=exc, countdown=60)
 
@@ -614,11 +667,15 @@ async def _delete_expired_denylist_rows(batch_size: int) -> Dict[str, int]:
         lock_acquired = True
         if not disable_singleflight:
             lock_row = (
-                await conn.execute(
-                    text("SELECT pg_try_advisory_xact_lock(:lock_key) AS acquired"),
-                    {"lock_key": _DENYLIST_GC_SINGLEFLIGHT_LOCK_KEY},
+                (
+                    await conn.execute(
+                        text("SELECT pg_try_advisory_xact_lock(:lock_key) AS acquired"),
+                        {"lock_key": _DENYLIST_GC_SINGLEFLIGHT_LOCK_KEY},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             lock_acquired = bool(lock_row["acquired"])
             if not lock_acquired:
                 return {
@@ -632,7 +689,9 @@ async def _delete_expired_denylist_rows(batch_size: int) -> Dict[str, int]:
             # Test-only hook to force lock overlap during concurrency proofs.
             await asyncio.sleep(hold_seconds)
 
-        tenants_result = await conn.execute(text("SELECT id FROM public.tenants ORDER BY id"))
+        tenants_result = await conn.execute(
+            text("SELECT id FROM public.tenants ORDER BY id")
+        )
         tenant_rows = [row[0] for row in tenants_result]
 
         for tenant_id in tenant_rows:
@@ -696,7 +755,9 @@ async def _delete_expired_ephemeral_resolution_rows(batch_size: int) -> Dict[str
     remaining = max(1, int(batch_size))
 
     async with engine.begin() as conn:
-        tenants_result = await conn.execute(text("SELECT id FROM public.tenants ORDER BY id"))
+        tenants_result = await conn.execute(
+            text("SELECT id FROM public.tenants ORDER BY id")
+        )
         tenant_rows = [row[0] for row in tenants_result]
 
         for tenant_id in tenant_rows:
@@ -849,7 +910,9 @@ def gc_expired_ephemeral_resolution(self) -> Dict[str, int]:
     set_request_correlation_id(correlation_id)
     batch_size = _ephemeral_resolution_gc_batch_size()
     try:
-        result = run_in_worker_loop(_delete_expired_ephemeral_resolution_rows(batch_size))
+        result = run_in_worker_loop(
+            _delete_expired_ephemeral_resolution_rows(batch_size)
+        )
         logger.info(
             "ephemeral_resolution_gc_completed",
             extra={
@@ -879,7 +942,9 @@ def gc_expired_ephemeral_resolution(self) -> Dict[str, int]:
     max_retries=3,
     default_retry_delay=60,
 )
-def gc_expired_raw_event_payloads(self, correlation_id: Optional[str] = None) -> Dict[str, int]:
+def gc_expired_raw_event_payloads(
+    self, correlation_id: Optional[str] = None
+) -> Dict[str, int]:
     tenant_id = task_tenant_id(self)
     correlation_id = correlation_id or str(uuid4())
     set_request_correlation_id(correlation_id)
@@ -984,7 +1049,9 @@ def schedule_provider_oauth_refresh_for_tenant(
     set_tenant_id(tenant_id)
     try:
         result = run_in_worker_loop(
-            _select_and_enqueue_due_provider_refreshes_for_tenant(tenant_id, correlation_id)
+            _select_and_enqueue_due_provider_refreshes_for_tenant(
+                tenant_id, correlation_id
+            )
         )
         logger.info(
             "provider_oauth_refresh_scheduled_for_tenant",

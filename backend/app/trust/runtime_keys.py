@@ -68,10 +68,20 @@ def load_runtime_signing_registry() -> TrustKeyRegistry:
 
 def load_runtime_verification_registry() -> TrustKeyRegistry:
     """Load active plus public-only historical verification authority."""
-    active = _active_runtime_key()
     public_jwks = default_public_jwks()
-    historical: tuple[TrustSigningKey, ...] = ()
+    public_registry: TrustKeyRegistry | None = None
     if public_jwks.get("keys"):
         public_registry = registry_from_public_jwks(public_jwks)
-        historical = tuple(key for key in public_registry.keys if key.kid != active.kid)
-    return TrustKeyRegistry((active.public_only(), *historical))
+    if os.getenv("SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL", "").strip():
+        active = _active_runtime_key()
+        historical: tuple[TrustSigningKey, ...] = ()
+        if public_registry is not None:
+            historical = tuple(
+                key for key in public_registry.keys if key.kid != active.kid
+            )
+        return TrustKeyRegistry((active.public_only(), *historical))
+    if public_registry is None:
+        raise RuntimeTrustKeyConfigurationError(
+            "trust_public_verification_registry_required"
+        )
+    return public_registry

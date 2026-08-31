@@ -123,6 +123,15 @@ ALLOWED_NON_RUNTIME_PATHS = (
     # trust closure surfaces, not P1 runtime drift.
     "backend/app/trust/issuance_session.py",
     "backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py",
+    # Corrective XVII: signer consequence custody, the credential-isolated
+    # signer service and its public-API client, durable signing authority, and
+    # reconstructable attempt lineage are all post-P1 trust closure surfaces.
+    "backend/app/trust/signer_session.py",
+    "backend/app/trust/signer_service.py",
+    "backend/app/trust/signer_gateway.py",
+    "backend/app/trust/signing_authorization.py",
+    "backend/app/trust/signing_consequence.py",
+    "backend/tests/trust/test_b25_p13_c17_consequence_lineage.py",
 )
 
 
