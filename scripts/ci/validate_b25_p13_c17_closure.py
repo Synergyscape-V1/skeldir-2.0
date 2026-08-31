@@ -17,6 +17,7 @@ TRUST_API = Path("backend/app/api/trust_api.py")
 TRUST_EXPORT = Path("backend/app/api/trust_export.py")
 SIGNING = Path("backend/app/trust/signing.py")
 CONSEQUENCE = Path("backend/app/trust/signing_consequence.py")
+CONSEQUENCE_VERIFICATION = Path("backend/app/trust/consequence_verification.py")
 SIGNING_AUTHORIZATION = Path("backend/app/trust/signing_authorization.py")
 SIGNER_SESSION = Path("backend/app/trust/signer_session.py")
 SIGNER_SERVICE = Path("backend/app/trust/signer_service.py")
@@ -173,12 +174,28 @@ def validate_all(overrides: Mapping[Path, str] | None = None) -> None:
         "async def load_durable_trust_issuance_artifact(",
     )
     for token in (
-        "verify_trust_envelope(",
-        "key_registry=registry,",
-        "load_runtime_verification_registry().public_only()",
+        "adjudicate_retained_consequence(",
+        "supplied_registry=key_registry,",
         "issuance_completion_signature_invalid:",
     ):
         _require(token in completion, f"completion_public_verification_missing:{token}")
+    # The adjudication itself is public-key only and lives outside the
+    # provenance-audit module, so its own bindings are asserted at the source.
+    verification = _read(CONSEQUENCE_VERIFICATION, supplied)
+    for token in (
+        "verify_trust_envelope(",
+        "load_runtime_verification_registry().public_only()",
+        "supplied_registry.public_only()",
+        "RetainedConsequenceUnverifiable",
+    ):
+        _require(
+            token in verification,
+            f"consequence_verification_binding_missing:{token}",
+        )
+    _require(
+        "private_key" not in verification,
+        "consequence_verification_reaches_private_material",
+    )
     for token in (
         "load_durable_trust_issuance_replay(",
         "request_trust_envelope_signature(",
@@ -244,6 +261,10 @@ def validate_all(overrides: Mapping[Path, str] | None = None) -> None:
         "c17_real_process_custody_boundary=1",
         "c17_process_custody_guards=2",
         "c17_durable_export_reservice=1",
+        # Derived from the observed allocation, so the source token is the
+        # f-string; the concurrency itself is pinned separately.
+        "c17_concurrent_export_attempt_lineage={concurrency}",
+        "concurrency = 6",
     ):
         _require(token in tests, f"runtime_falsifier_missing:{token}")
 
@@ -301,6 +322,7 @@ def run_negative_controls() -> int:
         TRUST_EXPORT,
         SIGNING,
         CONSEQUENCE,
+        CONSEQUENCE_VERIFICATION,
         SIGNING_AUTHORIZATION,
         SIGNER_SESSION,
         SIGNER_SERVICE,
@@ -347,6 +369,11 @@ def run_negative_controls() -> int:
             "-- RLS retired",
         ),
         (AUDIT, "redeem_signing_consequence(consequence)", "material = consequence"),
+        (
+            CONSEQUENCE_VERIFICATION,
+            "verify_trust_envelope(",
+            "accept_trust_envelope(",
+        ),
         (
             AUDIT,
             "async def record_trust_signature_consequence(",

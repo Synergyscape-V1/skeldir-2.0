@@ -11,6 +11,7 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.trust.audit_hash import (
@@ -41,12 +42,12 @@ from app.trust.semantic_authority import (
     AuthorizedTrustEnvelope,
     _authorize_audited_trust_envelope,
 )
+from app.trust.consequence_verification import (
+    RetainedConsequenceUnverifiable,
+    adjudicate_retained_consequence,
+)
 from app.trust.issuance_session import trust_issuance_session_factory
 from app.trust.key_registry import TrustKeyRegistry
-from app.trust.runtime_keys import (
-    RuntimeTrustKeyConfigurationError,
-    load_runtime_verification_registry,
-)
 from app.trust.signer_session import trust_signer_session_factory
 from app.trust.signing import decode_ed25519_signature
 from app.trust.signing_consequence import (
@@ -60,7 +61,6 @@ from app.trust.signing_authorization import (
     mint_durable_signing_authorization,
 )
 from app.trust.source_adapters import ConfidenceProjectionSource, MatchVerdictSource
-from app.trust.verification import verify_trust_envelope
 
 
 AuditEventType = Literal["issuance", "refusal", "scope_denial", "replay"]
@@ -852,38 +852,20 @@ async def record_trust_issuance_completed(
             ).scalar_one_or_none()
             if artifact is None:
                 raise TrustAuditError("issuance_completion_attempt_missing")
-            # Completion never projects an unverified artifact, but a process
-            # with no configured public verification authority must fail for
-            # that reason only when it has no other authority to verify with.
-            # Resolving the runtime registry eagerly turned "no JWKS
-            # configured" into "issuance is impossible" for every caller that
-            # supplied its own key material.
-            verification_registries = []
-            if key_registry is not None:
-                verification_registries.append(key_registry.public_only())
+            # Completion never projects an unverified artifact. The
+            # adjudication itself lives outside this module so that the
+            # provenance-audit layer does not take on the verification surface.
             try:
-                verification_registries.append(
-                    load_runtime_verification_registry().public_only()
-                )
-            except RuntimeTrustKeyConfigurationError:
-                if not verification_registries:
-                    raise TrustAuditError(
-                        "issuance_completion_verification_authority_unavailable"
-                    ) from None
-            verification = None
-            for registry in verification_registries:
-                candidate = verify_trust_envelope(
+                verified, reason = adjudicate_retained_consequence(
                     dict(artifact),
-                    key_registry=registry,
+                    supplied_registry=key_registry,
                 )
-                verification = candidate
-                if candidate.verification_status == "verified":
-                    break
-            if verification is None or verification.verification_status != "verified":
+            except RetainedConsequenceUnverifiable as exc:
                 raise TrustAuditError(
-                    "issuance_completion_signature_invalid:"
-                    f"{verification.reason_code if verification else 'no_registry'}"
-                )
+                    "issuance_completion_verification_authority_unavailable"
+                ) from exc
+            if not verified:
+                raise TrustAuditError(f"issuance_completion_signature_invalid:{reason}")
             result = await audit_session.execute(
                 text(
                     """
@@ -1048,6 +1030,9 @@ async def load_durable_trust_issuance_replay(
     )
 
 
+_EXPORT_ATTEMPT_ALLOCATION_TRIES = 8
+
+
 async def record_trust_export_attempt_started(
     *,
     tenant_id: UUID,
@@ -1057,52 +1042,54 @@ async def record_trust_export_attempt_started(
 ) -> UUID:
     """Write ahead of the independent outer-artifact signing consequence."""
     factory = audit_session_factory or trust_issuance_session_factory()
-    attempt_id = uuid4()
-    async with factory() as audit_session:
-        async with audit_session.begin():
-            await audit_session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-                {"tenant_id": str(tenant_id)},
-            )
-            next_number = (
-                await audit_session.execute(
-                    text(
-                        """
-                        SELECT COALESCE(max(attempt_number), 0) + 1
-                        FROM public.trust_export_artifact_attempts
-                        WHERE tenant_id = :tenant_id
-                          AND request_binding_hash = :request_binding_hash
-                          AND page_start = :page_start
-                        """
-                    ),
-                    {
-                        "tenant_id": str(tenant_id),
-                        "request_binding_hash": request_binding_hash,
-                        "page_start": page_start,
-                    },
-                )
-            ).scalar_one()
-            await audit_session.execute(
-                text(
-                    """
-                    INSERT INTO public.trust_export_artifact_attempts (
-                        id, tenant_id, request_binding_hash, page_start,
-                        attempt_number, attempt_state
-                    ) VALUES (
-                        :attempt_id, :tenant_id, :request_binding_hash,
-                        :page_start, :attempt_number, 'signing'
+    # Two concurrent exports of the same reference set share a binding hash and
+    # a page start, so reading the next attempt number and then inserting it is
+    # a race: both readers see the same maximum. `uq_trust_export_artifact_
+    # attempt` is the authority that resolves it, so allocate inside one
+    # statement and treat a unique violation as "someone else took that number"
+    # rather than as a failure. Each concurrent request still gets its own
+    # attempt row, because each will produce its own real wrapper signature and
+    # both must be durably accounted for.
+    for _ in range(_EXPORT_ATTEMPT_ALLOCATION_TRIES):
+        attempt_id = uuid4()
+        try:
+            async with factory() as audit_session:
+                async with audit_session.begin():
+                    await audit_session.execute(
+                        text(
+                            "SELECT set_config("
+                            "'app.current_tenant_id', :tenant_id, true)"
+                        ),
+                        {"tenant_id": str(tenant_id)},
                     )
-                    """
-                ),
-                {
-                    "attempt_id": str(attempt_id),
-                    "tenant_id": str(tenant_id),
-                    "request_binding_hash": request_binding_hash,
-                    "page_start": page_start,
-                    "attempt_number": int(next_number),
-                },
-            )
-    return attempt_id
+                    await audit_session.execute(
+                        text(
+                            """
+                            INSERT INTO public.trust_export_artifact_attempts (
+                                id, tenant_id, request_binding_hash, page_start,
+                                attempt_number, attempt_state
+                            )
+                            SELECT :attempt_id, :tenant_id,
+                                   :request_binding_hash, :page_start,
+                                   COALESCE(max(attempt_number), 0) + 1,
+                                   'signing'
+                            FROM public.trust_export_artifact_attempts
+                            WHERE tenant_id = :tenant_id
+                              AND request_binding_hash = :request_binding_hash
+                              AND page_start = :page_start
+                            """
+                        ),
+                        {
+                            "attempt_id": str(attempt_id),
+                            "tenant_id": str(tenant_id),
+                            "request_binding_hash": request_binding_hash,
+                            "page_start": page_start,
+                        },
+                    )
+        except IntegrityError:
+            continue
+        return attempt_id
+    raise TrustAuditError("export_attempt_number_allocation_contended")
 
 
 async def assert_durable_export_signing_request(
@@ -1494,12 +1481,11 @@ async def reconcile_stale_trust_issuance_states(
                 .all()
             )
             for row in known_rows:
-                registry = key_registry or load_runtime_verification_registry()
-                verification = verify_trust_envelope(
+                verified, _reason = adjudicate_retained_consequence(
                     dict(row["signed_envelope"]),
-                    key_registry=registry.public_only(),
+                    supplied_registry=key_registry,
                 )
-                if verification.verification_status != "verified":
+                if not verified:
                     counts["invalid_signature_known_refused"] += 1
                     continue
                 completed = await audit_session.execute(

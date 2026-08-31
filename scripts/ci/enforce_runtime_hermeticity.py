@@ -30,6 +30,12 @@ PATH_SCOPED_ALLOWLIST: dict[str, set[str]] = {
     # B2.2-P1: PayPal provider-correct signature verification requires bounded
     # cert retrieval and DNS/public-IP vetting in the webhook verifier path.
     "backend/app/webhooks/signatures.py": {"socket", "urllib.request"},
+    # B2.5-P13 Corrective XVII: the public API no longer holds the Trust
+    # private key. It reaches the credential-isolated signer over a bounded
+    # internal HTTP boundary, and this gateway is the only module permitted to
+    # do so. The destination is an explicitly configured signer URL, TLS is
+    # required off loopback, and no provider or model egress is possible here.
+    "backend/app/trust/signer_gateway.py": {"httpx"},
 }
 
 ENTRYPOINTS = [

@@ -25,7 +25,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.secrets import get_database_url
 from app.db.dsn import to_asyncpg_postgres_dsn
 from app.tasks.enqueue import TENANT_SCOPED_TASK_NAMES
-from app.trust.audit import reconcile_stale_trust_issuance_states
+from app.trust.audit import (
+    reconcile_stale_trust_issuance_states,
+    record_trust_export_attempt_started,
+)
 from app.trust.issuance_session import trust_issuance_database_url
 from app.trust.issuance_session import dispose_trust_issuance_engine
 from app.trust.signer_session import dispose_trust_signer_engine
@@ -708,3 +711,84 @@ async def test_c17_export_refusal_leaves_no_unreachable_issued_row(monkeypatch) 
         print("\nc17_durable_export_reservice=1")
     finally:
         await engine.dispose()
+
+
+@_DB_PROOF
+@pytest.mark.asyncio
+async def test_c17_concurrent_export_attempts_allocate_distinct_lineage() -> None:
+    """Concurrent exports of one reference set each get their own attempt row.
+
+    Two concurrent exports of the same subject set share a binding hash and a
+    page start. Each will produce its own real wrapper signature, so each needs
+    its own durably accounted attempt; an allocation that reads the next
+    attempt number and then inserts it loses that race against its own unique
+    constraint.
+    """
+    tenant_id = uuid4()
+    migration_engine = create_async_engine(
+        to_asyncpg_postgres_dsn(os.environ["MIGRATION_DATABASE_URL"])
+    )
+    try:
+        async with migration_engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO public.tenants"
+                    "(id, name, api_key_hash, notification_email)"
+                    " VALUES (:i, :n, :h, :e)"
+                ),
+                {
+                    "i": str(tenant_id),
+                    "n": f"c17-export-race-{tenant_id.hex[:8]}",
+                    "h": f"hash:c17-export-race:{tenant_id.hex}",
+                    "e": f"c17-race-{tenant_id.hex[:8]}@example.invalid",
+                },
+            )
+    finally:
+        await migration_engine.dispose()
+
+    binding_hash = "sha256:" + hashlib.sha256(b"c17-export-race").hexdigest()
+    concurrency = 6
+    attempt_ids = await asyncio.gather(
+        *(
+            record_trust_export_attempt_started(
+                tenant_id=tenant_id,
+                request_binding_hash=binding_hash,
+                page_start=0,
+            )
+            for _ in range(concurrency)
+        )
+    )
+    assert len(set(attempt_ids)) == concurrency
+
+    issuer_engine = create_async_engine(
+        to_asyncpg_postgres_dsn(trust_issuance_database_url())
+    )
+    try:
+        async with issuer_engine.begin() as connection:
+            await connection.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                {"t": str(tenant_id)},
+            )
+            numbers = (
+                (
+                    await connection.execute(
+                        text(
+                            """
+                        SELECT attempt_number
+                        FROM public.trust_export_artifact_attempts
+                        WHERE tenant_id = :t AND request_binding_hash = :b
+                          AND page_start = 0
+                        ORDER BY attempt_number
+                        """
+                        ),
+                        {"t": str(tenant_id), "b": binding_hash},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+    finally:
+        await issuer_engine.dispose()
+
+    assert numbers == list(range(1, concurrency + 1)), numbers
+    print(f"\nc17_concurrent_export_attempt_lineage={concurrency}")

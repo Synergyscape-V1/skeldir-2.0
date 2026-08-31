@@ -131,6 +131,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/signer_gateway.py",
     "backend/app/trust/signing_authorization.py",
     "backend/app/trust/signing_consequence.py",
+    "backend/app/trust/consequence_verification.py",
     "backend/tests/trust/test_b25_p13_c17_consequence_lineage.py",
 )
 

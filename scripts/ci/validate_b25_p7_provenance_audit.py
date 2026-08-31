@@ -82,6 +82,21 @@ ALLOWED_AUDIT_TABLES = {
     "trust_replay_events",
     "trust_scope_denial_events",
 }
+# B2.5-P13 Corrective XVII added per-attempt issuance and export-wrapper
+# lineage. They are audit tables owned by this module, so the audit write scope
+# includes them; they are created by the C17 migration rather than the P7 one,
+# so their tenancy and RLS obligations are asserted against that migration
+# (see _assert_later_corrective_migration) instead of weakening the P7
+# migration contract.
+LATER_CORRECTIVE_AUDIT_TABLES = {
+    "trust_issuance_attempts",
+    "trust_export_artifact_attempts",
+}
+C17_MIGRATION_PATH = (
+    ROOT
+    / "alembic/versions/007_skeldir_foundation"
+    / "202608311200_b25_p13_c17_consequence_lineage.py"
+)
 EXPECTED_SOURCE_CLASSES = {
     "webhook_ingress_identity",
     "provider_native_references",
@@ -685,7 +700,11 @@ def _assert_migration(text: str) -> int:
 
 
 def validate_migration() -> int:
-    return _assert_migration(MIGRATION_PATH.read_text(encoding="utf-8"))
+    controls = _assert_migration(MIGRATION_PATH.read_text(encoding="utf-8"))
+    controls += _assert_later_corrective_migration(
+        C17_MIGRATION_PATH.read_text(encoding="utf-8")
+    )
+    return controls
 
 
 def _imports_for(path: Path) -> set[str]:
@@ -811,10 +830,28 @@ def _assert_allowed_write_tables(text: str, *, label: str) -> int:
     ):
         for match in re.finditer(pattern, text, flags=re.IGNORECASE):
             table = match.group(1)
-            if table not in ALLOWED_AUDIT_TABLES:
+            if table not in ALLOWED_AUDIT_TABLES | LATER_CORRECTIVE_AUDIT_TABLES:
                 raise B25P7ValidationError(f"forbidden write table {table} in {label}")
             checked += 1
     return checked
+
+
+def _assert_later_corrective_migration(text: str) -> int:
+    controls = 0
+    for table in LATER_CORRECTIVE_AUDIT_TABLES:
+        for token in (
+            f"CREATE TABLE public.{table}",
+            f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY",
+            f"ALTER TABLE public.{table} FORCE ROW LEVEL SECURITY",
+            f"tenant_isolation_policy_{table}",
+            "tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE",
+        ):
+            if token not in text:
+                raise B25P7ValidationError(
+                    f"later-corrective migration missing token: {token}"
+                )
+            controls += 1
+    return controls
 
 
 def validate_write_scope() -> int:
@@ -829,15 +866,22 @@ def validate_write_scope() -> int:
     if "record_trust_audit_event_durable(" not in sql:
         raise B25P7ValidationError("durable audit transaction writer missing")
     if "record_trust_audit_event(db_session, final_request)" in sql:
-        raise B25P7ValidationError("success wrapper is rollback-coupled to caller session")
+        raise B25P7ValidationError(
+            "success wrapper is rollback-coupled to caller session"
+        )
     if "record_trust_audit_event(db_session, audit_request)" in sql:
-        raise B25P7ValidationError("refusal wrapper is rollback-coupled to caller session")
+        raise B25P7ValidationError(
+            "refusal wrapper is rollback-coupled to caller session"
+        )
     return controls + 1
 
 
 def _function_node(tree: ast.AST, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == name
+        ):
             return node
     raise B25P7ValidationError(f"missing function for static scan: {name}")
 
@@ -869,7 +913,9 @@ def _assert_created_at_required(tree: ast.AST) -> int:
                     and child.target.id == "created_at"
                 ):
                     if child.value is not None:
-                        raise B25P7ValidationError("TrustAuditRequest.created_at has a default")
+                        raise B25P7ValidationError(
+                            "TrustAuditRequest.created_at has a default"
+                        )
                     return 1
     raise B25P7ValidationError("TrustAuditRequest.created_at field missing")
 
@@ -923,7 +969,9 @@ def _assert_no_static_timestamp_fallbacks(source: str) -> int:
             "datetime.min",
             "datetime.max",
         }:
-            raise B25P7ValidationError(f"static timestamp fallback {_dotted_name(node)}")
+            raise B25P7ValidationError(
+                f"static timestamp fallback {_dotted_name(node)}"
+            )
         if isinstance(node, ast.Call) and _dotted_name(node.func) == "datetime":
             if node.args:
                 first = node.args[0]
@@ -931,7 +979,9 @@ def _assert_no_static_timestamp_fallbacks(source: str) -> int:
                     raise B25P7ValidationError("epoch created_at fallback")
             controls += 1
         if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
-            has_created_at = any(_is_created_at_reference(value) for value in node.values)
+            has_created_at = any(
+                _is_created_at_reference(value) for value in node.values
+            )
             has_static_fallback = any(
                 _is_static_timestamp_fallback(value) for value in node.values[1:]
             )
@@ -962,7 +1012,9 @@ def _assert_clock_source_static(source: str) -> int:
 
 
 def validate_clock_source_containment() -> int:
-    return _assert_clock_source_static(P7_AUDIT_WRITE_PATHS[0].read_text(encoding="utf-8"))
+    return _assert_clock_source_static(
+        P7_AUDIT_WRITE_PATHS[0].read_text(encoding="utf-8")
+    )
 
 
 def validate_static_sentinel_created_at_rejection() -> int:
@@ -1014,7 +1066,9 @@ def validate_static_sentinel_created_at_rejection() -> int:
     )
     for mutated in mutants:
         if mutated == audit_source:
-            raise B25P7ValidationError("static sentinel negative mutation did not apply")
+            raise B25P7ValidationError(
+                "static sentinel negative mutation did not apply"
+            )
         try:
             _assert_no_static_timestamp_fallbacks(mutated)
         except B25P7ValidationError:
@@ -1046,10 +1100,17 @@ def _assert_created_at_source_authority_static(source: str) -> int:
     )
     for token in required_tokens:
         if token not in source:
-            raise B25P7ValidationError(f"created_at source authority token missing: {token}")
+            raise B25P7ValidationError(
+                f"created_at source authority token missing: {token}"
+            )
         controls += 1
-    if "TrustAuditRequest(\n" in source and "created_at_source=created_at_source" not in source:
-        raise B25P7ValidationError("wrapper constructs audit request without source authority")
+    if (
+        "TrustAuditRequest(\n" in source
+        and "created_at_source=created_at_source" not in source
+    ):
+        raise B25P7ValidationError(
+            "wrapper constructs audit request without source authority"
+        )
     return controls
 
 
@@ -1081,7 +1142,9 @@ def validate_created_at_source_authority() -> int:
         }
     )
     if authoritative_record.audit_hash == build_audit_record(retry_original).audit_hash:
-        raise B25P7ValidationError("audit hash did not bind created_at source authority")
+        raise B25P7ValidationError(
+            "audit hash did not bind created_at source authority"
+        )
     controls += 1
 
     try:
@@ -1124,7 +1187,9 @@ def validate_created_at_source_authority() -> int:
     except B25P7ValidationError:
         controls += 1
     else:
-        raise B25P7ValidationError("test fixture copied into production negative passed")
+        raise B25P7ValidationError(
+            "test fixture copied into production negative passed"
+        )
     return controls
 
 
@@ -1279,7 +1344,7 @@ def validate_postgres_transaction_boundary() -> tuple[int, int, int, int, int, i
     required_tokens = (
         "services:",
         "postgres:",
-        "SKELDIR_B25_P7_POSTGRES_PROOF: \"1\"",
+        'SKELDIR_B25_P7_POSTGRES_PROOF: "1"',
         "setup-postgres-ci",
         "test_postgres_audit_durability_survives_caller_rollback",
     )
@@ -1288,11 +1353,13 @@ def validate_postgres_transaction_boundary() -> tuple[int, int, int, int, int, i
         if token not in workflow and token not in (
             "test_postgres_audit_durability_survives_caller_rollback",
         ):
-            raise B25P7ValidationError(f"workflow missing PostgreSQL proof token: {token}")
+            raise B25P7ValidationError(
+                f"workflow missing PostgreSQL proof token: {token}"
+            )
         static_controls += 1
-    test_text = (ROOT / "backend/tests/trust/test_b25_p7_provenance_audit.py").read_text(
-        encoding="utf-8"
-    )
+    test_text = (
+        ROOT / "backend/tests/trust/test_b25_p7_provenance_audit.py"
+    ).read_text(encoding="utf-8")
     if "test_postgres_audit_durability_survives_caller_rollback" not in test_text:
         raise B25P7ValidationError("PostgreSQL transaction proof test missing")
     static_controls += 1
@@ -1611,7 +1678,9 @@ def validate_meta_negative_controls() -> int:
             "created_at = utc_second(request.created_at or datetime.now(timezone.utc))",
             1,
         ),
-        audit_source.replace("observed_at = created_at", "observed_at = utc_second()", 1),
+        audit_source.replace(
+            "observed_at = created_at", "observed_at = utc_second()", 1
+        ),
     )
     for mutated in clock_mutants:
         if mutated == audit_source:
@@ -1641,9 +1710,9 @@ def validate_meta_negative_controls() -> int:
 
     controls += validate_sqlite_primary_proof_rejection()
 
-    test_text = (ROOT / "backend/tests/trust/test_b25_p7_provenance_audit.py").read_text(
-        encoding="utf-8"
-    )
+    test_text = (
+        ROOT / "backend/tests/trust/test_b25_p7_provenance_audit.py"
+    ).read_text(encoding="utf-8")
     missing_canary_assertion = test_text.replace(
         "assert witness_count_after_rollback == 0",
         "assert witness_count_after_rollback >= 0",
@@ -1773,16 +1842,19 @@ def validate_all(*, include_prior_phases: bool, negative_control_only: bool) -> 
     print(f"native_dispatch_ban_controls_passed={dispatch_controls}")
     print(f"audit_write_scope_controls_passed={write_controls}")
     print(f"later_phase_scope_controls_passed={scope_controls + ci_controls}")
-    print(f"postgres_transaction_boundary_controls_passed={postgres_transaction_controls}")
+    print(
+        f"postgres_transaction_boundary_controls_passed={postgres_transaction_controls}"
+    )
     print(
         "serialization_failure_audit_survival_controls_passed="
         f"{serialization_failure_controls}"
     )
     print(f"rollback_coupling_negative_controls_passed={rollback_coupling_controls}")
-    print(f"postgres_required_transaction_proof_controls_passed={postgres_required_controls}")
     print(
-        "rollback_witness_canary_controls_passed="
-        f"{rollback_witness_canary_controls}"
+        f"postgres_required_transaction_proof_controls_passed={postgres_required_controls}"
+    )
+    print(
+        "rollback_witness_canary_controls_passed=" f"{rollback_witness_canary_controls}"
     )
     print(
         "caller_transaction_rollback_observed_controls_passed="
