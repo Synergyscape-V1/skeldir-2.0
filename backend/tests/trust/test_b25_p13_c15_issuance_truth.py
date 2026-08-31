@@ -69,7 +69,8 @@ from test_b25_p13_e2e_trust_closure import (
 ROOT = Path(__file__).resolve().parents[3]
 NOW = datetime(2026, 8, 29, 12, 0, 2, tzinfo=timezone.utc)
 REVENUE_EXAMPLE = (
-    ROOT / "contracts/trust-api/examples/revenue_claim_valid_with_verified_revenue_minor.json"
+    ROOT
+    / "contracts/trust-api/examples/revenue_claim_valid_with_verified_revenue_minor.json"
 )
 
 #: Observation ledgers. Each append is made by the code path that witnessed it.
@@ -92,7 +93,9 @@ class _CountingPrivateKey:
     """Counts private-key uses so a bypass cannot pass by never reaching crypto."""
 
     def __init__(self, seed: bytes) -> None:
-        self.delegate = Ed25519PrivateKey.from_private_bytes(hashlib.sha256(seed).digest())
+        self.delegate = Ed25519PrivateKey.from_private_bytes(
+            hashlib.sha256(seed).digest()
+        )
         self.sign_calls = 0
 
     def sign(self, material: bytes) -> bytes:
@@ -251,9 +254,10 @@ def test_c15_capability_bypass_ledger_is_complete() -> None:
     """Pinned exactly: a vector that stops being exercised must turn this red."""
 
     print("\nc15_capability_bypass_refusals=" + str(len(CAPABILITY_BYPASS_REFUSALS)))
-    print("c15_capability_bypass_provenance=" + json.dumps(
-        sorted(CAPABILITY_BYPASS_REFUSALS)
-    ))
+    print(
+        "c15_capability_bypass_provenance="
+        + json.dumps(sorted(CAPABILITY_BYPASS_REFUSALS))
+    )
     assert len(CAPABILITY_BYPASS_REFUSALS) == 7, CAPABILITY_BYPASS_REFUSALS
 
 
@@ -376,16 +380,20 @@ async def test_c15_durable_history_never_overstates_physical_issuance(
 
         from app.api import trust_api
 
+        async def signer_request_failure(**_kwargs):
+            raise RuntimeError("c15_injected_signer_request_failure")
+
+        async def signer_response_loss(**_kwargs):
+            raise ConnectionError("c15_injected_signer_response_loss")
+
         boundaries = {
-            "during_private_key_use": lambda *a, **k: (_ for _ in ()).throw(
-                RuntimeError("c15_injected_private_key_failure")
-            ),
-            "during_final_serialization": lambda *a, **k: (_ for _ in ()).throw(
-                ValueError("c15_injected_serialization_failure")
-            ),
+            "during_signer_request": signer_request_failure,
+            "during_signer_response": signer_response_loss,
         }
         for label, exploding in boundaries.items():
-            monkeypatch.setattr(trust_api, "sign_trust_envelope", exploding)
+            monkeypatch.setattr(
+                trust_api, "request_trust_envelope_signature", exploding
+            )
             with pytest.raises(Exception):
                 await _query_envelope(
                     app,
@@ -401,9 +409,7 @@ async def test_c15_durable_history_never_overstates_physical_issuance(
         rows = await _issuance_rows(engine, tenant_id)
         issued = [row for row in rows if row["issuance_state"] == "issued"]
         unknown = [
-            row
-            for row in rows
-            if row["issuance_state"] == "signature_outcome_unknown"
+            row for row in rows if row["issuance_state"] == "signature_outcome_unknown"
         ]
 
         # THE GOVERNING INVARIANT: AUDIT HISTORY = PHYSICAL EVENT HISTORY.
@@ -428,16 +434,19 @@ async def test_c15_durable_history_never_overstates_physical_issuance(
             assert row["issuance_outcome_unknown_at"] is not None, row
             ISSUANCE_TRUTH_OBSERVATIONS.append("unknown_row_is_explicit")
 
-        print("\nc15_issuance_truth_observations=" + str(
-            len(ISSUANCE_TRUTH_OBSERVATIONS)
-        ))
-        print("c15_issuance_states=" + json.dumps(
-            {
-                "issued": len(issued),
-                "signature_outcome_unknown": len(unknown),
-            },
-            sort_keys=True,
-        ))
+        print(
+            "\nc15_issuance_truth_observations=" + str(len(ISSUANCE_TRUTH_OBSERVATIONS))
+        )
+        print(
+            "c15_issuance_states="
+            + json.dumps(
+                {
+                    "issued": len(issued),
+                    "signature_outcome_unknown": len(unknown),
+                },
+                sort_keys=True,
+            )
+        )
     finally:
         await engine.dispose()
 
@@ -572,11 +581,15 @@ async def test_c15_retry_after_indeterminate_yields_one_coherent_lineage(
         pinned = datetime.now(timezone.utc).replace(microsecond=0)
         monkeypatch.setattr(trust_api, "_utc_now", lambda: pinned)
 
-        original_signer = trust_api.sign_trust_envelope
+        original_signer = trust_api.request_trust_envelope_signature
+
+        async def fail_signer_request(**_kwargs):
+            raise RuntimeError("c15_retry_failure")
+
         monkeypatch.setattr(
             trust_api,
-            "sign_trust_envelope",
-            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("c15_retry_failure")),
+            "request_trust_envelope_signature",
+            fail_signer_request,
         )
         with pytest.raises(Exception):
             await _query_envelope(
@@ -592,7 +605,9 @@ async def test_c15_retry_after_indeterminate_yields_one_coherent_lineage(
         ]
 
         # Same logical request, retried after the transient is gone.
-        monkeypatch.setattr(trust_api, "sign_trust_envelope", original_signer)
+        monkeypatch.setattr(
+            trust_api, "request_trust_envelope_signature", original_signer
+        )
         retry = await _query_envelope(
             app,
             tenant_id=tenant_id,
@@ -685,9 +700,7 @@ async def test_c15_historical_envelope_serviceable_over_http_after_key_rotation(
         public_jwks = build_jwks_response(TrustKeyRegistry((retired_key,)))
         # Public-only: the historical key is served with no private material.
         assert all("d" not in key for key in public_jwks["keys"])
-        monkeypatch.setenv(
-            "SKELDIR_TRUST_PUBLIC_JWKS_JSON", json.dumps(public_jwks)
-        )
+        monkeypatch.setenv("SKELDIR_TRUST_PUBLIC_JWKS_JSON", json.dumps(public_jwks))
         _configure_signing(
             monkeypatch,
             kid="kid:b25-p13-c15-generation-n-plus-1",
@@ -760,12 +773,14 @@ async def test_c15_historical_envelope_serviceable_over_http_after_key_rotation(
         assert crossed.status_code in {401, 403}, crossed.text
         HISTORICAL_SERVICEABILITY_OBSERVATIONS.append("cross_tenant_refused")
 
-        print("\nc15_historical_serviceability_observations=" + str(
-            len(HISTORICAL_SERVICEABILITY_OBSERVATIONS)
-        ))
-        print("c15_historical_provenance=" + json.dumps(
-            HISTORICAL_SERVICEABILITY_OBSERVATIONS
-        ))
+        print(
+            "\nc15_historical_serviceability_observations="
+            + str(len(HISTORICAL_SERVICEABILITY_OBSERVATIONS))
+        )
+        print(
+            "c15_historical_provenance="
+            + json.dumps(HISTORICAL_SERVICEABILITY_OBSERVATIONS)
+        )
         assert len(HISTORICAL_SERVICEABILITY_OBSERVATIONS) == 8
     finally:
         await engine.dispose()

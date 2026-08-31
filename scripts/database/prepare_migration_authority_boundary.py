@@ -70,6 +70,8 @@ class AuthorityConfig:
     publisher_password: str
     trust_issuer_user: str = "app_trust_issuer"
     trust_issuer_password: str = "app_trust_issuer"
+    trust_signer_user: str = "app_trust_signer"
+    trust_signer_password: str = "app_trust_signer"
     rotate_existing_credentials: bool = False
 
 
@@ -95,6 +97,8 @@ def _parse_args() -> AuthorityConfig:
     parser.add_argument("--publisher-password", default="app_dispatch_publisher")
     parser.add_argument("--trust-issuer-user", default="app_trust_issuer")
     parser.add_argument("--trust-issuer-password", default="app_trust_issuer")
+    parser.add_argument("--trust-signer-user", default="app_trust_signer")
+    parser.add_argument("--trust-signer-password", default="app_trust_signer")
     parser.add_argument(
         "--rotate-existing-credentials",
         action="store_true",
@@ -121,6 +125,8 @@ def _parse_args() -> AuthorityConfig:
         publisher_password=args.publisher_password,
         trust_issuer_user=args.trust_issuer_user,
         trust_issuer_password=args.trust_issuer_password,
+        trust_signer_user=args.trust_signer_user,
+        trust_signer_password=args.trust_signer_password,
         rotate_existing_credentials=bool(args.rotate_existing_credentials),
     )
 
@@ -238,6 +244,16 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                 cursor,
                 config.trust_issuer_user,
                 config.trust_issuer_password,
+                rotate_existing=rotate,
+            )
+            # Corrective XVII separates write-ahead/recovery authority from the
+            # principal allowed to persist a signer-produced consequence. The
+            # signer login is co-custodied with the Ed25519 signing boundary and
+            # is deliberately not a member of any generic runtime role.
+            _create_or_alter_login_role(
+                cursor,
+                config.trust_signer_user,
+                config.trust_signer_password,
                 rotate_existing=rotate,
             )
             # The migration principal must be a member of the worker role:
@@ -461,6 +477,8 @@ def main() -> int:
     print(f"migration_user={config.migration_user}")
     print(f"worker_user={config.worker_user}")
     print(f"publisher_user={config.publisher_user}")
+    print(f"trust_issuer_user={config.trust_issuer_user}")
+    print(f"trust_signer_user={config.trust_signer_user}")
     print("runtime_schema_privileges=" + ",".join(GOVERNED_RUNTIME_SCHEMA_PRIVILEGES))
     print(f"runtime_schema_hardening_applied={str(hardened).lower()}")
     print(

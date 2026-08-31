@@ -68,14 +68,35 @@ def _stub_issuance_finalisation(monkeypatch, module) -> None:
     async def _noop(**kwargs):
         return None
 
+    async def _new_attempt(**kwargs):
+        return uuid4()
+
+    async def _no_replay(**kwargs):
+        return None
+
+    for name in (
+        "load_durable_trust_issuance_replay",
+        "load_durable_trust_issuance_artifact",
+        "load_durable_trust_export_artifact",
+    ):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, _no_replay)
+    for name in (
+        "record_trust_issuance_attempt_started",
+        "record_trust_export_attempt_started",
+    ):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, _new_attempt)
+
     # The export route finalises once per request via the batch write; the read
     # route finalises per envelope. Stub whichever this module actually uses.
     for name in (
-        "record_trust_issuance_attempt_started",
         "record_trust_issuance_completed",
         "record_trust_issuance_batch_completed",
         "record_trust_issuance_batch_outcome_unknown",
         "record_trust_issuance_outcome_unknown",
+        "record_trust_export_artifact_issued",
+        "record_trust_export_attempt_unknown",
     ):
         if hasattr(module, name):
             monkeypatch.setattr(module, name, _noop)
@@ -589,7 +610,7 @@ async def test_machine_route_pages_at_two_and_emits_verifiable_artifacts(
             audit_record=_stub_audit_record(),
             authorized_envelope=_unsigned_for_route(
                 request.tenant_id, request.subject_ref
-            )
+            ),
         )
 
     app.dependency_overrides[trust_export.get_machine_export_db_session] = fake_session
@@ -602,12 +623,25 @@ async def test_machine_route_pages_at_two_and_emits_verifiable_artifacts(
         fake_build,
     )
     _stub_issuance_finalisation(monkeypatch, trust_export)
+
+    async def sign_envelope_gateway(**kwargs):
+        return _cryptographically_sign_fixture(
+            kwargs["unsigned_envelope"], kwargs["test_signing_registry"]
+        )
+
+    async def sign_export_gateway(**kwargs):
+        return sign_export_artifact(
+            kwargs["unsigned_artifact"],
+            key_registry=kwargs["test_signing_registry"],
+        )
+
+    monkeypatch.setattr(
+        trust_export, "request_trust_envelope_signature", sign_envelope_gateway
+    )
     monkeypatch.setattr(
         trust_export,
-        "sign_trust_envelope",
-        lambda payload, *, key_registry: _cryptographically_sign_fixture(
-            payload, key_registry
-        ),
+        "request_trust_export_artifact_signature",
+        sign_export_gateway,
     )
 
     transport = ASGITransport(app=app)
@@ -734,7 +768,6 @@ async def test_atomic_preflight_rejects_full_mixed_set_before_any_p7_issuance(
         "build_unsigned_trust_envelope_with_audit",
         forbidden_build,
     )
-
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(

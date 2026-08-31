@@ -66,8 +66,15 @@ def _stub_issuance_finalisation(monkeypatch, module) -> None:
     async def _noop(**kwargs):
         return None
 
+    async def _attempt_started(**kwargs):
+        return uuid4()
+
+    monkeypatch.setattr(
+        module, "record_trust_issuance_attempt_started", _attempt_started
+    )
     for name in (
-        "record_trust_issuance_attempt_started",
+        "load_durable_trust_issuance_replay",
+        "load_durable_trust_issuance_artifact",
         "record_trust_issuance_completed",
         "record_trust_issuance_outcome_unknown",
     ):
@@ -171,7 +178,11 @@ async def test_authorized_happy_path_returns_signed_verifiable_safe_envelope(
         return caller
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(audit_record=_stub_audit_record(), authorized_envelope=_unsigned_fixture())
+        envelope = _unsigned_fixture()
+        envelope["tenant_id_hash"] = tenant_hash(caller.tenant_id)
+        return SimpleNamespace(
+            audit_record=_stub_audit_record(), authorized_envelope=envelope
+        )
 
     app.dependency_overrides[trust_api.get_machine_db_session] = fake_session
     app.dependency_overrides[trust_api.require_envelope_read_tenant_context] = (
@@ -188,12 +199,14 @@ async def test_authorized_happy_path_returns_signed_verifiable_safe_envelope(
         fake_build,
     )
     _stub_issuance_finalisation(monkeypatch, trust_api)
+
+    async def signed_fixture_gateway(**kwargs):
+        return _cryptographically_sign_fixture(
+            kwargs["unsigned_envelope"], kwargs["test_signing_registry"]
+        )
+
     monkeypatch.setattr(
-        trust_api,
-        "sign_trust_envelope",
-        lambda payload, *, key_registry: _cryptographically_sign_fixture(
-            payload, key_registry
-        ),
+        trust_api, "request_trust_envelope_signature", signed_fixture_gateway
     )
 
     transport = ASGITransport(app=app)
@@ -452,7 +465,7 @@ def test_p10_runtime_has_no_compute_llm_or_mutation_imports() -> None:
         assert forbidden not in source
     assert "TrustEnvelopeBuildRequest" in source
     assert "build_unsigned_trust_envelope_with_audit" in source
-    assert "sign_trust_envelope" in source
+    assert "request_trust_envelope_signature" in source
     assert '"tenant_id" in payload' in source
 
 

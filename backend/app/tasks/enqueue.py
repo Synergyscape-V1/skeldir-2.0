@@ -28,6 +28,7 @@ TENANT_SCOPED_TASK_NAMES: frozenset[str] = frozenset(
         "app.tasks.maintenance.scan_for_pii_contamination",
         "app.tasks.maintenance.enforce_data_retention",
         "app.tasks.maintenance.gc_expired_raw_event_payloads",
+        "app.tasks.maintenance.reconcile_trust_issuance_for_tenant",
         "app.tasks.maintenance.schedule_provider_oauth_refresh_for_tenant",
         "app.tasks.maintenance.refresh_provider_oauth_credential",
         "app.tasks.matviews.refresh_single",
@@ -51,7 +52,9 @@ def _build_task_kwargs(
     overlap = sorted(prohibited.intersection(task_kwargs.keys()))
     if overlap:
         joined = ", ".join(overlap)
-        raise ValueError(f"tenant authority fields are reserved and must not be task kwargs: {joined}")
+        raise ValueError(
+            f"tenant authority fields are reserved and must not be task kwargs: {joined}"
+        )
     assert_no_sensitive_material(task_kwargs, boundary_name="celery_task_kwargs")
     return task_kwargs
 

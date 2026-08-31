@@ -24,6 +24,7 @@ from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey
 from app.trust.machine_auth import MachineCallerContext, _check_rate_limit
 from app.trust.machine_identity import AgentScope
 from app.trust.reason_codes import ReasonCode
+from app.trust.refusal import tenant_hash
 from app.trust.source_adapters import (
     MatchVerdictSource,
     SUPPORTED_P5_SUBJECT_TYPES,
@@ -63,8 +64,15 @@ def _stub_issuance_finalisation(monkeypatch, module) -> None:
     async def _noop(**kwargs):
         return None
 
+    async def _attempt_started(**kwargs):
+        return uuid4()
+
+    monkeypatch.setattr(
+        module, "record_trust_issuance_attempt_started", _attempt_started
+    )
     for name in (
-        "record_trust_issuance_attempt_started",
+        "load_durable_trust_issuance_replay",
+        "load_durable_trust_issuance_artifact",
         "record_trust_issuance_completed",
         "record_trust_issuance_outcome_unknown",
     ):
@@ -442,7 +450,9 @@ async def test_individual_wire_budget_fails_typed_before_response(
     caller = _caller()
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(audit_record=_stub_audit_record(), authorized_envelope={"safe": True})
+        return SimpleNamespace(
+            audit_record=_stub_audit_record(), authorized_envelope={"safe": True}
+        )
 
     monkeypatch.setattr(
         trust_api,
@@ -450,14 +460,15 @@ async def test_individual_wire_budget_fails_typed_before_response(
         fake_build,
     )
     _stub_issuance_finalisation(monkeypatch, trust_api)
-    monkeypatch.setattr(
-        trust_api,
-        "sign_trust_envelope",
-        lambda *args, **kwargs: {
+
+    async def oversized_signer(**kwargs):
+        return {
             "signature": "ed25519:test",
+            "tenant_id_hash": tenant_hash(caller.tenant_id),
             "bounded": "x" * trust_api.MAX_SERIALIZED_ENVELOPE_BYTES,
-        },
-    )
+        }
+
+    monkeypatch.setattr(trust_api, "request_trust_envelope_signature", oversized_signer)
 
     with pytest.raises(
         trust_api.TrustResponseBudgetExceeded,
@@ -739,7 +750,11 @@ async def test_client_visible_wire_verifies_through_published_jwks_and_mutation_
         return registry
 
     async def fake_build(*args, **kwargs):
-        return SimpleNamespace(audit_record=_stub_audit_record(), authorized_envelope=_unsigned_fixture())
+        envelope = _unsigned_fixture()
+        envelope["tenant_id_hash"] = tenant_hash(caller.tenant_id)
+        return SimpleNamespace(
+            audit_record=_stub_audit_record(), authorized_envelope=envelope
+        )
 
     app.dependency_overrides[trust_api.get_machine_db_session] = (
         _fake_session_dependency
@@ -752,12 +767,14 @@ async def test_client_visible_wire_verifies_through_published_jwks_and_mutation_
         fake_build,
     )
     _stub_issuance_finalisation(monkeypatch, trust_api)
+
+    async def signed_fixture_gateway(**kwargs):
+        return _cryptographically_sign_fixture(
+            kwargs["unsigned_envelope"], kwargs["test_signing_registry"]
+        )
+
     monkeypatch.setattr(
-        trust_api,
-        "sign_trust_envelope",
-        lambda payload, *, key_registry: _cryptographically_sign_fixture(
-            payload, key_registry
-        ),
+        trust_api, "request_trust_envelope_signature", signed_fixture_gateway
     )
     monkeypatch.setattr(
         trust_keys,

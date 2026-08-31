@@ -394,7 +394,7 @@ def run_negative_controls() -> None:
             lambda: validate_issuance_state_model(
                 audit,
                 api,
-                export.replace("record_trust_issuance_batch_completed(", "_skip("),
+                export.replace("record_trust_issuance_completed(", "_skip("),
             ),
         ),
         (

@@ -53,6 +53,7 @@ on:
       - 'backend/tests/trust/test_b25_p13_c14_semantic_authority.py'
       - 'backend/tests/trust/test_b25_p13_c15_issuance_truth.py'
       - 'backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py'
+      - 'backend/tests/trust/test_b25_p13_c17_consequence_lineage.py'
       - 'backend/app/trust/semantic_authority.py'
       - 'backend/app/inference_policy_registry.py'
       - 'backend/app/tasks/bayesian_publisher.py'
@@ -86,6 +87,7 @@ on:
       - 'scripts/ci/validate_b25_p13_c14_closure.py'
       - 'scripts/ci/validate_b25_p13_c15_closure.py'
       - 'scripts/ci/validate_b25_p13_c16_closure.py'
+      - 'scripts/ci/validate_b25_p13_c17_closure.py'
       - 'backend/app/trust/issuance_session.py'
       - 'scripts/database/prepare_migration_authority_boundary.py'
       - '.github/actions/setup-postgres-ci/action.yml'
@@ -2008,13 +2010,19 @@ jobs:
           from pathlib import Path
           path = Path('backend/app/api/trust_api.py')
           source = path.read_text(encoding='utf-8')
-          old = '    await record_trust_issuance_attempt_started('
+          old = '    attempt_id = await record_trust_issuance_attempt_started('
           assert source.count(old) == 1, source.count(old)
-          source = source.replace(old, '    await _skipped_attempt_record(', 1)
+          source = source.replace(
+              old, '    attempt_id = await _skipped_attempt_record(', 1
+          )
+          # The mutation removes only the durable write-ahead, not the shape of
+          # its result, so the red is caused by the missing durable attempt and
+          # not by a type error downstream.
           source = source.replace(
               'from app.trust.audit import (',
               'async def _skipped_attempt_record(**kwargs):\n'
-              '    return None\n\n\n'
+              '    from uuid import uuid4\n\n'
+              '    return uuid4()\n\n\n'
               'from app.trust.audit import (',
               1,
           )
@@ -2104,8 +2112,8 @@ jobs:
             "SELECT rolbypassrls::text || ':' || rolsuper::text FROM pg_roles WHERE rolname = current_user")
           test "$role_flags" = "false:false" || test "$role_flags" = "f:f"
           python -m alembic downgrade 202608291200
-          python -m alembic upgrade 202608301200
-          python -m alembic current | grep -q '202608301200 (head)'
+          python -m alembic upgrade head
+          python -m alembic current | grep -q '202608311200 (head)'
           echo 'c16_migration_non_super_round_trip=1' >> "$GITHUB_STEP_SUMMARY"
 
       # XVI-B. The issuance principal is the whole point of the remediation, so
@@ -2135,7 +2143,7 @@ jobs:
           echo "$denial" | grep -q 'permission denied for table b23_match_verdicts'
           granted=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT string_agg(table_name || ':' || privilege_type, ',' ORDER BY table_name, privilege_type) FROM information_schema.table_privileges WHERE grantee = 'app_trust_issuer'")
-          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE"
+          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
           guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.trust_access_log'::regclass AND tgname = 'trg_trust_access_log_issuance_authority_guard'")
           test "$guard" = "1"
@@ -2159,13 +2167,17 @@ jobs:
           grep -E '^c16_reconciled_nonterminal_states=2$' /tmp/c16-bidirectional-truth.out
           grep -E '^c16_reconciler_schedule_observations=3$' /tmp/c16-bidirectional-truth.out
 
+      # The historical C16 entry point stays load-bearing. Corrective XVII made
+      # its state machine a strict subset of C17's, so the compatibility shim
+      # forwards to the successor contract rather than asserting a superseded
+      # token list; removing the step entirely would have silently dropped a
+      # required static gate.
       - name: C16 static closure and semantic negative controls
         run: |
           set -o pipefail
-          python scripts/ci/validate_b25_p13_c16_closure.py --negative-control \
-            | tee /tmp/c16-closure.out
+          python scripts/ci/validate_b25_p13_c16_closure.py --negative-control             | tee /tmp/c16-closure.out
           grep -q '^B25_P13_C16_CLOSURE_VALIDATION_PASS$' /tmp/c16-closure.out
-          grep -q '^c16_static_negative_controls_fired=27$' /tmp/c16-closure.out
+          grep -q '^c16_compatibility_negative_controls_fired=28$' /tmp/c16-closure.out
 
       # NC-C16-DB. A guard nobody can break is a guard nobody has tested. Each
       # control removes one physical property from the live database, proves the
@@ -2208,7 +2220,7 @@ jobs:
           if run_matrix; then echo 'NC-C16-02 did not fire'; exit 1; fi
           fired=$((fired + 1))
           python -m alembic downgrade 202608291200
-          python -m alembic upgrade 202608301200
+          python -m alembic upgrade head
           run_matrix
           grep -qE '1 passed' /tmp/c16-nc.out
 
@@ -2216,18 +2228,376 @@ jobs:
           # The application must fail closed rather than write issuance history
           # under ordinary authority.
           if TRUST_ISSUANCE_DATABASE_URL="$DATABASE_URL" python -m pytest \
-              backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_post_signature_completion_failure_is_explicitly_unknown \
+              backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_post_signature_completion_failure_retains_known_signature \
               -q --no-header -p no:randomly > /tmp/c16-nc3.out 2>&1; then
             echo 'NC-C16-03 did not fire'; exit 1
           fi
           fired=$((fired + 1))
           python -m pytest \
-            backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_post_signature_completion_failure_is_explicitly_unknown \
+            backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_post_signature_completion_failure_retains_known_signature \
             -q --no-header -p no:randomly | tee /tmp/c16-nc3-restored.out
           grep -qE '1 passed' /tmp/c16-nc3-restored.out
 
           test "$fired" = "3"
           echo "c16_runtime_negative_controls_fired=$fired"
+
+  # Corrective XVII: completed issuance is legal only as a projection of an
+  # exact, durable signer-produced attempt. The distinct signer and issuer
+  # principals make the consequence boundary two-sided, while runtime controls
+  # prove that removing either database guard turns the falsifier red.
+  b2-5-p13-c17-consequence-lineage:
+    name: B2.5-P13 C17 Consequence Lineage
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p13_c17
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c17
+      WORKER_DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c17
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      SKELDIR_B25_P13_C17_DB_PROOF: "1"
+      # The C17 job also asserts the export-wrapper correspondence that
+      # lives in the C16 matrix; without this flag that test skips and the
+      # assertion would pass over a proof that never ran.
+      SKELDIR_B25_P13_C16_DB_PROOF: "1"
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Provision least-privilege C17 database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: skeldir_b25_p13_c17
+
+      - name: Prove C17 migration round trip as non-superuser
+        run: |
+          set -euo pipefail
+          flags=$(psql "$MIGRATION_DATABASE_URL" -tAc \
+            "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname=current_user")
+          test "$flags" = "false:false" || test "$flags" = "f:f"
+          python -m alembic downgrade 202608301200
+          tenant='17171717-1717-4717-8717-171717171717'
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "INSERT INTO public.tenants(id,name,api_key_hash,notification_email) VALUES ('$tenant','c17-history','hash:c17-history','c17-history@example.invalid')"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+          BEGIN;
+          SELECT set_config('app.current_tenant_id','$tenant',true);
+          INSERT INTO public.trust_access_log(
+            tenant_id,event_type,status,request_identity_hash,
+            idempotency_key_hash,subject_type,envelope_hash,policy_state,
+            audit_ref,audit_hash,issuance_state
+          ) VALUES (
+            '$tenant','issuance','success','sha256:'||repeat('1',64),
+            'sha256:'||repeat('2',64),'match_verdict','sha256:'||repeat('3',64),
+            'read_only','urn:skeldir:audit:c17-history',
+            'sha256:'||repeat('4',64),'authorized'
+          );
+          COMMIT;
+          SQL
+          psql "$TRUST_ISSUANCE_DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+          BEGIN;
+          SELECT set_config('app.current_tenant_id','$tenant',true);
+          UPDATE public.trust_access_log
+          SET issuance_state='signing',issuance_attempted_at=now(),
+              issuance_attempt_count=1 WHERE tenant_id='$tenant';
+          UPDATE public.trust_access_log
+          SET issuance_state='issued',issued_at=now(),
+              issued_signing_key_id='kid:c16-history',
+              issued_signature_hash='sha256:'||repeat('5',64),
+              issued_signature=decode(repeat('ab',64),'hex')
+          WHERE tenant_id='$tenant';
+          COMMIT;
+          SQL
+          python -m alembic upgrade head
+          history=$(psql "$TRUST_ISSUANCE_DATABASE_URL" -Atc \
+            "BEGIN; SELECT set_config('app.current_tenant_id','$tenant',true); SELECT issuance_state||':'||coalesce(issued_attempt_id::text,'null') FROM public.trust_access_log WHERE tenant_id='$tenant'; COMMIT;")
+          grep -q '^issued_pre_xvii:null$' <<<"$history"
+          attempts=$(psql "$TRUST_ISSUANCE_DATABASE_URL" -Atc \
+            "BEGIN; SELECT set_config('app.current_tenant_id','$tenant',true); SELECT count(*) FROM public.trust_issuance_attempts WHERE tenant_id='$tenant'; COMMIT;")
+          test "$(grep -c '^0$' <<<"$attempts")" = 1
+          python -m alembic downgrade 202608301200
+          python -m alembic upgrade head
+          python -m alembic current | grep -q '202608311200 (head)'
+          echo 'c17_historical_rows_not_elevated=1'
+          echo 'c17_migration_non_super_round_trip=1'
+
+      - name: Assert split consequence custody
+        run: |
+          set -euo pipefail
+          issuer=$(psql "$TRUST_ISSUANCE_DATABASE_URL" -tAc 'SELECT current_user')
+          signer=$(psql "$TRUST_SIGNER_DATABASE_URL" -tAc 'SELECT current_user')
+          runtime=$(psql "$DATABASE_URL" -tAc 'SELECT current_user')
+          test "$issuer" = app_trust_issuer
+          test "$signer" = app_trust_signer
+          test "$runtime" = app_user
+          test "$issuer" != "$signer" && test "$issuer" != "$runtime" && test "$signer" != "$runtime"
+          for role in app_trust_issuer app_trust_signer; do
+            flags=$(psql "$MIGRATION_DATABASE_URL" -tAc \
+              "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='$role'")
+            test "$flags" = "false:false" || test "$flags" = "f:f"
+          done
+          attempt_guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
+            "SELECT count(*) FROM pg_trigger WHERE tgname='trg_trust_issuance_attempt_guard'")
+          completion_guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
+            "SELECT count(*) FROM pg_trigger WHERE tgname='trg_trust_access_log_issuance_authority_guard'")
+          test "$attempt_guard:$completion_guard" = '1:1'
+          echo 'c17_split_consequence_custody_asserted=1'
+
+      - name: C17 PostgreSQL consequence and recovery falsifiers
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c17_consequence_lineage.py \
+            -q -s --no-header | tee /tmp/c17-lineage.out
+          grep -E '10 passed' /tmp/c17-lineage.out
+          grep -q '^c17_exact_consequence_correspondence=1$' /tmp/c17-lineage.out
+          grep -q '^c17_strongest_known_fact_retry=1$' /tmp/c17-lineage.out
+          grep -q '^c17_issuer_fabrication_refusals=4$' /tmp/c17-lineage.out
+          grep -q '^c17_raw_signer_invalid_completion_refused=1$' /tmp/c17-lineage.out
+          grep -q '^c17_restart_key_rotation_reservice=1$' /tmp/c17-lineage.out
+          grep -q '^c17_durable_recovery_convergence=1$' /tmp/c17-lineage.out
+          grep -q '^c17_reconciler_dispatch_authorized=1$' /tmp/c17-lineage.out
+          grep -q '^c17_real_process_custody_boundary=1$' /tmp/c17-lineage.out
+          grep -q '^c17_process_custody_guards=2$' /tmp/c17-lineage.out
+          grep -q '^c17_durable_export_reservice=1$' /tmp/c17-lineage.out
+          grep -q '^c17_concurrent_export_attempt_lineage=6$' /tmp/c17-lineage.out
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c16_bidirectional_issuance_truth.py::test_c16_export_413_occurs_after_durable_signature_completion \
+            -q -s --no-header | tee /tmp/c17-export-wrapper.out
+          grep -qE '1 passed' /tmp/c17-export-wrapper.out
+          grep -q '^c17_export_wrapper_correspondence=1$' /tmp/c17-export-wrapper.out
+          python -m pytest \
+            backend/tests/trust/test_b25_p11_export_artifact.py::test_atomic_preflight_rejects_full_mixed_set_before_any_p7_issuance \
+            -q --no-header
+
+      - name: C17 static closure and mutation controls
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_b25_p13_c17_closure.py --negative-control \
+            | tee /tmp/c17-closure.out
+          grep -q '^B25_P13_C17_CLOSURE_VALIDATION_PASS$' /tmp/c17-closure.out
+          grep -q '^c17_static_negative_controls_fired=28$' /tmp/c17-closure.out
+
+      - name: C17 live Beat broker worker recovery topology
+        env:
+          CELERY_BROKER_URL: sqla+postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c17
+          CELERY_RESULT_BACKEND: db+postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c17
+          B25_TRUST_ISSUANCE_RECONCILE_INTERVAL_SECONDS: "1"
+          B25_TRUST_ISSUANCE_STALE_SECONDS: "1"
+          B25_TRUST_ISSUANCE_RECONCILE_BATCH_SIZE: "2"
+          PROMETHEUS_MULTIPROC_DIR: /tmp/c17-prometheus
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+          # public.tenants has a UNIQUE index on api_key_hash, so every tenant
+          # this job creates needs its own value or the second insert fails for
+          # a reason unrelated to the invariant under proof.
+          tenants=(
+            17171717-1717-4717-8717-171717171701
+            17171717-1717-4717-8717-171717171702
+          )
+          race_tenant=17171717-1717-4717-8717-171717171703
+          seed_tenant() {
+            psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+              "INSERT INTO public.tenants(id,name,api_key_hash,notification_email) VALUES ('$1','c17-$2','hash:c17:$1','c17-$1@example.invalid') ON CONFLICT (id) DO NOTHING"
+          }
+          seed_authorized_row() {
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+          BEGIN;
+          SELECT set_config('app.current_tenant_id','$1',true);
+          INSERT INTO public.trust_access_log(
+            tenant_id,event_type,status,request_identity_hash,
+            idempotency_key_hash,subject_type,envelope_hash,policy_state,
+            audit_ref,audit_hash,issuance_state,created_at,updated_at
+          ) VALUES (
+            '$1','issuance','success',
+            'sha256:'||lpad('$2',64,'1'),
+            'sha256:'||lpad('$2',64,'2'),'match_verdict',
+            'sha256:'||lpad('$2',64,'3'),'read_only',
+            '$3',
+            'sha256:'||lpad('$2',64,'4'),'authorized',
+            now()-interval '1 hour',now()-interval '1 hour'
+          );
+          COMMIT;
+          SQL
+          }
+          for tenant in "${tenants[@]}"; do
+            seed_tenant "$tenant" "recovery"
+            for n in $(seq 1 5); do
+              seed_authorized_row "$tenant" "$n" "urn:skeldir:audit:c17-recovery:$tenant:$n"
+            done
+          done
+          # The live-issuance race is seeded before the scheduler starts so it
+          # is decided inside the same running control plane rather than after a
+          # backlog of stale fan-outs; the Kombu SQLAlchemy transport drains one
+          # message per poll, so a post-hoc phase could not be made determinate.
+          seed_tenant "$race_tenant" "live-race"
+          seed_authorized_row "$race_tenant" "9" "urn:skeldir:audit:c17-live-race"
+
+          celery -A app.celery_app.celery_app worker -Q maintenance \
+            --pool=solo --concurrency=1 --loglevel=INFO \
+            > /tmp/c17-worker.log 2>&1 &
+          worker_pid=$!
+          celery -A app.celery_app.celery_app beat --loglevel=INFO \
+            --pidfile= --schedule=/tmp/c17-beat-schedule \
+            > /tmp/c17-beat.log 2>&1 &
+          beat_pid=$!
+          cleanup() {
+            set +e
+            kill "$beat_pid" "$worker_pid" 2>/dev/null
+            set -e
+          }
+          trap cleanup EXIT
+
+          # A live issuance attempt is started while the reconciler is actively
+          # cycling: the reconciler must bound it truthfully without erasing the
+          # attempt lineage the live path created.
+          python - <<'PY' > /tmp/c17-race-attempt.out 2>&1 &
+          import asyncio
+          from uuid import UUID
+          from app.trust.audit import record_trust_issuance_attempt_started
+          try:
+              asyncio.run(record_trust_issuance_attempt_started(
+                  tenant_id=UUID('17171717-1717-4717-8717-171717171703'),
+                  audit_ref='urn:skeldir:audit:c17-live-race',
+              ))
+              print('attempt_started')
+          except Exception as exc:
+              print('attempt_refused:' + type(exc).__name__)
+          PY
+          race_pid=$!
+          wait "$race_pid"
+          cat /tmp/c17-race-attempt.out
+
+          # public.trust_access_log is FORCE ROW LEVEL SECURITY, which applies
+          # to the table owner too. A migration_owner query that does not bind
+          # app.current_tenant_id sees zero rows and can only ever report a
+          # vacuous result, so every observation below is tenant-scoped.
+          tenant_scoped() {
+            psql "$MIGRATION_DATABASE_URL" -At \
+              -c "SET app.current_tenant_id = '$1'" -c "$2" | tail -1
+          }
+          recovery_counts() {
+            local acc=""
+            for tenant in "${tenants[@]}"; do
+              acc="$acc$(tenant_scoped "$tenant" \
+                "SELECT count(*) FILTER (WHERE issuance_state='failed')||':'||count(*) FROM public.trust_access_log WHERE tenant_id='$tenant' AND audit_ref LIKE 'urn:skeldir:audit:c17-recovery:%'"),"
+            done
+            printf '%s' "$acc"
+          }
+          recovery_snapshot() {
+            local acc=""
+            for tenant in "${tenants[@]}"; do
+              acc="$acc$(tenant_scoped "$tenant" \
+                "SELECT coalesce(md5(string_agg(id::text||':'||updated_at::text,',' ORDER BY id)),'no_rows') FROM public.trust_access_log WHERE tenant_id='$tenant' AND audit_ref LIKE 'urn:skeldir:audit:c17-recovery:%'")|"
+            done
+            printf '%s' "$acc"
+          }
+          race_state_now() {
+            tenant_scoped "$race_tenant" \
+              "SELECT issuance_state FROM public.trust_access_log WHERE tenant_id='$race_tenant' AND audit_ref='urn:skeldir:audit:c17-live-race'"
+          }
+
+          observed=0
+          for _ in $(seq 1 180); do
+            terminal=$(recovery_counts)
+            race_state=$(race_state_now)
+            if test "$terminal" = '5:5,5:5,' \
+               && { test "$race_state" = failed || test "$race_state" = signature_outcome_unknown; } \
+               && grep -q 'app.tasks.maintenance.reconcile_trust_issuance_for_tenant' /tmp/c17-worker.log \
+               && grep -q 'trust_issuance_reconciliation_completed' /tmp/c17-worker.log; then
+              observed=1
+              break
+            fi
+            sleep 1
+          done
+          test "$observed" = 1 || { cat /tmp/c17-beat.log; cat /tmp/c17-worker.log; exit 1; }
+          grep -q 'app.tasks.maintenance.reconcile_trust_issuance_all_tenants' /tmp/c17-worker.log
+
+          # Repeated scheduled passes over already-terminal rows must change
+          # nothing. A snapshot that observed no rows would make this trivially
+          # true, so require it to be substantive before comparing.
+          before=$(recovery_snapshot)
+          case "$before" in *no_rows*) echo 'recovery snapshot saw no rows'; exit 1;; esac
+          sleep 5
+          after=$(recovery_snapshot)
+          test "$before" = "$after"
+          grep -Eq '"batches": [3-9]|batches.?[=:] ?[3-9]' /tmp/c17-worker.log
+
+          # Truthful convergence of the raced row: a bounded 'signing' attempt
+          # becomes explicitly unknown and keeps its attempt row; a row the
+          # reconciler reached before the live attempt stays pre-signature.
+          race_attempts=$(tenant_scoped "$race_tenant" \
+            "SELECT count(*) FROM public.trust_issuance_attempts WHERE tenant_id='$race_tenant' AND audit_ref='urn:skeldir:audit:c17-live-race'")
+          if test "$race_state" = failed; then test "$race_attempts" = 0; else test "$race_attempts" = 1; fi
+          # Derived from the observed terminal counts, not a literal: a counter
+          # the harness prints unconditionally proves nothing.
+          converged=$(printf '%s' "$terminal" | tr ',' '\n' | grep -c '^5:5$')
+          echo "c17_multi_tenant_batch_exhaustion=$((converged * 5))"
+          echo 'c17_recovery_idempotence=1'
+          echo "c17_live_issuance_race_converged=$race_state"
+          echo 'c17_scheduler_broker_worker_recovery=1'
+
+      - name: NC-C17 runtime non-vacuity
+        run: |
+          set -euo pipefail
+          run_fabrication() {
+            python -m pytest \
+              backend/tests/trust/test_b25_p13_c17_consequence_lineage.py::test_c17_issuer_cannot_manufacture_signer_consequence \
+              -q --no-header -p no:randomly > /tmp/c17-nc.out 2>&1
+          }
+          restore_head() {
+            python -m alembic downgrade 202608301200
+            python -m alembic upgrade head
+          }
+          run_fabrication
+          fired=0
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c 'DROP TRIGGER trg_trust_issuance_attempt_guard ON public.trust_issuance_attempts'
+          if run_fabrication; then echo 'NC-C17-01 did not fire'; exit 1; fi
+          fired=$((fired + 1))
+          restore_head
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c 'DROP TRIGGER trg_trust_access_log_issuance_authority_guard ON public.trust_access_log'
+          if run_fabrication; then echo 'NC-C17-02 did not fire'; exit 1; fi
+          fired=$((fired + 1))
+          restore_head
+          if TRUST_SIGNER_DATABASE_URL="$TRUST_ISSUANCE_DATABASE_URL" python -m pytest \
+              backend/tests/trust/test_b25_p13_c17_consequence_lineage.py::test_c17_real_signer_consequence_is_exactly_persisted \
+              -q --no-header -p no:randomly > /tmp/c17-nc3.out 2>&1; then
+            echo 'NC-C17-03 did not fire'; exit 1
+          fi
+          fired=$((fired + 1))
+          test "$fired" = 3
+          echo "c17_runtime_negative_controls_fired=$fired"
 
   # load-bearing proof therefore cannot report the required context green.
   b25-p13-e2e-trust-closure:
@@ -2241,6 +2611,7 @@ jobs:
       - b2-5-p13-c14-semantic-authority
       - b2-5-p13-c15-issuance-truth
       - b2-5-p13-c16-bidirectional-truth
+      - b2-5-p13-c17-consequence-lineage
     runs-on: ubuntu-latest
     steps:
       - name: Require every load-bearing P13 proof
@@ -2252,6 +2623,7 @@ jobs:
           COMPLETE_AUTHORITY_RESULT: ${{ needs['b2-5-p13-c14-semantic-authority'].result }}
           ISSUANCE_TRUTH_RESULT: ${{ needs['b2-5-p13-c15-issuance-truth'].result }}
           BIDIRECTIONAL_TRUTH_RESULT: ${{ needs['b2-5-p13-c16-bidirectional-truth'].result }}
+          CONSEQUENCE_LINEAGE_RESULT: ${{ needs['b2-5-p13-c17-consequence-lineage'].result }}
         run: |
           set -euo pipefail
           test "$CORE_RESULT" = success || {
@@ -2274,5 +2646,8 @@ jobs:
           }
           test "$BIDIRECTIONAL_TRUTH_RESULT" = success || {
             echo "b2-5-p13-c16-bidirectional-truth=$BIDIRECTIONAL_TRUTH_RESULT"; exit 1;
+          }
+          test "$CONSEQUENCE_LINEAGE_RESULT" = success || {
+            echo "b2-5-p13-c17-consequence-lineage=$CONSEQUENCE_LINEAGE_RESULT"; exit 1;
           }
           echo 'p13_load_bearing_proof_graph=green'

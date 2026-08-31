@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Annotated, Any
 from uuid import UUID
@@ -16,19 +17,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.trust_api import (
     TrustRequestBoundaryException,
+    _signer_request_payload,
     get_runtime_signing_registry,
     machine_bearer,
 )
 from app.db import session as db_session
 from app.trust.audit import (
     build_unsigned_trust_envelope_with_audit,
+    load_durable_trust_export_artifact,
+    load_durable_trust_issuance_artifact,
+    load_durable_trust_issuance_replay,
     record_trust_issuance_attempt_started,
-    record_trust_issuance_batch_completed,
-    record_trust_issuance_batch_outcome_unknown,
+    record_trust_issuance_completed,
     record_trust_issuance_outcome_unknown,
+    record_trust_export_attempt_started,
+    record_trust_export_attempt_unknown,
 )
 from app.trust.builder import TrustEnvelopeBuildRequest
-from app.trust.export_artifact import build_export_artifact, sign_export_artifact
+from app.trust.export_artifact import build_export_artifact, verify_export_artifact
 from app.trust.key_registry import TrustKeyRegistry
 from app.trust.machine_auth import MachineCallerContext, authenticate_machine_caller
 from app.trust.machine_identity import AgentScope
@@ -37,13 +43,17 @@ from app.trust.query_continuation import (
     MAX_CURSOR_TOKEN_BYTES,
     TrustQueryContinuationError,
     continuation_expiry,
-    issue_trust_query_continuation,
     trust_query_binding_hash,
     verify_trust_query_continuation,
 )
 from app.trust.reason_codes import ReasonCode
 from app.trust.refusal import tenant_hash
-from app.trust.signing import sign_trust_envelope
+from app.trust.semantic_authority import AuthorizedTrustEnvelope
+from app.trust.signer_gateway import (
+    request_trust_continuation_signature,
+    request_trust_envelope_signature,
+    request_trust_export_artifact_signature,
+)
 from app.trust.source_adapters import (
     MatchVerdictSource,
     parse_match_verdict_subject_ref,
@@ -261,16 +271,40 @@ def _typed_error_response(
     )
 
 
-async def _issue_export_envelope(
+@dataclass(frozen=True)
+class _PreparedExportEnvelope:
+    audit_ref: str
+    authorized_envelope: AuthorizedTrustEnvelope | None
+    replay_artifact: dict[str, Any] | None = None
+    replay_attempt_id: UUID | None = None
+    replay_needs_completion: bool = False
+
+
+async def _prepare_export_envelope(
     *,
     session: AsyncSession,
     caller: MachineCallerContext,
     subject_ref: str,
     idempotency_key: str,
-    key_registry: TrustKeyRegistry,
     issued_at: datetime,
     source: MatchVerdictSource,
-) -> tuple[dict[str, Any], str] | None:
+) -> _PreparedExportEnvelope | None:
+    replay = await load_durable_trust_issuance_replay(
+        tenant_id=caller.tenant_id,
+        subject_type="match_verdict",
+        subject_ref=subject_ref,
+        audience_id=caller.audience,
+        idempotency_key=idempotency_key,
+    )
+    if replay is not None:
+        audit_ref, state, attempt_id, signed = replay
+        return _PreparedExportEnvelope(
+            audit_ref=audit_ref,
+            authorized_envelope=None,
+            replay_artifact=signed,
+            replay_attempt_id=attempt_id,
+            replay_needs_completion=state == "signature_known",
+        )
     result = await build_unsigned_trust_envelope_with_audit(
         session,
         TrustEnvelopeBuildRequest(
@@ -290,23 +324,61 @@ async def _issue_export_envelope(
     )
     if result.authorized_envelope is None:
         return None
-    await record_trust_issuance_attempt_started(
+    durable = await load_durable_trust_issuance_artifact(
         tenant_id=caller.tenant_id,
         audit_ref=result.audit_record.audit_ref,
     )
+    if durable is not None:
+        state, attempt_id, signed = durable
+        return _PreparedExportEnvelope(
+            audit_ref=result.audit_record.audit_ref,
+            authorized_envelope=None,
+            replay_artifact=signed,
+            replay_attempt_id=attempt_id,
+            replay_needs_completion=state == "signature_known",
+        )
+    return _PreparedExportEnvelope(
+        audit_ref=result.audit_record.audit_ref,
+        authorized_envelope=result.authorized_envelope,
+    )
+
+
+async def _sign_prepared_export_envelope(
+    *,
+    prepared: _PreparedExportEnvelope,
+    caller: MachineCallerContext,
+    key_registry: TrustKeyRegistry,
+) -> tuple[dict[str, Any], str, UUID | None]:
+    if prepared.replay_artifact is not None and prepared.replay_attempt_id is not None:
+        return (
+            prepared.replay_artifact,
+            prepared.audit_ref,
+            prepared.replay_attempt_id if prepared.replay_needs_completion else None,
+        )
+    if prepared.authorized_envelope is None:
+        raise RuntimeError("prepared_export_authority_missing")
+    attempt_id = await record_trust_issuance_attempt_started(
+        tenant_id=caller.tenant_id,
+        audit_ref=prepared.audit_ref,
+    )
     try:
-        signed = await asyncio.to_thread(
-            sign_trust_envelope,
-            result.authorized_envelope,
-            key_registry=key_registry,
+        signed = await request_trust_envelope_signature(
+            tenant_id=caller.tenant_id,
+            audit_ref=prepared.audit_ref,
+            attempt_id=attempt_id,
+            unsigned_envelope=_signer_request_payload(prepared.authorized_envelope),
+            test_signing_registry=key_registry,
         )
     except BaseException:
-        # Once the signer is entered, an exception alone cannot prove whether
-        # the private key returned before the exception occurred.
-        await record_trust_issuance_outcome_unknown(
+        durable_after_failure = await load_durable_trust_issuance_artifact(
             tenant_id=caller.tenant_id,
-            audit_ref=result.audit_record.audit_ref,
+            audit_ref=prepared.audit_ref,
         )
+        if durable_after_failure is None:
+            await record_trust_issuance_outcome_unknown(
+                tenant_id=caller.tenant_id,
+                audit_ref=prepared.audit_ref,
+            )
         raise
     # B2.5-P13 Corrective XVI (XVI-C). Externalisation safety is a delivery
     # property, not a signing outcome. The read path evaluates it strictly
@@ -314,28 +386,53 @@ async def _issue_export_envelope(
     # issuance truth for the same physical consequence, so this check moved out
     # of the signing boundary and is applied by the caller once the page's
     # signatures are durably recorded.
-    return signed, result.audit_record.audit_ref
+    return signed, prepared.audit_ref, attempt_id
+
+
+async def _issue_export_envelope(
+    *,
+    session: AsyncSession,
+    caller: MachineCallerContext,
+    subject_ref: str,
+    idempotency_key: str,
+    key_registry: TrustKeyRegistry,
+    issued_at: datetime,
+    source: MatchVerdictSource,
+) -> tuple[dict[str, Any], str, UUID | None] | None:
+    """Compatibility wrapper; the route itself uses two-phase page preflight."""
+    prepared = await _prepare_export_envelope(
+        session=session,
+        caller=caller,
+        subject_ref=subject_ref,
+        idempotency_key=idempotency_key,
+        issued_at=issued_at,
+        source=source,
+    )
+    if prepared is None:
+        return None
+    return await _sign_prepared_export_envelope(
+        prepared=prepared,
+        caller=caller,
+        key_registry=key_registry,
+    )
 
 
 async def _finalize_export_issuance_completions(
     *,
     tenant_id: UUID,
-    completions: list[tuple[str, dict[str, Any]]],
+    completions: list[tuple[str, UUID]],
+    key_registry: TrustKeyRegistry,
 ) -> None:
     """Commit signed page evidence or retain an explicit unknown outcome."""
     if not completions:
         return
-    try:
-        await record_trust_issuance_batch_completed(
+    for audit_ref, attempt_id in completions:
+        await record_trust_issuance_completed(
             tenant_id=tenant_id,
-            completions=completions,
+            audit_ref=audit_ref,
+            attempt_id=attempt_id,
+            key_registry=key_registry,
         )
-    except BaseException:
-        await record_trust_issuance_batch_outcome_unknown(
-            tenant_id=tenant_id,
-            audit_refs=[audit_ref for audit_ref, _ in completions],
-        )
-        raise
 
 
 async def _create_export_with_capacity(
@@ -416,45 +513,71 @@ async def _create_export_with_capacity(
             ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
+    # The reachability invariant this used to defend is now carried by two
+    # cheaper mechanisms that hold for every refusal class, not just the ones a
+    # preflight can anticipate: page members are all prepared before any of
+    # them is signed, so a page-local refusal precedes the first private-key
+    # call; and an already-issued row is re-served from durable evidence rather
+    # than failing closed, so a refusal on a later page can never strand an
+    # earlier page's signatures. Rebuilding every accepted reference through
+    # the semantic builder on every page added no reachability guarantee and
+    # cost more than the export handler's whole deadline at the declared
+    # maximum reference count.
     envelopes: list[dict[str, Any]] = []
-    issuance_completions: list[tuple[str, dict[str, Any]]] = []
+    issuance_completions: list[tuple[str, UUID]] = []
+    prepared_envelopes: list[_PreparedExportEnvelope] = []
     deferred_refusal: JSONResponse | None = None
-    try:
-        for page_offset, subject_ref in enumerate(page_refs):
-            verdict_id = parse_match_verdict_subject_ref(subject_ref)
-            source = sources_by_id.get(verdict_id)
-            if source is None:
-                deferred_refusal = _typed_error_response(
-                    ReasonCode.SUBJECT_NOT_FOUND,
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                )
-                break
-            issued = await _issue_export_envelope(
-                session=session,
-                caller=caller,
-                subject_ref=subject_ref,
-                idempotency_key=(
-                    f"{idempotency_key}:export:"
-                    f"{binding_hash.removeprefix('sha256:')}:"
-                    f"{start_position + page_offset}"
-                ),
-                key_registry=key_registry,
-                issued_at=now,
-                source=source,
+    # Phase one is consequence-free: every page member must establish semantic
+    # authority before any private key is approached. A late refusal therefore
+    # cannot orphan earlier signatures.
+    for page_offset, subject_ref in enumerate(page_refs):
+        verdict_id = parse_match_verdict_subject_ref(subject_ref)
+        source = sources_by_id.get(verdict_id)
+        if source is None:
+            deferred_refusal = _typed_error_response(
+                ReasonCode.SUBJECT_NOT_FOUND,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
-            if issued is None:
-                deferred_refusal = _typed_error_response(
-                    ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            break
+        prepared = await _prepare_export_envelope(
+            session=session,
+            caller=caller,
+            subject_ref=subject_ref,
+            idempotency_key=(
+                f"{idempotency_key}:export:"
+                f"{binding_hash.removeprefix('sha256:')}:"
+                f"{start_position + page_offset}"
+            ),
+            issued_at=now,
+            source=source,
+        )
+        if prepared is None:
+            deferred_refusal = _typed_error_response(
+                ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+            break
+        prepared_envelopes.append(prepared)
+    if deferred_refusal is not None:
+        return deferred_refusal
+
+    try:
+        for prepared in prepared_envelopes:
+            envelope, envelope_audit_ref, envelope_attempt_id = (
+                await _sign_prepared_export_envelope(
+                    prepared=prepared,
+                    caller=caller,
+                    key_registry=key_registry,
                 )
-                break
-            envelope, envelope_audit_ref = issued
+            )
             envelopes.append(envelope)
-            issuance_completions.append((envelope_audit_ref, envelope))
+            if envelope_attempt_id is not None:
+                issuance_completions.append((envelope_audit_ref, envelope_attempt_id))
     except BaseException:
         await _finalize_export_issuance_completions(
             tenant_id=caller.tenant_id,
             completions=issuance_completions,
+            key_registry=key_registry,
         )
         raise
 
@@ -464,25 +587,52 @@ async def _create_export_with_capacity(
     await _finalize_export_issuance_completions(
         tenant_id=caller.tenant_id,
         completions=issuance_completions,
+        key_registry=key_registry,
     )
     for envelope in envelopes:
         _assert_external_payload_safe(envelope)
-    if deferred_refusal is not None:
-        return deferred_refusal
     if len(envelopes) > MAX_SIGNED_EXPORT_ENVELOPES:
         raise RuntimeError("p11_signed_envelope_ceiling_breached")
 
-    unsigned_artifact = await asyncio.to_thread(
-        build_export_artifact,
-        envelopes=envelopes,
-        tenant_id_hash=tenant_hash(caller.tenant_id),
-        generated_at=now,
+    artifact = await load_durable_trust_export_artifact(
+        tenant_id=caller.tenant_id,
+        request_binding_hash=binding_hash,
+        page_start=start_position,
     )
-    artifact = await asyncio.to_thread(
-        sign_export_artifact,
-        unsigned_artifact,
-        key_registry=key_registry,
+    if artifact is None:
+        unsigned_artifact = await asyncio.to_thread(
+            build_export_artifact,
+            envelopes=envelopes,
+            tenant_id_hash=tenant_hash(caller.tenant_id),
+            generated_at=now,
+        )
+        export_attempt_id = await record_trust_export_attempt_started(
+            tenant_id=caller.tenant_id,
+            request_binding_hash=binding_hash,
+            page_start=start_position,
+        )
+        try:
+            artifact = await request_trust_export_artifact_signature(
+                tenant_id=caller.tenant_id,
+                attempt_id=export_attempt_id,
+                unsigned_artifact=unsigned_artifact,
+                test_signing_registry=key_registry,
+            )
+        except BaseException:
+            await record_trust_export_attempt_unknown(
+                tenant_id=caller.tenant_id,
+                attempt_id=export_attempt_id,
+            )
+            raise
+    artifact_verification = verify_export_artifact(
+        artifact,
+        key_registry=key_registry.public_only(),
     )
+    if artifact_verification.verification_status != "verified":
+        raise RuntimeError(
+            "durable_export_artifact_verification_refused:"
+            f"{artifact_verification.reason_code}"
+        )
     response = _json_response(artifact)
     if len(response.body) > MAX_EXPORT_ARTIFACT_BYTES:
         return _typed_error_response(
@@ -495,12 +645,14 @@ async def _create_export_with_capacity(
     response.headers["X-Export-Evaluated-Count"] = str(end_position)
     response.headers["X-Export-Remaining-Count"] = str(remaining_count)
     if remaining_count:
-        response.headers["X-Trust-Continuation"] = issue_trust_query_continuation(
-            key_registry=key_registry,
-            binding_hash=binding_hash,
-            next_position=end_position,
-            total_accepted=accepted_count,
-            expires_at=expires_at,
+        response.headers["X-Trust-Continuation"] = (
+            await request_trust_continuation_signature(
+                binding_hash=binding_hash,
+                next_position=end_position,
+                total_accepted=accepted_count,
+                expires_at=expires_at,
+                test_signing_registry=key_registry,
+            )
         )
     return response
 

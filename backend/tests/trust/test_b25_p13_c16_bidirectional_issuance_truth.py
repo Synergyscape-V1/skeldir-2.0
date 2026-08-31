@@ -24,7 +24,9 @@ from app.trust.issuance_session import (
     TRUST_ISSUANCE_PRINCIPAL,
     trust_issuance_database_url,
 )
+from app.trust.export_artifact import verify_export_artifact
 from app.trust.machine_identity import AgentScope
+from app.trust.signing import decode_ed25519_signature
 from test_b25_p13_c15_issuance_truth import (
     _configure_signing,
     _grant_scope,
@@ -49,14 +51,16 @@ _DB_PROOF = pytest.mark.skipif(
 
 @_DB_PROOF
 @pytest.mark.asyncio
-async def test_c16_post_signature_completion_failure_is_explicitly_unknown(
+async def test_c16_post_signature_completion_failure_retains_known_signature(
     monkeypatch,
 ) -> None:
     """Cross the real signing boundary, then fail only the completion write.
 
     The signing function executes genuinely and its signed result is captured.
-    Only the subsequent completion write is forced to fail. Durable history must
-    make that physical uncertainty explicit and must never say ``authorized``.
+    Only the subsequent completion projection is forced to fail. C17 writes the
+    exact signer consequence before that projection, so durable history must
+    retain ``signature_known`` and the exact signed artifact rather than
+    regressing a known fact to ``signature_outcome_unknown``.
     """
 
     _configure_signing(monkeypatch, seed=b"b25-p13-c16-reproduction")
@@ -70,17 +74,19 @@ async def test_c16_post_signature_completion_failure_is_explicitly_unknown(
         from app.api import trust_api
 
         captured: list[dict] = []
-        original_signer = trust_api.sign_trust_envelope
+        original_signer = trust_api.request_trust_envelope_signature
 
-        def capture_real_signature(*args, **kwargs):
-            signed = original_signer(*args, **kwargs)
+        async def capture_real_signature(**kwargs):
+            signed = await original_signer(**kwargs)
             captured.append(signed)
             return signed
 
         async def fail_completion_write(**_kwargs) -> None:
             raise RuntimeError("c16_injected_completion_write_failure")
 
-        monkeypatch.setattr(trust_api, "sign_trust_envelope", capture_real_signature)
+        monkeypatch.setattr(
+            trust_api, "request_trust_envelope_signature", capture_real_signature
+        )
         monkeypatch.setattr(
             trust_api,
             "record_trust_issuance_completed",
@@ -115,16 +121,39 @@ async def test_c16_post_signature_completion_failure_is_explicitly_unknown(
 
         rows = await _issuance_rows(engine, tenant_id)
         assert len(rows) == 1, rows
-        assert rows[0]["issuance_state"] == "signature_outcome_unknown", rows
-        assert rows[0]["issued_signature_hash"] is None, rows
-        assert rows[0]["issued_signature"] is None, rows
+        assert rows[0]["issuance_state"] == "signature_known", rows
+        issuer_engine = create_async_engine(
+            to_asyncpg_postgres_dsn(trust_issuance_database_url()), future=True
+        )
+        try:
+            async with issuer_engine.begin() as connection:
+                await connection.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": str(tenant_id)},
+                )
+                retained_signature = (
+                    await connection.execute(
+                        text(
+                            """
+                            SELECT signature FROM public.trust_issuance_attempts
+                            WHERE tenant_id = :t AND audit_ref = :r
+                            """
+                        ),
+                        {"t": str(tenant_id), "r": rows[0]["audit_ref"]},
+                    )
+                ).scalar_one()
+        finally:
+            await issuer_engine.dispose()
+        assert bytes(retained_signature) == decode_ed25519_signature(
+            captured[0]["signature"]
+        )
         assert rows[0]["issuance_attempted_at"] is not None, rows
-        assert rows[0]["issuance_outcome_unknown_at"] is not None, rows
+        assert rows[0]["issuance_outcome_unknown_at"] is None, rows
         observations = [
             "real_signature_captured",
             "public_verification_passed",
             "write_ahead_attempt_retained",
-            "unknown_outcome_explicit",
+            "strongest_known_signature_retained",
         ]
         print("\nc16_post_signature_boundary_observations=" + str(len(observations)))
     finally:
@@ -168,15 +197,20 @@ async def test_c16_export_413_occurs_after_durable_signature_completion(
         from app.api import trust_export
 
         captured: list[dict] = []
-        original_signer = trust_export.sign_trust_envelope
+        original_signer = trust_export.request_trust_envelope_signature
 
-        def capture_real_signature(*args, **kwargs):
-            signed = original_signer(*args, **kwargs)
+        async def capture_real_signature(**kwargs):
+            signed = await original_signer(**kwargs)
             captured.append(signed)
             return signed
 
-        monkeypatch.setattr(trust_export, "sign_trust_envelope", capture_real_signature)
+        monkeypatch.setattr(
+            trust_export,
+            "request_trust_envelope_signature",
+            capture_real_signature,
+        )
         monkeypatch.setattr(trust_export, "MAX_EXPORT_ARTIFACT_BYTES", 1)
+        export_idempotency_key = f"c16-export-{uuid4().hex}"
         app = FastAPI()
         app.include_router(trust_export.router, prefix="/api")
         async with AsyncClient(
@@ -189,17 +223,65 @@ async def test_c16_export_413_occurs_after_durable_signature_completion(
                     "X-Tenant-ID": str(tenant_id),
                     "X-Trust-Nonce": f"c16-export-{uuid4().hex}",
                     "X-Correlation-ID": str(uuid4()),
-                    "X-Idempotency-Key": f"c16-export-{uuid4().hex}",
+                    "X-Idempotency-Key": export_idempotency_key,
+                },
+                json={"subject_refs": [subject_urn]},
+            )
+            retry = await client.post(
+                "/api/trust/v1/exports/match-verdicts",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Tenant-ID": str(tenant_id),
+                    "X-Trust-Nonce": f"c16-export-retry-{uuid4().hex}",
+                    "X-Correlation-ID": str(uuid4()),
+                    "X-Idempotency-Key": export_idempotency_key,
                 },
                 json={"subject_refs": [subject_urn]},
             )
 
         assert response.status_code == 413, response.text
+        assert retry.status_code == 413, retry.text
         assert len(captured) == 1, "the 413 falsifier must occur after real signing"
         rows = await _issuance_rows(engine, tenant_id)
         assert len(rows) == 1, rows
         assert rows[0]["issuance_state"] == "issued", rows
         assert len(rows[0]["issued_signature"]) == 64, rows
+        issuer_engine = create_async_engine(
+            to_asyncpg_postgres_dsn(trust_issuance_database_url()), future=True
+        )
+        try:
+            async with issuer_engine.begin() as connection:
+                await connection.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": str(tenant_id)},
+                )
+                wrapper_rows = (
+                    (
+                        await connection.execute(
+                            text(
+                                """
+                            SELECT attempt_state, signature, signed_artifact
+                            FROM public.trust_export_artifact_attempts
+                            WHERE tenant_id = :t ORDER BY attempt_number
+                            """
+                            ),
+                            {"t": str(tenant_id)},
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+        finally:
+            await issuer_engine.dispose()
+        assert len(wrapper_rows) == 1
+        assert wrapper_rows[0]["attempt_state"] == "issued"
+        assert len(wrapper_rows[0]["signature"]) == 64
+        registry = await trust_export.get_runtime_signing_registry()
+        verification = verify_export_artifact(
+            dict(wrapper_rows[0]["signed_artifact"]),
+            key_registry=registry.public_only(),
+        )
+        assert verification.verification_status == "verified"
         observations = [
             "real_export_signature_captured",
             "response_budget_refused_413",
@@ -207,6 +289,7 @@ async def test_c16_export_413_occurs_after_durable_signature_completion(
             "raw_signature_evidence_retained",
         ]
         print("\nc16_export_boundary_observations=" + str(len(observations)))
+        print("c17_export_wrapper_correspondence=1")
     finally:
         await engine.dispose()
 
@@ -244,12 +327,13 @@ async def test_c16_database_refuses_every_weak_principal_completion_claim(
     )
     try:
         tenant_id, token, subject_urn = await _seed_tenant(worker_engine, "c16-db")
+        issued_idempotency_key = f"c16-db-{uuid4().hex}"
         response = await _query_envelope(
             _build_authenticated_app(),
             tenant_id=tenant_id,
             token=token,
             subject_ref=subject_urn,
-            idempotency_key=f"c16-db-{uuid4().hex}",
+            idempotency_key=issued_idempotency_key,
         )
         assert response.status_code == 200, response.text
         issued_ref = (await _issuance_rows(worker_engine, tenant_id))[0]["audit_ref"]
@@ -288,39 +372,65 @@ async def test_c16_database_refuses_every_weak_principal_completion_claim(
         sig64 = "decode(repeat('ab',64),'hex')"
         good_hash = "'sha256:' || repeat('a',64)"
         mutations = (
-            ("issued_null_crypto", pre_ref,
-             "issuance_state='issued', issued_at=now(), issuance_attempted_at=now(),"
-             " issuance_attempt_count=1, issued_signing_key_id='kid:x',"
-             " issued_signature_hash=NULL, issued_signature=NULL"),
-            ("issued_malformed_crypto", pre_ref,
-             "issuance_state='issued', issued_at=now(), issuance_attempted_at=now(),"
-             " issuance_attempt_count=1, issued_signing_key_id='kid:x',"
-             " issued_signature_hash='not-a-hash', issued_signature=decode('ab','hex')"),
-            ("issued_fabricated_well_shaped", pre_ref,
-             f"issuance_state='issued', issued_at=now(), issuance_attempted_at=now(),"
-             f" issuance_attempt_count=1, issued_signing_key_id='kid:forged',"
-             f" issued_signature_hash={good_hash}, issued_signature={sig64}"),
-            ("issued_missing_key_identity", pre_ref,
-             f"issuance_state='issued', issued_at=now(), issuance_attempted_at=now(),"
-             f" issuance_attempt_count=1, issued_signing_key_id=NULL,"
-             f" issued_signature_hash={good_hash}, issued_signature={sig64}"),
-            ("unissued_carries_crypto", pre_ref,
-             f"issued_signing_key_id='kid:forged',"
-             f" issued_signature_hash={good_hash}, issued_signature={sig64}"),
-            ("terminal_issuance_denied", issued_ref,
-             "issuance_state='failed', issued_at=NULL, issuance_attempted_at=NULL,"
-             " issued_signing_key_id=NULL, issued_signature_hash=NULL,"
-             " issued_signature=NULL"),
-            ("terminal_signature_substituted", issued_ref,
-             f"issued_signing_key_id='kid:swapped',"
-             f" issued_signature_hash={good_hash}, issued_signature={sig64}"),
-            ("legacy_state_claimed", pre_ref,
-             "issuance_state='issued_legacy'"),
-            ("cross_tenant_rebind", pre_ref,
-             "tenant_id='22222222-2222-2222-2222-222222222222'"),
-            ("lineage_regressed", pre_ref,
-             "issuance_attempt_count=0, issuance_unknown_outcome_count=0,"
-             " issuance_state='signing', issuance_attempted_at=now()"),
+            (
+                "issued_null_crypto",
+                pre_ref,
+                "issuance_state='issued', issued_at=now(), issuance_attempted_at=now(),"
+                " issuance_attempt_count=1, issued_signing_key_id='kid:x',"
+                " issued_signature_hash=NULL, issued_signature=NULL",
+            ),
+            (
+                "issued_malformed_crypto",
+                pre_ref,
+                "issuance_state='issued', issued_at=now(), issuance_attempted_at=now(),"
+                " issuance_attempt_count=1, issued_signing_key_id='kid:x',"
+                " issued_signature_hash='not-a-hash', issued_signature=decode('ab','hex')",
+            ),
+            (
+                "issued_fabricated_well_shaped",
+                pre_ref,
+                f"issuance_state='issued', issued_at=now(), issuance_attempted_at=now(),"
+                f" issuance_attempt_count=1, issued_signing_key_id='kid:forged',"
+                f" issued_signature_hash={good_hash}, issued_signature={sig64}",
+            ),
+            (
+                "issued_missing_key_identity",
+                pre_ref,
+                f"issuance_state='issued', issued_at=now(), issuance_attempted_at=now(),"
+                f" issuance_attempt_count=1, issued_signing_key_id=NULL,"
+                f" issued_signature_hash={good_hash}, issued_signature={sig64}",
+            ),
+            (
+                "unissued_carries_crypto",
+                pre_ref,
+                f"issued_signing_key_id='kid:forged',"
+                f" issued_signature_hash={good_hash}, issued_signature={sig64}",
+            ),
+            (
+                "terminal_issuance_denied",
+                issued_ref,
+                "issuance_state='failed', issued_at=NULL, issuance_attempted_at=NULL,"
+                " issued_signing_key_id=NULL, issued_signature_hash=NULL,"
+                " issued_signature=NULL",
+            ),
+            (
+                "terminal_signature_substituted",
+                issued_ref,
+                f"issued_signing_key_id='kid:swapped',"
+                f" issued_signature_hash={good_hash}, issued_signature={sig64}",
+            ),
+            ("legacy_state_claimed", pre_ref, "issuance_state='issued_legacy'"),
+            (
+                "cross_tenant_rebind",
+                pre_ref,
+                "tenant_id='22222222-2222-2222-2222-222222222222'",
+            ),
+            (
+                "lineage_regressed",
+                pre_ref,
+                "issuance_attempt_count=0, issuance_unknown_outcome_count=0,"
+                " issuance_state='signing', issuance_attempted_at=now()",
+            ),
         )
 
         async def _refusal(engine, expected_role: str, mutation: str, ref: str) -> str:
@@ -395,9 +505,9 @@ async def test_c16_database_refuses_every_weak_principal_completion_claim(
                 )
         assert "trust_issuance_authority_violation" in str(insert_error.value)
 
-        # Positive control: the legitimate lineage still completes, and a retry
-        # after an unknown outcome retains rather than erases the earlier
-        # signing consequence.
+        # Positive control: the legitimate API lineage completed above and an
+        # exact retry re-serves it, while unknown-attempt counters remain
+        # monotonic even though the issuer cannot manufacture completion.
         async with issuer_engine.begin() as connection:
             await connection.execute(
                 text("SELECT set_config('app.current_tenant_id', :t, true)"),
@@ -440,40 +550,37 @@ async def test_c16_database_refuses_every_weak_principal_completion_claim(
                 ),
                 {"t": str(tenant_id), "r": pre_ref},
             )
-            await connection.execute(
-                text(
-                    """
-                    UPDATE public.trust_access_log
-                    SET issuance_state = 'issued', issued_at = now(),
-                        issued_signing_key_id = 'kid:retry',
-                        issued_signature_hash = 'sha256:' || repeat('c', 64),
-                        issued_signature = decode(repeat('5e', 64), 'hex')
-                    WHERE tenant_id = :t AND audit_ref = :r
-                    """
-                ),
-                {"t": str(tenant_id), "r": pre_ref},
-            )
             lineage = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT issuance_state, issuance_attempt_count,
                                issuance_unknown_outcome_count
                         FROM public.trust_access_log
                         WHERE tenant_id = :t AND audit_ref = :r
                         """
-                    ),
-                    {"t": str(tenant_id), "r": pre_ref},
+                        ),
+                        {"t": str(tenant_id), "r": pre_ref},
+                    )
                 )
-            ).mappings().one()
-        assert lineage["issuance_state"] == "issued"
+                .mappings()
+                .one()
+            )
+        assert lineage["issuance_state"] == "signing"
         assert lineage["issuance_attempt_count"] == 2
         assert lineage["issuance_unknown_outcome_count"] == 1
-
-        print(
-            "\nc16_ordinary_principal_completion_refusals="
-            + str(ordinary_refusals)
+        replay = await _query_envelope(
+            _build_authenticated_app(),
+            tenant_id=tenant_id,
+            token=token,
+            subject_ref=subject_urn,
+            idempotency_key=issued_idempotency_key,
         )
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == response.json()
+
+        print("\nc16_ordinary_principal_completion_refusals=" + str(ordinary_refusals))
         print("c16_issuer_principal_bounded_refusals=" + str(issuer_refusals))
         print("c16_fabricated_insert_refused=1")
         print(
@@ -500,9 +607,7 @@ async def test_c16_catalog_survey_has_no_implicit_nullable_check_operands(
         to_asyncpg_postgres_dsn(_worker_database_url()), future=True
     )
     try:
-        tenant_id, _token, _subject_urn = await _seed_tenant(
-            engine, "c16-null-survey"
-        )
+        tenant_id, _token, _subject_urn = await _seed_tenant(engine, "c16-null-survey")
         async with engine.begin() as connection:
             await connection.execute(
                 text("SELECT set_config('app.current_tenant_id', :t, true)"),
@@ -582,8 +687,7 @@ async def test_c16_catalog_survey_has_no_implicit_nullable_check_operands(
             with pytest.raises(
                 IntegrityError,
                 match=(
-                    "ck_bayesian_model_fits_"
-                    "available_interval_requires_passed_diagn"
+                    "ck_bayesian_model_fits_" "available_interval_requires_passed_diagn"
                 ),
             ):
                 async with connection.begin_nested():
@@ -674,6 +778,8 @@ async def test_c16_reconciler_bounds_authorized_and_signing_states(
         assert result == {
             "authorized_to_failed": 1,
             "signing_to_unknown": 1,
+            "signature_known_to_issued": 0,
+            "invalid_signature_known_refused": 0,
         }
         states = sorted(
             row["issuance_state"] for row in await _issuance_rows(engine, tenant_id)

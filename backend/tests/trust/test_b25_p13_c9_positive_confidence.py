@@ -534,14 +534,19 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
         )
         assert pymc.__version__
 
-    monkeypatch.setenv(
-        "SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL",
-        base64.urlsafe_b64encode(hashlib.sha256(b"b25-p13-c9p-signing").digest())
-        .rstrip(b"=")
-        .decode("ascii"),
-    )
-    monkeypatch.setenv("SKELDIR_TRUST_SIGNING_KEY_ID", "kid:b25-p13-c9p")
-    monkeypatch.setenv("SKELDIR_TRUST_SIGNING_KEY_VALID_FROM", "2026-01-01T00:00:00Z")
+    if os.getenv("SKELDIR_TRUST_SIGNER_FORCE_REMOTE_TEST") != "1":
+        monkeypatch.setenv(
+            "SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL",
+            base64.urlsafe_b64encode(
+                hashlib.sha256(b"b25-p13-c9p-signing").digest()
+            )
+            .rstrip(b"=")
+            .decode("ascii"),
+        )
+        monkeypatch.setenv("SKELDIR_TRUST_SIGNING_KEY_ID", "kid:b25-p13-c9p")
+        monkeypatch.setenv(
+            "SKELDIR_TRUST_SIGNING_KEY_VALID_FROM", "2026-01-01T00:00:00Z"
+        )
     monkeypatch.setenv("B24_BAYESIAN_WORKSPACE_ROOT", str(tmp_path / "workspaces"))
     monkeypatch.setenv("B24_PYTENSOR_ROOT", str(tmp_path / "compiledirs"))
 

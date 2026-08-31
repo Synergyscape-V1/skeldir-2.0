@@ -619,7 +619,7 @@ async def test_postgres_maximum_query_resource_envelope(monkeypatch) -> None:
         audit_latencies_ms: list[float] = []
         signing_latencies_ms: list[float] = []
         original_audit = trust_api.build_unsigned_trust_envelope_with_audit
-        original_sign = trust_api.sign_trust_envelope
+        original_sign = trust_api.request_trust_envelope_signature
 
         async def measured_audit(*args, **kwargs):
             started = time.perf_counter()
@@ -628,10 +628,10 @@ async def test_postgres_maximum_query_resource_envelope(monkeypatch) -> None:
             finally:
                 audit_latencies_ms.append((time.perf_counter() - started) * 1000)
 
-        def measured_sign(*args, **kwargs):
+        async def measured_sign(**kwargs):
             started = time.perf_counter()
             try:
-                return original_sign(*args, **kwargs)
+                return await original_sign(**kwargs)
             finally:
                 signing_latencies_ms.append((time.perf_counter() - started) * 1000)
 
@@ -640,7 +640,9 @@ async def test_postgres_maximum_query_resource_envelope(monkeypatch) -> None:
             "build_unsigned_trust_envelope_with_audit",
             measured_audit,
         )
-        monkeypatch.setattr(trust_api, "sign_trust_envelope", measured_sign)
+        monkeypatch.setattr(
+            trust_api, "request_trust_envelope_signature", measured_sign
+        )
 
         app = FastAPI()
         app.include_router(trust_api.router, prefix="/api")

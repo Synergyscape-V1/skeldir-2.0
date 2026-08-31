@@ -38,6 +38,13 @@ services:
     container_name: skeldir-api-local
     env_file:
       - .env.local
+    # B2.5-P13 Corrective XVII. The shared env file documents signer custody for
+    # the signer deployment unit; the public API must never receive it. Blanking
+    # here is the compose-level expression of the same rule the runtime enforces
+    # in assert_public_api_signer_isolation().
+    environment:
+      TRUST_SIGNER_DATABASE_URL: ""
+      SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     ports:
       - "${API_PORT:-8000}:8000"
@@ -59,6 +66,9 @@ services:
       - .env.local
     environment:
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+      # The reconciler needs issuer authority, never signer authority.
+      TRUST_SIGNER_DATABASE_URL: ""
+      SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO
@@ -70,6 +80,29 @@ services:
         condition: service_healthy
     tmpfs:
       - /tmp/prometheus_multiproc
+
+  trust-signer:
+    # B2.5-P13 Corrective XVII deployment unit. Started only when an operator
+    # supplies SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL, because the process
+    # refuses to start without the private key it exists to hold:
+    #   docker compose --env-file .env.local -f docker-compose.local.yml     #     --profile trust-signer up -d trust-signer
+    profiles: ["trust-signer"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: skeldir-trust-signer-local
+    env_file:
+      - .env.local
+    environment:
+      # Signer custody is exclusive in the other direction too.
+      TRUST_ISSUANCE_DATABASE_URL: ""
+      MIGRATION_DATABASE_URL: ""
+    command: uvicorn app.trust.signer_service:app --host 0.0.0.0 --port 8001
+    ports:
+      - "${TRUST_SIGNER_PORT:-8001}:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   smoke:
     build:

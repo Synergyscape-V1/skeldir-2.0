@@ -115,6 +115,39 @@ every consequence-bearing transition, so a misconfigured deployment fails closed
 and loudly rather than silently issuing with ordinary authority. That is the
 intended behaviour, not a bypass.
 
+B2.5-P13 Corrective XVII adds `app_trust_signer` as the distinct persistence
+principal at the private-key boundary. The signer can append the exact signed
+artifact and move an authorized attempt to `signature_known`; it cannot mark
+that attempt or its parent issuance `issued`. Conversely, `app_trust_issuer`
+cannot create signer attempts or manufacture `signature_known`. Completion
+loads the exact retained artifact, verifies its Ed25519 correspondence against
+the active plus historical public-key registry, and only then projects both
+records to `issued`.
+
+| Property | Value |
+|---|---|
+| Role | `app_trust_signer`, `NOSUPERUSER`, `NOBYPASSRLS`, isolated from every runtime and issuer role |
+| Table privileges | bounded `SELECT, UPDATE` on `public.trust_issuance_attempts` and `public.trust_access_log`; no attempt INSERT and no authority to project envelope `issued` |
+| Enforced by | the C17 parent/attempt authority guards, exact attempt foreign keys, tenant-binding triggers, monotonic attempt lineage, and public-key verification before completion |
+| Provisioned by | `scripts/database/prepare_migration_authority_boundary.py` (`--trust-signer-user` / `--trust-signer-password`) |
+| Consumed by | `TRUST_SIGNER_DATABASE_URL`, read only by `backend/app/trust/signer_session.py` |
+| Fail-closed rule | the signer DSN must be distinct from both `DATABASE_URL` and `TRUST_ISSUANCE_DATABASE_URL`; the XVII topology and runtime falsifiers enforce this |
+
+Corrective XVII makes the process boundary load-bearing, not documentary:
+
+| Process | Receives | Must not receive |
+|---|---|---|
+| Public API | `DATABASE_URL`, `TRUST_ISSUANCE_DATABASE_URL`, `TRUST_SIGNER_URL`, the shared client secret, and public JWKS | `TRUST_SIGNER_DATABASE_URL`; `SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL` |
+| Trust signer (`uvicorn app.trust.signer_service:app`) | `TRUST_SIGNER_DATABASE_URL`, the private signing seed, public-key metadata, and the shared client secret | `TRUST_ISSUANCE_DATABASE_URL`; `MIGRATION_DATABASE_URL` |
+| Migration | `MIGRATION_DATABASE_URL` for serialized deployment only | runtime service placement |
+
+The gateway permits cleartext HTTP only on loopback for local/CI process
+proofs; non-loopback deployments require TLS. The signer independently checks
+the tenant, audit identity, exact unsigned-envelope hash, and current attempt
+against PostgreSQL before entering the private-key operation. It persists the
+exact consequence before responding. The public API independently verifies the
+returned or replayed artifact against JWKS before the issuer projection.
+
 ## Which gates run where
 
 Unchanged from `REPRODUCIBLE_GREENFIELD.md` §7, restated here so the support
@@ -122,8 +155,8 @@ contract is readable in one place:
 
 * **Local, no extra credentials:** B0.4 / B0.6 phase gates; B2.1–B2.4
   validators; the full `backend/tests/trust` suite; `validate_b25_p13_c13_closure`,
-  `_c14_closure`, `_c15_closure`, and `_c16_closure` including
-  `--negative-control`; migration, role and RLS checks; backend import. The C16
+  `_c14_closure`, `_c15_closure`, `_c16_closure`, and `_c17_closure` including
+  `--negative-control`; migration, role and RLS checks; backend import. The C17
   production-topology proof additionally requires Docker host networking.
 * **Requires pushed-branch CI:** B0.1 / B0.2 / B0.3 (need `oasdiff` and Prism
   mocks); B1.1–B1.7 (need AWS OIDC); `ci.yml` and

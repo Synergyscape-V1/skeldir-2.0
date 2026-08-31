@@ -6,6 +6,14 @@ set -euo pipefail
 # - Bayesian model SDK access may only exist at designated Bayesian worker/task boundary.
 
 ALLOWED_LLM_BOUNDARY_PATH="backend/app/llm/provider_boundary.py"
+# Raw HTTP transport stays confined to explicitly named boundary modules.
+# B2.5-P13 Corrective XVII adds a second one: the public API no longer holds
+# the Trust private key and reaches the credential-isolated signer over a
+# bounded internal HTTP boundary. No other module may open a transport.
+ALLOWED_TRANSPORT_PATHS=(
+  "backend/app/llm/provider_boundary.py"
+  "backend/app/trust/signer_gateway.py"
+)
 ALLOWED_BAYESIAN_PATHS=(
   "backend/app/bayesian/runtime_probe.py"
   "backend/app/bayesian/runtime_identity.py"
@@ -68,6 +76,16 @@ is_allowed_path() {
   [[ "$rel" == "$expected" ]]
 }
 
+is_allowed_transport_path() {
+  local rel="$1"
+  for allowed in "${ALLOWED_TRANSPORT_PATHS[@]}"; do
+    if [[ "$rel" == "$allowed" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 is_allowed_bayesian_path() {
   local rel="$1"
   for allowed in "${ALLOWED_BAYESIAN_PATHS[@]}"; do
@@ -114,10 +132,10 @@ for path in "${SCAN_FILES[@]}"; do
     emit_violation "${rel}" "bayesian SDK import outside designated Bayesian boundary paths" "${bayesian_import_hits}"
   fi
 
-  # Raw HTTP transport imports are only allowed in the LLM boundary module.
+  # Raw HTTP transport imports are only allowed in declared boundary modules.
   transport_import_hits="$(scan_matches "${IMPORT_PATTERN}(${TRANSPORT_GROUP})([[:space:]\\.]|$)" "${rel}")"
-  if [[ -n "${transport_import_hits}" ]] && ! is_allowed_path "${rel}" "${ALLOWED_LLM_BOUNDARY_PATH}"; then
-    emit_violation "${rel}" "HTTP transport import outside ${ALLOWED_LLM_BOUNDARY_PATH}" "${transport_import_hits}"
+  if [[ -n "${transport_import_hits}" ]] && ! is_allowed_transport_path "${rel}"; then
+    emit_violation "${rel}" "HTTP transport import outside declared transport boundary paths" "${transport_import_hits}"
   fi
 
   # Dynamic import bypass patterns for provider SDK modules.
@@ -138,6 +156,10 @@ if [[ "${violations}" -ne 0 ]]; then
   echo "enforce_boundary.sh failed."
   echo "Allowed LLM boundary path:"
   echo "  - ${ALLOWED_LLM_BOUNDARY_PATH}"
+  echo "Allowed transport boundary paths:"
+  for allowed in "${ALLOWED_TRANSPORT_PATHS[@]}"; do
+    echo "  - ${allowed}"
+  done
   echo "Allowed Bayesian boundary paths:"
   for allowed in "${ALLOWED_BAYESIAN_PATHS[@]}"; do
     echo "  - ${allowed}"
@@ -153,4 +175,5 @@ echo "Provider SDK modules enforced: ${PROVIDER_SDK_MODULES[*]}"
 echo "Bayesian SDK modules enforced: ${BAYESIAN_SDK_MODULES[*]}"
 echo "Transport modules enforced: ${TRANSPORT_MODULES[*]}"
 echo "Allowed LLM boundary path: ${ALLOWED_LLM_BOUNDARY_PATH}"
+echo "Allowed transport boundary paths: ${ALLOWED_TRANSPORT_PATHS[*]}"
 echo "Allowed Bayesian boundary paths: ${ALLOWED_BAYESIAN_PATHS[*]}"

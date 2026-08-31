@@ -177,6 +177,21 @@ def canonicalize_envelope_payload(payload: dict[str, Any]) -> bytes:
     return _canonical_bytes(prepared)
 
 
+def canonicalize_json_document(document: dict[str, Any]) -> bytes:
+    """Return canonical UTF-8 bytes for a trust-boundary JSON document.
+
+    Hashing is not the only place trust-path bytes are produced: an artifact
+    that is durably retained or transported to the signer must be encoded the
+    same way, or the stored/transmitted form is not the form the canonicalizer
+    would have produced. This applies the same sorted-key, NaN-rejecting,
+    non-ASCII-preserving encoding and the same value-safety assertions, without
+    imposing the TrustEnvelope schema on documents that are not envelopes.
+    """
+    if not isinstance(document, dict):
+        raise CanonicalizationError("document_not_object")
+    return _canonical_bytes(document)
+
+
 def canonicalize_semantic_truth(payload: dict[str, Any]) -> bytes:
     """Return canonical bytes for a structured semantic-truth hash object."""
     from app.trust.hash_identity import build_semantic_truth_hash_input
