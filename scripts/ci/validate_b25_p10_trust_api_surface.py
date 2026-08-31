@@ -176,7 +176,12 @@ def validate_route_source(source: str) -> int:
         "require_envelope_verify_scope",
         "required_scope=AgentScope.ENVELOPE_VERIFY",
         "build_unsigned_trust_envelope_with_audit",
-        "sign_trust_envelope",
+        # B2.5-P13 Corrective XVII moved the private key out of this process.
+        # The route still orchestrates the signing step; it now does so by
+        # requesting a consequence from the credential-isolated signer instead
+        # of calling the signer in-process, so the orchestration token is the
+        # gateway call rather than the in-process signing entry point.
+        "request_trust_envelope_signature",
         "verify_trust_envelope",
     ):
         _require(token in source, f"orchestration_token_missing:{token}")
@@ -474,7 +479,10 @@ def validate_directive_ii_controls(sources: dict[Path, str]) -> int:
         "global_position = start_position + page_offset",
         "remaining_count = accepted_count - end_position",
         "complete = remaining_count == 0",
-        "continuation_token = issue_trust_query_continuation(",
+        # Corrective XVII: the cursor is signed by the isolated signer, so
+        # the work-conservation control binds to the request that produces
+        # it rather than to an in-process signing call.
+        "continuation_token = await request_trust_continuation_signature(",
         "next_position=end_position",
     ):
         _require(token in query, f"work_conservation_control_missing:{token}")
