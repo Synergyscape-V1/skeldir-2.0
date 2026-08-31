@@ -851,8 +851,8 @@ def validate_negative_controls(sources: dict[Path, str]) -> int:
         (
             mutation(
                 ROUTE_PATH,
-                "continuation_token = issue_trust_query_continuation(",
-                "continuation_token = disabled_issue_trust_query_continuation(",
+                "continuation_token = await request_trust_continuation_signature(",
+                "continuation_token = await disabled_continuation_signature(",
             ),
             "NC-P10-II-01-continuation-omitted",
         ),
