@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.18.0",
+  "contract_version": "1.19.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -123,6 +123,14 @@
       "validate_live_branch_protection --mode main: B24_P11_LIVE_BRANCH_PROTECTION_VALIDATION_PASS",
       "enforce_required_status_checks: passed",
       "all 75 required contexts produced by a workflow firing on merge_group (physics guard rule 5)"
-    ]
+    ],
+    "batching": {
+      "max_entries_to_build": 1,
+      "min_entries_to_merge": 5,
+      "max_entries_to_merge": 10,
+      "min_entries_to_merge_wait_minutes": 5,
+      "rationale": "This is what makes convoy cost sub-linear in concurrent PRs. A merge group validates every PR it contains with ONE set of merge_group workflow runs, so batching N pull requests costs one matrix rather than N. With min_entries_to_merge=1 the queue merged each entry as soon as it was ready and no batching occurred, leaving a 6-PR convoy at 6 matrices - roughly 1,560 CPU-minutes, a ~78 minute floor against 20 slots. With max_entries_to_build=1 the queue builds one speculative commit at a time, so a batch of up to 10 costs a single ~260 CPU-minute matrix and a ~13 minute floor.",
+      "single_pr_cost": "min_entries_to_merge_wait_minutes=5 caps how long a lone PR waits for companions before merging by itself. A single PR therefore costs its measured 25.5 minute matrix plus up to 5 minutes of wait, about 30.5 minutes, inside the 35 minute single-PR threshold."
+    }
   }
 }
