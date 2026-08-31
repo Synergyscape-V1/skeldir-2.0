@@ -2113,7 +2113,7 @@ jobs:
           test "$role_flags" = "false:false" || test "$role_flags" = "f:f"
           python -m alembic downgrade 202608291200
           python -m alembic upgrade head
-          python -m alembic current | grep -q '202608311200 (head)'
+          python -m alembic current | grep -q '202608312100 (head)'
           echo 'c16_migration_non_super_round_trip=1' >> "$GITHUB_STEP_SUMMARY"
 
       # XVI-B. The issuance principal is the whole point of the remediation, so
@@ -2345,7 +2345,7 @@ jobs:
           test "$(grep -c '^0$' <<<"$attempts")" = 1
           python -m alembic downgrade 202608301200
           python -m alembic upgrade head
-          python -m alembic current | grep -q '202608311200 (head)'
+          python -m alembic current | grep -q '202608312100 (head)'
           echo 'c17_historical_rows_not_elevated=1'
           echo 'c17_migration_non_super_round_trip=1'
 

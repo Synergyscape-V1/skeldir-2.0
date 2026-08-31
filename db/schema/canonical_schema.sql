@@ -2569,7 +2569,7 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
         DECLARE
             table_owner text;
             consequence_changed boolean;
-            attempt public.trust_issuance_attempts%ROWTYPE;
+            attempt record;
         BEGIN
             SELECT r.rolname INTO table_owner
             FROM pg_class c
