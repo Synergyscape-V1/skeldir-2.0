@@ -1,5 +1,3 @@
-"use client";
-
 import { ArticleMetadata } from "@/data/articlesData";
 import { ArticleCard } from "./ArticleCard";
 
@@ -13,8 +11,8 @@ export function ArticleGrid({ articles }: ArticleGridProps) {
             <div className="text-center py-12">
                 <p
                     style={{
-                        fontSize: '16px',
-                        color: '#6B7280',
+                        fontSize: "16px",
+                        color: "#6B7280",
                     }}
                 >
                     No articles found in this category.
@@ -26,27 +24,7 @@ export function ArticleGrid({ articles }: ArticleGridProps) {
     return (
         <section className="w-full pb-16 md:pb-20 lg:pb-24">
             <div className="container mx-auto px-4 md:px-6">
-                <div
-                    className="grid gap-6 md:gap-8"
-                    style={{
-                        gridTemplateColumns: 'repeat(1, 1fr)',
-                    }}
-                >
-                    {/* Responsive grid using CSS */}
-                    <style jsx>{`
-            @media (min-width: 768px) {
-              div.grid {
-                grid-template-columns: repeat(2, 1fr) !important;
-                gap: 24px 24px !important;
-              }
-            }
-            @media (min-width: 1024px) {
-              div.grid {
-                grid-template-columns: repeat(3, 1fr) !important;
-                gap: 32px 24px !important;
-              }
-            }
-          `}</style>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                     {articles.map((article) => (
                         <ArticleCard key={article.id} article={article} />
                     ))}

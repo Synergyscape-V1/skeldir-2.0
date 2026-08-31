@@ -1,0 +1,85 @@
+{
+  "version": "1.0.0",
+  "canonicalName": "Skeldir",
+  "canonicalDefinition": "Skeldir is deterministic revenue-verification and attribution infrastructure that reconciles platform-reported revenue against verified commerce/payment evidence and exposes audit-ready financial truth through TrustEnvelopes.",
+  "shortDescription": "Skeldir reconciles platform-reported ad revenue with verified commerce and payment evidence so teams and AI agents work from audit-ready financial truth—not dashboard guesses.",
+  "approvedTerminology": [
+    "revenue verification",
+    "verified commerce",
+    "payment evidence",
+    "deterministic reconciliation",
+    "attribution infrastructure",
+    "audit-ready financial truth",
+    "TrustEnvelope",
+    "platform-reported",
+    "confidence range"
+  ],
+  "requiredContextTerms": [
+    "reconcil",
+    "verified",
+    "audit",
+    "methodology",
+    "evidence",
+    "limitation",
+    "does not prove",
+    "not claimed"
+  ],
+  "disallowedTerminology": [
+    {
+      "id": "ai_ad_optimization_primary",
+      "pattern": "Skeldir is AI ad optimization",
+      "flags": "i"
+    },
+    {
+      "id": "financial_product_primary",
+      "pattern": "Skeldir is a financial product",
+      "flags": "i"
+    },
+    {
+      "id": "bayesian_financial_truth",
+      "pattern": "Bayesian confidence is financial truth",
+      "flags": "i"
+    },
+    {
+      "id": "zero_pii_global",
+      "pattern": "Skeldir collects zero PII globally",
+      "flags": "i"
+    },
+    {
+      "id": "zero_pii_we_collect",
+      "pattern": "we collect zero PII",
+      "flags": "i"
+    },
+    {
+      "id": "trust_envelope_causal_guarantee",
+      "pattern": "TrustEnvelope guarantees causal attribution",
+      "flags": "i"
+    },
+    {
+      "id": "financial_product_schema",
+      "pattern": "\"@type\"\\s*:\\s*\"FinancialProduct\"",
+      "flags": ""
+    }
+  ],
+  "highRiskTerminology": [
+    {
+      "id": "decision_intelligence_primary",
+      "pattern": "decision intelligence for ad spend",
+      "flags": "i",
+      "unlessNearPattern": "(reconcil|verif|audit-ready|platform-reported|methodology|does not|not claimed|limitation)"
+    },
+    {
+      "id": "decision_intelligence_bare",
+      "pattern": "\\bdecision intelligence\\b",
+      "flags": "i",
+      "unlessNearPattern": "(reconcil|verif|audit|TrustEnvelope|methodology|limitation|does not prove)"
+    },
+    {
+      "id": "financial_product_mention",
+      "pattern": "\\bfinancial product\\b",
+      "flags": "i",
+      "unlessNearPattern": "(not a financial product|not claimed|does not|limitation|methodology|D5)"
+    }
+  ],
+  "routeExceptions": []
+}

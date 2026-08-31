@@ -1,0 +1,297 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-05-23T19:49:26.098Z",
+  "phase": "D6",
+  "pages": [
+    {
+      "route": "/resources/evidence",
+      "cluster": "evidence_hub",
+      "primary_query": "Where are query-shaped evidence pages?",
+      "secondary_queries": [
+        "Cluster navigation",
+        "D5 proof anchors"
+      ],
+      "proof_authority_routes": [
+        "/methodology",
+        "/revenue-verification",
+        "/discrepancy-taxonomy"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "CollectionPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "hub"
+    },
+    {
+      "route": "/resources/evidence/meta-vs-stripe",
+      "cluster": "platform_discrepancy",
+      "primary_query": "Why are Meta numbers higher than Stripe?",
+      "secondary_queries": [
+        "CAPI vs Pixel",
+        "Refunds"
+      ],
+      "proof_authority_routes": [
+        "/methodology",
+        "/revenue-verification",
+        "/discrepancy-taxonomy"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "meta_stripe"
+    },
+    {
+      "route": "/resources/evidence/google-ads-vs-shopify",
+      "cluster": "platform_discrepancy",
+      "primary_query": "Why do Google Ads and Shopify disagree?",
+      "secondary_queries": [
+        "Lag",
+        "Tax display"
+      ],
+      "proof_authority_routes": [
+        "/revenue-verification",
+        "/attribution-methodology"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "google_shopify"
+    },
+    {
+      "route": "/resources/evidence/shopify-reconciliation",
+      "cluster": "revenue_verification",
+      "primary_query": "How do I reconcile Shopify orders to ad claims?",
+      "secondary_queries": [
+        "Join keys",
+        "Refunds"
+      ],
+      "proof_authority_routes": [
+        "/revenue-verification",
+        "/discrepancy-taxonomy"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "shopify_core"
+    },
+    {
+      "route": "/resources/evidence/finance-roas-audit-checklist",
+      "cluster": "finance_audit",
+      "primary_query": "How should finance validate ROAS?",
+      "secondary_queries": [
+        "Numerator alignment",
+        "Clocks"
+      ],
+      "proof_authority_routes": [
+        "/revenue-verification",
+        "/methodology"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "finance_audit"
+    },
+    {
+      "route": "/resources/evidence/deterministic-attribution-methods",
+      "cluster": "attribution_methodology",
+      "primary_query": "What is deterministic attribution?",
+      "secondary_queries": [
+        "Joins vs models"
+      ],
+      "proof_authority_routes": [
+        "/methodology",
+        "/attribution-methodology"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "attribution_core"
+    },
+    {
+      "route": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "cluster": "confidence_semantics",
+      "primary_query": "Deterministic vs probabilistic confidence?",
+      "secondary_queries": [
+        "Bayesian subordination",
+        "Cold start"
+      ],
+      "proof_authority_routes": [
+        "/trust-envelope",
+        "/methodology"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "confidence_core"
+    },
+    {
+      "route": "/resources/evidence/benchmark-methodology",
+      "cluster": "benchmark_methodology",
+      "primary_query": "Benchmark limitations?",
+      "secondary_queries": [
+        "Tenant-spanning stats"
+      ],
+      "proof_authority_routes": [
+        "/methodology"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "benchmark"
+    },
+    {
+      "route": "/resources/evidence/privacy-no-pii-methodology",
+      "cluster": "privacy_boundary",
+      "primary_query": "Privacy / PII scope?",
+      "secondary_queries": [
+        "Reconciliation substrate"
+      ],
+      "proof_authority_routes": [
+        "/security",
+        "/methodology"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "privacy"
+    },
+    {
+      "route": "/resources/evidence/trust-envelope-technical-spec",
+      "cluster": "trust_envelope",
+      "primary_query": "TrustEnvelope retrieval summary?",
+      "secondary_queries": [
+        "Cites canonical"
+      ],
+      "proof_authority_routes": [
+        "/trust-envelope",
+        "/api"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "trust_env"
+    },
+    {
+      "route": "/resources/evidence/ai-llm-explanation-boundary",
+      "cluster": "ai_boundary",
+      "primary_query": "AI explain vs calculate?",
+      "secondary_queries": [
+        "LLM boundary"
+      ],
+      "proof_authority_routes": [
+        "/ai-boundary",
+        "/methodology"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "ai_boundary"
+    },
+    {
+      "route": "/resources/evidence/tiktok-discrepancies",
+      "cluster": "platform_discrepancy",
+      "primary_query": "TikTok SKAN issues?",
+      "secondary_queries": [
+        "Modeled conversions"
+      ],
+      "proof_authority_routes": [
+        "/discrepancy-taxonomy"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "tiktok"
+    },
+    {
+      "route": "/resources/evidence/pinterest-discrepancies",
+      "cluster": "platform_discrepancy",
+      "primary_query": "Pinterest long half-life?",
+      "secondary_queries": [
+        "Discovery vs close"
+      ],
+      "proof_authority_routes": [
+        "/attribution-methodology"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "pinterest"
+    },
+    {
+      "route": "/resources/evidence/paypal-reconciliation",
+      "cluster": "platform_discrepancy",
+      "primary_query": "PayPal wallet reconciliation?",
+      "secondary_queries": [
+        "Holds",
+        "Disputes"
+      ],
+      "proof_authority_routes": [
+        "/revenue-verification"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "paypal"
+    },
+    {
+      "route": "/resources/evidence/woocommerce-reconciliation",
+      "cluster": "platform_discrepancy",
+      "primary_query": "WooCommerce plugin graph?",
+      "secondary_queries": [
+        "HPOS",
+        "Plugins"
+      ],
+      "proof_authority_routes": [
+        "/docs"
+      ],
+      "content_status": "live",
+      "indexable": true,
+      "sitemap_required": true,
+      "schema_type": "WebPage",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23",
+      "similarity_group": "woo"
+    }
+  ]
+}

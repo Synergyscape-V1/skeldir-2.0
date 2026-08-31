@@ -1,120 +1,102 @@
-"use client";
-
-import { useState, useMemo } from "react";
-import { Manrope } from "next/font/google";
-import { Footer } from "@/components/layout/Footer";
-import { ResourcesHero } from "@/components/resources/ResourcesHero";
-import { ArticleGrid } from "@/components/resources/ArticleGrid";
-import { CategoryFilter } from "@/components/resources/CategoryFilter";
+import type { ReactNode } from "react";
+import Link from "next/link";
 import {
     articles,
     getFeaturedArticle,
     getNonFeaturedArticles,
-    CategoryFilter as CategoryFilterType,
+    type CategoryFilter,
 } from "@/data/articlesData";
+import { ArticleGrid } from "@/components/resources/ArticleGrid";
+import { ResourcesHero } from "@/components/resources/ResourcesHero";
+import { ResourcesPageClient } from "./ResourcesPageClient";
+import { JsonLd } from "@/components/schema/JsonLd";
+import { collectionPageResourcesJsonLd, resourcesHubBreadcrumbJsonLd } from "@/lib/schema/pageSchemas";
 
-const manrope = Manrope({
-    subsets: ["latin"],
-    weight: ["400", "500", "600", "700", "800"],
-    variable: "--font-manrope",
-});
+function buildCategorySections(): Record<CategoryFilter, ReactNode> {
+    const featured = getFeaturedArticle();
+    const nonFeatured = getNonFeaturedArticles();
+    const budgetArticle = articles.find((a) => a.category === "Budget Planning");
+
+    if (!featured || !budgetArticle) {
+        throw new Error("resources: missing featured or budget article in articlesData");
+    }
+
+    const attributionNonFeatured = nonFeatured.filter((a) => a.category === "Attribution");
+
+    return {
+        All: (
+            <>
+                <ResourcesHero article={featured} />
+                <ArticleGrid articles={nonFeatured} />
+            </>
+        ),
+        Attribution: (
+            <>
+                <ResourcesHero article={featured} />
+                <ArticleGrid articles={attributionNonFeatured} />
+            </>
+        ),
+        "Budget Planning": (
+            <>
+                <ResourcesHero article={budgetArticle} />
+                <div className="pb-16" />
+            </>
+        ),
+    };
+}
 
 export default function ResourcesPage() {
-    const [activeCategory, setActiveCategory] = useState<CategoryFilterType>("All");
+    const sections = buildCategorySections();
 
-    const featuredArticle = getFeaturedArticle();
-
-    const filteredArticles = useMemo(() => {
-        const nonFeatured = getNonFeaturedArticles();
-        if (activeCategory === "All") {
-            return nonFeatured;
-        }
-        return nonFeatured.filter((article) => article.category === activeCategory);
-    }, [activeCategory]);
-
-    // Check if featured article matches the filter
-    const showFeaturedHero = useMemo(() => {
-        if (!featuredArticle) return false;
-        if (activeCategory === "All") return true;
-        return featuredArticle.category === activeCategory;
-    }, [activeCategory, featuredArticle]);
-
-    // If filtering to Budget Planning only, promote article 4 to hero position
-    const heroArticle = useMemo(() => {
-        if (activeCategory === "Budget Planning") {
-            return articles.find((a) => a.category === "Budget Planning");
-        }
-        return featuredArticle;
-    }, [activeCategory, featuredArticle]);
-
-    const gridArticles = useMemo(() => {
-        if (activeCategory === "Budget Planning") {
-            // Don't show any cards when Budget Planning is selected (only hero)
-            return [];
-        }
-        return filteredArticles;
-    }, [activeCategory, filteredArticles]);
+    const evidenceStrip = (
+        <section
+            className="container mx-auto px-4 md:px-6 max-w-5xl pb-10"
+            aria-label="Evidence Library — methodology-aligned explainers"
+        >
+            <h2 className="text-2xl font-bold text-slate-900 mb-3">Evidence Library</h2>
+            <p className="text-slate-700 leading-relaxed mb-4">
+                Alongside the articles below, we publish focused explainers on{" "}
+                <strong>revenue verification</strong>, <strong>platform discrepancies</strong>, finance{" "}
+                <strong>audit</strong> checklists, <strong>TrustEnvelope</strong> concepts,{" "}
+                <strong>benchmark methodology</strong> and its limits, deterministic versus probabilistic{" "}
+                <strong>confidence</strong>, <strong>privacy</strong> and durable identifiers, and the{" "}
+                <strong>AI boundary</strong>. Those pages intentionally cross-link the same public methodology
+                anchors (for example{" "}
+                <Link className="underline font-medium text-slate-900" href="/methodology">
+                    Methodology
+                </Link>
+                ,{" "}
+                <Link className="underline font-medium text-slate-900" href="/revenue-verification">
+                    Revenue verification
+                </Link>
+                , and{" "}
+                <Link className="underline font-medium text-slate-900" href="/discrepancy-taxonomy">
+                    Discrepancy taxonomy
+                </Link>
+                ) so we do not drift between “marketing language” and how Skeldir defines terms.
+            </p>
+            <Link
+                href="/resources/evidence"
+                className="inline-flex font-semibold text-slate-900 underline underline-offset-4"
+            >
+                Browse the Evidence Library hub
+            </Link>
+        </section>
+    );
 
     return (
-        <div className="min-h-screen flex flex-col bg-white">
-
-            <main className="flex-grow pt-20">
-                {/* Page Header */}
-                <header className="w-full pt-12 md:pt-16 lg:pt-20 pb-4 md:pb-6 text-center">
-                    <div className="container mx-auto px-4 md:px-6">
-                        <h1
-                            className="mb-4"
-                            style={{
-                                fontFamily: `${manrope.style.fontFamily}, sans-serif`,
-                                fontSize: "clamp(36px, 6vw, 56px)",
-                                lineHeight: "1.1",
-                                color: "#111827",
-                                fontWeight: 700,
-                                letterSpacing: "-0.03em",
-                            }}
-                        >
-                            What's new at Skeldir?
-                        </h1>
-                        <p
-                            className="max-w-2xl mx-auto"
-                            style={{
-                                fontSize: "18px",
-                                lineHeight: "1.6",
-                                color: "#4B5563",
-                            }}
-                        >
-                            Learn how to navigate attribution discrepancies, understand ROAS ranges,
-                            and defend budget shifts with evidence-based frameworks.
-                        </p>
-                    </div>
-                </header>
-
-                {/* Category Filter */}
-                <CategoryFilter
-                    activeCategory={activeCategory}
-                    onCategoryChange={setActiveCategory}
-                />
-
-                {/* Hero Section */}
-                {heroArticle && showFeaturedHero && (
-                    <ResourcesHero article={heroArticle} />
-                )}
-
-                {/* Article 4 as hero when Budget Planning is selected */}
-                {activeCategory === "Budget Planning" && heroArticle && (
-                    <ResourcesHero article={heroArticle} />
-                )}
-
-                {/* Article Grid */}
-                {gridArticles.length > 0 && <ArticleGrid articles={gridArticles} />}
-
-                {/* Empty state for Budget Planning (no cards, only hero shown above) */}
-                {activeCategory === "Budget Planning" && gridArticles.length === 0 && (
-                    <div className="pb-16" />
-                )}
-            </main>
-
-            <Footer />
-        </div>
+        <>
+            <JsonLd data={[collectionPageResourcesJsonLd(), resourcesHubBreadcrumbJsonLd()]} />
+            <nav aria-label="All Skeldir resource articles" className="sr-only">
+                <ul>
+                    {articles.map((article) => (
+                        <li key={article.slug}>
+                            <a href={`/resources/${article.slug}`}>{article.title}</a>
+                        </li>
+                    ))}
+                </ul>
+            </nav>
+            <ResourcesPageClient sections={sections} prepend={evidenceStrip} />
+        </>
     );
 }

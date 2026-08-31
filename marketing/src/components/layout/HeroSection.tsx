@@ -4,22 +4,22 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  HERO_HEADLINE_LEAD,
+  HERO_TYPEWRITER_PHRASE_FINAL,
+  HERO_TYPEWRITER_PHRASE_INITIAL,
+  HERO_TYPEWRITER_PREFIX,
+  HERO_TYPEWRITER_SUFFIX_FINAL,
+  HERO_TYPEWRITER_SUFFIX_INITIAL,
+  HOME_PAGE_H1_ARIA_LABEL,
+} from "@/lib/homeHeroCopy";
 
-/** Full phrase — measure + slice use identical string for stable layout physics */
-const HERO_HEADLINE_LEAD = "Every ad dollar traced, verified to the source—";
-const HERO_TYPEWRITER_PREFIX = "So your AI Agents and teams ";
-const HERO_TYPEWRITER_SUFFIX_INITIAL = "never act on a guess.";
-const HERO_TYPEWRITER_SUFFIX_FINAL = "execute from confirmed truth.";
-const HERO_TYPEWRITER_PHRASE_INITIAL =
-  HERO_TYPEWRITER_PREFIX + HERO_TYPEWRITER_SUFFIX_INITIAL;
-const HERO_TYPEWRITER_PHRASE_FINAL =
-  HERO_TYPEWRITER_PREFIX + HERO_TYPEWRITER_SUFFIX_FINAL;
 /** Longest suffix sets invisible reserve width during suffix swap */
 const HERO_TYPEWRITER_LAYOUT_SUFFIX =
   HERO_TYPEWRITER_SUFFIX_FINAL.length >= HERO_TYPEWRITER_SUFFIX_INITIAL.length
     ? HERO_TYPEWRITER_SUFFIX_FINAL
     : HERO_TYPEWRITER_SUFFIX_INITIAL;
-const HERO_HEADLINE_ARIA_LABEL = `${HERO_HEADLINE_LEAD} ${HERO_TYPEWRITER_PHRASE_FINAL}`;
+const HERO_HEADLINE_ARIA_LABEL = HOME_PAGE_H1_ARIA_LABEL;
 
 /** Subheadline — one string per line; order + spacing are layout-stable */
 const HERO_SUBHEADLINE_LINES = [

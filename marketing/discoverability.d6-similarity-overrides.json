@@ -1,0 +1,6 @@
+{
+  "$schema": "https://skeldir.com/schemas/discoverability-d6-similarity-overrides-v1.json",
+  "version": "1.0.0",
+  "notes": "Optional manual justifications for evidence page pairs with normalized Jaccard similarity above the soft threshold (0.72). Leave empty when no overrides are required.",
+  "pair_overrides": []
+}
