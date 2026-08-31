@@ -263,6 +263,7 @@ ALLOWED_M0_PATHS = [
     "backend/app/trust/signing_authorization.py",
     "backend/app/trust/signing_consequence.py",
     "backend/app/trust/consequence_verification.py",
+    "scripts/ci/enforce_runtime_hermeticity.py",
     "alembic/versions/007_skeldir_foundation/202608311200_b25_p13_c17_consequence_lineage.py",
     "docs/forensics/B2.5-P13 Corrective Action Remediation XVII Report.md",
     # The bounded issuance reconciler and the Optional correlation-id typing it

@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.core.secrets import get_database_url
+from app.core.secrets import get_database_url, get_migration_database_url
 from app.db.dsn import to_asyncpg_postgres_dsn
 from app.tasks.enqueue import TENANT_SCOPED_TASK_NAMES
 from app.trust.audit import (
@@ -726,7 +726,7 @@ async def test_c17_concurrent_export_attempts_allocate_distinct_lineage() -> Non
     """
     tenant_id = uuid4()
     migration_engine = create_async_engine(
-        to_asyncpg_postgres_dsn(os.environ["MIGRATION_DATABASE_URL"])
+        to_asyncpg_postgres_dsn(get_migration_database_url())
     )
     try:
         async with migration_engine.begin() as connection:
