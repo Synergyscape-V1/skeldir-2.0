@@ -22,6 +22,13 @@ def _engine(url: str):
     return create_engine(to_sync_postgres_dsn(url), pool_pre_ping=True, future=True)
 
 
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"required C19 PostgreSQL proof setting is absent: {name}")
+    return value
+
+
 def _bind(conn, tenant_id) -> None:
     conn.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant, false)"),
@@ -30,8 +37,10 @@ def _bind(conn, tenant_id) -> None:
 
 
 def test_c19_verdict_transition_atomically_projects_allocation_verification() -> None:
-    migration_url = os.environ["MIGRATION_DATABASE_URL"]
-    worker_url = os.environ.get("B23_DATABASE_URL") or os.environ["DATABASE_URL"]
+    migration_url = _required_env("MIGRATION_DATABASE_URL")
+    worker_url = os.getenv("B23_DATABASE_URL", "").strip() or _required_env(
+        "DATABASE_URL"
+    )
     migration_engine = _engine(migration_url)
     worker_engine = _engine(worker_url)
     tenant_id = uuid4()
