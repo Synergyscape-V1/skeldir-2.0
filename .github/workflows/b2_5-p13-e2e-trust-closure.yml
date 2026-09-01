@@ -429,7 +429,10 @@ jobs:
           set -o pipefail
           DB=postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_e2e
 
-          psql "$DB" -c "DROP TRIGGER trg_b24_invalidate_b23_match_verdicts_update ON public.b23_match_verdicts;"
+          # C19 retired the write-clock statement trigger for verdicts and
+          # moved the surface onto the financial event's clock, so the control
+          # has to sever the carrier that is actually installed.
+          psql "$DB" -c "DROP TRIGGER trg_b24_mark_verdict_financial_window_dirty ON public.b23_match_verdicts;"
           if python -m pytest \
               backend/tests/trust/test_b25_p13_c7_conservation_physics.py \
               -q -s --no-header -k source_change_creates_durable_obligation \
@@ -441,7 +444,7 @@ jobs:
           grep -E "1 failed" /tmp/nc_c7_b02_red.out
           grep -E "produced no invalidation" /tmp/nc_c7_b02_red.out
 
-          psql "$DB" -c "CREATE TRIGGER trg_b24_invalidate_b23_match_verdicts_update AFTER UPDATE ON public.b23_match_verdicts REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_match_verdicts_update();"
+          psql "$DB" -c "CREATE TRIGGER trg_b24_mark_verdict_financial_window_dirty AFTER INSERT OR UPDATE OR DELETE ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b24_mark_verdict_financial_window_dirty();"
           python -m pytest \
             backend/tests/trust/test_b25_p13_c7_conservation_physics.py \
             -q -s --no-header -k source_change_creates_durable_obligation \
