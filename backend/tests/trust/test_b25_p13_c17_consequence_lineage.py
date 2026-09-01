@@ -626,8 +626,7 @@ def test_c19_remote_signer_private_ca_is_verified_not_disabled(
         match="trust_signer_ca_bundle_invalid",
     ):
         _signer_tls_verify()
-    print("
-c19_signer_private_ca_verified=1")
+    print("\nc19_signer_private_ca_verified=1")
 
 
 @_DB_PROOF
