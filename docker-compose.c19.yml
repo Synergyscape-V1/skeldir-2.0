@@ -1,0 +1,223 @@
+x-runtime-common: &runtime-common
+  CI: "true"
+  ENVIRONMENT: test
+  LOG_LEVEL: INFO
+  CELERY_BROKER_URL: ${C19_CELERY_BROKER_URL?missing C19_CELERY_BROKER_URL}
+  CELERY_RESULT_BACKEND: ${C19_CELERY_RESULT_BACKEND?missing C19_CELERY_RESULT_BACKEND}
+  # Verification-only public material. The API artifact receives no JWT or
+  # TrustEnvelope private signing key.
+  AUTH_JWT_SECRET: ${C19_AUTH_JWT_PUBLIC_KEY_RING_JSON?missing C19_AUTH_JWT_PUBLIC_KEY_RING_JSON}
+  AUTH_JWT_PUBLIC_KEY_RING: ${C19_AUTH_JWT_PUBLIC_KEY_RING_JSON?missing C19_AUTH_JWT_PUBLIC_KEY_RING_JSON}
+  AUTH_JWT_ALGORITHM: RS256
+  AUTH_JWT_ISSUER: https://issuer.skeldir.test
+  AUTH_JWT_AUDIENCE: skeldir-api
+  PLATFORM_TOKEN_ENCRYPTION_KEY: c19-platform-key
+  PLATFORM_TOKEN_KEY_ID: c19-key
+  DATABASE_POOL_SIZE: "4"
+  DATABASE_MAX_OVERFLOW: "0"
+  DATABASE_FORCE_POOLING: "1"
+
+x-worker-service: &worker-service
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  restart: "no"
+  depends_on:
+    postgres:
+      condition: service_healthy
+  tmpfs:
+    - /tmp/prometheus_multiproc
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "${C19_POSTGRES_PORT:-55462}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  trust_signer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    environment:
+      CI: "true"
+      ENVIRONMENT: test
+      LOG_LEVEL: INFO
+      DATABASE_URL: ${C19_SIGNER_DATABASE_URL?missing C19_SIGNER_DATABASE_URL}
+      TRUST_SIGNER_DATABASE_URL: ${C19_SIGNER_DATABASE_URL?missing C19_SIGNER_DATABASE_URL}
+      TRUST_SIGNER_SHARED_SECRET: ${C19_TRUST_SIGNER_SHARED_SECRET?missing C19_TRUST_SIGNER_SHARED_SECRET}
+      SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ${C19_TRUST_SIGNING_KEY_SEED_B64URL?missing C19_TRUST_SIGNING_KEY_SEED_B64URL}
+      SKELDIR_TRUST_SIGNING_KEY_ID: ${C19_TRUST_SIGNING_KEY_ID?missing C19_TRUST_SIGNING_KEY_ID}
+      SKELDIR_TRUST_SIGNING_KEY_VALID_FROM: ${C19_TRUST_SIGNING_KEY_VALID_FROM?missing C19_TRUST_SIGNING_KEY_VALID_FROM}
+    command: >
+      uvicorn app.trust.signer_service:app
+      --host 0.0.0.0
+      --port 8001
+      --ssl-keyfile /run/skeldir-tls/signer-key.pem
+      --ssl-certfile /run/skeldir-tls/signer-cert.pem
+    volumes:
+      - type: bind
+        source: ${C19_TLS_DIR?missing C19_TLS_DIR}
+        target: /run/skeldir-tls
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import ssl,urllib.request;
+          c=ssl.create_default_context(cafile='/run/skeldir-tls/ca.pem');
+          urllib.request.urlopen('https://trust_signer:8001/health/live',context=c)
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    environment:
+      <<: *runtime-common
+      DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
+      TRUST_ISSUANCE_DATABASE_URL: ${C19_ISSUER_DATABASE_URL?missing C19_ISSUER_DATABASE_URL}
+      TRUST_SIGNER_URL: https://trust_signer:8001
+      TRUST_SIGNER_SHARED_SECRET: ${C19_TRUST_SIGNER_SHARED_SECRET?missing C19_TRUST_SIGNER_SHARED_SECRET}
+      TRUST_SIGNER_CA_BUNDLE: /run/skeldir-tls/ca.pem
+      SKELDIR_TRUST_PUBLIC_JWKS_JSON: ${C19_TRUST_PUBLIC_JWKS_JSON?missing C19_TRUST_PUBLIC_JWKS_JSON}
+      INGESTION_FOLLOWUP_TASKS_ENABLED: "true"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    volumes:
+      - type: bind
+        source: ${C19_TLS_DIR?missing C19_TLS_DIR}
+        target: /run/skeldir-tls
+        read_only: true
+    ports:
+      - "${C19_API_PORT:-18019}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trust_signer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  worker_attribution:
+    <<: *worker-service
+    environment:
+      <<: *runtime-common
+      DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
+      SKELDIR_CELERY_WORKER_ROLE: non_bayesian
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: >
+      celery -A app.celery_app worker --loglevel=INFO --pool=solo
+      --concurrency=1 --prefetch-multiplier=1
+      --queues=attribution
+
+  worker_b23_a:
+    <<: *worker-service
+    environment:
+      <<: *runtime-common
+      DATABASE_URL: ${C19_WORKER_DATABASE_URL?missing C19_WORKER_DATABASE_URL}
+      SKELDIR_CELERY_WORKER_ROLE: non_bayesian
+      B23_DATABASE_POOL_SIZE: "4"
+      B23_DATABASE_MAX_OVERFLOW: "0"
+      B23_DATABASE_POOL_TIMEOUT_SECONDS: "1"
+      B23_DATABASE_STATEMENT_TIMEOUT_MS: "5000"
+      B23_DATABASE_LOCK_TIMEOUT_MS: "250"
+      B23_WORKER_CONCURRENCY: "1"
+      B23_WORKER_PREFETCH_MULTIPLIER: "4"
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: >
+      celery -A app.celery_app worker --loglevel=INFO --pool=solo
+      --concurrency=1 --prefetch-multiplier=4 --queues=b23_match_engine
+
+  worker_b23_b:
+    <<: *worker-service
+    environment:
+      <<: *runtime-common
+      DATABASE_URL: ${C19_WORKER_DATABASE_URL?missing C19_WORKER_DATABASE_URL}
+      SKELDIR_CELERY_WORKER_ROLE: non_bayesian
+      B23_DATABASE_POOL_SIZE: "4"
+      B23_DATABASE_MAX_OVERFLOW: "0"
+      B23_DATABASE_POOL_TIMEOUT_SECONDS: "1"
+      B23_DATABASE_STATEMENT_TIMEOUT_MS: "5000"
+      B23_DATABASE_LOCK_TIMEOUT_MS: "250"
+      B23_WORKER_CONCURRENCY: "1"
+      B23_WORKER_PREFETCH_MULTIPLIER: "4"
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: >
+      celery -A app.celery_app worker --loglevel=INFO --pool=solo
+      --concurrency=1 --prefetch-multiplier=4 --queues=b23_match_engine
+
+  worker_bayesian:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.bayesian
+    restart: "no"
+    environment:
+      <<: *runtime-common
+      DATABASE_URL: ${C19_WORKER_DATABASE_URL?missing C19_WORKER_DATABASE_URL}
+      SKELDIR_CELERY_WORKER_ROLE: bayesian
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_deployment_attested
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: c19_postgres_15_container
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: >
+      celery -A app.celery_app worker --loglevel=INFO --pool=solo
+      --concurrency=1 --prefetch-multiplier=4 --queues=bayesian
+    depends_on:
+      postgres:
+        condition: service_healthy
+    tmpfs:
+      - /tmp/prometheus_multiproc
+
+  worker_publisher:
+    <<: *worker-service
+    environment:
+      <<: *runtime-common
+      DATABASE_URL: ${C19_PUBLISHER_DATABASE_URL?missing C19_PUBLISHER_DATABASE_URL}
+      B24_DISPATCH_PUBLISHER_DATABASE_URL: ${C19_PUBLISHER_SYNC_DATABASE_URL?missing C19_PUBLISHER_SYNC_DATABASE_URL}
+      SKELDIR_CELERY_WORKER_ROLE: bayesian_publisher
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
+      SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION: direct_postgres_deployment_attested
+      SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE: c19_postgres_15_container_publisher
+      SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY: connection_lifetime
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: >
+      celery -A app.celery_app worker --loglevel=INFO --pool=solo
+      --concurrency=1 --prefetch-multiplier=4 --queues=bayesian_publisher
+
+  beat:
+    <<: *worker-service
+    environment:
+      <<: *runtime-common
+      DATABASE_URL: ${C19_TRANSPORT_DATABASE_URL?missing C19_TRANSPORT_DATABASE_URL}
+      B23_TRANSITION_SWEEP_INTERVAL_SECONDS: "30"
+      B24_FIT_PLANNER_INTERVAL_SECONDS: "3"
+      B24_FIT_PLANNER_QUIET_PERIOD_SECONDS: "2"
+      B24_P9_RECOVERY_RECONCILE_INTERVAL_SECONDS: "10"
+      B25_TRUST_ISSUANCE_RECONCILE_INTERVAL_SECONDS: "10"
+      ZG_BEAT_TEST_INTERVAL_SECONDS: "5"
+      SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: celery -A app.celery_app beat --loglevel=INFO

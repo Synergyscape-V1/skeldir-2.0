@@ -7,7 +7,6 @@ import argparse
 import ast
 import hashlib
 import re
-import tempfile
 from pathlib import Path
 
 
@@ -192,17 +191,27 @@ def validate_input_contract(root: Path, text: str | None = None) -> None:
     _require("SparsePrivacyThresholds" in text, "sparse privacy thresholds missing")
     constants = _constant_assignments(tree)
     floor = constants.get("MIN_SPARSE_PRIVACY_FLOOR")
+    model_dimension_floor = constants.get("MIN_MODEL_DIMENSION_FLOOR")
     _require(
         isinstance(floor, int) and floor >= 20,
         "sparse privacy floor must be at least 20",
+    )
+    _require(
+        isinstance(model_dimension_floor, int) and model_dimension_floor >= 2,
+        "model dimension floor must be at least 2",
     )
     thresholds = _threshold_defaults(tree)
     for threshold_name in REQUIRED_SPARSE_THRESHOLD_FIELDS:
         _require(
             threshold_name in thresholds, f"sparse threshold missing: {threshold_name}"
         )
+        required_floor = (
+            model_dimension_floor
+            if threshold_name == "minimum_distinct_channels"
+            else floor
+        )
         _require(
-            thresholds[threshold_name] >= floor,
+            thresholds[threshold_name] >= required_floor,
             f"sparse threshold below floor: {threshold_name}={thresholds[threshold_name]}",
         )
     _require(
@@ -393,19 +402,31 @@ def validate_source_snapshot(root: Path, text: str | None = None) -> None:
         "full source materialization forbidden",
     )
     _require(
-        "_contract_row_payload(source_name, dict(row))" in text,
+        text.count("_contract_row_payload(source_name, dict(row))") >= 2,
         "source rows must pass through contract allowlist projection",
     )
     for order_fragment in (
-        "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC",
-        "ORDER BY tenant_id ASC, created_at ASC NULLS LAST, id ASC",
-        "ORDER BY tenant_id ASC, last_transition_at ASC NULLS LAST, id ASC",
+        "ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC",
+        "ORDER BY a.tenant_id ASC, e.occurred_at ASC NULLS LAST, a.id ASC",
+        "ORDER BY v.tenant_id ASC, e.occurred_at ASC NULLS LAST, v.id ASC",
         "ORDER BY tenant_id ASC, event_occurred_at ASC NULLS LAST, id ASC",
     ):
         _require(
             order_fragment in text,
             f"source stream missing total order: {order_fragment}",
         )
+    _require(
+        "JOIN public.attribution_events AS e" in text
+        and "e.occurred_at >= :window_start" in text
+        and "e.occurred_at < :window_end" in text,
+        "allocation source membership must use the financial event clock",
+    )
+    _require(
+        "FROM public.attribution_allocations AS authority" in text
+        and "authority.event_id = e.id" in text
+        and "authority.verified = true" in text,
+        "attribution event source membership must require verified allocation lineage",
+    )
     _require(
         "sentinel_material_for(preflight.fallback_reason)" in text
         and "SENTINEL_PREFIX" in text,
@@ -461,8 +482,10 @@ def validate_repository(root: Path, text: str | None = None) -> None:
         "fallback upsert repository method missing",
     )
     _require(
-        "ON CONFLICT" in fallback_text and "DO UPDATE SET" in fallback_text,
-        "fallback debounce must use ON CONFLICT DO UPDATE",
+        "ON CONFLICT" in fallback_text
+        and "DO NOTHING" in fallback_text
+        and "SELECT id FROM inserted" in fallback_text,
+        "fallback debounce must reuse immutable terminal evidence",
     )
     for marker in (
         "sampling_started_at = NULL",
@@ -583,8 +606,8 @@ def run_negative_controls(root: Path) -> None:
             lambda: validate_source_snapshot(
                 root,
                 snapshot.replace(
-                    "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC",
-                    "ORDER BY occurred_at ASC",
+                        "ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC",
+                        "ORDER BY e.occurred_at ASC",
                     1,
                 ),
             ),
@@ -657,8 +680,8 @@ def run_negative_controls(root: Path) -> None:
             lambda: validate_source_snapshot(
                 root,
                 snapshot.replace(
-                    "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC",
-                    "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC OFFSET 100",
+                        "ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC",
+                        "ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC OFFSET 100",
                     1,
                 ),
             ),

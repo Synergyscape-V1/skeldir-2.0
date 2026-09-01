@@ -526,6 +526,10 @@ async def _upsert_job_identity(
                     status = 'running',
                     run_count = attribution_recompute_jobs.run_count + 1,
                     last_correlation_id = EXCLUDED.last_correlation_id,
+                    replay_event_created_ceiling = GREATEST(
+                        attribution_recompute_jobs.replay_event_created_ceiling,
+                        EXCLUDED.replay_event_created_ceiling
+                    ),
                     updated_at = CURRENT_TIMESTAMP,
                     started_at = CURRENT_TIMESTAMP
                 RETURNING id, run_count, NULL as previous_status, replay_event_created_ceiling

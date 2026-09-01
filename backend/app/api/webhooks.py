@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from collections.abc import Callable
 from types import MappingProxyType
-from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
+from uuid import UUID, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
@@ -26,6 +26,7 @@ from sqlalchemy import text
 from typing import Any, Mapping, Optional
 
 from app.api.problem_details import ProblemDetails
+from app.attribution.strategy_kernel import LAST_TOUCH_MODEL
 from app.core.config import settings
 from app.core.tenant_context import get_tenant_with_webhook_secrets
 from app.db.session import get_session
@@ -599,6 +600,7 @@ def _schedule_downstream_tasks(
                     "session_id": session_id,
                     "correlation_id": correlation_id,
                     "model_version": "1.0.0",
+                    "model_type": LAST_TOUCH_MODEL,
                 },
             ).set(correlation_id=correlation_id),
             tenant_task_signature(
@@ -1439,6 +1441,13 @@ async def stripe_payment_intent_succeeded_v2(
                 tenant_id=tenant_info["tenant_id"],
                 event_timestamp=str(event_timestamp),
                 session_id=str(session_id),
+                correlation_id=str(correlation_id),
+            )
+        if event_timestamp and result.event_id and not result.is_duplicate:
+            await _dispatch_b23_match_task_from_persisted_ingress(
+                tenant_id=tenant_info["tenant_id"],
+                event_id=str(result.event_id),
+                event_timestamp=str(event_timestamp),
                 correlation_id=str(correlation_id),
             )
         return {

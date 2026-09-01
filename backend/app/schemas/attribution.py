@@ -10,6 +10,37 @@ from typing import Annotated, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class TouchpointEventRequest(BaseModel):
+    event_id: Annotated[str, Field(min_length=1, max_length=128)]
+    event_type: Literal[
+        "ad_click",
+        "ad_impression",
+        "click",
+        "email_click",
+        "email_open",
+        "landing_page_view",
+        "page_view",
+        "product_view",
+        "session_start",
+        "utm_click",
+        "view",
+    ]
+    event_timestamp: datetime
+    vendor: Literal["facebook_ads", "google_ads", "tiktok_ads"]
+    vendor_channel_indicator: Annotated[str, Field(min_length=1, max_length=64)]
+    session_id: Optional[str] = None
+    campaign_id: Annotated[Optional[str], Field(max_length=128)] = None
+
+
+class TouchpointEventResponse(BaseModel):
+    event_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
+    session_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
+    channel_code: str
+    event_timestamp: datetime
+    duplicate: bool
+
+
 class RealtimeRevenueCounter(BaseModel):
     total_revenue: Annotated[float, Field(example=125430.5)]
     """

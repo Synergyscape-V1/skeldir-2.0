@@ -102,50 +102,67 @@ _PREFLIGHT_SQL = (
             SELECT id, channel, nullif(campaign_id, '') AS campaign_id,
                    upper(coalesce(currency, 'USD')) AS currency_code,
                    revenue_cents, occurred_at
-            FROM public.attribution_events
-            WHERE tenant_id = :tenant_id
-              AND occurred_at >= :window_start
-              AND occurred_at < :window_end
-              AND processing_status IN :processed_event_statuses
-              AND event_type IN :conversion_event_types
+            FROM public.attribution_events AS e
+            WHERE e.tenant_id = :tenant_id
+              AND e.occurred_at >= :window_start
+              AND e.occurred_at < :window_end
+              AND e.processing_status IN :processed_event_statuses
+              AND e.event_type IN :conversion_event_types
+              AND EXISTS (
+                    SELECT 1
+                    FROM public.attribution_allocations AS authority
+                    WHERE authority.tenant_id = e.tenant_id
+                      AND authority.event_id = e.id
+                      AND authority.verified = true
+              )
         ),
         excluded_attribution_events AS (
             SELECT processing_status, count(*)::bigint AS count
-            FROM public.attribution_events
-            WHERE tenant_id = :tenant_id
-              AND occurred_at >= :window_start
-              AND occurred_at < :window_end
+            FROM public.attribution_events AS e
+            WHERE e.tenant_id = :tenant_id
+              AND e.occurred_at >= :window_start
+              AND e.occurred_at < :window_end
               AND (
-                    processing_status NOT IN :processed_event_statuses
-                    OR event_type NOT IN :conversion_event_types
+                    e.processing_status NOT IN :processed_event_statuses
+                    OR e.event_type NOT IN :conversion_event_types
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM public.attribution_allocations AS authority
+                        WHERE authority.tenant_id = e.tenant_id
+                          AND authority.event_id = e.id
+                          AND authority.verified = true
+                    )
               )
-            GROUP BY processing_status
+            GROUP BY e.processing_status
         ),
         eligible_allocations AS (
-            SELECT id, channel_code, allocated_revenue_cents, created_at
-            FROM public.attribution_allocations
-            WHERE tenant_id = :tenant_id
-              AND created_at >= :window_start
-              AND created_at < :window_end
-              AND verified = true
+            SELECT a.id, a.channel_code, a.allocated_revenue_cents, a.created_at,
+                   e.occurred_at AS event_occurred_at
+            FROM public.attribution_allocations AS a
+            JOIN eligible_attribution_events AS e
+              ON e.id = a.event_id
+            WHERE a.tenant_id = :tenant_id
+              AND a.verified = true
         ),
         eligible_match_verdicts AS (
-            SELECT id, nullif(provider, '') AS provider, upper(currency_code) AS currency_code,
-                   canonical_net_verified_amount_minor, last_transition_at
-            FROM public.b23_match_verdicts
-            WHERE tenant_id = :tenant_id
-              AND last_transition_at >= :window_start
-              AND last_transition_at < :window_end
-              AND status IN :match_verdict_statuses
+            SELECT v.id, nullif(v.provider, '') AS provider,
+                   upper(v.currency_code) AS currency_code,
+                   v.canonical_net_verified_amount_minor, v.last_transition_at,
+                   e.occurred_at AS event_occurred_at
+            FROM public.b23_match_verdicts AS v
+            JOIN eligible_attribution_events AS e
+              ON e.id = v.attribution_event_id
+            WHERE v.tenant_id = :tenant_id
+              AND v.status IN :match_verdict_statuses
         ),
         excluded_match_verdicts AS (
-            SELECT status, count(*)::bigint AS count
-            FROM public.b23_match_verdicts
-            WHERE tenant_id = :tenant_id
-              AND last_transition_at >= :window_start
-              AND last_transition_at < :window_end
-              AND status NOT IN :match_verdict_statuses
-            GROUP BY status
+            SELECT v.status, count(*)::bigint AS count
+            FROM public.b23_match_verdicts AS v
+            JOIN eligible_attribution_events AS e
+              ON e.id = v.attribution_event_id
+            WHERE v.tenant_id = :tenant_id
+              AND v.status NOT IN :match_verdict_statuses
+            GROUP BY v.status
         ),
         eligible_revenue_events AS (
             SELECT id, nullif(provider, '') AS provider, upper(currency_code) AS currency_code,
@@ -175,35 +192,26 @@ _PREFLIGHT_SQL = (
             FROM eligible_revenue_events
             GROUP BY currency_code
         ),
+        -- Channel dimensionality comes only from verified deterministic
+        -- allocation lineage. A conversion's ingestion channel is commerce
+        -- metadata and cannot stand in for a preceding touchpoint.
         channel_keys(channel_key, ordinal) AS (
             (
-                SELECT channel AS channel_key, 1 AS ordinal
-                FROM public.attribution_events
-                WHERE tenant_id = :tenant_id
-                  AND occurred_at >= :window_start
-                  AND occurred_at < :window_end
-                  AND processing_status IN :processed_event_statuses
-                  AND event_type IN :conversion_event_types
-                  AND channel IS NOT NULL
-                  AND channel <> ''
-                ORDER BY channel, occurred_at, id
+                SELECT channel_code AS channel_key, 1 AS ordinal
+                FROM eligible_allocations
+                WHERE channel_code NOT IN ('direct', 'unknown')
+                ORDER BY channel_code, event_occurred_at, id
                 LIMIT 1
             )
             UNION ALL
             SELECT next_key.channel_key, channel_keys.ordinal + 1
             FROM channel_keys
             CROSS JOIN LATERAL (
-                SELECT candidate.channel AS channel_key
-                FROM public.attribution_events AS candidate
-                WHERE candidate.tenant_id = :tenant_id
-                  AND candidate.occurred_at >= :window_start
-                  AND candidate.occurred_at < :window_end
-                  AND candidate.processing_status IN :processed_event_statuses
-                  AND candidate.event_type IN :conversion_event_types
-                  AND candidate.channel IS NOT NULL
-                  AND candidate.channel <> ''
-                  AND candidate.channel > channel_keys.channel_key
-                ORDER BY candidate.channel, candidate.occurred_at, candidate.id
+                SELECT candidate.channel_code AS channel_key
+                FROM eligible_allocations AS candidate
+                WHERE candidate.channel_code NOT IN ('direct', 'unknown')
+                  AND candidate.channel_code > channel_keys.channel_key
+                ORDER BY candidate.channel_code, candidate.event_occurred_at, candidate.id
                 LIMIT 1
             ) AS next_key
             WHERE channel_keys.ordinal < :channel_cap_plus_one
@@ -211,9 +219,9 @@ _PREFLIGHT_SQL = (
         all_event_times AS (
             SELECT occurred_at AS event_at FROM eligible_attribution_events
             UNION ALL
-            SELECT created_at AS event_at FROM eligible_allocations
+            SELECT event_occurred_at AS event_at FROM eligible_allocations
             UNION ALL
-            SELECT last_transition_at AS event_at FROM eligible_match_verdicts
+            SELECT event_occurred_at AS event_at FROM eligible_match_verdicts
             UNION ALL
             SELECT event_occurred_at AS event_at FROM eligible_revenue_events
         )

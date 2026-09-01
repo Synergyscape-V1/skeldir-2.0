@@ -80,7 +80,11 @@ async def resolve_session_authority(
         )
 
         if existing is not None:
-            is_active = existing.invalidated_at is None and existing.expires_at > now_utc
+            is_active = (
+                existing.invalidated_at is None
+                and existing.issued_at <= now_utc
+                and existing.expires_at > now_utc
+            )
             if is_active:
                 existing.last_seen_at = now_utc
                 existing.updated_at = now_utc
@@ -92,7 +96,11 @@ async def resolve_session_authority(
                     rotated_stale=False,
                 )
 
-            if existing.invalidated_at is None:
+            if (
+                existing.invalidated_at is None
+                and existing.issued_at <= now_utc
+                and existing.expires_at <= now_utc
+            ):
                 existing.invalidated_at = now_utc
                 existing.invalidation_reason = "expired"
                 existing.updated_at = now_utc
@@ -120,4 +128,3 @@ async def resolve_session_authority(
         reused_existing=False,
         rotated_stale=candidate_uuid is not None,
     )
-

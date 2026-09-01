@@ -24,6 +24,11 @@ REQUIRED_TRANSACTION_ISOLATION = "REPEATABLE READ"
 REQUIRED_TRANSACTION_ACCESS_MODE = "READ ONLY"
 REQUIRED_TENANT_GUC = "app.current_tenant_id"
 MIN_SPARSE_PRIVACY_FLOOR = 20
+# Feature dimensionality is not a privacy cohort. Requiring the privacy floor
+# here made eligibility impossible because the canonical channel vocabulary has
+# fewer than twenty values. Two independently evidenced, non-direct channels
+# are the minimum shape that can support a channel-effect model.
+MIN_MODEL_DIMENSION_FLOOR = 2
 SOURCE_STREAM_PARTITION_SIZE = 128
 SOURCE_STREAM_MAX_ROW_BUFFER = 256
 
@@ -36,7 +41,7 @@ class SparsePrivacyThresholds:
     minimum_distinct_source_events: int = MIN_SPARSE_PRIVACY_FLOOR
     minimum_conversion_or_revenue_events: int = MIN_SPARSE_PRIVACY_FLOOR
     minimum_confirmed_match_verdicts: int = MIN_SPARSE_PRIVACY_FLOOR
-    minimum_distinct_channels: int = MIN_SPARSE_PRIVACY_FLOOR
+    minimum_distinct_channels: int = MIN_MODEL_DIMENSION_FLOOR
     minimum_observations_per_currency: int = MIN_SPARSE_PRIVACY_FLOOR
     minimum_source_window_density_days: int = MIN_SPARSE_PRIVACY_FLOOR
 
@@ -147,8 +152,13 @@ FORBIDDEN_FIELD_FRAGMENTS = frozenset(
 
 LIFECYCLE_INCLUSION_RULES = MappingProxyType(
     {
-        "attribution_events.processing_status": ("processed",),
-        "attribution_events.event_type": ("conversion",),
+        # Ingestion events are immutable and remain pending after deterministic
+        # attribution. Source authority is therefore the verified allocation
+        # lineage required by the source queries, not a mutable status flag.
+        "attribution_events.processing_status": ("pending", "processed"),
+        # Production commerce adapters emit ``purchase``. ``conversion`` is
+        # retained for backward-compatible deterministic ingress.
+        "attribution_events.event_type": ("conversion", "purchase"),
         "attribution_allocations.verified": (True,),
         "b23_match_verdicts.status": ("matched_confirmed", "adjusted"),
         "b23_revenue_events.event_type": (
@@ -164,7 +174,7 @@ LIFECYCLE_INCLUSION_RULES = MappingProxyType(
 
 LIFECYCLE_EXCLUSION_RULES = MappingProxyType(
     {
-        "attribution_events.processing_status": ("pending", "failed"),
+        "attribution_events.processing_status": ("failed",),
         "b23_match_verdicts.status": ("pending", "matched_provisional", "unmatched"),
         "b23_revenue_events.event_type": ("chargeback_opened",),
         "source_window": ("out_of_window",),
@@ -249,9 +259,14 @@ def validate_contract() -> None:
     """Fail closed if source membership violates P2 privacy/order rules."""
 
     for threshold_name, threshold_value in SPARSE_PRIVACY_THRESHOLDS.__dict__.items():
-        if threshold_value < MIN_SPARSE_PRIVACY_FLOOR:
+        floor = (
+            MIN_MODEL_DIMENSION_FLOOR
+            if threshold_name == "minimum_distinct_channels"
+            else MIN_SPARSE_PRIVACY_FLOOR
+        )
+        if threshold_value < floor:
             raise ValueError(
-                f"sparse privacy threshold below floor: {threshold_name}={threshold_value}"
+                f"eligibility threshold below floor: {threshold_name}={threshold_value}"
             )
     for forbidden_source in FORBIDDEN_MANIFEST_SOURCES:
         if forbidden_source in ALLOWED_SOURCE_READ_MODELS:

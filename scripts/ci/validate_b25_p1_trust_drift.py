@@ -133,6 +133,11 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/signing_consequence.py",
     "backend/app/trust/consequence_verification.py",
     "backend/tests/trust/test_b25_p13_c17_consequence_lineage.py",
+    # Corrective XIX: the context-robust production-topology observer and the
+    # legitimate-source physics falsifiers are post-P1 trust closure surfaces
+    # like their C15-C17 predecessors, not P1 runtime drift.
+    "backend/tests/trust/test_b25_p13_c19_context_robust_topology.py",
+    "backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py",
 )
 
 

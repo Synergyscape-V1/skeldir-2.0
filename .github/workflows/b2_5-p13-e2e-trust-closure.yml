@@ -105,6 +105,17 @@ on:
       - 'docs/environment/INFRASTRUCTURE_EVIDENCE_CAPSULES.md'
       - 'db/schema/canonical_schema.sql'
       - '.github/workflows/b2_5-p13-e2e-trust-closure.yml'
+      - 'docker-compose.c19.yml'
+      - 'scripts/ci/run_b25_p13_c19_context_robust_closure.sh'
+      - 'backend/tests/trust/test_b25_p13_c19_context_robust_topology.py'
+      - 'backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py'
+      - 'backend/tests/test_b25_p13_c19_touchpoint_ingress.py'
+      - 'backend/app/api/attribution.py'
+      - 'backend/app/api/webhooks.py'
+      - 'backend/app/ingestion/**'
+      - 'backend/app/privacy/**'
+      - 'backend/app/revenue_verification/**'
+      - 'api-contracts/openapi/v1/attribution.yaml'
   workflow_dispatch:
 
 concurrency:
@@ -2599,6 +2610,103 @@ jobs:
           test "$fired" = 3
           echo "c17_runtime_negative_controls_fired=$fired"
 
+  b2-5-p13-c19-context-robust-closure:
+    name: B2.5-P13 C19 Context-Robust Production Closure
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      # One physical topology: PostgreSQL 15, public API, Beat, attribution
+      # worker, two B2.3 workers, Bayesian worker, publisher, and a separately
+      # networked TLS Trust signer. Business/model state is created only by
+      # authenticated external HTTP against those production artifacts.
+      - name: Run C19 production topology closure (external evidence to public verification)
+        env:
+          C19_KEEP_TOPOLOGY: "1"
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run_b25_p13_c19_context_robust_closure.sh
+          docker compose ls --format '{{.Name}}' | grep -x 'skeldir-c19-[0-9]*' | head -1
+
+      - name: NC-C19 physical severance turns the governed physics gate red
+        env:
+          SKELDIR_B25_P13_C19_DB_PROOF: "1"
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:55462/skeldir_c19
+          B23_DATABASE_URL: postgresql+asyncpg://app_worker:app_worker@127.0.0.1:55462/skeldir_c19
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          physics="backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py"
+          admin="postgresql://postgres:postgres@127.0.0.1:55462/skeldir_c19"
+          python -m pytest "$physics" -q --no-header -p no:randomly
+
+          # Severance 1: allocation verification is no longer stripped of
+          # caller-fabricated authority.
+          psql "$admin" -v ON_ERROR_STOP=1 \
+            -c 'DROP TRIGGER trg_b23_project_allocation_verification ON public.attribution_allocations'
+          if python -m pytest "$physics" -q --no-header -p no:randomly > /tmp/nc-c19-01.out 2>&1; then
+            echo 'NC-C19-01 did not fire'; exit 1
+          fi
+          psql "$admin" -v ON_ERROR_STOP=1 -c "CREATE TRIGGER trg_b23_project_allocation_verification BEFORE INSERT OR UPDATE OF tenant_id, event_id, verified, verification_source, verification_timestamp ON public.attribution_allocations FOR EACH ROW EXECUTE FUNCTION public.b23_project_allocation_verification()"
+          python -m pytest "$physics" -q --no-header -p no:randomly
+
+          # Severance 2: a confirmed verdict no longer projects verification.
+          psql "$admin" -v ON_ERROR_STOP=1 \
+            -c 'DROP TRIGGER trg_b23_refresh_allocation_verification_update ON public.b23_match_verdicts'
+          if python -m pytest "$physics" -q --no-header -p no:randomly > /tmp/nc-c19-02.out 2>&1; then
+            echo 'NC-C19-02 did not fire'; exit 1
+          fi
+          psql "$admin" -v ON_ERROR_STOP=1 -c "CREATE TRIGGER trg_b23_refresh_allocation_verification_update AFTER UPDATE OF status, attribution_event_id, last_transition_at ON public.b23_match_verdicts FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status OR OLD.attribution_event_id IS DISTINCT FROM NEW.attribution_event_id OR OLD.last_transition_at IS DISTINCT FROM NEW.last_transition_at) EXECUTE FUNCTION public.b23_refresh_allocation_verification()"
+          python -m pytest "$physics" -q --no-header -p no:randomly
+
+          # Severance 3: financial-event-clock invalidation is removed across
+          # both dirty-marker surfaces (each alone overlaps on this path).
+          psql "$admin" -v ON_ERROR_STOP=1 \
+            -c 'DROP TRIGGER trg_b24_mark_verdict_financial_window_dirty ON public.b23_match_verdicts' \
+            -c 'DROP TRIGGER trg_b24_mark_allocation_financial_window_dirty ON public.attribution_allocations'
+          if python -m pytest "$physics" -q --no-header -p no:randomly > /tmp/nc-c19-03.out 2>&1; then
+            echo 'NC-C19-03 did not fire'; exit 1
+          fi
+          psql "$admin" -v ON_ERROR_STOP=1 \
+            -c "CREATE TRIGGER trg_b24_mark_verdict_financial_window_dirty AFTER INSERT OR UPDATE OR DELETE ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b24_mark_verdict_financial_window_dirty()" \
+            -c "CREATE TRIGGER trg_b24_mark_allocation_financial_window_dirty AFTER INSERT OR UPDATE OR DELETE ON public.attribution_allocations FOR EACH ROW EXECUTE FUNCTION public.b24_mark_allocation_financial_window_dirty()"
+          python -m pytest "$physics" -q --no-header -p no:randomly
+          echo 'c19_physical_severance_controls=red_then_green'
+
+      - name: Teardown C19 topology
+        if: always()
+        run: |
+          set -euo pipefail
+          set +e
+          project="$(docker compose ls --format '{{.Name}}' | grep -x 'skeldir-c19-[0-9]*' | head -1)"
+          if [ -n "$project" ]; then
+            docker compose -p "$project" -f docker-compose.c19.yml down --volumes --remove-orphans
+            echo "c19_topology_teardown=$project"
+          else
+            echo 'c19_topology_not_present'
+          fi
+
   # load-bearing proof therefore cannot report the required context green.
   b25-p13-e2e-trust-closure:
     name: B2.5-P13 E2E Trust Closure
@@ -2612,6 +2720,7 @@ jobs:
       - b2-5-p13-c15-issuance-truth
       - b2-5-p13-c16-bidirectional-truth
       - b2-5-p13-c17-consequence-lineage
+      - b2-5-p13-c19-context-robust-closure
     runs-on: ubuntu-latest
     steps:
       - name: Require every load-bearing P13 proof
@@ -2624,6 +2733,7 @@ jobs:
           ISSUANCE_TRUTH_RESULT: ${{ needs['b2-5-p13-c15-issuance-truth'].result }}
           BIDIRECTIONAL_TRUTH_RESULT: ${{ needs['b2-5-p13-c16-bidirectional-truth'].result }}
           CONSEQUENCE_LINEAGE_RESULT: ${{ needs['b2-5-p13-c17-consequence-lineage'].result }}
+          CONTEXT_ROBUST_RESULT: ${{ needs['b2-5-p13-c19-context-robust-closure'].result }}
         run: |
           set -euo pipefail
           test "$CORE_RESULT" = success || {
@@ -2649,5 +2759,8 @@ jobs:
           }
           test "$CONSEQUENCE_LINEAGE_RESULT" = success || {
             echo "b2-5-p13-c17-consequence-lineage=$CONSEQUENCE_LINEAGE_RESULT"; exit 1;
+          }
+          test "$CONTEXT_ROBUST_RESULT" = success || {
+            echo "b2-5-p13-c19-context-robust-closure=$CONTEXT_ROBUST_RESULT"; exit 1;
           }
           echo 'p13_load_bearing_proof_graph=green'

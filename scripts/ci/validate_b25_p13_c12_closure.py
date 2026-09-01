@@ -42,6 +42,9 @@ LOAD_BEARING_JOBS = {
     "b2-5-p13-c16-bidirectional-truth",
     # Corrective XVII: completed issuance is an exact projection of durable
     # signer-produced attempt evidence, with reconstructable recovery.
+    # Corrective XIX: the full production-topology composition proof
+    # (external evidence to public verification) is merge-governing.
+    "b2-5-p13-c19-context-robust-closure",
     "b2-5-p13-c17-consequence-lineage",
 }
 

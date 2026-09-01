@@ -30,6 +30,65 @@ security:
   - accessBearerAuth: ["viewer"]
 
 paths:
+  /api/attribution/events:
+    post:
+      summary: Ingest a tenant-scoped attribution touchpoint
+      description: |
+        Accepts a non-PII first-party marketing touchpoint under JWT manager
+        authority. The server issues or reuses only a valid ephemeral session
+        authority and schedules the production last-touch deterministic worker.
+        Conversion and revenue authority remain exclusive to signed commerce
+        webhooks; this surface cannot create them.
+      operationId: ingestAttributionTouchpoint
+      tags:
+        - Attribution
+      security:
+        - accessBearerAuth: ["manager"]
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TouchpointEventRequest'
+      responses:
+        '201':
+          description: Touchpoint accepted and deterministic replay scheduled
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TouchpointEventResponse'
+        '200':
+          description: Idempotent replay of an already accepted touchpoint
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TouchpointEventResponse'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '422':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+      x-skeldir-b25-p13-c19:
+        authority_class: legitimate_external_touchpoint_ingress
+        conversion_authority_forbidden: true
+        revenue_authority_forbidden: true
+        session_authority: server_issued_or_active_reuse_only
+        maximum_backfill_days: 31
+
   /api/attribution/revenue/realtime:
     get:
       summary: Get Realtime Revenue Counter
@@ -979,6 +1038,87 @@ paths:
 
 components:
   schemas:
+    TouchpointEventRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - event_type
+        - event_timestamp
+        - vendor
+        - vendor_channel_indicator
+      properties:
+        event_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Tenant-local idempotency identity from the first-party collector
+        event_type:
+          type: string
+          enum:
+            - ad_click
+            - ad_impression
+            - click
+            - email_click
+            - email_open
+            - landing_page_view
+            - page_view
+            - product_view
+            - session_start
+            - utm_click
+            - view
+        event_timestamp:
+          type: string
+          format: date-time
+        vendor:
+          type: string
+          enum:
+            - facebook_ads
+            - google_ads
+            - tiktok_ads
+        vendor_channel_indicator:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Vendor-governed channel indicator normalized through channel_mapping.yaml
+        session_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional previously server-issued active session authority
+        campaign_id:
+          type: string
+          maxLength: 128
+          nullable: true
+          description: Optional non-PII tenant campaign reference
+
+    TouchpointEventResponse:
+      type: object
+      required:
+        - event_id
+        - tenant_id
+        - session_id
+        - channel_code
+        - event_timestamp
+        - duplicate
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        channel_code:
+          type: string
+        event_timestamp:
+          type: string
+          format: date-time
+        duplicate:
+          type: boolean
+
     Platform:
       type: string
       description: Supported platform identifier

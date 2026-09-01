@@ -47,7 +47,7 @@ async def _execute_b23_batch_chunk(
         result = await session.execute(
             text(
                 """
-                WITH claimed_webhooks AS MATERIALIZED (
+                WITH candidate_webhooks AS MATERIALIZED (
                     SELECT
                         wi.id AS webhook_ingress_identity_id,
                         wi.tenant_id,
@@ -78,7 +78,17 @@ async def _execute_b23_batch_chunk(
                       )
                     ORDER BY wi.event_timestamp ASC, wi.id ASC
                     LIMIT :chunk_size
-                    FOR UPDATE OF wi SKIP LOCKED
+                ),
+                claimed_webhooks AS MATERIALIZED (
+                    SELECT candidate.*
+                    FROM candidate_webhooks AS candidate
+                    WHERE pg_try_advisory_xact_lock(
+                        hashtextextended(
+                            candidate.tenant_id::text || ':' ||
+                            candidate.webhook_ingress_identity_id::text,
+                            0
+                        )
+                    )
                 ),
                 claimed AS (
                     SELECT

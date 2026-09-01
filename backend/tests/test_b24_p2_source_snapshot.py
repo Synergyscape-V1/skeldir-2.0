@@ -19,6 +19,8 @@ from app.bayesian.input_contract import (
     ALLOWED_SOURCE_READ_MODELS,
     ELIGIBILITY_POLICY_VERSION,
     FORBIDDEN_MANIFEST_SOURCES,
+    LIFECYCLE_INCLUSION_RULES,
+    MIN_MODEL_DIMENSION_FLOOR,
     MIN_SPARSE_PRIVACY_FLOOR,
     SOURCE_STREAM_INDEX_REQUIREMENTS,
     SOURCE_STREAM_MAX_ROW_BUFFER,
@@ -116,10 +118,16 @@ def test_b24_p2_source_contract_is_versioned() -> None:
     validate_contract()
 
 
-def test_b24_p2_sparse_thresholds_are_at_least_twenty() -> None:
+def test_b24_p2_privacy_thresholds_are_twenty_and_model_dimension_is_separate() -> None:
     assert MIN_SPARSE_PRIVACY_FLOOR >= 20
-    for value in SPARSE_PRIVACY_THRESHOLDS.__dict__.values():
-        assert value >= MIN_SPARSE_PRIVACY_FLOOR
+    assert MIN_MODEL_DIMENSION_FLOOR >= 2
+    for name, value in SPARSE_PRIVACY_THRESHOLDS.__dict__.items():
+        expected_floor = (
+            MIN_MODEL_DIMENSION_FLOOR
+            if name == "minimum_distinct_channels"
+            else MIN_SPARSE_PRIVACY_FLOOR
+        )
+        assert value >= expected_floor
 
 
 def test_b24_p2_threshold_below_floor_fails_validator() -> None:
@@ -192,11 +200,73 @@ def test_b24_p2_below_floor_cohorts_never_stream(count: int) -> None:
 def test_b24_p2_twenty_event_cohort_can_stream_only_when_other_gates_pass() -> None:
     eligible = _classify(_base_preflight_row())
     insufficient_channel_diversity = _classify(
-        _base_preflight_row(eligible_channel_count=19)
+        _base_preflight_row(eligible_channel_count=1)
     )
     assert eligible.is_eligible
     assert insufficient_channel_diversity.fallback_reason == (
         FallbackReason.INSUFFICIENT_PRIVACY_COHORT
+    )
+
+
+def test_b24_p2_production_purchase_and_legacy_conversion_are_source_members() -> None:
+    assert LIFECYCLE_INCLUSION_RULES["attribution_events.event_type"] == (
+        "conversion",
+        "purchase",
+    )
+
+
+def test_b24_p2_immutable_pending_event_requires_verified_allocation_lineage() -> None:
+    assert LIFECYCLE_INCLUSION_RULES["attribution_events.processing_status"] == (
+        "pending",
+        "processed",
+    )
+    eligibility_sql = ELIGIBILITY.read_text(encoding="utf-8")
+    source_sql = str(_SOURCE_QUERIES["attribution_events"])
+    for sql in (eligibility_sql, source_sql):
+        assert "authority.event_id = e.id" in sql
+        assert "authority.verified = true" in sql
+
+
+def test_b24_p2_channel_dimension_comes_from_verified_allocation_lineage() -> None:
+    sql = str(_SOURCE_QUERIES["attribution_allocations"])
+    eligibility_sql = ELIGIBILITY.read_text(encoding="utf-8")
+    assert "channel_keys(channel_key, ordinal)" in eligibility_sql
+    channel_cte = eligibility_sql.split(
+        "channel_keys(channel_key, ordinal)", 1
+    )[1].split("all_event_times", 1)[0]
+    eligible_allocations_cte = eligibility_sql.split(
+        "eligible_allocations AS", 1
+    )[1].split("eligible_match_verdicts", 1)[0]
+    assert "public.attribution_allocations" in eligible_allocations_cte
+    assert "JOIN eligible_attribution_events" in eligible_allocations_cte
+    assert "a.verified = true" in eligible_allocations_cte
+    assert "FROM eligible_allocations" in channel_cte
+    assert "channel_code NOT IN ('direct', 'unknown')" in channel_cte
+    assert "verified = true" in sql
+
+
+def test_b24_p2_allocation_membership_uses_financial_event_clock() -> None:
+    sql = str(_SOURCE_QUERIES["attribution_allocations"])
+    eligibility_sql = ELIGIBILITY.read_text(encoding="utf-8")
+    assert "JOIN public.attribution_events AS e" in sql
+    assert "e.occurred_at >= :window_start" in sql
+    assert "e.occurred_at < :window_end" in sql
+    assert "a.created_at >= :window_start" not in sql
+    assert "e.occurred_at AS event_occurred_at" in eligibility_sql
+    assert "SELECT event_occurred_at AS event_at FROM eligible_allocations" in (
+        eligibility_sql
+    )
+
+
+def test_b24_p2_verdict_membership_uses_financial_event_clock() -> None:
+    sql = str(_SOURCE_QUERIES["b23_match_verdicts"])
+    eligibility_sql = ELIGIBILITY.read_text(encoding="utf-8")
+    assert "JOIN public.attribution_events AS e" in sql
+    assert "e.occurred_at >= :window_start" in sql
+    assert "v.last_transition_at >= :window_start" not in sql
+    assert "JOIN eligible_attribution_events AS e" in eligibility_sql
+    assert "SELECT event_occurred_at AS event_at FROM eligible_match_verdicts" in (
+        eligibility_sql
     )
 
 
@@ -247,8 +317,8 @@ def test_b24_p2_same_timestamp_rows_hash_deterministically() -> None:
 def test_b24_p2_timestamp_only_ordering_is_rejected() -> None:
     validator = _load_validator()
     text = SOURCE_SNAPSHOT.read_text(encoding="utf-8").replace(
-        "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC",
-        "ORDER BY occurred_at ASC",
+        "ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC",
+        "ORDER BY e.occurred_at ASC",
         1,
     )
     with pytest.raises(validator.ValidationError, match="total order"):
@@ -538,8 +608,8 @@ def test_b24_p2_orm_to_json_hashing_fails_validator() -> None:
 def test_b24_p2_source_hashing_rejects_offset_pagination() -> None:
     validator = _load_validator()
     text = SOURCE_SNAPSHOT.read_text(encoding="utf-8").replace(
-        "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC",
-        "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC OFFSET 100",
+        "ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC",
+        "ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC OFFSET 100",
         1,
     )
     with pytest.raises(validator.ValidationError, match="OFFSET"):
