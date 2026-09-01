@@ -1655,7 +1655,7 @@ CREATE FUNCTION public.b24_mark_allocation_financial_window_dirty() RETURNS trig
     SET search_path TO 'pg_catalog', 'public'
     AS $$
 DECLARE
-    source_row public.attribution_allocations%ROWTYPE;
+    source_row record;
     financial_window_start timestamptz;
 BEGIN
     source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
@@ -1820,7 +1820,7 @@ CREATE FUNCTION public.b24_mark_verdict_financial_window_dirty() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public'
     AS $$
 DECLARE
-    source_row public.b23_match_verdicts%ROWTYPE;
+    source_row record;
     financial_window_start timestamptz;
 BEGIN
     source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;

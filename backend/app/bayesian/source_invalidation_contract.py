@@ -277,7 +277,11 @@ def _financial_window_function(relation: str) -> str:
         "SET search_path = pg_catalog, public\n"
         "AS $BODY$\n"
         "DECLARE\n"
-        f"    source_row public.{relation}%ROWTYPE;\n"
+        # `record`, not `<relation>%ROWTYPE`: pg_dump emits functions ahead of
+        # the tables they name, and %ROWTYPE is resolved when the function is
+        # created, so the canonical schema artifact stops applying to an empty
+        # database. `record` defers field resolution to the assignment below.
+        "    source_row record;\n"
         "    financial_window_start timestamptz;\n"
         "BEGIN\n"
         "    source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;\n"

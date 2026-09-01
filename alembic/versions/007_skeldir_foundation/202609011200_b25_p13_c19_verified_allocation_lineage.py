@@ -31,7 +31,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $BODY$
 DECLARE
-    source_row public.attribution_allocations%ROWTYPE;
+    source_row record;
     financial_window_start timestamptz;
 BEGIN
     source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
@@ -118,7 +118,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $BODY$
 DECLARE
-    source_row public.b23_match_verdicts%ROWTYPE;
+    source_row record;
     financial_window_start timestamptz;
 BEGIN
     source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
