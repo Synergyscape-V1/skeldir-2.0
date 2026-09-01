@@ -742,39 +742,66 @@ def upgrade() -> None:
         COMMENT ON FUNCTION public.fn_bind_session_authority_from_event() IS
             'C19: session authority is adjudicated in the event-time domain, including bounded legitimate backfill.';
 
-        GRANT USAGE ON SCHEMA public TO app_celery_transport;
-        GRANT SELECT, INSERT, UPDATE, DELETE ON
-            public.kombu_queue,
-            public.kombu_message,
-            public.celery_taskmeta,
-            public.celery_tasksetmeta
-        TO app_celery_transport;
-        GRANT USAGE, SELECT ON
-            public.queue_id_sequence,
-            public.message_id_sequence,
-            public.task_id_sequence,
-            public.taskset_id_sequence,
-            public.kombu_queue_id_seq,
-            public.kombu_message_id_seq,
-            public.celery_taskmeta_id_seq,
-            public.celery_tasksetmeta_id_seq
-        TO app_celery_transport;
+        -- The deployment provisioner creates the LOGIN roles; migration-only
+        -- replay jobs have no CREATEROLE capability and may not have them.
+        -- Following the C6 pattern, optional-role grants are conditional so a
+        -- legacy replay skips absent identities instead of failing.
+        DO $$
+        BEGIN
+            IF to_regrole('app_celery_transport') IS NOT NULL THEN
+                EXECUTE 'GRANT USAGE ON SCHEMA public TO app_celery_transport';
+                EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON
+                    public.kombu_queue,
+                    public.kombu_message,
+                    public.celery_taskmeta,
+                    public.celery_tasksetmeta
+                TO app_celery_transport';
+                EXECUTE 'GRANT USAGE, SELECT ON
+                    public.queue_id_sequence,
+                    public.message_id_sequence,
+                    public.task_id_sequence,
+                    public.taskset_id_sequence,
+                    public.kombu_queue_id_seq,
+                    public.kombu_message_id_seq,
+                    public.celery_taskmeta_id_seq,
+                    public.celery_tasksetmeta_id_seq
+                TO app_celery_transport';
+            END IF;
+        END
+        $$;
 
         -- The dispatch publisher is a real Celery worker; its failure hook
         -- must be able to persist its own dead letters like app_worker can.
         -- FORCE RLS previously admitted only app_user, so worker substrate
         -- roles held grants they could never exercise; extend the same
         -- tenant-isolation expression to them rather than weakening it.
-        GRANT SELECT, INSERT, UPDATE ON public.worker_failed_jobs
-        TO app_dispatch_publisher;
-        DROP POLICY IF EXISTS tenant_isolation_policy
-            ON public.worker_failed_jobs;
-        CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs
-        TO app_user, app_worker, app_dispatch_publisher
-        USING (
-            tenant_id IS NULL
-            OR tenant_id::text = current_setting('app.current_tenant_id', true)
-        );
+        -- The policy role list is composed from the roles that exist so the
+        -- same migration replays on provisioner and migration-only topologies.
+        DO $$
+        DECLARE
+            dlq_roles text;
+        BEGIN
+            IF to_regrole('app_dispatch_publisher') IS NOT NULL THEN
+                EXECUTE 'GRANT SELECT, INSERT, UPDATE ON public.worker_failed_jobs'
+                    || ' TO app_dispatch_publisher';
+            END IF;
+            SELECT string_agg(quote_ident(role_name), ', ')
+              INTO dlq_roles
+              FROM unnest(
+                  ARRAY['app_user', 'app_worker', 'app_dispatch_publisher']
+              ) AS role_name
+             WHERE to_regrole(role_name) IS NOT NULL;
+            EXECUTE 'DROP POLICY IF EXISTS tenant_isolation_policy'
+                || ' ON public.worker_failed_jobs';
+            EXECUTE format(
+                'CREATE POLICY tenant_isolation_policy'
+                || ' ON public.worker_failed_jobs TO %s USING ('
+                || 'tenant_id IS NULL OR tenant_id::text'
+                || ' = current_setting(''app.current_tenant_id'', true))',
+                dlq_roles
+            );
+        END
+        $$;
         """
     )
 
@@ -885,32 +912,40 @@ def downgrade() -> None:
         DROP FUNCTION IF EXISTS public.b23_project_allocation_verification();
         DROP FUNCTION IF EXISTS public.b24_mark_allocation_financial_window_dirty();
         DROP FUNCTION IF EXISTS public.b24_mark_verdict_financial_window_dirty();
-        DROP POLICY IF EXISTS tenant_isolation_policy
-            ON public.worker_failed_jobs;
-        CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs
-        TO app_user
-        USING (
-            tenant_id IS NULL
-            OR tenant_id::text = current_setting('app.current_tenant_id', true)
-        );
-        REVOKE SELECT, INSERT, UPDATE ON public.worker_failed_jobs
-        FROM app_dispatch_publisher;
-        REVOKE ALL ON
-            public.queue_id_sequence,
-            public.message_id_sequence,
-            public.task_id_sequence,
-            public.taskset_id_sequence,
-            public.kombu_queue_id_seq,
-            public.kombu_message_id_seq,
-            public.celery_taskmeta_id_seq,
-            public.celery_tasksetmeta_id_seq
-        FROM app_celery_transport;
-        REVOKE ALL ON
-            public.kombu_queue,
-            public.kombu_message,
-            public.celery_taskmeta,
-            public.celery_tasksetmeta
-        FROM app_celery_transport;
-        REVOKE USAGE ON SCHEMA public FROM app_celery_transport;
+        DO $$
+        BEGIN
+            EXECUTE 'DROP POLICY IF EXISTS tenant_isolation_policy'
+                || ' ON public.worker_failed_jobs';
+            IF to_regrole('app_user') IS NOT NULL THEN
+                EXECUTE 'CREATE POLICY tenant_isolation_policy'
+                    || ' ON public.worker_failed_jobs TO app_user USING ('
+                    || 'tenant_id IS NULL OR tenant_id::text'
+                    || ' = current_setting(''app.current_tenant_id'', true))';
+            END IF;
+            IF to_regrole('app_dispatch_publisher') IS NOT NULL THEN
+                EXECUTE 'REVOKE SELECT, INSERT, UPDATE ON public.worker_failed_jobs'
+                    || ' FROM app_dispatch_publisher';
+            END IF;
+            IF to_regrole('app_celery_transport') IS NOT NULL THEN
+                EXECUTE 'REVOKE ALL ON
+                    public.queue_id_sequence,
+                    public.message_id_sequence,
+                    public.task_id_sequence,
+                    public.taskset_id_sequence,
+                    public.kombu_queue_id_seq,
+                    public.kombu_message_id_seq,
+                    public.celery_taskmeta_id_seq,
+                    public.celery_tasksetmeta_id_seq
+                FROM app_celery_transport';
+                EXECUTE 'REVOKE ALL ON
+                    public.kombu_queue,
+                    public.kombu_message,
+                    public.celery_taskmeta,
+                    public.celery_tasksetmeta
+                FROM app_celery_transport';
+                EXECUTE 'REVOKE USAGE ON SCHEMA public FROM app_celery_transport';
+            END IF;
+        END
+        $$;
         """
     )

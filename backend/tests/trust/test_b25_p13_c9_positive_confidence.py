@@ -207,6 +207,22 @@ def _seed_market(conn, tenant_id) -> list[uuid.UUID]:
         )
         conn.execute(
             text(
+                "INSERT INTO public.attribution_allocations (id, tenant_id,"
+                " event_id, channel_code, allocated_revenue_cents,"
+                " allocation_ratio, model_version, model_type,"
+                " confidence_score, verified) VALUES (:a, :t, :e, :ch, :amt,"
+                " 1.0, 'b25-p13-c9-positive-v1', 'last_touch', 1.0, false)"
+            ),
+            {
+                "a": str(uuid.uuid4()),
+                "t": str(tenant_id),
+                "e": str(event_id),
+                "ch": channel,
+                "amt": amount,
+            },
+        )
+        conn.execute(
+            text(
                 "INSERT INTO public.b23_revenue_events (tenant_id,"
                 " match_verdict_id, provider, provider_native_event_reference,"
                 " provider_native_commerce_reference,"

@@ -149,6 +149,13 @@ paths:
                     format: date-time
                   duplicate:
                     type: boolean
+              example:
+                event_id: 0f8fad5b-d9cb-469f-a165-70867728950e
+                tenant_id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                session_id: 16fd2706-8baf-433b-82eb-8c7fada847da
+                channel_code: paid_search
+                event_timestamp: '2026-09-01T15:00:00Z'
+                duplicate: true
         '201':
           description: Touchpoint accepted and deterministic replay scheduled
           headers:
@@ -162,6 +169,13 @@ paths:
                 type: object
                 required: *ref_0
                 properties: *ref_1
+              example:
+                event_id: 0f8fad5b-d9cb-469f-a165-70867728950e
+                tenant_id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                session_id: 16fd2706-8baf-433b-82eb-8c7fada847da
+                channel_code: paid_search
+                event_timestamp: '2026-09-01T15:00:00Z'
+                duplicate: false
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: &ref_6

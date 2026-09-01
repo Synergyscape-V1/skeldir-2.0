@@ -65,6 +65,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TouchpointEventResponse'
+              example:
+                event_id: 0f8fad5b-d9cb-469f-a165-70867728950e
+                tenant_id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                session_id: 16fd2706-8baf-433b-82eb-8c7fada847da
+                channel_code: paid_search
+                event_timestamp: '2026-09-01T15:00:00Z'
+                duplicate: false
         '200':
           description: Idempotent replay of an already accepted touchpoint
           headers:
@@ -76,6 +83,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TouchpointEventResponse'
+              example:
+                event_id: 0f8fad5b-d9cb-469f-a165-70867728950e
+                tenant_id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                session_id: 16fd2706-8baf-433b-82eb-8c7fada847da
+                channel_code: paid_search
+                event_timestamp: '2026-09-01T15:00:00Z'
+                duplicate: true
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':

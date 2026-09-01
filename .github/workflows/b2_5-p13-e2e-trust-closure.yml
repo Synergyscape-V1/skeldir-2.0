@@ -2124,7 +2124,7 @@ jobs:
           test "$role_flags" = "false:false" || test "$role_flags" = "f:f"
           python -m alembic downgrade 202608291200
           python -m alembic upgrade head
-          python -m alembic current | grep -q '202608312100 (head)'
+          python -m alembic current | grep -q '202609011200 (head)'
           echo 'c16_migration_non_super_round_trip=1' >> "$GITHUB_STEP_SUMMARY"
 
       # XVI-B. The issuance principal is the whole point of the remediation, so
@@ -2356,7 +2356,7 @@ jobs:
           test "$(grep -c '^0$' <<<"$attempts")" = 1
           python -m alembic downgrade 202608301200
           python -m alembic upgrade head
-          python -m alembic current | grep -q '202608312100 (head)'
+          python -m alembic current | grep -q '202609011200 (head)'
           echo 'c17_historical_rows_not_elevated=1'
           echo 'c17_migration_non_super_round_trip=1'
 
@@ -2647,7 +2647,10 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/ci/run_b25_p13_c19_context_robust_closure.sh
-          docker compose ls --format '{{.Name}}' | grep -x 'skeldir-c19-[0-9]*' | head -1
+          docker compose ls --format json \
+            | jq -r '.[].Name' \
+            | grep -x 'skeldir-c19-[0-9]*' \
+            | head -1
 
       - name: NC-C19 physical severance turns the governed physics gate red
         env:
@@ -2699,7 +2702,10 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          project="$(docker compose ls --format '{{.Name}}' | grep -x 'skeldir-c19-[0-9]*' | head -1)"
+          project="$(docker compose ls --format json \
+            | jq -r '.[].Name' \
+            | grep -x 'skeldir-c19-[0-9]*' \
+            | head -1)"
           if [ -n "$project" ]; then
             docker compose -p "$project" -f docker-compose.c19.yml down --volumes --remove-orphans
             echo "c19_topology_teardown=$project"

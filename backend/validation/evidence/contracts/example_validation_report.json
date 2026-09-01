@@ -1,9 +1,9 @@
 {
   "status": "success",
-  "timestamp": "2025-11-27T02:07:50.224005+00:00",
+  "timestamp": "2026-09-01T19:35:34.409651+00:00",
   "script_version": "1.0.0",
   "python_version": "3.11.9",
-  "total_files": 9,
+  "total_files": 14,
   "total_issues": 0,
   "files": [
     {
@@ -23,7 +23,27 @@
       "issues": []
     },
     {
+      "file": "api-contracts\\dist\\openapi\\v1\\llm-budget.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts\\dist\\openapi\\v1\\llm-explanations.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts\\dist\\openapi\\v1\\llm-investigations.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts\\dist\\openapi\\v1\\privacy.bundled.yaml",
+      "issues": []
+    },
+    {
       "file": "api-contracts\\dist\\openapi\\v1\\reconciliation.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts\\dist\\openapi\\v1\\revenue.bundled.yaml",
       "issues": []
     },
     {
