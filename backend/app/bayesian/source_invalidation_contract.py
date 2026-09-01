@@ -195,35 +195,38 @@ def trigger_names() -> tuple[str, ...]:
 _FINANCIAL_WINDOW_SPECS: dict[str, dict[str, object]] = {
     "attribution_allocations": {
         "surface_prefix": "allocation",
-        "changed_columns": (
-            "event_id",
-            "tenant_id",
-            "channel_code",
-            "allocated_revenue_cents",
-            "allocation_ratio",
-            "model_type",
-            "model_version",
-            "verified",
-            "verification_source",
-            "verification_timestamp",
-        ),
         "event_link_column": "event_id",
         "authority_gate": "verified_column",
     },
     "b23_match_verdicts": {
         "surface_prefix": "verdict",
-        "changed_columns": (
-            "attribution_event_id",
-            "tenant_id",
-            "status",
-            "canonical_net_verified_amount_minor",
-            "currency_code",
-            "last_transition_at",
-        ),
         "event_link_column": "attribution_event_id",
         "authority_gate": "status_membership",
     },
 }
+
+# The primary key identifies the row rather than describing it, so it cannot
+# change without the row being a different row.
+_IDENTITY_COLUMNS: frozenset[str] = frozenset({"id"})
+
+
+def changed_columns(relation: str) -> tuple[str, ...]:
+    """The columns whose movement is a source change, from the projection.
+
+    These were transcribed by hand beside the projection they were supposed to
+    mirror, and the two drifted: the verdict surface watched six columns while
+    the projection carried nineteen, so a committed change to match_quality,
+    provider, either verified amount or the discrepancy surface changed the
+    snapshot's bytes and emitted no obligation. Deriving them removes the
+    second list rather than re-synchronising it, which is the same reason
+    membership and projection are already derived here.
+    """
+
+    return tuple(
+        column
+        for column in SOURCE_CONTRACT_AUTHORITY[relation].projected_columns()
+        if column not in _IDENTITY_COLUMNS
+    )
 
 
 def _sql_in_list(values: tuple[str, ...] | list[str]) -> str:
@@ -233,7 +236,7 @@ def _sql_in_list(values: tuple[str, ...] | list[str]) -> str:
 
 def _financial_window_function(relation: str) -> str:
     spec = _FINANCIAL_WINDOW_SPECS[relation]
-    columns = cast(tuple[str, ...], spec["changed_columns"])
+    columns = changed_columns(relation)
     link = str(spec["event_link_column"])
     identity = active_identity()
     new_tuple = ",\n       ".join(f"NEW.{column}" for column in columns)

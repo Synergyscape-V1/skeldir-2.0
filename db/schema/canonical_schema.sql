@@ -1660,8 +1660,9 @@ DECLARE
 BEGIN
     source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     IF TG_OP = 'UPDATE' AND
-       (NEW.event_id,
-       NEW.tenant_id,
+       (NEW.tenant_id,
+       NEW.event_id,
+       NEW.created_at,
        NEW.channel_code,
        NEW.allocated_revenue_cents,
        NEW.allocation_ratio,
@@ -1671,8 +1672,9 @@ BEGIN
        NEW.verification_source,
        NEW.verification_timestamp)
        IS NOT DISTINCT FROM
-       (OLD.event_id,
-       OLD.tenant_id,
+       (OLD.tenant_id,
+       OLD.event_id,
+       OLD.created_at,
        OLD.channel_code,
        OLD.allocated_revenue_cents,
        OLD.allocation_ratio,
@@ -1822,12 +1824,6 @@ DECLARE
     financial_window_start timestamptz;
 BEGIN
     source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
-    -- Every column the B2.4 source projection carries, because those columns
-    -- are the snapshot's bytes: a committed change to any of them changes the
-    -- source and must therefore produce its invalidation.  The narrow
-    -- six-column form let match_quality, provider, the verified amounts and
-    -- the whole discrepancy surface move without one.  Precision comes from
-    -- the membership guard below, not from omitting columns here.
     IF TG_OP = 'UPDATE' AND
        (NEW.tenant_id,
        NEW.attribution_event_id,
