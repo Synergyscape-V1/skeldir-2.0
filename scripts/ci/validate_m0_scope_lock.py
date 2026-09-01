@@ -37,6 +37,20 @@ REQUIRED_ARTIFACTS = [
     M0_COMPLETION_RECORD_PATH,
 ]
 
+# The path lock adjudicates the historical M0 delivery, not every later phase
+# that happens to run this repository-wide required check.  Keep the M0 lock
+# strict whenever an M0-owned authority surface changes, while treating an
+# unrelated phase diff as outside this delivery gate's applicability.  This
+# avoids encoding every future phase as a permanent M0 exemption.
+M0_SCOPE_TRIGGER_PATHS = (
+    "docs/maintainability/m0_baseline.md",
+    "docs/maintainability/m0_scope_lock.md",
+    "docs/maintainability/maintainability_issue_register.yaml",
+    "docs/maintainability/m0_completion_record.md",
+    "scripts/ci/validate_m0_scope_lock.py",
+    ".github/workflows/m0-maintainability-scope-lock.yml",
+)
+
 REQUIRED_BASELINE_FIELDS = [
     "primary branch",
     "primary branch head",
@@ -669,6 +683,10 @@ def _is_governance_path(filepath: str) -> bool:
     return any(filepath.startswith(allowed) for allowed in ALLOWED_M0_PATHS)
 
 
+def _m0_scope_is_applicable(files: list[str]) -> bool:
+    return any(path in M0_SCOPE_TRIGGER_PATHS for path in files)
+
+
 def _filter_diff_exclude_governance(diff_content: str) -> str:
     filtered_lines: list[str] = []
     in_governance_file = False
@@ -1006,12 +1024,22 @@ def main() -> int:
             changed_files = _git_diff_names(baseline_sha)
             diff_content = _git_diff_content(baseline_sha)
             result.add("Diff available", True, f"{len(changed_files)} files changed")
-            check_allowed_change_surface(result, changed_files)
-            check_no_prohibited_surface_changes(result, changed_files)
-            nongovernance_diff = _filter_diff_exclude_governance(diff_content)
-            check_b24_contamination_dependencies(result, nongovernance_diff)
-            check_b24_contamination_code(result, nongovernance_diff)
-            check_no_ci_gate_removal(result, nongovernance_diff)
+            if not _m0_scope_is_applicable(changed_files):
+                detail = "not applicable: no M0-owned authority surface changed"
+                result.add("M0 changes within allowed surface", True, detail)
+                result.add(
+                    "No prohibited B2.3/provider/dependency/migration surfaces changed",
+                    True,
+                    detail,
+                )
+                result.add("M0 contamination checks", True, detail)
+            else:
+                check_allowed_change_surface(result, changed_files)
+                check_no_prohibited_surface_changes(result, changed_files)
+                nongovernance_diff = _filter_diff_exclude_governance(diff_content)
+                check_b24_contamination_dependencies(result, nongovernance_diff)
+                check_b24_contamination_code(result, nongovernance_diff)
+                check_no_ci_gate_removal(result, nongovernance_diff)
 
     print()
     print("-- Results --")

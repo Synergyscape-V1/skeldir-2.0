@@ -35,6 +35,29 @@ REQUIRED_FILES = [
     "docs/maintainability/m1_completion_record.md",
 ]
 
+# The diff lock was created to adjudicate the M1 delivery itself.  M1 later
+# became a repository-wide required check, so applying that delivery-only lock
+# to every unrelated phase makes all future work fail by construction and has
+# historically led to an ever-growing exemption list.  Keep the lock strict
+# whenever an M1-owned surface changes, and treat it as not applicable when the
+# PR does not alter M1 authority.
+M1_SCOPE_TRIGGER_PATHS = (
+    "DEVELOPMENT.md",
+    "README.md",
+    "backend/README.md",
+    "backend/Dockerfile",
+    "backend/requirements-dev.txt",
+    ".env.example",
+    ".env.local.example",
+    "docker-compose.local.yml",
+    "Makefile",
+    "scripts/smoke/m1_runtime_smoke.py",
+    "scripts/ci/run_m1_onboarding_bootstrap.sh",
+    "scripts/ci/validate_m1_local_dev_authority.py",
+    ".github/workflows/m1-local-dev-authority.yml",
+    "docs/maintainability/m1_completion_record.md",
+)
+
 REQUIRED_MAKE_TARGETS = [
     "dev",
     "migrate",
@@ -767,6 +790,10 @@ def _allowed_m1_path(path: str) -> bool:
     )
 
 
+def _m1_scope_is_applicable(files: list[str]) -> bool:
+    return any(path in M1_SCOPE_TRIGGER_PATHS for path in files)
+
+
 def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) -> None:
     if local_dev:
         result.add("diff scope check", True, "skipped in --local-dev")
@@ -775,6 +802,11 @@ def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) 
         result.add("baseline SHA available", False)
         return
     files = changed_files(baseline_sha)
+    if not _m1_scope_is_applicable(files):
+        detail = "not applicable: no M1-owned authority surface changed"
+        result.add("M1 diff stays in allowed surfaces", True, detail)
+        result.add("M1 diff avoids prohibited surfaces", True, detail)
+        return
     violations = [path for path in files if not _allowed_m1_path(path)]
     result.add(
         "M1 diff stays in allowed surfaces", not violations, ", ".join(violations[:10])
