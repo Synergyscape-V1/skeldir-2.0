@@ -471,12 +471,15 @@ async def test_b21_p3_channels_endpoint_reads_projection_without_recompute_and_p
 
     async with engine.begin() as conn:
         await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
-    authority_now = datetime.now(timezone.utc).replace(microsecond=0)
+    # The C19 guard adjudicates session authority on the financial event
+    # clock, so the fixture session is anchored to the seeded event window
+    # rather than to wall-clock now: a session cannot authorise an event
+    # that occurred before the session was issued.
     await _seed_session_authority(
         tenant_id=tenant_id,
         session_id=session_id,
-        issued_at=authority_now - timedelta(minutes=5),
-        expires_at=authority_now + timedelta(hours=1),
+        issued_at=window_start - timedelta(minutes=5),
+        expires_at=window_end + timedelta(hours=1),
     )
     await _seed_projection_fixture(
         tenant_id=tenant_id,
@@ -562,18 +565,21 @@ async def test_b21_p3_cross_tenant_projection_identity_is_fail_closed() -> None:
     async with engine.begin() as conn:
         await _insert_tenant(conn, tenant_a, api_key_hash=f"test_hash_{tenant_a}")
         await _insert_tenant(conn, tenant_b, api_key_hash=f"test_hash_{tenant_b}")
-    authority_now = datetime.now(timezone.utc).replace(microsecond=0)
+    # The C19 guard adjudicates session authority on the financial event
+    # clock, so the fixture session is anchored to the seeded event window
+    # rather than to wall-clock now: a session cannot authorise an event
+    # that occurred before the session was issued.
     await _seed_session_authority(
         tenant_id=tenant_a,
         session_id=session_a,
-        issued_at=authority_now - timedelta(minutes=5),
-        expires_at=authority_now + timedelta(hours=1),
+        issued_at=window_start - timedelta(minutes=5),
+        expires_at=window_end + timedelta(hours=1),
     )
     await _seed_session_authority(
         tenant_id=tenant_b,
         session_id=session_b,
-        issued_at=authority_now - timedelta(minutes=5),
-        expires_at=authority_now + timedelta(hours=1),
+        issued_at=window_start - timedelta(minutes=5),
+        expires_at=window_end + timedelta(hours=1),
     )
     await _seed_projection_fixture(
         tenant_id=tenant_a,
@@ -645,12 +651,14 @@ async def test_b21_p3_projection_window_bound_exceeds_limit_fails_closed() -> No
 
     async with engine.begin() as conn:
         await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
-    authority_now = datetime.now(timezone.utc).replace(microsecond=0)
+    # The 45-day span here is the requested read window, not a session span:
+    # one session may not lawfully cover 45 financial days, so authority is
+    # issued around the single seeded event at window_start + 5 minutes.
     await _seed_session_authority(
         tenant_id=tenant_id,
         session_id=session_id,
-        issued_at=authority_now - timedelta(minutes=5),
-        expires_at=authority_now + timedelta(hours=1),
+        issued_at=window_start - timedelta(minutes=5),
+        expires_at=window_start + timedelta(hours=1),
     )
     await _seed_projection_fixture(
         tenant_id=tenant_id,
@@ -710,11 +718,12 @@ async def test_b21_p3_sequential_recompute_preserves_projection_row_ownership() 
         async with engine.begin() as conn:
             await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
 
+        # Anchored to the conversion event's own financial time.
         await _seed_session_authority(
             tenant_id=tenant_id,
             session_id=session_id,
-            issued_at=authority_now - timedelta(minutes=5),
-            expires_at=authority_now + timedelta(hours=1),
+            issued_at=occurred_at - timedelta(minutes=5),
+            expires_at=occurred_at + timedelta(hours=1),
         )
         event_id = await _seed_conversion_event(
             tenant_id=tenant_id,

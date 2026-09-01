@@ -2388,8 +2388,9 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c17_consequence_lineage.py \
             -q -s --no-header | tee /tmp/c17-lineage.out
-          grep -E '10 passed' /tmp/c17-lineage.out
+          grep -E '11 passed' /tmp/c17-lineage.out
           grep -q '^c17_exact_consequence_correspondence=1$' /tmp/c17-lineage.out
+          grep -q '^c19_signer_private_ca_verified=1$' /tmp/c17-lineage.out
           grep -q '^c17_strongest_known_fact_retry=1$' /tmp/c17-lineage.out
           grep -q '^c17_issuer_fabrication_refusals=4$' /tmp/c17-lineage.out
           grep -q '^c17_raw_signer_invalid_completion_refused=1$' /tmp/c17-lineage.out
@@ -2649,7 +2650,7 @@ jobs:
           bash scripts/ci/run_b25_p13_c19_context_robust_closure.sh
           docker compose ls --format json \
             | jq -r '.[].Name' \
-            | grep -x 'skeldir-c19-[0-9]*' \
+            | grep -xE 'skeldir-c19-[A-Za-z0-9]+-[0-9]+' \
             | head -1
 
       - name: NC-C19 physical severance turns the governed physics gate red
@@ -2704,7 +2705,7 @@ jobs:
           set +e
           project="$(docker compose ls --format json \
             | jq -r '.[].Name' \
-            | grep -x 'skeldir-c19-[0-9]*' \
+            | grep -xE 'skeldir-c19-[A-Za-z0-9]+-[0-9]+' \
             | head -1)"
           if [ -n "$project" ]; then
             docker compose -p "$project" -f docker-compose.c19.yml down --volumes --remove-orphans

@@ -54,8 +54,24 @@ async def _require_b14_p3_schema() -> None:
         pytest.skip("B1.4-P3 runtime proofs require alembic head schema with session_authority")
 
 
-async def _seed_active_session(*, tenant_id: UUID, session_id: UUID, issued_by: str) -> None:
+async def _seed_active_session(
+    *,
+    tenant_id: UUID,
+    session_id: UUID,
+    issued_by: str,
+    issued_at: datetime | None = None,
+    expires_at: datetime | None = None,
+) -> None:
+    """Seed one live session authority row.
+
+    Session authority is adjudicated on the financial event clock, so a test
+    that backdates the events this session must authorise has to issue the
+    session before those events.  ``issued_at``/``expires_at`` let such a test
+    state that window explicitly; the default covers events at wall-clock now.
+    """
     now = datetime.now(timezone.utc)
+    issued_at = issued_at if issued_at is not None else now - timedelta(minutes=5)
+    expires_at = expires_at if expires_at is not None else now + timedelta(hours=23)
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
         await conn.execute(
@@ -98,11 +114,11 @@ async def _seed_active_session(*, tenant_id: UUID, session_id: UUID, issued_by: 
             {
                 "tenant_id": str(tenant_id),
                 "session_id": str(session_id),
-                "issued_at": now - timedelta(minutes=5),
-                "expires_at": now + timedelta(hours=23),
-                "last_seen_at": now,
+                "issued_at": issued_at,
+                "expires_at": expires_at,
+                "last_seen_at": issued_at,
                 "issued_by": issued_by,
-                "created_at": now - timedelta(minutes=5),
+                "created_at": issued_at,
                 "updated_at": now,
             },
         )
@@ -850,10 +866,15 @@ async def test_b14_p3_runtime_universal_webhook_order_resolution_adopts_active_b
     try:
         async with engine.begin() as conn:
             await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+        # The browser click below is a 12-hour-old financial event, so the
+        # session has to have been live then, not merely live now.
+        _order_now = datetime.now(timezone.utc)
         await _seed_active_session(
             tenant_id=tenant_id,
             session_id=browser_session,
             issued_by="b14_p3_runtime",
+            issued_at=_order_now - timedelta(hours=13),
+            expires_at=_order_now + timedelta(hours=10),
         )
 
         seed_result = await ingest_with_transaction(
@@ -929,10 +950,14 @@ async def test_b14_p3_runtime_ephemeral_click_resolution_routes_and_expires_afte
 
     async with engine.begin() as conn:
         await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+    # The seed click is an hour-old financial event; the conversion is now.
+    _click_now = datetime.now(timezone.utc)
     await _seed_active_session(
         tenant_id=tenant_id,
         session_id=browser_session,
         issued_by="b14_p3_runtime",
+        issued_at=_click_now - timedelta(hours=2),
+        expires_at=_click_now + timedelta(hours=21),
     )
 
     seed_result = await ingest_with_transaction(

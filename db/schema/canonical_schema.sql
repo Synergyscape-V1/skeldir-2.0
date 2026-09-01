@@ -12886,7 +12886,7 @@ CREATE POLICY tenant_isolation_policy ON public.tenant_memberships USING ((tenan
 
 
 
-CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user, app_worker, app_dispatch_publisher USING (((tenant_id IS NULL) OR ((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))));
+CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs USING (((tenant_id IS NULL) OR ((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))));
 
 
 

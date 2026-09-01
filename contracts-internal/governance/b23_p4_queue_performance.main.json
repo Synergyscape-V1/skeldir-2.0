@@ -73,7 +73,7 @@
     "background_cardinality_constant": "B23_BATCH_MATCH_BACKGROUND_CARDINALITY",
     "background_cardinality": 10000,
     "required_tokens": [
-      "FOR UPDATE OF wi SKIP LOCKED",
+      "pg_try_advisory_xact_lock(",
       "LIMIT :chunk_size",
       "ON CONFLICT (tenant_id, provider, provider_native_event_reference)",
       "while True",
@@ -83,7 +83,10 @@
       "for match_input in",
       "process_b23_capture_match(",
       "time.sleep(",
-      "celery_app.send_task("
+      "celery_app.send_task(",
+      "FOR UPDATE OF wi",
+      "pg_advisory_xact_lock(",
+      "pg_advisory_lock("
     ]
   },
   "telemetry": {

@@ -775,31 +775,23 @@ def upgrade() -> None:
         -- FORCE RLS previously admitted only app_user, so worker substrate
         -- roles held grants they could never exercise; extend the same
         -- tenant-isolation expression to them rather than weakening it.
-        -- The policy role list is composed from the roles that exist so the
-        -- same migration replays on provisioner and migration-only topologies.
+        -- The policy targets PUBLIC so its catalog identity is invariant
+        -- across minimal migration validation and the complete production
+        -- role graph.  Table grants remain the capability boundary; every
+        -- granted role is then subject to this same tenant predicate under
+        -- FORCE RLS, including roles provisioned after migration replay.
         DO $$
-        DECLARE
-            dlq_roles text;
         BEGIN
             IF to_regrole('app_dispatch_publisher') IS NOT NULL THEN
                 EXECUTE 'GRANT SELECT, INSERT, UPDATE ON public.worker_failed_jobs'
                     || ' TO app_dispatch_publisher';
             END IF;
-            SELECT string_agg(quote_ident(role_name), ', ')
-              INTO dlq_roles
-              FROM unnest(
-                  ARRAY['app_user', 'app_worker', 'app_dispatch_publisher']
-              ) AS role_name
-             WHERE to_regrole(role_name) IS NOT NULL;
             EXECUTE 'DROP POLICY IF EXISTS tenant_isolation_policy'
                 || ' ON public.worker_failed_jobs';
-            EXECUTE format(
-                'CREATE POLICY tenant_isolation_policy'
-                || ' ON public.worker_failed_jobs TO %s USING ('
+            EXECUTE 'CREATE POLICY tenant_isolation_policy'
+                || ' ON public.worker_failed_jobs TO PUBLIC USING ('
                 || 'tenant_id IS NULL OR tenant_id::text'
-                || ' = current_setting(''app.current_tenant_id'', true))',
-                dlq_roles
-            );
+                || ' = current_setting(''app.current_tenant_id'', true))';
         END
         $$;
         """

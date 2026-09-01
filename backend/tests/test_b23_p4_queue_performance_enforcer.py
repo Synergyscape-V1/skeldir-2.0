@@ -122,6 +122,65 @@ def test_negative_control_n_plus_one_batch_token_fails(monkeypatch) -> None:
     assert "batch_forbidden_token_present:for match_input in" in violations
 
 
+def test_negative_control_blocking_batch_claim_fails(monkeypatch) -> None:
+    """The batch claim must skip contended rows, never wait on them.
+
+    ``pg_try_advisory_xact_lock`` returns false for a row another worker
+    already holds; the blocking ``pg_advisory_xact_lock`` would serialise the
+    workers behind it instead, so the bounded-latency claim would no longer
+    hold under concurrency.
+    """
+    original_read_text = _MODULE._read_text
+    batch_path = REPO_ROOT / "backend" / "app" / "revenue_verification" / "batch_engine.py"
+
+    def mutated_read_text(path: Path) -> str:
+        text = original_read_text(path)
+        if Path(path) == batch_path:
+            return text.replace("pg_try_advisory_xact_lock(", "pg_advisory_xact_lock(")
+        return text
+
+    monkeypatch.setattr(_MODULE, "_read_text", mutated_read_text)
+    status, violations = _MODULE.run_enforcement(
+        repo_root=REPO_ROOT,
+        contract_file=CONTRACT,
+        workflow_file=WORKFLOW,
+        simulate_regression=False,
+    )
+    assert status != 0
+    assert "batch_required_token_missing:pg_try_advisory_xact_lock(" in violations
+    assert "batch_forbidden_token_present:pg_advisory_xact_lock(" in violations
+
+
+def test_negative_control_row_lock_batch_claim_fails(monkeypatch) -> None:
+    """Claiming immutable ingress with ``FOR UPDATE`` is a privilege defect.
+
+    ``app_worker`` holds SELECT and not UPDATE on ``webhook_ingress_identities``,
+    so a row lock over that relation is denied outright for the principal the
+    B2.3 workers actually run as.  The advisory claim needs only SELECT.
+    """
+    original_read_text = _MODULE._read_text
+    batch_path = REPO_ROOT / "backend" / "app" / "revenue_verification" / "batch_engine.py"
+
+    def mutated_read_text(path: Path) -> str:
+        text = original_read_text(path)
+        if Path(path) == batch_path:
+            return (
+                text
+                + "\n# regression sentinel: FOR UPDATE OF wi SKIP LOCKED\n"
+            )
+        return text
+
+    monkeypatch.setattr(_MODULE, "_read_text", mutated_read_text)
+    status, violations = _MODULE.run_enforcement(
+        repo_root=REPO_ROOT,
+        contract_file=CONTRACT,
+        workflow_file=WORKFLOW,
+        simulate_regression=False,
+    )
+    assert status != 0
+    assert "batch_forbidden_token_present:FOR UPDATE OF wi" in violations
+
+
 def test_negative_control_missing_telemetry_index_fails(monkeypatch) -> None:
     original_read_text = _MODULE._read_text
     schema_path = REPO_ROOT / "db" / "schema" / "canonical_schema.sql"

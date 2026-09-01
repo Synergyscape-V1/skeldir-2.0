@@ -526,10 +526,14 @@ async def _upsert_job_identity(
                     status = 'running',
                     run_count = attribution_recompute_jobs.run_count + 1,
                     last_correlation_id = EXCLUDED.last_correlation_id,
-                    replay_event_created_ceiling = GREATEST(
-                        attribution_recompute_jobs.replay_event_created_ceiling,
-                        EXCLUDED.replay_event_created_ceiling
-                    ),
+                    -- replay_event_created_ceiling is deliberately NOT updated
+                    -- here.  B2.1-P1 freezes the replay identity of a logical
+                    -- replay request: once a ceiling is established, rerunning
+                    -- the same (tenant, window, model_version) must replay the
+                    -- same evidence set, so a row created after the first run
+                    -- can never enter a previously adjudicated replay.  Raising
+                    -- the ceiling on conflict re-opened it and changed
+                    -- replay_identity_digest between identical reruns.
                     updated_at = CURRENT_TIMESTAMP,
                     started_at = CURRENT_TIMESTAMP
                 RETURNING id, run_count, NULL as previous_status, replay_event_created_ceiling
