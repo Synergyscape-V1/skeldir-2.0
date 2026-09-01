@@ -147,11 +147,20 @@ def _run_planner(*, failing: set[str], batch: int = 25) -> dict:
 
     original = tasks.plan_due_dirty_events
 
-    async def failing_planner(*, tenant_id, planner_owner, limit):
+    # Forward whatever the task actually passes rather than restating a
+    # signature. This stub named three keyword arguments; when XIX began
+    # passing the governed quiet period as a fourth, every tenant raised
+    # TypeError instead of the one injected failure, so the containment claim
+    # became unprovable while still reporting a failure count. The assertion
+    # below keeps the stub honest without re-freezing the signature.
+    async def failing_planner(*, tenant_id, planner_owner, **planner_kwargs):
+        assert "quiet_period_seconds" in planner_kwargs, (
+            "the planner task must pass its governed debounce through"
+        )
         if str(tenant_id) in failing:
             raise RuntimeError(f"c9 injected planner failure for {tenant_id}")
         return await original(
-            tenant_id=tenant_id, planner_owner=planner_owner, limit=limit
+            tenant_id=tenant_id, planner_owner=planner_owner, **planner_kwargs
         )
 
     class _Request:
