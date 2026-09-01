@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 from scripts.ci.enforce_b21_p3_persistence_read_surface_lock import run_enforcement
 
 
@@ -124,18 +126,30 @@ def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_
     assert "contract_missing_required_query_param:model_type" in combined
 
 
+CHANNELS_PATH = "/api/attribution/channels"
+
+
+def _contract_without_channels_422(source: Path, destination: Path) -> None:
+    """Remove the exact response the enforcer reads, not the first one in the file.
+
+    These controls used to delete the first ``'422':`` line in the document.
+    Once another path declared a 422 above the channels endpoint that edit
+    stopped touching the channels response at all, and the control passed while
+    proving nothing.
+    """
+
+    document = yaml.safe_load(source.read_text(encoding="utf-8"))
+    responses = document["paths"][CHANNELS_PATH]["get"]["responses"]
+    assert "422" in responses, "control precondition: the channels 422 must exist"
+    del responses["422"]
+    destination.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+
 def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_contract_422_response(
     tmp_path: Path,
 ) -> None:
     contract_regression = tmp_path / "attribution_contract_422.regression.yaml"
-    contract_regression.write_text(
-        CONTRACT_FILE.read_text(encoding="utf-8").replace(
-            "'422':",
-            "'422_removed':",
-            1,
-        ),
-        encoding="utf-8",
-    )
+    _contract_without_channels_422(CONTRACT_FILE, contract_regression)
     proc = subprocess.run(
         [
             sys.executable,
@@ -157,14 +171,7 @@ def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_
     tmp_path: Path,
 ) -> None:
     bundled_contract_regression = tmp_path / "attribution_bundled_422.regression.yaml"
-    bundled_contract_regression.write_text(
-        BUNDLED_CONTRACT_FILE.read_text(encoding="utf-8").replace(
-            "'422':",
-            "'422_removed':",
-            1,
-        ),
-        encoding="utf-8",
-    )
+    _contract_without_channels_422(BUNDLED_CONTRACT_FILE, bundled_contract_regression)
     proc = subprocess.run(
         [
             sys.executable,

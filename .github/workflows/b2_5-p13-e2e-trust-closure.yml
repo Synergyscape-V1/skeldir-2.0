@@ -2656,6 +2656,11 @@ jobs:
       - name: NC-C19 physical severance turns the governed physics gate red
         env:
           SKELDIR_B25_P13_C19_DB_PROOF: "1"
+          # This step only became reachable once C19 project discovery stopped
+          # failing after a passing proof, and the B0.5.3.3 Gate C guard refuses
+          # to run without an explicit runtime DSN rather than let conftest fall
+          # back to stale credentials.
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:55462/skeldir_c19
           MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:55462/skeldir_c19
           B23_DATABASE_URL: postgresql+asyncpg://app_worker:app_worker@127.0.0.1:55462/skeldir_c19
           PGPASSWORD: postgres

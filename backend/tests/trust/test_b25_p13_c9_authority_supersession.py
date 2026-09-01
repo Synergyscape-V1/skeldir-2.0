@@ -120,6 +120,26 @@ def _seed_settlement(conn, tenant_id, *, index: int, occurred_at: datetime) -> N
             "camp": f"c9s-campaign-{index:03d}",
         },
     )
+    # C19 derives B2.4 source membership from verified allocation lineage, so a
+    # settlement without one produces the insufficient-data sentinel hash rather
+    # than a content hash -- and two sentinels are equal, which would make a
+    # supersession proof vacuous. Seeded unverified; the verdict projects it.
+    conn.execute(
+        text(
+            "INSERT INTO public.attribution_allocations (id, tenant_id,"
+            " event_id, channel_code, allocated_revenue_cents,"
+            " allocation_ratio, model_version, model_type, confidence_score,"
+            " verified) VALUES (:a, :t, :e, :ch, :amt, 1.0,"
+            " 'b25-p13-c9-supersession-v1', 'last_touch', 1.0, false)"
+        ),
+        {
+            "a": str(uuid.uuid4()),
+            "t": str(tenant_id),
+            "e": str(event_id),
+            "ch": channel,
+            "amt": amount,
+        },
+    )
     conn.execute(
         text(
             "INSERT INTO public.b23_match_verdicts (id, tenant_id,"

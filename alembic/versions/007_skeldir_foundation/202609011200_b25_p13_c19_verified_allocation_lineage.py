@@ -121,20 +121,50 @@ DECLARE
     financial_window_start timestamptz;
 BEGIN
     source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    -- Every column the B2.4 source projection carries, because those columns
+    -- are the snapshot's bytes: a committed change to any of them changes the
+    -- source and must therefore produce its invalidation.  The narrow
+    -- six-column form let match_quality, provider, the verified amounts and
+    -- the whole discrepancy surface move without one.  Precision comes from
+    -- the membership guard below, not from omitting columns here.
     IF TG_OP = 'UPDATE' AND
-       (NEW.attribution_event_id,
-       NEW.tenant_id,
+       (NEW.tenant_id,
+       NEW.attribution_event_id,
+       NEW.provider,
+       NEW.canonical_commerce_reference,
        NEW.status,
-       NEW.canonical_net_verified_amount_minor,
+       NEW.match_quality,
+       NEW.attributed_amount_minor,
+       NEW.verified_amount_minor,
        NEW.currency_code,
-       NEW.last_transition_at)
+       NEW.confirmed_at,
+       NEW.adjusted_at,
+       NEW.last_transition_at,
+       NEW.canonical_expected_gross_amount_minor,
+       NEW.canonical_captured_gross_amount_minor,
+       NEW.canonical_net_verified_amount_minor,
+       NEW.discrepancy_amount_minor,
+       NEW.discrepancy_ratio_bps,
+       NEW.discrepancy_band)
        IS NOT DISTINCT FROM
-       (OLD.attribution_event_id,
-       OLD.tenant_id,
+       (OLD.tenant_id,
+       OLD.attribution_event_id,
+       OLD.provider,
+       OLD.canonical_commerce_reference,
        OLD.status,
-       OLD.canonical_net_verified_amount_minor,
+       OLD.match_quality,
+       OLD.attributed_amount_minor,
+       OLD.verified_amount_minor,
        OLD.currency_code,
-       OLD.last_transition_at) THEN
+       OLD.confirmed_at,
+       OLD.adjusted_at,
+       OLD.last_transition_at,
+       OLD.canonical_expected_gross_amount_minor,
+       OLD.canonical_captured_gross_amount_minor,
+       OLD.canonical_net_verified_amount_minor,
+       OLD.discrepancy_amount_minor,
+       OLD.discrepancy_ratio_bps,
+       OLD.discrepancy_band) THEN
         RETURN NULL;
     END IF;
     IF NOT (

@@ -153,11 +153,22 @@ def _seed_financial_history(
     a governed channel row, and the revenue event needs the verdict. A bare row
     would be a subject the database itself considers impossible.
 
-    They are left ``matched_provisional`` so the journey has a genuine financial
+    The history before the final day is already settled; only the final day is
+    left ``matched_provisional``, so the journey has a genuine financial
     transition to make later, rather than a synthetic touch.
+
+    Which day matters. C19 buckets invalidation on the financial event's own
+    clock rather than on the settlement clock, so confirming a twenty-day
+    backlog in one run marks twenty financial days dirty and the planner works
+    through them oldest first -- each of those windows reaching back before any
+    data exists, and each correctly refused for density. Settling the backlog
+    up front leaves exactly one dirty financial day, and ``fit_window_for``
+    anchors on that day's end, so the window the planner fits is the window the
+    fixture actually populated.
     """
 
     verdicts: list[UUID] = []
+    settled_rows = (days - 1) * per_day
     for index in range(days * per_day):
         # One channel and one campaign per row. B2.4's sparse-input privacy
         # floor refuses to fit a market thinner than twenty distinct channels,
@@ -208,6 +219,26 @@ def _seed_financial_history(
                 "camp": f"c8n-campaign-{index:03d}",
             },
         )
+        # C19 made verified allocation lineage the authority for B2.4 source
+        # membership. Without it this history is ineligible, the planner records
+        # fallback_only, and the journey never reaches a feature-authority
+        # request. Seeded unverified; the confirmed verdict projects it.
+        conn.execute(
+            text(
+                "INSERT INTO public.attribution_allocations (id, tenant_id,"
+                " event_id, channel_code, allocated_revenue_cents,"
+                " allocation_ratio, model_version, model_type,"
+                " confidence_score, verified) VALUES (:a, :t, :e, :ch, :amt,"
+                " 1.0, 'b25-p13-c8n-v1', 'last_touch', 1.0, false)"
+            ),
+            {
+                "a": str(uuid4()),
+                "t": str(tenant_id),
+                "e": str(event_id),
+                "ch": channel,
+                "amt": amount,
+            },
+        )
         conn.execute(
             text(
                 "INSERT INTO public.b23_match_verdicts (id, tenant_id,"
@@ -220,8 +251,9 @@ def _seed_financial_history(
                 " canonical_captured_gross_amount_minor,"
                 " canonical_net_verified_amount_minor, discrepancy_amount_minor,"
                 " discrepancy_ratio_bps, discrepancy_band) VALUES (:v, :t, :e,"
-                " 'stripe', :ref, :pev, :ref, 'matched_provisional', 'high',"
-                " :amt, :amt, 'USD', NULL, :at, :amt, :amt, :amt, 0, 0, 'exact')"
+                " 'stripe', :ref, :pev, :ref, :vstatus, 'high',"
+                " :amt, :amt, 'USD', :confirmed, :at, :amt, :amt, :amt, 0, 0,"
+                " 'exact')"
             ),
             {
                 "v": str(verdict_id),
@@ -230,12 +262,14 @@ def _seed_financial_history(
                 "ref": f"c8n-order-{tenant_id.hex[:8]}-{index:03d}",
                 "pev": f"c8n-event-{tenant_id.hex[:8]}-{index:03d}",
                 "amt": amount,
-                # Every verdict last transitioned in the same settlement run.
-                # The invalidation triggers see OLD and NEW rows and bucket
-                # both, so verdicts whose transition times were scattered would
-                # produce one dirty bucket per scattered day and the journey
-                # would be watching twenty overlapping chains instead of one.
-                "at": CHANGE_AT,
+                "vstatus": (
+                    "matched_confirmed" if index < settled_rows
+                    else "matched_provisional"
+                ),
+                "confirmed": occurred_at if index < settled_rows else None,
+                # Settled history transitioned when it occurred; the one day
+                # left provisional transitions in the settlement run below.
+                "at": occurred_at if index < settled_rows else CHANGE_AT,
             },
         )
         conn.execute(
@@ -257,7 +291,9 @@ def _seed_financial_history(
                 "amt": amount,
             },
         )
-        verdicts.append(verdict_id)
+        if index >= settled_rows:
+            # Only the still-provisional day is the transition under test.
+            verdicts.append(verdict_id)
     return verdicts
 
 
@@ -726,7 +762,15 @@ def test_c8_financial_change_reaches_a_jwks_verified_trust_claim(
         # F-01: the identity the trigger emits must be one Trust can project.
         assert {row["model_type"] for row in dirty} == {ACTIVE.model_type}, dirty
         assert {row["model_version"] for row in dirty} == {ACTIVE.model_version}
-        assert {row["source_family"] for row in dirty} == {"b23_match_verdicts"}, dirty
+        # Confirming a verdict lawfully changes two B2.4 source relations under
+        # C19: the verdict itself, and the allocation the verdict projects
+        # verification onto. Both must invalidate; neither may be a family the
+        # read model refuses.
+        assert {row["source_family"] for row in dirty} <= {
+            "b23_match_verdicts",
+            "attribution_allocations",
+        }, dirty
+        assert "b23_match_verdicts" in {row["source_family"] for row in dirty}, dirty
 
         # -- Stage 3: the wake-up, written by the production trigger -----------
         with app_engine.connect() as conn:

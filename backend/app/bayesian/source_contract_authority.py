@@ -101,6 +101,31 @@ class SourceRelationContract:
     # express. The authoritative text is declared here and the C7 gate still
     # compares it byte-level (whitespace-normalised) against what ships.
     select_override: str | None = None
+    # C19 moved snapshot membership for this relation onto the immutable
+    # financial event's clock while ``window_key`` still names this relation's
+    # own transition/write column.  The two must not disagree: a relation may
+    # not be inside the snapshot and outside the measurement of that same
+    # snapshot.  When set, this predicate is the window bound the bounded-key
+    # walk uses, so measurement follows membership.
+    walk_window_predicate: str | None = None
+
+    def walk_window_clause(self, alias: str) -> str:
+        """The window bound the bounded-key walk applies to one candidate row."""
+
+        if self.walk_window_predicate is not None:
+            return self.walk_window_predicate.format(alias=alias)
+        return (
+            f"{alias}.{self.window_key} >= :window_start"
+            + "\n                  AND "
+            + f"{alias}.{self.window_key} < :window_end"
+        )
+
+    def walk_order_key(self, alias: str) -> str:
+        """Deterministic walk tiebreak; the dedup key still leads the ORDER BY."""
+
+        if self.walk_window_predicate is not None:
+            return f"{alias}.id"
+        return f"{alias}.{self.window_key}, {alias}.id"
 
     def projected_columns(self) -> tuple[str, ...]:
         return tuple(item.column for item in self.projection)
@@ -327,6 +352,18 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
             ).strip(),
             relation="b23_match_verdicts",
             window_key="last_transition_at",
+            # A verdict enters the snapshot through its financial event, so its
+            # width must be measured the same way.  Bounding the walk by
+            # last_transition_at instead lost every provider whose verdict was
+            # reconciled after the window closed -- the ordinary case for late
+            # settlement -- while those verdicts stayed in the snapshot.
+            walk_window_predicate=(
+                "EXISTS (SELECT 1 FROM public.attribution_events AS window_event"
+                " WHERE window_event.tenant_id = {alias}.tenant_id"
+                " AND window_event.id = {alias}.attribution_event_id"
+                " AND window_event.occurred_at >= :window_start"
+                " AND window_event.occurred_at < :window_end)"
+            ),
             projection=(
                 ProjectedColumn("id", "id::text", "id"),
                 ProjectedColumn("tenant_id", "tenant_id::text", "tenant_id"),

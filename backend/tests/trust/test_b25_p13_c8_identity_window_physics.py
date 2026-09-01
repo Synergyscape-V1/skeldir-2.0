@@ -285,7 +285,12 @@ def test_c8_source_change_stales_a_trust_projectable_fit() -> None:
                 text(
                     "SELECT DISTINCT model_type, model_version FROM"
                     " public.b24_dirty_events WHERE tenant_id = :t"
-                    " AND dirty_reason = 'b23_match_verdicts_snapshot_changed'"
+                    # C19 split verdict invalidation onto the financial event
+                    # clock and renamed the reason with it; the property under
+                    # test -- the emitted identity is one Trust projects -- is
+                    # unchanged.
+                    " AND dirty_reason ="
+                    " 'b23_match_verdicts_financial_event_changed'"
                 ),
                 {"t": str(tenant_id)},
             ).all()
