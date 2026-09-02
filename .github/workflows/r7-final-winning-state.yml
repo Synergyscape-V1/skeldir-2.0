@@ -335,8 +335,17 @@ jobs:
             --window-id "${WINDOW_ID}" \
             --orm-verdict-json /tmp/r2_orm.json | tee /tmp/r2_scenario.log
 
-          sleep 2
-          podman logs --since "${LOG_SINCE}" "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1
+          # The window is delimited by the R2_WINDOW_START/END markers inside the
+          # log itself, so reading the whole log is what the standalone R2 lane
+          # does. A --since bound adds no bounding and can drop a marker emitted
+          # in the same second as the timestamp.
+          for _ in $(seq 1 15); do
+            podman logs "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1 || true
+            if grep -q "R2_WINDOW_END::${GITHUB_SHA}::${WINDOW_ID}" /tmp/r7_postgres.log; then
+              break
+            fi
+            sleep 1
+          done
 
           python scripts/r2/db_log_window_audit.py \
             --log-file /tmp/r7_postgres.log \
@@ -415,12 +424,17 @@ jobs:
         run: |
           set -euo pipefail
           pkill -f "uvicorn app.main:app" || true
+          # Match the standalone R3 lane's calibration. Four workers plus a load
+          # generator plus PostgreSQL on a two-core runner over-subscribes the
+          # box, which measures the runner rather than the ingestion path.
+          R3_SERVER_WORKERS="$(python -c "import os; c=os.cpu_count() or 2; print(max(2, c-1))")"
+          echo "R7_R3_SERVER_WORKERS=${R3_SERVER_WORKERS}"
           nohup env PYTHONUNBUFFERED=1 python -u -m uvicorn app.main:app \
             --host 127.0.0.1 \
             --port 8000 \
             --log-level debug \
             --access-log \
-            --workers 4 \
+            --workers "${R3_SERVER_WORKERS}" \
             --backlog 2048 > /tmp/r7_uvicorn_r3.log 2>&1 &
           API_PID=$!
           echo "R3_API_PID=${API_PID}" >> "${GITHUB_ENV}"
