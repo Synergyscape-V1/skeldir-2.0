@@ -47,6 +47,7 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
     AS $$
         DECLARE
             principal_is_superuser boolean;
+            table_owner_oid oid;
             worker_role_oid oid;
         BEGIN
             -- A superuser can drop this trigger, so refusing it buys no
@@ -56,6 +57,19 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
               FROM pg_catalog.pg_roles
              WHERE rolname = session_user;
             IF COALESCE(principal_is_superuser, false) THEN
+                RETURN NEW;
+            END IF;
+
+            -- The migration principal owns this relation and can drop the
+            -- trigger, so refusing it buys no authority either. It is already
+            -- a member of app_worker where that role exists; naming ownership
+            -- explicitly keeps provisioning working in the environments that
+            -- migrate before any runtime role is created.
+            SELECT relowner
+              INTO table_owner_oid
+              FROM pg_catalog.pg_class
+             WHERE oid = TG_RELID;
+            IF pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE') THEN
                 RETURN NEW;
             END IF;
 

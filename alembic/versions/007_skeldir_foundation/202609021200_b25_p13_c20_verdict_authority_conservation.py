@@ -76,6 +76,22 @@ _AUTHORITY_CHANGE_PREDICATE = "\n        OR ".join(
 )
 
 
+def _if_role_exists(role: str, statement: str) -> None:
+    """Apply a privilege statement only where the runtime role is provisioned."""
+
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{role}')
+            THEN
+                EXECUTE $stmt${statement}$stmt$;
+            END IF;
+        END $$;
+        """
+    )
+
+
 def upgrade() -> None:
     op.execute(
         """
@@ -86,6 +102,7 @@ def upgrade() -> None:
         AS $BODY$
         DECLARE
             principal_is_superuser boolean;
+            table_owner_oid oid;
             worker_role_oid oid;
         BEGIN
             -- A superuser can drop this trigger, so refusing it buys no
@@ -95,6 +112,19 @@ def upgrade() -> None:
               FROM pg_catalog.pg_roles
              WHERE rolname = session_user;
             IF COALESCE(principal_is_superuser, false) THEN
+                RETURN NEW;
+            END IF;
+
+            -- The migration principal owns this relation and can drop the
+            -- trigger, so refusing it buys no authority either. It is already
+            -- a member of app_worker where that role exists; naming ownership
+            -- explicitly keeps provisioning working in the environments that
+            -- migrate before any runtime role is created.
+            SELECT relowner
+              INTO table_owner_oid
+              FROM pg_catalog.pg_class
+             WHERE oid = TG_RELID;
+            IF pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE') THEN
                 RETURN NEW;
             END IF;
 
@@ -145,14 +175,30 @@ def upgrade() -> None:
     # Layer 1. app_user inherits app_rw, so both the direct and the inherited
     # grant have to go; app_ro keeps read only; app_worker receives the narrow
     # write capability the B2.3 sweep actually needs.
-    op.execute(
-        """
-        REVOKE ALL ON TABLE public.b23_match_verdicts
-            FROM PUBLIC, app_user, app_rw, app_ro;
-        GRANT SELECT ON TABLE public.b23_match_verdicts TO app_user, app_ro;
-        GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts
-            TO app_worker;
-        """
+    #
+    # Guarded per role, matching the idiom the B2.3 authority-lock migration
+    # already uses: several proof lanes migrate an empty cluster before any
+    # runtime role exists, and a migration that assumed them would fail there
+    # rather than in production.
+    op.execute("REVOKE ALL ON TABLE public.b23_match_verdicts FROM PUBLIC")
+    _if_role_exists(
+        "app_user",
+        "REVOKE ALL ON TABLE public.b23_match_verdicts FROM app_user;"
+        " GRANT SELECT ON TABLE public.b23_match_verdicts TO app_user",
+    )
+    _if_role_exists(
+        "app_rw",
+        "REVOKE ALL ON TABLE public.b23_match_verdicts FROM app_rw",
+    )
+    _if_role_exists(
+        "app_ro",
+        "REVOKE ALL ON TABLE public.b23_match_verdicts FROM app_ro;"
+        " GRANT SELECT ON TABLE public.b23_match_verdicts TO app_ro",
+    )
+    _if_role_exists(
+        "app_worker",
+        "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts"
+        " TO app_worker",
     )
 
 
@@ -164,10 +210,21 @@ def downgrade() -> None:
         DROP TRIGGER IF EXISTS trg_b23_verdict_authorship_insert
             ON public.b23_match_verdicts;
         DROP FUNCTION IF EXISTS public.b23_enforce_verdict_authorship();
-        REVOKE ALL ON TABLE public.b23_match_verdicts
-            FROM PUBLIC, app_user, app_rw, app_ro, app_worker;
-        GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts
-            TO app_user, app_rw;
-        GRANT SELECT ON TABLE public.b23_match_verdicts TO app_ro;
         """
+    )
+    _if_role_exists(
+        "app_user",
+        "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts TO app_user",
+    )
+    _if_role_exists(
+        "app_rw",
+        "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts TO app_rw",
+    )
+    _if_role_exists(
+        "app_ro",
+        "GRANT SELECT ON TABLE public.b23_match_verdicts TO app_ro",
+    )
+    _if_role_exists(
+        "app_worker",
+        "REVOKE ALL ON TABLE public.b23_match_verdicts FROM app_worker",
     )
