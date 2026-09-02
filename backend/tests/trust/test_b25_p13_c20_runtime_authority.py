@@ -599,6 +599,45 @@ def test_c20_process_role_authority_contract_holds() -> None:
     assert violations == [], violations
 
 
+def test_c20_no_runtime_principal_inherits_the_relation_owner() -> None:
+    """Ownership is the trigger layer's one remaining escape hatch.
+
+    ``b23_enforce_verdict_authorship`` admits the relation's owner, because the
+    owner can drop the trigger outright and every environment migrates as it.
+    That is only sound while no runtime login can reach the owner's role: an
+    ownership transfer to a runtime principal, or a membership grant into the
+    migration role, would open the trigger layer silently and leave only the
+    privilege layer standing. Nothing else in the repository asserts this, so it
+    is asserted here, beside the fence that depends on it.
+    """
+
+    conn = _admin_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT owner.rolname FROM pg_class AS relation"
+                " JOIN pg_roles AS owner ON owner.oid = relation.relowner"
+                " WHERE relation.oid = 'public.b23_match_verdicts'::regclass"
+            )
+            owner = cursor.fetchone()[0]
+            reachable = []
+            for principal in PRINCIPALS:
+                cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (principal,))
+                if cursor.fetchone() is None:
+                    continue
+                cursor.execute(
+                    "SELECT pg_has_role(%s, %s, 'USAGE')", (principal, owner)
+                )
+                if cursor.fetchone()[0]:
+                    reachable.append(principal)
+    finally:
+        conn.close()
+    assert reachable == [], (
+        f"{reachable} can act as {owner!r}, the owner of b23_match_verdicts, so"
+        " the verdict guard trigger would admit them"
+    )
+
+
 def test_c20_sibling_overgrant_is_detected() -> None:
     """The contract assertion must actually fire when authority widens."""
 

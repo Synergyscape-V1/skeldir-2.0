@@ -1422,7 +1422,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c20_runtime_authority.py \
             -q -s --no-header -p no:randomly | tee /tmp/b25_p13_c20_authority.out
-          grep -E "5 passed" /tmp/b25_p13_c20_authority.out
+          grep -E "6 passed" /tmp/b25_p13_c20_authority.out
 
       # NC-C20-01. The historical overgrant, restored on the live database. The
       # remediation is two independent layers, so restoring the grant alone must
