@@ -139,7 +139,19 @@ async def acquire_preflight_lease(
         .one()
     )
     stale = existing["leased_until"] is not None and existing["leased_until"] < now
-    if stale:
+    # A terminal row records the last attempt; it is not an active exclusion
+    # lease. Any later dirty candidate must be able to reopen the window,
+    # especially when a sparse cohort crosses the eligibility threshold.
+    terminal_reopen = str(existing["status"]) in {
+        "succeeded",
+        "failed",
+        "timeout",
+        "worker_lost",
+        "fallback_only",
+        "cancelled",
+    }
+    if stale or terminal_reopen:
+        params["stale_recovered"] = stale
         await session.execute(
             text(
                 """
@@ -153,7 +165,10 @@ async def acquire_preflight_lease(
                     lease_acquired_at = now(),
                     leased_until = :leased_until,
                     heartbeat_at = now(),
-                    stale_recovered_at = now(),
+                    stale_recovered_at = CASE
+                        WHEN :stale_recovered THEN now()
+                        ELSE stale_recovered_at
+                    END,
                     terminal_at = NULL,
                     updated_at = now()
                 WHERE tenant_id = :tenant_id
@@ -171,7 +186,7 @@ async def acquire_preflight_lease(
             lease_id,
             "claiming",
             leased_until,
-            stale_recovered=True,
+            stale_recovered=stale,
         )
     return PreflightLeaseResult(
         False,

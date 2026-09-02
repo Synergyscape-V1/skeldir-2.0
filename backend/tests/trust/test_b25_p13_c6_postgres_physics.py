@@ -369,6 +369,32 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
                         "campaign": f"c6-campaign-{suffix}-{index:02d}",
                     },
                 )
+                # C19 moved B2.4 source membership onto verified allocation
+                # lineage, and the database - not this fixture - decides
+                # verification.  The row is created unverified; the confirmed
+                # verdict inserted below is what projects verified = true.
+                await conn.execute(
+                    text(
+                        """
+                        INSERT INTO public.attribution_allocations (
+                            id, tenant_id, event_id, channel_code,
+                            allocated_revenue_cents, allocation_ratio,
+                            model_version, model_type, confidence_score, verified
+                        ) VALUES (
+                            :allocation_id, :tenant, :event_id, :channel,
+                            :amount, 1.0, 'b25-p13-c6-planner-v1', 'last_touch',
+                            1.0, false
+                        )
+                        """
+                    ),
+                    {
+                        "allocation_id": str(uuid4()),
+                        "tenant": str(tenant_id),
+                        "event_id": str(event_id),
+                        "channel": channel,
+                        "amount": amount_minor,
+                    },
+                )
                 await conn.execute(
                     text(
                         """

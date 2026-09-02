@@ -49,6 +49,7 @@ from app.bayesian.worker_boot_probe import (
     assert_bayesian_worker_boot_topology_proven,
     current_bayesian_worker_claim_authority,
     ensure_bayesian_worker_boot_probe_signal_registered,
+    refresh_worker_process_authority,
 )
 from app.celery_app import celery_app
 from app.core.config import settings
@@ -167,6 +168,19 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _fit_planner_quiet_period_seconds() -> int:
+    """Return the source-settle debounce, retaining the governed default."""
+
+    raw = os.getenv("B24_FIT_PLANNER_QUIET_PERIOD_SECONDS")
+    if raw is None:
+        return QUIET_PERIOD_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        return QUIET_PERIOD_SECONDS
+    return value if value > 0 else QUIET_PERIOD_SECONDS
+
+
 def _append_probe_event(event: dict) -> None:
     path = os.getenv("BAYESIAN_PROBE_LOG_PATH")
     if not path:
@@ -282,7 +296,7 @@ def _complete_planner_wakeup(
                     "lease_owner": lease_owner,
                     "revision": wakeup_revision,
                     "succeeded": succeeded,
-                    "quiet_period_seconds": QUIET_PERIOD_SECONDS,
+                    "quiet_period_seconds": _fit_planner_quiet_period_seconds(),
                     "max_wait_seconds": MAX_WAIT_SECONDS,
                 },
             ).scalar_one()
@@ -318,6 +332,14 @@ def plan_due_fit_intents(
     """
 
     assert_bayesian_worker_boot_topology_proven()
+    try:
+        refresh_worker_process_authority()
+    except Exception:
+        logger.warning(
+            "bayesian_worker_authority_heartbeat_failed",
+            exc_info=True,
+            extra={"event_type": "bayesian.worker_authority_heartbeat"},
+        )
     lease_owner = f"celery:{self.request.id}"
     tenants = _due_planner_tenants(
         lease_owner=lease_owner, batch_size=tenant_batch_size
@@ -335,6 +357,7 @@ def plan_due_fit_intents(
                 plan_due_dirty_events(
                     tenant_id=tenant_id,
                     planner_owner=lease_owner,
+                    quiet_period_seconds=_fit_planner_quiet_period_seconds(),
                     limit=max(1, min(int(candidate_limit), 100)),
                 )
             )

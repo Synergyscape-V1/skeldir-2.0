@@ -143,6 +143,27 @@ def _seed_row(
             "estatus": event_status,
         },
     )
+    # C19 made verified allocation lineage the authority for B2.4 source
+    # membership, so a settlement without one is not in the snapshot and
+    # contributes no channel width. The row is created unverified; the verdict
+    # below is what projects verification, and a non-member verdict status
+    # leaves it unverified exactly as production would.
+    conn.execute(
+        text(
+            "INSERT INTO public.attribution_allocations (id, tenant_id,"
+            " event_id, channel_code, allocated_revenue_cents,"
+            " allocation_ratio, model_version, model_type, confidence_score,"
+            " verified) VALUES (:a, :t, :e, :ch, :amt, 1.0,"
+            " 'b25-p13-c9-cardinality-v1', 'last_touch', 1.0, false)"
+        ),
+        {
+            "a": str(uuid.uuid4()),
+            "t": str(tenant_id),
+            "e": str(event_id),
+            "ch": channel,
+            "amt": amount,
+        },
+    )
     conn.execute(
         text(
             "INSERT INTO public.b23_match_verdicts (id, tenant_id,"
@@ -316,6 +337,68 @@ def test_c9_provider_cardinality_unions_both_governed_relations() -> None:
 
     measured = _measure(tenant_id)
     assert measured["counts"]["provider_count"] == 2, measured
+
+
+def test_c9_provider_width_survives_late_verdict_reconciliation() -> None:
+    """Measurement must bind a verdict to the window the way membership does.
+
+    A verdict enters the snapshot through its financial event's clock. Bounding
+    the width walk by ``last_transition_at`` instead dropped every provider
+    whose verdict was reconciled after the window closed -- the ordinary case
+    for late settlement -- while those same verdicts stayed in the snapshot the
+    width was stamped on. The authority row then under-reported the width of a
+    snapshot it claimed to describe, and the compute envelopes derived from it
+    were sized for a narrower design matrix than the data actually had.
+    """
+
+    engine = _migration_engine()
+    try:
+        with engine.begin() as conn:
+            tenant_id = _new_tenant(conn, "late-settlement")
+            for index in range(3):
+                _seed_row(
+                    conn,
+                    tenant_id,
+                    index=index,
+                    channel="c9_late_channel",
+                    campaign="c9-late-campaign",
+                    provider="c9_verdict_provider",
+                    currency="USD",
+                    occurred_at=INSIDE + timedelta(minutes=index),
+                )
+            # Separate the two governed provider relations, so the verdict walk
+            # is the only way c9_verdict_provider can be counted at all.
+            conn.execute(
+                text(
+                    "UPDATE public.b23_revenue_events SET provider ="
+                    " 'c9_settlement_provider' WHERE tenant_id = :t"
+                ),
+                {"t": str(tenant_id)},
+            )
+    finally:
+        engine.dispose()
+
+    reconciled_in_window = _measure(tenant_id)
+    assert reconciled_in_window["counts"]["provider_count"] == 2, reconciled_in_window
+
+    # Only the reconciliation clock moves. The financial events, and therefore
+    # snapshot membership, are untouched.
+    engine = _migration_engine()
+    try:
+        with engine.begin() as conn:
+            _bind(conn, tenant_id)
+            conn.execute(
+                text(
+                    "UPDATE public.b23_match_verdicts SET last_transition_at ="
+                    " :late WHERE tenant_id = :t"
+                ),
+                {"late": WINDOW_END + timedelta(days=2), "t": str(tenant_id)},
+            )
+    finally:
+        engine.dispose()
+
+    reconciled_late = _measure(tenant_id)
+    assert reconciled_late["counts"]["provider_count"] == 2, reconciled_late
 
 
 # ---------------------------------------------------------------------------

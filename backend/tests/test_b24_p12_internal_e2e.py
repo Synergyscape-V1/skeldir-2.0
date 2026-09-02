@@ -74,7 +74,11 @@ END = datetime(2026, 6, 1, tzinfo=timezone.utc)
 P12_CA1_REPRESENTATIVE_EVENT_COUNT = 512
 P12_CA1_REPRESENTATIVE_CHANNEL_COUNT = 32
 P12_CA1_REPRESENTATIVE_CAMPAIGN_COUNT = 128
-P12_CA1_EXPECTED_SOURCE_ROWS = P12_CA1_REPRESENTATIVE_EVENT_COUNT * 3
+# One attribution event, one verified allocation, one confirmed match
+# verdict and one revenue event per representative record.  The allocation
+# joined the source stream with C19, which made verified allocation lineage
+# the authority for B2.4 source membership.
+P12_CA1_EXPECTED_SOURCE_ROWS = P12_CA1_REPRESENTATIVE_EVENT_COUNT * 4
 DB_PROOF_SKIP = pytest.mark.skipif(
     os.getenv("SKELDIR_B24_P12_REQUIRE_DB_PROOFS", "0").strip().lower()
     not in {"1", "true", "yes", "on"}
@@ -398,6 +402,32 @@ async def _seed_p12_ca1_representative_source_rows(
                     "idempotency_key": f"p12-ca1:{suffix}:{index}",
                     "channel": channel,
                     "campaign_id": f"campaign_{suffix}_{campaign_index:03d}",
+                },
+            )
+            # C19 derives B2.4 source membership from verified allocation
+            # lineage.  The allocation is seeded unverified so the confirmed
+            # verdict below is what projects verification; the fixture never
+            # asserts verified state itself.
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO public.attribution_allocations (
+                        id, tenant_id, event_id, channel_code,
+                        allocated_revenue_cents, allocation_ratio,
+                        model_version, model_type, confidence_score, verified
+                    ) VALUES (
+                        :allocation_id, :tenant_id, :event_id, :channel,
+                        :revenue_cents, 1.0, 'b24-p12-ca1-v1', 'last_touch',
+                        1.0, false
+                    )
+                    """
+                ),
+                {
+                    "allocation_id": str(uuid4()),
+                    "tenant_id": str(tenant_id),
+                    "event_id": str(event_id),
+                    "channel": channel,
+                    "revenue_cents": revenue_cents,
                 },
             )
             await session.execute(
@@ -936,7 +966,7 @@ async def test_b24_p12_ca1_subprocess_worker_boundary_consumes_committed_represe
     assert snapshot.preflight.is_eligible
     assert snapshot.preflight.included_row_counts_by_source == {
         "attribution_events": P12_CA1_REPRESENTATIVE_EVENT_COUNT,
-        "attribution_allocations": 0,
+        "attribution_allocations": P12_CA1_REPRESENTATIVE_EVENT_COUNT,
         "b23_match_verdicts": P12_CA1_REPRESENTATIVE_EVENT_COUNT,
         "b23_revenue_events": P12_CA1_REPRESENTATIVE_EVENT_COUNT,
     }

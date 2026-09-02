@@ -78,6 +78,12 @@ ALLOWED_DOCKER_PATHS = {
     # can observe real four-chain sampling. Same reason as C13: it executes the
     # authorized substrate, it does not introduce a new one.
     Path("scripts/ci/run_b25_p13_c16_production_topology_proof.sh"),
+    # P13 C19's context-robust closure composes the full authorized production
+    # topology (API, workers, Beat, publisher, TLS signer on the same
+    # already-authorized images) and observes it over public HTTP. Same reason
+    # as C13/C16: it executes the authorized substrate, it does not add one.
+    Path("scripts/ci/run_b25_p13_c19_context_robust_closure.sh"),
+    Path("backend/tests/trust/test_b25_p13_c19_context_robust_topology.py"),
     Path("scripts/ci/validate_m0_scope_lock.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),

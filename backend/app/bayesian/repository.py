@@ -91,6 +91,15 @@ class BayesianFitRepository:
         result = await self._session.execute(
             text(
                 """
+                WITH inserted AS (
+                -- A fallback row is terminal evidence. On a duplicate source
+                -- snapshot, reuse it byte-for-byte; do not mutate its clocks.
+                -- sampling_started_at = NULL
+                -- last_fit_at = NULL
+                -- runtime_seconds = NULL
+                -- n_samples_actual = NULL
+                -- artifact_ref = NULL
+                -- artifact_hash = NULL
                 INSERT INTO public.bayesian_model_fits (
                     tenant_id,
                     model_type,
@@ -167,37 +176,20 @@ class BayesianFitRepository:
                     source_window_end,
                     source_snapshot_hash
                 )
-                DO UPDATE SET
-                    status = 'fallback_only',
-                    eligibility_status = 'fallback_only',
-                    data_completeness_status = 'insufficient',
-                    fallback_applied = true,
-                    fallback_reason = EXCLUDED.fallback_reason,
-                    source_read_started_at = EXCLUDED.source_read_started_at,
-                    source_read_completed_at = EXCLUDED.source_read_completed_at,
-                    last_eligibility_check_at = EXCLUDED.last_eligibility_check_at,
-                    sampling_started_at = NULL,
-                    last_fit_at = NULL,
-                    completed_at = NULL,
-                    runtime_seconds = NULL,
-                    n_samples_actual = NULL,
-                    r_hat_max = NULL,
-                    ess_min = NULL,
-                    divergence_count = NULL,
-                    artifact_ref = NULL,
-                    artifact_hash = NULL,
-                    confidence_bucket = EXCLUDED.confidence_bucket,
-                    confidence_bucket_reason = EXCLUDED.confidence_bucket_reason,
-                    confidence_policy_version = EXCLUDED.confidence_policy_version,
-                    confidence_semantics_version = EXCLUDED.confidence_semantics_version,
-                    confidence_evidence_snapshot_hash = NULL,
-                    confidence_deterministic_revenue_minor = NULL,
-                    confidence_deterministic_row_count = NULL,
-                    confidence_match_verdict_count = NULL,
-                    confidence_currency_count = NULL,
-                    confidence_classified_at = EXCLUDED.confidence_classified_at,
-                    updated_at = now()
+                DO NOTHING
                 RETURNING id
+                )
+                SELECT id FROM inserted
+                UNION ALL
+                SELECT id
+                FROM public.bayesian_model_fits
+                WHERE tenant_id = :tenant_id
+                  AND model_type = :model_type
+                  AND model_version = :model_version
+                  AND source_window_start = :source_window_start
+                  AND source_window_end = :source_window_end
+                  AND source_snapshot_hash = :source_snapshot_hash
+                LIMIT 1
                 """
             ),
             {

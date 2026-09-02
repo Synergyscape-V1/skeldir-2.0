@@ -27,6 +27,8 @@ renders.
 
 from __future__ import annotations
 
+import textwrap
+
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -93,6 +95,37 @@ class SourceRelationContract:
     window_key: str
     projection: tuple[ProjectedColumn, ...]
     membership: tuple[MembershipFilter, ...]
+    # C19: allocations and verdicts enter the snapshot through the immutable
+    # financial event's clock via an aliased join, and events require verified
+    # allocation lineage -- a SELECT shape the structural renderer cannot
+    # express. The authoritative text is declared here and the C7 gate still
+    # compares it byte-level (whitespace-normalised) against what ships.
+    select_override: str | None = None
+    # C19 moved snapshot membership for this relation onto the immutable
+    # financial event's clock while ``window_key`` still names this relation's
+    # own transition/write column.  The two must not disagree: a relation may
+    # not be inside the snapshot and outside the measurement of that same
+    # snapshot.  When set, this predicate is the window bound the bounded-key
+    # walk uses, so measurement follows membership.
+    walk_window_predicate: str | None = None
+
+    def walk_window_clause(self, alias: str) -> str:
+        """The window bound the bounded-key walk applies to one candidate row."""
+
+        if self.walk_window_predicate is not None:
+            return self.walk_window_predicate.format(alias=alias)
+        return (
+            f"{alias}.{self.window_key} >= :window_start"
+            + "\n                  AND "
+            + f"{alias}.{self.window_key} < :window_end"
+        )
+
+    def walk_order_key(self, alias: str) -> str:
+        """Deterministic walk tiebreak; the dedup key still leads the ORDER BY."""
+
+        if self.walk_window_predicate is not None:
+            return f"{alias}.id"
+        return f"{alias}.{self.window_key}, {alias}.id"
 
     def projected_columns(self) -> tuple[str, ...]:
         return tuple(item.column for item in self.projection)
@@ -114,6 +147,8 @@ class SourceRelationContract:
     def render_select(self) -> str:
         """The authoritative canonical snapshot SELECT for this relation."""
 
+        if self.select_override is not None:
+            return self.select_override
         columns = ",\n                ".join(
             [f"'{self.relation}' AS source_table_discriminator"]
             + [item.select_fragment() for item in self.projection]
@@ -164,6 +199,38 @@ def _lifecycle(relation: str, column: str, bind: str) -> "MembershipFilter":
 SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
     {
         "attribution_events": SourceRelationContract(
+            # C19 authoritative SELECT (see select_override).
+            select_override=textwrap.dedent(
+                """\n            SELECT
+                'attribution_events' AS source_table_discriminator,
+                id::text AS id,
+                tenant_id::text AS tenant_id,
+                occurred_at,
+                event_timestamp,
+                event_type,
+                channel,
+                campaign_id,
+                revenue_cents,
+                conversion_value_cents,
+                upper(coalesce(currency, 'USD')) AS currency,
+                processing_status
+            FROM public.attribution_events AS e
+            WHERE e.tenant_id = :tenant_id
+              AND e.occurred_at >= :window_start
+              AND e.occurred_at < :window_end
+              AND e.processing_status IN :processed_statuses
+              AND e.event_type IN :conversion_event_types
+              AND EXISTS (
+                    SELECT 1
+                    FROM public.attribution_allocations AS authority
+                    WHERE authority.tenant_id = e.tenant_id
+                      AND authority.event_id = e.id
+                      AND authority.verified = true
+              )
+            ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC
+            
+                """
+            ).strip(),
             relation="attribution_events",
             window_key="occurred_at",
             projection=(
@@ -193,6 +260,36 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
             ),
         ),
         "attribution_allocations": SourceRelationContract(
+            # C19 authoritative SELECT (see select_override).
+            select_override=textwrap.dedent(
+                """\n        SELECT
+            'attribution_allocations' AS source_table_discriminator,
+            a.id::text AS id,
+            a.tenant_id::text AS tenant_id,
+            a.event_id::text AS event_id,
+            a.created_at,
+            a.channel_code,
+            a.allocated_revenue_cents,
+            a.allocation_ratio,
+            a.model_type,
+            a.model_version,
+            a.verified,
+            a.verification_source,
+            a.verification_timestamp
+        FROM public.attribution_allocations AS a
+        JOIN public.attribution_events AS e
+          ON e.tenant_id = a.tenant_id
+         AND e.id = a.event_id
+        WHERE a.tenant_id = :tenant_id
+          AND e.occurred_at >= :window_start
+          AND e.occurred_at < :window_end
+          AND e.processing_status IN :processed_statuses
+          AND e.event_type IN :conversion_event_types
+          AND a.verified = true
+        ORDER BY a.tenant_id ASC, e.occurred_at ASC NULLS LAST, a.id ASC
+            
+                """
+            ).strip(),
             relation="attribution_allocations",
             window_key="created_at",
             projection=(
@@ -216,8 +313,57 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
             ),
         ),
         "b23_match_verdicts": SourceRelationContract(
+            # C19 authoritative SELECT (see select_override).
+            select_override=textwrap.dedent(
+                """\n            SELECT
+                'b23_match_verdicts' AS source_table_discriminator,
+                v.id::text AS id,
+                v.tenant_id::text AS tenant_id,
+                v.attribution_event_id::text AS attribution_event_id,
+                v.provider,
+                v.canonical_commerce_reference,
+                v.status,
+                v.match_quality,
+                v.attributed_amount_minor,
+                v.verified_amount_minor,
+                upper(v.currency_code) AS currency_code,
+                v.confirmed_at,
+                v.adjusted_at,
+                v.last_transition_at,
+                v.canonical_expected_gross_amount_minor,
+                v.canonical_captured_gross_amount_minor,
+                v.canonical_net_verified_amount_minor,
+                v.discrepancy_amount_minor,
+                v.discrepancy_ratio_bps,
+                v.discrepancy_band
+            FROM public.b23_match_verdicts AS v
+            JOIN public.attribution_events AS e
+              ON e.tenant_id = v.tenant_id
+             AND e.id = v.attribution_event_id
+            WHERE v.tenant_id = :tenant_id
+              AND e.occurred_at >= :window_start
+              AND e.occurred_at < :window_end
+              AND e.processing_status IN :processed_statuses
+              AND e.event_type IN :conversion_event_types
+              AND v.status IN :match_verdict_statuses
+            ORDER BY v.tenant_id ASC, e.occurred_at ASC NULLS LAST, v.id ASC
+            
+                """
+            ).strip(),
             relation="b23_match_verdicts",
             window_key="last_transition_at",
+            # A verdict enters the snapshot through its financial event, so its
+            # width must be measured the same way.  Bounding the walk by
+            # last_transition_at instead lost every provider whose verdict was
+            # reconciled after the window closed -- the ordinary case for late
+            # settlement -- while those verdicts stayed in the snapshot.
+            walk_window_predicate=(
+                "EXISTS (SELECT 1 FROM public.attribution_events AS window_event"
+                " WHERE window_event.tenant_id = {alias}.tenant_id"
+                " AND window_event.id = {alias}.attribution_event_id"
+                " AND window_event.occurred_at >= :window_start"
+                " AND window_event.occurred_at < :window_end)"
+            ),
             projection=(
                 ProjectedColumn("id", "id::text", "id"),
                 ProjectedColumn("tenant_id", "tenant_id::text", "tenant_id"),

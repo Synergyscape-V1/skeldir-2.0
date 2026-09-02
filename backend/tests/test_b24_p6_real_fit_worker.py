@@ -339,6 +339,46 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                     "campaign_id": f"campaign_{suffix}_{index:02d}",
                 },
             )
+            # C19 makes the database, not the fixture, decide verification.
+            # This row begins unverified; the confirmed B2.3 verdict inserted
+            # below projects the only state that P6 eligibility may consume.
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO public.attribution_allocations (
+                        id,
+                        tenant_id,
+                        event_id,
+                        channel_code,
+                        allocated_revenue_cents,
+                        allocation_ratio,
+                        model_version,
+                        model_type,
+                        confidence_score,
+                        verified
+                    )
+                    VALUES (
+                        :allocation_id,
+                        :tenant_id,
+                        :event_id,
+                        :channel,
+                        :revenue_cents,
+                        1.0,
+                        'b24-p6-proof-v1',
+                        'last_touch',
+                        1.0,
+                        false
+                    )
+                    """
+                ),
+                {
+                    "allocation_id": str(uuid4()),
+                    "tenant_id": str(tenant_id),
+                    "event_id": str(event_id),
+                    "channel": channel,
+                    "revenue_cents": revenue_cents,
+                },
+            )
             await session.execute(
                 text(
                     """

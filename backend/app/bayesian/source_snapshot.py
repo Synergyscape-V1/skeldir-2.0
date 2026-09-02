@@ -31,6 +31,7 @@ from app.bayesian.input_contract import (
     SOURCE_STREAM_MAX_ROW_BUFFER,
     SOURCE_STREAM_PARTITION_SIZE,
     STREAM_CHUNK_FORMAT_VERSION,
+    LIFECYCLE_INCLUSION_RULES,
 )
 
 
@@ -221,74 +222,98 @@ _SOURCE_QUERIES = {
                 conversion_value_cents,
                 upper(coalesce(currency, 'USD')) AS currency,
                 processing_status
-            FROM public.attribution_events
-            WHERE tenant_id = :tenant_id
-              AND occurred_at >= :window_start
-              AND occurred_at < :window_end
-              AND processing_status IN :processed_statuses
-              AND event_type IN :conversion_event_types
-            ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC
+            FROM public.attribution_events AS e
+            WHERE e.tenant_id = :tenant_id
+              AND e.occurred_at >= :window_start
+              AND e.occurred_at < :window_end
+              AND e.processing_status IN :processed_statuses
+              AND e.event_type IN :conversion_event_types
+              AND EXISTS (
+                    SELECT 1
+                    FROM public.attribution_allocations AS authority
+                    WHERE authority.tenant_id = e.tenant_id
+                      AND authority.event_id = e.id
+                      AND authority.verified = true
+              )
+            ORDER BY e.tenant_id ASC, e.occurred_at ASC NULLS LAST, e.id ASC
             """
         )
         .bindparams(bindparam("processed_statuses", expanding=True))
         .bindparams(bindparam("conversion_event_types", expanding=True))
     ),
-    "attribution_allocations": text(
-        """
+    "attribution_allocations": (
+        text(
+            """
         SELECT
             'attribution_allocations' AS source_table_discriminator,
-            id::text AS id,
-            tenant_id::text AS tenant_id,
-            event_id::text AS event_id,
-            created_at,
-            channel_code,
-            allocated_revenue_cents,
-            allocation_ratio,
-            model_type,
-            model_version,
-            verified,
-            verification_source,
-            verification_timestamp
-        FROM public.attribution_allocations
-        WHERE tenant_id = :tenant_id
-          AND created_at >= :window_start
-          AND created_at < :window_end
-          AND verified = true
-        ORDER BY tenant_id ASC, created_at ASC NULLS LAST, id ASC
-        """
+            a.id::text AS id,
+            a.tenant_id::text AS tenant_id,
+            a.event_id::text AS event_id,
+            a.created_at,
+            a.channel_code,
+            a.allocated_revenue_cents,
+            a.allocation_ratio,
+            a.model_type,
+            a.model_version,
+            a.verified,
+            a.verification_source,
+            a.verification_timestamp
+        FROM public.attribution_allocations AS a
+        JOIN public.attribution_events AS e
+          ON e.tenant_id = a.tenant_id
+         AND e.id = a.event_id
+        WHERE a.tenant_id = :tenant_id
+          AND e.occurred_at >= :window_start
+          AND e.occurred_at < :window_end
+          AND e.processing_status IN :processed_statuses
+          AND e.event_type IN :conversion_event_types
+          AND a.verified = true
+        ORDER BY a.tenant_id ASC, e.occurred_at ASC NULLS LAST, a.id ASC
+            """
+        )
+        .bindparams(bindparam("processed_statuses", expanding=True))
+        .bindparams(bindparam("conversion_event_types", expanding=True))
     ),
     "b23_match_verdicts": (
         text(
             """
             SELECT
                 'b23_match_verdicts' AS source_table_discriminator,
-                id::text AS id,
-                tenant_id::text AS tenant_id,
-                attribution_event_id::text AS attribution_event_id,
-                provider,
-                canonical_commerce_reference,
-                status,
-                match_quality,
-                attributed_amount_minor,
-                verified_amount_minor,
-                upper(currency_code) AS currency_code,
-                confirmed_at,
-                adjusted_at,
-                last_transition_at,
-                canonical_expected_gross_amount_minor,
-                canonical_captured_gross_amount_minor,
-                canonical_net_verified_amount_minor,
-                discrepancy_amount_minor,
-                discrepancy_ratio_bps,
-                discrepancy_band
-            FROM public.b23_match_verdicts
-            WHERE tenant_id = :tenant_id
-              AND last_transition_at >= :window_start
-              AND last_transition_at < :window_end
-              AND status IN :match_verdict_statuses
-            ORDER BY tenant_id ASC, last_transition_at ASC NULLS LAST, id ASC
+                v.id::text AS id,
+                v.tenant_id::text AS tenant_id,
+                v.attribution_event_id::text AS attribution_event_id,
+                v.provider,
+                v.canonical_commerce_reference,
+                v.status,
+                v.match_quality,
+                v.attributed_amount_minor,
+                v.verified_amount_minor,
+                upper(v.currency_code) AS currency_code,
+                v.confirmed_at,
+                v.adjusted_at,
+                v.last_transition_at,
+                v.canonical_expected_gross_amount_minor,
+                v.canonical_captured_gross_amount_minor,
+                v.canonical_net_verified_amount_minor,
+                v.discrepancy_amount_minor,
+                v.discrepancy_ratio_bps,
+                v.discrepancy_band
+            FROM public.b23_match_verdicts AS v
+            JOIN public.attribution_events AS e
+              ON e.tenant_id = v.tenant_id
+             AND e.id = v.attribution_event_id
+            WHERE v.tenant_id = :tenant_id
+              AND e.occurred_at >= :window_start
+              AND e.occurred_at < :window_end
+              AND e.processing_status IN :processed_statuses
+              AND e.event_type IN :conversion_event_types
+              AND v.status IN :match_verdict_statuses
+            ORDER BY v.tenant_id ASC, e.occurred_at ASC NULLS LAST, v.id ASC
             """
-        ).bindparams(bindparam("match_verdict_statuses", expanding=True))
+        )
+        .bindparams(bindparam("processed_statuses", expanding=True))
+        .bindparams(bindparam("conversion_event_types", expanding=True))
+        .bindparams(bindparam("match_verdict_statuses", expanding=True))
     ),
     "b23_revenue_events": (
         text(
@@ -321,8 +346,12 @@ _SOURCE_QUERIES = {
 }
 
 _QUERY_PARAMS = {
-    "processed_statuses": ("processed",),
-    "conversion_event_types": ("conversion",),
+    "processed_statuses": LIFECYCLE_INCLUSION_RULES[
+        "attribution_events.processing_status"
+    ],
+    "conversion_event_types": LIFECYCLE_INCLUSION_RULES[
+        "attribution_events.event_type"
+    ],
     "match_verdict_statuses": ("matched_confirmed", "adjusted"),
     "revenue_event_types": (
         "payment_capture",

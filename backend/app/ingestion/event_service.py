@@ -576,6 +576,9 @@ class EventIngestionService:
             event_data=ingestion_event_data,
             identity_payload=identity_payload,
         )
+        event_authority_time = self._coerce_event_timestamp(
+            ingestion_event_data.get("event_timestamp")
+        )
 
         candidate_session_uuid = await resolve_session_candidate_with_ephemeral_substrate(
             session=session,
@@ -583,6 +586,7 @@ class EventIngestionService:
             candidate_session_id=raw_candidate_session_id,
             order_id=order_resolution_key,
             click_id=click_resolution_key,
+            now=event_authority_time,
         )
         candidate_session_id = str(candidate_session_uuid) if candidate_session_uuid is not None else None
 
@@ -596,6 +600,7 @@ class EventIngestionService:
                 order_id=order_resolution_key,
                 click_id=click_resolution_key,
                 source=source,
+                now=existing.occurred_at,
             )
             logger.info(
                 "duplicate_event_detected",
@@ -621,6 +626,7 @@ class EventIngestionService:
             tenant_id=tenant_id,
             candidate_session_id=candidate_session_id,
             source=source,
+            now=event_authority_time,
         )
         ingestion_event_data["session_id"] = str(session_resolution.session_id)
         await upsert_ephemeral_resolution_links(
@@ -630,6 +636,7 @@ class EventIngestionService:
             order_id=order_resolution_key,
             click_id=click_resolution_key,
             source=source,
+            now=event_authority_time,
         )
 
         start_time = time.perf_counter()
@@ -913,16 +920,9 @@ class EventIngestionService:
         # Required: event_timestamp
         if "event_timestamp" not in event_data:
             raise ValidationError("Missing required field: event_timestamp")
-        try:
-            # Accept datetime object or ISO string
-            if isinstance(event_data["event_timestamp"], datetime):
-                validated["event_timestamp"] = event_data["event_timestamp"]
-            else:
-                validated["event_timestamp"] = datetime.fromisoformat(
-                    str(event_data["event_timestamp"]).replace("Z", "+00:00")
-                )
-        except (ValueError, TypeError) as e:
-            raise ValidationError(f"Invalid event_timestamp format: {e}")
+        validated["event_timestamp"] = self._coerce_event_timestamp(
+            event_data["event_timestamp"]
+        )
 
         # Required: revenue_amount (convert to cents)
         if "revenue_amount" not in event_data:
@@ -962,6 +962,22 @@ class EventIngestionService:
             validated["correlation_id"] = None
 
         return validated
+
+    @staticmethod
+    def _coerce_event_timestamp(value: object) -> datetime:
+        """Return an authenticated event time as a timezone-aware UTC value."""
+
+        try:
+            parsed = (
+                value
+                if isinstance(value, datetime)
+                else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            )
+        except (ValueError, TypeError) as exc:
+            raise ValidationError(f"Invalid event_timestamp format: {exc}") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
 
     async def _route_to_dlq(
         self,

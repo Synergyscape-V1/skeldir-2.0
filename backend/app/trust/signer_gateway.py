@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -64,11 +65,26 @@ def _signer_secret() -> str:
     return secret
 
 
+def _signer_tls_verify() -> bool | str:
+    """Resolve an optional private CA without weakening TLS verification."""
+
+    configured = os.getenv("TRUST_SIGNER_CA_BUNDLE", "").strip()
+    if not configured:
+        return True
+    bundle = Path(configured).expanduser().resolve()
+    if not bundle.is_file():
+        raise TrustSignerGatewayError("trust_signer_ca_bundle_invalid")
+    return str(bundle)
+
+
 async def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     assert_public_api_signer_isolation()
     try:
         body = canonicalize_json_document(payload)
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            verify=_signer_tls_verify(),
+        ) as client:
             response = await client.post(
                 _signer_url() + path,
                 content=body,

@@ -51,10 +51,22 @@ def _bayesian_planner_interval_seconds() -> float:
     return float(_positive_int_env("B24_FIT_PLANNER_INTERVAL_SECONDS", 60))
 
 
+def _b23_transition_interval_seconds() -> float:
+    """Return the production transition sweep cadence.
+
+    The default remains five minutes.  A physical-topology proof can shorten
+    only the dispatch cadence; verdict maturity still comes exclusively from
+    the immutable provider event timestamp and the governed transition policy.
+    """
+
+    return float(_positive_int_env("B23_TRANSITION_SWEEP_INTERVAL_SECONDS", 300))
+
+
 def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
     interval = _refresh_interval_seconds()
     recovery_interval = _bayesian_recovery_interval_seconds()
     planner_interval = _bayesian_planner_interval_seconds()
+    transition_interval = _b23_transition_interval_seconds()
     # The publisher runs with the planner, because what it publishes is
     # exactly what the planner has just claimed.
     dispatch_interval = planner_interval
@@ -82,13 +94,13 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
         },
         "b23-p3-pending-to-unmatched-transition": {
             "task": "app.tasks.revenue_verification.transition_stale_pending_to_unmatched_all_tenants",
-            "schedule": crontab(minute="*/5"),
-            "options": {"expires": 600},
+            "schedule": transition_interval,
+            "options": {"expires": max(int(transition_interval), 1) * 2},
         },
         "b23-p3-provisional-to-confirmed-transition": {
             "task": "app.tasks.revenue_verification.transition_stale_provisional_to_confirmed_all_tenants",
-            "schedule": crontab(minute="*/5"),
-            "options": {"expires": 600},
+            "schedule": transition_interval,
+            "options": {"expires": max(int(transition_interval), 1) * 2},
         },
     }
     if os.getenv("SKELDIR_B25_DISABLE_TRUST_ISSUANCE_RECONCILER_JOB") != "1":

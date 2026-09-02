@@ -39,7 +39,10 @@ from app.schemas.attribution import (
     ChannelAttributionResponse,
     ChannelName,
     RealtimeRevenueResponse,
+    TouchpointEventRequest,
+    TouchpointEventResponse,
 )
+from app.ingestion.event_service import ingest_with_transaction
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.security.auth import AuthContext, get_auth_context
 from app.services.attribution_explanation_authority import (
@@ -90,6 +93,8 @@ _CHANNEL_CODE_TO_NAME: dict[str, ChannelName] = {
     "referral": ChannelName.Referral,
     "unknown": ChannelName.Unknown,
 }
+_TOUCHPOINT_BACKFILL_DAYS = 31
+_TOUCHPOINT_FUTURE_SKEW = timedelta(minutes=5)
 
 
 def _truth_snapshot_payload(
@@ -510,6 +515,98 @@ def _degraded_explanation_payload(
             "Deterministic authority remains the only source of financial truth.",
         ],
     }
+
+
+@router.post(
+    "/events",
+    response_model=TouchpointEventResponse,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="ingestAttributionTouchpoint",
+    summary="Ingest a tenant-scoped attribution touchpoint",
+)
+async def ingest_attribution_touchpoint(
+    payload: TouchpointEventRequest,
+    request: Request,
+    response: Response,
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    auth_context: Annotated[
+        AuthContext,
+        Security(get_auth_context, scopes=["manager"]),
+    ],
+):
+    """Persist legitimate touchpoint ingress without minting conversion authority."""
+
+    tenant_id = auth_context.tenant_id
+    now = datetime.now(timezone.utc)
+    event_timestamp = (
+        payload.event_timestamp.replace(tzinfo=timezone.utc)
+        if payload.event_timestamp.tzinfo is None
+        else payload.event_timestamp.astimezone(timezone.utc)
+    )
+    if event_timestamp < now - timedelta(days=_TOUCHPOINT_BACKFILL_DAYS):
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            title="Touchpoint Outside Backfill Window",
+            detail="Touchpoint event_timestamp is older than the 31-day authority window.",
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/touchpoint-backfill-window",
+        )
+    if event_timestamp > now + _TOUCHPOINT_FUTURE_SKEW:
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            title="Touchpoint Timestamp In Future",
+            detail="Touchpoint event_timestamp exceeds allowed clock skew.",
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/touchpoint-future-timestamp",
+        )
+
+    idempotency_key = f"{tenant_id}:{payload.event_id}"
+    event_data = {
+        "event_type": payload.event_type,
+        "event_timestamp": event_timestamp,
+        "revenue_amount": "0.00",
+        "currency": "USD",
+        "session_id": payload.session_id,
+        "vendor": payload.vendor,
+        "utm_source": payload.vendor_channel_indicator,
+        "campaign_id": payload.campaign_id,
+        "external_event_id": payload.event_id,
+        "correlation_id": str(x_correlation_id),
+    }
+    result = await ingest_with_transaction(
+        tenant_id=tenant_id,
+        event_data=event_data,
+        idempotency_key=idempotency_key,
+        source="first_party_touchpoint",
+        identity_payload=event_data,
+        request_headers=dict(request.headers),
+    )
+    if result.status != "success" or result.event is None:
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            title="Touchpoint Validation Failed",
+            detail="Touchpoint did not satisfy the deterministic ingress contract.",
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/touchpoint-validation",
+        )
+
+    duplicate = result.is_duplicate
+    if not duplicate:
+        response.status_code = status.HTTP_201_CREATED
+    else:
+        response.status_code = status.HTTP_200_OK
+    response.headers["X-Correlation-ID"] = str(x_correlation_id)
+    return TouchpointEventResponse(
+        event_id=str(result.event.id),
+        tenant_id=str(tenant_id),
+        session_id=str(result.event.session_id),
+        channel_code=str(result.event.channel),
+        event_timestamp=result.event.occurred_at,
+        duplicate=duplicate,
+    )
 
 
 @router.get(

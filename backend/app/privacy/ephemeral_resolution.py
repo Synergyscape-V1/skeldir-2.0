@@ -66,6 +66,7 @@ async def _is_active_session_authority(
             SessionAuthority.tenant_id == tenant_id,
             SessionAuthority.session_id == session_id,
             SessionAuthority.invalidated_at.is_(None),
+            SessionAuthority.issued_at <= now,
             SessionAuthority.expires_at > now,
         )
         .limit(1)
@@ -85,6 +86,7 @@ async def _lookup_order_resolution(
         .where(
             EphemeralOrderResolution.tenant_id == tenant_id,
             EphemeralOrderResolution.order_id == order_id,
+            EphemeralOrderResolution.observed_at <= now,
             EphemeralOrderResolution.expires_at > now,
         )
         .order_by(EphemeralOrderResolution.observed_at.desc())
@@ -104,6 +106,7 @@ async def _lookup_click_resolution(
         .where(
             EphemeralClickResolution.tenant_id == tenant_id,
             EphemeralClickResolution.click_id == click_id,
+            EphemeralClickResolution.observed_at <= now,
             EphemeralClickResolution.expires_at > now,
         )
         .order_by(EphemeralClickResolution.observed_at.desc())
@@ -202,6 +205,7 @@ async def upsert_ephemeral_resolution_links(
                     "source": source,
                     "updated_at": now_utc,
                 },
+                where=EphemeralOrderResolution.observed_at <= now_utc,
             )
         )
 
@@ -228,5 +232,6 @@ async def upsert_ephemeral_resolution_links(
                     "source": source,
                     "updated_at": now_utc,
                 },
+                where=EphemeralClickResolution.observed_at <= now_utc,
             )
         )

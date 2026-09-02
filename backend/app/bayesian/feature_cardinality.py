@@ -170,7 +170,8 @@ def render_bounded_key_walk(contract: SourceRelationContract, *, key: str) -> st
     """
 
     relation = contract.relation
-    window_key = contract.window_key
+    window_clause = contract.walk_window_clause("candidate")
+    order_key = contract.walk_order_key("candidate")
     member = contract.member_predicate("candidate")
     key_expr = f"nullif(candidate.{key}, '')"
     return f"""
@@ -179,11 +180,10 @@ def render_bounded_key_walk(contract: SourceRelationContract, *, key: str) -> st
                 SELECT {key_expr} AS source_key, 1 AS ordinal
                 FROM public.{relation} AS candidate
                 WHERE candidate.tenant_id = :tenant_id
-                  AND candidate.{window_key} >= :window_start
-                  AND candidate.{window_key} < :window_end
+                  AND {window_clause}
                   AND {member}
                   AND {key_expr} IS NOT NULL
-                ORDER BY {key_expr}, candidate.{window_key}, candidate.id
+                ORDER BY {key_expr}, {order_key}
                 LIMIT 1
             )
             UNION ALL
@@ -193,12 +193,11 @@ def render_bounded_key_walk(contract: SourceRelationContract, *, key: str) -> st
                 SELECT {key_expr} AS source_key
                 FROM public.{relation} AS candidate
                 WHERE candidate.tenant_id = :tenant_id
-                  AND candidate.{window_key} >= :window_start
-                  AND candidate.{window_key} < :window_end
+                  AND {window_clause}
                   AND {member}
                   AND {key_expr} IS NOT NULL
                   AND {key_expr} > walked.source_key
-                ORDER BY {key_expr}, candidate.{window_key}, candidate.id
+                ORDER BY {key_expr}, {order_key}
                 LIMIT 1
             ) AS next_key
             WHERE walked.ordinal < :cap_plus_one

@@ -25,6 +25,9 @@ relation is instead evaluated at read time by bounded window overlap; see
 
 from __future__ import annotations
 
+from typing import cast
+
+from app.bayesian.input_contract import LIFECYCLE_INCLUSION_RULES
 from app.bayesian.model_identity import active_identity
 from app.bayesian.source_contract_authority import (
     SOURCE_CONTRACT_AUTHORITY,
@@ -45,6 +48,31 @@ def governed_relations() -> tuple[str, ...]:
         contract.relation
         for contract in source_contracts()
         if contract.relation not in GOVERNED_INVALIDATION_EXCEPTIONS
+    )
+
+
+# C19: allocation and verdict changes invalidate the governed daily window of
+# the underlying immutable financial event, not the database write/transition
+# clock. These two relations carry the financial-window surface; every other
+# governed relation keeps the write-clock statement-level surface.
+FINANCIAL_WINDOW_RELATIONS: frozenset[str] = frozenset(
+    {"attribution_allocations", "b23_match_verdicts"}
+)
+
+
+def financial_window_relations() -> tuple[str, ...]:
+    return tuple(
+        relation
+        for relation in governed_relations()
+        if relation in FINANCIAL_WINDOW_RELATIONS
+    )
+
+
+def write_clock_relations() -> tuple[str, ...]:
+    return tuple(
+        relation
+        for relation in governed_relations()
+        if relation not in FINANCIAL_WINDOW_RELATIONS
     )
 
 
@@ -151,6 +179,10 @@ def _function(name: str, body: str) -> str:
 def function_names() -> tuple[str, ...]:
     names: list[str] = []
     for relation in governed_relations():
+        if relation in FINANCIAL_WINDOW_RELATIONS:
+            prefix = str(_FINANCIAL_WINDOW_SPECS[relation]["surface_prefix"])
+            names.append(f"b24_mark_{prefix}_financial_window_dirty")
+            continue
         for operation in ("insert", "update", "delete"):
             names.append(f"b24_invalidate_{relation}_{operation}")
     return tuple(names)
@@ -160,11 +192,172 @@ def trigger_names() -> tuple[str, ...]:
     return tuple(f"trg_{name}" for name in function_names())
 
 
-def render_source_invalidation_ddl() -> str:
-    """Render every authority-derived invalidation function and trigger."""
+_FINANCIAL_WINDOW_SPECS: dict[str, dict[str, object]] = {
+    "attribution_allocations": {
+        "surface_prefix": "allocation",
+        "event_link_column": "event_id",
+        "authority_gate": "verified_column",
+    },
+    "b23_match_verdicts": {
+        "surface_prefix": "verdict",
+        "event_link_column": "attribution_event_id",
+        "authority_gate": "status_membership",
+    },
+}
 
+# The primary key identifies the row rather than describing it, so it cannot
+# change without the row being a different row.
+_IDENTITY_COLUMNS: frozenset[str] = frozenset({"id"})
+
+
+def changed_columns(relation: str) -> tuple[str, ...]:
+    """The columns whose movement is a source change, from the projection.
+
+    These were transcribed by hand beside the projection they were supposed to
+    mirror, and the two drifted: the verdict surface watched six columns while
+    the projection carried nineteen, so a committed change to match_quality,
+    provider, either verified amount or the discrepancy surface changed the
+    snapshot's bytes and emitted no obligation. Deriving them removes the
+    second list rather than re-synchronising it, which is the same reason
+    membership and projection are already derived here.
+    """
+
+    return tuple(
+        column
+        for column in SOURCE_CONTRACT_AUTHORITY[relation].projected_columns()
+        if column not in _IDENTITY_COLUMNS
+    )
+
+
+def _sql_in_list(values: tuple[str, ...] | list[str]) -> str:
+    rendered = ", ".join(f"'{value}'" for value in values)
+    return f"({rendered})"
+
+
+def _financial_window_function(relation: str) -> str:
+    spec = _FINANCIAL_WINDOW_SPECS[relation]
+    columns = changed_columns(relation)
+    link = str(spec["event_link_column"])
+    identity = active_identity()
+    new_tuple = ",\n       ".join(f"NEW.{column}" for column in columns)
+    old_tuple = ",\n       ".join(f"OLD.{column}" for column in columns)
+    if spec["authority_gate"] == "verified_column":
+        authority_gate = """IF NOT COALESCE(
+            CASE WHEN TG_OP = 'DELETE' THEN OLD.verified
+                 WHEN TG_OP = 'INSERT' THEN NEW.verified
+                 ELSE OLD.verified OR NEW.verified END,
+            false
+        ) THEN
+            RETURN NULL;
+        END IF;"""
+    else:
+        statuses = _sql_in_list(
+            list(LIFECYCLE_INCLUSION_RULES["b23_match_verdicts.status"])
+        )
+        authority_gate = f"""IF NOT (
+            (TG_OP <> 'INSERT' AND OLD.status IN {statuses})
+            OR
+            (TG_OP <> 'DELETE' AND NEW.status IN {statuses})
+        ) THEN
+            RETURN NULL;
+        END IF;"""
+    processed = _sql_in_list(
+        list(LIFECYCLE_INCLUSION_RULES["attribution_events.processing_status"])
+    )
+    event_types = _sql_in_list(
+        list(LIFECYCLE_INCLUSION_RULES["attribution_events.event_type"])
+    )
+    prefix = str(spec["surface_prefix"])
+    return (
+        "CREATE OR REPLACE FUNCTION public."
+        f"b24_mark_{prefix}_financial_window_dirty()\n"
+        "RETURNS trigger\n"
+        "LANGUAGE plpgsql\n"
+        "SECURITY DEFINER\n"
+        "SET search_path = pg_catalog, public\n"
+        "AS $BODY$\n"
+        "DECLARE\n"
+        # `record`, not `<relation>%ROWTYPE`: pg_dump emits functions ahead of
+        # the tables they name, and %ROWTYPE is resolved when the function is
+        # created, so the canonical schema artifact stops applying to an empty
+        # database. `record` defers field resolution to the assignment below.
+        "    source_row record;\n"
+        "    financial_window_start timestamptz;\n"
+        "BEGIN\n"
+        "    source_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;\n"
+        "    IF TG_OP = 'UPDATE' AND\n"
+        f"       ({new_tuple})\n"
+        "       IS NOT DISTINCT FROM\n"
+        f"       ({old_tuple}) THEN\n"
+        "        RETURN NULL;\n"
+        "    END IF;\n"
+        f"    {authority_gate}\n"
+        "\n"
+        "    SELECT date_trunc('day', event.occurred_at)\n"
+        "      INTO financial_window_start\n"
+        "      FROM public.attribution_events AS event\n"
+        "     WHERE event.tenant_id = source_row.tenant_id\n"
+        f"       AND event.id = source_row.{link}\n"
+        f"       AND event.processing_status IN {processed}\n"
+        f"       AND event.event_type IN {event_types};\n"
+        "    IF financial_window_start IS NULL THEN\n"
+        "        RETURN NULL;\n"
+        "    END IF;\n"
+        "\n"
+        "    INSERT INTO public.b24_dirty_events (\n"
+        "        tenant_id, model_type, model_version,\n"
+        "        source_window_start, source_window_end,\n"
+        "        dirty_reason, source_family, event_hash, source_event_id,\n"
+        "        observed_at, status, created_at, updated_at\n"
+        "    ) VALUES (\n"
+        "        source_row.tenant_id,\n"
+        f"        '{identity.model_type}', '{identity.model_version}',\n"
+        "        financial_window_start, financial_window_start + interval '1 day',\n"
+        f"        '{relation}_financial_event_changed',\n"
+        f"        '{relation}',\n"
+        "        encode(sha256(convert_to(\n"
+        f"            'c19|{relation}|' || source_row.tenant_id::text || '|'\n"
+        "            || source_row.id::text || '|' || TG_OP || '|'\n"
+        "            || transaction_timestamp()::text || '|' || txid_current()::text,\n"
+        "            'UTF8')), 'hex'),\n"
+        f"        left('{relation}:' || source_row.id::text, 128),\n"
+        "        transaction_timestamp(), 'pending',\n"
+        "        transaction_timestamp(), transaction_timestamp()\n"
+        "    );\n"
+        "    RETURN NULL;\n"
+        "END;\n"
+        "$BODY$;"
+    )
+
+
+def _financial_window_trigger(relation: str) -> str:
+    prefix = str(_FINANCIAL_WINDOW_SPECS[relation]["surface_prefix"])
+    name = f"b24_mark_{prefix}_financial_window_dirty"
+    return (
+        f"DROP TRIGGER IF EXISTS trg_{name} ON public.{relation};\n"
+        f"CREATE TRIGGER trg_{name}\n"
+        f"AFTER INSERT OR UPDATE OR DELETE ON public.{relation}\n"
+        "FOR EACH ROW\n"
+        f"EXECUTE FUNCTION public.{name}();"
+    )
+
+
+def render_source_invalidation_ddl(
+    relations: tuple[str, ...] | None = None,
+) -> str:
+    """Render every authority-derived invalidation function and trigger.
+
+    ``relations`` selects a carrier subset: the write-clock statement-level
+    surface, the C19 financial-window surface, or (default) both.
+    """
+
+    selected = governed_relations() if relations is None else relations
     blocks: list[str] = []
-    for relation in governed_relations():
+    for relation in selected:
+        if relation in FINANCIAL_WINDOW_RELATIONS:
+            blocks.append(_financial_window_function(relation))
+            blocks.append(_financial_window_trigger(relation))
+            continue
         contract = SOURCE_CONTRACT_AUTHORITY[relation]
         insert_fn = f"b24_invalidate_{relation}_insert"
         update_fn = f"b24_invalidate_{relation}_update"
@@ -205,6 +398,14 @@ def render_drop_ddl() -> str:
 
     statements: list[str] = []
     for relation in governed_relations():
+        if relation in FINANCIAL_WINDOW_RELATIONS:
+            prefix = str(_FINANCIAL_WINDOW_SPECS[relation]["surface_prefix"])
+            name = f"b24_mark_{prefix}_financial_window_dirty"
+            statements.append(
+                f"DROP TRIGGER IF EXISTS trg_{name} ON public.{relation};"
+            )
+            statements.append(f"DROP FUNCTION IF EXISTS public.{name}();")
+            continue
         for operation in ("insert", "update", "delete"):
             name = f"b24_invalidate_{relation}_{operation}"
             statements.append(

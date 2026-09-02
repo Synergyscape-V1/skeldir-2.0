@@ -71,6 +71,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p11_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p11_ci
+      TRUST_ISSUANCE_DATABASE_URL: postgresql://app_trust_issuer:app_trust_issuer@127.0.0.1:5432/skeldir_b25_p11_ci
+      TRUST_SIGNER_DATABASE_URL: postgresql://app_trust_signer:app_trust_signer@127.0.0.1:5432/skeldir_b25_p11_ci
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p11_ci
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p11_ci
       SKELDIR_B25_P7_POSTGRES_PROOF: "1"

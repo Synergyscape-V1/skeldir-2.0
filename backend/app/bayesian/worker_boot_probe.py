@@ -343,6 +343,37 @@ def assert_bayesian_worker_boot_topology_proven() -> None:
     )
 
 
+def refresh_worker_process_authority() -> bool:
+    """Extend this live process's database claim authority (liveness heartbeat).
+
+    Registration at boot alone expires after one hour, which would silently
+    strip a healthy long-running worker of dispatch eligibility. Consuming a
+    beat tick is itself proof of liveness, so the planner refreshes the
+    authority registration each time it runs. Returns whether the extension
+    was persisted; callers surface failures without blocking planning.
+    """
+
+    if not bayesian_worker_boot_topology_probe_has_passed():
+        return False
+    authority = _bayesian_execution_authority
+    if authority is None:
+        return False
+    engine = create_bayesian_worker_engine()
+    try:
+        with engine.begin() as conn:
+            register_worker_process_authority_sync(
+                conn,
+                generation_id=authority.generation_id,
+                pid=authority.pid,
+                parent_pid=authority.parent_pid,
+                topology_fingerprint=authority.topology_fingerprint,
+                process_token=authority.token,
+            )
+    finally:
+        engine.dispose()
+    return True
+
+
 def _run_bayesian_worker_boot_topology_probe_if_needed() -> None:
     """Fatal parent-generation physical proof before task consumption."""
 

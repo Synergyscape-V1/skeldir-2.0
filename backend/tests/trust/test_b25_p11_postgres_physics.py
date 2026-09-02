@@ -166,27 +166,18 @@ async def _seed_track1_history(
     connection,
     *,
     tenant_id: UUID,
-    session_id: UUID,
     count: int,
     namespace: str,
 ) -> None:
+    """Seed historical rows with one bounded session authority per event.
+
+    A single session cannot honestly span this 31-day scaling window: session
+    authority is capped at 24 hours. The C19 insert trigger adjudicates each
+    generated session against its event-time instead.
+    """
     await connection.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)},
-    )
-    await connection.execute(
-        text(
-            """
-            INSERT INTO public.session_authority (
-                tenant_id, session_id, issued_at, expires_at, last_seen_at, issued_by
-            ) VALUES (
-                :tenant_id, :session_id, now(), now() + interval '1 day', now(),
-                'b25_p11_postgres_proof'
-            )
-            ON CONFLICT (tenant_id, session_id) DO NOTHING
-            """
-        ),
-        {"tenant_id": str(tenant_id), "session_id": str(session_id)},
     )
     await connection.execute(
         text(
@@ -216,7 +207,7 @@ async def _seed_track1_history(
                     gen_random_uuid(), :tenant_id,
                     date_trunc('day', now()) - ((ordinal - 1) % 31) * interval '1 day',
                     :namespace || '-external-' || ordinal,
-                    gen_random_uuid(), :session_id, 100,
+                    gen_random_uuid(), gen_random_uuid(), 100,
                     jsonb_build_object('source', 'b25-p11-track1-proof'),
                     :namespace || '-idempotency-' || ordinal,
                     'purchase',
@@ -239,7 +230,6 @@ async def _seed_track1_history(
         ),
         {
             "tenant_id": str(tenant_id),
-            "session_id": str(session_id),
             "namespace": namespace,
             "row_count": count,
         },
@@ -486,7 +476,6 @@ async def test_postgres_two_tenant_bounded_plan_and_read_only_snapshot() -> None
 @pytest.mark.asyncio
 async def test_track1_31_day_source_scaling_timeout_and_connection_occupancy() -> None:
     tenant_id = uuid4()
-    session_id = uuid4()
     migration_engine = create_async_engine(
         to_asyncpg_postgres_dsn(get_migration_database_url())
     )
@@ -527,7 +516,6 @@ async def test_track1_31_day_source_scaling_timeout_and_connection_occupancy() -
                 await _seed_track1_history(
                     connection,
                     tenant_id=tenant_id,
-                    session_id=session_id,
                     count=addition,
                     namespace=f"track1-{total + addition}",
                 )

@@ -637,7 +637,11 @@ def test_c7_source_change_creates_durable_obligation() -> None:
                     {"tenant": str(tenant_id)},
                 ).all()
             }
-            assert "b23_match_verdicts_snapshot_changed" in reasons, reasons
+            # C19 split verdict invalidation onto the financial event clock,
+            # so the governed reason for this relation names that surface. The
+            # invariant under test is unchanged: the transition must produce a
+            # durable invalidation for the window the financial event falls in.
+            assert "b23_match_verdicts_financial_event_changed" in reasons, reasons
             assert len(_wakeup(conn, tenant_id)) == 1, (
                 "invalidation did not become a durable planning obligation"
             )

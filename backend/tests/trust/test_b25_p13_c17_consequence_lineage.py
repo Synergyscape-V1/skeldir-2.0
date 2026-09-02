@@ -40,6 +40,7 @@ from app.trust.runtime_keys import load_runtime_signing_registry
 from app.trust.signer_gateway import (
     TrustSignerGatewayError,
     assert_public_api_signer_isolation,
+    _signer_tls_verify,
 )
 from app.trust.signer_service import assert_signer_process_custody
 from test_b25_p13_c15_issuance_truth import (
@@ -609,6 +610,23 @@ def test_c17_process_custody_guards_fail_closed(monkeypatch) -> None:
     ):
         assert_signer_process_custody()
     print("\nc17_process_custody_guards=2")
+
+
+def test_c19_remote_signer_private_ca_is_verified_not_disabled(
+    monkeypatch, tmp_path
+) -> None:
+    ca_bundle = tmp_path / "c19-signer-ca.pem"
+    ca_bundle.write_text("test-ca", encoding="utf-8")
+    monkeypatch.setenv("TRUST_SIGNER_CA_BUNDLE", str(ca_bundle))
+    assert _signer_tls_verify() == str(ca_bundle.resolve())
+
+    monkeypatch.setenv("TRUST_SIGNER_CA_BUNDLE", str(tmp_path / "missing.pem"))
+    with pytest.raises(
+        TrustSignerGatewayError,
+        match="trust_signer_ca_bundle_invalid",
+    ):
+        _signer_tls_verify()
+    print("\nc19_signer_private_ca_verified=1")
 
 
 @_DB_PROOF

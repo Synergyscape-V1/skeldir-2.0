@@ -68,6 +68,8 @@ class AuthorityConfig:
     worker_password: str
     publisher_user: str
     publisher_password: str
+    transport_user: str = "app_celery_transport"
+    transport_password: str = "app_celery_transport"
     trust_issuer_user: str = "app_trust_issuer"
     trust_issuer_password: str = "app_trust_issuer"
     trust_signer_user: str = "app_trust_signer"
@@ -95,6 +97,8 @@ def _parse_args() -> AuthorityConfig:
     parser.add_argument("--worker-password", default="app_worker")
     parser.add_argument("--publisher-user", default="app_dispatch_publisher")
     parser.add_argument("--publisher-password", default="app_dispatch_publisher")
+    parser.add_argument("--transport-user", default="app_celery_transport")
+    parser.add_argument("--transport-password", default="app_celery_transport")
     parser.add_argument("--trust-issuer-user", default="app_trust_issuer")
     parser.add_argument("--trust-issuer-password", default="app_trust_issuer")
     parser.add_argument("--trust-signer-user", default="app_trust_signer")
@@ -123,6 +127,8 @@ def _parse_args() -> AuthorityConfig:
         worker_password=args.worker_password,
         publisher_user=args.publisher_user,
         publisher_password=args.publisher_password,
+        transport_user=args.transport_user,
+        transport_password=args.transport_password,
         trust_issuer_user=args.trust_issuer_user,
         trust_issuer_password=args.trust_issuer_password,
         trust_signer_user=args.trust_signer_user,
@@ -229,6 +235,16 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                 cursor,
                 config.publisher_user,
                 config.publisher_password,
+                rotate_existing=rotate,
+            )
+            # Celery's SQL broker/result tables are transport, not application
+            # or dispatch authority. Every process may hold this credential;
+            # it is therefore deliberately separate from app_worker and from
+            # the cross-tenant dispatch publisher.
+            _create_or_alter_login_role(
+                cursor,
+                config.transport_user,
+                config.transport_password,
                 rotate_existing=rotate,
             )
             # B2.5-P13 Corrective XVI. Recording a completed issuance is the
@@ -477,6 +493,7 @@ def main() -> int:
     print(f"migration_user={config.migration_user}")
     print(f"worker_user={config.worker_user}")
     print(f"publisher_user={config.publisher_user}")
+    print(f"transport_user={config.transport_user}")
     print(f"trust_issuer_user={config.trust_issuer_user}")
     print(f"trust_signer_user={config.trust_signer_user}")
     print("runtime_schema_privileges=" + ",".join(GOVERNED_RUNTIME_SCHEMA_PRIVILEGES))

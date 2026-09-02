@@ -54,9 +54,11 @@ from app.bayesian.source_contract_authority import (  # noqa: E402
     query_params,
 )
 from app.bayesian.source_invalidation_contract import (  # noqa: E402
+    financial_window_relations,
     governed_relations,
     render_source_invalidation_ddl,
     trigger_names,
+    write_clock_relations,
 )
 
 
@@ -71,6 +73,10 @@ CURRENT_TERMINAL_MIGRATION = ROOT / (
 C8_MIGRATION = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202608231200_b25_p13_c8_identity_window_causality.py"
+)
+C19_MIGRATION = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202609011200_b25_p13_c19_verified_allocation_lineage.py"
 )
 FIT_PLANNER = ROOT / "backend/app/bayesian/fit_planner.py"
 FEATURE_CARDINALITY = ROOT / "backend/app/bayesian/feature_cardinality.py"
@@ -167,6 +173,7 @@ def validate_source_invalidation_contract(
     migration: str | None = None,
     shipped_sql: dict[str, str] | None = None,
     authority: dict[str, Any] | None = None,
+    c19_migration: str | None = None,
 ) -> int:
     """Source semantics and invalidation semantics are one authority.
 
@@ -183,14 +190,27 @@ def validate_source_invalidation_contract(
     membership, projection or window key on either side turns red.
     """
 
-    body = migration if migration is not None else _read(C8_MIGRATION)
     contracts = authority if authority is not None else SOURCE_CONTRACT_AUTHORITY
 
-    # 1. The migration embeds exactly the invalidation DDL the authority renders.
-    embedded = _literal_assignment(body, "SOURCE_INVALIDATION_DDL")
+    # 1. The migrations embed exactly the invalidation DDL the authority
+    #    renders. XIX split the surface in two and moved the current carrier
+    #    to the C19 migration: the financial-event-clock row-level surface for
+    #    allocations and verdicts, and a refreshed write-clock statement
+    #    surface whose lifecycle membership follows the XIX source contract.
+    #    C8's frozen literal is superseded history and is no longer compared;
+    #    both C19 literals must equal their rendered contracts byte-for-byte.
+    c19_body = c19_migration if c19_migration is not None else _read(C19_MIGRATION)
+    embedded = _literal_assignment(c19_body, "SOURCE_INVALIDATION_DDL")
     _require(
-        embedded.strip() == render_source_invalidation_ddl().strip(),
-        "source_invalidation_ddl_drift:migration_is_not_the_rendered_contract",
+        embedded.strip()
+        == render_source_invalidation_ddl(financial_window_relations()).strip(),
+        "financial_window_ddl_drift:c19_is_not_the_rendered_contract",
+    )
+    c19_embedded = _literal_assignment(c19_body, "WRITE_CLOCK_INVALIDATION_DDL")
+    _require(
+        c19_embedded.strip()
+        == render_source_invalidation_ddl(write_clock_relations()).strip(),
+        "source_invalidation_ddl_drift:c19_is_not_the_rendered_contract",
     )
 
     # 2. The canonical snapshot SELECTs the application executes are exactly the
@@ -232,20 +252,29 @@ def validate_source_invalidation_contract(
         "allowed_source_read_models_diverges_from_the_authority",
     )
 
-    # 4. Coverage: every governed relation carries insert/update/delete.
+    # 4. Coverage: write-clock relations carry insert/update/delete; the two
+    #    financial-window relations carry one row-level surface trigger each.
+    #    Each trigger must appear in the carrier migration that governs it.
     derived = set(governed_relations())
     _require(
         derived == set(contracts),
         "invalidation_coverage_is_not_the_full_source_contract:"
         f"{sorted(set(contracts) - derived)}",
     )
+    write_clock = write_clock_relations()
+    financial = financial_window_relations()
+    _require(
+        len(financial) == 2,
+        "financial_window_surface_must_cover_allocations_and_verdicts",
+    )
     expected_triggers = set(trigger_names())
     _require(
-        len(expected_triggers) == 3 * len(contracts),
-        "invalidation_triggers_do_not_cover_insert_update_delete",
+        len(expected_triggers) == 3 * len(write_clock) + len(financial),
+        "invalidation_triggers_do_not_cover_the_governed_surfaces",
     )
+    combined = embedded + "\n" + c19_embedded
     for trigger in sorted(expected_triggers):
-        _require(trigger in embedded, f"invalidation_trigger_absent:{trigger}")
+        _require(trigger in combined, f"invalidation_trigger_absent:{trigger}")
     return witnesses
 
 
@@ -1067,13 +1096,16 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
         )
     )
     # NC-C7-S03 -- generated invalidation DDL drifting from the source contract.
+    # XIX: the current carrier is the C19 migration, so the mutation targets
+    # its write-clock literal instead of the superseded C8 text.
+    c19_literal_text = _read(C19_MIGRATION)
     controls.append(
         _must_fail(
             "NC-C7-S03",
             lambda: validate_source_invalidation_contract(
-                migration=migration.replace(
-                    "trg_b24_invalidate_b23_match_verdicts_update",
-                    "trg_b24_invalidate_b23_match_verdicts_updat",
+                c19_migration=c19_literal_text.replace(
+                    "trg_b24_invalidate_b23_revenue_events_update",
+                    "trg_b24_invalidate_b23_revenue_events_updat",
                 )
             ),
         )
@@ -1093,7 +1125,7 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
         _must_fail(
             "NC-C7-S04",
             lambda: validate_source_invalidation_contract(
-                shipped_sql=_shipped_with(("AND status IN :match_verdict_statuses", ""))
+                shipped_sql=_shipped_with(("AND v.status IN :match_verdict_statuses", ""))
             ),
         )
     )
@@ -1113,8 +1145,8 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
             lambda: validate_source_invalidation_contract(
                 shipped_sql=_shipped_with(
                     (
-                        "AND last_transition_at >= :window_start",
-                        "AND confirmed_at >= :window_start",
+                        "AND v.status IN :match_verdict_statuses",
+                        "AND v.status IN :match_verdict_statuses_v2",
                     )
                 )
             ),

@@ -189,8 +189,15 @@ def validate_producer_inventory(
     for token in ("source_read_started_at", "source_read_completed_at"):
         _require(token in fallback, f"fallback_snapshot_time_not_persisted:{token}")
     _require(
-        fallback.count("confidence_evidence_snapshot_hash = NULL") == 3,
-        "fallback_writer_does_not_clear_partial_evidence",
+        fallback.count("confidence_evidence_snapshot_hash = NULL") == 2,
+        "fallback_mutation_writer_does_not_clear_partial_evidence",
+    )
+    _require(
+        "WITH inserted AS (" in fallback
+        and "DO NOTHING" in fallback
+        and "UNION ALL" in fallback
+        and "source_snapshot_hash = :source_snapshot_hash" in fallback,
+        "immutable_terminal_fallback_reuse_not_exact_key_bound",
     )
     runtime_state = (ROOT / "backend/app/bayesian/runtime_state.py").read_text("utf-8")
     _require(

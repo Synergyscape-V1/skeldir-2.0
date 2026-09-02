@@ -307,6 +307,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | VALUE_02 | docs/forensics/evidence/value_traces/value_02_constraint_trace.md | Value trace report | unknown (legacy) | unknown |
 | VALUE_03 | docs/forensics/evidence/value_traces/value_03_provider_handshake.md | Value trace report | unknown (legacy) | unknown |
 | VALUE_04 | docs/forensics/evidence/value_traces/value_04_registry_trace.md | Value trace report | unknown (legacy) | unknown |
+| VALUE_05 | docs/forensics/evidence/value_traces/value_05_centaur_enforcement.md | Regenerated Centaur enforcement value trace carried by the Corrective XIX contract and causal-composition preservation run. | PR #697 (B2.5-P13 Corrective XIX) | Adjudicated by the required Phase Gates (VALUE_05) context; the landed protected-main identity is recorded by the Corrective XIX evidence report. |
 
 ## Backend evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
