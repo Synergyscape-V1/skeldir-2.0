@@ -2716,11 +2716,15 @@ jobs:
             | grep -xE 'skeldir-c19-[A-Za-z0-9]+-[0-9]+' \
             | head -1)"
           if [ -n "$project" ]; then
-            docker compose -p "$project" -f docker-compose.c19.yml down --volumes --remove-orphans
+            test -s "$RUNNER_TEMP/c19-teardown.env"
+            docker compose --env-file "$RUNNER_TEMP/c19-teardown.env" \
+              -p "$project" -f docker-compose.c19.yml \
+              down --volumes --remove-orphans
             echo "c19_topology_teardown=$project"
           else
             echo 'c19_topology_not_present'
           fi
+          rm -f "$RUNNER_TEMP/c19-teardown.env"
 
   # load-bearing proof therefore cannot report the required context green.
   b25-p13-e2e-trust-closure:

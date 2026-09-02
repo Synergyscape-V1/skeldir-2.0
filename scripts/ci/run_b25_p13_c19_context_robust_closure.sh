@@ -125,6 +125,29 @@ export C19_ISSUER_DATABASE_URL='postgresql+asyncpg://app_trust_issuer:app_trust_
 export C19_CELERY_BROKER_URL='sqla+postgresql://app_celery_transport:app_celery_transport@postgres:5432/skeldir_c19'
 export C19_CELERY_RESULT_BACKEND='db+postgresql://app_celery_transport:app_celery_transport@postgres:5432/skeldir_c19'
 
+# GitHub Actions runs teardown in a fresh shell. Preserve the exact ephemeral
+# Compose interpolation context without printing it so that a kept topology can
+# still be removed after the physical severance checks. The workflow deletes
+# this capsule as part of teardown.
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+  teardown_env="${RUNNER_TEMP:?RUNNER_TEMP is required in GitHub Actions}/c19-teardown.env"
+  : > "$teardown_env"
+  teardown_names=(
+    C19_POSTGRES_PORT C19_API_PORT C19_TLS_DIR
+    C19_API_DATABASE_URL C19_WORKER_DATABASE_URL
+    C19_PUBLISHER_DATABASE_URL C19_PUBLISHER_SYNC_DATABASE_URL
+    C19_TRANSPORT_DATABASE_URL C19_SIGNER_DATABASE_URL C19_ISSUER_DATABASE_URL
+    C19_CELERY_BROKER_URL C19_CELERY_RESULT_BACKEND
+    C19_AUTH_JWT_PUBLIC_KEY_RING_JSON C19_TRUST_PUBLIC_JWKS_JSON
+    C19_TRUST_SIGNING_KEY_SEED_B64URL C19_TRUST_SIGNING_KEY_ID
+    C19_TRUST_SIGNING_KEY_VALID_FROM C19_TRUST_SIGNER_SHARED_SECRET
+  )
+  for name in "${teardown_names[@]}"; do
+    printf '%s=%s\n' "$name" "${!name}" >> "$teardown_env"
+  done
+  chmod 600 "$teardown_env"
+fi
+
 "${compose[@]}" config --quiet
 "${compose[@]}" up -d postgres
 for _ in $(seq 1 60); do
