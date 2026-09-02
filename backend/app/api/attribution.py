@@ -23,7 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.problem_details import problem_details_response
 from app.attribution.strategy_kernel import (
     DETERMINISTIC_BASELINE_MODEL,
-    LAST_TOUCH_MODEL,
     canonical_model_type,
 )
 from app.core.config import settings
@@ -67,7 +66,6 @@ from app.services.realtime_revenue_providers import build_realtime_revenue_fetch
 from app.services.realtime_revenue_response import (
     build_attribution_realtime_revenue_response,
 )
-from app.services.attribution import schedule_recompute_window
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -536,7 +534,7 @@ async def ingest_attribution_touchpoint(
         Security(get_auth_context, scopes=["manager"]),
     ],
 ):
-    """Persist legitimate touchpoint ingress and enqueue deterministic replay."""
+    """Persist legitimate touchpoint ingress without minting conversion authority."""
 
     tenant_id = auth_context.tenant_id
     now = datetime.now(timezone.utc)
@@ -598,15 +596,6 @@ async def ingest_attribution_touchpoint(
     duplicate = result.is_duplicate
     if not duplicate:
         response.status_code = status.HTTP_201_CREATED
-        window_start = event_timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
-        schedule_recompute_window(
-            tenant_id=tenant_id,
-            window_start=window_start,
-            window_end=window_start + timedelta(days=1),
-            session_id=result.session_id,
-            correlation_id=str(x_correlation_id),
-            model_type=LAST_TOUCH_MODEL,
-        )
     else:
         response.status_code = status.HTTP_200_OK
     response.headers["X-Correlation-ID"] = str(x_correlation_id)

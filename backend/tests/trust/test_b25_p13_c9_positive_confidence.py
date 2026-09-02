@@ -447,6 +447,52 @@ def _rearm_authority_waiters(tenant_id) -> None:
         engine.dispose()
 
 
+def _wait_for_external_feature_authority(tenant_id, *, timeout_s: int = 180) -> None:
+    """Wait for the real worker to answer and publish the planner's request."""
+
+    import time as _time
+
+    engine = _engine()
+    try:
+        deadline = _time.monotonic() + timeout_s
+        state: dict[str, int] = {}
+        while _time.monotonic() < deadline:
+            with engine.connect() as conn:
+                _bind(conn, tenant_id)
+                state = dict(
+                    conn.execute(
+                        text(
+                            "SELECT "
+                            "count(*) FILTER (WHERE r.status = 'authority_completed') "
+                            "AS completed_requests, "
+                            "count(a.tenant_id) FILTER "
+                            "(WHERE a.freshness_status = 'fresh') AS fresh_authorities "
+                            "FROM public.b24_feature_authority_build_requests r "
+                            "LEFT JOIN public.b24_source_window_feature_authority a "
+                            "ON a.tenant_id = r.tenant_id "
+                            "AND a.model_type = r.model_type "
+                            "AND a.model_version = r.model_version "
+                            "AND a.source_window_start = r.source_window_start "
+                            "AND a.source_window_end = r.source_window_end "
+                            "AND a.source_snapshot_hash = r.source_snapshot_hash "
+                            "WHERE r.tenant_id = :t"
+                        ),
+                        {"t": str(tenant_id)},
+                    )
+                    .mappings()
+                    .one()
+                )
+            if state["completed_requests"] >= 1 and state["fresh_authorities"] >= 1:
+                return
+            _time.sleep(0.5)
+        raise AssertionError(
+            "the external worker did not materialize requested feature authority: "
+            f"{state}"
+        )
+    finally:
+        engine.dispose()
+
+
 def _lease_claimed_dispatch(tenant_id) -> tuple[dict, dict]:
     """Lease the planner's dispatch row through the production relay.
 
@@ -601,10 +647,13 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
 
         # --- planner asks, producer answers, planner claims ------------------
         _plan(tenant_id, "c9-positive-1")
-        assert _produce_requested_authority(tenant_id) >= 1, (
-            "the planner asked for no authority the producer could answer"
-        )
-        _rearm_authority_waiters(tenant_id)
+        if external_worker:
+            _wait_for_external_feature_authority(tenant_id)
+        else:
+            assert _produce_requested_authority(tenant_id) >= 1, (
+                "the planner asked for no authority the producer could answer"
+            )
+            _rearm_authority_waiters(tenant_id)
         _plan(tenant_id, "c9-positive-2")
 
         if external_worker:

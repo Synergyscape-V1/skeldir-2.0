@@ -10,7 +10,6 @@ from fastapi import Request, Response
 from pydantic import ValidationError
 
 from app.api import attribution as attribution_api
-from app.attribution.strategy_kernel import LAST_TOUCH_MODEL
 from app.schemas.attribution import TouchpointEventRequest
 from app.security.auth import AuthContext
 
@@ -32,7 +31,7 @@ def _auth_context(tenant_id):
 
 
 @pytest.mark.asyncio
-async def test_c19_touchpoint_ingress_is_legitimate_and_schedules_last_touch(
+async def test_c19_touchpoint_ingress_is_legitimate_without_conversion_authority(
     monkeypatch,
 ) -> None:
     tenant_id = uuid4()
@@ -55,12 +54,7 @@ async def test_c19_touchpoint_ingress_is_legitimate_and_schedules_last_touch(
             ),
         )
 
-    def fake_schedule(**kwargs):
-        observed["schedule"] = kwargs
-        return SimpleNamespace(id="c19-task")
-
     monkeypatch.setattr(attribution_api, "ingest_with_transaction", fake_ingest)
-    monkeypatch.setattr(attribution_api, "schedule_recompute_window", fake_schedule)
 
     payload = TouchpointEventRequest(
         event_id="collector-event-001",
@@ -93,12 +87,19 @@ async def test_c19_touchpoint_ingress_is_legitimate_and_schedules_last_touch(
     assert ingest["event_data"]["revenue_amount"] == "0.00"
     assert ingest["event_data"]["event_type"] == "ad_click"
     assert ingest["idempotency_key"] == f"{tenant_id}:collector-event-001"
-    schedule = observed["schedule"]
-    assert schedule["model_type"] == LAST_TOUCH_MODEL
-    assert schedule["session_id"] == str(session_id)
     assert result.channel_code == "google_search_paid"
     assert result.tenant_id == str(tenant_id)
     assert response.status_code == 201
+
+
+def test_c19_touchpoint_surface_has_no_financial_recompute_edge() -> None:
+    """A non-financial fact cannot freeze a conversion replay identity."""
+
+    source = (REPO_ROOT / "backend/app/api/attribution.py").read_text(encoding="utf-8")
+    route = source.split("async def ingest_attribution_touchpoint(", 1)[1].split(
+        '@router.get(\n    "/revenue/realtime"', 1
+    )[0]
+    assert "schedule_recompute_window" not in route
 
 
 def test_c19_touchpoint_contract_cannot_claim_conversion_or_revenue_authority() -> None:
