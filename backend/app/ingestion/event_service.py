@@ -576,9 +576,25 @@ class EventIngestionService:
             event_data=ingestion_event_data,
             identity_payload=identity_payload,
         )
-        event_authority_time = self._coerce_event_timestamp(
-            ingestion_event_data.get("event_timestamp")
-        )
+        start_time = time.perf_counter()
+        try:
+            event_authority_time = self._coerce_event_timestamp(
+                ingestion_event_data.get("event_timestamp")
+            )
+        except ValidationError as exc:
+            await self._route_validation_error_to_dlq(
+                session=session,
+                tenant_id=tenant_id,
+                event_data=event_data,
+                ingestion_event_data=ingestion_event_data,
+                identity_payload=identity_payload,
+                request_headers=request_headers,
+                idempotency_key=idempotency_key,
+                source=source,
+                error=exc,
+                start_time=start_time,
+            )
+            raise
 
         candidate_session_uuid = await resolve_session_candidate_with_ephemeral_substrate(
             session=session,
@@ -639,7 +655,6 @@ class EventIngestionService:
             now=event_authority_time,
         )
 
-        start_time = time.perf_counter()
         try:
             # 2. Validate event schema
             validated = self._validate_schema(ingestion_event_data)
@@ -768,35 +783,18 @@ class EventIngestionService:
             )
 
         except ValidationError as e:
-            # Route validation failures to dead-letter queue
-            logger.warning(
-                "validation_error_routed_to_dlq",
-                extra={
-                    "event": "validation_error_routed_to_dlq",
-                    "error": str(e),
-                    "idempotency_key": idempotency_key,
-                    "source": source,
-                    "tenant_id": str(tenant_id),
-                    "vendor": ingestion_event_data.get("vendor", source),
-                    "event_type": ingestion_event_data.get("event_type"),
-                    "correlation_id_business": idempotency_key,
-                    **log_context(),
-                }
-            )
-            await self._route_to_dlq(
+            await self._route_validation_error_to_dlq(
                 session=session,
                 tenant_id=tenant_id,
                 event_data=event_data,
-                error_type="validation_error",
-                error_message=str(e),
-                source=source,
+                ingestion_event_data=ingestion_event_data,
                 identity_payload=identity_payload,
                 request_headers=request_headers,
+                idempotency_key=idempotency_key,
+                source=source,
+                error=e,
+                start_time=start_time,
             )
-            duration = time.perf_counter() - start_time
-            # B0.5.6.3: No labels on event metrics (bounded cardinality)
-            events_dlq_total.inc()
-            ingestion_duration_seconds.observe(duration)
             raise  # Re-raise to signal failure to caller
 
         except IntegrityError as e:
@@ -1040,6 +1038,49 @@ class EventIngestionService:
         )
 
         return dead_event
+
+    async def _route_validation_error_to_dlq(
+        self,
+        *,
+        session: AsyncSession,
+        tenant_id: UUID,
+        event_data: dict,
+        ingestion_event_data: Mapping[str, Any],
+        identity_payload: Mapping[str, Any],
+        request_headers: Mapping[str, str] | None,
+        idempotency_key: str,
+        source: str,
+        error: ValidationError,
+        start_time: float,
+    ) -> None:
+        """Persist a validation failure before returning it to the caller."""
+
+        logger.warning(
+            "validation_error_routed_to_dlq",
+            extra={
+                "event": "validation_error_routed_to_dlq",
+                "error": str(error),
+                "idempotency_key": idempotency_key,
+                "source": source,
+                "tenant_id": str(tenant_id),
+                "vendor": ingestion_event_data.get("vendor", source),
+                "event_type": ingestion_event_data.get("event_type"),
+                "correlation_id_business": idempotency_key,
+                **log_context(),
+            },
+        )
+        await self._route_to_dlq(
+            session=session,
+            tenant_id=tenant_id,
+            event_data=event_data,
+            error_type="validation_error",
+            error_message=str(error),
+            source=source,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+        events_dlq_total.inc()
+        ingestion_duration_seconds.observe(time.perf_counter() - start_time)
 
 
 # Transaction Wrapper for External API
