@@ -577,15 +577,24 @@ class EventIngestionService:
             identity_payload=identity_payload,
         )
         start_time = time.perf_counter()
-        # GATE XX2-F CONTROLLED DEFECT -- DO NOT MERGE.
-        # This restores the exact early-validation DLQ escape that traversed the
-        # ALLGREEN merge queue as PR #697 and was only caught by the push-only
-        # R2 lane three seconds after it had already landed on protected main.
-        # Corrective XX makes R2 mandatory pre-merge; this candidate exists to
-        # prove that the same defect can no longer reach main.
-        event_authority_time = self._coerce_event_timestamp(
-            ingestion_event_data.get("event_timestamp")
-        )
+        try:
+            event_authority_time = self._coerce_event_timestamp(
+                ingestion_event_data.get("event_timestamp")
+            )
+        except ValidationError as exc:
+            await self._route_validation_error_to_dlq(
+                session=session,
+                tenant_id=tenant_id,
+                event_data=event_data,
+                ingestion_event_data=ingestion_event_data,
+                identity_payload=identity_payload,
+                request_headers=request_headers,
+                idempotency_key=idempotency_key,
+                source=source,
+                error=exc,
+                start_time=start_time,
+            )
+            raise
 
         candidate_session_uuid = await resolve_session_candidate_with_ephemeral_substrate(
             session=session,
