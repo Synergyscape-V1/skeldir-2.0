@@ -1447,6 +1447,11 @@ jobs:
 
       # XX2-D. The divergent-clock experiment both audits left unresolved.
       - name: P13 C20 B2.4 temporal coherence
+        env:
+          # The feature-authority producer this experiment drives is worker-owned,
+          # so the proof runs under the principal that owns it -- the same
+          # principal the C9 cardinality lane already uses.
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c20
         run: |
           set -o pipefail
           python -m pytest \
@@ -1458,6 +1463,8 @@ jobs:
       # the temporal-coherence proof red, and exact restoration must return it
       # to green. Without this the override is an untested assertion.
       - name: NC-C20-02 restoring the write-clock walk turns temporal coherence red
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b25_p13_c20
         run: |
           set -o pipefail
           cp backend/app/bayesian/source_contract_authority.py /tmp/contract_backup.py
