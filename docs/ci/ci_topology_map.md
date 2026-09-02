@@ -97,6 +97,12 @@
 - `runtime-ops-proofs`
 - `Checkout Code`
 - `CI Physics Guard`
+- `B2.4-P12 Internal E2E Proof Harness`
+- `R2 Data-Truth Hardening`
+- `R3 Ingestion Under Fire`
+- `R4 Worker Failure Semantics`
+- `R6 Worker Resource Governance`
+- `R7 Final Winning State`
 
 ## Jobs That Call scripts/ci Enforcers
 

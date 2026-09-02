@@ -1,0 +1,544 @@
+{
+  "audited_predecessor": {
+    "alembic_head": "202609011200",
+    "sha": "87836b60cd2d8a23dcd6def203c14e3ae3b3477b",
+    "tree": "a922924e4e2ab7c7a98fb503f7bea69d5718effd"
+  },
+  "corrective": "B2.5-P13 XX",
+  "environment": "PostgreSQL 15 container, production role graph provisioned by scripts/database/prepare_migration_authority_boundary.py",
+  "gate_xx2_a_b_c_after_remediation": {
+    "c20_authority_conservation": {
+      "allocation_after_lawful_transition": [
+        true,
+        "b23_match_verdict"
+      ],
+      "app_user_cross_tenant": {
+        "error": "permission denied for table b23_match_verdicts",
+        "op": "CROSS_TENANT_UPDATE",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "sqlstate": "42501"
+      },
+      "app_user_insert": {
+        "error": "permission denied for table b23_match_verdicts",
+        "op": "INSERT",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "sqlstate": "42501"
+      },
+      "app_user_transition": {
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "app_worker_transition": {
+        "current_user": "app_worker",
+        "principal": "app_worker",
+        "result": "ALLOWED",
+        "rowcount": 1,
+        "session_user": "app_worker"
+      },
+      "gate": "XX2-A/XX2-B",
+      "tenant_id": "b1867648-6293-4cdc-b837-6f4285196ef2",
+      "verdict_id": "a0733991-7033-4312-893b-e82afc5b25e4"
+    },
+    "c20_authority_matrix": {
+      "b23_match_verdicts": {
+        "app_celery_transport": [],
+        "app_dispatch_publisher": [],
+        "app_ro": [
+          "SELECT"
+        ],
+        "app_rw": [],
+        "app_trust_issuer": [],
+        "app_trust_signer": [],
+        "app_user": [
+          "SELECT"
+        ],
+        "app_worker": [
+          "INSERT",
+          "SELECT",
+          "UPDATE"
+        ]
+      },
+      "b24_active_execution_leases": {
+        "app_celery_transport": [],
+        "app_dispatch_publisher": [],
+        "app_ro": [],
+        "app_rw": [],
+        "app_trust_issuer": [],
+        "app_trust_signer": [],
+        "app_user": [
+          "SELECT"
+        ],
+        "app_worker": [
+          "DELETE",
+          "INSERT",
+          "SELECT",
+          "UPDATE"
+        ]
+      },
+      "b24_fit_dispatch_outbox": {
+        "app_celery_transport": [],
+        "app_dispatch_publisher": [
+          "SELECT"
+        ],
+        "app_ro": [],
+        "app_rw": [],
+        "app_trust_issuer": [],
+        "app_trust_signer": [],
+        "app_user": [
+          "SELECT"
+        ],
+        "app_worker": [
+          "INSERT",
+          "SELECT",
+          "UPDATE"
+        ]
+      },
+      "b24_fit_planner_wakeups": {
+        "app_celery_transport": [],
+        "app_dispatch_publisher": [],
+        "app_ro": [],
+        "app_rw": [],
+        "app_trust_issuer": [],
+        "app_trust_signer": [],
+        "app_user": [],
+        "app_worker": [
+          "DELETE",
+          "INSERT",
+          "SELECT",
+          "UPDATE"
+        ]
+      },
+      "bayesian_artifacts": {
+        "app_celery_transport": [],
+        "app_dispatch_publisher": [],
+        "app_ro": [
+          "SELECT"
+        ],
+        "app_rw": [
+          "SELECT"
+        ],
+        "app_trust_issuer": [],
+        "app_trust_signer": [],
+        "app_user": [
+          "SELECT"
+        ],
+        "app_worker": [
+          "INSERT",
+          "SELECT",
+          "UPDATE"
+        ]
+      },
+      "bayesian_model_fits": {
+        "app_celery_transport": [],
+        "app_dispatch_publisher": [],
+        "app_ro": [
+          "SELECT"
+        ],
+        "app_rw": [
+          "SELECT"
+        ],
+        "app_trust_issuer": [],
+        "app_trust_signer": [],
+        "app_user": [
+          "SELECT"
+        ],
+        "app_worker": [
+          "INSERT",
+          "SELECT",
+          "UPDATE"
+        ]
+      }
+    },
+    "c20_layer_falsifier": {
+      "after_exact_restoration": {
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "both_layers_severed": {
+        "current_user": "app_user",
+        "principal": "app_user",
+        "result": "ALLOWED",
+        "rowcount": 1,
+        "session_user": "app_user"
+      },
+      "gate": "XX2-A active falsifier",
+      "guard_trigger_severed": {
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "guard_triggers": [
+        "trg_b23_verdict_authorship_insert",
+        "trg_b23_verdict_authorship_update"
+      ],
+      "historical_downstream_consequence": [
+        true,
+        "b23_match_verdict"
+      ],
+      "historical_grant_restored": {
+        "current_user": "app_user",
+        "error": "b23 verdict authority is owned by the B2.3 worker principal; app_user may not UPDATE public.b23_match_verdicts",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      }
+    },
+    "violations": []
+  },
+  "gate_xx2_a_first_red": {
+    "app_user_benign_update": "ALLOWED",
+    "app_user_insert_verdict": "ALLOWED",
+    "app_user_provisional_to_confirmed": "ALLOWED (UPDATE 1)",
+    "classification": "PRODUCT DEFECT, not environment",
+    "description": "H-XX2-01 reproduced on the audited predecessor head before any remediation",
+    "downstream_allocation_after": [
+      "verified=true",
+      "verification_source=b23_match_verdict"
+    ]
+  },
+  "gate_xx2_c_sibling_battery": {
+    "probes": [
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user INSERT verdict",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user UPDATE verdict amount",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user provisional->confirmed",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user cross-tenant verdict mutation",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user DELETE verdict",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied to set role \"app_worker\"",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user SET ROLE app_worker",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied to set role \"postgres\"",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user SET ROLE postgres",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user partial verdict tuple (NULL authority columns)",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_worker",
+        "expected": "ALLOWED",
+        "principal": "app_worker",
+        "probe": "app_worker provisional->confirmed",
+        "result": "ALLOWED",
+        "rowcount": -1,
+        "session_user": "app_worker"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_dispatch_publisher",
+        "error": "permission denied for table bayesian_model_fits",
+        "expected": "REFUSED",
+        "principal": "app_dispatch_publisher",
+        "probe": "publisher mutates worker-owned fit",
+        "result": "REFUSED",
+        "session_user": "app_dispatch_publisher",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_dispatch_publisher",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_dispatch_publisher",
+        "probe": "publisher mutates verdict",
+        "result": "REFUSED",
+        "session_user": "app_dispatch_publisher",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_celery_transport",
+        "error": "permission denied for table revenue_ledger",
+        "expected": "REFUSED",
+        "principal": "app_celery_transport",
+        "probe": "transport mutates financial ledger",
+        "result": "REFUSED",
+        "session_user": "app_celery_transport",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_celery_transport",
+        "error": "permission denied for table attribution_events",
+        "expected": "REFUSED",
+        "principal": "app_celery_transport",
+        "probe": "transport reads attribution events",
+        "result": "REFUSED",
+        "session_user": "app_celery_transport",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_trust_issuer",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_trust_issuer",
+        "probe": "trust issuer mutates verdict",
+        "result": "REFUSED",
+        "session_user": "app_trust_issuer",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_trust_signer",
+        "error": "permission denied for table b23_match_verdicts",
+        "expected": "REFUSED",
+        "principal": "app_trust_signer",
+        "probe": "trust signer mutates verdict",
+        "result": "REFUSED",
+        "session_user": "app_trust_signer",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_trust_signer",
+        "error": "permission denied for table attribution_allocations",
+        "expected": "REFUSED",
+        "principal": "app_trust_signer",
+        "probe": "trust signer mutates allocation verification",
+        "result": "REFUSED",
+        "session_user": "app_trust_signer",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": true,
+        "current_user": "app_user",
+        "error": "permission denied for table b24_fit_planner_wakeups",
+        "expected": "REFUSED",
+        "principal": "app_user",
+        "probe": "app_user schedules a fit (planner wakeup)",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      {
+        "as_expected": false,
+        "current_user": "app_user",
+        "error": "permission denied for function b24_next_active_worker_generation",
+        "expected": "ALLOWED",
+        "principal": "app_user",
+        "probe": "app_user calls b24_next_active_worker_generation",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      }
+    ],
+    "tenant_id": "9b32f8d1-6d55-42c7-8b9a-4a2a8c4aec7f",
+    "verdict_id": "62af0b1f-722e-4902-abac-62a3cb110177"
+  },
+  "gate_xx2_d_divergent_clock": {
+    "adjudication": "No load-bearing B2.4 decision moved in either direction: counts, source snapshot hash, feature authority and resource decision were identical. The relation's own bounded walk collapsed to the empty set before the C20 override and is stable after it. BOUNDED HARDENING DEBT, empirically resolved and remediated; the write-clock bound was not reachable from a production decision because DERIVED_DIMENSION_SOURCES never routes attribution_allocations through render_bounded_key_walk and the eligibility preflight is event-clocked end to end.",
+    "held_constant": [
+      "tenant",
+      "financial event times",
+      "event contents",
+      "verified allocation contents",
+      "channel/provider identity",
+      "B2.3 authority",
+      "event-time source window"
+    ],
+    "post_remediation": {
+      "after": {
+        "allocation_walk_overflowed": true,
+        "allocation_walk_size": 129,
+        "channel_overflowed": true,
+        "channel_value": 129,
+        "counts": {
+          "campaign_or_feature_count": 1,
+          "channel_count": 129,
+          "currency_count": 1,
+          "provider_count": 1
+        },
+        "feature_authority_present": true,
+        "feature_width": null,
+        "resource_decision": "fallback",
+        "resource_failure_reason": "feature_width_exceeded",
+        "source_row_count": null,
+        "source_snapshot_hash": "be325f56b274ece311fd2f1981c7263bf5232990f1b9819f6ba1aa64e8d6ae35"
+      },
+      "before": {
+        "allocation_walk_overflowed": true,
+        "allocation_walk_size": 129,
+        "channel_overflowed": true,
+        "channel_value": 129,
+        "counts": {
+          "campaign_or_feature_count": 1,
+          "channel_count": 129,
+          "currency_count": 1,
+          "provider_count": 1
+        },
+        "feature_authority_present": true,
+        "feature_width": null,
+        "resource_decision": "fallback",
+        "resource_failure_reason": "feature_width_exceeded",
+        "source_row_count": null,
+        "source_snapshot_hash": "be325f56b274ece311fd2f1981c7263bf5232990f1b9819f6ba1aa64e8d6ae35"
+      },
+      "changed_keys": [],
+      "tenant_id": "db28b233-61c0-449f-bad5-b0129ab6968c"
+    },
+    "pre_remediation": {
+      "after": {
+        "allocation_walk_overflowed": false,
+        "allocation_walk_size": 0,
+        "channel_overflowed": true,
+        "channel_value": 129,
+        "counts": {
+          "campaign_or_feature_count": 1,
+          "channel_count": 129,
+          "currency_count": 1,
+          "provider_count": 1
+        },
+        "feature_authority_present": true,
+        "feature_width": null,
+        "resource_decision": "fallback",
+        "resource_failure_reason": "feature_width_exceeded",
+        "source_row_count": null,
+        "source_snapshot_hash": "be325f56b274ece311fd2f1981c7263bf5232990f1b9819f6ba1aa64e8d6ae35"
+      },
+      "before": {
+        "allocation_walk_overflowed": true,
+        "allocation_walk_size": 129,
+        "channel_overflowed": true,
+        "channel_value": 129,
+        "counts": {
+          "campaign_or_feature_count": 1,
+          "channel_count": 129,
+          "currency_count": 1,
+          "provider_count": 1
+        },
+        "feature_authority_present": true,
+        "feature_width": null,
+        "resource_decision": "fallback",
+        "resource_failure_reason": "feature_width_exceeded",
+        "source_row_count": null,
+        "source_snapshot_hash": "be325f56b274ece311fd2f1981c7263bf5232990f1b9819f6ba1aa64e8d6ae35"
+      },
+      "changed_keys": [
+        "allocation_walk_overflowed",
+        "allocation_walk_size"
+      ],
+      "tenant_id": "f6de8c42-2f5d-435e-a4ef-ee1d86eb7420"
+    },
+    "varied": "attribution_allocations.created_at moved to window_end + 2 days"
+  },
+  "gate_xx2_g_migration_physics": {
+    "fresh_replay_heads": [
+      "202609021200"
+    ],
+    "predecessor_upgrade_heads": [
+      "202609021200"
+    ],
+    "privilege_graphs_identical": true,
+    "table_counts": [
+      120,
+      120
+    ],
+    "trigger_count": 158,
+    "trigger_graphs_identical": true,
+    "verdict_guard_triggers": [
+      "b23_match_verdicts.trg_b23_verdict_authorship_insert",
+      "b23_match_verdicts.trg_b23_verdict_authorship_update"
+    ],
+    "verdict_privileges": {
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_user": [
+        "SELECT"
+      ],
+      "app_worker": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ]
+    }
+  }
+}
