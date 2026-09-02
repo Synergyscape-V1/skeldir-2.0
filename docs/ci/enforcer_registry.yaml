@@ -88,22 +88,22 @@
   path: scripts/ci/validate_b25_p13_c5_closure.py
   status: required
   owning_phase: B2.5-P13-C5
-  protected_invariant: B2.5-P13-C5 binds terminal fit truth immutability, producer/consumer agreement
-    on one governed evidence skew tolerance, schema-derived dispatch-column completeness for the production
+  protected_invariant: B2.5-P13-C5 binds terminal fit truth immutability, producer/consumer agreement on
+    one governed evidence skew tolerance, schema-derived dispatch-column completeness for the production
     claim path, same-snapshot reuse that preserves terminal evidence, explicit freshness saturation and
     absolute-age semantics on the signed wire, causal binding of the B2.4 claim seam into the P13 proof
-    graph, and a complete STATIC/BEHAVIORAL classification of every C3/C4/C5 negative control in which
-    a behavioural invariant guarded by a source check must name a verified causal backstop.
+    graph, and a complete STATIC/BEHAVIORAL classification of every C3/C4/C5 negative control in which a
+    behavioural invariant guarded by a source check must name a verified causal backstop.
   command: python scripts/ci/validate_b25_p13_c5_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
   local_reproduction_command: python scripts/ci/validate_b25_p13_c5_closure.py --negative-control
-  expected_failure_meaning: Terminal fit truth became mutable again, the producer and consumer skew tolerances
-    drifted apart, the claim path stopped supplying a column the canonical schema requires, same-snapshot
-    reuse began restating terminal evidence, freshness saturation or absolute age lost its explicit wire
-    semantics, the claim seam left the required proof graph, a runtime counter reverted to a printed literal,
-    or a negative control lost its classification or its causal backstop.
+  expected_failure_meaning: Terminal fit truth became mutable again, the producer and consumer skew
+    tolerances drifted apart, the claim path stopped supplying a column the canonical schema requires,
+    same-snapshot reuse began restating terminal evidence, freshness saturation or absolute age lost its
+    explicit wire semantics, the claim seam left the required proof graph, a runtime counter reverted to a
+    printed literal, or a negative control lost its classification or its causal backstop.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c5_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
@@ -121,13 +121,13 @@
   status: required
   owning_phase: B2.5-P13-C11
   protected_invariant: B2.5-P13-C11 binds the four authority-correspondence properties Corrective Action
-    XI closes -- that global fresh-dispatch publication is held by a dedicated database principal an ordinary
-    tenant-scoped worker cannot become or self-assert into, that a policy identifier denotes one immutable
-    set of governed semantics so the same identity cannot mean different numbers over time, that policy_bundle_hash
-    is recomputed from and compared against its component policy identities before Trust signs an available
-    confidence rather than merely checked for shape, and that every policy replan appends a durable lineage
-    transition in the same transaction as the mutation it describes so a multi-step P1 through P4 history
-    stays fully reconstructable.
+    XI closes -- that global fresh-dispatch publication is held by a dedicated database principal an
+    ordinary tenant-scoped worker cannot become or self-assert into, that a policy identifier denotes one
+    immutable set of governed semantics so the same identity cannot mean different numbers over time, that
+    policy_bundle_hash is recomputed from and compared against its component policy identities before Trust
+    signs an available confidence rather than merely checked for shape, and that every policy replan
+    appends a durable lineage transition in the same transaction as the mutation it describes so a
+    multi-step P1 through P4 history stays fully reconstructable.
   command: python scripts/ci/validate_b25_p13_c11_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
@@ -183,19 +183,13 @@
   path: scripts/ci/validate_b25_p13_c13_closure.py
   status: required
   owning_phase: B2.5-P13-C13
-  protected_invariant: Every TrustEnvelope private-key route converges on current semantic policy validation
-    before signing; historical bundles remain immutable and resolvable but cannot be reissued; every runtime
-    topology is honestly classified; and the exact Bayesian image carries its governed dependency closure
-    without host bind substitution.
+  protected_invariant: Every TrustEnvelope private-key route converges on current semantic policy validation before signing; historical bundles remain immutable and resolvable but cannot be reissued; every runtime topology is honestly classified; and the exact Bayesian image carries its governed dependency closure without host bind substitution.
   command: python scripts/ci/validate_b25_p13_c13_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
   local_reproduction_command: python scripts/ci/validate_b25_p13_c13_closure.py --negative-control
-  expected_failure_meaning: A signer can mint semantically contradictory trust, a private-key route is
-    unclassified, historical meaning was rewritten or made issuable, a reduced topology claims production
-    equivalence, an image dependency is absent or shadowed, or a load-bearing proof left the required
-    graph.
+  expected_failure_meaning: A signer can mint semantically contradictory trust, a private-key route is unclassified, historical meaning was rewritten or made issuable, a reduced topology claims production equivalence, an image dependency is absent or shadowed, or a load-bearing proof left the required graph.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c13_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
@@ -212,17 +206,13 @@
   path: scripts/ci/validate_b25_p13_c13_artifact_closure.py
   status: required
   owning_phase: B2.5-P13-C13
-  protected_invariant: The exact Dockerfile.bayesian image imports every governed runtime module and reads
-    every governed contract from image-owned paths, resolves the producer and registry to one policy bundle,
-    and rejects governed host bind mounts.
+  protected_invariant: The exact Dockerfile.bayesian image imports every governed runtime module and reads every governed contract from image-owned paths, resolves the producer and registry to one policy bundle, and rejects governed host bind mounts.
   command: docker run --rm -i skeldir-bayesian:candidate python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
-  local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate
-    . && docker run --rm -i skeldir-bayesian:candidate python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py
-  expected_failure_meaning: The shipped image lacks a governed module or contract, imports authority from
-    outside the image, resolves a different bundle than the producer, or is being shadowed by a host mount.
+  local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate . && docker run --rm -i skeldir-bayesian:candidate python - < scripts/ci/validate_b25_p13_c13_artifact_closure.py
+  expected_failure_meaning: The shipped image lacks a governed module or contract, imports authority from outside the image, resolves a different bundle than the producer, or is being shadowed by a host mount.
   first_diagnostic_command: docker image inspect skeldir-bayesian:candidate
   depends_on_db: false
   depends_on_celery: false
@@ -239,22 +229,13 @@
   path: scripts/ci/validate_b25_p13_c15_closure.py
   status: required
   owning_phase: B2.5-P13-C15
-  protected_invariant: TrustEnvelope signing capability is unforgeable outside a declared trusted computing
-    base and carries no transplantable payload; durable audit history distinguishes an authorised issuance
-    from a completed cryptographic one and the database refuses to record completion without the signature
-    that justifies it; and the repository governs its own line endings so the documented bootstrap is
-    executable on a clean clone.
+  protected_invariant: TrustEnvelope signing capability is unforgeable outside a declared trusted computing base and carries no transplantable payload; durable audit history distinguishes an authorised issuance from a completed cryptographic one and the database refuses to record completion without the signature that justifies it; and the repository governs its own line endings so the documented bootstrap is executable on a clean clone.
   command: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 C15 Issuance Capability and Audit Truth
   local_reproduction_command: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control
-  expected_failure_meaning: An importable seal or a caller-held payload has returned to the capability
-    or the P5 witness, the ledger no longer restricts minting to the declared TCB, capability redemption
-    is replayable, a route stopped finalising the durable issuance state, the database completion constraint
-    was dropped or stopped binding the signature, the repository line-ending policy was weakened, the
-    supported-environment matrix stopped declaring unsupported environments, or a C15 falsifier was deleted
-    or detached from the required aggregate.
+  expected_failure_meaning: An importable seal or a caller-held payload has returned to the capability or the P5 witness, the ledger no longer restricts minting to the declared TCB, capability redemption is replayable, a route stopped finalising the durable issuance state, the database completion constraint was dropped or stopped binding the signature, the repository line-ending policy was weakened, the supported-environment matrix stopped declaring unsupported environments, or a C15 falsifier was deleted or detached from the required aggregate.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c15_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
@@ -271,24 +252,13 @@
   path: scripts/ci/validate_b25_p13_c16_closure.py
   status: required
   owning_phase: B2.5-P13-C16
-  protected_invariant: Every successful Ed25519 operation has a durable, reconstructable issuance-history
-    event; an attempted operation can never remain authorized; completion requires the retained raw signature
-    and its hash; only the dedicated app_trust_issuer principal may transition issuance consequence, and
-    it remains bounded by the transition graph, terminal immutability, tenant binding and monotonic lineage;
-    post-sign failures become signature_outcome_unknown; stale nonterminal states are bounded; nullable
-    CHECK policy is explicit; runtime principals are neither superuser nor BYPASSRLS; and the C16 proof
-    remains attached to the required aggregate and serialized schema deployment.
+  protected_invariant: Every successful Ed25519 operation has a durable, reconstructable issuance-history event; an attempted operation can never remain authorized; completion requires the retained raw signature and its hash; only the dedicated app_trust_issuer principal may transition issuance consequence, and it remains bounded by the transition graph, terminal immutability, tenant binding and monotonic lineage; post-sign failures become signature_outcome_unknown; stale nonterminal states are bounded; nullable CHECK policy is explicit; runtime principals are neither superuser nor BYPASSRLS; and the C16 proof remains attached to the required aggregate and serialized schema deployment.
   command: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 C16 Bidirectional Issuance Truth
   local_reproduction_command: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control
-  expected_failure_meaning: An ordinary runtime database principal can manufacture completed-issuance
-    history, a signing attempt can escape durable classification, an issued row can lack reconstructable
-    signature evidence, a route can cross the irreversible signer boundary before durable attempt or completion
-    state, a stale issuance can remain unbounded, a nullable CHECK can accept an unintended unknown predicate,
-    a privileged runtime identity can defeat RLS evidence, the deployment lock can split by trigger, or
-    the C16 behavioral gate can be detached from the required aggregate.
+  expected_failure_meaning: An ordinary runtime database principal can manufacture completed-issuance history, a signing attempt can escape durable classification, an issued row can lack reconstructable signature evidence, a route can cross the irreversible signer boundary before durable attempt or completion state, a stale issuance can remain unbounded, a nullable CHECK can accept an unintended unknown predicate, a privileged runtime identity can defeat RLS evidence, the deployment lock can split by trigger, or the C16 behavioral gate can be detached from the required aggregate.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c16_closure.py --negative-control
   depends_on_db: true
   depends_on_celery: false
@@ -305,28 +275,13 @@
   path: scripts/ci/validate_b25_p13_c17_closure.py
   status: required
   owning_phase: B2.5-P13-C17
-  protected_invariant: Durable completed issuance exists only as a projection of an exact signer-produced
-    attempt. The app_trust_signer principal alone can establish signature_known with real signature material;
-    the app_trust_issuer principal alone can begin, abandon or finalize an attempt; the completion guard
-    requires exact correspondence between the projected key id, signature hash, signature bytes and signed
-    envelope and the attempt row that carries them; completion re-verifies the retained artifact against
-    public key authority; pre-XVII completions stay issued_pre_xvii rather than being elevated; retry
-    lineage is reconstructable and a known signature is never degraded to generic uncertainty; the export
-    wrapper carries the same durable consequence history and a full-set preflight precedes the first private-key
-    call; the public API process holds neither the signer DSN nor the private seed; the scheduled reconciler
-    is dispatchable through the tenant-task allowlist; and the C17 proof remains attached to the required
-    P13 aggregate.
+  protected_invariant: Durable completed issuance exists only as a projection of an exact signer-produced attempt. The app_trust_signer principal alone can establish signature_known with real signature material; the app_trust_issuer principal alone can begin, abandon or finalize an attempt; the completion guard requires exact correspondence between the projected key id, signature hash, signature bytes and signed envelope and the attempt row that carries them; completion re-verifies the retained artifact against public key authority; pre-XVII completions stay issued_pre_xvii rather than being elevated; retry lineage is reconstructable and a known signature is never degraded to generic uncertainty; the export wrapper carries the same durable consequence history and a full-set preflight precedes the first private-key call; the public API process holds neither the signer DSN nor the private seed; the scheduled reconciler is dispatchable through the tenant-task allowlist; and the C17 proof remains attached to the required P13 aggregate.
   command: python scripts/ci/validate_b25_p13_c17_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 C17 Consequence Lineage
   local_reproduction_command: python scripts/ci/validate_b25_p13_c17_closure.py --negative-control
-  expected_failure_meaning: The issuance principal can manufacture a completed issuance without the cryptographic
-    consequence it claims, a definitely-known signature can be lost to generic uncertainty, attempt lineage
-    can be erased by retry, the signed export wrapper can exist with no durable consequence history, the
-    public API can regain private-key or signer-database custody, the production reconciler can become
-    undispatchable, a historical completion can be silently elevated to consequence-coupled status, or
-    the C17 behavioral gate can be detached from the required aggregate.
+  expected_failure_meaning: The issuance principal can manufacture a completed issuance without the cryptographic consequence it claims, a definitely-known signature can be lost to generic uncertainty, attempt lineage can be erased by retry, the signed export wrapper can exist with no durable consequence history, the public API can regain private-key or signer-database custody, the production reconciler can become undispatchable, a historical completion can be silently elevated to consequence-coupled status, or the C17 behavioral gate can be detached from the required aggregate.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c17_closure.py --negative-control
   depends_on_db: true
   depends_on_celery: true
@@ -343,18 +298,13 @@
   path: scripts/ci/validate_b25_p13_c14_closure.py
   status: required
   owning_phase: B2.5-P13-C14
-  protected_invariant: Every consequence-bearing TrustEnvelope field is an exact projection of its declared
-    producing authority; the controlled P7 audit transform is the only pre-signing mutation; and only
-    an immutable content-addressed issuance capability can reach the TrustEnvelope private key.
+  protected_invariant: Every consequence-bearing TrustEnvelope field is an exact projection of its declared producing authority; the controlled P7 audit transform is the only pre-signing mutation; and only an immutable content-addressed issuance capability can reach the TrustEnvelope private key.
   command: python scripts/ci/validate_b25_p13_c14_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 C14 Complete Semantic Issuance Authority
   local_reproduction_command: python scripts/ci/validate_b25_p13_c14_closure.py --negative-control
-  expected_failure_meaning: A caller-authored dictionary can reach the private key, the P5 witness or
-    P7 transform can be forged, a tenant, subject, financial, source-window, confidence, or producing-policy
-    claim lacks correspondence, a signed field lacks a declared authority, or the XIV proof is detached
-    from the required aggregate context.
+  expected_failure_meaning: A caller-authored dictionary can reach the private key, the P5 witness or P7 transform can be forged, a tenant, subject, financial, source-window, confidence, or producing-policy claim lacks correspondence, a signed field lacks a declared authority, or the XIV proof is detached from the required aggregate context.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c14_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
@@ -371,21 +321,21 @@
   path: scripts/ci/validate_b25_p13_c6_closure.py
   status: required
   owning_phase: B2.5-P13-C6
-  protected_invariant: B2.5-P13-C6 isolates Bayesian mint, claim, fit, artifact, dispatch, recovery, and
-    planner authority to app_worker; makes committed dirty state causally reach a bounded, restart-safe
-    production planner; freezes terminal projection dependencies; preserves REUSED observations without
-    reviving terminal outbox work; governs lifecycle and temporal vocabularies; versions the Trust schema
-    honestly; and binds independent G5/G8 oracles and the sole completion counter to completed proof journeys
-    with twelve executable negative controls.
+  protected_invariant: B2.5-P13-C6 isolates Bayesian mint, claim, fit, artifact, dispatch, recovery,
+    and planner authority to app_worker; makes committed dirty state causally reach a bounded,
+    restart-safe production planner; freezes terminal projection dependencies; preserves REUSED
+    observations without reviving terminal outbox work; governs lifecycle and temporal vocabularies;
+    versions the Trust schema honestly; and binds independent G5/G8 oracles and the sole completion
+    counter to completed proof journeys with twelve executable negative controls.
   command: python scripts/ci/validate_b25_p13_c6_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
   local_reproduction_command: python scripts/ci/validate_b25_p13_c6_closure.py --negative-control
-  expected_failure_meaning: Worker authority became reachable from app_user or a shared role, dirty events
-    stopped waking the production planner, restart/idempotency or REUSED terminal semantics regressed,
-    terminal projection dependencies drifted, lifecycle/temporal/schema governance diverged, or a supposedly
-    independent oracle or completion counter became self-referential or vacuous.
+  expected_failure_meaning: Worker authority became reachable from app_user or a shared role, dirty
+    events stopped waking the production planner, restart/idempotency or REUSED terminal semantics
+    regressed, terminal projection dependencies drifted, lifecycle/temporal/schema governance diverged,
+    or a supposedly independent oracle or completion counter became self-referential or vacuous.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c6_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
@@ -402,25 +352,27 @@
   path: scripts/ci/validate_b25_p13_c7_closure.py
   status: required
   owning_phase: B2.5-P13-C7
-  protected_invariant: B2.5-P13-C7 makes source-change causality physical by rendering B2.4 invalidation
-    triggers from the source contract itself; derives planner-wakeup acknowledgement from residual authority
-    instead of Python control flow so pre-debounce and candidate-limit passes cannot strand dirty work;
-    keeps provisioning monotonic with respect to migration hardening; derives the confidence dependency
-    registry from the read model bidirectionally so an unregistered decision-affecting field cannot land;
-    enforces worker credential custody in every in-scope executable topology; governs artifact and dirty-event
-    lifecycle transitions; and separates static from behavioural controls so a source-text substitution
-    can never stand in for a runtime falsifier.
+  protected_invariant: B2.5-P13-C7 makes source-change causality physical by rendering B2.4
+    invalidation triggers from the source contract itself; derives planner-wakeup acknowledgement
+    from residual authority instead of Python control flow so pre-debounce and candidate-limit
+    passes cannot strand dirty work; keeps provisioning monotonic with respect to migration
+    hardening; derives the confidence dependency registry from the read model bidirectionally so
+    an unregistered decision-affecting field cannot land; enforces worker credential custody in
+    every in-scope executable topology; governs artifact and dirty-event lifecycle transitions;
+    and separates static from behavioural controls so a source-text substitution can never stand
+    in for a runtime falsifier.
   command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
   local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   expected_failure_meaning: The generated invalidation surface drifted from the B2.4 source contract,
-    a source relation lost trigger coverage, wakeup acknowledgement stopped consulting residual authority,
-    the planner lease collapsed onto the worker hard time limit, provisioning widened runtime schema authority
-    or lost its fail-closed postcondition, a decision-affecting read-model dependency went unregistered,
-    an in-scope process topology conflated the worker and API database credentials, a non-fit lifecycle
-    guard was removed, or a behavioural obligation lost the runtime proof bound to it.
+    a source relation lost trigger coverage, wakeup acknowledgement stopped consulting residual
+    authority, the planner lease collapsed onto the worker hard time limit, provisioning widened
+    runtime schema authority or lost its fail-closed postcondition, a decision-affecting read-model
+    dependency went unregistered, an in-scope process topology conflated the worker and API database
+    credentials, a non-fit lifecycle guard was removed, or a behavioural obligation lost the runtime
+    proof bound to it.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
@@ -437,10 +389,10 @@
   path: backend/app/bayesian/source_snapshot.py
   status: required
   owning_phase: B2.5-P13-C9
-  protected_invariant: Every feature-authority dimension is measured inside the one repeatable-read transaction
-    that produced the hash the row is stamped with. The earlier producer hashed and preflighted in one
-    transaction and walked provider and campaign width in a later one, so a commit landing in the gap
-    produced a row marked fresh describing a snapshot that never existed.
+  protected_invariant: Every feature-authority dimension is measured inside the one repeatable-read
+    transaction that produced the hash the row is stamped with. The earlier producer hashed and
+    preflighted in one transaction and walked provider and campaign width in a later one, so a commit
+    landing in the gap produced a row marked fresh describing a snapshot that never existed.
   command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
@@ -452,12 +404,12 @@
   depends_on_db: false
   depends_on_celery: false
   depends_on_pooler: false
-  deprecation_reason: null
+  deprecation_reason:
   subsumed_by: validate-b25-p13-c7-closure
   ci_visibility: library
   default_execution: true
   execution_cohort: b2-5-p13-e2e-trust-closure
-  replacement: null
+  replacement:
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation IX Report.md
 - id: b25-p13-c9-feature-authority-producer
@@ -465,46 +417,47 @@
   status: required
   owning_phase: B2.5-P13-C9
   protected_invariant: Materializes the P4 source-window cardinality authority that had no production
-    writer. Measures the four governed widths of an exact snapshot under the source contract's own membership
-    and the adjudicated cap-plus-one bounded walk, and states no threshold of its own -- sufficiency belongs
-    to b24-eligibility-v1 and admissibility to the resource policy. Before C9 the task named for building
-    this authority only read it, so every planner that requested one waited forever and every proof of
-    a fit wrote that row itself.
+    writer. Measures the four governed widths of an exact snapshot under the source contract's own
+    membership and the adjudicated cap-plus-one bounded walk, and states no threshold of its own --
+    sufficiency belongs to b24-eligibility-v1 and admissibility to the resource policy. Before C9 the
+    task named for building this authority only read it, so every planner that requested one waited
+    forever and every proof of a fit wrote that row itself.
   command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
   local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   expected_failure_meaning: The producer has started deciding rather than measuring -- a threshold, a
-    time-based freshness rule, a restated membership value or a hard-coded cap -- or the task named for
-    building the feature authority has gone back to only reading it, which is the F-06 defect.
+    time-based freshness rule, a restated membership value or a hard-coded cap -- or the task named
+    for building the feature authority has gone back to only reading it, which is the F-06 defect.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
   depends_on_pooler: false
-  deprecation_reason: null
+  deprecation_reason:
   subsumed_by: validate-b25-p13-c7-closure
   ci_visibility: library
   default_execution: true
   execution_cohort: b2-5-p13-e2e-trust-closure
-  replacement: null
+  replacement:
   registry_action: keep
   evidence_pack: docs/forensics/B2.5-P13 Corrective Action Remediation VIII Report.md
 - id: b25-p13-c8-model-identity-authority
   path: backend/app/bayesian/model_identity.py
   status: required
   owning_phase: B2.5-P13-C8
-  protected_invariant: Declares the single governed model-identity registry -- which statistical family
-    production may emit, which Trust may project, and which are retired but still readable. Before C8
-    the invalidation triggers emitted a B2.4-P3 orchestration default the Trust read model refuses, so
-    no committed source change could make a signed claim stale.
+  protected_invariant: Declares the single governed model-identity registry -- which statistical
+    family production may emit, which Trust may project, and which are retired but still readable.
+    Before C8 the invalidation triggers emitted a B2.4-P3 orchestration default the Trust read model
+    refuses, so no committed source change could make a signed claim stale.
   command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
   local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
-  expected_failure_meaning: Production emits an identity Trust cannot project, Trust eligibility drifted
-    from the registry, the database stopped constraining the family, or a retired identity became producible.
+  expected_failure_meaning: Production emits an identity Trust cannot project, Trust eligibility
+    drifted from the registry, the database stopped constraining the family, or a retired identity
+    became producible.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
@@ -521,17 +474,18 @@
   path: backend/app/bayesian/source_contract_authority.py
   status: required
   owning_phase: B2.5-P13-C8
-  protected_invariant: One structured contract per B2.4 source relation renders both the canonical snapshot
-    SELECT and the invalidation trigger DDL, so membership, projection, window key and normalization have
-    a single definition. Replaces the C7 equivalence check whose projection arm was a tautology over a
-    tuple's own repr and whose membership predicates were never compared to the source queries at all.
+  protected_invariant: One structured contract per B2.4 source relation renders both the canonical
+    snapshot SELECT and the invalidation trigger DDL, so membership, projection, window key and
+    normalization have a single definition. Replaces the C7 equivalence check whose projection arm
+    was a tautology over a tuple's own repr and whose membership predicates were never compared to
+    the source queries at all.
   command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
   local_reproduction_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
-  expected_failure_meaning: A shipped source query diverged from what the authority renders, or the invalidation
-    DDL embedded in the migration is no longer the rendered contract.
+  expected_failure_meaning: A shipped source query diverged from what the authority renders, or the
+    invalidation DDL embedded in the migration is no longer the rendered contract.
   first_diagnostic_command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   depends_on_db: false
   depends_on_celery: false
@@ -548,18 +502,19 @@
   path: scripts/ci/_b25_p13_c7_dependency_derivation.py
   status: required
   owning_phase: B2.5-P13-C7
-  protected_invariant: Derives the confidence read model's ACTUAL decision dependencies from its SQL by
-    resolving the projection's CTE alias map, so the C7 gate can assert set equality against the governed
-    registry in both directions rather than one-directional substring membership. This is the mechanism
-    by which created_at, an ordering input that decides signed snapshot freshness, can no longer stay
-    governed by nobody while CI is green.
+  protected_invariant: Derives the confidence read model's ACTUAL decision dependencies from its SQL
+    by resolving the projection's CTE alias map, so the C7 gate can assert set equality against the
+    governed registry in both directions rather than one-directional substring membership. This is
+    the mechanism by which created_at, an ordering input that decides signed snapshot freshness,
+    can no longer stay governed by nobody while CI is green.
   command: python scripts/ci/validate_b25_p13_c7_closure.py --negative-control
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 E2E Trust Closure
   local_reproduction_command: python scripts/ci/_b25_p13_c7_dependency_derivation.py
-  expected_failure_meaning: The read model gained a relation alias or a requested_fit output the derivation
-    cannot resolve, which means the dependency diff would silently stop covering part of the projection.
+  expected_failure_meaning: The read model gained a relation alias or a requested_fit output the
+    derivation cannot resolve, which means the dependency diff would silently stop covering part of
+    the projection.
   first_diagnostic_command: python scripts/ci/_b25_p13_c7_dependency_derivation.py
   depends_on_db: false
   depends_on_celery: false
@@ -1079,16 +1034,15 @@
   path: scripts/ci/validate_b24_artifact_topology.py
   status: required
   owning_phase: B2.5-P13-C10
-  protected_invariant: The unmodified production Bayesian image resolves the governed four-chain, single-core,
-    single-BLAS-thread inference profile before PyMC; the posterior physically contains four independent
-    chain dimensions and the authorized retained-draw count; and finite diagnostics satisfy the governed
-    thresholds.
+  protected_invariant: The unmodified production Bayesian image resolves the governed four-chain,
+    single-core, single-BLAS-thread inference profile before PyMC; the posterior physically contains
+    four independent chain dimensions and the authorized retained-draw count; and finite diagnostics
+    satisfy the governed thresholds.
   command: python scripts/ci/validate_b24_artifact_topology.py
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 C10 Production Artifact Topology
-  local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate
-    backend
+  local_reproduction_command: docker build -f backend/Dockerfile.bayesian -t skeldir-bayesian:candidate backend
   expected_failure_meaning: The shipped Bayesian artifact resolves a runtime/profile mismatch, reaches
     PyMC with an unauthorized topology, returns incomplete posterior dimensions, violates single-process
     containment, or cannot produce finite diagnostics under its governed policy.
@@ -3781,9 +3735,9 @@
   path: scripts/ci/test_ci_physics_negative_controls.py
   status: required
   owning_phase: CI-Topology-Physics
-  protected_invariant: 'The CI physics guard is non-vacuous: twelve synthetic workflow trees prove it
-    rejects each violation for the stated reason and accepts the conforming and exempted cases, including
-    a newly added B3 phase workflow enforced with no edit to the guard.'
+  protected_invariant: 'The CI physics guard is non-vacuous: twelve synthetic workflow trees prove it rejects
+    each violation for the stated reason and accepts the conforming and exempted cases, including a newly
+    added B3 phase workflow enforced with no edit to the guard.'
   command: python scripts/ci/test_ci_physics_negative_controls.py
   workflow_references:
   - .github/workflows/ci-physics-guard.yml
@@ -3830,17 +3784,17 @@
   path: scripts/ci/validate_p13_merge_governance.py
   status: required
   owning_phase: B2.5-P13-Corrective-XX
-  protected_invariant: 'Every load-bearing adversarial lane declared in the required-status contract actually
-    blocks a merge: it runs on pull_request and merge_group without a filter, publishes an unconditional
-    job whose name is the required context, and that context is required.'
+  protected_invariant: 'Every load-bearing adversarial lane declared in the required-status contract actually blocks
+    a merge: it runs on pull_request and merge_group without a filter, publishes an unconditional job whose name
+    is the required context, and that context is required.'
   command: python scripts/ci/validate_p13_merge_governance.py --verbose
   workflow_references:
   - .github/workflows/ci-physics-guard.yml
   workflow_job_name: CI Physics Guard
   local_reproduction_command: python scripts/ci/validate_p13_merge_governance.py --verbose
-  expected_failure_meaning: A lane the phase relies on to reject a defect before it lands has been detached
-    from mandatory pre-merge adjudication, which is the exact condition that let the early-validation
-    DLQ escape reach protected main.
+  expected_failure_meaning: A lane the phase relies on to reject a defect before it lands has been detached from
+    mandatory pre-merge adjudication, which is the exact condition that let the early-validation DLQ escape reach
+    protected main.
   first_diagnostic_command: python scripts/ci/validate_p13_merge_governance.py --verbose
   depends_on_db: false
   depends_on_celery: false
@@ -3856,15 +3810,15 @@
   path: scripts/ci/test_p13_merge_governance_negative_controls.py
   status: required
   owning_phase: B2.5-P13-Corrective-XX
-  protected_invariant: 'The merge-governance validator is non-vacuous: each clause of the conjunction
-    is detached in turn and must turn the validator red, then restored and must turn it green.'
+  protected_invariant: 'The merge-governance validator is non-vacuous: each clause of the conjunction is detached
+    in turn and must turn the validator red, then restored and must turn it green.'
   command: python scripts/ci/test_p13_merge_governance_negative_controls.py
   workflow_references:
   - .github/workflows/ci-physics-guard.yml
   workflow_job_name: CI Physics Guard
   local_reproduction_command: python scripts/ci/test_p13_merge_governance_negative_controls.py
-  expected_failure_meaning: A rule in the merge-governance validator has been weakened into a no-op, so
-    it would keep reporting green over a detached lane.
+  expected_failure_meaning: A rule in the merge-governance validator has been weakened into a no-op, so it would
+    keep reporting green over a detached lane.
   first_diagnostic_command: python scripts/ci/test_p13_merge_governance_negative_controls.py
   depends_on_db: false
   depends_on_celery: false
@@ -3880,16 +3834,15 @@
   path: scripts/ci/_b25_p13_c20_revert_allocation_walk.py
   status: utility
   owning_phase: B2.5-P13-Corrective-XX
-  protected_invariant: NC-C20-02 mutates the exact attribution_allocations walk override and fails loudly
-    if that override has moved, so the negative control can never look like it fired while having mutated
-    nothing.
+  protected_invariant: NC-C20-02 mutates the exact attribution_allocations walk override and fails loudly if that
+    override has moved, so the negative control can never look like it fired while having mutated nothing.
   command: python -m pytest backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py -q
   workflow_references:
   - .github/workflows/b2_5-p13-e2e-trust-closure.yml
   workflow_job_name: B2.5-P13 C20 Verdict Authority Conservation
   local_reproduction_command: python scripts/ci/_b25_p13_c20_revert_allocation_walk.py
-  expected_failure_meaning: The allocation walk override was renamed or moved, so the temporal coherence
-    negative control can no longer reproduce the write-clock behaviour it is supposed to falsify.
+  expected_failure_meaning: The allocation walk override was renamed or moved, so the temporal coherence negative
+    control can no longer reproduce the write-clock behaviour it is supposed to falsify.
   first_diagnostic_command: git diff backend/app/bayesian/source_contract_authority.py
   depends_on_db: true
   depends_on_celery: false
