@@ -108,6 +108,7 @@ on:
       - 'docker-compose.c19.yml'
       - 'scripts/ci/run_b25_p13_c19_context_robust_closure.sh'
       - 'backend/tests/trust/test_b25_p13_c19_context_robust_topology.py'
+      - 'backend/tests/trust/test_b25_p13_c20_runtime_authority.py'
       - 'backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py'
       - 'backend/tests/test_b25_p13_c19_touchpoint_ingress.py'
       - 'backend/app/api/attribution.py'
@@ -673,7 +674,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
             -q -s --no-header | tee /tmp/nc_c9_01_restored.out
-          grep -E "11 passed" /tmp/nc_c9_01_restored.out
+          grep -E "12 passed" /tmp/nc_c9_01_restored.out
 
       # NC-C9-06: removing the per-tenant containment boundary must strand the
       # tenants behind a failing one again.
@@ -738,7 +739,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
             -q -s --no-header | tee /tmp/b25_p13_c9_cardinality.out
-          grep -E "11 passed" /tmp/b25_p13_c9_cardinality.out
+          grep -E "12 passed" /tmp/b25_p13_c9_cardinality.out
 
       # C8-N: the principal closure gate, and it now closes. One real financial
       # fact reaches a JWKS-verifiable Trust claim with no substituted authority
@@ -1344,6 +1345,146 @@ jobs:
             backend/tests/trust/test_b25_p13_c9_positive_confidence.py \
             -q -s --no-header | tee /tmp/nc_c9_08_restored.out
           grep -E "2 passed" /tmp/nc_c9_08_restored.out
+
+  # B2.5-P13 Corrective XX, Exit Gates XX2-A / XX2-B / XX2-C. Two independent
+  # audits of protected main executed `matched_provisional -> matched_confirmed`
+  # as the API database principal and watched the C19 projection trigger set
+  # `verified = true` on the allocation. The database derived verification
+  # correctly; nothing fenced who may assert the verdict the derivation reads.
+  # This job provisions the real production role graph, attempts the historical
+  # transition as the real API login, requires PostgreSQL to refuse it, then
+  # performs the lawful worker-owned transition and requires verification to
+  # appear -- a fence that also blocks the legitimate author is not a fix.
+  b2-5-p13-c20-verdict-authority:
+    name: B2.5-P13 C20 Verdict Authority Conservation
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p13_c20
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c20
+      C20_ADMIN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p13_c20
+      C20_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/b25_p13_c20/b25_p13_c20_runtime_authority_evidence.json
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B25_P13_C20_RUNTIME_AUTHORITY_PROOF: "1"
+      SKELDIR_B25_P13_C9_DB_PROOF: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      # The role graph is provisioned by the production script, not by ad-hoc
+      # SQL: the subject under test is the authority topology the deployment
+      # actually creates.
+      - name: Prepare C20 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b25_p13_c20"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      # XX2-A / XX2-B / XX2-C, including the layer falsifier: the privilege
+      # layer and the trigger layer are severed independently and then together,
+      # and only the both-severed case may reproduce the historical RED.
+      - name: P13 C20 verdict authority conservation
+        run: |
+          set -o pipefail
+          mkdir -p "$(dirname "$C20_EVIDENCE_PATH")"
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c20_runtime_authority.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p13_c20_authority.out
+          grep -E "5 passed" /tmp/b25_p13_c20_authority.out
+
+      # NC-C20-01. The historical overgrant, restored on the live database. The
+      # remediation is two independent layers, so restoring the grant alone must
+      # still be refused. The proof that this is not vacuous lives in the test
+      # above, which severs both layers and requires the historical UPDATE 1 to
+      # reappear before restoring them.
+      - name: NC-C20-01 the guard trigger alone still refuses the historical grant
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_c20 -v ON_ERROR_STOP=1 \
+            -c "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts TO app_user;"
+          if PGPASSWORD=app_user psql -h 127.0.0.1 -U app_user -d skeldir_b25_p13_c20 -v ON_ERROR_STOP=1 \
+              -c "UPDATE public.b23_match_verdicts SET status = 'matched_confirmed' WHERE status = 'matched_provisional';"; then
+            echo "NC-C20-01 did not fire: the API principal transitioned a verdict"
+            exit 1
+          fi
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_c20 -v ON_ERROR_STOP=1 \
+            -c "REVOKE ALL ON TABLE public.b23_match_verdicts FROM app_user; GRANT SELECT ON TABLE public.b23_match_verdicts TO app_user;"
+          echo "NC-C20-01 fired: consequence ownership survives a grant regression"
+
+      # XX2-D. The divergent-clock experiment both audits left unresolved.
+      - name: P13 C20 B2.4 temporal coherence
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p13_c20_clock.out
+          grep -E "12 passed" /tmp/b25_p13_c20_clock.out
+
+      # NC-C20-02. Reverting the allocation walk to its write clock must turn
+      # the temporal-coherence proof red, and exact restoration must return it
+      # to green. Without this the override is an untested assertion.
+      - name: NC-C20-02 restoring the write-clock walk turns temporal coherence red
+        run: |
+          set -o pipefail
+          cp backend/app/bayesian/source_contract_authority.py /tmp/contract_backup.py
+          python scripts/ci/_b25_p13_c20_revert_allocation_walk.py
+          if python -m pytest \
+              backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
+              -q -s --no-header -p no:randomly \
+              -k c20_allocation_write_clock > /tmp/nc_c20_02.out 2>&1; then
+            echo "NC-C20-02 did not fire: the write-clock walk stayed coherent"
+            cp /tmp/contract_backup.py backend/app/bayesian/source_contract_authority.py
+            tail -40 /tmp/nc_c20_02.out
+            exit 1
+          fi
+          grep -E "allocation membership drifted" /tmp/nc_c20_02.out
+          cp /tmp/contract_backup.py backend/app/bayesian/source_contract_authority.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py \
+            -q -s --no-header -p no:randomly | tee /tmp/nc_c20_02_restored.out
+          grep -E "12 passed" /tmp/nc_c20_02_restored.out
+
+      - name: Upload C20 authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b25-p13-c20-authority-${{ github.sha }}
+          path: artifacts/b25_p13_c20/
+          if-no-files-found: warn
 
   b2-5-p13-c10-artifact-topology:
     name: B2.5-P13 C10 Executable Artifact Topology
@@ -2740,6 +2881,7 @@ jobs:
       - b2-5-p13-c16-bidirectional-truth
       - b2-5-p13-c17-consequence-lineage
       - b2-5-p13-c19-context-robust-closure
+      - b2-5-p13-c20-verdict-authority
     runs-on: ubuntu-latest
     steps:
       - name: Require every load-bearing P13 proof
@@ -2753,6 +2895,7 @@ jobs:
           BIDIRECTIONAL_TRUTH_RESULT: ${{ needs['b2-5-p13-c16-bidirectional-truth'].result }}
           CONSEQUENCE_LINEAGE_RESULT: ${{ needs['b2-5-p13-c17-consequence-lineage'].result }}
           CONTEXT_ROBUST_RESULT: ${{ needs['b2-5-p13-c19-context-robust-closure'].result }}
+          VERDICT_AUTHORITY_RESULT: ${{ needs['b2-5-p13-c20-verdict-authority'].result }}
         run: |
           set -euo pipefail
           test "$CORE_RESULT" = success || {
@@ -2781,5 +2924,8 @@ jobs:
           }
           test "$CONTEXT_ROBUST_RESULT" = success || {
             echo "b2-5-p13-c19-context-robust-closure=$CONTEXT_ROBUST_RESULT"; exit 1;
+          }
+          test "$VERDICT_AUTHORITY_RESULT" = success || {
+            echo "b2-5-p13-c20-verdict-authority=$VERDICT_AUTHORITY_RESULT"; exit 1;
           }
           echo 'p13_load_bearing_proof_graph=green'

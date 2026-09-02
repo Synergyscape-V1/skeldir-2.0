@@ -292,6 +292,18 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
             ).strip(),
             relation="attribution_allocations",
             window_key="created_at",
+            # Allocation rows are part of the same financial observation as
+            # their event. A late persistence/reconciliation write must not
+            # erase a still-in-window allocation from a bounded cardinality
+            # walk while the canonical source SELECT continues to include it
+            # through attribution_events.occurred_at.
+            walk_window_predicate=(
+                "EXISTS (SELECT 1 FROM public.attribution_events AS window_event"
+                " WHERE window_event.tenant_id = {alias}.tenant_id"
+                " AND window_event.id = {alias}.event_id"
+                " AND window_event.occurred_at >= :window_start"
+                " AND window_event.occurred_at < :window_end)"
+            ),
             projection=(
                 ProjectedColumn("id", "id::text", "id"),
                 ProjectedColumn("tenant_id", "tenant_id::text", "tenant_id"),

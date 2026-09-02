@@ -7,6 +7,8 @@ name: "R4: Worker Failure Semantics"
 
 on:
   workflow_dispatch:
+  pull_request:
+  merge_group:
   push:
     branches: [main]
     paths:
@@ -28,6 +30,7 @@ concurrency:
 
 jobs:
   r4-worker-failure-semantics:
+    name: "R4 Worker Failure Semantics"
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -192,8 +195,13 @@ jobs:
             celery_harness_worker*.log
             uvicorn.log
 
+      # Corrective XX, H-XX2-08. See the R3 lane: pre-merge runs prove the
+      # candidate, they do not anchor evidence about main.
       - name: Open PR to anchor run evidence in repo
-        if: always()
+        if: >-
+          always()
+          && github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

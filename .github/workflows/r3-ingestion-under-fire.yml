@@ -8,6 +8,8 @@ name: "R3: Ingestion Under Fire"
 
 on:
   workflow_dispatch:
+  pull_request:
+  merge_group:
   push:
     branches: [main]
     paths:
@@ -29,6 +31,7 @@ concurrency:
 
 jobs:
   r3-ingestion-under-fire:
+    name: "R3 Ingestion Under Fire"
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -218,8 +221,15 @@ jobs:
           fi
           echo "PASS: harness step outcome=success"
 
+      # Corrective XX, H-XX2-08. This lane now runs pre-merge, and a
+      # pre-merge run must not push a branch or open a PR: the proof it
+      # would anchor describes a candidate that has not landed. Evidence
+      # anchoring stays a post-merge consequence of main.
       - name: Open PR to anchor proof in repo
-        if: steps.r3_harness.outcome == 'success'
+        if: >-
+          steps.r3_harness.outcome == 'success'
+          && github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

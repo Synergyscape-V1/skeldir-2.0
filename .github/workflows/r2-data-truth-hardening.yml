@@ -15,6 +15,12 @@ name: "R2: Data-Truth Hardening"
 
 on:
   workflow_dispatch:
+  # Corrective XX, Gate XX2-E. This lane caught the early-validation DLQ
+  # escape three seconds after it had already merged. Pre-merge events are
+  # declared without a paths filter on purpose: a required context that can
+  # decline to run is a required context that never blocks.
+  pull_request:
+  merge_group:
   push:
     branches: [main]
     paths:
