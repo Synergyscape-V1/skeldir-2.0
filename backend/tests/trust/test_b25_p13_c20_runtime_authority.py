@@ -86,6 +86,50 @@ AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
         "app_user": {"SELECT"},
         "app_worker": {"SELECT", "INSERT", "UPDATE", "DELETE"},
     },
+    # B2.5-P13 C21 / Corrective XXI. Audit 65 rewrote a dirty event's
+    # source snapshot as app_user and flipped the confidence projection's
+    # freshness predicate. Producers append invalidation evidence; only the
+    # B2.4 planner advances its lifecycle.
+    "b24_dirty_events": {
+        "app_user": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT", "INSERT", "UPDATE"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
+    },
+    # Durable record of what was signed. Written once, by the API principal,
+    # beside the returned envelope; never mutated by any code path. The worker's
+    # SELECT is inherited from app_ro and is read-only by construction.
+    "trust_envelope_issuance_log": {
+        "app_user": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
+    },
+    # The same 202607011200 blanket grant reached both of these. Both are
+    # INSERT-only in every code path.
+    "trust_replay_events": {
+        "app_user": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
+    },
+    "trust_scope_denial_events": {
+        "app_user": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
+    },
+    # The audit ledger keeps its lawful API UPDATE -- the replay counter is an
+    # ON CONFLICT DO UPDATE -- and the C16 guard fences every issuance
+    # consequence column on it. Only the inherited app_rw write is gone.
+    "trust_access_log": {
+        "app_user": {"SELECT", "INSERT", "UPDATE"},
+        "app_worker": {"SELECT"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
+        "app_trust_issuer": {"SELECT", "UPDATE"},
+        "app_trust_signer": {"SELECT", "UPDATE"},
+    },
 }
 
 # Principals enumerated for every relation in the contract. A principal that

@@ -142,6 +142,10 @@ ALLOWED_NON_RUNTIME_PATHS = (
     # C19 observer for the same reason -- it adjudicates who may assert B2.3
     # truth on a real role graph, which is post-P1 closure, not P1 runtime.
     "backend/tests/trust/test_b25_p13_c20_runtime_authority.py",
+    # Corrective XXI: B2.4 freshness-authority conservation and durable
+    # issuance-history immutability, proved on the same real role graph. Same
+    # classification as its C19/C20 neighbours -- post-P1 closure physics.
+    "backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py",
 )
 
 
