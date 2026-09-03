@@ -2,6 +2,13 @@ name: "R7: Final Winning State"
 
 on:
   workflow_dispatch:
+  # Corrective XX. R7 re-runs the R1-R6 proofs sequentially against one
+  # PostgreSQL server, each phase on its own freshly created database -- shared
+  # co-tenancy, not shared state. Its assertions are a subset of the standalone
+  # lanes', so it is a resource soak rather than a distinct truth, and its
+  # harness produced three different non-product failures in four pre-merge
+  # runs. It stays a post-merge diagnostic; the merge boundary is held by
+  # R2/R3/R4/R6 plus `P13 Adversarial Physics Adjudication`.
   push:
     branches: [main]
     paths:
@@ -27,6 +34,7 @@ concurrency:
 
 jobs:
   r7-final-winning-state:
+    name: "R7 Final Winning State"
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     env:
@@ -332,8 +340,17 @@ jobs:
             --window-id "${WINDOW_ID}" \
             --orm-verdict-json /tmp/r2_orm.json | tee /tmp/r2_scenario.log
 
-          sleep 2
-          podman logs --since "${LOG_SINCE}" "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1
+          # The window is delimited by the R2_WINDOW_START/END markers inside the
+          # log itself, so reading the whole log is what the standalone R2 lane
+          # does. A --since bound adds no bounding and can drop a marker emitted
+          # in the same second as the timestamp.
+          for _ in $(seq 1 15); do
+            podman logs "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1 || true
+            if grep -q "R2_WINDOW_END::${GITHUB_SHA}::${WINDOW_ID}" /tmp/r7_postgres.log; then
+              break
+            fi
+            sleep 1
+          done
 
           python scripts/r2/db_log_window_audit.py \
             --log-file /tmp/r7_postgres.log \

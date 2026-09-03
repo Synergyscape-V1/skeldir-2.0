@@ -27,10 +27,12 @@ from sqlalchemy import create_engine, text
 from app.bayesian.feature_cardinality import (
     BOUNDED_CARDINALITY_POLICY,
     DIMENSION_CAPS,
+    _walk_keys,
     measure_source_window_within_one_snapshot,
     produce_source_window_feature_authority,
 )
 from app.bayesian.model_identity import active_identity
+from app.bayesian.resource_profile import evaluate_source_snapshot_resource_bounds
 from app.core.secrets import get_database_url
 from app.db.dsn import to_sync_postgres_dsn
 
@@ -251,6 +253,31 @@ def _measure(tenant_id, *, barrier=None) -> dict:
     return asyncio.run(go())
 
 
+async def _allocation_channel_walk(tenant_id) -> tuple[set[str], bool]:
+    """Observe the governed allocation walk itself, not a copied query."""
+
+    from app.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        await session.begin()
+        try:
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                {"t": str(tenant_id)},
+            )
+            return await _walk_keys(
+                session,
+                relation="attribution_allocations",
+                key="channel_code",
+                tenant_id=tenant_id,
+                source_window_start=WINDOW_START,
+                source_window_end=WINDOW_END,
+                cap=DIMENSION_CAPS["channel"],
+            )
+        finally:
+            await session.rollback()
+
+
 # ---------------------------------------------------------------------------
 # The four widths are the widths of the data.
 # ---------------------------------------------------------------------------
@@ -399,6 +426,146 @@ def test_c9_provider_width_survives_late_verdict_reconciliation() -> None:
 
     reconciled_late = _measure(tenant_id)
     assert reconciled_late["counts"]["provider_count"] == 2, reconciled_late
+
+
+def test_c20_allocation_write_clock_cannot_change_b24_resource_decision() -> None:
+    """Only an allocation persistence clock moves; the financial window does not.
+
+    Corrective XX, Exit Gate XX2-D. Two independent audits left the write-clock
+    question open — one classified it ``INCONCLUSIVE - BLOCKING`` and refused to
+    accept the inherited "bounded hardening debt" label without the experiment.
+    This is that experiment, run against real PostgreSQL rather than reasoned
+    about: tenant, event times, event contents, allocation contents, channel
+    identity, B2.3 authority and the event-time window are all held constant,
+    and only ``attribution_allocations.created_at`` moves across the window
+    boundary.
+
+    What the experiment found, before any remediation, is worth stating exactly
+    because it is narrower than the suspicion was:
+
+    * the four cardinality counts, the source snapshot hash, the feature
+      authority and the B2.4 resource decision were all **unchanged**. The
+      preflight that decides them is event-clocked end to end (every relation
+      joins ``attribution_events.occurred_at``), and
+      ``DERIVED_DIMENSION_SOURCES`` never routes ``attribution_allocations``
+      through the bounded walk at all. So the write clock was not load-bearing;
+    * the relation's own bounded walk nevertheless collapsed from the full
+      channel set to the empty set, because ``walk_window_clause`` fell back to
+      the ``created_at`` window key while the canonical SELECT kept admitting
+      the same rows through their event clock.
+
+    That is one predicate away from being load-bearing: adding
+    ``("attribution_allocations", "channel_code")`` to the channel dimension
+    would silently hand a resource-refusal decision to a persistence clock. The
+    codebase already carries the scar — ``b23_match_verdicts`` has this same
+    override precisely because an earlier bug of this shape lost every provider
+    reconciled after the window closed. The C20 override closes the class on the
+    walk path only, which is why the decision-level assertions below held in
+    both directions and the membership assertion is the one that changed.
+    """
+
+    cap = DIMENSION_CAPS["channel"]
+    engine = _migration_engine()
+    try:
+        with engine.begin() as conn:
+            tenant_id = _new_tenant(conn, "allocation-write-clock")
+            for index in range(cap + 1):
+                _seed_row(
+                    conn,
+                    tenant_id,
+                    index=index,
+                    channel=f"c20-allocation-channel-{index:02d}",
+                    campaign="c20-allocation-write-clock",
+                    provider="c20-allocation-provider",
+                    currency="USD",
+                    occurred_at=INSIDE + timedelta(minutes=index),
+                )
+            # Establish the baseline where both old and corrected walks see
+            # the same physical rows.
+            conn.execute(
+                text(
+                    "UPDATE public.attribution_allocations SET created_at = :inside"
+                    " WHERE tenant_id = :tenant_id"
+                ),
+                {"inside": INSIDE, "tenant_id": str(tenant_id)},
+            )
+    finally:
+        engine.dispose()
+
+    def decision() -> tuple[dict, object]:
+        async def go() -> tuple[dict, object]:
+            snapshot, cardinality = await measure_source_window_within_one_snapshot(
+                tenant_id=tenant_id,
+                model_type=ACTIVE.model_type,
+                model_version=ACTIVE.model_version,
+                source_window_start=WINDOW_START,
+                source_window_end=WINDOW_END,
+            )
+            authority = await produce_source_window_feature_authority(
+                tenant_id=tenant_id,
+                model_type=ACTIVE.model_type,
+                model_version=ACTIVE.model_version,
+                source_window_start=WINDOW_START,
+                source_window_end=WINDOW_END,
+                expected_source_snapshot_hash=snapshot.source_snapshot_hash,
+            )
+            assert authority is not None
+            resource = evaluate_source_snapshot_resource_bounds(
+                snapshot=snapshot,
+                preflight_lease_id="c20-allocation-write-clock",
+                feature_authority=authority,
+            )
+            return {
+                "counts": cardinality.counts(),
+                "overflowed": cardinality.channel.overflowed,
+                "walk": await _allocation_channel_walk(tenant_id),
+            }, resource
+
+        return asyncio.run(go())
+
+    before, before_decision = decision()
+    assert before["walk"] == (
+        {f"c20-allocation-channel-{index:02d}" for index in range(cap + 1)},
+        True,
+    )
+    assert before["counts"]["channel_count"] == cap + 1
+    assert before["overflowed"] is True
+    assert before_decision.decision == "fallback"
+
+    engine = _migration_engine()
+    try:
+        with engine.begin() as conn:
+            _bind(conn, tenant_id)
+            conn.execute(
+                text(
+                    "UPDATE public.attribution_allocations SET created_at = :late"
+                    " WHERE tenant_id = :tenant_id"
+                ),
+                {
+                    "late": WINDOW_END + timedelta(days=2),
+                    "tenant_id": str(tenant_id),
+                },
+            )
+    finally:
+        engine.dispose()
+
+    after, after_decision = decision()
+    # The load-bearing invariant: no B2.4 decision may move. This held before
+    # the C20 override too, and is asserted so that a future change which routes
+    # allocations into a decision path cannot quietly make the clock matter.
+    assert after["counts"] == before["counts"]
+    assert after["overflowed"] == before["overflowed"]
+    assert after_decision.decision == before_decision.decision
+    assert after_decision.failure_reason == before_decision.failure_reason
+    # The invariant C20 newly establishes: the relation's own bounded walk
+    # measures the same membership the canonical SELECT admits. Reverting the
+    # `walk_window_predicate` override on attribution_allocations turns this
+    # assertion red and leaves the four above green -- that asymmetry is the
+    # whole finding.
+    assert after["walk"] == before["walk"], (
+        "allocation membership drifted from the event-clock source contract: "
+        f"before={before['walk']} after={after['walk']}"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -2801,3 +2801,92 @@
   local_reproduction_command: python scripts/ci/validate_ci_physics.py --verbose
   risk_if_removed: Applier and guard could drift, demanding a cache key the applier refuses to add.
   decision: keep_utility
+- gate_id: p13-merge-governance-validator
+  workflow: .github/workflows/ci-physics-guard.yml
+  job: CI Physics Guard
+  script: scripts/ci/validate_p13_merge_governance.py
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: Load-bearing adversarial physics is mandatory before protected-main admission, not reported
+    after it.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: No other gate checks the pre-merge blocking conjunction. The live branch-protection validator
+    checks that the contract matches GitHub; this checks that the workflows named in that contract can actually
+    report on a pull_request and a merge_group. Two independent audits found the historical gap precisely because
+    both halves were needed and only one existed.
+  negative_control_preserved_by: python scripts/ci/test_p13_merge_governance_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_p13_merge_governance.py --verbose
+  risk_if_removed: A future change could silently return an R lane to push-only and the early-validation DLQ escape
+    class could merge again undetected.
+  decision: keep_all
+- gate_id: p13-merge-governance-negative-controls
+  workflow: .github/workflows/ci-physics-guard.yml
+  job: CI Physics Guard
+  script: scripts/ci/test_p13_merge_governance_negative_controls.py
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: Each clause of the merge-blocking conjunction is independently load-bearing and independently
+    falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: The paired negative control for the merge-governance validator, in the same shape as test_ci_physics_negative_controls.py.
+    A validator with no negative control is an assertion, not a proof, and this corrective exists because an assertion
+    was accepted once already.
+  negative_control_preserved_by: python scripts/ci/test_p13_merge_governance_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_p13_merge_governance_negative_controls.py
+  risk_if_removed: The merge-governance validator could be weakened into a no-op and keep reporting green.
+  decision: keep_all
+- gate_id: p13-c20-allocation-walk-mutator
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 C20 Verdict Authority Conservation
+  script: scripts/ci/_b25_p13_c20_revert_allocation_walk.py
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: The C20 temporal-coherence negative control mutates the real override or fails loudly.
+  current_status: utility
+  default_execution: true
+  candidate_action: keep_utility
+  subsuming_gate: b25-p13-c20-verdict-authority
+  subsumption_evidence: A single-purpose mutator invoked by NC-C20-02 inside the C20 job, not a standalone required
+    context.
+  negative_control_preserved_by: NC-C20-02 in .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  local_reproduction_command: python scripts/ci/_b25_p13_c20_revert_allocation_walk.py
+  risk_if_removed: NC-C20-02 would mutate nothing and appear to fire, making the temporal-coherence proof vacuous.
+  decision: keep_utility
+- gate_id: p13-adversarial-physics-adjudicator
+  workflow: .github/workflows/p13-adversarial-physics-adjudication.yml
+  job: P13 Adversarial Physics Adjudication
+  script: scripts/ci/adjudicate_p13_adversarial_physics.py
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: The adversarial proof executed, not merely reported green.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: Replaces R7 Final Winning State as the merge blocker. R7's phase assertions are a strict
+    subset of the standalone R2/R3/R4/R6 lanes, each of its phases runs against its own freshly created database
+    so the shared substrate is a server rather than conducted state, and its harness produced three different non-product
+    failures in four pre-merge runs.
+  negative_control_preserved_by: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  local_reproduction_command: python scripts/ci/adjudicate_p13_adversarial_physics.py --list-lanes
+  risk_if_removed: A required lane could report skipped, satisfy branch protection, and let a P13-invalid candidate
+    merge unproven.
+  decision: keep_all
+- gate_id: p13-adversarial-physics-negative-controls
+  workflow: .github/workflows/p13-adversarial-physics-adjudication.yml
+  job: P13 Adversarial Physics Adjudication
+  script: scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: Each refusal mode of the adjudicator is independently load-bearing.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: The paired negative control for the adjudicator, in the same shape as the CI physics guard's.
+    An adjudicator with no negative control is an assertion.
+  negative_control_preserved_by: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  risk_if_removed: The adjudicator could silently accept a skipped lane.
+  decision: keep_all

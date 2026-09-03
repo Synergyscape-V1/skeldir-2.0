@@ -305,6 +305,8 @@ jobs:
           pytest backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py -q
 
       - name: Run B2.3-P0 semantic authority runtime proofs
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b22_p2_ci
         run: |
           pytest backend/tests/test_b23_p0_semantic_authority.py -q
 
@@ -317,6 +319,8 @@ jobs:
           pytest backend/tests/test_b23_p1_schema_authority_enforcer.py -q
 
       - name: Run B2.3-P1 schema authority runtime proofs
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b22_p2_ci
         run: |
           pytest backend/tests/test_b23_p1_schema_authority_runtime.py -q
 
@@ -369,6 +373,7 @@ jobs:
 
       - name: Run B2.3-P2 match-engine kernel runtime proofs
         env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b22_p2_ci
           SKELDIR_B23_P2_REQUIRE_DB_PROOFS: "1"
         run: |
           mkdir -p artifacts
@@ -434,6 +439,7 @@ jobs:
 
       - name: Run B2.3-P3 verdict persistence runtime proofs
         env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b22_p2_ci
           SKELDIR_B23_P3_REQUIRE_DB_PROOFS: "1"
         run: |
           mkdir -p artifacts
@@ -454,6 +460,7 @@ jobs:
 
       - name: Run B2.3-P4 queue performance runtime proofs
         env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b22_p2_ci
           SKELDIR_B23_P4_REQUIRE_DB_PROOFS: "1"
         run: |
           mkdir -p artifacts
@@ -491,7 +498,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
+      # Corrective XX. This job runs the B2.3 proof harnesses, which
+      # author verdict truth. In production that is worker_b23 under
+      # app_worker; the API principal no longer holds the authority, so
+      # the proof job now runs under the principal it is proving.
+      DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b23_p5_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b23_p5_ci
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
@@ -4446,7 +4457,7 @@ jobs:
         run: |
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${RUNTIME_USER};"
-          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${RUNTIME_USER}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${RUNTIME_USER}; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b23_match_verdicts FROM ${RUNTIME_USER}; GRANT SELECT ON public.b23_match_verdicts TO ${RUNTIME_USER}; REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${RUNTIME_USER}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${RUNTIME_USER}; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM ${RUNTIME_USER};"
 
       - name: Enforce llm_api_calls single write path
         run: |
@@ -4930,7 +4941,7 @@ jobs:
             alembic upgrade head
           } | tee "$B055_EVIDENCE_DIR/LOGS/migrations.log"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO app_user; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO app_user;"
-          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM app_user; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM app_user; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b23_match_verdicts FROM app_user, app_rw, app_ro; GRANT SELECT ON public.b23_match_verdicts TO app_user, app_ro; GRANT SELECT, INSERT, UPDATE ON public.b23_match_verdicts TO app_worker; REVOKE ALL ON public.b24_fit_planner_wakeups FROM app_user; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM app_user; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM app_user;"
 
       - name: Phase 0 DB authority - required deterministic schema drift gate
         env:
@@ -5346,7 +5357,7 @@ jobs:
           alembic upgrade 202511131121
           alembic upgrade skeldir_foundation@head
           PGPASSWORD=postgres psql -h localhost -U postgres -d "${{ env.DB_NAME }}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${{ env.APP_USER }}; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${{ env.APP_USER }};"
-          PGPASSWORD=postgres psql -h localhost -U postgres -d "${{ env.DB_NAME }}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${{ env.APP_USER }}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${{ env.APP_USER }}; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM ${{ env.APP_USER }};"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d "${{ env.DB_NAME }}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON public.b23_match_verdicts FROM ${{ env.APP_USER }}; GRANT SELECT ON public.b23_match_verdicts TO ${{ env.APP_USER }}; REVOKE ALL ON public.b24_fit_planner_wakeups FROM ${{ env.APP_USER }}; REVOKE INSERT, UPDATE, DELETE ON public.bayesian_model_fits, public.bayesian_artifacts, public.b24_fit_dispatch_outbox, public.b24_fit_recovery_outbox, public.b24_active_execution_leases, public.b24_feature_authority_build_requests, public.b24_feature_authority_build_outbox FROM ${{ env.APP_USER }}; REVOKE UPDATE, DELETE ON public.b24_dirty_events FROM ${{ env.APP_USER }};"
           echo "✓ Migrations complete (skeldir_foundation@head reached)"
 
       - name: R5-4 / Gate G4 - Verify schema with canonical DSN

@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.18.0",
+  "contract_version": "1.20.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -80,7 +80,12 @@
     "validate-ops-runbooks",
     "runtime-ops-proofs",
     "Checkout Code",
-    "CI Physics Guard"
+    "CI Physics Guard",
+    "R2 Data-Truth Hardening",
+    "R3 Ingestion Under Fire",
+    "R4 Worker Failure Semantics",
+    "R6 Worker Resource Governance",
+    "P13 Adversarial Physics Adjudication"
   ],
   "hardware_enforcement": {
     "status": "enforced",
@@ -124,5 +129,54 @@
       "enforce_required_status_checks: passed",
       "all 75 required contexts produced by a workflow firing on merge_group (physics guard rule 5)"
     ]
+  },
+  "p13_merge_blocking_physics": {
+    "declared_by": "B2.5-P13 Corrective XX (Exit Gate XX2-E)",
+    "invariant": "load-bearing adversarial physics is mandatory before protected-main admission, not reported after it",
+    "validator": "scripts/ci/validate_p13_merge_governance.py",
+    "negative_control": "scripts/ci/test_p13_merge_governance_negative_controls.py",
+    "lanes": {
+      "r2-data-truth-hardening": {
+        "workflow": ".github/workflows/r2-data-truth-hardening.yml",
+        "required_context": "R2 Data-Truth Hardening",
+        "physics": "database-enforced data truth: RLS cross-tenant denial, PII guardrail, immutability, DB/ORM runtime innocence",
+        "corrective": "XX",
+        "reason": "caught the early-validation DLQ escape three seconds after it merged (PR #697, 2026-09-02T09:20:33Z)"
+      },
+      "r3-ingestion-under-fire": {
+        "workflow": ".github/workflows/r3-ingestion-under-fire.yml",
+        "required_context": "R3 Ingestion Under Fire",
+        "physics": "ingress behaviour under concurrency and malformed load; no raw PII in API logs",
+        "corrective": "XX"
+      },
+      "r4-worker-failure-semantics": {
+        "workflow": ".github/workflows/r4-worker-failure-semantics.yml",
+        "required_context": "R4 Worker Failure Semantics",
+        "physics": "poison pill, crash-after-write, RLS probe, runaway no-starve, least privilege",
+        "corrective": "XX"
+      },
+      "r6-worker-resource-governance": {
+        "workflow": ".github/workflows/r6-worker-resource-governance.yml",
+        "required_context": "R6 Worker Resource Governance",
+        "physics": "worker resource governance under load",
+        "corrective": "XX"
+      },
+      "p13-adversarial-physics-adjudication": {
+        "workflow": ".github/workflows/p13-adversarial-physics-adjudication.yml",
+        "required_context": "P13 Adversarial Physics Adjudication",
+        "adjudicator": true,
+        "physics": "every declared adversarial lane actually executed and concluded success on this SHA -- a skipped, neutral, cancelled or absent check-run is a refusal, which branch protection alone does not provide",
+        "corrective": "XX",
+        "reason": "replaces R7 as the merge blocker: R7's assertions are a subset of the standalone lanes', its phases share a PostgreSQL server rather than state, and its harness produced three different non-product failures in four pre-merge runs"
+      }
+    },
+    "demoted": {
+      "R7 Final Winning State": {
+        "disposition": "post-merge soak diagnostic, not merge-blocking",
+        "mapping": "R7 phase R2/R3c/R4b-f/R6 invoke scripts/r2, scripts/r3, scripts/r4 and scripts/r6 respectively -- a strict subset of the standalone lanes, which additionally run scripts/r2/static_behavioral_audit.py. Phases R1 and R5 are liveness and determinism, proven more strongly by 'B2.5-P13 E2E Trust Closure'.",
+        "no_unique_compositional_physics": "the bootstrap step creates a separate database per phase (r1..r6) and no phase reads another's, so the shared substrate is a PostgreSQL server and a runner VM, not conducted state",
+        "restore_condition": "may return to the merge-blocking set once its R3 ingestion phase and R2 log-window capture are deterministic on hosted runners"
+      }
+    }
   }
 }

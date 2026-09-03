@@ -311,12 +311,24 @@ async def test_c6_pending_wakeup_coalesces_and_leased_wakeup_is_invalidated() ->
 
 
 async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> None:
-    """Use the runtime identity and production dirty marker to create stimulus."""
+    """Create stimulus with each row's production author, not one principal.
+
+    Corrective XX fenced B2.3 verdict authorship to the worker principal, so
+    this fixture can no longer write events, allocations and verdicts through a
+    single connection. It writes what the API/attribution principal writes as
+    that principal, commits, and then writes what the B2.3 worker writes as the
+    worker -- which is also the real order: the allocation is on disk before a
+    verdict confirms it, so the projection trigger can observe it.
+    """
 
     app_engine = create_async_engine(
         to_asyncpg_postgres_dsn(_app_url()), future=True, pool_pre_ping=True
     )
+    worker_engine = create_async_engine(
+        to_asyncpg_postgres_dsn(get_database_url()), future=True, pool_pre_ping=True
+    )
     row_count = MIN_SPARSE_PRIVACY_FLOOR + 4
+    settlements: list[dict[str, object]] = []
     try:
         async with app_engine.begin() as conn:
             await conn.execute(
@@ -329,6 +341,15 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
                 verdict_id = uuid4()
                 occurred_at = START + timedelta(days=index, seconds=index)
                 amount_minor = 10_000 + index
+                settlements.append(
+                    {
+                        "index": index,
+                        "event_id": event_id,
+                        "verdict_id": verdict_id,
+                        "occurred_at": occurred_at,
+                        "amount_minor": amount_minor,
+                    }
+                )
                 await conn.execute(
                     text(
                         """
@@ -395,6 +416,14 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
                         "amount": amount_minor,
                     },
                 )
+        # B2.3 truth, authored by the B2.3 worker principal.
+        async with worker_engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                {"tenant": str(tenant_id)},
+            )
+            for settlement in settlements:
+                index = settlement["index"]
                 await conn.execute(
                     text(
                         """
@@ -419,13 +448,13 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
                         """
                     ),
                     {
-                        "verdict": str(verdict_id),
+                        "verdict": str(settlement["verdict_id"]),
                         "tenant": str(tenant_id),
-                        "event": str(event_id),
+                        "event": str(settlement["event_id"]),
                         "commerce": f"c6-order-{suffix}-{index:02d}",
                         "provider_event": f"c6-event-{suffix}-{index:02d}",
-                        "amount": amount_minor,
-                        "occurred_at": occurred_at,
+                        "amount": settlement["amount_minor"],
+                        "occurred_at": settlement["occurred_at"],
                     },
                 )
                 await conn.execute(
@@ -447,13 +476,19 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
                     ),
                     {
                         "tenant": str(tenant_id),
-                        "verdict": str(verdict_id),
+                        "verdict": str(settlement["verdict_id"]),
                         "provider_event": f"c6-capture-{suffix}-{index:02d}",
                         "commerce": f"c6-order-{suffix}-{index:02d}",
-                        "occurred_at": occurred_at,
-                        "amount": amount_minor,
+                        "occurred_at": settlement["occurred_at"],
+                        "amount": settlement["amount_minor"],
                     },
                 )
+
+        async with app_engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                {"tenant": str(tenant_id)},
+            )
             await append_dirty_event(
                 conn,
                 tenant_id=tenant_id,
@@ -468,6 +503,7 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
             )
     finally:
         await app_engine.dispose()
+        await worker_engine.dispose()
 
 
 @pytest.mark.asyncio

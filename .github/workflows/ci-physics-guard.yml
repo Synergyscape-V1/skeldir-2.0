@@ -53,3 +53,13 @@ jobs:
 
       - name: Prove the guard is non-vacuous
         run: python scripts/ci/test_ci_physics_negative_controls.py
+
+      # B2.5-P13 Corrective XX, Gate XX2-E. Throughput topology is not the only
+      # structural property a required context can lose. A lane can execute on
+      # every PR and still block nothing, which is exactly how the early-
+      # validation DLQ escape reached protected main.
+      - name: Validate P13 merge-blocking physics
+        run: python scripts/ci/validate_p13_merge_governance.py --verbose
+
+      - name: Prove the merge-governance validator is non-vacuous
+        run: python scripts/ci/test_p13_merge_governance_negative_controls.py

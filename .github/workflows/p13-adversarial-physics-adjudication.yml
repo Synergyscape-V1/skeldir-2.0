@@ -1,0 +1,76 @@
+name: "P13 Adversarial Physics Adjudication"
+
+# B2.5-P13 Corrective XX, Exit Gate XX2-E.
+#
+# Branch protection answers "is this named context green". This answers the
+# stronger question: did each declared adversarial lane actually execute and
+# conclude success on this exact SHA. GitHub treats a `skipped` check-run as
+# satisfying a branch rule, which is exactly the automatic NOT-COMPLETE
+# condition the directive names -- "required context is green because the real
+# adversarial job skipped".
+#
+# It replaces `R7 Final Winning State` as the merge blocker. R7 re-runs the same
+# four proofs sequentially against one PostgreSQL server, each phase on its own
+# freshly created database, so it adds resource-soak coverage rather than a
+# distinct truth; its harness produced three different non-product failures in
+# four pre-merge runs. The compositional proof that does carry state between
+# processes is `B2.5-P13 E2E Trust Closure`, which remains required.
+#
+# Not path-filtered on the pre-merge events, deliberately: a required status
+# check that can decline to run never blocks a merge.
+
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - main
+
+concurrency:
+  # Keyed on event_name as well as PR number: a workflow that declares both
+  # pull_request and pull_request_target fires twice for the same PR, and without
+  # the event in the group the two runs share it and cancel each other - which
+  # cancelled three required contexts on PR #653 before this was fixed.
+  # PR events: one live run per workflow per PR - a new push supersedes the old.
+  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # and never queued. The audit proof on an exact SHA always runs to completion.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  p13-adversarial-physics-adjudication:
+    name: "P13 Adversarial Physics Adjudication"
+    runs-on: ubuntu-latest
+    # Long enough for the slowest declared lane (R3, ~11 minutes) with room for
+    # queueing, and comfortably inside the merge queue's 60-minute check
+    # response timeout so a wait can never masquerade as an admission.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      checks: read
+      statuses: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Adjudicate the declared adversarial lanes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check-runs attach to the SHA the workflow run reports as its head,
+          # which for a pull_request is the PR head -- not GITHUB_SHA, which is
+          # the merge commit. Querying GITHUB_SHA would find no lanes at all and
+          # fail closed on a perfectly healthy candidate.
+          python scripts/ci/adjudicate_p13_adversarial_physics.py \
+            --sha "${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}" \
+            --wait-seconds 2100 \
+            --poll-seconds 30
+
+      - name: Prove the adjudicator is non-vacuous
+        run: python scripts/ci/test_p13_adversarial_physics_negative_controls.py

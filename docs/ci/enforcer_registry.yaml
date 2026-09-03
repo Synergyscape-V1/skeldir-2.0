@@ -3780,3 +3780,125 @@
   deprecation_reason: ''
   subsumed_by: validate-ci-physics
   registry_action: utility
+- id: p13-merge-governance-validator
+  path: scripts/ci/validate_p13_merge_governance.py
+  status: required
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: 'Every load-bearing adversarial lane declared in the required-status contract actually blocks
+    a merge: it runs on pull_request and merge_group without a filter, publishes an unconditional job whose name
+    is the required context, and that context is required.'
+  command: python scripts/ci/validate_p13_merge_governance.py --verbose
+  workflow_references:
+  - .github/workflows/ci-physics-guard.yml
+  workflow_job_name: CI Physics Guard
+  local_reproduction_command: python scripts/ci/validate_p13_merge_governance.py --verbose
+  expected_failure_meaning: A lane the phase relies on to reject a defect before it lands has been detached from
+    mandatory pre-merge adjudication, which is the exact condition that let the early-validation DLQ escape reach
+    protected main.
+  first_diagnostic_command: python scripts/ci/validate_p13_merge_governance.py --verbose
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: ci-physics-guard
+  ci_visibility: executed
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: p13-merge-governance-negative-controls
+  path: scripts/ci/test_p13_merge_governance_negative_controls.py
+  status: required
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: 'The merge-governance validator is non-vacuous: each clause of the conjunction is detached
+    in turn and must turn the validator red, then restored and must turn it green.'
+  command: python scripts/ci/test_p13_merge_governance_negative_controls.py
+  workflow_references:
+  - .github/workflows/ci-physics-guard.yml
+  workflow_job_name: CI Physics Guard
+  local_reproduction_command: python scripts/ci/test_p13_merge_governance_negative_controls.py
+  expected_failure_meaning: A rule in the merge-governance validator has been weakened into a no-op, so it would
+    keep reporting green over a detached lane.
+  first_diagnostic_command: python scripts/ci/test_p13_merge_governance_negative_controls.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: ci-physics-guard
+  ci_visibility: executed
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: p13-c20-allocation-walk-mutator
+  path: scripts/ci/_b25_p13_c20_revert_allocation_walk.py
+  status: utility
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: NC-C20-02 mutates the exact attribution_allocations walk override and fails loudly if that
+    override has moved, so the negative control can never look like it fired while having mutated nothing.
+  command: python -m pytest backend/tests/trust/test_b25_p13_c9_feature_cardinality_physics.py -q
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 C20 Verdict Authority Conservation
+  local_reproduction_command: python scripts/ci/_b25_p13_c20_revert_allocation_walk.py
+  expected_failure_meaning: The allocation walk override was renamed or moved, so the temporal coherence negative
+    control can no longer reproduce the write-clock behaviour it is supposed to falsify.
+  first_diagnostic_command: git diff backend/app/bayesian/source_contract_authority.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b25-p13-e2e-trust-closure
+  ci_visibility: not_executed
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: b25-p13-c20-verdict-authority
+  registry_action: utility
+- id: p13-adversarial-physics-adjudicator
+  path: scripts/ci/adjudicate_p13_adversarial_physics.py
+  status: required
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: Every declared adversarial lane actually executed and concluded success on the SHA under
+    adjudication. GitHub treats a skipped check-run as satisfying a branch rule; this refuses skipped, neutral,
+    cancelled, timed-out and absent as well as failed.
+  command: python scripts/ci/adjudicate_p13_adversarial_physics.py
+  workflow_references:
+  - .github/workflows/p13-adversarial-physics-adjudication.yml
+  workflow_job_name: P13 Adversarial Physics Adjudication
+  local_reproduction_command: python scripts/ci/adjudicate_p13_adversarial_physics.py --list-lanes
+  expected_failure_meaning: A load-bearing adversarial lane did not execute, or concluded anything other than success,
+    on the candidate being merged.
+  first_diagnostic_command: python scripts/ci/adjudicate_p13_adversarial_physics.py --list-lanes
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: p13-adversarial-physics-adjudication
+  ci_visibility: executed
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: p13-adversarial-physics-negative-controls
+  path: scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  status: required
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: The adjudicator refuses each way a lane can fail to have proved anything -- skipped, neutral,
+    cancelled, timed out, failed, absent and still-running -- and accepts only success.
+  command: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  workflow_references:
+  - .github/workflows/p13-adversarial-physics-adjudication.yml
+  workflow_job_name: P13 Adversarial Physics Adjudication
+  local_reproduction_command: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  expected_failure_meaning: The adjudicator has been weakened into accepting a lane that did not prove anything.
+  first_diagnostic_command: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: p13-adversarial-physics-adjudication
+  ci_visibility: executed
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep

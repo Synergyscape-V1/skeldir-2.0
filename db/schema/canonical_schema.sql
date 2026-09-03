@@ -41,6 +41,57 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
 
 
 
+CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            principal_is_superuser boolean;
+            table_owner_oid oid;
+            worker_role_oid oid;
+        BEGIN
+            -- A superuser can drop this trigger, so refusing it buys no
+            -- authority and only breaks administrative provisioning.
+            SELECT rolsuper
+              INTO principal_is_superuser
+              FROM pg_catalog.pg_roles
+             WHERE rolname = session_user;
+            IF COALESCE(principal_is_superuser, false) THEN
+                RETURN NEW;
+            END IF;
+
+            -- The migration principal owns this relation and can drop the
+            -- trigger, so refusing it buys no authority either. It is already
+            -- a member of app_worker where that role exists; naming ownership
+            -- explicitly keeps provisioning working in the environments that
+            -- migrate before any runtime role is created.
+            SELECT relowner
+              INTO table_owner_oid
+              FROM pg_catalog.pg_class
+             WHERE oid = TG_RELID;
+            IF pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE') THEN
+                RETURN NEW;
+            END IF;
+
+            SELECT oid
+              INTO worker_role_oid
+              FROM pg_catalog.pg_roles
+             WHERE rolname = 'app_worker';
+            IF worker_role_oid IS NOT NULL
+               AND pg_catalog.pg_has_role(session_user, worker_role_oid, 'USAGE')
+            THEN
+                RETURN NEW;
+            END IF;
+
+            RAISE EXCEPTION
+                'b23 verdict authority is owned by the B2.3 worker principal; '
+                '% may not % public.b23_match_verdicts',
+                session_user, TG_OP
+                USING ERRCODE = '42501';
+        END;
+        $$;
+
+
 CREATE FUNCTION public.b23_project_allocation_verification() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -11719,6 +11770,10 @@ CREATE TRIGGER trg_b23_refresh_allocation_verification_insert AFTER INSERT ON pu
 CREATE TRIGGER trg_b23_refresh_allocation_verification_update AFTER UPDATE OF status, attribution_event_id, last_transition_at ON public.b23_match_verdicts FOR EACH ROW WHEN ((((old.status)::text IS DISTINCT FROM (new.status)::text) OR (old.attribution_event_id IS DISTINCT FROM new.attribution_event_id) OR (old.last_transition_at IS DISTINCT FROM new.last_transition_at))) EXECUTE FUNCTION public.b23_refresh_allocation_verification();
 
 
+
+CREATE TRIGGER trg_b23_verdict_authorship_insert BEFORE INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
+
+CREATE TRIGGER trg_b23_verdict_authorship_update BEFORE UPDATE ON public.b23_match_verdicts FOR EACH ROW WHEN ((((old.status)::text IS DISTINCT FROM (new.status)::text) OR (old.confirmed_at IS DISTINCT FROM new.confirmed_at) OR (old.adjusted_at IS DISTINCT FROM new.adjusted_at) OR (old.unmatched_marked_at IS DISTINCT FROM new.unmatched_marked_at) OR ((old.match_quality)::text IS DISTINCT FROM (new.match_quality)::text) OR (old.attributed_amount_minor IS DISTINCT FROM new.attributed_amount_minor) OR (old.verified_amount_minor IS DISTINCT FROM new.verified_amount_minor) OR (old.canonical_expected_gross_amount_minor IS DISTINCT FROM new.canonical_expected_gross_amount_minor) OR (old.canonical_captured_gross_amount_minor IS DISTINCT FROM new.canonical_captured_gross_amount_minor) OR (old.canonical_net_verified_amount_minor IS DISTINCT FROM new.canonical_net_verified_amount_minor) OR (old.discrepancy_amount_minor IS DISTINCT FROM new.discrepancy_amount_minor) OR (old.discrepancy_ratio_bps IS DISTINCT FROM new.discrepancy_ratio_bps) OR ((old.discrepancy_band)::text IS DISTINCT FROM (new.discrepancy_band)::text))) EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
 
 CREATE TRIGGER trg_b24_dispatch_fence_artifacts BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('artifact');
 
