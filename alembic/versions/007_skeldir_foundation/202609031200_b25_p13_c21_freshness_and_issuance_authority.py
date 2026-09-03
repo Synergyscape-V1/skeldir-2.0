@@ -224,17 +224,14 @@ def upgrade() -> None:
     # Named to sort before trg_b24_enforce_dirty_event_lifecycle so a statement
     # that violates both rules reports the authority refusal, which is the
     # load-bearing one.
+    # CONTROLLED DEFECT CANDIDATE A (do not merge): the consequence layer is
+    # severed -- no dirty-event authority trigger is created -- so the
+    # historical pre-C21 physics of CF-XXI-01 is restored alongside the
+    # privilege re-grant below.
     op.execute(
-        f"""
+        """
         DROP TRIGGER IF EXISTS trg_b24_dirty_event_authority
             ON public.b24_dirty_events;
-        CREATE TRIGGER trg_b24_dirty_event_authority
-            BEFORE UPDATE ON public.b24_dirty_events
-            FOR EACH ROW
-            WHEN (
-                {_GUARDED_CHANGE_PREDICATE}
-            )
-            EXECUTE FUNCTION public.b24_enforce_dirty_event_authority();
         """
     )
 
@@ -245,10 +242,15 @@ def upgrade() -> None:
     # attribution worker both call append_dirty_event) and reads it. Every
     # UPDATE in the codebase belongs to the planner/Bayesian worker.
     op.execute("REVOKE ALL ON TABLE public.b24_dirty_events FROM PUBLIC")
+    # CONTROLLED DEFECT CANDIDATE A (do not merge): the historical
+    # 202605221430 overgrant is restored -- app_user regains UPDATE, the
+    # exact privilege state of protected main 737db584 -- so the audit's
+    # CF-XXI-01 rewrite must become physically possible again.
     _if_role_exists(
         "app_user",
         "REVOKE ALL ON TABLE public.b24_dirty_events FROM app_user;"
-        " GRANT SELECT, INSERT ON TABLE public.b24_dirty_events TO app_user",
+        " GRANT SELECT, INSERT, UPDATE ON TABLE public.b24_dirty_events"
+        " TO app_user",
     )
     _if_role_exists(
         "app_rw",
