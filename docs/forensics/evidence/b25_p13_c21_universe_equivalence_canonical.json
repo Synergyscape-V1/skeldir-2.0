@@ -1,0 +1,242 @@
+{
+  "baseline": "empty_to_head",
+  "capabilities": {
+    "canonical_bootstrap": {
+      "app_rw:b24_dirty_events:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_rw:trust_access_log:UPDATE": {
+        "agrees": false,
+        "expected": true,
+        "held": false
+      },
+      "app_rw:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_trust_issuer:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_trust_signer:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:b24_dirty_events:DELETE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:b24_dirty_events:INSERT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:b24_dirty_events:SELECT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:b24_dirty_events:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:trust_access_log:UPDATE": {
+        "agrees": false,
+        "expected": true,
+        "held": false
+      },
+      "app_user:trust_envelope_issuance_log:DELETE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:trust_envelope_issuance_log:INSERT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:trust_envelope_issuance_log:SELECT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:trust_replay_events:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:trust_scope_denial_events:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_worker:b24_dirty_events:INSERT": {
+        "agrees": false,
+        "expected": true,
+        "held": false
+      },
+      "app_worker:b24_dirty_events:SELECT": {
+        "agrees": false,
+        "expected": true,
+        "held": false
+      },
+      "app_worker:b24_dirty_events:UPDATE": {
+        "agrees": false,
+        "expected": true,
+        "held": false
+      },
+      "app_worker:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "authority_triggers": [
+        "trg_b24_dirty_event_authority",
+        "trg_trust_issuance_history_immutable"
+      ]
+    },
+    "empty_to_head": {
+      "app_rw:b24_dirty_events:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_rw:trust_access_log:UPDATE": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_rw:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_trust_issuer:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_trust_signer:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:b24_dirty_events:DELETE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:b24_dirty_events:INSERT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:b24_dirty_events:SELECT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:b24_dirty_events:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:trust_access_log:UPDATE": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:trust_envelope_issuance_log:DELETE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:trust_envelope_issuance_log:INSERT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:trust_envelope_issuance_log:SELECT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_user:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:trust_replay_events:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_user:trust_scope_denial_events:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "app_worker:b24_dirty_events:INSERT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_worker:b24_dirty_events:SELECT": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_worker:b24_dirty_events:UPDATE": {
+        "agrees": true,
+        "expected": true,
+        "held": true
+      },
+      "app_worker:trust_envelope_issuance_log:UPDATE": {
+        "agrees": true,
+        "expected": false,
+        "held": false
+      },
+      "authority_triggers": [
+        "trg_b24_dirty_event_authority",
+        "trg_trust_issuance_history_immutable"
+      ]
+    }
+  },
+  "empty_to_head_vs_canonical_bootstrap": {
+    "constraints": {
+      "baseline_rows": 1697,
+      "candidate_rows": 1697,
+      "cast_rewrites": 308,
+      "identical": false,
+      "identical_after_cast_normalisation": true
+    },
+    "policies": {
+      "baseline_rows": 123,
+      "candidate_rows": 123,
+      "identical": true
+    },
+    "rls_flags": {
+      "baseline_rows": 118,
+      "candidate_rows": 118,
+      "identical": true
+    },
+    "triggers": {
+      "baseline_rows": 160,
+      "candidate_rows": 160,
+      "identical": true
+    }
+  },
+  "verdict": "EQUIVALENT"
+}

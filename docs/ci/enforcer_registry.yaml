@@ -3854,6 +3854,39 @@
   deprecation_reason: ''
   subsumed_by: b25-p13-c20-verdict-authority
   registry_action: utility
+- id: p13-c21-authority-universe-comparator
+  path: scripts/ci/compare_b25_p13_c21_authority_universes.py
+  status: required
+  owning_phase: B2.5-P13-Corrective-XXI
+  protected_invariant: Every supported schema construction path produces one authority physics. An empty cluster
+    migrated to head, a cluster that already sat at 202609021200 and was migrated forward, and the checked-in
+    canonical bootstrap must agree on owners, RLS enable/force, policies, triggers, constraints, function ownership
+    and security flags, table grants, column grants, function EXECUTE and role memberships, must carry both C21
+    authority triggers, and must answer the C21 forbidden/lawful capability matrix identically.
+  command: python scripts/ci/compare_b25_p13_c21_authority_universes.py --admin-dsn "$C21_ADMIN_DATABASE_URL"
+    --universe "empty_to_head=skeldir_b25_p13_c21" --universe "predecessor_to_head=skeldir_b25_p13_c21_incremental"
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P13 C21 Freshness and Issuance Authority Conservation
+  local_reproduction_command: python scripts/ci/compare_b25_p13_c21_authority_universes.py --admin-dsn
+    "postgresql://postgres:postgres@127.0.0.1:5432/postgres" --universe "empty_to_head=skeldir_b25_p13_c21"
+    --universe "predecessor_to_head=skeldir_b25_p13_c21_incremental"
+  expected_failure_meaning: A schema construction path diverges on who may assert what. An incremental upgrade, a
+    fresh install and the canonical bootstrap no longer produce the same authority graph, so the C21 freshness and
+    issuance fences are not guaranteed to exist in a deployment built by one of those paths.
+  first_diagnostic_command: python scripts/ci/compare_b25_p13_c21_authority_universes.py --admin-dsn
+    "postgresql://postgres:postgres@127.0.0.1:5432/postgres" --universe "empty_to_head=skeldir_b25_p13_c21"
+    --universe "predecessor_to_head=skeldir_b25_p13_c21_incremental" --out /tmp/c21_universes.json
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b25-p13-e2e-trust-closure
+  ci_visibility: named_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: retain
 - id: p13-adversarial-physics-adjudicator
   path: scripts/ci/adjudicate_p13_adversarial_physics.py
   status: required

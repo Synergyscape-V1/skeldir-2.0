@@ -66,6 +66,9 @@ LOAD_BEARING_JOBS = {
     # Corrective XX: verdict-authority conservation -- the API principal
     # may not author B2.3 truth -- is merge-governing.
     "b2-5-p13-c20-verdict-authority",
+    # Corrective XXI: B2.4 freshness-authority conservation and durable
+    # issuance-history immutability are merge-governing.
+    "b2-5-p13-c21-freshness-issuance-authority",
 }
 
 

@@ -665,6 +665,94 @@ CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
 
 
 
+CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            principal_is_superuser boolean;
+            table_owner_oid oid;
+            planner_role_oid oid;
+            caller_is_planner boolean;
+        BEGIN
+            -- A superuser can drop this trigger, so refusing it buys no
+            -- authority and only breaks administrative provisioning.
+            SELECT rolsuper
+              INTO principal_is_superuser
+              FROM pg_catalog.pg_roles
+             WHERE rolname = session_user;
+            IF COALESCE(principal_is_superuser, false) THEN
+                RETURN NEW;
+            END IF;
+
+            -- Likewise the migration principal, which owns the relation and can
+            -- drop the trigger outright. C20 asserts, beside its own fence, that
+            -- no runtime login can reach that role; the same assertion carries
+            -- this one.
+            SELECT relowner
+              INTO table_owner_oid
+              FROM pg_catalog.pg_class
+             WHERE oid = TG_RELID;
+            IF pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE') THEN
+                RETURN NEW;
+            END IF;
+
+            -- Identity of the invalidation evidence is written once, by the
+            -- producer, and is never restated by a lifecycle transition.
+            IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+           OR NEW.model_type IS DISTINCT FROM OLD.model_type
+           OR NEW.model_version IS DISTINCT FROM OLD.model_version
+           OR NEW.source_window_start IS DISTINCT FROM OLD.source_window_start
+           OR NEW.source_window_end IS DISTINCT FROM OLD.source_window_end
+           OR NEW.dirty_reason IS DISTINCT FROM OLD.dirty_reason
+           OR NEW.source_family IS DISTINCT FROM OLD.source_family
+           OR NEW.event_hash IS DISTINCT FROM OLD.event_hash
+           OR NEW.source_event_id IS DISTINCT FROM OLD.source_event_id
+           OR NEW.created_at IS DISTINCT FROM OLD.created_at
+            THEN
+                RAISE EXCEPTION
+                    'b24 invalidation evidence identity is immutable after '
+                    'creation; % may not restate what changed',
+                    session_user
+                    USING ERRCODE = '42501';
+            END IF;
+
+            -- The resolved source snapshot has exactly one lawful writer and
+            -- exactly one lawful moment: the B2.4 planner binding it as a leased
+            -- obligation enters authority_waiting.
+            IF NEW.source_snapshot_hash IS DISTINCT FROM OLD.source_snapshot_hash
+            THEN
+                SELECT oid
+                  INTO planner_role_oid
+                  FROM pg_catalog.pg_roles
+                 WHERE rolname = 'app_worker';
+                caller_is_planner := planner_role_oid IS NOT NULL
+                    AND pg_catalog.pg_has_role(
+                        session_user, planner_role_oid, 'USAGE'
+                    );
+                IF NOT caller_is_planner THEN
+                    RAISE EXCEPTION
+                        'b24 freshness authority is owned by the B2.4 planner '
+                        'principal; % may not rebind source_snapshot_hash',
+                        session_user
+                        USING ERRCODE = '42501';
+                END IF;
+                IF OLD.status <> 'leased' OR NEW.status <> 'authority_waiting'
+                THEN
+                    RAISE EXCEPTION
+                        'b24 source snapshot may only be bound on the lawful '
+                        'leased -> authority_waiting transition; refused % -> %',
+                        OLD.status, NEW.status
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$;
+
+
+
 CREATE FUNCTION public.b24_enforce_dirty_event_lifecycle() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -3138,6 +3226,49 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
                     USING ERRCODE = '42501';
             END IF;
             RETURN NEW;
+        END;
+        $$;
+
+
+
+CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            principal_is_superuser boolean;
+            table_owner_oid oid;
+        BEGIN
+            SELECT rolsuper
+              INTO principal_is_superuser
+              FROM pg_catalog.pg_roles
+             WHERE rolname = session_user;
+            SELECT relowner
+              INTO table_owner_oid
+              FROM pg_catalog.pg_class
+             WHERE oid = TG_RELID;
+
+            -- Superuser and the owning migration principal can drop this
+            -- trigger, so refusing them buys no authority; the owner branch is
+            -- also what keeps a governed tenant cascade working.
+            IF COALESCE(principal_is_superuser, false)
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+            THEN
+                IF TG_OP = 'DELETE' THEN
+                    RETURN OLD;
+                END IF;
+                RETURN NEW;
+            END IF;
+
+            -- Every row of this relation is terminal at INSERT: the status
+            -- CHECK admits only 'success', so a row exists exactly when a
+            -- cryptographic consequence was recorded. A later statement may
+            -- not restate what Skeldir durably claims it signed.
+            RAISE EXCEPTION
+                'durable trust issuance history is immutable; % may not % '
+                'public.trust_envelope_issuance_log',
+                session_user, TG_OP
+                USING ERRCODE = '42501';
         END;
         $$;
 
@@ -11775,6 +11906,10 @@ CREATE TRIGGER trg_b23_verdict_authorship_insert BEFORE INSERT ON public.b23_mat
 
 CREATE TRIGGER trg_b23_verdict_authorship_update BEFORE UPDATE ON public.b23_match_verdicts FOR EACH ROW WHEN ((((old.status)::text IS DISTINCT FROM (new.status)::text) OR (old.confirmed_at IS DISTINCT FROM new.confirmed_at) OR (old.adjusted_at IS DISTINCT FROM new.adjusted_at) OR (old.unmatched_marked_at IS DISTINCT FROM new.unmatched_marked_at) OR ((old.match_quality)::text IS DISTINCT FROM (new.match_quality)::text) OR (old.attributed_amount_minor IS DISTINCT FROM new.attributed_amount_minor) OR (old.verified_amount_minor IS DISTINCT FROM new.verified_amount_minor) OR (old.canonical_expected_gross_amount_minor IS DISTINCT FROM new.canonical_expected_gross_amount_minor) OR (old.canonical_captured_gross_amount_minor IS DISTINCT FROM new.canonical_captured_gross_amount_minor) OR (old.canonical_net_verified_amount_minor IS DISTINCT FROM new.canonical_net_verified_amount_minor) OR (old.discrepancy_amount_minor IS DISTINCT FROM new.discrepancy_amount_minor) OR (old.discrepancy_ratio_bps IS DISTINCT FROM new.discrepancy_ratio_bps) OR ((old.discrepancy_band)::text IS DISTINCT FROM (new.discrepancy_band)::text))) EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
 
+CREATE TRIGGER trg_b24_dirty_event_authority BEFORE UPDATE ON public.b24_dirty_events FOR EACH ROW WHEN (((new.tenant_id IS DISTINCT FROM old.tenant_id) OR ((new.model_type)::text IS DISTINCT FROM (old.model_type)::text) OR ((new.model_version)::text IS DISTINCT FROM (old.model_version)::text) OR (new.source_window_start IS DISTINCT FROM old.source_window_start) OR (new.source_window_end IS DISTINCT FROM old.source_window_end) OR ((new.dirty_reason)::text IS DISTINCT FROM (old.dirty_reason)::text) OR ((new.source_family)::text IS DISTINCT FROM (old.source_family)::text) OR ((new.event_hash)::text IS DISTINCT FROM (old.event_hash)::text) OR ((new.source_event_id)::text IS DISTINCT FROM (old.source_event_id)::text) OR (new.created_at IS DISTINCT FROM old.created_at) OR ((new.source_snapshot_hash)::text IS DISTINCT FROM (old.source_snapshot_hash)::text))) EXECUTE FUNCTION public.b24_enforce_dirty_event_authority();
+
+
+
 CREATE TRIGGER trg_b24_dispatch_fence_artifacts BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('artifact');
 
 
@@ -11916,6 +12051,10 @@ CREATE TRIGGER trg_trust_export_artifact_attempt_guard BEFORE INSERT OR UPDATE O
 
 
 CREATE TRIGGER trg_trust_issuance_attempt_guard BEFORE INSERT OR UPDATE ON public.trust_issuance_attempts FOR EACH ROW EXECUTE FUNCTION public.trust_issuance_attempt_guard();
+
+
+
+CREATE TRIGGER trg_trust_issuance_history_immutable BEFORE DELETE OR UPDATE ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.trust_enforce_issuance_history_immutable();
 
 
 
