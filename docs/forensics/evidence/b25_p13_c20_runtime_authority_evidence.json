@@ -1,0 +1,193 @@
+{
+  "c20_authority_conservation": {
+    "allocation_after_lawful_transition": [
+      true,
+      "b23_match_verdict"
+    ],
+    "app_user_cross_tenant": {
+      "error": "permission denied for table b23_match_verdicts",
+      "op": "CROSS_TENANT_UPDATE",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "sqlstate": "42501"
+    },
+    "app_user_insert": {
+      "error": "permission denied for table b23_match_verdicts",
+      "op": "INSERT",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "sqlstate": "42501"
+    },
+    "app_user_transition": {
+      "current_user": "app_user",
+      "error": "permission denied for table b23_match_verdicts",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "app_worker_transition": {
+      "current_user": "app_worker",
+      "principal": "app_worker",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_worker"
+    },
+    "gate": "XX2-A/XX2-B",
+    "tenant_id": "ee54f755-e9e5-404c-9d5b-c26c3b20c9c6",
+    "verdict_id": "8a75e1cd-35aa-4a21-bb47-fef9e46ef469"
+  },
+  "c20_authority_matrix": {
+    "b23_match_verdicts": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "SELECT"
+      ],
+      "app_worker": [
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ]
+    },
+    "b24_active_execution_leases": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "SELECT"
+      ],
+      "app_worker": [
+        "DELETE",
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ]
+    },
+    "b24_fit_dispatch_outbox": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [
+        "SELECT"
+      ],
+      "app_ro": [],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "SELECT"
+      ],
+      "app_worker": [
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ]
+    },
+    "b24_fit_planner_wakeups": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [],
+      "app_worker": [
+        "DELETE",
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ]
+    },
+    "bayesian_artifacts": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [
+        "SELECT"
+      ],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "SELECT"
+      ],
+      "app_worker": [
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ]
+    },
+    "bayesian_model_fits": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [
+        "SELECT"
+      ],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "SELECT"
+      ],
+      "app_worker": [
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ]
+    }
+  },
+  "c20_layer_falsifier": {
+    "after_exact_restoration": {
+      "current_user": "app_user",
+      "error": "permission denied for table b23_match_verdicts",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "both_layers_severed": {
+      "current_user": "app_user",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_user"
+    },
+    "gate": "XX2-A active falsifier",
+    "guard_trigger_severed": {
+      "current_user": "app_user",
+      "error": "permission denied for table b23_match_verdicts",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "guard_triggers": [
+      "trg_b23_verdict_authorship_insert",
+      "trg_b23_verdict_authorship_update"
+    ],
+    "historical_downstream_consequence": [
+      true,
+      "b23_match_verdict"
+    ],
+    "historical_grant_restored": {
+      "current_user": "app_user",
+      "error": "b23 verdict authority is owned by the B2.3 worker principal; app_user may not UPDATE public.b23_match_verdicts",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    }
+  },
+  "violations": []
+}

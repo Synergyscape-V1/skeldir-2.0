@@ -186,9 +186,57 @@ for _ in $(seq 1 120); do
 done
 curl --fail --silent "$C19_API_BASE_URL/health/ready" \
   | tee "$evidence_dir/c19_api_ready.json"
-for service in worker_attribution worker_b23_a worker_b23_b worker_bayesian worker_publisher beat; do
-  test "$("${compose[@]}" ps --status running --services | grep -x "$service")" = "$service"
-done
+# A process that dies during bring-up must say why. Without this the topology
+# assertion reports only "not running", which makes every bring-up red
+# indistinguishable from every other one -- and a first red that cannot be
+# explained cannot be dispositioned.
+c19_report_topology_failure() {
+  local failed="$1"
+  echo "c19_topology_service_not_running=$failed"
+  "${compose[@]}" ps --all || true
+  local service
+  for service in postgres trust_signer api worker_attribution worker_b23_a \
+      worker_b23_b worker_bayesian worker_publisher beat; do
+    echo "----- c19 container logs: $service -----"
+    "${compose[@]}" logs --no-color --tail 120 "$service" 2>&1 || true
+  done
+}
+
+# Every service declares `restart: no`, deliberately: a process that dies must
+# stay dead and be seen. That makes the distinction between "has not finished
+# starting" and "started and exited" load-bearing, so it is drawn explicitly
+# rather than by whichever happens to be true at the instant the API answers.
+# An exited container is fatal immediately; a not-yet-running one is waited on.
+c19_await_topology() {
+  local service attempt state
+  for attempt in $(seq 1 60); do
+    local pending=0
+    for service in worker_attribution worker_b23_a worker_b23_b \
+        worker_bayesian worker_publisher beat; do
+      state="$("${compose[@]}" ps --all --format '{{.Service}} {{.State}}' \
+        | awk -v s="$service" '$1 == s {print $2}' | head -1)"
+      case "$state" in
+        running) ;;
+        exited|dead)
+          echo "c19_topology_service_exited=$service state=$state"
+          c19_report_topology_failure "$service"
+          return 1
+          ;;
+        *) pending=1 ;;
+      esac
+    done
+    if [[ "$pending" -eq 0 ]]; then
+      echo "c19_topology_services_running=9"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "c19_topology_services_never_started"
+  c19_report_topology_failure "timeout"
+  return 1
+}
+
+c19_await_topology
 
 export PYTHONPATH="$repo_root/backend"
 export SKELDIR_B25_P13_C19_TOPOLOGY_PROOF=1
