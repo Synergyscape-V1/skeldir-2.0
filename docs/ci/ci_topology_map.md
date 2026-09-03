@@ -102,7 +102,7 @@
 - `R3 Ingestion Under Fire`
 - `R4 Worker Failure Semantics`
 - `R6 Worker Resource Governance`
-- `R7 Final Winning State`
+- `P13 Adversarial Physics Adjudication`
 
 ## Jobs That Call scripts/ci Enforcers
 

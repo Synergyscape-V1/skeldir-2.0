@@ -46,6 +46,9 @@ LOAD_BEARING_JOBS = {
     # (external evidence to public verification) is merge-governing.
     "b2-5-p13-c19-context-robust-closure",
     "b2-5-p13-c17-consequence-lineage",
+    # Corrective XX: verdict-authority conservation -- the API principal
+    # may not author B2.3 truth -- is merge-governing.
+    "b2-5-p13-c20-verdict-authority",
 }
 
 

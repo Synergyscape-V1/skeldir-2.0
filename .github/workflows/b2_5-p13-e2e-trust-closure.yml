@@ -1434,15 +1434,33 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
+          # Pick a real target first. This table forces row-level security on a
+          # tenant GUC, so an unbound UPDATE matches nothing, the BEFORE ROW
+          # trigger never fires, and psql exits zero -- a control that measured
+          # nothing would look exactly like a fence that failed.
+          target=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_c20 -tAc \
+            "SELECT id || ' ' || tenant_id FROM public.b23_match_verdicts WHERE status = 'matched_provisional' LIMIT 1")
+          if [ -z "$target" ]; then
+            echo "NC-C20-01 cannot run: no provisional verdict exists to attack"
+            exit 1
+          fi
+          verdict_id="${target%% *}"
+          tenant_id="${target##* }"
+          echo "NC-C20-01 target verdict=$verdict_id tenant=$tenant_id"
+
           psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_c20 -v ON_ERROR_STOP=1 \
             -c "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts TO app_user;"
           if PGPASSWORD=app_user psql -h 127.0.0.1 -U app_user -d skeldir_b25_p13_c20 -v ON_ERROR_STOP=1 \
-              -c "UPDATE public.b23_match_verdicts SET status = 'matched_confirmed' WHERE status = 'matched_provisional';"; then
+              -c "SELECT set_config('app.current_tenant_id', '$tenant_id', false);" \
+              -c "UPDATE public.b23_match_verdicts SET status = 'matched_confirmed', confirmed_at = now(), last_transition_at = now() WHERE id = '$verdict_id';"; then
             echo "NC-C20-01 did not fire: the API principal transitioned a verdict"
             exit 1
           fi
           psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_c20 -v ON_ERROR_STOP=1 \
             -c "REVOKE ALL ON TABLE public.b23_match_verdicts FROM app_user; GRANT SELECT ON TABLE public.b23_match_verdicts TO app_user;"
+          still_provisional=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_c20 -tAc \
+            "SELECT status FROM public.b23_match_verdicts WHERE id = '$verdict_id'")
+          test "$still_provisional" = "matched_provisional"
           echo "NC-C20-01 fired: consequence ownership survives a grant regression"
 
       # XX2-D. The divergent-clock experiment both audits left unresolved.
@@ -2275,7 +2293,7 @@ jobs:
           test "$role_flags" = "false:false" || test "$role_flags" = "f:f"
           python -m alembic downgrade 202608291200
           python -m alembic upgrade head
-          python -m alembic current | grep -q '202609011200 (head)'
+          python -m alembic current | grep -q '202609021200 (head)'
           echo 'c16_migration_non_super_round_trip=1' >> "$GITHUB_STEP_SUMMARY"
 
       # XVI-B. The issuance principal is the whole point of the remediation, so
@@ -2507,7 +2525,7 @@ jobs:
           test "$(grep -c '^0$' <<<"$attempts")" = 1
           python -m alembic downgrade 202608301200
           python -m alembic upgrade head
-          python -m alembic current | grep -q '202609011200 (head)'
+          python -m alembic current | grep -q '202609021200 (head)'
           echo 'c17_historical_rows_not_elevated=1'
           echo 'c17_migration_non_super_round_trip=1'
 

@@ -2855,3 +2855,38 @@
   local_reproduction_command: python scripts/ci/_b25_p13_c20_revert_allocation_walk.py
   risk_if_removed: NC-C20-02 would mutate nothing and appear to fire, making the temporal-coherence proof vacuous.
   decision: keep_utility
+- gate_id: p13-adversarial-physics-adjudicator
+  workflow: .github/workflows/p13-adversarial-physics-adjudication.yml
+  job: P13 Adversarial Physics Adjudication
+  script: scripts/ci/adjudicate_p13_adversarial_physics.py
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: The adversarial proof executed, not merely reported green.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: Replaces R7 Final Winning State as the merge blocker. R7's phase assertions are a strict
+    subset of the standalone R2/R3/R4/R6 lanes, each of its phases runs against its own freshly created database
+    so the shared substrate is a server rather than conducted state, and its harness produced three different non-product
+    failures in four pre-merge runs.
+  negative_control_preserved_by: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  local_reproduction_command: python scripts/ci/adjudicate_p13_adversarial_physics.py --list-lanes
+  risk_if_removed: A required lane could report skipped, satisfy branch protection, and let a P13-invalid candidate
+    merge unproven.
+  decision: keep_all
+- gate_id: p13-adversarial-physics-negative-controls
+  workflow: .github/workflows/p13-adversarial-physics-adjudication.yml
+  job: P13 Adversarial Physics Adjudication
+  script: scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: Each refusal mode of the adjudicator is independently load-bearing.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: The paired negative control for the adjudicator, in the same shape as the CI physics guard's.
+    An adjudicator with no negative control is an assertion.
+  negative_control_preserved_by: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  risk_if_removed: The adjudicator could silently accept a skipped lane.
+  decision: keep_all

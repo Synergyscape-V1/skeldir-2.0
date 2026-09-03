@@ -3854,3 +3854,51 @@
   deprecation_reason: ''
   subsumed_by: b25-p13-c20-verdict-authority
   registry_action: utility
+- id: p13-adversarial-physics-adjudicator
+  path: scripts/ci/adjudicate_p13_adversarial_physics.py
+  status: required
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: Every declared adversarial lane actually executed and concluded success on the SHA under
+    adjudication. GitHub treats a skipped check-run as satisfying a branch rule; this refuses skipped, neutral,
+    cancelled, timed-out and absent as well as failed.
+  command: python scripts/ci/adjudicate_p13_adversarial_physics.py
+  workflow_references:
+  - .github/workflows/p13-adversarial-physics-adjudication.yml
+  workflow_job_name: P13 Adversarial Physics Adjudication
+  local_reproduction_command: python scripts/ci/adjudicate_p13_adversarial_physics.py --list-lanes
+  expected_failure_meaning: A load-bearing adversarial lane did not execute, or concluded anything other than success,
+    on the candidate being merged.
+  first_diagnostic_command: python scripts/ci/adjudicate_p13_adversarial_physics.py --list-lanes
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: p13-adversarial-physics-adjudication
+  ci_visibility: executed
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: p13-adversarial-physics-negative-controls
+  path: scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  status: required
+  owning_phase: B2.5-P13-Corrective-XX
+  protected_invariant: The adjudicator refuses each way a lane can fail to have proved anything -- skipped, neutral,
+    cancelled, timed out, failed, absent and still-running -- and accepts only success.
+  command: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  workflow_references:
+  - .github/workflows/p13-adversarial-physics-adjudication.yml
+  workflow_job_name: P13 Adversarial Physics Adjudication
+  local_reproduction_command: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  expected_failure_meaning: The adjudicator has been weakened into accepting a lane that did not prove anything.
+  first_diagnostic_command: python scripts/ci/test_p13_adversarial_physics_negative_controls.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: p13-adversarial-physics-adjudication
+  ci_visibility: executed
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep

@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.19.0",
+  "contract_version": "1.20.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -85,7 +85,7 @@
     "R3 Ingestion Under Fire",
     "R4 Worker Failure Semantics",
     "R6 Worker Resource Governance",
-    "R7 Final Winning State"
+    "P13 Adversarial Physics Adjudication"
   ],
   "hardware_enforcement": {
     "status": "enforced",
@@ -161,11 +161,21 @@
         "physics": "worker resource governance under load",
         "corrective": "XX"
       },
-      "r7-final-winning-state": {
-        "workflow": ".github/workflows/r7-final-winning-state.yml",
-        "required_context": "R7 Final Winning State",
-        "physics": "aggregate R1-R6 winning-state replay on one shared substrate",
-        "corrective": "XX"
+      "p13-adversarial-physics-adjudication": {
+        "workflow": ".github/workflows/p13-adversarial-physics-adjudication.yml",
+        "required_context": "P13 Adversarial Physics Adjudication",
+        "adjudicator": true,
+        "physics": "every declared adversarial lane actually executed and concluded success on this SHA -- a skipped, neutral, cancelled or absent check-run is a refusal, which branch protection alone does not provide",
+        "corrective": "XX",
+        "reason": "replaces R7 as the merge blocker: R7's assertions are a subset of the standalone lanes', its phases share a PostgreSQL server rather than state, and its harness produced three different non-product failures in four pre-merge runs"
+      }
+    },
+    "demoted": {
+      "R7 Final Winning State": {
+        "disposition": "post-merge soak diagnostic, not merge-blocking",
+        "mapping": "R7 phase R2/R3c/R4b-f/R6 invoke scripts/r2, scripts/r3, scripts/r4 and scripts/r6 respectively -- a strict subset of the standalone lanes, which additionally run scripts/r2/static_behavioral_audit.py. Phases R1 and R5 are liveness and determinism, proven more strongly by 'B2.5-P13 E2E Trust Closure'.",
+        "no_unique_compositional_physics": "the bootstrap step creates a separate database per phase (r1..r6) and no phase reads another's, so the shared substrate is a PostgreSQL server and a runner VM, not conducted state",
+        "restore_condition": "may return to the merge-blocking set once its R3 ingestion phase and R2 log-window capture are deterministic on hosted runners"
       }
     }
   }
