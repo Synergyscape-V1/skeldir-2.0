@@ -200,6 +200,13 @@ def upgrade() -> None:
         "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts"
         " TO app_worker",
     )
+    # AUDIT-INJECTED HISTORICAL DEFECT (B2.5-P13 Gate I falsifier): the
+    # pre-C20 re-grant that let the API principal write B2.3 verdict truth.
+    _if_role_exists(
+        "app_user",
+        "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_verdicts"
+        " TO app_user",
+    )
 
 
 def downgrade() -> None:
