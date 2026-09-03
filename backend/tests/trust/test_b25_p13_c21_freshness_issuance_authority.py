@@ -352,23 +352,54 @@ def _issuance_state(cursor, issuance_id) -> tuple:
     return tuple(cursor.fetchone())
 
 
-def _assert_contract_restored(cursor) -> None:
-    """No falsifier may leave the database in a state the migration never makes.
+_GUARDED_RELATIONS = (
+    "b24_dirty_events",
+    "trust_envelope_issuance_log",
+    "trust_replay_events",
+    "trust_scope_denial_events",
+    "trust_access_log",
+)
 
-    A control that severs a fence and restores something *close* to it silently
-    poisons every later experiment -- and the first version of the issuance
-    control did exactly that, stripping app_rw's lawful SELECT+INSERT instead of
-    restoring it, which turned the next authority-contract assertion red for a
-    reason that had nothing to do with the product. So each falsifier ends by
-    re-asserting the whole machine-checked contract.
-    """
+
+def _privilege_snapshot(cursor) -> dict[str, dict[str, list[str]]]:
+    """Effective privileges on every relation a C21 falsifier may touch."""
 
     from tests.trust.test_b25_p13_c20_runtime_authority import (  # noqa: PLC0415
-        _contract_violations,
+        _effective_privileges,
     )
 
-    violations = _contract_violations(cursor)
-    assert violations == [], violations
+    return {
+        relation: {
+            principal: sorted(operations)
+            for principal, operations in _effective_privileges(cursor, relation).items()
+        }
+        for relation in _GUARDED_RELATIONS
+    }
+
+
+def _assert_privileges_restored(cursor, before: dict[str, dict[str, list[str]]]) -> None:
+    """A falsifier must hand back the exact privilege state it was given.
+
+    Not "the state the contract says" -- *the state it found*. Restoring to an
+    assumed-correct fence looks identical to restoring correctly right up until
+    the assumption is wrong, and then it silently normalises a defect out of the
+    database and every check that runs afterwards goes green over it. The first
+    version of the issuance control restored app_rw to nothing instead of to the
+    SELECT+INSERT the migration produces, and a controlled-defect dry run showed
+    the same class of masking: the freshness control's restore erased a
+    deliberately reintroduced overgrant before the authority-contract assertion
+    could see it.
+
+    Whether the state it was given is *lawful* is a separate question, asked by
+    the authority-contract equality against a pristine migrated database.
+    """
+
+    after = _privilege_snapshot(cursor)
+    assert after == before, {
+        relation: {"before": before[relation], "after": after[relation]}
+        for relation in _GUARDED_RELATIONS
+        if before[relation] != after[relation]
+    }
 
 
 def _record_evidence(payload: dict[str, Any]) -> None:
@@ -392,6 +423,38 @@ def _record_evidence(payload: dict[str, Any]) -> None:
     path.write_text(
         json.dumps(existing, indent=2, sort_keys=True, default=str), encoding="utf-8"
     )
+
+
+# ---------------------------------------------------------------------------
+# Asserted first, before any experiment mutates a grant.
+# ---------------------------------------------------------------------------
+
+
+def test_c21_the_migrated_authority_contract_holds_before_any_mutation() -> None:
+    """The database as the migrations built it, judged before anything moves.
+
+    Every other test in this module severs a fence and puts it back. A
+    controlled-defect dry run showed why that ordering matters: an overgrant
+    deliberately reintroduced *by the migration* was erased by the first
+    falsifier's restore, and every check that ran afterwards went green over a
+    defect that was really there. So the as-migrated state is judged here, at
+    the top of the file, where nothing has touched it yet -- and the CI job runs
+    the three-universe comparison before this module for the same reason.
+    """
+
+    from tests.trust.test_b25_p13_c20_runtime_authority import (  # noqa: PLC0415
+        _contract_violations,
+    )
+
+    conn = _admin_connection()
+    try:
+        with conn.cursor() as cursor:
+            violations = _contract_violations(cursor)
+            snapshot = _privilege_snapshot(cursor)
+    finally:
+        conn.close()
+    _record_evidence({"c21_as_migrated_privileges": snapshot})
+    assert violations == [], violations
 
 
 # ---------------------------------------------------------------------------
@@ -642,6 +705,7 @@ def test_c21_each_freshness_layer_is_independently_load_bearing() -> None:
         with conn.cursor() as cursor:
             universe = _seed_universe(cursor)
             saved = _dirty_authority_triggerdefs(cursor)
+            privileges_before = _privilege_snapshot(cursor)
         assert len(saved) == 1, saved
         evidence["guard_trigger"] = sorted(saved)
         tenant_id = universe["tenant_id"]
@@ -715,7 +779,7 @@ def test_c21_each_freshness_layer_is_independently_load_bearing() -> None:
         assert restored["result"] == "REFUSED", restored
         assert restored["has_later_dirty_evidence_after"] is True, restored
         with conn.cursor() as cursor:
-            _assert_contract_restored(cursor)
+            _assert_privileges_restored(cursor, privileges_before)
     finally:
         conn.close()
 
@@ -932,6 +996,7 @@ def test_c21_each_issuance_layer_is_independently_load_bearing() -> None:
             issuance = _seed_issuance(cursor, universe["tenant_id"])
             saved = _issuance_triggerdefs(cursor)
             durable_before = _issuance_state(cursor, issuance["issuance_id"])
+            privileges_before = _privilege_snapshot(cursor)
         assert len(saved) == 1, saved
         evidence["guard_trigger"] = sorted(saved)
         tenant_id = universe["tenant_id"]
@@ -1021,7 +1086,7 @@ def test_c21_each_issuance_layer_is_independently_load_bearing() -> None:
         evidence["after_exact_restoration"] = restored
         assert restored["result"] == "REFUSED", restored
         with conn.cursor() as cursor:
-            _assert_contract_restored(cursor)
+            _assert_privileges_restored(cursor, privileges_before)
     finally:
         conn.close()
 
@@ -1149,6 +1214,7 @@ def test_c21_guards_admit_no_null_or_unknown_bypass() -> None:
         with conn.cursor() as cursor:
             universe = _seed_universe(cursor)
             issuance = _seed_issuance(cursor, universe["tenant_id"])
+            privileges_before = _privilege_snapshot(cursor)
         tenant_id = universe["tenant_id"]
 
         # Restore the historical grants so the *consequence* layer is the thing
@@ -1211,7 +1277,7 @@ def test_c21_guards_admit_no_null_or_unknown_bypass() -> None:
             with conn.cursor() as cursor:
                 cursor.execute(_FENCED_DIRTY_GRANT)
                 cursor.execute(_FENCED_ISSUANCE_GRANT)
-                _assert_contract_restored(cursor)
+                _assert_privileges_restored(cursor, privileges_before)
     finally:
         conn.close()
 

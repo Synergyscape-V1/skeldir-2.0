@@ -1582,6 +1582,56 @@ jobs:
           migration-command: "alembic upgrade head"
           revoke-alembic-version: "false"
 
+      # Gate XXI-F. Three construction paths, one authority physics. The
+      # incremental path is the one Corrective XX's own migration proof could
+      # not cover, because C21 adds a migration after it.
+      #
+      # This runs BEFORE the proof suite deliberately. Every C21 falsifier
+      # severs a fence and puts it back, and a controlled-defect dry run showed
+      # that such a restore erases an overgrant the migration itself introduced
+      # -- after which a comparison against that same database goes green over a
+      # defect that is really there. The as-migrated state is judged first,
+      # while nothing has touched it.
+      - name: XXI-F three-universe authority equivalence
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --database-name skeldir_b25_p13_c21_incremental
+          MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c21_incremental" \
+            python -m alembic upgrade 202609021200
+          MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c21_incremental" \
+            python -m alembic upgrade head
+          python scripts/ci/compare_b25_p13_c21_authority_universes.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --universe "empty_to_head=skeldir_b25_p13_c21" \
+            --universe "predecessor_to_head=skeldir_b25_p13_c21_incremental" \
+            --out artifacts/b25_p13_c21/universe_equivalence.json
+
+      # The canonical bootstrap is the third construction path. It must carry
+      # the same authority objects the migration path produces.
+      - name: XXI-F canonical bootstrap carries the same authority objects
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --database-name skeldir_b25_p13_c21_canonical
+          PGPASSWORD=migration_owner psql -h 127.0.0.1 -U migration_owner \
+            -d skeldir_b25_p13_c21_canonical -v ON_ERROR_STOP=1 -q \
+            -c "SET check_function_bodies = false;" \
+            -c "SELECT pg_catalog.set_config('search_path', '', false);" \
+            -f db/schema/canonical_schema.sql
+          python scripts/ci/compare_b25_p13_c21_authority_universes.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --universe "empty_to_head=skeldir_b25_p13_c21" \
+            --universe "canonical_bootstrap=skeldir_b25_p13_c21_canonical" \
+            --structural-only canonical_bootstrap \
+            --out artifacts/b25_p13_c21/universe_equivalence_canonical.json
+
       # XXI-A / XXI-B / XXI-C / XXI-D / XXI-E, including both layer falsifiers:
       # for each surface the privilege layer and the consequence layer are
       # severed independently and then together, and only the both-severed case
@@ -1593,7 +1643,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py \
             -q -s --no-header -p no:randomly | tee /tmp/b25_p13_c21_authority.out
-          grep -E "9 passed" /tmp/b25_p13_c21_authority.out
+          grep -E "10 passed" /tmp/b25_p13_c21_authority.out
 
       # The C20 process x role x consequence contract now names both C21
       # relations, and it is asserted as an equality. Re-running it here means a
@@ -1688,49 +1738,6 @@ jobs:
             "SELECT envelope_hash || '|' || semantic_truth_hash FROM public.trust_envelope_issuance_log WHERE id = '$issuance_id'")
           test "$before" = "$after"
           echo "NC-C21-02 fired: durable issuance history survives a grant regression"
-
-      # Gate XXI-F. Three construction paths, one authority physics. The
-      # incremental path is the one Corrective XX's own migration proof could
-      # not cover, because C21 adds a migration after it.
-      - name: XXI-F three-universe authority equivalence
-        env:
-          PGPASSWORD: postgres
-        run: |
-          set -euo pipefail
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name skeldir_b25_p13_c21_incremental
-          MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c21_incremental" \
-            python -m alembic upgrade 202609021200
-          MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_c21_incremental" \
-            python -m alembic upgrade head
-          python scripts/ci/compare_b25_p13_c21_authority_universes.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --universe "empty_to_head=skeldir_b25_p13_c21" \
-            --universe "predecessor_to_head=skeldir_b25_p13_c21_incremental" \
-            --out artifacts/b25_p13_c21/universe_equivalence.json
-
-      # The canonical bootstrap is the third construction path. It must carry
-      # the same authority objects the migration path produces.
-      - name: XXI-F canonical bootstrap carries the same authority objects
-        env:
-          PGPASSWORD: postgres
-        run: |
-          set -euo pipefail
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name skeldir_b25_p13_c21_canonical
-          PGPASSWORD=migration_owner psql -h 127.0.0.1 -U migration_owner \
-            -d skeldir_b25_p13_c21_canonical -v ON_ERROR_STOP=1 -q \
-            -c "SET check_function_bodies = false;" \
-            -c "SELECT pg_catalog.set_config('search_path', '', false);" \
-            -f db/schema/canonical_schema.sql
-          python scripts/ci/compare_b25_p13_c21_authority_universes.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --universe "empty_to_head=skeldir_b25_p13_c21" \
-            --universe "canonical_bootstrap=skeldir_b25_p13_c21_canonical" \
-            --structural-only canonical_bootstrap \
-            --out artifacts/b25_p13_c21/universe_equivalence_canonical.json
 
       - name: Upload C21 authority evidence
         if: always()
