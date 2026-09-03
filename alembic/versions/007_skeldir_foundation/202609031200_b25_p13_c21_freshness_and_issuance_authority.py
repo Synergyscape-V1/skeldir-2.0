@@ -313,14 +313,13 @@ def upgrade() -> None:
         $BODY$;
         """
     )
+    # CONTROLLED DEFECT CANDIDATE B (do not merge): the immutability trigger is
+    # severed -- it is never created -- so the historical pre-C21 physics of
+    # CF-XXI-02 is restored alongside the privilege re-grant below.
     op.execute(
         """
         DROP TRIGGER IF EXISTS trg_trust_issuance_history_immutable
             ON public.trust_envelope_issuance_log;
-        CREATE TRIGGER trg_trust_issuance_history_immutable
-            BEFORE UPDATE OR DELETE ON public.trust_envelope_issuance_log
-            FOR EACH ROW
-            EXECUTE FUNCTION public.trust_enforce_issuance_history_immutable();
         """
     )
 
@@ -333,8 +332,26 @@ def upgrade() -> None:
     # stays on both, because `record_trust_audit_event` writes all three of
     # these relations from whichever session composes a Trust read, and the C9
     # positive-confidence lane composes one under the worker principal.
+    #
+    # CONTROLLED DEFECT CANDIDATE B (do not merge): on the issuance log only,
+    # the historical 202607011200 overgrant is restored on both heads --
+    # app_user directly and app_rw as the inherited grant -- so the audit's
+    # CF-XXI-02 hash rewrite must become physically possible again.
+    op.execute("REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM PUBLIC")
+    for role in ("app_user", "app_rw"):
+        _if_role_exists(
+            role,
+            f"REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM {role};"
+            f" GRANT SELECT, INSERT, UPDATE ON TABLE"
+            f" public.trust_envelope_issuance_log TO {role}",
+        )
+    _if_role_exists(
+        "app_ro",
+        "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_ro;"
+        " GRANT SELECT ON TABLE public.trust_envelope_issuance_log TO app_ro",
+    )
+
     for relation in (
-        "trust_envelope_issuance_log",
         "trust_replay_events",
         "trust_scope_denial_events",
     ):
