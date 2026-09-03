@@ -63,7 +63,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Check-runs attach to the SHA the workflow run reports as its head,
+          # which for a pull_request is the PR head -- not GITHUB_SHA, which is
+          # the merge commit. Querying GITHUB_SHA would find no lanes at all and
+          # fail closed on a perfectly healthy candidate.
           python scripts/ci/adjudicate_p13_adversarial_physics.py \
+            --sha "${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}" \
             --wait-seconds 2100 \
             --poll-seconds 30
 

@@ -137,6 +137,10 @@ def adjudicate(
                 verdicts[context] = f"pending:{run.get('status')}"
             else:
                 verdicts[context] = str(run.get("conclusion"))
+        # A query against the wrong SHA looks identical to "no lane ran". Say
+        # how many check-runs were visible at all so the two cannot be
+        # confused in a log.
+        print(f"  check_runs_visible_on_sha={len(observed)}")
         unsettled = [c for c, v in verdicts.items() if v.startswith("pending")]
         if enforcing:
             unsettled += [c for c, v in verdicts.items() if v == "absent"]
