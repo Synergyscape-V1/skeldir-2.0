@@ -245,8 +245,16 @@ export SKELDIR_B25_P13_C19_TOPOLOGY_PROOF=1
 export SKELDIR_B25_P13_C20_RUNTIME_AUTHORITY_PROOF=1
 export C20_ADMIN_DATABASE_URL="$C19_ADMIN_DATABASE_URL"
 export C20_EVIDENCE_PATH="$evidence_dir/b25_p13_c20_runtime_authority_evidence.json"
+# Corrective XXI. Same argument, one layer further down the spine: B2.4
+# freshness authority and durable issuance history are proved here, against the
+# database the nine production processes are actually connected to, under the
+# same real logins they hold.
+export SKELDIR_B25_P13_C21_AUTHORITY_PROOF=1
+export C21_ADMIN_DATABASE_URL="$C19_ADMIN_DATABASE_URL"
+export C21_EVIDENCE_PATH="$evidence_dir/b25_p13_c21_authority_evidence.json"
 echo "c19_topology_test_path=$repo_root/backend/tests/trust/test_b25_p13_c19_context_robust_topology.py"
 echo "c20_authority_test_path=$repo_root/backend/tests/trust/test_b25_p13_c20_runtime_authority.py"
+echo "c21_authority_test_path=$repo_root/backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py"
 if [[ "$python_bin" == *.exe ]]; then
   powershell_runner="$runtime_root/run-c19-observer.ps1"
   : > "$powershell_runner"
@@ -264,12 +272,14 @@ if [[ "$python_bin" == *.exe ]]; then
     C19_TRANSPORT_DATABASE_URL C19_SIGNER_DATABASE_URL C19_ISSUER_DATABASE_URL
     SKELDIR_B25_P13_C19_TOPOLOGY_PROOF SKELDIR_B25_P13_C20_RUNTIME_AUTHORITY_PROOF
     C20_ADMIN_DATABASE_URL C20_EVIDENCE_PATH
+    SKELDIR_B25_P13_C21_AUTHORITY_PROOF
+    C21_ADMIN_DATABASE_URL C21_EVIDENCE_PATH
     C19_REPO_ROOT C19_TLS_DIR C19_EVIDENCE_PATH C19_JWT_PRIVATE_KEY_PATH PYTHONPATH
   )
   for name in "${observer_env[@]}"; do
     value="${!name:-}"
     case "$name" in
-      C19_REPO_ROOT|C19_TLS_DIR|C19_EVIDENCE_PATH|C20_EVIDENCE_PATH|C19_JWT_PRIVATE_KEY_PATH|PYTHONPATH)
+      C19_REPO_ROOT|C19_TLS_DIR|C19_EVIDENCE_PATH|C20_EVIDENCE_PATH|C21_EVIDENCE_PATH|C19_JWT_PRIVATE_KEY_PATH|PYTHONPATH)
         value="$(python_path "$value")"
         ;;
     esac
@@ -278,7 +288,7 @@ if [[ "$python_bin" == *.exe ]]; then
       "$name" "$encoded" >> "$powershell_runner"
   done
   printf 'Set-Location -LiteralPath "%s"\n' "$(python_path "$repo_root")" >> "$powershell_runner"
-  printf '& "%s" -m pytest backend/tests/trust/test_b25_p13_c19_context_robust_topology.py backend/tests/trust/test_b25_p13_c20_runtime_authority.py -q -s --no-header -p no:randomly *>&1 | Tee-Object -FilePath "%s"\n' \
+  printf '& "%s" -m pytest backend/tests/trust/test_b25_p13_c19_context_robust_topology.py backend/tests/trust/test_b25_p13_c20_runtime_authority.py backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py -q -s --no-header -p no:randomly *>&1 | Tee-Object -FilePath "%s"\n' \
     "$(python_path "$python_bin")" "$(python_path "$evidence_dir/c19_topology_pytest.out")" \
     >> "$powershell_runner"
   printf '%s\n' 'if ($null -eq $LASTEXITCODE) { exit 1 }' >> "$powershell_runner"
@@ -303,6 +313,7 @@ else
   "$python_bin" -m pytest \
     backend/tests/trust/test_b25_p13_c19_context_robust_topology.py \
     backend/tests/trust/test_b25_p13_c20_runtime_authority.py \
+    backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py \
     -q -s --no-header -p no:randomly \
     2>&1 | tee "$evidence_dir/c19_topology_pytest.out"
 fi
