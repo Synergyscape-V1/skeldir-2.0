@@ -57,12 +57,19 @@ the historical capability. The C21 negative controls sever each layer
 independently and then both together, and only the both-severed case may
 reproduce the audit's RED.
 
-The trust audit siblings (``trust_access_log``, ``trust_replay_events``,
-``trust_scope_denial_events``) received the same blanket grant from the same
-migration. ``trust_access_log`` genuinely needs ``app_user`` UPDATE (the replay
-counter upsert) and already carries the C16 issuance-consequence guard; the
-other two are INSERT-only in every code path. The inherited ``app_rw`` write on
-all four is removed regardless, because no worker path writes any of them.
+The trust audit siblings ``trust_replay_events`` and
+``trust_scope_denial_events`` received the same blanket grant from the same
+migration and are INSERT-only in every code path, so they lose UPDATE on both
+heads too. ``trust_access_log`` is deliberately untouched: its UPDATE is the
+replay-counter upsert, and the C16 guard already refuses any change to an
+issuance-consequence column from a principal that is not the issuer.
+
+INSERT stays with ``app_rw`` on all three narrowed relations.
+``record_trust_audit_event`` writes every one of them from whichever session
+composes a Trust read, and the C9 positive-confidence lane composes one under
+the worker principal -- a revoke there fences a lawful author, which is the
+failure mode directive H-XXI-11 names and which mandatory CI caught before this
+landed.
 """
 
 from __future__ import annotations
@@ -321,41 +328,36 @@ def upgrade() -> None:
     # 4. Durable issuance history -- privilege layer, plus the siblings that
     #    inherited the same blanket grant from the same migration.
     # ------------------------------------------------------------------
+    # UPDATE is what has to go, and it has to go from *both* heads: the direct
+    # grant and the one app_user and app_worker inherit through app_rw. INSERT
+    # stays on both, because `record_trust_audit_event` writes all three of
+    # these relations from whichever session composes a Trust read, and the C9
+    # positive-confidence lane composes one under the worker principal.
     for relation in (
         "trust_envelope_issuance_log",
         "trust_replay_events",
         "trust_scope_denial_events",
     ):
         op.execute(f"REVOKE ALL ON TABLE public.{relation} FROM PUBLIC")
-        _if_role_exists(
-            "app_user",
-            f"REVOKE ALL ON TABLE public.{relation} FROM app_user;"
-            f" GRANT SELECT, INSERT ON TABLE public.{relation} TO app_user",
-        )
-        _if_role_exists(
-            "app_rw",
-            f"REVOKE ALL ON TABLE public.{relation} FROM app_rw",
-        )
+        for role in ("app_user", "app_rw"):
+            _if_role_exists(
+                role,
+                f"REVOKE ALL ON TABLE public.{relation} FROM {role};"
+                f" GRANT SELECT, INSERT ON TABLE public.{relation} TO {role}",
+            )
         _if_role_exists(
             "app_ro",
             f"REVOKE ALL ON TABLE public.{relation} FROM app_ro;"
             f" GRANT SELECT ON TABLE public.{relation} TO app_ro",
         )
 
-    # trust_access_log keeps app_user UPDATE: `_upsert_access_log` increments a
-    # replay counter through ON CONFLICT DO UPDATE, and the C16 guard already
-    # fences every issuance-consequence column on it against non-issuer
-    # principals. Only the inherited app_rw write -- which no worker path uses
-    # -- is removed.
-    _if_role_exists(
-        "app_rw",
-        "REVOKE ALL ON TABLE public.trust_access_log FROM app_rw",
-    )
-    _if_role_exists(
-        "app_ro",
-        "REVOKE ALL ON TABLE public.trust_access_log FROM app_ro;"
-        " GRANT SELECT ON TABLE public.trust_access_log TO app_ro",
-    )
+    # trust_access_log is deliberately untouched. Its UPDATE is load-bearing --
+    # `_upsert_access_log` increments a replay counter through ON CONFLICT DO
+    # UPDATE -- and the C16 guard `trust_access_log_issuance_authority_guard`
+    # already refuses any change to an issuance-consequence column from a
+    # principal that is not the issuer or the relation owner. The remaining
+    # capability there is appending audit rows and counting replays, which is
+    # not authority over another process's consequence.
 
 
 def downgrade() -> None:
@@ -379,7 +381,6 @@ def downgrade() -> None:
         "trust_envelope_issuance_log",
         "trust_replay_events",
         "trust_scope_denial_events",
-        "trust_access_log",
     ):
         _if_role_exists(
             "app_user",

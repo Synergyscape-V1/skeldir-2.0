@@ -84,6 +84,19 @@ _FENCED_ISSUANCE_GRANT = (
     "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_user; "
     "GRANT SELECT, INSERT ON TABLE public.trust_envelope_issuance_log TO app_user"
 )
+# app_rw keeps SELECT+INSERT after C21 -- `record_trust_audit_event` writes this
+# relation from whichever session composes a Trust read, and the C9 lane composes
+# one under the worker principal. Restoring the *fence* therefore means restoring
+# that, not stripping the role: a control that leaves the database in a state the
+# migration never produces is a control that breaks the next experiment.
+_HISTORICAL_ISSUANCE_GRANT_RW = (
+    "GRANT SELECT, INSERT, UPDATE ON TABLE public.trust_envelope_issuance_log"
+    " TO app_rw"
+)
+_FENCED_ISSUANCE_GRANT_RW = (
+    "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_rw; "
+    "GRANT SELECT, INSERT ON TABLE public.trust_envelope_issuance_log TO app_rw"
+)
 
 _MODEL_TYPE = "bayesian_attribution_confidence"
 _MODEL_VERSION = "b25-p13-c21-v1"
@@ -337,6 +350,25 @@ def _issuance_state(cursor, issuance_id) -> tuple:
         (str(issuance_id),),
     )
     return tuple(cursor.fetchone())
+
+
+def _assert_contract_restored(cursor) -> None:
+    """No falsifier may leave the database in a state the migration never makes.
+
+    A control that severs a fence and restores something *close* to it silently
+    poisons every later experiment -- and the first version of the issuance
+    control did exactly that, stripping app_rw's lawful SELECT+INSERT instead of
+    restoring it, which turned the next authority-contract assertion red for a
+    reason that had nothing to do with the product. So each falsifier ends by
+    re-asserting the whole machine-checked contract.
+    """
+
+    from tests.trust.test_b25_p13_c20_runtime_authority import (  # noqa: PLC0415
+        _contract_violations,
+    )
+
+    violations = _contract_violations(cursor)
+    assert violations == [], violations
 
 
 def _record_evidence(payload: dict[str, Any]) -> None:
@@ -682,6 +714,8 @@ def test_c21_each_freshness_layer_is_independently_load_bearing() -> None:
         evidence["after_exact_restoration"] = restored
         assert restored["result"] == "REFUSED", restored
         assert restored["has_later_dirty_evidence_after"] is True, restored
+        with conn.cursor() as cursor:
+            _assert_contract_restored(cursor)
     finally:
         conn.close()
 
@@ -932,18 +966,13 @@ def test_c21_each_issuance_layer_is_independently_load_bearing() -> None:
         # (1b) The inherited path is the same defect wearing a different hat.
         with conn.cursor() as cursor:
             cursor.execute(_FENCED_ISSUANCE_GRANT)
-            cursor.execute(
-                "GRANT SELECT, INSERT, UPDATE ON TABLE"
-                " public.trust_envelope_issuance_log TO app_rw"
-            )
+            cursor.execute(_HISTORICAL_ISSUANCE_GRANT_RW)
         inherited = rewrite("inherited app_rw grant restored")
         evidence["inherited_grant_restored"] = inherited
         assert inherited["result"] == "REFUSED", inherited
         assert inherited.get("sqlstate") == "42501", inherited
         with conn.cursor() as cursor:
-            cursor.execute(
-                "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_rw"
-            )
+            cursor.execute(_FENCED_ISSUANCE_GRANT_RW)
 
         # (2) Sever the consequence layer. The privilege layer must refuse.
         with conn.cursor() as cursor:
@@ -991,6 +1020,8 @@ def test_c21_each_issuance_layer_is_independently_load_bearing() -> None:
         restored = rewrite("after exact restoration")
         evidence["after_exact_restoration"] = restored
         assert restored["result"] == "REFUSED", restored
+        with conn.cursor() as cursor:
+            _assert_contract_restored(cursor)
     finally:
         conn.close()
 
@@ -1025,27 +1056,27 @@ def test_c21_new_consequence_relations_are_inside_the_authority_contract() -> No
         },
         "trust_envelope_issuance_log": {
             "app_user": {"SELECT", "INSERT"},
-            "app_worker": {"SELECT"},
+            "app_worker": {"SELECT", "INSERT"},
             "app_ro": {"SELECT"},
-            "app_rw": set(),
+            "app_rw": {"SELECT", "INSERT"},
         },
         "trust_replay_events": {
             "app_user": {"SELECT", "INSERT"},
-            "app_worker": {"SELECT"},
+            "app_worker": {"SELECT", "INSERT"},
             "app_ro": {"SELECT"},
-            "app_rw": set(),
+            "app_rw": {"SELECT", "INSERT"},
         },
         "trust_scope_denial_events": {
             "app_user": {"SELECT", "INSERT"},
-            "app_worker": {"SELECT"},
+            "app_worker": {"SELECT", "INSERT"},
             "app_ro": {"SELECT"},
-            "app_rw": set(),
+            "app_rw": {"SELECT", "INSERT"},
         },
         "trust_access_log": {
             "app_user": {"SELECT", "INSERT", "UPDATE"},
-            "app_worker": {"SELECT"},
+            "app_worker": {"SELECT", "INSERT", "UPDATE"},
             "app_ro": {"SELECT"},
-            "app_rw": set(),
+            "app_rw": {"SELECT", "INSERT", "UPDATE"},
             "app_trust_issuer": {"SELECT", "UPDATE"},
             "app_trust_signer": {"SELECT", "UPDATE"},
         },
@@ -1180,6 +1211,7 @@ def test_c21_guards_admit_no_null_or_unknown_bypass() -> None:
             with conn.cursor() as cursor:
                 cursor.execute(_FENCED_DIRTY_GRANT)
                 cursor.execute(_FENCED_ISSUANCE_GRANT)
+                _assert_contract_restored(cursor)
     finally:
         conn.close()
 

@@ -149,8 +149,13 @@ CAPABILITY_MATRIX = (
     ("app_rw", "trust_envelope_issuance_log", "UPDATE", False),
     ("app_user", "trust_replay_events", "UPDATE", False),
     ("app_user", "trust_scope_denial_events", "UPDATE", False),
+    ("app_worker", "trust_envelope_issuance_log", "UPDATE", False),
+    ("app_trust_issuer", "trust_envelope_issuance_log", "UPDATE", False),
+    ("app_trust_signer", "trust_envelope_issuance_log", "UPDATE", False),
+    # trust_access_log keeps its replay-counter UPDATE; the C16 guard is what
+    # fences its issuance-consequence columns, and it is out of C21 scope.
     ("app_user", "trust_access_log", "UPDATE", True),
-    ("app_rw", "trust_access_log", "UPDATE", False),
+    ("app_rw", "trust_access_log", "UPDATE", True),
 )
 
 # The migration path renders ``ANY ((ARRAY['x'::character varying, ...])::text[])``.

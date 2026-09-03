@@ -96,37 +96,39 @@ AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
         "app_ro": {"SELECT"},
         "app_rw": set(),
     },
-    # Durable record of what was signed. Written once, by the API principal,
-    # beside the returned envelope; never mutated by any code path. The worker's
-    # SELECT is inherited from app_ro and is read-only by construction.
+    # Durable record of what was signed. Written once, beside the returned
+    # envelope, by whichever session composed the Trust read; never mutated by
+    # any code path, and now not mutable by any runtime principal either.
     "trust_envelope_issuance_log": {
         "app_user": {"SELECT", "INSERT"},
-        "app_worker": {"SELECT"},
+        "app_worker": {"SELECT", "INSERT"},
         "app_ro": {"SELECT"},
-        "app_rw": set(),
+        "app_rw": {"SELECT", "INSERT"},
     },
     # The same 202607011200 blanket grant reached both of these. Both are
     # INSERT-only in every code path.
     "trust_replay_events": {
         "app_user": {"SELECT", "INSERT"},
-        "app_worker": {"SELECT"},
+        "app_worker": {"SELECT", "INSERT"},
         "app_ro": {"SELECT"},
-        "app_rw": set(),
+        "app_rw": {"SELECT", "INSERT"},
     },
     "trust_scope_denial_events": {
         "app_user": {"SELECT", "INSERT"},
-        "app_worker": {"SELECT"},
+        "app_worker": {"SELECT", "INSERT"},
         "app_ro": {"SELECT"},
-        "app_rw": set(),
+        "app_rw": {"SELECT", "INSERT"},
     },
-    # The audit ledger keeps its lawful API UPDATE -- the replay counter is an
-    # ON CONFLICT DO UPDATE -- and the C16 guard fences every issuance
-    # consequence column on it. Only the inherited app_rw write is gone.
+    # The audit ledger keeps UPDATE deliberately: the replay counter is an
+    # ON CONFLICT DO UPDATE, and the C16 guard already refuses any change to an
+    # issuance-consequence column from a principal that is not the issuer. It is
+    # pinned here so a future widening of the columns that guard does not cover
+    # still has to pass through this equality.
     "trust_access_log": {
         "app_user": {"SELECT", "INSERT", "UPDATE"},
-        "app_worker": {"SELECT"},
+        "app_worker": {"SELECT", "INSERT", "UPDATE"},
         "app_ro": {"SELECT"},
-        "app_rw": set(),
+        "app_rw": {"SELECT", "INSERT", "UPDATE"},
         "app_trust_issuer": {"SELECT", "UPDATE"},
         "app_trust_signer": {"SELECT", "UPDATE"},
     },

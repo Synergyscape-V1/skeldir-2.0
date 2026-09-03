@@ -2855,6 +2855,27 @@
   local_reproduction_command: python scripts/ci/_b25_p13_c20_revert_allocation_walk.py
   risk_if_removed: NC-C20-02 would mutate nothing and appear to fire, making the temporal-coherence proof vacuous.
   decision: keep_utility
+- gate_id: p13-c21-authority-universe-comparator
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P13 C21 Freshness and Issuance Authority Conservation
+  script: scripts/ci/compare_b25_p13_c21_authority_universes.py
+  owning_phase: B2.5-P13-Corrective-XXI
+  protected_invariant: Every supported schema construction path produces one authority physics, carries both C21
+    authority triggers, and answers the C21 forbidden/lawful capability matrix identically.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: Corrective XXI adds a migration after the head Corrective XX proved, so XX's
+    migration-equivalence evidence does not carry. Nothing else in the repository compares an incremental upgrade
+    against a fresh install at the authority level.
+  negative_control_preserved_by: NC-C21-01 and NC-C21-02 in .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  local_reproduction_command: python scripts/ci/compare_b25_p13_c21_authority_universes.py --admin-dsn
+    "postgresql://postgres:postgres@127.0.0.1:5432/postgres" --universe "empty_to_head=skeldir_b25_p13_c21"
+    --universe "predecessor_to_head=skeldir_b25_p13_c21_incremental"
+  risk_if_removed: A deployment built by an incremental upgrade or from the canonical bootstrap could silently lack
+    the C21 freshness or issuance fences while a fresh install carries them.
+  decision: keep_all
 - gate_id: p13-adversarial-physics-adjudicator
   workflow: .github/workflows/p13-adversarial-physics-adjudication.yml
   job: P13 Adversarial Physics Adjudication
