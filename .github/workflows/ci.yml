@@ -3077,7 +3077,7 @@ jobs:
           ref: ${{ env.ADJUDICATED_SHA }}
       
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
@@ -5588,7 +5588,7 @@ jobs:
           ref: ${{ env.ADJUDICATED_SHA }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
@@ -5715,7 +5715,7 @@ jobs:
           ref: ${{ env.ADJUDICATED_SHA }}
       
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
