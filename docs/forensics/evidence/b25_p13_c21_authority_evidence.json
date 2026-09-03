@@ -1,0 +1,499 @@
+{
+  "c21_freshness_authority": {
+    "app_user_cross_tenant": {
+      "current_user": "app_user",
+      "error": "permission denied for table b24_dirty_events",
+      "label": "app_user rewrites under a substituted tenant GUC",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "app_user_delete": {
+      "current_user": "app_user",
+      "error": "permission denied for table b24_dirty_events",
+      "label": "app_user deletes the invalidation evidence",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "app_user_sees_target_row": 1,
+    "dirty_id": "8a39274e-fa01-4b42-a974-84ac18d546ad",
+    "fit_id": "c82212d9-3383-4bec-8977-48bc36b350d2",
+    "forbidden_rewrites": {
+      "dirty_reason": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites dirty_reason",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "model_type": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites model_type",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "model_version": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites model_version",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "observed_at": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites observed_at",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "source_family": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites source_family",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "source_snapshot_hash": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites source_snapshot_hash",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "source_window_end": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites source_window_end",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "source_window_start": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites source_window_start",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "tenant_id": {
+        "current_user": "app_user",
+        "error": "permission denied for table b24_dirty_events",
+        "has_later_dirty_evidence_after": true,
+        "label": "app_user rewrites tenant_id",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      }
+    },
+    "gate": "XXI-A",
+    "has_later_dirty_evidence_after_all": true,
+    "has_later_dirty_evidence_before": true,
+    "predicate_source": "C:\\Users\\ayewhy\\skeldir-2.0\\backend\\app\\confidence_projection\\read_model.py",
+    "tenant_id": "0f2a30c1-855f-4854-a7cb-d1b8cb1b395b"
+  },
+  "c21_freshness_layer_falsifier": {
+    "after_exact_restoration": {
+      "current_user": "app_user",
+      "error": "permission denied for table b24_dirty_events",
+      "has_later_dirty_evidence_after": true,
+      "label": "after exact restoration",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "both_layers_severed": {
+      "current_user": "app_user",
+      "has_later_dirty_evidence_after": false,
+      "label": "both layers severed",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_user"
+    },
+    "exact_restore_identical": true,
+    "gate": "XXI-A active falsifier",
+    "guard_trigger": [
+      "trg_b24_dirty_event_authority"
+    ],
+    "guard_trigger_severed": {
+      "current_user": "app_user",
+      "error": "permission denied for table b24_dirty_events",
+      "has_later_dirty_evidence_after": true,
+      "label": "guard trigger severed",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "historical_grant_restored": {
+      "current_user": "app_user",
+      "error": "b24 freshness authority is owned by the B2.4 planner principal; app_user may not rebind source_snapshot_hash",
+      "has_later_dirty_evidence_after": true,
+      "label": "historical grant restored",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "pristine": {
+      "current_user": "app_user",
+      "error": "permission denied for table b24_dirty_events",
+      "has_later_dirty_evidence_after": true,
+      "label": "pristine",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    }
+  },
+  "c21_issuance_authority": {
+    "app_user_delete": {
+      "current_user": "app_user",
+      "error": "permission denied for table trust_envelope_issuance_log",
+      "label": "app_user deletes durable issuance history",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "app_user_sees_target_row": 1,
+    "durable_after": [
+      "sha256:ac96b3672eb14c3d9d16b22a61130d8ecd8a5dcd047d49769190731628c689d4",
+      "sha256:dc7759efbe0540b98ecd7ae906410f4036dd00c909c3480f81023bedc13412c9",
+      "sha256:994d61ff2e5140cfabc455d30d5c8837c1cffa7c07df4aecbc13dab4a0c1aa80",
+      "issued",
+      "sha256:756fd4aa2c4e464184b576f416b80d14fa1a92fb2fea435294c5eacb1af0c6fe",
+      "success"
+    ],
+    "durable_before": [
+      "sha256:ac96b3672eb14c3d9d16b22a61130d8ecd8a5dcd047d49769190731628c689d4",
+      "sha256:dc7759efbe0540b98ecd7ae906410f4036dd00c909c3480f81023bedc13412c9",
+      "sha256:994d61ff2e5140cfabc455d30d5c8837c1cffa7c07df4aecbc13dab4a0c1aa80",
+      "issued",
+      "sha256:756fd4aa2c4e464184b576f416b80d14fa1a92fb2fea435294c5eacb1af0c6fe",
+      "success"
+    ],
+    "forbidden_rewrites": {
+      "access_audit_ref": {
+        "current_user": "app_user",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_user rewrites issued access_audit_ref",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "audit_hash": {
+        "current_user": "app_user",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_user rewrites issued audit_hash",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "envelope_hash": {
+        "current_user": "app_user",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_user rewrites issued envelope_hash",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "policy_state": {
+        "current_user": "app_user",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_user rewrites issued policy_state",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "semantic_truth_hash": {
+        "current_user": "app_user",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_user rewrites issued semantic_truth_hash",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "status": {
+        "current_user": "app_user",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_user rewrites issued status",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "subject_ref_hash": {
+        "current_user": "app_user",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_user rewrites issued subject_ref_hash",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      },
+      "subject_type": {
+        "current_user": "app_user",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_user rewrites issued subject_type",
+        "principal": "app_user",
+        "result": "REFUSED",
+        "session_user": "app_user",
+        "sqlstate": "42501"
+      }
+    },
+    "gate": "XXI-C",
+    "issuance_id": "aea5e5bc-c262-42fc-9b16-b1a4942450cb",
+    "sibling_principals": {
+      "app_trust_issuer": {
+        "current_user": "app_trust_issuer",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_trust_issuer rewrites issued envelope_hash",
+        "principal": "app_trust_issuer",
+        "result": "REFUSED",
+        "session_user": "app_trust_issuer",
+        "sqlstate": "42501"
+      },
+      "app_trust_signer": {
+        "current_user": "app_trust_signer",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_trust_signer rewrites issued envelope_hash",
+        "principal": "app_trust_signer",
+        "result": "REFUSED",
+        "session_user": "app_trust_signer",
+        "sqlstate": "42501"
+      },
+      "app_worker": {
+        "current_user": "app_worker",
+        "error": "permission denied for table trust_envelope_issuance_log",
+        "label": "app_worker rewrites issued envelope_hash",
+        "principal": "app_worker",
+        "result": "REFUSED",
+        "session_user": "app_worker",
+        "sqlstate": "42501"
+      }
+    }
+  },
+  "c21_issuance_layer_falsifier": {
+    "after_exact_restoration": {
+      "current_user": "app_user",
+      "error": "permission denied for table trust_envelope_issuance_log",
+      "label": "after exact restoration",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "both_layers_severed": {
+      "current_user": "app_user",
+      "label": "both layers severed",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_user"
+    },
+    "durable_after_historical_rewrite": [
+      "sha256:4ea6dd7a243743d0a6c8805db242e7945ffa746b25ca44328802702dcb0dcf82",
+      "sha256:7f8865f8f5f641dc86203d6345e6b9c233f1247e3e4540b581caa0848515c9bb",
+      "sha256:cbc2c4f5e2c54d37a58bc009e28d8c137f59a9de612b4fc1b88448cd477f772d",
+      "issued",
+      "sha256:6b4e79ac9c6f4434be5236328dd34c4c7442121ff92f4227a0b74ccead73fdd3",
+      "success"
+    ],
+    "exact_restore_identical": true,
+    "gate": "XXI-C active falsifier",
+    "guard_trigger": [
+      "trg_trust_issuance_history_immutable"
+    ],
+    "guard_trigger_severed": {
+      "current_user": "app_user",
+      "error": "permission denied for table trust_envelope_issuance_log",
+      "label": "immutability trigger severed",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "historical_grant_restored": {
+      "current_user": "app_user",
+      "error": "durable trust issuance history is immutable; app_user may not UPDATE public.trust_envelope_issuance_log",
+      "label": "historical grant restored",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "inherited_grant_restored": {
+      "current_user": "app_user",
+      "error": "durable trust issuance history is immutable; app_user may not UPDATE public.trust_envelope_issuance_log",
+      "label": "inherited app_rw grant restored",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "pristine": {
+      "current_user": "app_user",
+      "error": "permission denied for table trust_envelope_issuance_log",
+      "label": "pristine",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    }
+  },
+  "c21_lawful_invalidation": {
+    "api_appends_evidence": {
+      "current_user": "app_user",
+      "label": "API appends invalidation evidence",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_user"
+    },
+    "gate": "XXI-B",
+    "new_fit_id": "3e7df66a-4bcc-4ba4-932a-dfe6994eceae",
+    "new_fit_stale": false,
+    "old_fit_stale": true,
+    "planner_binds_snapshot": {
+      "current_user": "app_worker",
+      "label": "planner binds the resolved snapshot",
+      "principal": "app_worker",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_worker"
+    },
+    "planner_dispatches": {
+      "current_user": "app_worker",
+      "label": "planner terminates the obligation",
+      "principal": "app_worker",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_worker"
+    },
+    "planner_leases": {
+      "current_user": "app_worker",
+      "label": "planner leases the obligation",
+      "principal": "app_worker",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_worker"
+    },
+    "planner_reactivates": {
+      "current_user": "app_worker",
+      "label": "planner reactivates a waiting obligation",
+      "principal": "app_worker",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_worker"
+    }
+  },
+  "c21_lawful_issuance": {
+    "access_log_insert": {
+      "current_user": "app_user",
+      "label": "API records a trust access event",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_user"
+    },
+    "access_log_replay_update": {
+      "current_user": "app_user",
+      "label": "API increments the replay counter",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_user"
+    },
+    "durable_rows": 1,
+    "gate": "XXI-D",
+    "issuance_recorded": {
+      "current_user": "app_user",
+      "label": "API records issuance",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_user"
+    },
+    "issuance_replayed": {
+      "current_user": "app_user",
+      "label": "API replays issuance",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 0,
+      "session_user": "app_user"
+    }
+  },
+  "c21_null_physics": {
+    "dirty_noop_update": {
+      "current_user": "app_user",
+      "label": "app_user performs a consequence-free update",
+      "principal": "app_user",
+      "result": "ALLOWED",
+      "rowcount": 1,
+      "session_user": "app_user"
+    },
+    "dirty_null_provenance": {
+      "current_user": "app_user",
+      "error": "b24 invalidation evidence identity is immutable after creation; app_user may not restate what changed",
+      "label": "app_user nulls nullable provenance columns",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "dirty_null_snapshot": {
+      "current_user": "app_user",
+      "error": "b24 freshness authority is owned by the B2.4 planner principal; app_user may not rebind source_snapshot_hash",
+      "label": "app_user nulls the source snapshot",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    },
+    "gate": "XXI-A/XXI-C NULL physics",
+    "issuance_self_assignment": {
+      "current_user": "app_user",
+      "error": "durable trust issuance history is immutable; app_user may not UPDATE public.trust_envelope_issuance_log",
+      "label": "app_user self-assigns the issued envelope hash",
+      "principal": "app_user",
+      "result": "REFUSED",
+      "session_user": "app_user",
+      "sqlstate": "42501"
+    }
+  }
+}
