@@ -84,6 +84,14 @@ ALLOWED_DOCKER_PATHS = {
     # as C13/C16: it executes the authorized substrate, it does not add one.
     Path("scripts/ci/run_b25_p13_c19_context_robust_closure.sh"),
     Path("backend/tests/trust/test_b25_p13_c19_context_robust_topology.py"),
+    # P14 Gate 4 proves that the image the C19 topology already deploys
+    # resolves the same projection contract the tree declares. Both scripts run
+    # `backend/Dockerfile` -- the already-authorized image, built with the same
+    # context `docker-compose.c19.yml` uses -- and neither adds a substrate.
+    # The controlled-defect applier is listed for the same reason: its Gate 4
+    # mutation narrows a COPY layer in that same authorized Dockerfile.
+    Path("scripts/ci/assert_b25_p14_container_projection_parity.py"),
+    Path("scripts/ci/_b25_p14_controlled_defect.py"),
     Path("scripts/ci/validate_m0_scope_lock.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),
