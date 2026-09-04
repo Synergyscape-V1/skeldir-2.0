@@ -228,7 +228,6 @@ def upgrade() -> None:
         f"""
         DROP TRIGGER IF EXISTS trg_b24_dirty_event_authority
             ON public.b24_dirty_events;
-        CREATE TRIGGER trg_b24_dirty_event_authority
             BEFORE UPDATE ON public.b24_dirty_events
             FOR EACH ROW
             WHEN (
@@ -248,7 +247,7 @@ def upgrade() -> None:
     _if_role_exists(
         "app_user",
         "REVOKE ALL ON TABLE public.b24_dirty_events FROM app_user;"
-        " GRANT SELECT, INSERT ON TABLE public.b24_dirty_events TO app_user",
+        " GRANT SELECT, INSERT, UPDATE ON TABLE public.b24_dirty_events TO app_user",
     )
     _if_role_exists(
         "app_rw",
