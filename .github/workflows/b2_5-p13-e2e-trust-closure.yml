@@ -110,6 +110,16 @@ on:
       - 'backend/tests/trust/test_b25_p13_c19_context_robust_topology.py'
       - 'backend/tests/trust/test_b25_p13_c20_runtime_authority.py'
       - 'backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py'
+      - 'backend/app/trust/projection.py'
+      - 'backend/app/trust/projection_profiles.py'
+      - 'backend/app/explanation/**'
+      - 'backend/app/simulation/**'
+      - 'backend/tests/trust/test_b25_p14_gate0_issuance_consequence_authority.py'
+      - 'backend/tests/trust/test_b25_p14_projection_contract_floor.py'
+      - 'backend/tests/trust/test_b25_p14_b27_explanation_conservation.py'
+      - 'backend/tests/trust/test_b25_p14_b28_simulation_conservation.py'
+      - 'scripts/ci/validate_b25_p14_downstream_authority.py'
+      - 'scripts/ci/compare_b25_p13_c21_authority_universes.py'
       - 'backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py'
       - 'backend/tests/test_b25_p13_c19_touchpoint_ingress.py'
       - 'backend/app/api/attribution.py'
@@ -3129,6 +3139,342 @@ jobs:
           rm -f "$RUNNER_TEMP/c19-teardown.env"
 
   # load-bearing proof therefore cannot report the required context green.
+  # B2.5-P14 -- B2.7/B2.8 downstream projection safety.
+  #
+  # Independent audit 67 physically fabricated a terminal `status='success'` row
+  # in `trust_envelope_issuance_log` as the real `app_worker` login on protected
+  # main. C21 had narrowed UPDATE on that relation but kept INSERT on the
+  # `app_rw` head the worker inherits, justified by a CI lane that composes a
+  # Trust read under the worker DSN -- a harness choice, not the deployed
+  # topology. This job proves the fence, proves the three layers are each
+  # independently load-bearing, and proves the contract floor and both
+  # downstream conservation surfaces the phase adds.
+  b2-5-p14-downstream-projection-safety:
+    name: B2.5-P14 Downstream Projection Safety
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p14
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p14
+      P14_ADMIN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14
+      C21_ADMIN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14
+      C20_ADMIN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14
+      P14_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/b25_p14/b25_p14_gate0_evidence.json
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B25_P14_GATE0_PROOF: "1"
+      SKELDIR_B25_P13_C20_RUNTIME_AUTHORITY_PROOF: "1"
+      SKELDIR_B25_P13_C21_AUTHORITY_PROOF: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      # The contract floor needs no database, so it runs before one exists. A
+      # narrowed or malformed projection registry fails here first and cheapest.
+      - name: P14-G1..G4 static downstream authority validation
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/b25_p14
+          python scripts/ci/validate_b25_p14_downstream_authority.py \
+            --evidence-out artifacts/b25_p14/b25_p14_static_authority.json \
+            | tee /tmp/b25_p14_static.out
+          grep -F '[b25-p14] downstream authority validation PASSED' /tmp/b25_p14_static.out
+
+      # NC-P14-01. A platform-write client one import away from the simulation
+      # package must turn the isolation gate red. Gate 9's active falsifier.
+      - name: NC-P14-01 platform-write reachability turns the isolation gate red
+        run: |
+          set -euo pipefail
+          cp backend/app/simulation/service.py /tmp/p14_service_pristine.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply platform_write
+          if python scripts/ci/validate_b25_p14_downstream_authority.py > /tmp/nc_p14_01.out 2>&1; then
+            echo "NC-P14-01 did not fire: P14 tolerated a platform-write import"
+            cp /tmp/p14_service_pristine.py backend/app/simulation/service.py
+            cat /tmp/nc_p14_01.out
+            exit 1
+          fi
+          grep -F 'no_external_action_reachability=FAIL' /tmp/nc_p14_01.out
+          grep -F 'app.services.platform_connections' /tmp/nc_p14_01.out
+          cp /tmp/p14_service_pristine.py backend/app/simulation/service.py
+          git diff --exit-code backend/app/simulation/service.py
+          python scripts/ci/validate_b25_p14_downstream_authority.py \
+            | tee /tmp/nc_p14_01_restored.out
+          grep -F '[b25-p14] downstream authority validation PASSED' /tmp/nc_p14_01_restored.out
+
+      # NC-P14-02. A second caller of the solver must turn the gate red: the
+      # admission conjunction is only the whole admission story while it is the
+      # only path in.
+      - name: NC-P14-02 a second solver caller turns the admission gate red
+        run: |
+          set -euo pipefail
+          cp backend/app/explanation/service.py /tmp/p14_expl_pristine.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply second_solver_caller
+          if python scripts/ci/validate_b25_p14_downstream_authority.py > /tmp/nc_p14_02.out 2>&1; then
+            echo "NC-P14-02 did not fire: a second solver caller was tolerated"
+            cp /tmp/p14_expl_pristine.py backend/app/explanation/service.py
+            cat /tmp/nc_p14_02.out
+            exit 1
+          fi
+          grep -F 'solver_has_one_caller=FAIL' /tmp/nc_p14_02.out
+          cp /tmp/p14_expl_pristine.py backend/app/explanation/service.py
+          git diff --exit-code backend/app/explanation/service.py
+          python scripts/ci/validate_b25_p14_downstream_authority.py \
+            | tee /tmp/nc_p14_02_restored.out
+          grep -F '[b25-p14] downstream authority validation PASSED' /tmp/nc_p14_02_restored.out
+
+      # NC-P14-03. Remove a required projection profile from the real registry
+      # and require the contract floor to fail closed. Gate 1's active falsifier.
+      - name: NC-P14-03 removing a required profile turns the contract floor red
+        run: |
+          set -euo pipefail
+          cp contracts/trust-api/projection-profiles.v1.yaml /tmp/p14_profiles_pristine.yaml
+          python scripts/ci/_b25_p14_controlled_defect.py apply remove_required_profile
+          if python scripts/ci/validate_b25_p14_downstream_authority.py > /tmp/nc_p14_03.out 2>&1; then
+            echo "NC-P14-03 did not fire: the contract floor tolerated a missing profile"
+            cp /tmp/p14_profiles_pristine.yaml contracts/trust-api/projection-profiles.v1.yaml
+            cat /tmp/nc_p14_03.out
+            exit 1
+          fi
+          grep -F 'projection_contract_floor=FAIL' /tmp/nc_p14_03.out
+          grep -F 'projection_profile_required_missing' /tmp/nc_p14_03.out
+          cp /tmp/p14_profiles_pristine.yaml contracts/trust-api/projection-profiles.v1.yaml
+          git diff --exit-code contracts/trust-api/projection-profiles.v1.yaml
+          python scripts/ci/validate_b25_p14_downstream_authority.py \
+            | tee /tmp/nc_p14_03_restored.out
+          grep -F '[b25-p14] downstream authority validation PASSED' /tmp/nc_p14_03_restored.out
+
+      # NC-P14-04. Seat a provider-controlled label in the default LLM
+      # projection. P14-G2's active falsifier.
+      - name: NC-P14-04 an untrusted label in the LLM projection turns it red
+        run: |
+          set -euo pipefail
+          cp contracts/trust-api/projection-profiles.v1.yaml /tmp/p14_profiles_pristine.yaml
+          python scripts/ci/_b25_p14_controlled_defect.py apply untrusted_label_in_llm_profile
+          if python scripts/ci/validate_b25_p14_downstream_authority.py > /tmp/nc_p14_04.out 2>&1; then
+            echo "NC-P14-04 did not fire: a provider label entered the LLM projection"
+            cp /tmp/p14_profiles_pristine.yaml contracts/trust-api/projection-profiles.v1.yaml
+            cat /tmp/nc_p14_04.out
+            exit 1
+          fi
+          grep -F 'projection_contract_floor=FAIL' /tmp/nc_p14_04.out
+          grep -F 'untrusted' /tmp/nc_p14_04.out
+          cp /tmp/p14_profiles_pristine.yaml contracts/trust-api/projection-profiles.v1.yaml
+          git diff --exit-code contracts/trust-api/projection-profiles.v1.yaml
+          python scripts/ci/validate_b25_p14_downstream_authority.py \
+            | tee /tmp/nc_p14_04_restored.out
+          grep -F '[b25-p14] downstream authority validation PASSED' /tmp/nc_p14_04_restored.out
+
+      - name: P14-G1..G4 canonical projection contract floor
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_projection_contract_floor.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_floor.out
+          grep -E "19 passed" /tmp/b25_p14_floor.out
+
+      - name: B2.7 explanation semantic conservation
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_b27_explanation_conservation.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_b27.out
+          grep -E "44 passed" /tmp/b25_p14_b27.out
+
+      - name: B2.8 simulation admission and conservation
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_b28_simulation_conservation.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_b28.out
+          grep -E "34 passed" /tmp/b25_p14_b28.out
+
+      - name: Prepare P14 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b25_p14"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      # The as-migrated state is judged before any falsifier mutates it. C21's
+      # own dry run showed that a restore can erase an overgrant the migration
+      # itself introduced, after which a comparison goes green over a defect
+      # that is really there.
+      - name: P14-F three-universe authority equivalence
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --database-name skeldir_b25_p14_incremental
+          MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p14_incremental" \
+            python -m alembic upgrade 202609031200
+          MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p14_incremental" \
+            python -m alembic upgrade head
+          python scripts/ci/compare_b25_p13_c21_authority_universes.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --universe "empty_to_head=skeldir_b25_p14" \
+            --universe "predecessor_to_head=skeldir_b25_p14_incremental" \
+            --out artifacts/b25_p14/universe_equivalence.json
+
+      - name: P14-F canonical bootstrap carries the same authority objects
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --database-name skeldir_b25_p14_canonical
+          PGPASSWORD=migration_owner psql -h 127.0.0.1 -U migration_owner \
+            -d skeldir_b25_p14_canonical -v ON_ERROR_STOP=1 -q \
+            -c "SET check_function_bodies = false;" \
+            -c "SELECT pg_catalog.set_config('search_path', '', false);" \
+            -f db/schema/canonical_schema.sql
+          python scripts/ci/compare_b25_p13_c21_authority_universes.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --universe "empty_to_head=skeldir_b25_p14" \
+            --universe "canonical_bootstrap=skeldir_b25_p14_canonical" \
+            --structural-only canonical_bootstrap \
+            --out artifacts/b25_p14/universe_equivalence_canonical.json
+
+      # Gate 0. Audit 67's exact statement under every production login, the
+      # three-layer severance ladder, and the lawful path that must keep
+      # conducting.
+      - name: P14 Gate 0 issuance consequence authority
+        run: |
+          set -o pipefail
+          mkdir -p "$(dirname "$P14_EVIDENCE_PATH")"
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_gate0_issuance_consequence_authority.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_gate0.out
+          grep -E "14 passed" /tmp/b25_p14_gate0.out
+
+      # The C20 process x role x consequence contract now names the P14
+      # relations and the narrowed trust-audit grants, so a future migration
+      # that widens either fails against this job as well as against C20's own.
+      - name: P14 process-consequence authority contract
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p13_c20_runtime_authority.py \
+            backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_contract.out
+          grep -E "16 passed" /tmp/b25_p14_contract.out
+
+      # NC-P14-05. The historical inherited INSERT, restored on the live
+      # database with psql rather than psycopg2, so the control does not share a
+      # driver with the proof it controls. Gate 0's active falsifier.
+      - name: NC-P14-05 the consequence guard alone still refuses the worker
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          tenant=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT id FROM public.tenants LIMIT 1")
+          if [ -z "$tenant" ]; then
+            echo "NC-P14-05 cannot run: no tenant exists to bind"
+            exit 1
+          fi
+          echo "NC-P14-05 tenant=$tenant"
+          before=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT count(*) FROM public.trust_envelope_issuance_log")
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+            -c "GRANT SELECT, INSERT ON TABLE public.trust_envelope_issuance_log TO app_rw;"
+          held=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT has_table_privilege('app_worker','public.trust_envelope_issuance_log','INSERT')")
+          test "$held" = "t"
+          if PGPASSWORD=app_worker psql -h 127.0.0.1 -U app_worker -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+              -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
+              -c "INSERT INTO public.trust_envelope_issuance_log (tenant_id, access_audit_ref, idempotency_key_hash, subject_type, subject_ref_hash, envelope_hash, semantic_truth_hash, policy_state, audit_ref, audit_hash, status) VALUES ('$tenant', 'urn:skeldir:audit:nc-p14-05', 'sha256:' || repeat('a', 64), 'match_verdict', 'sha256:' || repeat('b', 64), 'sha256:' || repeat('c', 64), 'sha256:' || repeat('d', 64), 'read_only', 'urn:skeldir:audit:nc-p14-05', 'sha256:' || repeat('e', 64), 'success');"; then
+            echo "NC-P14-05 did not fire: the worker fabricated durable issuance history"
+            exit 1
+          fi
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+            -c "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_rw; GRANT SELECT ON TABLE public.trust_envelope_issuance_log TO app_rw;"
+          after=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT count(*) FROM public.trust_envelope_issuance_log")
+          test "$before" = "$after"
+          held=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT has_table_privilege('app_worker','public.trust_envelope_issuance_log','INSERT')")
+          test "$held" = "f"
+          echo "NC-P14-05 fired: durable issuance history survives a grant regression"
+
+      # NC-P14-06. Drop the consequence guard and require the referential
+      # binding alone to refuse a row that names no audit lineage.
+      - name: NC-P14-06 the referential binding alone still refuses an unbound row
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          tenant=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT id FROM public.tenants LIMIT 1")
+          triggerdef=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger WHERE tgname = 'trg_trust_issuance_consequence_authority' AND NOT tgisinternal")
+          test -n "$triggerdef"
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+            -c "DROP TRIGGER trg_trust_issuance_consequence_authority ON public.trust_envelope_issuance_log;"
+          if PGPASSWORD=app_user psql -h 127.0.0.1 -U app_user -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+              -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
+              -c "INSERT INTO public.trust_envelope_issuance_log (tenant_id, access_audit_ref, idempotency_key_hash, subject_type, subject_ref_hash, envelope_hash, semantic_truth_hash, policy_state, audit_ref, audit_hash, status) VALUES ('$tenant', 'urn:skeldir:audit:nc-p14-06', 'sha256:' || repeat('a', 64), 'match_verdict', 'sha256:' || repeat('b', 64), 'sha256:' || repeat('c', 64), 'sha256:' || repeat('d', 64), 'read_only', 'urn:skeldir:audit:nc-p14-06', 'sha256:' || repeat('e', 64), 'success');"; then
+            echo "NC-P14-06 did not fire: an unbound issuance row was accepted"
+            psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q -c "$triggerdef"
+            exit 1
+          fi
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q -c "$triggerdef"
+          restored=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger WHERE tgname = 'trg_trust_issuance_consequence_authority' AND NOT tgisinternal")
+          test "$triggerdef" = "$restored"
+          echo "NC-P14-06 fired: the referential binding is independently load-bearing"
+
+      - name: P14 canonical schema authority
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          python scripts/schema/assert_canonical_schema.py \
+            --mode ci \
+            --no-migrate \
+            --artifacts-dir artifacts/b25_p14/schema_authority \
+            --diff-out artifacts/b25_p14/schema_authority/schema.diff
+
+      - name: Upload P14 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b25-p14-downstream-projection-safety-${{ github.sha }}
+          path: artifacts/b25_p14/
+          if-no-files-found: warn
+
   b25-p13-e2e-trust-closure:
     name: B2.5-P13 E2E Trust Closure
     if: always()
@@ -3144,6 +3490,7 @@ jobs:
       - b2-5-p13-c19-context-robust-closure
       - b2-5-p13-c20-verdict-authority
       - b2-5-p13-c21-freshness-issuance-authority
+      - b2-5-p14-downstream-projection-safety
     runs-on: ubuntu-latest
     steps:
       - name: Require every load-bearing P13 proof
@@ -3159,6 +3506,7 @@ jobs:
           CONTEXT_ROBUST_RESULT: ${{ needs['b2-5-p13-c19-context-robust-closure'].result }}
           VERDICT_AUTHORITY_RESULT: ${{ needs['b2-5-p13-c20-verdict-authority'].result }}
           FRESHNESS_ISSUANCE_AUTHORITY_RESULT: ${{ needs['b2-5-p13-c21-freshness-issuance-authority'].result }}
+          P14_DOWNSTREAM_RESULT: ${{ needs['b2-5-p14-downstream-projection-safety'].result }}
         run: |
           set -euo pipefail
           test "$CORE_RESULT" = success || {
@@ -3195,4 +3543,9 @@ jobs:
             echo "b2-5-p13-c21-freshness-issuance-authority=$FRESHNESS_ISSUANCE_AUTHORITY_RESULT"
             exit 1
           }
+          test "$P14_DOWNSTREAM_RESULT" = success || {
+            echo "b2-5-p14-downstream-projection-safety=$P14_DOWNSTREAM_RESULT"
+            exit 1
+          }
           echo 'p13_load_bearing_proof_graph=green'
+          echo 'p14_downstream_projection_safety=green'
