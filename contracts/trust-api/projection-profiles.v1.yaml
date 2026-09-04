@@ -1,0 +1,487 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://schemas.skeldir.local/trust-api/projection-profiles.v1.yaml
+title: B2.5-P14 Downstream Projection Profile Registry
+
+# ---------------------------------------------------------------------------
+# What this file is
+# ---------------------------------------------------------------------------
+#
+# P14 is the boundary between Skeldir's independently verifiable TrustEnvelope
+# and every downstream system that explains, simulates or proposes from it. The
+# governing law is:
+#
+#     DOWNSTREAM AUTHORITY MUST NEVER EXCEED SOURCE AUTHORITY
+#     A(y) <= A(x)   for a projection y of source authority x
+#
+# A projection profile is the machine-readable answer to two separate
+# questions, which P14 requires to stay separate:
+#
+#   1. TRUTH CORRESPONDENCE. If a truth-bearing field is projected at all, its
+#      meaning must correspond exactly to its authoritative source. Not every
+#      source field must appear downstream; a field that does appear may not be
+#      mutated. This registry answers it by naming an explicit allowlist --
+#      `fields` -- and nothing outside it may be projected.
+#
+#   2. AUTHORITY MONOTONICITY. A projected value occupies a *position* in the
+#      consumer: instruction, tool context, policy, authority, evidence or
+#      display. A value may only occupy a position whose authority is <= the
+#      authority its source class carries. This registry answers it by naming a
+#      `position` per field and a total order over positions.
+#
+# The two are different invariants. A faithful copy of `verified_revenue_minor`
+# placed in an instruction position is truth-correspondent and still unlawful.
+#
+# ---------------------------------------------------------------------------
+# Why a file and not code
+# ---------------------------------------------------------------------------
+#
+# The identity of a profile has to be reconstructable by an auditor who holds
+# only a downstream artifact. `app/trust/projection_profiles.py` computes a
+# content-addressed `profile_hash` over the canonical form of each profile
+# below, so a persisted explanation or simulation names the exact bytes of the
+# contract it was produced under. Editing a profile changes its hash; a stored
+# artifact then no longer claims to have been produced under the edited rule.
+#
+# Unknown profile ids, unknown field paths, unknown trust classes, unknown
+# positions and missing matrix cells are errors, not safe defaults.
+
+registry_version: b25-p14-projection-profiles-v1
+
+# The authority partial order used for `position`. Index 0 is weakest.
+# `A(position_a) <= A(position_b)` iff index(a) <= index(b).
+position_authority_order:
+- display_only          # rendered to a human; carries no machine authority
+- evidence              # a machine-readable fact the consumer may reason over
+- policy                # constrains what the consumer may do
+- tool_context          # reaches a tool/function boundary
+- instruction           # reaches the consumer's instruction channel
+- execution             # causes an external side effect. No P14 profile may use it.
+
+# The B2.5-P3 text trust classes, and the strongest position each may occupy.
+# `untrusted_display_label` and `quarantined_text_hash` are provider-controlled:
+# a signature over them authenticates that Skeldir received those bytes, never
+# that the bytes are true or safe to obey. P14-G2 is this table's first row.
+text_trust_class_max_position:
+  machine_authority_enum: policy
+  machine_authority_code: policy
+  safe_system_enum: evidence
+  opaque_reference: evidence
+  untrusted_display_label: display_only
+  quarantined_text_hash: display_only
+  redacted_text: display_only
+  operator_controlled_safe_label: display_only
+  provider_controlled_quarantined: display_only
+  none: display_only
+
+profiles:
+
+# ---------------------------------------------------------------------------
+# P14-G2. The default projection for any LLM explanation surface.
+# ---------------------------------------------------------------------------
+- profile_id: llm_explanation_projection_safe
+  profile_version: v1
+  status: supported
+  purpose: >-
+    The only projection an LLM explanation surface may consume. It carries the
+    deterministic facts an explanation must stay faithful to, and it carries
+    them as evidence -- never as instruction or tool context. Provider-
+    controlled display strings are excluded outright, so no signed untrusted
+    label can become model instruction merely because it travelled inside a
+    TrustEnvelope.
+  untrusted_labels_admitted: false
+  policy_authority_projection: typed
+  judge_authority: none
+  max_action_authority: read_only
+  llm_authority_over_projected_values: none
+  fields:
+  - path: envelope_id
+    position: evidence
+    trust_class: machine_authority_code
+  - path: schema_version
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: tenant_id_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: subject_type
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: subject_ref_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: truth_type
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_authority.authority_class
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_authority.source_system
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_authority.source_snapshot_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: deterministic_verification_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: match_verdict_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: verified_revenue_minor
+    position: evidence
+    trust_class: machine_authority_code
+  - path: currency
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: discrepancy_class
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: attribution_model
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: model_assumption
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: causal_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_authority
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_score_basis_points
+    position: evidence
+    trust_class: machine_authority_code
+  - path: confidence_metadata.diagnostics_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.unavailable_reason
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: data_completeness_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: fallback_applied
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: fallback_reason
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.policy_state
+    position: policy
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.reason_code
+    position: policy
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.forbidden_scopes
+    position: policy
+    trust_class: machine_authority_enum
+  - path: evidence_temporal_boundary.as_of
+    position: evidence
+    trust_class: machine_authority_code
+  - path: semantic_truth_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: audit_ref
+    position: evidence
+    trust_class: machine_authority_code
+  - path: created_at
+    position: evidence
+    trust_class: machine_authority_code
+  - path: valid_until
+    position: evidence
+    trust_class: machine_authority_code
+
+# ---------------------------------------------------------------------------
+# The B2.8 solver's only lawful input surface.
+# ---------------------------------------------------------------------------
+- profile_id: optimization_projection_safe
+  profile_version: v1
+  status: supported
+  purpose: >-
+    The deterministic simulation input surface. Money crosses this boundary in
+    integer minor units only; nothing provider-controlled crosses it at all,
+    because a solver has no display surface and therefore no lawful use for a
+    display label. `policy_action_authority.policy_state` is projected as
+    policy, not as evidence, because it is what bounds the action authority any
+    resulting proposal may carry.
+  untrusted_labels_admitted: false
+  policy_authority_projection: typed
+  judge_authority: none
+  max_action_authority: simulation_only
+  llm_authority_over_projected_values: none
+  fields:
+  - path: envelope_id
+    position: evidence
+    trust_class: machine_authority_code
+  - path: tenant_id_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: subject_type
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: subject_ref_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: truth_type
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_authority.authority_class
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_authority.source_snapshot_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: verified_revenue_minor
+    position: evidence
+    trust_class: machine_authority_code
+  - path: currency
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: attribution_model
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: model_assumption
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: causal_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_authority
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_score_basis_points
+    position: evidence
+    trust_class: machine_authority_code
+  - path: data_completeness_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: fallback_applied
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.policy_state
+    position: policy
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.forbidden_scopes
+    position: policy
+    trust_class: machine_authority_enum
+  - path: semantic_truth_hash
+    position: evidence
+    trust_class: machine_authority_code
+
+# ---------------------------------------------------------------------------
+# The internal audit projection. Widest field set, weakest consumer authority.
+# ---------------------------------------------------------------------------
+- profile_id: audit_projection_internal
+  profile_version: v1
+  status: supported
+  purpose: >-
+    Reconstruction surface for an internal auditor holding a downstream
+    artifact identity. It admits the quarantined provider text *as evidence of
+    what was received*, which is exactly the thing an audit must be able to
+    see, and it carries no policy or instruction position at all -- an auditor
+    reads, and reading is not an action authority.
+  untrusted_labels_admitted: true
+  policy_authority_projection: typed
+  judge_authority: none
+  max_action_authority: read_only
+  llm_authority_over_projected_values: none
+  fields:
+  - path: envelope_id
+    position: evidence
+    trust_class: machine_authority_code
+  - path: schema_version
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: canonicalization_version
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: tenant_id_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: subject_type
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: subject_ref_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: truth_type
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_authority.authority_class
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_authority.source_system
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_authority.source_snapshot_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: deterministic_verification_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: match_verdict_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: verified_revenue_minor
+    position: evidence
+    trust_class: machine_authority_code
+  - path: currency
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: discrepancy_class
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: attribution_model
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: model_assumption
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: causal_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_authority
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_score_basis_points
+    position: evidence
+    trust_class: machine_authority_code
+  - path: confidence_metadata.diagnostics_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.unavailable_reason
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: data_completeness_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: fallback_applied
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: fallback_reason
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.policy_state
+    position: policy
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.reason_code
+    position: policy
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.allowed_scopes
+    position: policy
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.forbidden_scopes
+    position: policy
+    trust_class: machine_authority_enum
+  - path: evidence_temporal_boundary.as_of
+    position: evidence
+    trust_class: machine_authority_code
+  - path: semantic_truth_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: audit_ref
+    position: evidence
+    trust_class: machine_authority_code
+  - path: audit_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: signature_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: signing_key_id
+    position: evidence
+    trust_class: machine_authority_code
+  - path: created_at
+    position: evidence
+    trust_class: machine_authority_code
+  - path: valid_until
+    position: evidence
+    trust_class: machine_authority_code
+  - path: untrusted_display_data.text_trust_class
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: untrusted_display_data.display_transform
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: untrusted_display_data.raw_text_sha256
+    position: evidence
+    trust_class: machine_authority_code
+  - path: untrusted_display_data.display_text
+    position: display_only
+    trust_class: untrusted_display_label
+
+# ---------------------------------------------------------------------------
+# The one profile where a provider-controlled label is lawful -- and only ever
+# in a display position.
+# ---------------------------------------------------------------------------
+- profile_id: display_projection_untrusted_labels_allowed
+  profile_version: v1
+  status: supported
+  purpose: >-
+    The controlled human-presentation profile. It is the only profile that
+    admits provider-controlled display strings, and the position table pins
+    them to `display_only`, so admitting a label is not the same as trusting
+    it. No machine consumer may select this profile: the loader records
+    `machine_consumption_permitted: false` and the P14 contract floor asserts
+    it.
+  untrusted_labels_admitted: true
+  machine_consumption_permitted: false
+  policy_authority_projection: typed
+  judge_authority: none
+  max_action_authority: read_only
+  llm_authority_over_projected_values: none
+  fields:
+  - path: envelope_id
+    position: evidence
+    trust_class: machine_authority_code
+  - path: tenant_id_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: subject_type
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: truth_type
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: deterministic_verification_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: verified_revenue_minor
+    position: evidence
+    trust_class: machine_authority_code
+  - path: currency
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: causal_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: confidence_metadata.confidence_status
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: fallback_applied
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: policy_action_authority.policy_state
+    position: policy
+    trust_class: machine_authority_enum
+  - path: semantic_truth_hash
+    position: evidence
+    trust_class: machine_authority_code
+  - path: untrusted_display_data.text_trust_class
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: untrusted_display_data.display_transform
+    position: evidence
+    trust_class: machine_authority_enum
+  - path: untrusted_display_data.display_text
+    position: display_only
+    trust_class: untrusted_display_label
