@@ -34,8 +34,8 @@
       "session_user": "app_worker"
     },
     "gate": "XX2-A/XX2-B",
-    "tenant_id": "ee54f755-e9e5-404c-9d5b-c26c3b20c9c6",
-    "verdict_id": "8a75e1cd-35aa-4a21-bb47-fef9e46ef469"
+    "tenant_id": "6a770ea2-9506-4219-99ee-ff48bf214712",
+    "verdict_id": "ae243273-cb9d-4c9d-b47b-ae8d8a904b38"
   },
   "c20_authority_matrix": {
     "b23_match_verdicts": {
@@ -73,6 +73,25 @@
         "UPDATE"
       ]
     },
+    "b24_dirty_events": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "INSERT",
+        "SELECT"
+      ],
+      "app_worker": [
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ]
+    },
     "b24_fit_dispatch_outbox": {
       "app_celery_transport": [],
       "app_dispatch_publisher": [
@@ -104,6 +123,74 @@
         "INSERT",
         "SELECT",
         "UPDATE"
+      ]
+    },
+    "b27_explanation_materializations": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "INSERT",
+        "SELECT"
+      ],
+      "app_worker": [
+        "SELECT"
+      ]
+    },
+    "b28_proposals": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "INSERT",
+        "SELECT"
+      ],
+      "app_worker": [
+        "SELECT"
+      ]
+    },
+    "b28_simulation_requests": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "INSERT",
+        "SELECT"
+      ],
+      "app_worker": [
+        "SELECT"
+      ]
+    },
+    "b28_simulation_results": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "INSERT",
+        "SELECT"
+      ],
+      "app_worker": [
+        "SELECT"
       ]
     },
     "bayesian_artifacts": {
@@ -144,6 +231,95 @@
         "INSERT",
         "SELECT",
         "UPDATE"
+      ]
+    },
+    "trust_access_log": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ],
+      "app_trust_issuer": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "app_trust_signer": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "app_user": [
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ],
+      "app_worker": [
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ]
+    },
+    "trust_envelope_issuance_log": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [
+        "SELECT"
+      ],
+      "app_trust_issuer": [
+        "INSERT",
+        "SELECT"
+      ],
+      "app_trust_signer": [],
+      "app_user": [
+        "SELECT"
+      ],
+      "app_worker": [
+        "SELECT"
+      ]
+    },
+    "trust_replay_events": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [
+        "SELECT"
+      ],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "INSERT",
+        "SELECT"
+      ],
+      "app_worker": [
+        "SELECT"
+      ]
+    },
+    "trust_scope_denial_events": {
+      "app_celery_transport": [],
+      "app_dispatch_publisher": [],
+      "app_ro": [
+        "SELECT"
+      ],
+      "app_rw": [
+        "SELECT"
+      ],
+      "app_trust_issuer": [],
+      "app_trust_signer": [],
+      "app_user": [
+        "INSERT",
+        "SELECT"
+      ],
+      "app_worker": [
+        "SELECT"
       ]
     }
   },

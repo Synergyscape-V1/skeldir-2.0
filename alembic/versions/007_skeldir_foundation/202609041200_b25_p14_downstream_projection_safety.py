@@ -32,10 +32,11 @@ convenience, not a fact about the deployed topology. In production only the API
 container receives the trust issuance path, ``worker_bayesian``/``worker_b23_*``
 receive ``C19_WORKER_DATABASE_URL`` and no route to it, and ``grep`` across
 ``app/tasks/`` finds no reference to ``record_trust_audit_event``,
-``_insert_issuance_log`` or the trust API at all. The one worker-reachable
-issuance-adjacent function, ``reconcile_stale_trust_issuance_states``, already
-uses the dedicated ``app_trust_issuer`` factory. The causal writer is the API
-principal; the grant is narrowed to it.
+``_project_completed_issuance_log`` or the trust API at all. The one
+worker-reachable issuance-adjacent function,
+``reconcile_stale_trust_issuance_states``, already uses the dedicated
+``app_trust_issuer`` factory. The API may authorize an issuance, while only
+the dedicated issuer may project its terminal consequence.
 
 **Consequence.** Fencing the principal alone would leave the deeper property
 unstated: nothing in the schema bound a terminal success row to *any* real
@@ -47,11 +48,10 @@ debt on the same relation. So this migration also makes the durable record a
   * a real foreign key ``(tenant_id, access_audit_ref) -> trust_access_log
     (tenant_id, audit_ref)``, so the lineage exists physically and survives a
     disabled trigger;
-  * a BEFORE INSERT guard that requires the referenced ledger row to be an
-    ``issuance``/``success`` row whose identity fields *agree exactly* with the
-    row being written. ``_insert_issuance_log`` writes both rows from the same
-    ``_params(...)`` in one transaction, so agreement is automatic on the lawful
-    path and has to be manufactured on any other.
+  * a BEFORE INSERT guard that requires the referenced ledger row and linked
+    issuance attempt to have reached signer-confirmed ``issued`` state, with
+    exact retained-artifact correspondence, before identity fields may project
+    into terminal history.
 
 Authority is therefore expressed three times -- privilege, referential binding,
 consequence guard -- for the reason Corrective XX and XXI established
@@ -157,7 +157,8 @@ def upgrade() -> None:
     # 1. Gate 0 -- referential binding.
     # ------------------------------------------------------------------
     # Rows written before this revision by anything other than
-    # `_insert_issuance_log` may name an audit_ref that never existed. They are
+    # the prior authorization-time projection may name an audit_ref that never
+    # existed. They are
     # exactly the class this constraint exists to make impossible, so the
     # migration refuses to run rather than silently validating around them.
     op.execute(
@@ -213,8 +214,8 @@ def upgrade() -> None:
         DECLARE
             principal_is_superuser boolean;
             table_owner_oid oid;
-            recorder_role_oid oid;
-            caller_is_recorder boolean;
+            issuer_role_oid oid;
+            caller_is_issuer boolean;
             -- Scalars, not ``trust_access_log%ROWTYPE``. PL/pgSQL resolves a
             -- %ROWTYPE declaration when the function is *created*, and pg_dump
             -- emits functions before the tables they name -- which makes the
@@ -232,6 +233,17 @@ def upgrade() -> None:
             ledger_semantic_truth_hash text;
             ledger_policy_state text;
             ledger_audit_hash text;
+            ledger_issuance_state text;
+            ledger_issued_attempt_id uuid;
+            ledger_issued_signing_key_id text;
+            ledger_issued_signature_hash text;
+            ledger_issued_signature bytea;
+            ledger_issued_envelope jsonb;
+            attempt_state text;
+            attempt_signing_key_id text;
+            attempt_signature_hash text;
+            attempt_signature bytea;
+            attempt_signed_envelope jsonb;
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
@@ -251,33 +263,41 @@ def upgrade() -> None:
                 RETURN NEW;
             END IF;
 
-            -- Layer A: causal responsibility. `record_trust_audit_event` is
-            -- reached only from the FastAPI trust surface, which runs on the
-            -- API principal's session factory. No task module under
-            -- app/tasks/ references it, and the one worker-reachable
-            -- issuance-adjacent function uses app_trust_issuer.
+            -- Layer A: only the dedicated issuer may project a terminal
+            -- consequence.  The API principal may authorize an issuance, but
+            -- it cannot assert that signing happened: pairing an
+            -- ``authorized`` ledger row with a well-shaped terminal row is
+            -- not sufficient evidence of a completed consequence.
             SELECT oid
-              INTO recorder_role_oid
+              INTO issuer_role_oid
               FROM pg_catalog.pg_roles
-             WHERE rolname = 'app_user';
-            caller_is_recorder := recorder_role_oid IS NOT NULL
-                AND pg_catalog.pg_has_role(session_user, recorder_role_oid, 'USAGE');
-            IF NOT caller_is_recorder THEN
+             WHERE rolname = 'app_trust_issuer';
+            caller_is_issuer := issuer_role_oid IS NOT NULL
+                AND session_user = 'app_trust_issuer';
+            IF NOT caller_is_issuer THEN
                 RAISE EXCEPTION
-                    'durable trust issuance history is recorded by the trust '
-                    'audit principal alone; % may not assert a signing '
+                    'durable trust issuance history is recorded by the '
+                    'dedicated issuer alone; % may not assert a signing '
                     'consequence', session_user
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Layer B: the row must project a real audit-ledger issuance.
+            -- Layer B: the row must project a completed, signer-confirmed
+            -- issuance.  ``authorized`` is authorization to try, not evidence
+            -- of a consequence.  The source ledger and attempt therefore have
+            -- to be terminal and agree on the retained signature artifact.
             SELECT event_type, status, idempotency_key_hash, subject_type,
                    subject_ref_hash, envelope_hash, semantic_truth_hash,
-                   policy_state, audit_hash
+                   policy_state, audit_hash, issuance_state, issued_attempt_id,
+                   issued_signing_key_id, issued_signature_hash,
+                   issued_signature, issued_envelope
               INTO ledger_event_type, ledger_status, ledger_idempotency_key_hash,
                    ledger_subject_type, ledger_subject_ref_hash,
                    ledger_envelope_hash, ledger_semantic_truth_hash,
-                   ledger_policy_state, ledger_audit_hash
+                   ledger_policy_state, ledger_audit_hash,
+                   ledger_issuance_state, ledger_issued_attempt_id,
+                   ledger_issued_signing_key_id, ledger_issued_signature_hash,
+                   ledger_issued_signature, ledger_issued_envelope
               FROM public.trust_access_log
              WHERE tenant_id = NEW.tenant_id
                AND audit_ref = NEW.access_audit_ref;
@@ -293,6 +313,34 @@ def upgrade() -> None:
                     'durable trust issuance history may only project a '
                     'successful issuance ledger record; % is %/%',
                     NEW.access_audit_ref, ledger_event_type, ledger_status
+                    USING ERRCODE = '42501';
+            END IF;
+            IF ledger_issuance_state <> 'issued'
+               OR ledger_issued_attempt_id IS NULL THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history requires an issued ledger '
+                    'record with a signer-confirmed attempt; % is %',
+                    NEW.access_audit_ref, ledger_issuance_state
+                    USING ERRCODE = '42501';
+            END IF;
+            SELECT attempt.attempt_state, attempt.signing_key_id,
+                   attempt.signature_hash, attempt.signature,
+                   attempt.signed_envelope
+              INTO attempt_state, attempt_signing_key_id, attempt_signature_hash,
+                   attempt_signature, attempt_signed_envelope
+              FROM public.trust_issuance_attempts AS attempt
+             WHERE attempt.tenant_id = NEW.tenant_id
+               AND attempt.audit_ref = NEW.access_audit_ref
+               AND attempt.id = ledger_issued_attempt_id;
+            IF NOT FOUND OR attempt_state <> 'issued'
+               OR attempt_signing_key_id IS DISTINCT FROM ledger_issued_signing_key_id
+               OR attempt_signature_hash IS DISTINCT FROM ledger_issued_signature_hash
+               OR attempt_signature IS DISTINCT FROM ledger_issued_signature
+               OR attempt_signed_envelope IS DISTINCT FROM ledger_issued_envelope THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history requires completed '
+                    'attempt evidence corresponding to the ledger; %',
+                    NEW.access_audit_ref
                     USING ERRCODE = '42501';
             END IF;
             IF {agreement_predicate}
@@ -329,15 +377,36 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # 3. Gate 0 -- privilege layer.
     # ------------------------------------------------------------------
-    # app_user keeps a direct SELECT+INSERT; app_rw loses INSERT, which is what
-    # removes app_worker's inherited capability. app_worker is a member of
-    # app_rw only -- it holds no direct grant on any of these three relations --
-    # so this is the whole of its effective authority here.
-    for relation in (
-        "trust_envelope_issuance_log",
-        "trust_replay_events",
-        "trust_scope_denial_events",
-    ):
+    # The terminal issuance projection is written only after C16/C17 completed
+    # the signer-confirmed ledger transition, under the dedicated issuer.  The
+    # API still appends request-local replay/denial events, so those retain
+    # their narrower API writer.  Treating all three alike was the P14 gap:
+    # ``app_user`` could author both an ``authorized`` ledger and its supposed
+    # terminal consequence before any signing attempt existed.
+    for relation in ("trust_envelope_issuance_log",):
+        op.execute(f"REVOKE ALL ON TABLE public.{relation} FROM PUBLIC")
+        _if_role_exists(
+            "app_user",
+            f"REVOKE ALL ON TABLE public.{relation} FROM app_user;"
+            f" GRANT SELECT ON TABLE public.{relation} TO app_user",
+        )
+        _if_role_exists(
+            "app_rw",
+            f"REVOKE ALL ON TABLE public.{relation} FROM app_rw;"
+            f" GRANT SELECT ON TABLE public.{relation} TO app_rw",
+        )
+        _if_role_exists(
+            "app_ro",
+            f"REVOKE ALL ON TABLE public.{relation} FROM app_ro;"
+            f" GRANT SELECT ON TABLE public.{relation} TO app_ro",
+        )
+        _if_role_exists(
+            "app_trust_issuer",
+            f"REVOKE ALL ON TABLE public.{relation} FROM app_trust_issuer;"
+            f" GRANT SELECT, INSERT ON TABLE public.{relation} TO app_trust_issuer",
+        )
+
+    for relation in ("trust_replay_events", "trust_scope_denial_events"):
         op.execute(f"REVOKE ALL ON TABLE public.{relation} FROM PUBLIC")
         _if_role_exists(
             "app_user",

@@ -649,7 +649,15 @@ async def test_postgres_before_after_snapshot_only_access_log_changes(
         assert result is not None
         assert result["signature"].startswith("ed25519:")
         assert after["trust_access_log"] == before["trust_access_log"] + 1
-        for table in tracked_tables[1:]:
+        # B2.5-P14 Gate 0-B: a completed signed issuance projects exactly one
+        # terminal history row, downstream of the signer-confirmed completion,
+        # under the dedicated issuer principal. What stays unchanged is every
+        # other request-local surface.
+        assert (
+            after["trust_envelope_issuance_log"]
+            == before["trust_envelope_issuance_log"] + 1
+        )
+        for table in tracked_tables[2:]:
             assert after[table] == before[table], table
     finally:
         await runtime_engine.dispose()

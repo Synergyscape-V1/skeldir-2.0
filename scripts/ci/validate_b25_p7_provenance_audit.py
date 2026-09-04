@@ -526,9 +526,16 @@ async def _validate_successful_issuance() -> tuple[int, dict[str, Any]]:
         raise B25P7ValidationError(
             "success path did not persist exactly one access row"
         )
-    if len(session.issuance_rows) != 1:
+    # B2.5-P14 Gate 0-B. The authorization path records lawful request
+    # evidence in the access ledger, but terminal issuance history is a
+    # projection of a completed, signer-confirmed consequence and is
+    # materialized only by the dedicated issuer transaction
+    # (`_project_completed_issuance_log` under `app_trust_issuer`). An
+    # authorization-time issuance row here would be exactly the API
+    # self-certification the corrective exists to refuse.
+    if len(session.issuance_rows) != 0:
         raise B25P7ValidationError(
-            "success path did not persist exactly one issuance row"
+            "authorization path persisted an issuance row before any signing consequence"
         )
     _assert_no_raw_tenant(payload, tenant_id)
     _assert_prompt_not_present(payload)

@@ -82,7 +82,7 @@ _HISTORICAL_ISSUANCE_GRANT = (
 )
 _FENCED_ISSUANCE_GRANT = (
     "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_user; "
-    "GRANT SELECT, INSERT ON TABLE public.trust_envelope_issuance_log TO app_user"
+    "GRANT SELECT ON TABLE public.trust_envelope_issuance_log TO app_user"
 )
 # app_rw holds SELECT only after P14 Gate 0. Audit 67 fabricated a terminal
 # success row as `app_worker`, whose whole capability here was the INSERT it
@@ -938,7 +938,7 @@ def test_c21_durable_issuance_history_is_conserved() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_c21_lawful_issuance_recording_still_succeeds() -> None:
+def test_c21_api_authorization_cannot_project_terminal_issuance() -> None:
     evidence: dict[str, Any] = {"gate": "XXI-D"}
     conn = _admin_connection()
     try:
@@ -949,9 +949,9 @@ def test_c21_lawful_issuance_recording_still_succeeds() -> None:
         def digest() -> str:
             return "sha256:" + uuid.uuid4().hex + uuid.uuid4().hex
 
-        # P14 Gate 0. The lawful writer appends the audit ledger record first
-        # and then projects it; both writes carry the same material, exactly as
-        # `record_trust_audit_event` does.
+        # P14 Gate 0.  An API write is an authorization record, not terminal
+        # history.  The dedicated issuer projects only after signer-confirmed
+        # C16/C17 completion; P14's role-physics suite exercises that path.
         material = lawful_issuance_material(subject_type="allocation")
         with conn.cursor() as cursor:
             seed_issuance_audit_ledger(cursor, tenant_id, material)
@@ -976,23 +976,22 @@ def test_c21_lawful_issuance_recording_still_succeeds() -> None:
             material["audit_hash"],
         )
 
-        # This is `_insert_issuance_log`, verbatim in shape, under the principal
-        # the API session factory actually uses.
+        # The former direct API projection is now an explicit negative control.
         recorded = _as_principal(
-            "app_user", tenant_id, insert_sql, params, label="API records issuance"
+            "app_user", tenant_id, insert_sql, params, label="API asserts terminal issuance"
         )
         evidence["issuance_recorded"] = recorded
-        assert recorded["result"] == "ALLOWED", recorded
-        assert recorded["rowcount"] == 1, recorded
+        assert recorded["result"] == "REFUSED", recorded
+        assert "permission denied" in recorded["error"], recorded
 
         # The bounded retry path: an idempotent replay must still be admitted and
         # must not attempt to restate the durable row.
         replay = _as_principal(
-            "app_user", tenant_id, insert_sql, params, label="API replays issuance"
+            "app_user", tenant_id, insert_sql, params, label="API repeats terminal assertion"
         )
         evidence["issuance_replayed"] = replay
-        assert replay["result"] == "ALLOWED", replay
-        assert replay["rowcount"] == 0, replay
+        assert replay["result"] == "REFUSED", replay
+        assert "permission denied" in replay["error"], replay
 
         with conn.cursor() as cursor:
             _bind_tenant(cursor, tenant_id)
@@ -1002,7 +1001,7 @@ def test_c21_lawful_issuance_recording_still_succeeds() -> None:
                 (str(tenant_id), idempotency),
             )
             evidence["durable_rows"] = int(cursor.fetchone()[0])
-        assert evidence["durable_rows"] == 1, evidence
+        assert evidence["durable_rows"] == 0, evidence
 
         # The trust access log keeps its lawful replay-counter UPDATE: fencing
         # issuance history must not fence the audit ledger's own state machine.
@@ -1183,12 +1182,14 @@ def test_c21_new_consequence_relations_are_inside_the_authority_contract() -> No
             "app_ro": {"SELECT"},
             "app_rw": set(),
         },
-        # P14 Gate 0 narrowed INSERT on all three to the API principal alone.
+        # P14 Gate 0 permits only the dedicated issuer to append a terminal
+        # consequence after signer-confirmed completion.
         "trust_envelope_issuance_log": {
-            "app_user": {"SELECT", "INSERT"},
+            "app_user": {"SELECT"},
             "app_worker": {"SELECT"},
             "app_ro": {"SELECT"},
             "app_rw": {"SELECT"},
+            "app_trust_issuer": {"SELECT", "INSERT"},
         },
         "trust_replay_events": {
             "app_user": {"SELECT", "INSERT"},

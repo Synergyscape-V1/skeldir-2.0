@@ -226,6 +226,85 @@ def _seed_ledger(cursor, tenant_id, material: dict[str, str]) -> None:
     cursor.execute(_LEDGER_INSERT, _ledger_params(tenant_id, material))
 
 
+def _seed_completed_lineage(cursor, tenant_id, material: dict[str, str]) -> None:
+    """Create a completed C16/C17 witness for the P14 trigger-only proof.
+
+    This is a fixture for the database predicate. The P11/C17 topology tests
+    separately prove the real API -> signer -> verification consequence path.
+    """
+
+    _seed_ledger(cursor, tenant_id, material)
+    attempt_id = uuid.uuid4()
+    issuer = _role_connection("app_trust_issuer")
+    try:
+        with issuer.cursor() as issuer_cursor:
+            _bind_tenant(issuer_cursor, tenant_id)
+            issuer_cursor.execute(
+                "UPDATE public.trust_access_log SET issuance_state='signing', "
+                "issuance_attempted_at=now(), issuance_attempt_count=1 "
+                "WHERE tenant_id=%s AND audit_ref=%s",
+                (str(tenant_id), material["audit_ref"]),
+            )
+            issuer_cursor.execute(
+                "INSERT INTO public.trust_issuance_attempts "
+                "(id, tenant_id, audit_ref, attempt_number, attempt_state) "
+                "VALUES (%s, %s, %s, 1, 'signing')",
+                (str(attempt_id), str(tenant_id), material["audit_ref"]),
+            )
+        issuer.commit()
+    finally:
+        issuer.close()
+
+    signer = _role_connection("app_trust_signer")
+    try:
+        with signer.cursor() as signer_cursor:
+            _bind_tenant(signer_cursor, tenant_id)
+            signer_cursor.execute(
+                "UPDATE public.trust_issuance_attempts "
+                "SET attempt_state='signature_known', signature_known_at=now(), "
+                "signing_key_id='kid:p14-fixture', "
+                "signature_hash='sha256:' || repeat('a',64), "
+                "signature=decode(repeat('ab',64),'hex'), "
+                "signed_envelope_hash='sha256:' || repeat('b',64), "
+                "signed_envelope='{}'::jsonb "
+                "WHERE tenant_id=%s AND id=%s RETURNING signature_known_at",
+                (str(tenant_id), str(attempt_id)),
+            )
+            known_at = signer_cursor.fetchone()[0]
+            signer_cursor.execute(
+                "UPDATE public.trust_access_log SET issuance_state='signature_known', "
+                "known_signature_at=%s, issued_attempt_id=%s "
+                "WHERE tenant_id=%s AND audit_ref=%s",
+                (known_at, str(attempt_id), str(tenant_id), material["audit_ref"]),
+            )
+        signer.commit()
+    finally:
+        signer.close()
+
+    issuer = _role_connection("app_trust_issuer")
+    try:
+        with issuer.cursor() as issuer_cursor:
+            _bind_tenant(issuer_cursor, tenant_id)
+            issuer_cursor.execute(
+                "UPDATE public.trust_access_log "
+                "SET issuance_state='issued', issued_at=now(), "
+                "issued_signing_key_id='kid:p14-fixture', "
+                "issued_signature_hash='sha256:' || repeat('a',64), "
+                "issued_signature=decode(repeat('ab',64),'hex'), "
+                "issued_envelope='{}'::jsonb "
+                "WHERE tenant_id=%s AND audit_ref=%s",
+                (str(tenant_id), material["audit_ref"]),
+            )
+            issuer_cursor.execute(
+                "UPDATE public.trust_issuance_attempts SET attempt_state='issued', "
+                "issued_at=now() WHERE tenant_id=%s AND id=%s",
+                (str(tenant_id), str(attempt_id)),
+            )
+        issuer.commit()
+    finally:
+        issuer.close()
+
+
 def _as_principal(
     role: str,
     tenant_id,
@@ -307,7 +386,17 @@ def test_p14_gate0_migrated_authority_matrix_holds_before_any_mutation() -> None
             "app_trust_issuer": [],
             "app_trust_signer": [],
         }
-        for relation in FENCED_RELATIONS
+        for relation in ("trust_replay_events", "trust_scope_denial_events")
+    }
+    expected["trust_envelope_issuance_log"] = {
+        "app_user": ["SELECT"],
+        "app_worker": ["SELECT"],
+        "app_rw": ["SELECT"],
+        "app_ro": ["SELECT"],
+        "app_dispatch_publisher": [],
+        "app_celery_transport": [],
+        "app_trust_issuer": ["INSERT", "SELECT"],
+        "app_trust_signer": [],
     }
 
     conn = _admin_connection()
@@ -379,7 +468,7 @@ def test_p14_gate0_no_runtime_principal_reaches_the_relation_owner() -> None:
 
 
 def test_p14_gate0_issuance_history_is_not_fabricable_by_any_unrelated_principal() -> None:
-    """Audit 67's statement, run verbatim under every production login."""
+    """Audit 67 plus Agent-2's paired-ledger counterexample, under real roles."""
 
     evidence: dict[str, Any] = {"gate": "P14-GATE0-FABRICATION"}
     conn = _admin_connection()
@@ -403,16 +492,33 @@ def test_p14_gate0_issuance_history_is_not_fabricable_by_any_unrelated_principal
                 _issuance_params(tenant_id, material),
                 label="fabricate terminal success with no signing consequence",
             )
-        # The API principal holds the lawful INSERT, and is still refused when
-        # the row projects no audit lineage. Gate 0 is a property of the row,
-        # not only of the writer.
-        orphan_material = _lawful_material()
-        attempts["app_user_without_lineage"] = _as_principal(
+        # Agent-2's first-red: app_user may authorize a request in the ledger,
+        # but no API credential may turn that request into terminal history
+        # before a signer-confirmed attempt exists.
+        paired_material = _lawful_material()
+        attempts["app_user_authorized_ledger"] = _as_principal(
+            "app_user",
+            tenant_id,
+            _LEDGER_INSERT,
+            _ledger_params(tenant_id, paired_material),
+            label="API records an authorized issuance request",
+        )
+        attempts["app_user_paired_authorized_projection"] = _as_principal(
             "app_user",
             tenant_id,
             _ISSUANCE_INSERT,
-            _issuance_params(tenant_id, orphan_material),
-            label="fabricate terminal success naming no audit ledger record",
+            _issuance_params(tenant_id, paired_material),
+            label="API pairs an authorized ledger with terminal history",
+        )
+        issuer_material = _lawful_material()
+        with conn.cursor() as cursor:
+            _seed_ledger(cursor, tenant_id, issuer_material)
+        attempts["issuer_with_authorized_ledger"] = _as_principal(
+            "app_trust_issuer",
+            tenant_id,
+            _ISSUANCE_INSERT,
+            _issuance_params(tenant_id, issuer_material),
+            label="issuer projects before signing completion",
         )
         evidence["attempts"] = attempts
 
@@ -424,13 +530,25 @@ def test_p14_gate0_issuance_history_is_not_fabricable_by_any_unrelated_principal
                 (str(tenant_id),),
             )
             evidence["durable_rows_after_attacks"] = int(cursor.fetchone()[0])
+            cursor.execute(
+                "SELECT count(*) FROM public.trust_issuance_attempts "
+                "WHERE tenant_id = %s",
+                (str(tenant_id),),
+            )
+            evidence["signing_attempts_after_attacks"] = int(cursor.fetchone()[0])
     finally:
         conn.close()
 
     for principal, attempt in attempts.items():
+        if principal == "app_user_authorized_ledger":
+            continue
         assert attempt["result"] == "REFUSED", attempt
         assert attempt["sqlstate"] == "42501", attempt
     assert evidence["durable_rows_after_attacks"] == 0, evidence
+    assert evidence["signing_attempts_after_attacks"] == 0, evidence
+    assert attempts["app_user_authorized_ledger"]["result"] == "ALLOWED"
+    assert "permission denied" in attempts["app_user_paired_authorized_projection"]["error"]
+    assert "requires an issued ledger" in attempts["issuer_with_authorized_ledger"]["error"]
     _record_evidence({"gate0_fabrication_refusals": evidence})
 
 
@@ -442,7 +560,7 @@ def test_p14_gate0_a_row_disagreeing_with_its_ledger_record_is_refused() -> None
         with conn.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
             material = _lawful_material()
-            _seed_ledger(cursor, tenant_id, material)
+            _seed_completed_lineage(cursor, tenant_id, material)
 
         disagreements = {}
         for field in (
@@ -455,7 +573,7 @@ def test_p14_gate0_a_row_disagreeing_with_its_ledger_record_is_refused() -> None
             mutated = dict(material)
             mutated[field] = _digest()
             disagreements[field] = _as_principal(
-                "app_user",
+                "app_trust_issuer",
                 tenant_id,
                 _ISSUANCE_INSERT,
                 _issuance_params(tenant_id, mutated),
@@ -464,7 +582,7 @@ def test_p14_gate0_a_row_disagreeing_with_its_ledger_record_is_refused() -> None
         policy_mutation = dict(material)
         policy_mutation["policy_state"] = "simulation_only"
         disagreements["policy_state"] = _as_principal(
-            "app_user",
+            "app_trust_issuer",
             tenant_id,
             _ISSUANCE_INSERT,
             _issuance_params(tenant_id, policy_mutation),
@@ -496,7 +614,7 @@ def test_p14_gate0_a_refusal_ledger_record_cannot_carry_a_success_projection() -
                 ),
             )
         outcome = _as_principal(
-            "app_user",
+            "app_trust_issuer",
             tenant_id,
             _ISSUANCE_INSERT,
             _issuance_params(tenant_id, material),
@@ -524,27 +642,27 @@ def test_p14_gate0_lawful_issuance_recording_still_succeeds() -> None:
         with conn.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
             material = _lawful_material(subject_type="match_verdict")
-            _seed_ledger(cursor, tenant_id, material)
+            _seed_completed_lineage(cursor, tenant_id, material)
 
         recorded = _as_principal(
-            "app_user",
+            "app_trust_issuer",
             tenant_id,
             _ISSUANCE_INSERT + " ON CONFLICT (tenant_id, idempotency_key_hash)"
             " DO NOTHING",
             _issuance_params(tenant_id, material),
-            label="API records issuance",
+            label="issuer projects signer-confirmed issuance",
         )
         evidence["issuance_recorded"] = recorded
 
         # The bounded retry path: an idempotent replay is still admitted and
         # does not attempt to restate the durable row.
         replayed = _as_principal(
-            "app_user",
+            "app_trust_issuer",
             tenant_id,
             _ISSUANCE_INSERT + " ON CONFLICT (tenant_id, idempotency_key_hash)"
             " DO NOTHING",
             _issuance_params(tenant_id, material),
-            label="API replays issuance",
+            label="issuer replays completed issuance projection",
         )
         evidence["issuance_replayed"] = replayed
 
@@ -679,7 +797,7 @@ def test_p14_gate0_each_layer_is_independently_load_bearing() -> None:
 
     assert evidence["privilege_only_severed"]["result"] == "REFUSED"
     assert (
-        "recorded by the trust audit principal alone"
+        "dedicated issuer alone"
         in evidence["privilege_only_severed"]["error"]
     ), evidence["privilege_only_severed"]
 

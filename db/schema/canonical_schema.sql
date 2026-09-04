@@ -3296,8 +3296,8 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
         DECLARE
             principal_is_superuser boolean;
             table_owner_oid oid;
-            recorder_role_oid oid;
-            caller_is_recorder boolean;
+            issuer_role_oid oid;
+            caller_is_issuer boolean;
             -- Scalars, not ``trust_access_log%ROWTYPE``. PL/pgSQL resolves a
             -- %ROWTYPE declaration when the function is *created*, and pg_dump
             -- emits functions before the tables they name -- which makes the
@@ -3315,6 +3315,17 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
             ledger_semantic_truth_hash text;
             ledger_policy_state text;
             ledger_audit_hash text;
+            ledger_issuance_state text;
+            ledger_issued_attempt_id uuid;
+            ledger_issued_signing_key_id text;
+            ledger_issued_signature_hash text;
+            ledger_issued_signature bytea;
+            ledger_issued_envelope jsonb;
+            attempt_state text;
+            attempt_signing_key_id text;
+            attempt_signature_hash text;
+            attempt_signature bytea;
+            attempt_signed_envelope jsonb;
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
@@ -3334,33 +3345,38 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                 RETURN NEW;
             END IF;
 
-            -- Layer A: causal responsibility. `record_trust_audit_event` is
-            -- reached only from the FastAPI trust surface, which runs on the
-            -- API principal's session factory. No task module under
-            -- app/tasks/ references it, and the one worker-reachable
-            -- issuance-adjacent function uses app_trust_issuer.
+            -- Layer A: only the dedicated issuer may project a terminal
+            -- consequence. The API may authorize an issuance, but cannot
+            -- assert that signing happened.
             SELECT oid
-              INTO recorder_role_oid
+              INTO issuer_role_oid
               FROM pg_catalog.pg_roles
-             WHERE rolname = 'app_user';
-            caller_is_recorder := recorder_role_oid IS NOT NULL
-                AND pg_catalog.pg_has_role(session_user, recorder_role_oid, 'USAGE');
-            IF NOT caller_is_recorder THEN
+             WHERE rolname = 'app_trust_issuer';
+            caller_is_issuer := issuer_role_oid IS NOT NULL
+                AND session_user = 'app_trust_issuer';
+            IF NOT caller_is_issuer THEN
                 RAISE EXCEPTION
-                    'durable trust issuance history is recorded by the trust '
-                    'audit principal alone; % may not assert a signing '
+                    'durable trust issuance history is recorded by the '
+                    'dedicated issuer alone; % may not assert a signing '
                     'consequence', session_user
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Layer B: the row must project a real audit-ledger issuance.
+            -- Layer B: authorization is not a consequence. The source ledger
+            -- and linked attempt must both have reached ``issued`` and retain
+            -- the same signer-confirmed artifact.
             SELECT event_type, status, idempotency_key_hash, subject_type,
                    subject_ref_hash, envelope_hash, semantic_truth_hash,
-                   policy_state, audit_hash
+                   policy_state, audit_hash, issuance_state, issued_attempt_id,
+                   issued_signing_key_id, issued_signature_hash,
+                   issued_signature, issued_envelope
               INTO ledger_event_type, ledger_status, ledger_idempotency_key_hash,
                    ledger_subject_type, ledger_subject_ref_hash,
                    ledger_envelope_hash, ledger_semantic_truth_hash,
-                   ledger_policy_state, ledger_audit_hash
+                   ledger_policy_state, ledger_audit_hash,
+                   ledger_issuance_state, ledger_issued_attempt_id,
+                   ledger_issued_signing_key_id, ledger_issued_signature_hash,
+                   ledger_issued_signature, ledger_issued_envelope
               FROM public.trust_access_log
              WHERE tenant_id = NEW.tenant_id
                AND audit_ref = NEW.access_audit_ref;
@@ -3376,6 +3392,34 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                     'durable trust issuance history may only project a '
                     'successful issuance ledger record; % is %/%',
                     NEW.access_audit_ref, ledger_event_type, ledger_status
+                    USING ERRCODE = '42501';
+            END IF;
+            IF ledger_issuance_state <> 'issued'
+               OR ledger_issued_attempt_id IS NULL THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history requires an issued ledger '
+                    'record with a signer-confirmed attempt; % is %',
+                    NEW.access_audit_ref, ledger_issuance_state
+                    USING ERRCODE = '42501';
+            END IF;
+            SELECT attempt.attempt_state, attempt.signing_key_id,
+                   attempt.signature_hash, attempt.signature,
+                   attempt.signed_envelope
+              INTO attempt_state, attempt_signing_key_id, attempt_signature_hash,
+                   attempt_signature, attempt_signed_envelope
+              FROM public.trust_issuance_attempts AS attempt
+             WHERE attempt.tenant_id = NEW.tenant_id
+               AND attempt.audit_ref = NEW.access_audit_ref
+               AND attempt.id = ledger_issued_attempt_id;
+            IF NOT FOUND OR attempt_state <> 'issued'
+               OR attempt_signing_key_id IS DISTINCT FROM ledger_issued_signing_key_id
+               OR attempt_signature_hash IS DISTINCT FROM ledger_issued_signature_hash
+               OR attempt_signature IS DISTINCT FROM ledger_issued_signature
+               OR attempt_signed_envelope IS DISTINCT FROM ledger_issued_envelope THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history requires completed '
+                    'attempt evidence corresponding to the ledger; %',
+                    NEW.access_audit_ref
                     USING ERRCODE = '42501';
             END IF;
             IF NEW.idempotency_key_hash IS DISTINCT FROM ledger_idempotency_key_hash

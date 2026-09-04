@@ -99,14 +99,16 @@ AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
     # B2.5-P14 Gate 0. Audit 67 fabricated a terminal `status='success'` row
     # here as `app_worker`, which held INSERT only through `app_rw`. C21 kept
     # that grant on the strength of the C9 lane composing a Trust read under
-    # the worker DSN -- a CI-harness convenience, not the deployed topology,
-    # where only the API container reaches the issuance path. The causal writer
-    # is the API principal, so it is the only principal that may append here.
+    # the worker DSN -- a CI-harness convenience, not the deployed topology.
+    # P14 Agent-2 then showed that the API could pair its own ``authorized``
+    # ledger row with a terminal row before a signing attempt existed. The
+    # causal writer is therefore the dedicated issuer completion transaction.
     "trust_envelope_issuance_log": {
-        "app_user": {"SELECT", "INSERT"},
+        "app_user": {"SELECT"},
         "app_worker": {"SELECT"},
         "app_ro": {"SELECT"},
         "app_rw": {"SELECT"},
+        "app_trust_issuer": {"SELECT", "INSERT"},
     },
     # The same 202607011200 blanket grant reached both of these, and both are
     # written by the same API code path, so both are narrowed the same way.

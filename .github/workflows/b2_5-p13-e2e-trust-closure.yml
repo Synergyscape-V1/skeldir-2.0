@@ -1743,7 +1743,7 @@ jobs:
             exit 1
           fi
           psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_c21 -v ON_ERROR_STOP=1 \
-            -c "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_user; GRANT SELECT, INSERT ON TABLE public.trust_envelope_issuance_log TO app_user;"
+            -c "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_user; GRANT SELECT ON TABLE public.trust_envelope_issuance_log TO app_user;"
           after=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p13_c21 -tAc \
             "SELECT envelope_hash || '|' || semantic_truth_hash FROM public.trust_envelope_issuance_log WHERE id = '$issuance_id'")
           test "$before" = "$after"
@@ -2572,9 +2572,16 @@ jobs:
             exit 1
           fi
           echo "$denial" | grep -q 'permission denied for table b23_match_verdicts'
+          # B2.5-P14 Gate 0-B: the dedicated issuer additionally holds
+          # SELECT+INSERT on trust_envelope_issuance_log, because terminal
+          # issuance history is now an issuer-only projection of a completed,
+          # signer-confirmed consequence. The API principal's former INSERT is
+          # gone (it was the self-certification surface audit 67 and the P14
+          # successor falsified); the equality below is the full least-privilege
+          # contract under the corrected authority.
           granted=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT string_agg(table_name || ':' || privilege_type, ',' ORDER BY table_name, privilege_type) FROM information_schema.table_privileges WHERE grantee = 'app_trust_issuer'")
-          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
+          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE,trust_envelope_issuance_log:INSERT,trust_envelope_issuance_log:SELECT,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
           guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.trust_access_log'::regclass AND tgname = 'trg_trust_access_log_issuance_authority_guard'")
           test "$guard" = "1"
@@ -3453,7 +3460,7 @@ jobs:
           test -n "$triggerdef"
           psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
             -c "DROP TRIGGER trg_trust_issuance_consequence_authority ON public.trust_envelope_issuance_log;"
-          if PGPASSWORD=app_user psql -h 127.0.0.1 -U app_user -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+          if PGPASSWORD=app_trust_issuer psql -h 127.0.0.1 -U app_trust_issuer -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
               -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
               -c "INSERT INTO public.trust_envelope_issuance_log (tenant_id, access_audit_ref, idempotency_key_hash, subject_type, subject_ref_hash, envelope_hash, semantic_truth_hash, policy_state, audit_ref, audit_hash, status) VALUES ('$tenant', 'urn:skeldir:audit:nc-p14-06', 'sha256:' || repeat('a', 64), 'match_verdict', 'sha256:' || repeat('b', 64), 'sha256:' || repeat('c', 64), 'sha256:' || repeat('d', 64), 'read_only', 'urn:skeldir:audit:nc-p14-06', 'sha256:' || repeat('e', 64), 'success');"; then
             echo "NC-P14-06 did not fire: an unbound issuance row was accepted"

@@ -149,7 +149,7 @@ CAPABILITY_MATRIX = (
     ("app_worker", "b24_dirty_events", "UPDATE", True),
     ("app_rw", "b24_dirty_events", "UPDATE", False),
     ("app_user", "trust_envelope_issuance_log", "SELECT", True),
-    ("app_user", "trust_envelope_issuance_log", "INSERT", True),
+    ("app_user", "trust_envelope_issuance_log", "INSERT", False),
     ("app_user", "trust_envelope_issuance_log", "UPDATE", False),
     ("app_user", "trust_envelope_issuance_log", "DELETE", False),
     ("app_rw", "trust_envelope_issuance_log", "UPDATE", False),
@@ -157,13 +157,16 @@ CAPABILITY_MATRIX = (
     ("app_user", "trust_scope_denial_events", "UPDATE", False),
     ("app_worker", "trust_envelope_issuance_log", "UPDATE", False),
     ("app_trust_issuer", "trust_envelope_issuance_log", "UPDATE", False),
+    ("app_trust_issuer", "trust_envelope_issuance_log", "INSERT", True),
     ("app_trust_signer", "trust_envelope_issuance_log", "UPDATE", False),
     # trust_access_log keeps its replay-counter UPDATE; the C16 guard is what
     # fences its issuance-consequence columns, and it is out of C21 scope.
     ("app_user", "trust_access_log", "UPDATE", True),
     ("app_rw", "trust_access_log", "UPDATE", True),
-    # B2.5-P14 Gate 0. INSERT on the three trust audit relations belongs to the
-    # API principal alone; the inherited app_rw head is what audit 67 used.
+    # B2.5-P14 Gate 0. Terminal issuance INSERT belongs only to the dedicated
+    # issuer after signer-confirmed completion; the other two audit relations
+    # remain API request records. The inherited app_rw head is what audit 67
+    # used.
     ("app_rw", "trust_envelope_issuance_log", "INSERT", False),
     ("app_worker", "trust_envelope_issuance_log", "INSERT", False),
     ("app_rw", "trust_replay_events", "INSERT", False),
