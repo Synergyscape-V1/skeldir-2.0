@@ -317,10 +317,6 @@ def upgrade() -> None:
         """
         DROP TRIGGER IF EXISTS trg_trust_issuance_history_immutable
             ON public.trust_envelope_issuance_log;
-        CREATE TRIGGER trg_trust_issuance_history_immutable
-            BEFORE UPDATE OR DELETE ON public.trust_envelope_issuance_log
-            FOR EACH ROW
-            EXECUTE FUNCTION public.trust_enforce_issuance_history_immutable();
         """
     )
 
@@ -343,7 +339,9 @@ def upgrade() -> None:
             _if_role_exists(
                 role,
                 f"REVOKE ALL ON TABLE public.{relation} FROM {role};"
-                f" GRANT SELECT, INSERT ON TABLE public.{relation} TO {role}",
+                f" GRANT SELECT, INSERT"
+                f"{' , UPDATE' if relation == 'trust_envelope_issuance_log' else ''}"
+                f" ON TABLE public.{relation} TO {role}",
             )
         _if_role_exists(
             "app_ro",
