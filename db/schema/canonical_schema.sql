@@ -2281,6 +2281,64 @@ CREATE FUNCTION public.b24_source_windows_overlap(p_change_start timestamp with 
 
 
 
+CREATE FUNCTION public.b27_supersede_stale_explanations() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            UPDATE public.b27_explanation_materializations AS materialization
+               SET stale = true,
+                   superseded_at = now()
+             WHERE materialization.tenant_id = NEW.tenant_id
+               AND materialization.subject_type = NEW.subject_type
+               AND materialization.subject_ref_hash = NEW.subject_ref_hash
+               AND materialization.source_semantic_truth_hash
+                   IS DISTINCT FROM NEW.semantic_truth_hash
+               AND materialization.stale = false;
+            RETURN NEW;
+        END;
+        $$;
+
+
+
+CREATE FUNCTION public.b28_enforce_allocation_conservation() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $_$
+        DECLARE
+            summed bigint;
+            line jsonb;
+        BEGIN
+            summed := 0;
+            FOR line IN
+                SELECT * FROM jsonb_array_elements(NEW.allocations)
+            LOOP
+                IF jsonb_typeof(line -> 'allocation_minor') <> 'number' THEN
+                    RAISE EXCEPTION
+                        'b28 allocation lines carry integer minor units; % does not',
+                        line
+                        USING ERRCODE = '22P02';
+                END IF;
+                IF (line ->> 'allocation_minor') !~ '^-?[0-9]+$' THEN
+                    RAISE EXCEPTION
+                        'b28 allocation lines may not carry fractional money; % does',
+                        line ->> 'allocation_minor'
+                        USING ERRCODE = '22P02';
+                END IF;
+                summed := summed + (line ->> 'allocation_minor')::bigint;
+            END LOOP;
+            IF summed <> NEW.total_budget_minor THEN
+                RAISE EXCEPTION
+                    'b28 allocation must conserve the requested budget; % <> %',
+                    summed, NEW.total_budget_minor
+                    USING ERRCODE = '23514';
+            END IF;
+            RETURN NEW;
+        END;
+        $_$;
+
+
+
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -3231,6 +3289,101 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
 
 
 
+CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            principal_is_superuser boolean;
+            table_owner_oid oid;
+            recorder_role_oid oid;
+            caller_is_recorder boolean;
+            ledger public.trust_access_log%ROWTYPE;
+        BEGIN
+            SELECT rolsuper
+              INTO principal_is_superuser
+              FROM pg_catalog.pg_roles
+             WHERE rolname = session_user;
+            SELECT relowner
+              INTO table_owner_oid
+              FROM pg_catalog.pg_class
+             WHERE oid = TG_RELID;
+
+            -- A superuser or the owning migration principal can drop this
+            -- trigger outright, so refusing them buys no authority. C20/C21
+            -- already assert that no runtime login reaches the owner.
+            IF COALESCE(principal_is_superuser, false)
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+            THEN
+                RETURN NEW;
+            END IF;
+
+            -- Layer A: causal responsibility. `record_trust_audit_event` is
+            -- reached only from the FastAPI trust surface, which runs on the
+            -- API principal's session factory. No task module under
+            -- app/tasks/ references it, and the one worker-reachable
+            -- issuance-adjacent function uses app_trust_issuer.
+            SELECT oid
+              INTO recorder_role_oid
+              FROM pg_catalog.pg_roles
+             WHERE rolname = 'app_user';
+            caller_is_recorder := recorder_role_oid IS NOT NULL
+                AND pg_catalog.pg_has_role(session_user, recorder_role_oid, 'USAGE');
+            IF NOT caller_is_recorder THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history is recorded by the trust '
+                    'audit principal alone; % may not assert a signing '
+                    'consequence', session_user
+                    USING ERRCODE = '42501';
+            END IF;
+
+            -- Layer B: the row must project a real audit-ledger issuance.
+            SELECT *
+              INTO ledger
+              FROM public.trust_access_log
+             WHERE tenant_id = NEW.tenant_id
+               AND audit_ref = NEW.access_audit_ref;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history must project an existing '
+                    'audit ledger record; % names no such audit_ref',
+                    NEW.access_audit_ref
+                    USING ERRCODE = '42501';
+            END IF;
+            IF ledger.event_type <> 'issuance' OR ledger.status <> 'success' THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history may only project a '
+                    'successful issuance ledger record; % is %/%',
+                    NEW.access_audit_ref, ledger.event_type, ledger.status
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.idempotency_key_hash IS DISTINCT FROM ledger.idempotency_key_hash
+               OR NEW.subject_type IS DISTINCT FROM ledger.subject_type
+               OR NEW.subject_ref_hash IS DISTINCT FROM ledger.subject_ref_hash
+               OR NEW.envelope_hash IS DISTINCT FROM ledger.envelope_hash
+               OR NEW.semantic_truth_hash IS DISTINCT FROM ledger.semantic_truth_hash
+               OR NEW.policy_state IS DISTINCT FROM ledger.policy_state
+               OR NEW.audit_hash IS DISTINCT FROM ledger.audit_hash
+            THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history must agree with the audit '
+                    'ledger record it projects; % disagrees',
+                    NEW.access_audit_ref
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.audit_ref IS DISTINCT FROM NEW.access_audit_ref THEN
+                RAISE EXCEPTION
+                    'durable trust issuance history carries one audit identity; '
+                    '% and % disagree', NEW.audit_ref, NEW.access_audit_ref
+                    USING ERRCODE = '42501';
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$;
+
+
+
 CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -4155,6 +4308,120 @@ CREATE TABLE public.b24_worker_process_authority (
 );
 
 ALTER TABLE ONLY public.b24_worker_process_authority FORCE ROW LEVEL SECURITY;
+
+
+
+CREATE TABLE public.b27_explanation_materializations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    cache_identity_hash text NOT NULL,
+    source_envelope_id text NOT NULL,
+    source_semantic_truth_hash text NOT NULL,
+    subject_type text NOT NULL,
+    subject_ref_hash text NOT NULL,
+    projection_profile_id text NOT NULL,
+    projection_profile_version text NOT NULL,
+    projection_profile_hash text NOT NULL,
+    explanation_contract_version text NOT NULL,
+    policy_state text NOT NULL,
+    confidence_status text NOT NULL,
+    causal_status text,
+    fallback_applied boolean NOT NULL,
+    claim_count integer NOT NULL,
+    narrative text NOT NULL,
+    claims jsonb NOT NULL,
+    authority_class text DEFAULT 'non_authoritative_explanation'::text NOT NULL,
+    judge_authority text DEFAULT 'none'::text NOT NULL,
+    stale boolean DEFAULT false NOT NULL,
+    superseded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b27_authority_class CHECK ((authority_class = 'non_authoritative_explanation'::text)),
+    CONSTRAINT ck_b27_cache_identity_shape CHECK (((cache_identity_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (source_semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (subject_ref_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (projection_profile_hash ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT ck_b27_claims_object CHECK ((jsonb_typeof(claims) = 'array'::text)),
+    CONSTRAINT ck_b27_confidence_status CHECK ((confidence_status = ANY (ARRAY['available'::text, 'unavailable'::text, 'degraded'::text, 'diagnostics_failed'::text]))),
+    CONSTRAINT ck_b27_judge_authority CHECK ((judge_authority = 'none'::text)),
+    CONSTRAINT ck_b27_policy_state CHECK ((policy_state = ANY (ARRAY['blocked'::text, 'read_only'::text, 'simulation_only'::text, 'proposal_required'::text, 'approval_required'::text]))),
+    CONSTRAINT ck_b27_projection_profile CHECK ((projection_profile_id = 'llm_explanation_projection_safe'::text)),
+    CONSTRAINT ck_b27_stale_shape CHECK ((((stale = true) AND (superseded_at IS NOT NULL)) OR ((stale = false) AND (superseded_at IS NULL))))
+);
+
+ALTER TABLE ONLY public.b27_explanation_materializations FORCE ROW LEVEL SECURITY;
+
+
+
+CREATE TABLE public.b28_proposals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    result_id uuid NOT NULL,
+    proposal_ref text NOT NULL,
+    source_envelope_id text NOT NULL,
+    action_authority text NOT NULL,
+    requires_human_approval boolean DEFAULT true NOT NULL,
+    authority_class text DEFAULT 'non_authoritative_proposal'::text NOT NULL,
+    allocations jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b28_proposal_action_authority CHECK ((action_authority = ANY (ARRAY['blocked'::text, 'read_only'::text, 'simulation_only'::text, 'proposal_required'::text]))),
+    CONSTRAINT ck_b28_proposal_allocations CHECK ((jsonb_typeof(allocations) = 'array'::text)),
+    CONSTRAINT ck_b28_proposal_authority_class CHECK ((authority_class = 'non_authoritative_proposal'::text)),
+    CONSTRAINT ck_b28_proposal_human_approval CHECK ((requires_human_approval = true))
+);
+
+ALTER TABLE ONLY public.b28_proposals FORCE ROW LEVEL SECURITY;
+
+
+
+CREATE TABLE public.b28_simulation_requests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    request_ref text NOT NULL,
+    requested_by text NOT NULL,
+    source_envelope_id text NOT NULL,
+    source_semantic_truth_hash text NOT NULL,
+    input_snapshot_hash text NOT NULL,
+    total_budget_minor bigint NOT NULL,
+    currency text NOT NULL,
+    channel_count integer NOT NULL,
+    sufficiency_policy_version text NOT NULL,
+    requested_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b28_request_budget CHECK ((total_budget_minor > 0)),
+    CONSTRAINT ck_b28_request_channels CHECK ((channel_count > 0)),
+    CONSTRAINT ck_b28_request_currency CHECK ((currency ~ '^[A-Z]{3}$'::text)),
+    CONSTRAINT ck_b28_request_hashes CHECK (((source_semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (input_snapshot_hash ~ '^sha256:[0-9a-f]{64}$'::text)))
+);
+
+ALTER TABLE ONLY public.b28_simulation_requests FORCE ROW LEVEL SECURITY;
+
+
+
+CREATE TABLE public.b28_simulation_results (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    request_id uuid NOT NULL,
+    source_envelope_id text NOT NULL,
+    source_semantic_truth_hash text NOT NULL,
+    projection_profile_hash text NOT NULL,
+    input_snapshot_hash text NOT NULL,
+    solver_profile text NOT NULL,
+    solver_invocations integer NOT NULL,
+    total_budget_minor bigint NOT NULL,
+    allocated_total_minor bigint NOT NULL,
+    currency text NOT NULL,
+    action_authority text NOT NULL,
+    authority_class text DEFAULT 'deterministic_simulation'::text NOT NULL,
+    llm_authority_over_allocation text DEFAULT 'none'::text NOT NULL,
+    allocations jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b28_result_action_authority CHECK ((action_authority = ANY (ARRAY['blocked'::text, 'read_only'::text, 'simulation_only'::text, 'proposal_required'::text]))),
+    CONSTRAINT ck_b28_result_allocations CHECK ((jsonb_typeof(allocations) = 'array'::text)),
+    CONSTRAINT ck_b28_result_authority_class CHECK ((authority_class = 'deterministic_simulation'::text)),
+    CONSTRAINT ck_b28_result_budget CHECK ((total_budget_minor > 0)),
+    CONSTRAINT ck_b28_result_conserved CHECK ((allocated_total_minor = total_budget_minor)),
+    CONSTRAINT ck_b28_result_hashes CHECK (((source_semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (projection_profile_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (input_snapshot_hash ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT ck_b28_result_llm_authority CHECK ((llm_authority_over_allocation = 'none'::text)),
+    CONSTRAINT ck_b28_result_solver_ran CHECK ((solver_invocations >= 1))
+);
+
+ALTER TABLE ONLY public.b28_simulation_results FORCE ROW LEVEL SECURITY;
 
 
 
@@ -8370,6 +8637,26 @@ ALTER TABLE ONLY public.b24_worker_process_authority
 
 
 
+ALTER TABLE ONLY public.b27_explanation_materializations
+    ADD CONSTRAINT b27_explanation_materializations_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.b28_proposals
+    ADD CONSTRAINT b28_proposals_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.b28_simulation_requests
+    ADD CONSTRAINT b28_simulation_requests_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.b28_simulation_results
+    ADD CONSTRAINT b28_simulation_results_pkey PRIMARY KEY (id);
+
+
+
 ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
     ADD CONSTRAINT bayesian_artifact_storage_quotas_pkey PRIMARY KEY (tenant_id);
 
@@ -9162,6 +9449,26 @@ ALTER TABLE ONLY public.b24_fit_recovery_outbox
 
 ALTER TABLE ONLY public.b24_inference_policy_registry
     ADD CONSTRAINT uq_b24_policy_registry_tuple UNIQUE (policy_bundle_hash, inference_profile_version, runtime_policy_version, sampling_policy_version, diagnostic_policy_version);
+
+
+
+ALTER TABLE ONLY public.b27_explanation_materializations
+    ADD CONSTRAINT uq_b27_cache_identity UNIQUE (tenant_id, cache_identity_hash);
+
+
+
+ALTER TABLE ONLY public.b28_proposals
+    ADD CONSTRAINT uq_b28_proposal_ref UNIQUE (tenant_id, proposal_ref);
+
+
+
+ALTER TABLE ONLY public.b28_simulation_requests
+    ADD CONSTRAINT uq_b28_request_ref UNIQUE (tenant_id, request_ref);
+
+
+
+ALTER TABLE ONLY public.b28_simulation_results
+    ADD CONSTRAINT uq_b28_result_request UNIQUE (tenant_id, request_id);
 
 
 
@@ -10846,6 +11153,10 @@ CREATE INDEX ix_b24_fit_policy_replan_lineage_fit ON public.b24_fit_policy_repla
 
 
 
+CREATE INDEX ix_b27_explanation_subject ON public.b27_explanation_materializations USING btree (tenant_id, subject_type, subject_ref_hash, stale);
+
+
+
 CREATE INDEX ix_celery_taskmeta_task_id ON public.celery_taskmeta USING btree (task_id);
 
 
@@ -11978,6 +12289,14 @@ CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model
 
 
 
+CREATE TRIGGER trg_b27_supersede_stale_explanations AFTER INSERT ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.b27_supersede_stale_explanations();
+
+
+
+CREATE TRIGGER trg_b28_allocation_conservation BEFORE INSERT OR UPDATE ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_allocation_conservation();
+
+
+
 CREATE TRIGGER trg_bind_session_authority_from_event BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_bind_session_authority_from_event();
 
 
@@ -12051,6 +12370,10 @@ CREATE TRIGGER trg_trust_export_artifact_attempt_guard BEFORE INSERT OR UPDATE O
 
 
 CREATE TRIGGER trg_trust_issuance_attempt_guard BEFORE INSERT OR UPDATE ON public.trust_issuance_attempts FOR EACH ROW EXECUTE FUNCTION public.trust_issuance_attempt_guard();
+
+
+
+CREATE TRIGGER trg_trust_issuance_consequence_authority BEFORE INSERT ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.trust_enforce_issuance_consequence_authority();
 
 
 
@@ -12246,6 +12569,36 @@ ALTER TABLE ONLY public.b24_source_window_feature_authority
 
 
 
+ALTER TABLE ONLY public.b27_explanation_materializations
+    ADD CONSTRAINT b27_explanation_materializations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.b28_proposals
+    ADD CONSTRAINT b28_proposals_result_id_fkey FOREIGN KEY (result_id) REFERENCES public.b28_simulation_results(id) ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY public.b28_proposals
+    ADD CONSTRAINT b28_proposals_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.b28_simulation_requests
+    ADD CONSTRAINT b28_simulation_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.b28_simulation_results
+    ADD CONSTRAINT b28_simulation_results_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.b28_simulation_requests(id) ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY public.b28_simulation_results
+    ADD CONSTRAINT b28_simulation_results_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
     ADD CONSTRAINT bayesian_artifact_storage_quotas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -12383,6 +12736,11 @@ ALTER TABLE ONLY public.tenant_membership_roles
 
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT fk_trust_issuance_attempt_audit FOREIGN KEY (tenant_id, audit_ref) REFERENCES public.trust_access_log(tenant_id, audit_ref) ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY public.trust_envelope_issuance_log
+    ADD CONSTRAINT fk_trust_issuance_log_access_audit FOREIGN KEY (tenant_id, access_audit_ref) REFERENCES public.trust_access_log(tenant_id, audit_ref) ON DELETE CASCADE;
 
 
 
@@ -12705,6 +13063,18 @@ ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY
 
 
 ALTER TABLE public.b24_worker_process_authority ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.b27_explanation_materializations ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.b28_proposals ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.b28_simulation_requests ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.b28_simulation_results ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE public.bayesian_artifact_storage_quotas ENABLE ROW LEVEL SECURITY;
@@ -13179,6 +13549,22 @@ CREATE POLICY tenant_isolation_policy_b24_fit_recovery_outbox ON public.b24_fit_
 
 
 CREATE POLICY tenant_isolation_policy_b24_source_window_feature_authority ON public.b24_source_window_feature_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+CREATE POLICY tenant_isolation_policy_b27_explanation_materializations ON public.b27_explanation_materializations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+CREATE POLICY tenant_isolation_policy_b28_proposals ON public.b28_proposals USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+CREATE POLICY tenant_isolation_policy_b28_simulation_requests ON public.b28_simulation_requests USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+CREATE POLICY tenant_isolation_policy_b28_simulation_results ON public.b28_simulation_results USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 

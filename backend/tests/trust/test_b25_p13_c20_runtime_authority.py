@@ -96,28 +96,31 @@ AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
         "app_ro": {"SELECT"},
         "app_rw": set(),
     },
-    # Durable record of what was signed. Written once, beside the returned
-    # envelope, by whichever session composed the Trust read; never mutated by
-    # any code path, and now not mutable by any runtime principal either.
+    # B2.5-P14 Gate 0. Audit 67 fabricated a terminal `status='success'` row
+    # here as `app_worker`, which held INSERT only through `app_rw`. C21 kept
+    # that grant on the strength of the C9 lane composing a Trust read under
+    # the worker DSN -- a CI-harness convenience, not the deployed topology,
+    # where only the API container reaches the issuance path. The causal writer
+    # is the API principal, so it is the only principal that may append here.
     "trust_envelope_issuance_log": {
         "app_user": {"SELECT", "INSERT"},
-        "app_worker": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
         "app_ro": {"SELECT"},
-        "app_rw": {"SELECT", "INSERT"},
+        "app_rw": {"SELECT"},
     },
-    # The same 202607011200 blanket grant reached both of these. Both are
-    # INSERT-only in every code path.
+    # The same 202607011200 blanket grant reached both of these, and both are
+    # written by the same API code path, so both are narrowed the same way.
     "trust_replay_events": {
         "app_user": {"SELECT", "INSERT"},
-        "app_worker": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
         "app_ro": {"SELECT"},
-        "app_rw": {"SELECT", "INSERT"},
+        "app_rw": {"SELECT"},
     },
     "trust_scope_denial_events": {
         "app_user": {"SELECT", "INSERT"},
-        "app_worker": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
         "app_ro": {"SELECT"},
-        "app_rw": {"SELECT", "INSERT"},
+        "app_rw": {"SELECT"},
     },
     # The audit ledger keeps UPDATE deliberately: the replay counter is an
     # ON CONFLICT DO UPDATE, and the C16 guard already refuses any change to an
@@ -131,6 +134,35 @@ AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
         "app_rw": {"SELECT", "INSERT", "UPDATE"},
         "app_trust_issuer": {"SELECT", "UPDATE"},
         "app_trust_signer": {"SELECT", "UPDATE"},
+    },
+    # B2.5-P14. Downstream materializations: appended by the API surface that
+    # composed them, readable by the read-only role (and therefore by anything
+    # that inherits it), mutable by nothing. The one lawful post-insert
+    # transition -- marking a superseded explanation stale -- is a definer
+    # consequence of issuance, so no runtime principal carries UPDATE for it.
+    "b27_explanation_materializations": {
+        "app_user": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
+    },
+    "b28_simulation_requests": {
+        "app_user": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
+    },
+    "b28_simulation_results": {
+        "app_user": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
+    },
+    "b28_proposals": {
+        "app_user": {"SELECT", "INSERT"},
+        "app_worker": {"SELECT"},
+        "app_ro": {"SELECT"},
+        "app_rw": set(),
     },
 }
 
