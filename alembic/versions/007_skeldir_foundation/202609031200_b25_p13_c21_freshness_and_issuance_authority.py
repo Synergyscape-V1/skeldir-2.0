@@ -224,16 +224,11 @@ def upgrade() -> None:
     # Named to sort before trg_b24_enforce_dirty_event_lifecycle so a statement
     # that violates both rules reports the authority refusal, which is the
     # load-bearing one.
+    # AUDIT CANDIDATE A: the authority trigger is deliberately never created.
     op.execute(
-        f"""
+        """
         DROP TRIGGER IF EXISTS trg_b24_dirty_event_authority
             ON public.b24_dirty_events;
-            BEFORE UPDATE ON public.b24_dirty_events
-            FOR EACH ROW
-            WHEN (
-                {_GUARDED_CHANGE_PREDICATE}
-            )
-            EXECUTE FUNCTION public.b24_enforce_dirty_event_authority();
         """
     )
 
