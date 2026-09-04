@@ -3917,6 +3917,35 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: retain
+- id: b25-p14-container-projection-parity
+  path: scripts/ci/assert_b25_p14_container_projection_parity.py
+  status: required
+  owning_phase: B2.5-P14
+  protected_invariant: Declared policy equals container-resolved policy for the P14 projection contract. The real
+    loader runs inside the real production image and must resolve the same registry version and the same four
+    content-addressed profile hashes as the tree the proofs adjudicated.
+  command: python scripts/ci/assert_b25_p14_container_projection_parity.py --image "skeldir-b25-p14-api:$GITHUB_SHA"
+    --evidence-out artifacts/b25_p14/b25_p14_container_parity.json
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P14 Downstream Projection Safety
+  local_reproduction_command: docker build -f backend/Dockerfile -t skeldir-p14-api:local . && python
+    scripts/ci/assert_b25_p14_container_projection_parity.py --image skeldir-p14-api:local
+  expected_failure_meaning: The shipped production image resolves a different projection contract than the tree, or
+    no longer ships one at all. Downstream consumers inside the container would then be governed by bytes no gate
+    adjudicated, while every host-run gate stays green.
+  first_diagnostic_command: docker run --rm --entrypoint python skeldir-p14-api:local -c "from
+    app.trust.projection_profiles import projection_registry_identity; print(projection_registry_identity())"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b25-p13-e2e-trust-closure
+  ci_visibility: named_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: retain
 - id: b25-p14-controlled-defect-applier
   path: scripts/ci/_b25_p14_controlled_defect.py
   status: utility

@@ -3477,6 +3477,53 @@ jobs:
             --artifacts-dir artifacts/b25_p14/schema_authority \
             --diff-out artifacts/b25_p14/schema_authority/schema.diff
 
+
+      # Gate 4, for the surface P14 actually adds. The projection registry is a
+      # file the production image copies in, so two failure modes exist that no
+      # host-run gate can see: the image stops shipping it, or it ships bytes
+      # nobody adjudicated. Both are decided by running the real loader inside
+      # the real image and requiring the four content-addressed hashes to equal
+      # the host's.
+      - name: P14 Gate 4 declared policy equals container-resolved policy
+        run: |
+          set -euo pipefail
+          docker build -f backend/Dockerfile -t skeldir-b25-p14-api:${{ github.sha }} .
+          python scripts/ci/assert_b25_p14_container_projection_parity.py \
+            --image "skeldir-b25-p14-api:${{ github.sha }}" \
+            --evidence-out artifacts/b25_p14/b25_p14_container_parity.json \
+            | tee /tmp/b25_p14_parity.out
+          grep -F '[b25-p14] container projection parity PASSED' /tmp/b25_p14_parity.out
+
+      # NC-P14-07. Narrow the production Dockerfile's contract COPY so the
+      # container resolves a different policy than the tree, while every
+      # host-run gate stays green. Gate 4's active falsifier verbatim.
+      - name: NC-P14-07 a Dockerfile layer defect turns the parity gate red
+        run: |
+          set -euo pipefail
+          cp backend/Dockerfile /tmp/p14_dockerfile_pristine
+          python scripts/ci/_b25_p14_controlled_defect.py apply narrow_contract_copy_layer
+          docker build -f backend/Dockerfile -t skeldir-b25-p14-api-defect:${{ github.sha }} .
+          cp /tmp/p14_dockerfile_pristine backend/Dockerfile
+          git diff --exit-code backend/Dockerfile
+          # A Dockerfile edit leaves every host-run gate untouched -- that is the
+          # point of this control, so the host gate is asserted green before the
+          # container gate is required red.
+          python scripts/ci/validate_b25_p14_downstream_authority.py \
+            | tee /tmp/nc_p14_07_host.out
+          grep -F '[b25-p14] downstream authority validation PASSED' /tmp/nc_p14_07_host.out
+          if python scripts/ci/assert_b25_p14_container_projection_parity.py \
+              --image "skeldir-b25-p14-api-defect:${{ github.sha }}" > /tmp/nc_p14_07.out 2>&1; then
+            echo "NC-P14-07 did not fire: the image resolved a policy it no longer ships"
+            cat /tmp/nc_p14_07.out
+            exit 1
+          fi
+          grep -F 'projection_profile_registry_missing' /tmp/nc_p14_07.out
+          docker image rm "skeldir-b25-p14-api-defect:${{ github.sha }}" >/dev/null 2>&1 || true
+          python scripts/ci/assert_b25_p14_container_projection_parity.py \
+            --image "skeldir-b25-p14-api:${{ github.sha }}" \
+            | tee /tmp/nc_p14_07_restored.out
+          grep -F '[b25-p14] container projection parity PASSED' /tmp/nc_p14_07_restored.out
+
       - name: Upload P14 evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -32,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SIMULATION_SERVICE = REPO_ROOT / "backend/app/simulation/service.py"
 EXPLANATION_SERVICE = REPO_ROOT / "backend/app/explanation/service.py"
 PROFILE_REGISTRY = REPO_ROOT / "contracts/trust-api/projection-profiles.v1.yaml"
+PRODUCTION_DOCKERFILE = REPO_ROOT / "backend/Dockerfile"
 
 DEFAULT_LLM_PROFILE_ID = "llm_explanation_projection_safe"
 
@@ -115,11 +116,29 @@ def untrusted_label_in_llm_profile() -> None:
     )
 
 
+def narrow_contract_copy_layer() -> None:
+    """Gate 4: make the production image ship a policy the tree does not declare.
+
+    A Dockerfile edit is invisible to every host-run gate, which is exactly why
+    Gate 4 names it as its active falsifier: the container resolves one contract
+    while the tests adjudicate another, and nothing on the host can tell.
+    """
+
+    _replace_once(
+        PRODUCTION_DOCKERFILE,
+        "COPY contracts/trust-api /app/contracts/trust-api\n",
+        "COPY contracts/trust-api/trust-envelope.v2.yaml"
+        " /app/contracts/trust-api/trust-envelope.v2.yaml\n",
+        what="narrow_contract_copy_layer",
+    )
+
+
 DEFECTS = {
     "platform_write": platform_write,
     "second_solver_caller": second_solver_caller,
     "remove_required_profile": remove_required_profile,
     "untrusted_label_in_llm_profile": untrusted_label_in_llm_profile,
+    "narrow_contract_copy_layer": narrow_contract_copy_layer,
 }
 
 

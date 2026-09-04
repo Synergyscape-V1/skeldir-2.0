@@ -2898,6 +2898,26 @@
     could gain a caller outside the admission conjunction, or a provider-controlled label could enter the default LLM
     projection, with every database gate still green.
   decision: keep_all
+- gate_id: b25-p14-container-projection-parity
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P14 Downstream Projection Safety
+  script: scripts/ci/assert_b25_p14_container_projection_parity.py
+  owning_phase: B2.5-P14
+  protected_invariant: The production image resolves the same projection contract the tree declares - same registry
+    version, same four content-addressed profile hashes.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: The C19 topology proof exercises the deployed images end to end but does not compare the
+    projection registry the container resolves against the one the host adjudicated; no other gate reads a contract
+    file from inside a built image.
+  negative_control_preserved_by: NC-P14-07 in .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  local_reproduction_command: docker build -f backend/Dockerfile -t skeldir-p14-api:local . && python
+    scripts/ci/assert_b25_p14_container_projection_parity.py --image skeldir-p14-api:local
+  risk_if_removed: A Dockerfile layer change could stop shipping the projection registry, or ship a stale copy, with
+    every host-run P14 gate still green - the F-11 runner-versus-container class the directive names.
+  decision: keep_all
 - gate_id: b25-p14-controlled-defect-applier
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P14 Downstream Projection Safety
