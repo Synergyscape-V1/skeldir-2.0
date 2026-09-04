@@ -3518,7 +3518,6 @@ jobs:
             exit 1
           fi
           grep -F 'projection_profile_registry_missing' /tmp/nc_p14_07.out
-          docker image rm "skeldir-b25-p14-api-defect:${{ github.sha }}" >/dev/null 2>&1 || true
           python scripts/ci/assert_b25_p14_container_projection_parity.py \
             --image "skeldir-b25-p14-api:${{ github.sha }}" \
             | tee /tmp/nc_p14_07_restored.out
