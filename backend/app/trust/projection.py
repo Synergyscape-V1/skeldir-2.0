@@ -161,9 +161,14 @@ def project_trust_envelope(
         profile_id=profile.profile_id,
         profile_version=profile.profile_version,
         profile_hash=profile.profile_hash,
-        envelope_id=str(envelope["envelope_id"]),
-        tenant_id_hash=str(envelope["tenant_id_hash"]),
-        semantic_truth_hash=str(envelope["semantic_truth_hash"]),
+        # Copied, not coerced. The identity precondition above already
+        # established that each of these is a non-empty ``str``, so a
+        # ``str(...)`` here would be a serialization step on a trust path
+        # rather than a projection of a value -- which is the distinction the
+        # B2.5-P2 serializer boundary exists to keep.
+        envelope_id=envelope["envelope_id"],
+        tenant_id_hash=envelope["tenant_id_hash"],
+        semantic_truth_hash=envelope["semantic_truth_hash"],
         source_policy_state=source_policy_state,
         projected=dict(projected),
         authority_positions=dict(positions),

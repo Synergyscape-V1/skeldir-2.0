@@ -3887,6 +3887,62 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: retain
+- id: b25-p14-downstream-authority-validator
+  path: scripts/ci/validate_b25_p14_downstream_authority.py
+  status: required
+  owning_phase: B2.5-P14
+  protected_invariant: P14 remains READ / COMPUTE / PROPOSE and its contract floor loads. The transitive import
+    closure of every B2.7/B2.8 entrypoint contains no platform-write client, no action-dispatch queue and no HTTP
+    client; the deterministic solver has exactly the one declared caller, so the admission conjunction is the whole
+    admission story; the sufficiency module cannot name the solver, so a future "if sufficiency_passes, invoke"
+    branch has nothing to call; and all four required projection profiles load with untrusted labels excluded from
+    the default LLM projection, policy authority typed, and judge authority none.
+  command: python scripts/ci/validate_b25_p14_downstream_authority.py --evidence-out artifacts/b25_p14/b25_p14_static_authority.json
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P14 Downstream Projection Safety
+  local_reproduction_command: python scripts/ci/validate_b25_p14_downstream_authority.py
+  expected_failure_meaning: A downstream P14 surface acquired an authority it may not hold. Either an explanation or
+    simulation module can now reach an external side effect, or the solver gained a caller outside the admission
+    conjunction, or the projection contract floor no longer holds - which means a provider-controlled label, an
+    untyped policy state or a judge authority can reach a consumer.
+  first_diagnostic_command: python scripts/ci/validate_b25_p14_downstream_authority.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b25-p13-e2e-trust-closure
+  ci_visibility: named_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: retain
+- id: b25-p14-controlled-defect-applier
+  path: scripts/ci/_b25_p14_controlled_defect.py
+  status: utility
+  owning_phase: B2.5-P14
+  protected_invariant: Each P14 negative control mutates real governing state rather than a copy, and asserts its own
+    anchor before writing. A control that silently became a no-op because the code moved would produce a green gate
+    that measured nothing, so an unmatched anchor is an error rather than a skip.
+  command: python scripts/ci/_b25_p14_controlled_defect.py apply platform_write
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P14 Downstream Projection Safety
+  local_reproduction_command: python scripts/ci/_b25_p14_controlled_defect.py list
+  expected_failure_meaning: A P14 controlled defect could not be applied because its anchor moved. The negative
+    control it drives is therefore unable to prove the gate is non-vacuous, and the mutation must be repaired rather
+    than allowed to no-op.
+  first_diagnostic_command: python scripts/ci/_b25_p14_controlled_defect.py list
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b25-p13-e2e-trust-closure
+  ci_visibility: inline_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: utility
 - id: p13-adversarial-physics-adjudicator
   path: scripts/ci/adjudicate_p13_adversarial_physics.py
   status: required

@@ -69,6 +69,11 @@ LOAD_BEARING_JOBS = {
     # Corrective XXI: B2.4 freshness-authority conservation and durable
     # issuance-history immutability are merge-governing.
     "b2-5-p13-c21-freshness-issuance-authority",
+    # B2.5-P14: durable issuance non-fabricability, the projection contract
+    # floor, and the B2.7/B2.8 conservation proofs are merge-governing. The
+    # aggregate's `needs` is asserted as an equality, so registering the lane
+    # here is what makes it block a merge rather than merely run.
+    "b2-5-p14-downstream-projection-safety",
 }
 
 

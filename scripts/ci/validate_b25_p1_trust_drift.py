@@ -146,6 +146,17 @@ ALLOWED_NON_RUNTIME_PATHS = (
     # issuance-history immutability, proved on the same real role graph. Same
     # classification as its C19/C20 neighbours -- post-P1 closure physics.
     "backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py",
+    # B2.5-P14: the downstream projection boundary. These are the opposite of
+    # P1 runtime drift -- they are pure, read-only *consumers* of an already
+    # signed envelope, and neither constructs, models nor mutates one. The
+    # profile registry is a contract file; `projection.py` copies allowlisted
+    # source values and never re-derives any of them.
+    "backend/app/trust/projection.py",
+    "backend/app/trust/projection_profiles.py",
+    "backend/tests/trust/test_b25_p14_projection_contract_floor.py",
+    "backend/tests/trust/test_b25_p14_b27_explanation_conservation.py",
+    "backend/tests/trust/test_b25_p14_b28_simulation_conservation.py",
+    "backend/tests/trust/test_b25_p14_gate0_issuance_consequence_authority.py",
 )
 
 

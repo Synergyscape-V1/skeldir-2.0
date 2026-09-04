@@ -3298,7 +3298,23 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
             table_owner_oid oid;
             recorder_role_oid oid;
             caller_is_recorder boolean;
-            ledger public.trust_access_log%ROWTYPE;
+            -- Scalars, not ``trust_access_log%ROWTYPE``. PL/pgSQL resolves a
+            -- %ROWTYPE declaration when the function is *created*, and pg_dump
+            -- emits functions before the tables they name -- which makes the
+            -- canonical schema artifact inapplicable to an empty database.
+            -- Corrective XVII found that exact class on this schema, and the R2
+            -- bootstrap already carries a reorder list because of it. Naming the
+            -- columns keeps the compile-time dependency out of the artifact
+            -- instead of adding another entry to that list.
+            ledger_event_type text;
+            ledger_status text;
+            ledger_idempotency_key_hash text;
+            ledger_subject_type text;
+            ledger_subject_ref_hash text;
+            ledger_envelope_hash text;
+            ledger_semantic_truth_hash text;
+            ledger_policy_state text;
+            ledger_audit_hash text;
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
@@ -3338,8 +3354,13 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
             END IF;
 
             -- Layer B: the row must project a real audit-ledger issuance.
-            SELECT *
-              INTO ledger
+            SELECT event_type, status, idempotency_key_hash, subject_type,
+                   subject_ref_hash, envelope_hash, semantic_truth_hash,
+                   policy_state, audit_hash
+              INTO ledger_event_type, ledger_status, ledger_idempotency_key_hash,
+                   ledger_subject_type, ledger_subject_ref_hash,
+                   ledger_envelope_hash, ledger_semantic_truth_hash,
+                   ledger_policy_state, ledger_audit_hash
               FROM public.trust_access_log
              WHERE tenant_id = NEW.tenant_id
                AND audit_ref = NEW.access_audit_ref;
@@ -3350,20 +3371,20 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                     NEW.access_audit_ref
                     USING ERRCODE = '42501';
             END IF;
-            IF ledger.event_type <> 'issuance' OR ledger.status <> 'success' THEN
+            IF ledger_event_type <> 'issuance' OR ledger_status <> 'success' THEN
                 RAISE EXCEPTION
                     'durable trust issuance history may only project a '
                     'successful issuance ledger record; % is %/%',
-                    NEW.access_audit_ref, ledger.event_type, ledger.status
+                    NEW.access_audit_ref, ledger_event_type, ledger_status
                     USING ERRCODE = '42501';
             END IF;
-            IF NEW.idempotency_key_hash IS DISTINCT FROM ledger.idempotency_key_hash
-               OR NEW.subject_type IS DISTINCT FROM ledger.subject_type
-               OR NEW.subject_ref_hash IS DISTINCT FROM ledger.subject_ref_hash
-               OR NEW.envelope_hash IS DISTINCT FROM ledger.envelope_hash
-               OR NEW.semantic_truth_hash IS DISTINCT FROM ledger.semantic_truth_hash
-               OR NEW.policy_state IS DISTINCT FROM ledger.policy_state
-               OR NEW.audit_hash IS DISTINCT FROM ledger.audit_hash
+            IF NEW.idempotency_key_hash IS DISTINCT FROM ledger_idempotency_key_hash
+               OR NEW.subject_type IS DISTINCT FROM ledger_subject_type
+               OR NEW.subject_ref_hash IS DISTINCT FROM ledger_subject_ref_hash
+               OR NEW.envelope_hash IS DISTINCT FROM ledger_envelope_hash
+               OR NEW.semantic_truth_hash IS DISTINCT FROM ledger_semantic_truth_hash
+               OR NEW.policy_state IS DISTINCT FROM ledger_policy_state
+               OR NEW.audit_hash IS DISTINCT FROM ledger_audit_hash
             THEN
                 RAISE EXCEPTION
                     'durable trust issuance history must agree with the audit '

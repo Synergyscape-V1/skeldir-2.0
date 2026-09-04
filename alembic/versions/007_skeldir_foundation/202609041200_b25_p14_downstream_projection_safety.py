@@ -200,7 +200,7 @@ def upgrade() -> None:
     # 2. Gate 0 -- consequence layer.
     # ------------------------------------------------------------------
     agreement_predicate = "\n               OR ".join(
-        f"NEW.{column} IS DISTINCT FROM ledger.{column}"
+        f"NEW.{column} IS DISTINCT FROM ledger_{column}"
         for column in _LEDGER_PROJECTED_COLUMNS
     )
     op.execute(
@@ -215,7 +215,23 @@ def upgrade() -> None:
             table_owner_oid oid;
             recorder_role_oid oid;
             caller_is_recorder boolean;
-            ledger public.trust_access_log%ROWTYPE;
+            -- Scalars, not ``trust_access_log%ROWTYPE``. PL/pgSQL resolves a
+            -- %ROWTYPE declaration when the function is *created*, and pg_dump
+            -- emits functions before the tables they name -- which makes the
+            -- canonical schema artifact inapplicable to an empty database.
+            -- Corrective XVII found that exact class on this schema, and the R2
+            -- bootstrap already carries a reorder list because of it. Naming the
+            -- columns keeps the compile-time dependency out of the artifact
+            -- instead of adding another entry to that list.
+            ledger_event_type text;
+            ledger_status text;
+            ledger_idempotency_key_hash text;
+            ledger_subject_type text;
+            ledger_subject_ref_hash text;
+            ledger_envelope_hash text;
+            ledger_semantic_truth_hash text;
+            ledger_policy_state text;
+            ledger_audit_hash text;
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
@@ -255,8 +271,13 @@ def upgrade() -> None:
             END IF;
 
             -- Layer B: the row must project a real audit-ledger issuance.
-            SELECT *
-              INTO ledger
+            SELECT event_type, status, idempotency_key_hash, subject_type,
+                   subject_ref_hash, envelope_hash, semantic_truth_hash,
+                   policy_state, audit_hash
+              INTO ledger_event_type, ledger_status, ledger_idempotency_key_hash,
+                   ledger_subject_type, ledger_subject_ref_hash,
+                   ledger_envelope_hash, ledger_semantic_truth_hash,
+                   ledger_policy_state, ledger_audit_hash
               FROM public.trust_access_log
              WHERE tenant_id = NEW.tenant_id
                AND audit_ref = NEW.access_audit_ref;
@@ -267,11 +288,11 @@ def upgrade() -> None:
                     NEW.access_audit_ref
                     USING ERRCODE = '42501';
             END IF;
-            IF ledger.event_type <> 'issuance' OR ledger.status <> 'success' THEN
+            IF ledger_event_type <> 'issuance' OR ledger_status <> 'success' THEN
                 RAISE EXCEPTION
                     'durable trust issuance history may only project a '
                     'successful issuance ledger record; % is %/%',
-                    NEW.access_audit_ref, ledger.event_type, ledger.status
+                    NEW.access_audit_ref, ledger_event_type, ledger_status
                     USING ERRCODE = '42501';
             END IF;
             IF {agreement_predicate}
@@ -656,6 +677,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # The four relations dropped here are created by this revision and by
+    # nothing before it, so a downgrade removes exactly what the upgrade
+    # added. They hold downstream materializations, never authoritative
+    # truth: every value in them is a projection of a TrustEnvelope that
+    # remains intact. That is why the destructive annotation is honest here
+    # and would not be on an upstream relation.
     op.execute(
         """
         DROP TRIGGER IF EXISTS trg_b27_supersede_stale_explanations
@@ -664,10 +691,10 @@ def downgrade() -> None:
         DROP TRIGGER IF EXISTS trg_b28_allocation_conservation
             ON public.b28_simulation_results;
         DROP FUNCTION IF EXISTS public.b28_enforce_allocation_conservation();
-        DROP TABLE IF EXISTS public.b28_proposals;
-        DROP TABLE IF EXISTS public.b28_simulation_results;
-        DROP TABLE IF EXISTS public.b28_simulation_requests;
-        DROP TABLE IF EXISTS public.b27_explanation_materializations;
+        DROP TABLE IF EXISTS public.b28_proposals; -- # CI:DESTRUCTIVE_OK
+        DROP TABLE IF EXISTS public.b28_simulation_results; -- # CI:DESTRUCTIVE_OK
+        DROP TABLE IF EXISTS public.b28_simulation_requests; -- # CI:DESTRUCTIVE_OK
+        DROP TABLE IF EXISTS public.b27_explanation_materializations; -- # CI:DESTRUCTIVE_OK
         DROP TRIGGER IF EXISTS trg_trust_issuance_consequence_authority
             ON public.trust_envelope_issuance_log;
         DROP FUNCTION IF EXISTS
