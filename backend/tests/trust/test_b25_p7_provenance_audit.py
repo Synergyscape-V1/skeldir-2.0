@@ -229,7 +229,10 @@ async def test_successful_issuance_writes_audit_and_attaches_ref_hash() -> None:
     }
     assert str(tenant_id) not in str(payload)
     assert "INSERT INTO public.trust_access_log" in "\n".join(session.statements)
-    assert "INSERT INTO public.trust_envelope_issuance_log" in "\n".join(
+    # This is an unsigned authorization record. Terminal issuance history is
+    # projected later, in the dedicated issuer transaction, only after the
+    # signer-confirmed C16/C17 consequence reaches ``issued``.
+    assert "INSERT INTO public.trust_envelope_issuance_log" not in "\n".join(
         session.statements
     )
 
@@ -788,7 +791,7 @@ async def test_postgres_audit_durability_survives_caller_rollback() -> None:
         assert counts == {
             "access_count": 1,
             "replay_count": 1,
-            "issuance_count": 1,
+            "issuance_count": 0,
             "replay_event_count": 1,
         }
     finally:

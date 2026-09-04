@@ -126,10 +126,16 @@ DIMENSIONS: dict[str, str] = {
 
 STRUCTURAL_DIMENSIONS = ("rls_flags", "policies", "triggers", "constraints")
 
-# The C21 authority objects. Every construction path must carry both.
+# The C21 and P14 authority objects. Every construction path must carry all of
+# them: a universe that builds the tables but not the fences is a universe with
+# the historical physics and the current schema.
 REQUIRED_TRIGGERS = (
     "trg_b24_dirty_event_authority",
     "trg_trust_issuance_history_immutable",
+    # B2.5-P14 Gate 0 and the B2.7 staleness consequence.
+    "trg_trust_issuance_consequence_authority",
+    "trg_b27_supersede_stale_explanations",
+    "trg_b28_allocation_conservation",
 )
 
 # (role, relation, operation, expected). The two C21 surfaces, asked directly.
@@ -143,7 +149,7 @@ CAPABILITY_MATRIX = (
     ("app_worker", "b24_dirty_events", "UPDATE", True),
     ("app_rw", "b24_dirty_events", "UPDATE", False),
     ("app_user", "trust_envelope_issuance_log", "SELECT", True),
-    ("app_user", "trust_envelope_issuance_log", "INSERT", True),
+    ("app_user", "trust_envelope_issuance_log", "INSERT", False),
     ("app_user", "trust_envelope_issuance_log", "UPDATE", False),
     ("app_user", "trust_envelope_issuance_log", "DELETE", False),
     ("app_rw", "trust_envelope_issuance_log", "UPDATE", False),
@@ -151,11 +157,38 @@ CAPABILITY_MATRIX = (
     ("app_user", "trust_scope_denial_events", "UPDATE", False),
     ("app_worker", "trust_envelope_issuance_log", "UPDATE", False),
     ("app_trust_issuer", "trust_envelope_issuance_log", "UPDATE", False),
+    ("app_trust_issuer", "trust_envelope_issuance_log", "INSERT", True),
     ("app_trust_signer", "trust_envelope_issuance_log", "UPDATE", False),
     # trust_access_log keeps its replay-counter UPDATE; the C16 guard is what
     # fences its issuance-consequence columns, and it is out of C21 scope.
     ("app_user", "trust_access_log", "UPDATE", True),
     ("app_rw", "trust_access_log", "UPDATE", True),
+    # B2.5-P14 Gate 0. Terminal issuance INSERT belongs only to the dedicated
+    # issuer after signer-confirmed completion; the other two audit relations
+    # remain API request records. The inherited app_rw head is what audit 67
+    # used.
+    ("app_rw", "trust_envelope_issuance_log", "INSERT", False),
+    ("app_worker", "trust_envelope_issuance_log", "INSERT", False),
+    ("app_rw", "trust_replay_events", "INSERT", False),
+    ("app_worker", "trust_replay_events", "INSERT", False),
+    ("app_rw", "trust_scope_denial_events", "INSERT", False),
+    ("app_worker", "trust_scope_denial_events", "INSERT", False),
+    # B2.5-P14 downstream relations: appended by the API surface, read by the
+    # read-only role, mutated by nothing.
+    ("app_user", "b27_explanation_materializations", "INSERT", True),
+    ("app_user", "b27_explanation_materializations", "UPDATE", False),
+    ("app_user", "b27_explanation_materializations", "DELETE", False),
+    ("app_worker", "b27_explanation_materializations", "INSERT", False),
+    ("app_rw", "b27_explanation_materializations", "SELECT", False),
+    ("app_user", "b28_simulation_requests", "INSERT", True),
+    ("app_user", "b28_simulation_requests", "UPDATE", False),
+    ("app_worker", "b28_simulation_requests", "INSERT", False),
+    ("app_user", "b28_simulation_results", "INSERT", True),
+    ("app_user", "b28_simulation_results", "UPDATE", False),
+    ("app_worker", "b28_simulation_results", "INSERT", False),
+    ("app_user", "b28_proposals", "INSERT", True),
+    ("app_user", "b28_proposals", "UPDATE", False),
+    ("app_worker", "b28_proposals", "INSERT", False),
 )
 
 # The migration path renders ``ANY ((ARRAY['x'::character varying, ...])::text[])``.
@@ -328,7 +361,15 @@ def main() -> int:
         present = observed["authority_triggers"]
         if list(present) != sorted(REQUIRED_TRIGGERS):
             failed = True
-            print(f"[c21-universes] {name} is missing C21 authority triggers: {present}")
+            # Name the *missing* objects, not the present ones. A red gate that
+            # prints what is there makes an auditor derive the cause the
+            # comparator already knows; audit 66 recorded that as a defect.
+            missing = sorted(set(REQUIRED_TRIGGERS) - set(present))
+            unexpected = sorted(set(present) - set(REQUIRED_TRIGGERS))
+            print(
+                f"[c21-universes] {name} authority triggers diverge:"
+                f" missing={missing} unexpected={unexpected} present={list(present)}"
+            )
         if name in structural_only:
             # A --no-privileges artefact cannot express grants; the structural
             # authority objects above are what it is asked for.

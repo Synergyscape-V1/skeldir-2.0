@@ -82,12 +82,14 @@ _HISTORICAL_ISSUANCE_GRANT = (
 )
 _FENCED_ISSUANCE_GRANT = (
     "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_user; "
-    "GRANT SELECT, INSERT ON TABLE public.trust_envelope_issuance_log TO app_user"
+    "GRANT SELECT ON TABLE public.trust_envelope_issuance_log TO app_user"
 )
-# app_rw keeps SELECT+INSERT after C21 -- `record_trust_audit_event` writes this
-# relation from whichever session composes a Trust read, and the C9 lane composes
-# one under the worker principal. Restoring the *fence* therefore means restoring
-# that, not stripping the role: a control that leaves the database in a state the
+# app_rw holds SELECT only after P14 Gate 0. Audit 67 fabricated a terminal
+# success row as `app_worker`, whose whole capability here was the INSERT it
+# inherited through `app_rw`; C21 had kept that INSERT on the strength of the C9
+# lane composing a Trust read under the worker DSN, which is a harness choice
+# rather than the deployed topology. Restoring the *fence* therefore means
+# restoring SELECT-only: a control that leaves the database in a state the
 # migration never produces is a control that breaks the next experiment.
 _HISTORICAL_ISSUANCE_GRANT_RW = (
     "GRANT SELECT, INSERT, UPDATE ON TABLE public.trust_envelope_issuance_log"
@@ -95,7 +97,7 @@ _HISTORICAL_ISSUANCE_GRANT_RW = (
 )
 _FENCED_ISSUANCE_GRANT_RW = (
     "REVOKE ALL ON TABLE public.trust_envelope_issuance_log FROM app_rw; "
-    "GRANT SELECT, INSERT ON TABLE public.trust_envelope_issuance_log TO app_rw"
+    "GRANT SELECT ON TABLE public.trust_envelope_issuance_log TO app_rw"
 )
 
 _MODEL_TYPE = "bayesian_attribution_confidence"
@@ -306,29 +308,83 @@ def _seed_universe(cursor) -> dict[str, Any]:
     }
 
 
-def _seed_issuance(cursor, tenant_id) -> dict[str, Any]:
-    """One completed issuance row, shaped exactly as ``trust/audit.py`` writes it."""
+def lawful_issuance_material(subject_type: str = "match_verdict") -> dict[str, Any]:
+    """The exact field set ``trust/audit.py`` writes to both audit relations.
+
+    ``record_trust_audit_event`` builds one ``_params(...)`` mapping and writes
+    the ledger row and the durable issuance row from it inside a single
+    transaction. P14 Gate 0 makes that correspondence a database law, so a
+    fixture that invents two disagreeing rows is no longer a fixture of the
+    lawful path -- it is the fabrication the gate exists to refuse. This helper
+    produces the agreeing material once so both writes project the same truth.
+    """
 
     def digest() -> str:
         return "sha256:" + uuid.uuid4().hex + uuid.uuid4().hex
 
+    audit_ref = f"urn:skeldir:audit:c21-{uuid.uuid4().hex}"
+    return {
+        "audit_ref": audit_ref,
+        "request_identity_hash": digest(),
+        "idempotency_key_hash": digest(),
+        "subject_type": subject_type,
+        "subject_ref_hash": digest(),
+        "envelope_hash": digest(),
+        "semantic_truth_hash": digest(),
+        "policy_state": "read_only",
+        "audit_hash": digest(),
+    }
+
+
+def seed_issuance_audit_ledger(cursor, tenant_id, material: dict[str, Any]) -> None:
+    """Append the access-log issuance record a durable row must project."""
+
     _bind_tenant(cursor, tenant_id)
+    cursor.execute(
+        "INSERT INTO public.trust_access_log (tenant_id, event_type, status,"
+        " request_identity_hash, idempotency_key_hash, subject_type, subject_ref_hash,"
+        " envelope_hash, semantic_truth_hash, policy_state, audit_ref, audit_hash,"
+        " evidence_refs_allowed, issuance_state)"
+        " VALUES (%s, 'issuance', 'success', %s, %s, %s, %s, %s, %s, %s, %s, %s,"
+        " true, 'authorized')",
+        (
+            str(tenant_id),
+            material["request_identity_hash"],
+            material["idempotency_key_hash"],
+            material["subject_type"],
+            material["subject_ref_hash"],
+            material["envelope_hash"],
+            material["semantic_truth_hash"],
+            material["policy_state"],
+            material["audit_ref"],
+            material["audit_hash"],
+        ),
+    )
+
+
+def _seed_issuance(cursor, tenant_id) -> dict[str, Any]:
+    """One completed issuance row, shaped exactly as ``trust/audit.py`` writes it."""
+
+    material = lawful_issuance_material()
+    seed_issuance_audit_ledger(cursor, tenant_id, material)
     cursor.execute(
         "INSERT INTO public.trust_envelope_issuance_log (tenant_id, access_audit_ref,"
         " idempotency_key_hash, subject_type, subject_ref_hash, envelope_hash,"
         " semantic_truth_hash, policy_state, audit_ref, audit_hash, status)"
-        " VALUES (%s, %s, %s, 'allocation', %s, %s, %s, 'issued', %s, %s, 'success')"
+        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'success')"
         " RETURNING id, envelope_hash, semantic_truth_hash, subject_ref_hash,"
         "           policy_state, audit_hash, status",
         (
             str(tenant_id),
-            f"c21-access-{uuid.uuid4().hex[:12]}",
-            digest(),
-            digest(),
-            digest(),
-            digest(),
-            f"c21-audit-{uuid.uuid4().hex[:12]}",
-            digest(),
+            material["audit_ref"],
+            material["idempotency_key_hash"],
+            material["subject_type"],
+            material["subject_ref_hash"],
+            material["envelope_hash"],
+            material["semantic_truth_hash"],
+            material["policy_state"],
+            material["audit_ref"],
+            material["audit_hash"],
         ),
     )
     row = cursor.fetchone()
@@ -882,7 +938,7 @@ def test_c21_durable_issuance_history_is_conserved() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_c21_lawful_issuance_recording_still_succeeds() -> None:
+def test_c21_api_authorization_cannot_project_terminal_issuance() -> None:
     evidence: dict[str, Any] = {"gate": "XXI-D"}
     conn = _admin_connection()
     try:
@@ -893,42 +949,49 @@ def test_c21_lawful_issuance_recording_still_succeeds() -> None:
         def digest() -> str:
             return "sha256:" + uuid.uuid4().hex + uuid.uuid4().hex
 
-        idempotency = digest()
+        # P14 Gate 0.  An API write is an authorization record, not terminal
+        # history.  The dedicated issuer projects only after signer-confirmed
+        # C16/C17 completion; P14's role-physics suite exercises that path.
+        material = lawful_issuance_material(subject_type="allocation")
+        with conn.cursor() as cursor:
+            seed_issuance_audit_ledger(cursor, tenant_id, material)
+        idempotency = material["idempotency_key_hash"]
         insert_sql = (
             "INSERT INTO public.trust_envelope_issuance_log (tenant_id,"
             " access_audit_ref, idempotency_key_hash, subject_type, subject_ref_hash,"
             " envelope_hash, semantic_truth_hash, policy_state, audit_ref, audit_hash,"
-            " status) VALUES (%s, %s, %s, 'allocation', %s, %s, %s, 'issued', %s, %s,"
+            " status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,"
             " 'success') ON CONFLICT (tenant_id, idempotency_key_hash) DO NOTHING"
         )
         params = (
             str(tenant_id),
-            f"c21-access-{uuid.uuid4().hex[:12]}",
+            material["audit_ref"],
             idempotency,
-            digest(),
-            digest(),
-            digest(),
-            f"c21-audit-{uuid.uuid4().hex[:12]}",
-            digest(),
+            material["subject_type"],
+            material["subject_ref_hash"],
+            material["envelope_hash"],
+            material["semantic_truth_hash"],
+            material["policy_state"],
+            material["audit_ref"],
+            material["audit_hash"],
         )
 
-        # This is `_insert_issuance_log`, verbatim in shape, under the principal
-        # the API session factory actually uses.
+        # The former direct API projection is now an explicit negative control.
         recorded = _as_principal(
-            "app_user", tenant_id, insert_sql, params, label="API records issuance"
+            "app_user", tenant_id, insert_sql, params, label="API asserts terminal issuance"
         )
         evidence["issuance_recorded"] = recorded
-        assert recorded["result"] == "ALLOWED", recorded
-        assert recorded["rowcount"] == 1, recorded
+        assert recorded["result"] == "REFUSED", recorded
+        assert "permission denied" in recorded["error"], recorded
 
         # The bounded retry path: an idempotent replay must still be admitted and
         # must not attempt to restate the durable row.
         replay = _as_principal(
-            "app_user", tenant_id, insert_sql, params, label="API replays issuance"
+            "app_user", tenant_id, insert_sql, params, label="API repeats terminal assertion"
         )
         evidence["issuance_replayed"] = replay
-        assert replay["result"] == "ALLOWED", replay
-        assert replay["rowcount"] == 0, replay
+        assert replay["result"] == "REFUSED", replay
+        assert "permission denied" in replay["error"], replay
 
         with conn.cursor() as cursor:
             _bind_tenant(cursor, tenant_id)
@@ -938,7 +1001,7 @@ def test_c21_lawful_issuance_recording_still_succeeds() -> None:
                 (str(tenant_id), idempotency),
             )
             evidence["durable_rows"] = int(cursor.fetchone()[0])
-        assert evidence["durable_rows"] == 1, evidence
+        assert evidence["durable_rows"] == 0, evidence
 
         # The trust access log keeps its lawful replay-counter UPDATE: fencing
         # issuance history must not fence the audit ledger's own state machine.
@@ -1119,23 +1182,26 @@ def test_c21_new_consequence_relations_are_inside_the_authority_contract() -> No
             "app_ro": {"SELECT"},
             "app_rw": set(),
         },
+        # P14 Gate 0 permits only the dedicated issuer to append a terminal
+        # consequence after signer-confirmed completion.
         "trust_envelope_issuance_log": {
-            "app_user": {"SELECT", "INSERT"},
-            "app_worker": {"SELECT", "INSERT"},
+            "app_user": {"SELECT"},
+            "app_worker": {"SELECT"},
             "app_ro": {"SELECT"},
-            "app_rw": {"SELECT", "INSERT"},
+            "app_rw": {"SELECT"},
+            "app_trust_issuer": {"SELECT", "INSERT"},
         },
         "trust_replay_events": {
             "app_user": {"SELECT", "INSERT"},
-            "app_worker": {"SELECT", "INSERT"},
+            "app_worker": {"SELECT"},
             "app_ro": {"SELECT"},
-            "app_rw": {"SELECT", "INSERT"},
+            "app_rw": {"SELECT"},
         },
         "trust_scope_denial_events": {
             "app_user": {"SELECT", "INSERT"},
-            "app_worker": {"SELECT", "INSERT"},
+            "app_worker": {"SELECT"},
             "app_ro": {"SELECT"},
-            "app_rw": {"SELECT", "INSERT"},
+            "app_rw": {"SELECT"},
         },
         "trust_access_log": {
             "app_user": {"SELECT", "INSERT", "UPDATE"},

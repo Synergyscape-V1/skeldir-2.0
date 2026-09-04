@@ -299,14 +299,20 @@ async def _upsert_access_log(
     )
 
 
-async def _insert_issuance_log(
+async def _project_completed_issuance_log(
     db_session: AsyncSession,
     *,
-    request: TrustAuditRequest,
-    record: TrustAuditRecord,
+    tenant_id: UUID,
+    audit_ref: str,
 ) -> None:
-    if request.status != "success":
-        return
+    """Project only a signer-confirmed terminal issuance into durable history.
+
+    ``authorized`` records a lawful request to attempt signing.  It is not an
+    issuance consequence.  This statement is deliberately executed only after
+    the C16/C17 ledger and its linked attempt both transition to ``issued`` in
+    the dedicated issuer transaction; the P14 trigger rechecks that exact
+    relationship under the database's enforcement boundary.
+    """
     await db_session.execute(
         text(
             """
@@ -324,25 +330,41 @@ async def _insert_issuance_log(
                 status,
                 created_at
             )
-            VALUES (
-                :tenant_id,
-                :audit_ref,
-                :idempotency_key_hash,
-                :subject_type,
-                :subject_ref_hash,
-                :envelope_hash,
-                :semantic_truth_hash,
-                :policy_state,
-                :audit_ref,
-                :audit_hash,
-                :status,
-                :created_at
-            )
+            SELECT
+                log.tenant_id,
+                log.audit_ref,
+                log.idempotency_key_hash,
+                log.subject_type,
+                log.subject_ref_hash,
+                log.envelope_hash,
+                log.semantic_truth_hash,
+                log.policy_state,
+                log.audit_ref,
+                log.audit_hash,
+                'success',
+                log.issued_at
+            FROM public.trust_access_log AS log
+            JOIN public.trust_issuance_attempts AS attempt
+              ON attempt.tenant_id = log.tenant_id
+             AND attempt.audit_ref = log.audit_ref
+             AND attempt.id = log.issued_attempt_id
+            WHERE log.tenant_id = :tenant_id
+              AND log.audit_ref = :audit_ref
+              AND log.event_type = 'issuance'
+              AND log.status = 'success'
+              AND log.issuance_state = 'issued'
+              AND attempt.attempt_state = 'issued'
+              AND attempt.signing_key_id IS NOT DISTINCT FROM
+                    log.issued_signing_key_id
+              AND attempt.signature_hash IS NOT DISTINCT FROM
+                    log.issued_signature_hash
+              AND attempt.signature IS NOT DISTINCT FROM log.issued_signature
+              AND attempt.signed_envelope IS NOT DISTINCT FROM log.issued_envelope
             ON CONFLICT (tenant_id, idempotency_key_hash)
             DO NOTHING
             """
         ),
-        _params(request, record),
+        {"tenant_id": str(tenant_id), "audit_ref": audit_ref},
     )
 
 
@@ -469,7 +491,6 @@ async def record_trust_audit_event(
     record = build_audit_record(request)
     persisted = await _upsert_access_log(db_session, request=request, record=record)
     if not access_log_only:
-        await _insert_issuance_log(db_session, request=request, record=persisted)
         await _insert_scope_denial_log(db_session, request=request, record=persisted)
         await _insert_replay_log(db_session, request=request, record=persisted)
     return persisted
@@ -898,7 +919,7 @@ async def record_trust_issuance_completed(
             completed_attempt = result.scalar_one_or_none()
             if completed_attempt is None:
                 raise TrustAuditError("issuance_completion_transition_refused")
-            await audit_session.execute(
+            issued_attempt = await audit_session.execute(
                 text(
                     """
                     UPDATE public.trust_issuance_attempts
@@ -912,6 +933,13 @@ async def record_trust_issuance_completed(
                     "audit_ref": audit_ref,
                     "attempt_id": str(completed_attempt),
                 },
+            )
+            if int(getattr(issued_attempt, "rowcount", -1)) != 1:
+                raise TrustAuditError("issuance_completion_attempt_finalize_refused")
+            await _project_completed_issuance_log(
+                audit_session,
+                tenant_id=tenant_id,
+                audit_ref=audit_ref,
             )
 
 
@@ -1510,7 +1538,7 @@ async def reconcile_stale_trust_issuance_states(
                     {**params, "log_id": row["id"]},
                 )
                 if int(getattr(completed, "rowcount", -1)) == 1:
-                    await audit_session.execute(
+                    issued_attempt = await audit_session.execute(
                         text(
                             """
                             UPDATE public.trust_issuance_attempts
@@ -1521,6 +1549,15 @@ async def reconcile_stale_trust_issuance_states(
                             """
                         ),
                         {**params, "attempt_id": row["issued_attempt_id"]},
+                    )
+                    if int(getattr(issued_attempt, "rowcount", -1)) != 1:
+                        raise TrustAuditError(
+                            "issuance_reconciliation_attempt_finalize_refused"
+                        )
+                    await _project_completed_issuance_log(
+                        audit_session,
+                        tenant_id=tenant_id,
+                        audit_ref=str(row["audit_ref"]),
                     )
                     counts["signature_known_to_issued"] += 1
 

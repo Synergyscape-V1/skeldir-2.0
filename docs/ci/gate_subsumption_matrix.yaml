@@ -2876,6 +2876,66 @@
   risk_if_removed: A deployment built by an incremental upgrade or from the canonical bootstrap could silently lack
     the C21 freshness or issuance fences while a fresh install carries them.
   decision: keep_all
+- gate_id: b25-p14-downstream-authority-validator
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P14 Downstream Projection Safety
+  script: scripts/ci/validate_b25_p14_downstream_authority.py
+  owning_phase: B2.5-P14
+  protected_invariant: P14 remains READ / COMPUTE / PROPOSE and its contract floor loads - no platform-write or
+    dispatch reach from any B2.7/B2.8 entrypoint, exactly one lawful solver caller, a sufficiency module that cannot
+    name the solver, and four required projection profiles with untrusted labels excluded from the default LLM
+    projection.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: No existing gate decides the import closure of the B2.7/B2.8 packages, and none loads the
+    projection profile registry. C20/C21 adjudicate database authority; this adjudicates code reachability and the
+    contract floor, which are different objects with different failure modes.
+  negative_control_preserved_by: NC-P14-01 through NC-P14-04 in .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  local_reproduction_command: python scripts/ci/validate_b25_p14_downstream_authority.py
+  risk_if_removed: A downstream explanation or simulation surface could acquire a platform-write path, the solver
+    could gain a caller outside the admission conjunction, or a provider-controlled label could enter the default LLM
+    projection, with every database gate still green.
+  decision: keep_all
+- gate_id: b25-p14-container-projection-parity
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P14 Downstream Projection Safety
+  script: scripts/ci/assert_b25_p14_container_projection_parity.py
+  owning_phase: B2.5-P14
+  protected_invariant: The production image resolves the same projection contract the tree declares - same registry
+    version, same four content-addressed profile hashes.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: The C19 topology proof exercises the deployed images end to end but does not compare the
+    projection registry the container resolves against the one the host adjudicated; no other gate reads a contract
+    file from inside a built image.
+  negative_control_preserved_by: NC-P14-07 in .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  local_reproduction_command: docker build -f backend/Dockerfile -t skeldir-p14-api:local . && python
+    scripts/ci/assert_b25_p14_container_projection_parity.py --image skeldir-p14-api:local
+  risk_if_removed: A Dockerfile layer change could stop shipping the projection registry, or ship a stale copy, with
+    every host-run P14 gate still green - the F-11 runner-versus-container class the directive names.
+  decision: keep_all
+- gate_id: b25-p14-controlled-defect-applier
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P14 Downstream Projection Safety
+  script: scripts/ci/_b25_p14_controlled_defect.py
+  owning_phase: B2.5-P14
+  protected_invariant: Each P14 negative control mutates real governing state and asserts its own anchor first, so a
+    control cannot silently become a no-op and leave a green gate that measured nothing.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: This is the mutation half of the P14 non-vacuity proof. It exists as a reviewable script
+    rather than inline workflow heredocs so the controlled defects can be run and audited locally.
+  negative_control_preserved_by: It is the negative control - NC-P14-01 through NC-P14-04 invoke it directly.
+  local_reproduction_command: python scripts/ci/_b25_p14_controlled_defect.py list
+  risk_if_removed: The P14 gates would still run, but nothing would demonstrate they can go red, so a vacuous gate
+    could sit green indefinitely.
+  decision: keep_all
 - gate_id: p13-adversarial-physics-adjudicator
   workflow: .github/workflows/p13-adversarial-physics-adjudication.yml
   job: P13 Adversarial Physics Adjudication
