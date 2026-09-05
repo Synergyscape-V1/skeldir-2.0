@@ -1115,8 +1115,270 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise NotImplementedError(
-        "B2.5-P14 Corrective V is not reversible: downgrading would restore the"
-        " ability of a generic runtime principal to fabricate B2.8 request intent"
-        " and solver consequence."
+    """Restore the ``202609051200`` contract exactly.
+
+    Reversibility is a property of the chain, not an endorsement of the state it
+    returns to: the C16 lane migrates to head and then walks back to
+    ``202608291200`` as the non-superuser owner, which is how the repository
+    proves its migrations are reversible at all. A revision that refused to
+    downgrade would break that proof rather than protect anything -- the safety
+    here is in the upgrade being applied, and a deployment that walks back to
+    ``202609051200`` has chosen that revision's contract deliberately.
+
+    The three consequence guards are re-issued with their ``202609051200``
+    bodies. They are restated rather than imported because a downgrade must
+    describe the state it produces, and a body that drifted in the predecessor
+    file would otherwise silently change what this downgrade restores.
+    """
+
+    op.execute(
+        "DROP FUNCTION IF EXISTS"
+        " public.skeldir_database_construction_revisions()"
     )
+
+    _if_role_exists(
+        _REQUEST_PRINCIPAL,
+        "REVOKE ALL ON TABLE public.b28_simulation_requests"
+        f" FROM {_REQUEST_PRINCIPAL};"
+        " REVOKE ALL ON TABLE public.trust_envelope_issuance_log"
+        f" FROM {_REQUEST_PRINCIPAL};"
+        " REVOKE ALL ON TABLE public.agent_service_credentials"
+        f" FROM {_REQUEST_PRINCIPAL};"
+        f" REVOKE ALL ON TABLE public.agent_clients FROM {_REQUEST_PRINCIPAL};"
+        " REVOKE ALL ON TABLE public.agent_token_revocations"
+        f" FROM {_REQUEST_PRINCIPAL};"
+        f" REVOKE ALL ON TABLE public.tenants FROM {_REQUEST_PRINCIPAL}",
+    )
+    _if_role_exists(
+        _SOLVER_PRINCIPAL,
+        "REVOKE ALL ON TABLE public.b28_simulation_results"
+        f" FROM {_SOLVER_PRINCIPAL};"
+        f" REVOKE ALL ON TABLE public.b28_proposals FROM {_SOLVER_PRINCIPAL};"
+        " REVOKE ALL ON TABLE public.b28_simulation_requests"
+        f" FROM {_SOLVER_PRINCIPAL};"
+        " REVOKE ALL ON TABLE public.trust_envelope_issuance_log"
+        f" FROM {_SOLVER_PRINCIPAL};"
+        f" REVOKE ALL ON TABLE public.tenants FROM {_SOLVER_PRINCIPAL}",
+    )
+    for relation in (
+        "b28_simulation_requests",
+        "b28_simulation_results",
+        "b28_proposals",
+    ):
+        _if_role_exists(
+            "app_user",
+            f"GRANT SELECT, INSERT ON TABLE public.{relation} TO app_user",
+        )
+
+    op.execute("DROP INDEX IF EXISTS public.idx_b28_request_requester")
+    op.execute(
+        """
+        ALTER TABLE public.b28_simulation_requests
+            DROP CONSTRAINT IF EXISTS ck_b28_request_channel_evidence,
+            DROP CONSTRAINT IF EXISTS ck_b28_request_solver_profile,
+            DROP CONSTRAINT IF EXISTS ck_b28_request_requested_by_derived,
+            DROP CONSTRAINT IF EXISTS ck_b28_request_observed_nonnegative,
+            DROP COLUMN IF EXISTS requested_by_agent_client_id,
+            DROP COLUMN IF EXISTS requested_by_credential_id,
+            DROP COLUMN IF EXISTS request_authority_principal,
+            DROP COLUMN IF EXISTS channel_evidence,
+            DROP COLUMN IF EXISTS solver_profile,
+            DROP COLUMN IF EXISTS sufficiency_verdict,
+            DROP COLUMN IF EXISTS sufficiency_reasons,
+            DROP COLUMN IF EXISTS observed_channels,
+            DROP COLUMN IF EXISTS observed_conversions,
+            DROP COLUMN IF EXISTS observed_revenue_minor
+        """
+    )
+
+    # The 202609051200 request guard.
+    op.execute(
+        f"""
+        CREATE OR REPLACE FUNCTION public.b28_enforce_request_consequence()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog, public
+        AS $BODY$
+        DECLARE
+            issuance_semantic_truth_hash text;
+            issuance_policy_state text;
+            admissible text[] := {_ADMISSIBLE_POLICY_STATES};
+        BEGIN
+            SELECT semantic_truth_hash, policy_state
+              INTO issuance_semantic_truth_hash, issuance_policy_state
+              FROM public.trust_envelope_issuance_log
+             WHERE tenant_id = NEW.tenant_id
+               AND envelope_hash = NEW.source_issuance_envelope_hash;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_request_requires_durable_issuance:%',
+                    NEW.source_issuance_envelope_hash
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.source_semantic_truth_hash
+                   IS DISTINCT FROM issuance_semantic_truth_hash
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_source_trust_mismatch:%',
+                    NEW.source_issuance_envelope_hash
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NOT (issuance_policy_state = ANY(admissible)) THEN
+                RAISE EXCEPTION
+                    'b28_request_policy_forbids:%', issuance_policy_state
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.sufficiency_policy_version
+                   <> '{_SUFFICIENCY_POLICY_VERSION}'
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_sufficiency_policy_unknown:%',
+                    NEW.sufficiency_policy_version
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $BODY$;
+        """
+    )
+
+    # The 202609051200 result guard.
+    op.execute(
+        f"""
+        CREATE OR REPLACE FUNCTION public.b28_enforce_result_consequence()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog, public
+        AS $BODY$
+        DECLARE
+            request_tenant_id uuid;
+            request_envelope_id text;
+            request_semantic_truth_hash text;
+            request_snapshot_hash text;
+            request_budget bigint;
+            request_currency text;
+            request_channel_count integer;
+            request_source_envelope_hash text;
+            issuance_policy_state text;
+            derived_authority text;
+        BEGIN
+            SELECT tenant_id, source_envelope_id, source_semantic_truth_hash,
+                   input_snapshot_hash, total_budget_minor, currency,
+                   channel_count, source_issuance_envelope_hash
+              INTO request_tenant_id, request_envelope_id,
+                   request_semantic_truth_hash, request_snapshot_hash,
+                   request_budget, request_currency, request_channel_count,
+                   request_source_envelope_hash
+              FROM public.b28_simulation_requests
+             WHERE id = NEW.request_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_result_requires_explicit_request:%', NEW.request_id
+                    USING ERRCODE = '42501';
+            END IF;
+            IF request_tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+                RAISE EXCEPTION
+                    'b28_result_tenant_mismatch' USING ERRCODE = '42501';
+            END IF;
+            IF NEW.source_envelope_id IS DISTINCT FROM request_envelope_id
+               OR NEW.source_semantic_truth_hash
+                   IS DISTINCT FROM request_semantic_truth_hash
+               OR NEW.input_snapshot_hash IS DISTINCT FROM request_snapshot_hash
+               OR NEW.total_budget_minor IS DISTINCT FROM request_budget
+               OR NEW.currency IS DISTINCT FROM request_currency
+            THEN
+                RAISE EXCEPTION
+                    'b28_result_disagrees_with_request:%', NEW.request_id
+                    USING ERRCODE = '42501';
+            END IF;
+            IF jsonb_array_length(NEW.allocations)
+                   IS DISTINCT FROM request_channel_count
+            THEN
+                RAISE EXCEPTION
+                    'b28_result_channel_count_disagrees:% vs %',
+                    jsonb_array_length(NEW.allocations), request_channel_count
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.solver_profile <> '{_SOLVER_PROFILE}' THEN
+                RAISE EXCEPTION
+                    'b28_result_solver_profile_ungoverned:%', NEW.solver_profile
+                    USING ERRCODE = '42501';
+            END IF;
+
+            SELECT policy_state INTO issuance_policy_state
+              FROM public.trust_envelope_issuance_log
+             WHERE tenant_id = NEW.tenant_id
+               AND envelope_hash = request_source_envelope_hash;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_result_requires_durable_issuance:%',
+                    request_source_envelope_hash
+                    USING ERRCODE = '42501';
+            END IF;
+            derived_authority := CASE
+                WHEN issuance_policy_state IN (
+                    'blocked', 'read_only', 'simulation_only', 'proposal_required'
+                ) THEN issuance_policy_state
+                ELSE 'proposal_required'
+            END;
+            IF NEW.action_authority IS DISTINCT FROM derived_authority THEN
+                RAISE EXCEPTION
+                    'b28_result_action_authority_not_derived:% vs %',
+                    NEW.action_authority, derived_authority
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $BODY$;
+        """
+    )
+
+    # The 202609051200 proposal guard.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b28_enforce_proposal_consequence()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog, public
+        AS $BODY$
+        DECLARE
+            result_tenant_id uuid;
+            result_envelope_id text;
+            result_action_authority text;
+            result_allocations jsonb;
+        BEGIN
+            SELECT tenant_id, source_envelope_id, action_authority, allocations
+              INTO result_tenant_id, result_envelope_id,
+                   result_action_authority, result_allocations
+              FROM public.b28_simulation_results
+             WHERE id = NEW.result_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_proposal_requires_simulation_result:%', NEW.result_id
+                    USING ERRCODE = '42501';
+            END IF;
+            IF result_tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+                RAISE EXCEPTION
+                    'b28_proposal_tenant_mismatch' USING ERRCODE = '42501';
+            END IF;
+            IF NEW.source_envelope_id IS DISTINCT FROM result_envelope_id
+               OR NEW.action_authority IS DISTINCT FROM result_action_authority
+               OR NEW.allocations IS DISTINCT FROM result_allocations
+            THEN
+                RAISE EXCEPTION
+                    'b28_proposal_disagrees_with_result:%', NEW.result_id
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $BODY$;
+        """
+    )
+
+    for function_signature in (
+        "public.b28_recompute_allocation(jsonb, bigint)",
+        "public.b28_adjudicate_sufficiency(jsonb)",
+        "public.b28_input_snapshot_hash(text, text, bigint, text, jsonb)",
+        "public.b28_canonical_input_material(text, text, bigint, text, jsonb)",
+    ):
+        op.execute(f"DROP FUNCTION IF EXISTS {function_signature}")
