@@ -1190,6 +1190,11 @@ def test_c21_new_consequence_relations_are_inside_the_authority_contract() -> No
             "app_ro": {"SELECT"},
             "app_rw": {"SELECT"},
             "app_trust_issuer": {"SELECT", "INSERT"},
+            # P14 Corrective V: the two B2.8 consequence guards read the
+            # terminal row under the caller's own privileges to decide source
+            # binding and to derive the action authority. Neither may append.
+            "app_b28_requester": {"SELECT"},
+            "app_b28_solver": {"SELECT"},
         },
         "trust_replay_events": {
             "app_user": {"SELECT", "INSERT"},

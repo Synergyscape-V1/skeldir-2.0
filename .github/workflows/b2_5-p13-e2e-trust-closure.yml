@@ -120,6 +120,11 @@ on:
       - 'backend/tests/trust/test_b25_p14_b28_simulation_conservation.py'
       - 'backend/tests/trust/test_b25_p14_r4_terminal_provenance.py'
       - 'backend/tests/trust/test_b25_p14_r4_downstream_consequence.py'
+      - 'backend/tests/trust/test_b25_p14_r5_causal_authority.py'
+      - 'backend/tests/trust/test_b25_p14_r5_construction_authority.py'
+      - 'backend/app/simulation/**'
+      - 'backend/app/core/construction_authority.py'
+      - 'scripts/ci/assert_canonical_construction_authority.py'
       - 'scripts/ci/validate_b25_p14_downstream_authority.py'
       - 'scripts/ci/_b25_p14_controlled_defect.py'
       - 'scripts/ci/assert_b25_p14_container_projection_parity.py'
@@ -1636,8 +1641,6 @@ jobs:
             --database-name skeldir_b25_p13_c21_canonical
           PGPASSWORD=migration_owner psql -h 127.0.0.1 -U migration_owner \
             -d skeldir_b25_p13_c21_canonical -v ON_ERROR_STOP=1 -q \
-            -c "SET check_function_bodies = false;" \
-            -c "SELECT pg_catalog.set_config('search_path', '', false);" \
             -f db/schema/canonical_schema.sql
           python scripts/ci/compare_b25_p13_c21_authority_universes.py \
             --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
@@ -3415,7 +3418,25 @@ jobs:
             --universe "predecessor_to_head=skeldir_b25_p14_incremental" \
             --out artifacts/b25_p14/universe_equivalence.json
 
-      - name: P14-F canonical bootstrap carries the same authority objects
+      # B2.5-P14 Corrective V, Exit Gate 13. This comparison is structural on
+      # purpose and its name says so: `db/schema/canonical_schema.sql` is a
+      # `pg_dump --no-owner --no-privileges` reference, so it has no vocabulary
+      # for the authority graph and cannot be compared on one. The step that
+      # decides the construction *ontology* -- and requires the authority
+      # divergences to be present rather than tolerating them -- is
+      # `P14 Corrective V construction-authority ontology` below.
+      #
+      # The loader supplies no flags of its own. Until Corrective V the
+      # checked-in artifact had its pg_dump preamble stripped, so
+      # `SET check_function_bodies = false;` was absent and the file could not
+      # load in the order it was emitted in: the first SQL-language SECURITY
+      # DEFINER function references `public.users`, which does not exist yet.
+      # CI hid that by setting the flag itself, and an independent auditor
+      # loading the file plainly hit `ERROR: relation "public.users" does not
+      # exist` and recorded a real product defect. The artifact is now a
+      # faithful pg_dump with its preamble intact, and this step no longer
+      # compensates for it, so the defect cannot recur silently.
+      - name: P14-F canonical bootstrap is a sound structural reference
         env:
           PGPASSWORD: postgres
         run: |
@@ -3425,8 +3446,6 @@ jobs:
             --database-name skeldir_b25_p14_canonical
           PGPASSWORD=migration_owner psql -h 127.0.0.1 -U migration_owner \
             -d skeldir_b25_p14_canonical -v ON_ERROR_STOP=1 -q \
-            -c "SET check_function_bodies = false;" \
-            -c "SELECT pg_catalog.set_config('search_path', '', false);" \
             -f db/schema/canonical_schema.sql
           python scripts/ci/compare_b25_p13_c21_authority_universes.py \
             --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
@@ -3468,7 +3487,231 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_r4_downstream_consequence.py \
             -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r4_downstream.out
-          grep -E "10 passed" /tmp/b25_p14_r4_downstream.out
+          grep -E "11 passed" /tmp/b25_p14_r4_downstream.out
+
+      # Corrective V Exit Gates 1-5. Both independent audits made a B2.8 request
+      # and a B2.8 result durable with no caller, no adjudication and no solver
+      # execution, as the real `app_user` login through pure SQL. This suite
+      # drives the corrected path end to end -- a presented credential, an
+      # established principal, a durable request, the governed solver, a
+      # recomputed consequence -- and then attempts every fabrication both
+      # audits performed, under every runtime login including the two dedicated
+      # causal authorities.
+      - name: P14 Corrective V genuine request intent and solver consequence
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r5_causal_authority.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r5.out
+          grep -E "10 passed" /tmp/b25_p14_r5.out
+
+      # Corrective V Exit Gate 13. One falsifiable definition of a correctly
+      # constructed production database, decided on two real universes rather
+      # than declared in a comment.
+      - name: P14 Corrective V construction-authority ontology
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r5_construction_authority.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r5_construction.out
+          grep -E "6 passed" /tmp/b25_p14_r5_construction.out
+          python scripts/ci/assert_canonical_construction_authority.py \
+            --alembic-dsn "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14" \
+            --canonical-dsn "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14_canonical" \
+            --evidence-out artifacts/b25_p14/construction_authority.json \
+            | tee /tmp/b25_p14_construction.out
+          grep -F '[p14-construction] canonical construction authority PASSED' \
+            /tmp/b25_p14_construction.out
+
+      # NC-P14-10. Corrective V Exit Gate 1's active falsifier: sever the
+      # application half of the requester derivation and leave the database half
+      # standing. The two halves are each other's control, so the gate must go
+      # red because they disagree -- not because one of them is missing.
+      - name: NC-P14-10 a caller-authored requester identity turns Gate 1 red
+        run: |
+          set -euo pipefail
+          cp backend/app/simulation/persistence.py /tmp/p14_persistence_pristine.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply \
+            caller_authored_requester_identity
+          if python -m pytest \
+              backend/tests/trust/test_b25_p14_r5_causal_authority.py \
+              -q --no-header -p no:randomly > /tmp/nc_p14_10.out 2>&1; then
+            echo "NC-P14-10 did not fire: a caller-authored identity was accepted"
+            cp /tmp/p14_persistence_pristine.py backend/app/simulation/persistence.py
+            cat /tmp/nc_p14_10.out
+            exit 1
+          fi
+          grep -F 'b28_request_requested_by_not_derived' /tmp/nc_p14_10.out
+          cp /tmp/p14_persistence_pristine.py backend/app/simulation/persistence.py
+          git diff --exit-code backend/app/simulation/persistence.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r5_causal_authority.py \
+            -q --no-header -p no:randomly | tee /tmp/nc_p14_10_restored.out
+          grep -E "10 passed" /tmp/nc_p14_10_restored.out
+
+      # NC-P14-11. Remove the constant-time secret comparison and leave the
+      # prefix lookup, revocation and liveness checks intact. Knowing eight
+      # characters of a token is not custody of a credential.
+      - name: NC-P14-11 an unauthenticated requester turns Gate 1 red
+        run: |
+          set -euo pipefail
+          cp backend/app/simulation/requester_identity.py /tmp/p14_identity_pristine.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply unauthenticated_requester
+          if python -m pytest \
+              backend/tests/trust/test_b25_p14_r5_causal_authority.py \
+              -q --no-header -p no:randomly > /tmp/nc_p14_11.out 2>&1; then
+            echo "NC-P14-11 did not fire: an unverified credential was accepted"
+            cp /tmp/p14_identity_pristine.py backend/app/simulation/requester_identity.py
+            cat /tmp/nc_p14_11.out
+            exit 1
+          fi
+          grep -F 'test_p14_r5_requester_identity_is_established_not_asserted' \
+            /tmp/nc_p14_11.out
+          cp /tmp/p14_identity_pristine.py backend/app/simulation/requester_identity.py
+          git diff --exit-code backend/app/simulation/requester_identity.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r5_causal_authority.py \
+            -q --no-header -p no:randomly | tee /tmp/nc_p14_11_restored.out
+          grep -E "10 passed" /tmp/nc_p14_11_restored.out
+
+      # NC-P14-12. Exit Gate 13's active falsifier: make the runtime accept the
+      # unconstructed database a canonical bootstrap leaves behind.
+      - name: NC-P14-12 an authoritative canonical bootstrap turns Gate 13 red
+        run: |
+          set -euo pipefail
+          cp backend/app/core/construction_authority.py /tmp/p14_construction_pristine.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply \
+            canonical_bootstrap_is_authoritative
+          if python -m pytest \
+              backend/tests/trust/test_b25_p14_r5_construction_authority.py \
+              -q --no-header -p no:randomly > /tmp/nc_p14_12.out 2>&1; then
+            echo "NC-P14-12 did not fire: an unconstructed database was accepted"
+            cp /tmp/p14_construction_pristine.py backend/app/core/construction_authority.py
+            cat /tmp/nc_p14_12.out
+            exit 1
+          fi
+          grep -F 'an unconstructed database was accepted' /tmp/nc_p14_12.out
+          cp /tmp/p14_construction_pristine.py backend/app/core/construction_authority.py
+          git diff --exit-code backend/app/core/construction_authority.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r5_construction_authority.py \
+            -q --no-header -p no:randomly | tee /tmp/nc_p14_12_restored.out
+          grep -E "6 passed" /tmp/nc_p14_12_restored.out
+
+      # NC-P14-13. Restore the generic INSERT the corrective removed, on the
+      # live database with psql rather than psycopg2, and require the guard
+      # *alone* to keep refusing. Both layers have to be independently
+      # load-bearing or a future grant regression is a silent re-opening.
+      - name: NC-P14-13 the request guard alone still refuses the API principal
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          before=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT count(*) FROM public.b28_simulation_requests")
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+            -c "GRANT INSERT ON TABLE public.b28_simulation_requests TO app_user;"
+          held=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT has_table_privilege('app_user','public.b28_simulation_requests','INSERT')")
+          test "$held" = "t"
+          tenant=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT tenant_id FROM public.b28_simulation_requests LIMIT 1")
+          test -n "$tenant"
+          # Copy a lawful row's own governed fields, so the only defect is the
+          # writer: every derivation the guard checks is already satisfied.
+          if PGPASSWORD=app_user psql -h 127.0.0.1 -U app_user -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+              -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
+              -c "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref, requested_by, requested_by_agent_client_id, requested_by_credential_id, request_authority_principal, source_envelope_id, source_semantic_truth_hash, source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor, currency, channel_count, channel_evidence, solver_profile, sufficiency_policy_version, sufficiency_verdict, sufficiency_reasons, observed_channels, observed_conversions, observed_revenue_minor) SELECT tenant_id, 'req_nc_p14_13', requested_by, requested_by_agent_client_id, requested_by_credential_id, 'app_b28_requester', source_envelope_id, source_semantic_truth_hash, source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor, currency, channel_count, channel_evidence, solver_profile, sufficiency_policy_version, sufficiency_verdict, sufficiency_reasons, observed_channels, observed_conversions, observed_revenue_minor FROM public.b28_simulation_requests WHERE tenant_id = '$tenant' LIMIT 1;"; then
+            echo "NC-P14-13 did not fire: the API principal manufactured a request"
+            exit 1
+          fi
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+            -c "REVOKE INSERT ON TABLE public.b28_simulation_requests FROM app_user;"
+          after=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT count(*) FROM public.b28_simulation_requests")
+          test "$before" = "$after"
+          held=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT has_table_privilege('app_user','public.b28_simulation_requests','INSERT')")
+          test "$held" = "f"
+          echo "NC-P14-13 fired: request intent survives a grant regression"
+
+      # NC-P14-14. Drop the result consequence guard and require an uncomputed
+      # allocation to become durable. This is the falsifier for the claim the
+      # whole corrective rests on: that the persisted allocation is the solver's
+      # output because the database recomputes it, not because the row agrees
+      # with its request.
+      - name: NC-P14-14 severing the solver recomputation turns Gate 2 red
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          triggerdef=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger WHERE tgname = 'trg_b28_result_consequence' AND NOT tgisinternal")
+          test -n "$triggerdef"
+          row=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAF'|' -c \
+            "SELECT r.tenant_id, r.id, r.source_envelope_id, r.source_semantic_truth_hash, r.input_snapshot_hash, r.total_budget_minor, r.currency FROM public.b28_simulation_requests r LEFT JOIN public.b28_simulation_results res ON res.request_id = r.id WHERE res.id IS NULL AND r.sufficiency_verdict LIMIT 1")
+          test -n "$row"
+          IFS='|' read -r tenant reqid envid truth snap budget cur <<< "$row"
+          # Same cardinality, same channel ids, exactly conserving -- and not the
+          # value the governed solver computes. Every CHECK the entering tree had
+          # is satisfied; only the recomputation disagrees, which is the layer
+          # this control has to measure.
+          forged=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc "SELECT jsonb_agg(jsonb_build_object('channel_id', e->>'channel_id', 'allocation_minor', CASE WHEN ord = 1 THEN $budget ELSE 0 END, 'weight_basis_points', CASE WHEN ord = 1 THEN 10000 ELSE 0 END) ORDER BY ord)::text FROM public.b28_simulation_requests r, LATERAL jsonb_array_elements(r.channel_evidence) WITH ORDINALITY AS t(e, ord) WHERE r.id = '$reqid'")
+          test -n "$forged"
+          # Pristine: the recomputation refuses it.
+          if PGPASSWORD=app_b28_solver psql -h 127.0.0.1 -U app_b28_solver -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+              -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
+              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1',1,$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
+            echo "NC-P14-14 precondition failed: an uncomputed result was already durable"
+            exit 1
+          fi
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+            -c "DROP TRIGGER trg_b28_result_consequence ON public.b28_simulation_results;"
+          if ! PGPASSWORD=app_b28_solver psql -h 127.0.0.1 -U app_b28_solver -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+              -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
+              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1',1,$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
+            echo "NC-P14-14 is vacuous: the severed state refused for an unrelated reason"
+            psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q -c "$triggerdef"
+            exit 1
+          fi
+          psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+            -c "DELETE FROM public.b28_simulation_results WHERE request_id = '$reqid';" \
+            -c "$triggerdef"
+          restored=$(psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -tAc \
+            "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger WHERE tgname = 'trg_b28_result_consequence' AND NOT tgisinternal")
+          test "$triggerdef" = "$restored"
+          if PGPASSWORD=app_b28_solver psql -h 127.0.0.1 -U app_b28_solver -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
+              -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
+              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1',1,$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
+            echo "NC-P14-14 did not restore: an uncomputed result is still durable"
+            exit 1
+          fi
+          echo "NC-P14-14 fired: the allocation is durable only because it is recomputed"
+
+      # NC-P14-15. H-WIRE-V-02 / H-ART-V-03. A migration can create the right
+      # role and a deployment can still authenticate as the wrong one. The
+      # custody boundary refuses at connect time rather than discovering it at
+      # the trigger, so a misconfigured DSN is a named startup failure.
+      - name: NC-P14-15 a misconfigured consequence DSN is refused by name
+        run: |
+          set -euo pipefail
+          B28_SOLVER_DATABASE_URL="postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b25_p14" \
+          python - <<'PY' | tee /tmp/nc_p14_15.out
+          import sys
+          sys.path.insert(0, "backend")
+          from app.simulation import consequence_custody
+
+          try:
+              with consequence_custody._custody(
+                  consequence_custody.b28_solver_database_url(),
+                  expected_principal=consequence_custody.B28_SOLVER_PRINCIPAL,
+              ):
+                  print("ACCEPTED")
+          except consequence_custody.SimulationCustodyError as exc:
+              print(f"REFUSED {exc}")
+          PY
+          grep -F 'REFUSED b28_consequence_custody_wrong_principal:app_user' /tmp/nc_p14_15.out
+          echo "NC-P14-15 fired: the deployed credential is checked, not assumed"
 
       # The C20 process x role x consequence contract now names the P14
       # relations and the narrowed trust-audit grants, so a future migration

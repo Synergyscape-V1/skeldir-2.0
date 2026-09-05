@@ -94,6 +94,14 @@ services:
       <<: *runtime-common
       DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
       TRUST_ISSUANCE_DATABASE_URL: ${C19_ISSUER_DATABASE_URL?missing C19_ISSUER_DATABASE_URL}
+      # B2.5-P14 Corrective V. The API process holds the two B2.8 causal
+      # authorities the same way it holds issuance custody: as separate DSNs
+      # that only the persistence boundary can open. The generic DATABASE_URL
+      # above no longer carries INSERT on any B2.8 relation, so a deployment
+      # that omitted these would fail closed rather than persist a consequence
+      # under generic authority.
+      B28_REQUEST_DATABASE_URL: ${C19_B28_REQUEST_DATABASE_URL?missing C19_B28_REQUEST_DATABASE_URL}
+      B28_SOLVER_DATABASE_URL: ${C19_B28_SOLVER_DATABASE_URL?missing C19_B28_SOLVER_DATABASE_URL}
       TRUST_SIGNER_URL: https://trust_signer:8001
       TRUST_SIGNER_SHARED_SECRET: ${C19_TRUST_SIGNER_SHARED_SECRET?missing C19_TRUST_SIGNER_SHARED_SECRET}
       TRUST_SIGNER_CA_BUNDLE: /run/skeldir-tls/ca.pem

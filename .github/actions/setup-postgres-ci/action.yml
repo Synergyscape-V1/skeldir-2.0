@@ -88,17 +88,30 @@ runs:
           --trust-issuer-user "${{ inputs.trust-issuer-user }}" \
           --trust-issuer-password "${{ inputs.trust-issuer-password }}" \
           --trust-signer-user app_trust_signer \
-          --trust-signer-password app_trust_signer
+          --trust-signer-password app_trust_signer \
+          --b28-requester-user app_b28_requester \
+          --b28-requester-password app_b28_requester \
+          --b28-solver-user app_b28_solver \
+          --b28-solver-password app_b28_solver
 
     # B2.5-P13 Corrective XVI (XVI-B). Every job that provisions this boundary
     # gets the issuance DSN automatically, so no job can silently run the Trust
     # API with issuance-consequence authority folded back into the ordinary
     # runtime principal.
+    #
+    # B2.5-P14 Corrective V extends the same rule to B2.8. A durable request is
+    # the claim that a verified caller asked; a durable result is the claim that
+    # the governed solver ran. Each gets its own login here for the reason the
+    # issuer and signer have theirs: a credential the whole process can spend is
+    # not a dedicated credential, and the consequence guards key on
+    # `session_user`, which SET ROLE cannot forge.
     - name: Export Trust issuance custody DSN
       shell: bash
       run: |
         echo "TRUST_ISSUANCE_DATABASE_URL=postgresql://${{ inputs.trust-issuer-user }}:${{ inputs.trust-issuer-password }}@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
         echo "TRUST_SIGNER_DATABASE_URL=postgresql://app_trust_signer:app_trust_signer@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
+        echo "B28_REQUEST_DATABASE_URL=postgresql://app_b28_requester:app_b28_requester@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
+        echo "B28_SOLVER_DATABASE_URL=postgresql://app_b28_solver:app_b28_solver@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
 
     - name: Run Alembic migrations
       shell: bash

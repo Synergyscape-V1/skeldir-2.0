@@ -24,6 +24,10 @@ from uuid import UUID, uuid4
 
 from app.db.session import engine
 from app.celery_app import celery_app
+from app.core.construction_authority import (
+    ConstructionAuthorityError,
+    assert_production_construction_authority,
+)
 from app.core.secrets import validate_runtime_secret_contract
 from app.api.problem_details import problem_details_response
 from app.security.auth import AuthContext, get_auth_context
@@ -330,6 +334,7 @@ async def _evaluate_readiness() -> dict[str, object]:
         "rls": "ok",
         "tenant_guc": "ok",
         "secrets": "ok",
+        "construction_authority": "ok",
         "missing_required_secrets": [],
     }
 
@@ -372,7 +377,28 @@ async def _evaluate_readiness() -> dict[str, object]:
             if current_tid != tenant_probe:
                 result["tenant_guc"] = "error"
                 raise RuntimeError("Tenant context GUC not set correctly")
-                
+
+            # 4. B2.5-P14 Corrective V. The governed authority graph -- role
+            # grants, the consequence triggers, the seeded frame corpus -- is
+            # created by the migration history and by nothing else. A database
+            # built from `db/schema/canonical_schema.sql` is structurally
+            # identical and carries none of it: pg_dump `--no-privileges
+            # --schema-only` has no vocabulary for grants and no rows to seed.
+            # It leaves `alembic_version` empty, which is the one marker such a
+            # construction physically cannot forge, so that is what readiness
+            # checks. A process on an unconstructed database never becomes
+            # ready, and therefore never receives traffic.
+            revisions = await conn.execute(
+                text("SELECT version_num FROM public.alembic_version")
+            )
+            try:
+                assert_production_construction_authority(
+                    [row[0] for row in revisions.fetchall()]
+                )
+            except ConstructionAuthorityError as exc:
+                result["construction_authority"] = "error"
+                raise RuntimeError(str(exc)) from exc
+
     except Exception:
         logger.error("readiness_failed", exc_info=True)
         # Determine which component failed based on current state
@@ -381,6 +407,8 @@ async def _evaluate_readiness() -> dict[str, object]:
         elif result["rls"] != "ok":
             pass  # already marked
         elif result["tenant_guc"] != "ok":
+            pass  # already marked
+        elif result["construction_authority"] != "ok":
             pass  # already marked
         else:
             # DB connectivity itself failed

@@ -25,6 +25,7 @@ completely that a guard never runs and the experiment measures nothing.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import uuid
@@ -53,6 +54,8 @@ PRINCIPALS = (
     "app_celery_transport",
     "app_trust_issuer",
     "app_trust_signer",
+    "app_b28_requester",
+    "app_b28_solver",
 )
 
 FENCED_RELATIONS = (
@@ -387,6 +390,8 @@ def test_p14_gate0_migrated_authority_matrix_holds_before_any_mutation() -> None
             "app_celery_transport": [],
             "app_trust_issuer": [],
             "app_trust_signer": [],
+            "app_b28_requester": [],
+            "app_b28_solver": [],
         }
         for relation in ("trust_replay_events", "trust_scope_denial_events")
     }
@@ -399,6 +404,13 @@ def test_p14_gate0_migrated_authority_matrix_holds_before_any_mutation() -> None
         "app_celery_transport": [],
         "app_trust_issuer": ["INSERT", "SELECT"],
         "app_trust_signer": [],
+        # B2.5-P14 Corrective V. Both consequence guards read the terminal row
+        # to decide source binding and to derive the action authority, and a
+        # trigger runs under the caller's own privileges. Reading durable
+        # issuance history is not authority over it: neither principal can add
+        # to it, which the sole-writer assertion above continues to decide.
+        "app_b28_requester": ["SELECT"],
+        "app_b28_solver": ["SELECT"],
     }
 
     conn = _admin_connection()
@@ -986,6 +998,146 @@ def test_p14_gate10_explanation_cache_identity_is_tenant_scoped_at_the_database(
 # ---------------------------------------------------------------------------
 
 
+def _session_user(cursor) -> str:
+    cursor.execute("SELECT session_user")
+    return cursor.fetchone()[0]
+
+
+def _seed_agent_credential(cursor, tenant_id) -> dict[str, str]:
+    """One live machine principal, which Corrective V made a precondition of a
+    representable request."""
+    client_id = uuid.uuid4()
+    credential_id = uuid.uuid4()
+    prefix = uuid.uuid4().hex[:8]
+    cursor.execute(
+        "INSERT INTO public.agent_clients (id, tenant_id, client_name,"
+        " client_display_hash, audience, status)"
+        " VALUES (%s,%s,%s,%s,'trust-api','active')",
+        (str(client_id), str(tenant_id), f"p14g0-{client_id.hex[:8]}", _digest()),
+    )
+    cursor.execute(
+        "INSERT INTO public.agent_service_credentials (id, tenant_id,"
+        " agent_client_id, token_prefix, token_hash, status)"
+        " VALUES (%s,%s,%s,%s,%s,'active')",
+        (
+            str(credential_id),
+            str(tenant_id),
+            str(client_id),
+            prefix,
+            hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
+        ),
+    )
+    return {
+        "agent_client_id": str(client_id),
+        "credential_id": str(credential_id),
+        "requested_by": f"agent_client:{client_id}",
+    }
+
+
+def _channel_evidence(channel_count: int) -> list[dict[str, Any]]:
+    """Evidence that clears every governed sufficiency threshold."""
+    return [
+        {
+            "channel_id": f"channel{index}",
+            "verified_revenue_minor": 100_000 * (index + 1),
+            "conversion_count": 5 * (index + 1),
+        }
+        for index in range(channel_count)
+    ]
+
+
+def _sufficiency(channels: list[dict[str, Any]]) -> dict[str, Any]:
+    reasons: list[str] = []
+    n_channels = len(channels)
+    conversions = sum(c["conversion_count"] for c in channels)
+    revenue = sum(c["verified_revenue_minor"] for c in channels)
+    with_evidence = sum(
+        1
+        for c in channels
+        if c["conversion_count"] > 0 and c["verified_revenue_minor"] > 0
+    )
+    if n_channels < 2:
+        reasons.append(f"channels_below_minimum:{n_channels}<2")
+    if with_evidence < 2:
+        reasons.append(f"channels_with_evidence_below_minimum:{with_evidence}<2")
+    if conversions < 5:
+        reasons.append(f"conversions_below_minimum:{conversions}<5")
+    if revenue < 1:
+        reasons.append(f"revenue_below_minimum:{revenue}<1")
+    return {
+        "sufficient": not reasons,
+        "reasons": reasons,
+        "observed_channels": n_channels,
+        "observed_conversions": conversions,
+        "observed_revenue_minor": revenue,
+    }
+
+
+def _canonical_input_material(
+    envelope_id: str,
+    semantic_truth_hash: str,
+    budget: int,
+    currency: str,
+    channels: list[dict[str, Any]],
+) -> str:
+    """The exact bytes both the application and the database hash."""
+    ordered = sorted(channels, key=lambda c: c["channel_id"])
+    return json.dumps(
+        {
+            "contract_version": "b25-p14-simulation-v1",
+            "source_envelope_id": envelope_id,
+            "source_semantic_truth_hash": semantic_truth_hash,
+            "total_budget_minor": budget,
+            "currency": currency,
+            "sufficiency_policy_version": "b25-p14-sufficiency-v1",
+            "solver_profile": "b25-p14-deterministic-largest-remainder-v1",
+            "channels": ordered,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def _solver_allocation(channels: list[dict[str, Any]], budget: int) -> list[dict]:
+    """The governed largest-remainder allocation, the only one a result may
+    carry after Corrective V."""
+    ordered = sorted(channels, key=lambda c: c["channel_id"])
+    total_revenue = sum(c["verified_revenue_minor"] for c in ordered)
+    weights = [
+        (c["verified_revenue_minor"] * 10_000) // total_revenue for c in ordered
+    ]
+    weight_rem = [
+        ((c["verified_revenue_minor"] * 10_000) % total_revenue, c["channel_id"])
+        for c in ordered
+    ]
+    for _, channel_id in sorted(weight_rem, key=lambda i: (-i[0], i[1]))[
+        : max(10_000 - sum(weights), 0)
+    ]:
+        weights[next(i for i, c in enumerate(ordered) if c["channel_id"] == channel_id)] += 1
+    allocations = [
+        (c["verified_revenue_minor"] * budget) // total_revenue for c in ordered
+    ]
+    rem = [
+        ((c["verified_revenue_minor"] * budget) % total_revenue, c["channel_id"])
+        for c in ordered
+    ]
+    for _, channel_id in sorted(rem, key=lambda i: (-i[0], i[1]))[
+        : budget - sum(allocations)
+    ]:
+        allocations[
+            next(i for i, c in enumerate(ordered) if c["channel_id"] == channel_id)
+        ] += 1
+    return [
+        {
+            "channel_id": c["channel_id"],
+            "allocation_minor": allocation,
+            "weight_basis_points": weight,
+        }
+        for c, allocation, weight in zip(ordered, allocations, weights)
+    ]
+
+
 def _insert_request(
     cursor,
     tenant_id,
@@ -1002,28 +1154,49 @@ def _insert_request(
     """
 
     issuance = _seed_terminal_issuance(cursor, tenant_id, policy_state=policy_state)
+    principal = _seed_agent_credential(cursor, tenant_id)
+    channels = _channel_evidence(channel_count)
+    envelope_id = "env_" + uuid.uuid4().hex
+    # Corrective V: the snapshot hash is the hash of the retained evidence, and
+    # the sufficiency verdict is the adjudicator's, so a fixture cannot choose
+    # either. This helper computes both the way the request-entry boundary does.
+    material = _canonical_input_material(
+        envelope_id, issuance["semantic_truth_hash"], budget, "USD", channels
+    )
     request = {
         "request_ref": "req_" + uuid.uuid4().hex,
-        "source_envelope_id": "env_" + uuid.uuid4().hex,
+        "source_envelope_id": envelope_id,
         "source_semantic_truth_hash": issuance["semantic_truth_hash"],
         "source_issuance_envelope_hash": issuance["envelope_hash"],
-        "input_snapshot_hash": _digest(),
+        "input_snapshot_hash": "sha256:"
+        + hashlib.sha256(material.encode("utf-8")).hexdigest(),
         "total_budget_minor": budget,
         "currency": "USD",
         "channel_count": channel_count,
+        "channels": channels,
         "policy_state": issuance["policy_state"],
     }
     _bind_tenant(cursor, tenant_id)
+    verdict = _sufficiency(channels)
     cursor.execute(
         "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref,"
-        " requested_by, source_envelope_id, source_semantic_truth_hash,"
-        " source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor,"
-        " currency, channel_count, sufficiency_policy_version)"
-        " VALUES (%s, %s, 'agent:p14', %s, %s, %s, %s, %s, %s, %s,"
-        " 'b25-p14-sufficiency-v1') RETURNING id",
+        " requested_by, requested_by_agent_client_id, requested_by_credential_id,"
+        " request_authority_principal, source_envelope_id,"
+        " source_semantic_truth_hash, source_issuance_envelope_hash,"
+        " input_snapshot_hash, total_budget_minor, currency, channel_count,"
+        " channel_evidence, solver_profile, sufficiency_policy_version,"
+        " sufficiency_verdict, sufficiency_reasons, observed_channels,"
+        " observed_conversions, observed_revenue_minor)"
+        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,"
+        " 'b25-p14-deterministic-largest-remainder-v1',"
+        " 'b25-p14-sufficiency-v1',%s,%s,%s,%s,%s) RETURNING id",
         (
             str(tenant_id),
             request["request_ref"],
+            principal["requested_by"],
+            principal["agent_client_id"],
+            principal["credential_id"],
+            _session_user(cursor),
             request["source_envelope_id"],
             request["source_semantic_truth_hash"],
             request["source_issuance_envelope_hash"],
@@ -1031,6 +1204,12 @@ def _insert_request(
             request["total_budget_minor"],
             request["currency"],
             request["channel_count"],
+            json.dumps(channels),
+            verdict["sufficient"],
+            verdict["reasons"],
+            verdict["observed_channels"],
+            verdict["observed_conversions"],
+            verdict["observed_revenue_minor"],
         ),
     )
     request["id"] = cursor.fetchone()[0]
@@ -1147,52 +1326,84 @@ def test_p14_gate7_the_database_refuses_a_non_conserving_allocation() -> None:
             tenant_id = _seed_tenant(cursor)
             request = _insert_request(cursor, tenant_id)
 
-            # Lawful: the parts sum to the whole.
+            # Lawful: the parts sum to the whole, and -- Corrective V -- they
+            # are the parts the governed solver computes over the request's own
+            # retained evidence. Any other conserving split is refused before
+            # the conservation trigger is reached, so this is also the positive
+            # control for the recomputation guard.
+            lawful = _solver_allocation(
+                request["channels"], request["total_budget_minor"]
+            )
             cursor.execute(
-                _RESULT_INSERT,
-                _result_params(
-                    tenant_id,
-                    request,
-                    [
-                        {"channel_id": "a", "allocation_minor": 600},
-                        {"channel_id": "b", "allocation_minor": 400},
-                    ],
-                ),
+                _RESULT_INSERT, _result_params(tenant_id, request, lawful)
             )
 
         with conn.cursor() as cursor:
             tenant_id2 = _seed_tenant(cursor)
             request2 = _insert_request(cursor, tenant_id2)
-            with pytest.raises(psycopg2.Error) as excinfo:
-                cursor.execute(
-                    _RESULT_INSERT,
-                    _result_params(
-                        tenant_id2,
-                        request2,
-                        [
-                            {"channel_id": "a", "allocation_minor": 600},
-                            {"channel_id": "b", "allocation_minor": 399},
-                        ],
-                    ),
-                )
-            assert "conserve the requested budget" in str(excinfo.value)
+            # One minor unit short of the solver's own allocation. The
+            # conservation trigger is the layer under test, so the guard above
+            # it is severed for the measurement and restored immediately.
+            short = _solver_allocation(
+                request2["channels"], request2["total_budget_minor"]
+            )
+            short[0]["allocation_minor"] -= 1
+            cursor.execute(
+                "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger"
+                " WHERE tgname = 'trg_b28_result_consequence' AND NOT tgisinternal"
+            )
+            consequence_trigger = cursor.fetchone()[0]
+            cursor.execute(
+                "DROP TRIGGER trg_b28_result_consequence"
+                " ON public.b28_simulation_results"
+            )
+            try:
+                with pytest.raises(psycopg2.Error) as excinfo:
+                    cursor.execute(
+                        _RESULT_INSERT,
+                        _result_params(
+                            tenant_id2,
+                            request2,
+                            short,
+                            allocated_total=request2["total_budget_minor"],
+                        ),
+                    )
+                assert "conserve the requested budget" in str(excinfo.value)
+            finally:
+                cursor.execute("ROLLBACK")
+                cursor.execute(consequence_trigger)
 
         with conn.cursor() as cursor:
             tenant_id3 = _seed_tenant(cursor)
             request3 = _insert_request(cursor, tenant_id3)
-            with pytest.raises(psycopg2.Error) as excinfo:
-                cursor.execute(
-                    _RESULT_INSERT,
-                    _result_params(
-                        tenant_id3,
-                        request3,
-                        [
-                            {"channel_id": "a", "allocation_minor": 600.5},
-                            {"channel_id": "b", "allocation_minor": 399.5},
-                        ],
-                    ),
-                )
-            assert "fractional money" in str(excinfo.value)
+            fractional = _solver_allocation(
+                request3["channels"], request3["total_budget_minor"]
+            )
+            fractional[0]["allocation_minor"] = (
+                fractional[0]["allocation_minor"] + 0.5
+            )
+            fractional[1]["allocation_minor"] = (
+                fractional[1]["allocation_minor"] - 0.5
+            )
+            cursor.execute(
+                "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger"
+                " WHERE tgname = 'trg_b28_result_consequence' AND NOT tgisinternal"
+            )
+            consequence_trigger = cursor.fetchone()[0]
+            cursor.execute(
+                "DROP TRIGGER trg_b28_result_consequence"
+                " ON public.b28_simulation_results"
+            )
+            try:
+                with pytest.raises(psycopg2.Error) as excinfo:
+                    cursor.execute(
+                        _RESULT_INSERT,
+                        _result_params(tenant_id3, request3, fractional),
+                    )
+                assert "fractional money" in str(excinfo.value)
+            finally:
+                cursor.execute("ROLLBACK")
+                cursor.execute(consequence_trigger)
     finally:
         conn.close()
 
@@ -1211,7 +1422,7 @@ def test_p14_gate9_the_database_refuses_an_escalated_action_authority() -> None:
         with conn.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
             request = _insert_request(
-                cursor, tenant_id, channel_count=1, policy_state="approval_required"
+                cursor, tenant_id, policy_state="approval_required"
             )
             # Layer 1: the derivation guard. An `approval_required` source
             # yields `proposal_required`, so the escalated value is refused for
@@ -1222,7 +1433,9 @@ def test_p14_gate9_the_database_refuses_an_escalated_action_authority() -> None:
                     _result_params(
                         tenant_id,
                         request,
-                        [{"channel_id": "a", "allocation_minor": 1000}],
+                        _solver_allocation(
+                            request["channels"], request["total_budget_minor"]
+                        ),
                         action_authority="approval_required",
                     ),
                 )
@@ -1247,7 +1460,6 @@ def test_p14_gate9_the_database_refuses_an_escalated_action_authority() -> None:
                 request2 = _insert_request(
                     cursor,
                     tenant_id2,
-                    channel_count=1,
                     policy_state="approval_required",
                 )
                 # Layer 2: the CHECK, alone.
@@ -1257,7 +1469,10 @@ def test_p14_gate9_the_database_refuses_an_escalated_action_authority() -> None:
                         _result_params(
                             tenant_id2,
                             request2,
-                            [{"channel_id": "a", "allocation_minor": 1000}],
+                            _solver_allocation(
+                                request2["channels"],
+                                request2["total_budget_minor"],
+                            ),
                             action_authority="approval_required",
                         ),
                     )
@@ -1309,17 +1524,32 @@ def test_p14_new_relations_are_least_privilege() -> None:
     finally:
         conn.close()
 
+    # B2.5-P14 Corrective V. Exactly one principal writes each relation, and
+    # which one is a statement about causal responsibility rather than about
+    # convenience: the API principal composed the B2.7 explanation, so it
+    # appends that; the request-entry authority is the only thing that can
+    # establish a caller, so it appends requests; the solver consequence
+    # authority is the only thing that runs the solver, so it appends results
+    # and the proposals derived from them. Before 202609061200 `app_user` wrote
+    # all four, which is why one credential could author a cause and its own
+    # consequence.
+    expected_writer = {
+        "b27_explanation_materializations": "app_user",
+        "b28_simulation_requests": "app_b28_requester",
+        "b28_simulation_results": "app_b28_solver",
+        "b28_proposals": "app_b28_solver",
+    }
     for relation, matrix in observed.items():
-        # The API principal appends and reads. It holds no UPDATE and no
-        # DELETE: the one lawful post-insert transition is a definer-authority
-        # consequence of issuance, not a capability the writer carries.
-        assert matrix["app_user"] == ["INSERT", "SELECT"], (relation, matrix)
+        writer = expected_writer[relation]
+        assert matrix[writer] == ["INSERT", "SELECT"], (relation, matrix)
         assert matrix["app_ro"] == ["SELECT"], (relation, matrix)
         # app_worker is a member of app_ro, so it reads what the read-only role
         # reads. Reading a non-authoritative downstream materialization is not
         # authority over it; writing would be, and it holds no write anywhere.
         assert matrix["app_worker"] == ["SELECT"], (relation, matrix)
         assert matrix["app_rw"] == [], (relation, matrix)
+        if writer != "app_user":
+            assert matrix["app_user"] == ["SELECT"], (relation, matrix)
         for principal in (
             "app_dispatch_publisher",
             "app_celery_transport",
@@ -1333,7 +1563,7 @@ def test_p14_new_relations_are_least_privilege() -> None:
             for principal, ops in matrix.items()
             if {"INSERT", "UPDATE", "DELETE"} & set(ops)
         ]
-        assert writers == ["app_user"], (relation, writers)
+        assert writers == [writer], (relation, writers)
         for principal, ops in matrix.items():
             assert "UPDATE" not in ops, (relation, principal, ops)
             assert "DELETE" not in ops, (relation, principal, ops)
