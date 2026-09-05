@@ -8,6 +8,14 @@ conservation checker will adjudicate the rewrite against the same claims -- but
 the claims themselves stay a deterministic projection of source truth, so no
 generator can be the origin of a fact.
 
+Since Corrective IV the renderer has one further property, and it is the one
+that closes the open-world causal problem. It does not author sentences. Every
+rendering is produced by ``app.explanation.templates.render_claim`` from the
+closed, content-addressed frame corpus, and the narrative is the exact join of
+those renderings. The renderer therefore has no expressive power the frame
+corpus does not already have, which is why an unseen causal phrasing cannot
+appear here even by accident.
+
 Two consequences worth naming:
 
 * the renderer cannot emit a number that is not a projected value, because it
@@ -28,32 +36,36 @@ from app.explanation.contract import (
     CLAIM_STATUS,
     ExplanationClaim,
 )
+from app.explanation.templates import compose_narrative, render_claim
 from app.trust.projection import TrustProjection
 
 
-_STATUS_PATHS: tuple[tuple[str, str], ...] = (
-    ("deterministic_verification_status", "Deterministic verification status is {value}."),
-    ("match_verdict_status", "The match verdict is {value}."),
-    ("discrepancy_class", "The reconciliation discrepancy class is {value}."),
-    ("attribution_model", "The attribution model applied is {value}."),
-    ("model_assumption", "The model assumption is {value}."),
-    ("causal_status", "The causal status of this result is {value}."),
-    ("data_completeness_status", "Data completeness is {value}."),
-    ("truth_type", "The truth type is {value}."),
-    ("truth_authority.authority_class", "The authority class is {value}."),
+# Paths rendered as status facts, in the order an explanation states them. The
+# sentence frame for each lives in the template registry, not here: this list
+# decides *what* is stated, the registry decides *how*, and neither can invent
+# the other's half.
+_STATUS_PATHS: tuple[str, ...] = (
+    "deterministic_verification_status",
+    "match_verdict_status",
+    "discrepancy_class",
+    "attribution_model",
+    "model_assumption",
+    "causal_status",
+    "data_completeness_status",
+    "truth_type",
+    "truth_authority.authority_class",
 )
 
 
-def _minor_units_sentence(path: str, value: int, currency: str | None) -> str:
-    # Rendered in both minor units and the major-unit form the P11 display
-    # contract already produces, so the conservation checker's supported numeric
-    # surface and the renderer agree by construction rather than by luck.
-    major, cents = divmod(abs(value), 100)
-    sign = "-" if value < 0 else ""
-    unit = f" {currency}" if currency else ""
-    return (
-        f"{path.replace('_', ' ')} is {value} minor units "
-        f"({sign}{major}.{cents:02d}{unit})."
+def _claim(claim_kind: str, source_path: str, value: object) -> ExplanationClaim:
+    template_id, value_text, rendered = render_claim(claim_kind, source_path, value)
+    return ExplanationClaim(
+        claim_kind=claim_kind,
+        source_path=source_path,
+        value=value,
+        rendered=rendered,
+        template_id=template_id,
+        value_text=value_text,
     )
 
 
@@ -62,146 +74,87 @@ def render_explanation_claims(
 ) -> tuple[tuple[ExplanationClaim, ...], str]:
     """Render the claim set and narrative for one projection."""
     claims: list[ExplanationClaim] = []
-    currency = projection.projected.get("currency")
 
     # Provenance first: an explanation names what it explains before it says
     # anything about it.
     for path in ("envelope_id", "semantic_truth_hash", "audit_ref"):
         if projection.has(path):
-            value = projection.value(path)
-            claims.append(
-                ExplanationClaim(
-                    claim_kind=CLAIM_PROVENANCE,
-                    source_path=path,
-                    value=value,
-                    rendered=f"This explanation is bound to {path} {value}.",
-                )
-            )
+            claims.append(_claim(CLAIM_PROVENANCE, path, projection.value(path)))
 
     if projection.has("verified_revenue_minor"):
-        value = projection.value("verified_revenue_minor")
         claims.append(
-            ExplanationClaim(
-                claim_kind=CLAIM_FINANCIAL,
-                source_path="verified_revenue_minor",
-                value=value,
-                rendered=_minor_units_sentence(
-                    "verified revenue", value, currency if isinstance(currency, str) else None
-                ),
+            _claim(
+                CLAIM_FINANCIAL,
+                "verified_revenue_minor",
+                projection.value("verified_revenue_minor"),
             )
         )
     if projection.has("currency"):
-        claims.append(
-            ExplanationClaim(
-                claim_kind=CLAIM_STATUS,
-                source_path="currency",
-                value=projection.value("currency"),
-                rendered=f"Amounts are denominated in {projection.value('currency')}.",
-            )
-        )
+        claims.append(_claim(CLAIM_STATUS, "currency", projection.value("currency")))
 
-    for path, template in _STATUS_PATHS:
+    for path in _STATUS_PATHS:
         if projection.has(path):
-            value = projection.value(path)
-            claims.append(
-                ExplanationClaim(
-                    claim_kind=CLAIM_STATUS,
-                    source_path=path,
-                    value=value,
-                    rendered=template.format(value=value),
-                )
-            )
+            claims.append(_claim(CLAIM_STATUS, path, projection.value(path)))
 
     confidence_status = projection.projected.get(
         "confidence_metadata.confidence_status"
     )
     if confidence_status is not None:
-        if confidence_status == "available":
-            claims.append(
-                ExplanationClaim(
-                    claim_kind=CLAIM_CONFIDENCE,
-                    source_path="confidence_metadata.confidence_status",
-                    value=confidence_status,
-                    rendered="A bounded confidence projection is available.",
-                )
+        # Unconditional in both directions. The confidence state is stated as
+        # what it is -- available, unavailable, degraded, diagnostics_failed --
+        # through one frame, so an unavailable state can neither be hidden nor
+        # hedged into something that reads like a weak confidence.
+        claims.append(
+            _claim(
+                CLAIM_CONFIDENCE,
+                "confidence_metadata.confidence_status",
+                confidence_status,
             )
-            if projection.has("confidence_metadata.confidence_score_basis_points"):
-                score = projection.value(
-                    "confidence_metadata.confidence_score_basis_points"
-                )
-                if score is not None:
-                    claims.append(
-                        ExplanationClaim(
-                            claim_kind=CLAIM_CONFIDENCE,
-                            source_path=(
-                                "confidence_metadata.confidence_score_basis_points"
-                            ),
-                            value=score,
-                            rendered=(
-                                f"The projected confidence is {score} basis points."
-                            ),
-                        )
+        )
+        if confidence_status == "available" and projection.has(
+            "confidence_metadata.confidence_score_basis_points"
+        ):
+            score = projection.value(
+                "confidence_metadata.confidence_score_basis_points"
+            )
+            if score is not None:
+                claims.append(
+                    _claim(
+                        CLAIM_CONFIDENCE,
+                        "confidence_metadata.confidence_score_basis_points",
+                        score,
                     )
-        else:
-            # Unconditional. An unavailable confidence is stated as unavailable,
-            # never hedged into something that reads like a weak confidence.
-            claims.append(
-                ExplanationClaim(
-                    claim_kind=CLAIM_CONFIDENCE,
-                    source_path="confidence_metadata.confidence_status",
-                    value=confidence_status,
-                    rendered=(
-                        "No confidence projection is available for this result "
-                        f"(state: {confidence_status})."
-                    ),
                 )
-            )
+        if confidence_status != "available":
             reason = projection.projected.get(
                 "confidence_metadata.unavailable_reason"
             )
             if reason is not None:
                 claims.append(
-                    ExplanationClaim(
-                        claim_kind=CLAIM_STATUS,
-                        source_path="confidence_metadata.unavailable_reason",
-                        value=reason,
-                        rendered=f"The recorded unavailability reason is {reason}.",
+                    _claim(
+                        CLAIM_STATUS,
+                        "confidence_metadata.unavailable_reason",
+                        reason,
                     )
                 )
 
     if projection.has("fallback_applied") and bool(
         projection.value("fallback_applied")
     ):
-        claims.append(
-            ExplanationClaim(
-                claim_kind=CLAIM_FALLBACK,
-                source_path="fallback_applied",
-                value=True,
-                rendered="This result was produced under a declared fallback.",
-            )
-        )
+        claims.append(_claim(CLAIM_FALLBACK, "fallback_applied", True))
         if projection.has("fallback_reason"):
             reason = projection.value("fallback_reason")
             if reason is not None:
-                claims.append(
-                    ExplanationClaim(
-                        claim_kind=CLAIM_FALLBACK,
-                        source_path="fallback_reason",
-                        value=reason,
-                        rendered=f"The declared fallback reason is {reason}.",
-                    )
-                )
+                claims.append(_claim(CLAIM_FALLBACK, "fallback_reason", reason))
 
     if projection.has("policy_action_authority.policy_state"):
-        state = projection.value("policy_action_authority.policy_state")
         claims.append(
-            ExplanationClaim(
-                claim_kind=CLAIM_POLICY,
-                source_path="policy_action_authority.policy_state",
-                value=state,
-                rendered=f"The policy authority for this subject is {state}.",
+            _claim(
+                CLAIM_POLICY,
+                "policy_action_authority.policy_state",
+                projection.value("policy_action_authority.policy_state"),
             )
         )
 
-    narrative = " ".join(claim.rendered for claim in claims)
+    narrative = compose_narrative([claim.rendered for claim in claims])
     return tuple(claims), narrative

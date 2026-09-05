@@ -54,12 +54,28 @@ class ExplanationContractError(ValueError):
 
 @dataclass(frozen=True)
 class ExplanationClaim:
-    """One externalized statement and the source authority it rests on."""
+    """One externalized statement and the source authority it rests on.
+
+    ``template_id`` and ``value_text`` name the closed narrative frame the
+    rendering claims to be an instance of. They are *declared*, not enforced,
+    here: the conservation checker re-derives both from the registry and
+    requires byte equality with ``rendered``. Keeping the declaration separate
+    from the derivation is what lets the checker be pointed at an adversarial
+    artifact -- a claim whose rendering does not follow from its declared frame
+    has to be constructible, or the control that proves the checker works could
+    not be written.
+
+    Both fields default to the registry's own derivation, so an ordinary caller
+    cannot forget them and a caller that supplies a contradictory pair is
+    refused at adjudication rather than at construction.
+    """
 
     claim_kind: str
     source_path: str
     value: Any
     rendered: str
+    template_id: str = ""
+    value_text: str = ""
 
     def __post_init__(self) -> None:
         if self.claim_kind not in CLAIM_KINDS:
@@ -74,6 +90,45 @@ class ExplanationClaim:
             raise ExplanationContractError(
                 f"explanation_claim_float_forbidden:{self.source_path}"
             )
+        if not self.template_id or not self.value_text:
+            # Imported here rather than at module scope: the template registry
+            # imports this module for the claim-kind vocabulary, and the
+            # dependency has to run in that direction so the vocabulary stays
+            # the more primitive of the two.
+            from app.explanation.templates import (  # noqa: PLC0415
+                canonical_value_text,
+                template_for,
+            )
+
+            template = template_for(self.claim_kind, self.source_path)
+            if not self.template_id:
+                object.__setattr__(
+                    self,
+                    "template_id",
+                    "" if template is None else template.template_id,
+                )
+            if not self.value_text:
+                try:
+                    derived = canonical_value_text(self.source_path, self.value)
+                except ExplanationContractError:
+                    derived = ""
+                object.__setattr__(self, "value_text", derived)
+
+    def as_persisted(self) -> dict[str, Any]:
+        """The claim in the shape ``b27_explanation_materializations`` stores.
+
+        The database mirror of the frame registry re-derives ``rendered`` from
+        ``template_id`` and ``value_text``, so these five keys are exactly what
+        the physical derivation law needs and nothing more.
+        """
+
+        return {
+            "claim_kind": self.claim_kind,
+            "source_path": self.source_path,
+            "template_id": self.template_id,
+            "value_text": self.value_text,
+            "rendered": self.rendered,
+        }
 
 
 @dataclass(frozen=True)

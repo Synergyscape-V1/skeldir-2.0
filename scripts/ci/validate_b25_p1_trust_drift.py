@@ -157,6 +157,17 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/test_b25_p14_b27_explanation_conservation.py",
     "backend/tests/trust/test_b25_p14_b28_simulation_conservation.py",
     "backend/tests/trust/test_b25_p14_gate0_issuance_consequence_authority.py",
+    # B2.5-P14 Corrective IV: terminal-provenance conservation and downstream
+    # consequence binding. Same classification as their P14 neighbours. The
+    # terminal-provenance proof never touches an envelope at all -- it drives
+    # the audit ledger's own state machine. The downstream-consequence proof
+    # signs one envelope with a key it generates at test time so the journey it
+    # measures is a real cryptographic consequence rather than a fixture, but it
+    # does so through the P5/P8 signing path itself and models nothing: the
+    # payload is a shipped contract example, and every field the proof reads
+    # back comes out of PostgreSQL.
+    "backend/tests/trust/test_b25_p14_r4_terminal_provenance.py",
+    "backend/tests/trust/test_b25_p14_r4_downstream_consequence.py",
 )
 
 

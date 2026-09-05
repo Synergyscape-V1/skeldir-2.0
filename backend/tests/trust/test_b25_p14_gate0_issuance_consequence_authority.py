@@ -35,6 +35,8 @@ from urllib.parse import urlsplit
 import psycopg2
 import pytest
 
+from app.explanation.templates import EXPLANATION_TEMPLATE_REGISTRY_HASH
+
 
 pytestmark = pytest.mark.skipif(
     os.getenv("SKELDIR_B25_P14_GATE0_PROOF") != "1",
@@ -823,28 +825,64 @@ def test_p14_gate0_each_layer_is_independently_load_bearing() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _seed_terminal_issuance(
+    cursor,
+    tenant_id,
+    *,
+    semantic_truth: str | None = None,
+    subject_ref: str | None = None,
+    policy_state: str = "read_only",
+) -> dict[str, str]:
+    """Create one durable terminal issuance row for a downstream artifact to bind.
+
+    Corrective IV made a downstream artifact the *consequence* of a real issued
+    TrustEnvelope rather than a row that cites one, so every B2.7/B2.8 fixture
+    below starts from an issuance that physically exists. Written under the
+    owning connection: the P14 Gate 0 consequence guard exempts the owner for
+    the reason it states, and the lawful issuer path is proved separately by
+    ``test_p14_gate0_the_lawful_issuer_path_still_conducts``.
+    """
+
+    material = _lawful_material()
+    material["policy_state"] = policy_state
+    if semantic_truth is not None:
+        material["semantic_truth_hash"] = semantic_truth
+    if subject_ref is not None:
+        material["subject_ref_hash"] = subject_ref
+    _seed_ledger(cursor, tenant_id, material)
+    cursor.execute(_ISSUANCE_INSERT, _issuance_params(tenant_id, material))
+    return material
+
+
 def _insert_materialization(
     cursor, tenant_id, *, cache_identity: str, semantic_truth: str, subject_ref: str
 ) -> uuid.UUID:
+    issuance = _seed_terminal_issuance(
+        cursor, tenant_id, semantic_truth=semantic_truth, subject_ref=subject_ref
+    )
     _bind_tenant(cursor, tenant_id)
     cursor.execute(
         "INSERT INTO public.b27_explanation_materializations (tenant_id,"
         " cache_identity_hash, source_envelope_id, source_semantic_truth_hash,"
+        " source_issuance_envelope_hash, explanation_template_registry_hash,"
         " subject_type, subject_ref_hash, projection_profile_id,"
         " projection_profile_version, projection_profile_hash,"
         " explanation_contract_version, policy_state, confidence_status,"
         " causal_status, fallback_applied, claim_count, narrative, claims)"
-        " VALUES (%s, %s, %s, %s, 'match_verdict', %s,"
+        " VALUES (%s, %s, %s, %s, %s, %s, 'match_verdict', %s,"
         " 'llm_explanation_projection_safe', 'v1', %s, 'b25-p14-explanation-v1',"
-        " 'read_only', 'unavailable', NULL, false, 1, 'n', '[]'::jsonb)"
+        " %s, 'unavailable', NULL, false, 0, '', '[]'::jsonb)"
         " RETURNING id",
         (
             str(tenant_id),
             cache_identity,
             "env_" + uuid.uuid4().hex,
             semantic_truth,
+            issuance["envelope_hash"],
+            EXPLANATION_TEMPLATE_REGISTRY_HASH,
             subject_ref,
             _digest(),
+            issuance["policy_state"],
         ),
     )
     return cursor.fetchone()[0]
@@ -948,24 +986,86 @@ def test_p14_gate10_explanation_cache_identity_is_tenant_scoped_at_the_database(
 # ---------------------------------------------------------------------------
 
 
-def _insert_request(cursor, tenant_id) -> uuid.UUID:
+def _insert_request(
+    cursor,
+    tenant_id,
+    *,
+    budget: int = 1000,
+    channel_count: int = 2,
+    policy_state: str = "simulation_only",
+) -> dict[str, Any]:
+    """Seed a durable issuance and the explicit request that projects from it.
+
+    Returns the request's governed fields, because a result must now agree with
+    them field by field: Corrective IV replaced "a request row exists" with "the
+    result is the consequence of *this* request over *that* Trust".
+    """
+
+    issuance = _seed_terminal_issuance(cursor, tenant_id, policy_state=policy_state)
+    request = {
+        "request_ref": "req_" + uuid.uuid4().hex,
+        "source_envelope_id": "env_" + uuid.uuid4().hex,
+        "source_semantic_truth_hash": issuance["semantic_truth_hash"],
+        "source_issuance_envelope_hash": issuance["envelope_hash"],
+        "input_snapshot_hash": _digest(),
+        "total_budget_minor": budget,
+        "currency": "USD",
+        "channel_count": channel_count,
+        "policy_state": issuance["policy_state"],
+    }
     _bind_tenant(cursor, tenant_id)
     cursor.execute(
         "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref,"
         " requested_by, source_envelope_id, source_semantic_truth_hash,"
-        " input_snapshot_hash, total_budget_minor, currency, channel_count,"
-        " sufficiency_policy_version)"
-        " VALUES (%s, %s, 'agent:p14', %s, %s, %s, 1000000, 'USD', 3,"
+        " source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor,"
+        " currency, channel_count, sufficiency_policy_version)"
+        " VALUES (%s, %s, 'agent:p14', %s, %s, %s, %s, %s, %s, %s,"
         " 'b25-p14-sufficiency-v1') RETURNING id",
         (
             str(tenant_id),
-            "req_" + uuid.uuid4().hex,
-            "env_" + uuid.uuid4().hex,
-            _digest(),
-            _digest(),
+            request["request_ref"],
+            request["source_envelope_id"],
+            request["source_semantic_truth_hash"],
+            request["source_issuance_envelope_hash"],
+            request["input_snapshot_hash"],
+            request["total_budget_minor"],
+            request["currency"],
+            request["channel_count"],
         ),
     )
-    return cursor.fetchone()[0]
+    request["id"] = cursor.fetchone()[0]
+    return request
+
+
+def _result_params(
+    tenant_id,
+    request: dict[str, Any],
+    allocations: list[dict[str, Any]],
+    *,
+    action_authority: str | None = None,
+    allocated_total: int | None = None,
+) -> tuple[Any, ...]:
+    derived = action_authority
+    if derived is None:
+        derived = (
+            request["policy_state"]
+            if request["policy_state"]
+            in ("blocked", "read_only", "simulation_only", "proposal_required")
+            else "proposal_required"
+        )
+    return (
+        str(tenant_id),
+        str(request["id"]),
+        request["source_envelope_id"],
+        request["source_semantic_truth_hash"],
+        _digest(),
+        request["input_snapshot_hash"],
+        request["total_budget_minor"],
+        request["total_budget_minor"] if allocated_total is None else allocated_total,
+        request["currency"],
+        derived,
+        json.dumps(allocations),
+    )
 
 
 _RESULT_INSERT = (
@@ -974,34 +1074,68 @@ _RESULT_INSERT = (
     " input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor,"
     " allocated_total_minor, currency, action_authority, allocations)"
     " VALUES (%s, %s, %s, %s, %s, %s, 'b25-p14-deterministic-largest-remainder-v1',"
-    " 1, %s, %s, 'USD', %s, %s::jsonb)"
+    " 1, %s, %s, %s, %s, %s::jsonb)"
 )
 
 
 def test_p14_gate6_a_simulation_result_cannot_exist_without_a_request() -> None:
-    """Gate 6, made structural: the request FK is NOT NULL."""
+    """Gate 6, twice: the consequence guard and, alone, the NOT NULL FK.
 
+    The guard fires first because BEFORE triggers precede constraint checks, so
+    the structural half is severed to be measured. Both layers are individually
+    load-bearing, which is what stops a later change from leaving only one.
+    """
+
+    unbound = [
+        None,
+        "env_" + uuid.uuid4().hex,
+        _digest(),
+        _digest(),
+        _digest(),
+        1000,
+        1000,
+        "USD",
+        "simulation_only",
+        json.dumps([{"channel_id": "a", "allocation_minor": 1000}]),
+    ]
     conn = _admin_connection()
     try:
         with conn.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
             _bind_tenant(cursor, tenant_id)
-            with pytest.raises(psycopg2.errors.NotNullViolation):
+            with pytest.raises(psycopg2.Error) as excinfo:
+                cursor.execute(_RESULT_INSERT, tuple([str(tenant_id)] + unbound))
+            assert "b28_result_requires_explicit_request" in str(excinfo.value)
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger"
+                " WHERE tgname = 'trg_b28_result_consequence' AND NOT tgisinternal"
+            )
+            triggerdef = cursor.fetchone()[0]
+            assert triggerdef
+
+        try:
+            with conn.cursor() as cursor:
                 cursor.execute(
-                    _RESULT_INSERT,
-                    (
-                        str(tenant_id),
-                        None,
-                        "env_" + uuid.uuid4().hex,
-                        _digest(),
-                        _digest(),
-                        _digest(),
-                        1000,
-                        1000,
-                        "simulation_only",
-                        json.dumps([{"channel_id": "a", "allocation_minor": 1000}]),
-                    ),
+                    "DROP TRIGGER trg_b28_result_consequence"
+                    " ON public.b28_simulation_results"
                 )
+            with conn.cursor() as cursor:
+                tenant_id2 = _seed_tenant(cursor)
+                _bind_tenant(cursor, tenant_id2)
+                with pytest.raises(psycopg2.errors.NotNullViolation):
+                    cursor.execute(_RESULT_INSERT, tuple([str(tenant_id2)] + unbound))
+        finally:
+            with conn.cursor() as cursor:
+                cursor.execute(triggerdef)
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger"
+                " WHERE tgname = 'trg_b28_result_consequence' AND NOT tgisinternal"
+            )
+            assert cursor.fetchone()[0] == triggerdef
     finally:
         conn.close()
 
@@ -1011,78 +1145,51 @@ def test_p14_gate7_the_database_refuses_a_non_conserving_allocation() -> None:
     try:
         with conn.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
-            request_id = _insert_request(cursor, tenant_id)
+            request = _insert_request(cursor, tenant_id)
 
             # Lawful: the parts sum to the whole.
             cursor.execute(
                 _RESULT_INSERT,
-                (
-                    str(tenant_id),
-                    str(request_id),
-                    "env_" + uuid.uuid4().hex,
-                    _digest(),
-                    _digest(),
-                    _digest(),
-                    1000,
-                    1000,
-                    "simulation_only",
-                    json.dumps(
-                        [
-                            {"channel_id": "a", "allocation_minor": 600},
-                            {"channel_id": "b", "allocation_minor": 400},
-                        ]
-                    ),
+                _result_params(
+                    tenant_id,
+                    request,
+                    [
+                        {"channel_id": "a", "allocation_minor": 600},
+                        {"channel_id": "b", "allocation_minor": 400},
+                    ],
                 ),
             )
 
         with conn.cursor() as cursor:
             tenant_id2 = _seed_tenant(cursor)
-            request_id2 = _insert_request(cursor, tenant_id2)
+            request2 = _insert_request(cursor, tenant_id2)
             with pytest.raises(psycopg2.Error) as excinfo:
                 cursor.execute(
                     _RESULT_INSERT,
-                    (
-                        str(tenant_id2),
-                        str(request_id2),
-                        "env_" + uuid.uuid4().hex,
-                        _digest(),
-                        _digest(),
-                        _digest(),
-                        1000,
-                        1000,
-                        "simulation_only",
-                        json.dumps(
-                            [
-                                {"channel_id": "a", "allocation_minor": 600},
-                                {"channel_id": "b", "allocation_minor": 399},
-                            ]
-                        ),
+                    _result_params(
+                        tenant_id2,
+                        request2,
+                        [
+                            {"channel_id": "a", "allocation_minor": 600},
+                            {"channel_id": "b", "allocation_minor": 399},
+                        ],
                     ),
                 )
             assert "conserve the requested budget" in str(excinfo.value)
 
         with conn.cursor() as cursor:
             tenant_id3 = _seed_tenant(cursor)
-            request_id3 = _insert_request(cursor, tenant_id3)
+            request3 = _insert_request(cursor, tenant_id3)
             with pytest.raises(psycopg2.Error) as excinfo:
                 cursor.execute(
                     _RESULT_INSERT,
-                    (
-                        str(tenant_id3),
-                        str(request_id3),
-                        "env_" + uuid.uuid4().hex,
-                        _digest(),
-                        _digest(),
-                        _digest(),
-                        1000,
-                        1000,
-                        "simulation_only",
-                        json.dumps(
-                            [
-                                {"channel_id": "a", "allocation_minor": 600.5},
-                                {"channel_id": "b", "allocation_minor": 399.5},
-                            ]
-                        ),
+                    _result_params(
+                        tenant_id3,
+                        request3,
+                        [
+                            {"channel_id": "a", "allocation_minor": 600.5},
+                            {"channel_id": "b", "allocation_minor": 399.5},
+                        ],
                     ),
                 )
             assert "fractional money" in str(excinfo.value)
@@ -1091,27 +1198,79 @@ def test_p14_gate7_the_database_refuses_a_non_conserving_allocation() -> None:
 
 
 def test_p14_gate9_the_database_refuses_an_escalated_action_authority() -> None:
+    """Two independent layers refuse an escalated authority, severed apart.
+
+    The Corrective IV derivation guard computes the lawful authority from the
+    source policy and refuses anything else; the pre-existing CHECK refuses
+    ``approval_required`` outright. Proving both means severing the first, so a
+    later change that quietly makes one of them the only fence is visible here.
+    """
+
     conn = _admin_connection()
     try:
         with conn.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
-            request_id = _insert_request(cursor, tenant_id)
-            with pytest.raises(psycopg2.errors.CheckViolation):
+            request = _insert_request(
+                cursor, tenant_id, channel_count=1, policy_state="approval_required"
+            )
+            # Layer 1: the derivation guard. An `approval_required` source
+            # yields `proposal_required`, so the escalated value is refused for
+            # not following from its source rather than for being on a list.
+            with pytest.raises(psycopg2.Error) as excinfo:
                 cursor.execute(
                     _RESULT_INSERT,
-                    (
-                        str(tenant_id),
-                        str(request_id),
-                        "env_" + uuid.uuid4().hex,
-                        _digest(),
-                        _digest(),
-                        _digest(),
-                        1000,
-                        1000,
-                        "approval_required",
-                        json.dumps([{"channel_id": "a", "allocation_minor": 1000}]),
+                    _result_params(
+                        tenant_id,
+                        request,
+                        [{"channel_id": "a", "allocation_minor": 1000}],
+                        action_authority="approval_required",
                     ),
                 )
+            assert "b28_result_action_authority_not_derived" in str(excinfo.value)
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger"
+                " WHERE tgname = 'trg_b28_result_consequence' AND NOT tgisinternal"
+            )
+            triggerdef = cursor.fetchone()[0]
+            assert triggerdef
+
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "DROP TRIGGER trg_b28_result_consequence"
+                    " ON public.b28_simulation_results"
+                )
+            with conn.cursor() as cursor:
+                tenant_id2 = _seed_tenant(cursor)
+                request2 = _insert_request(
+                    cursor,
+                    tenant_id2,
+                    channel_count=1,
+                    policy_state="approval_required",
+                )
+                # Layer 2: the CHECK, alone.
+                with pytest.raises(psycopg2.errors.CheckViolation):
+                    cursor.execute(
+                        _RESULT_INSERT,
+                        _result_params(
+                            tenant_id2,
+                            request2,
+                            [{"channel_id": "a", "allocation_minor": 1000}],
+                            action_authority="approval_required",
+                        ),
+                    )
+        finally:
+            with conn.cursor() as cursor:
+                cursor.execute(triggerdef)
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger"
+                " WHERE tgname = 'trg_b28_result_consequence' AND NOT tgisinternal"
+            )
+            assert cursor.fetchone()[0] == triggerdef
     finally:
         conn.close()
 

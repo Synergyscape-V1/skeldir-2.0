@@ -92,6 +92,7 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
         $$;
 
 
+
 CREATE FUNCTION public.b23_project_allocation_verification() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -2281,6 +2282,190 @@ CREATE FUNCTION public.b24_source_windows_overlap(p_change_start timestamp with 
 
 
 
+CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            issuance_subject_type text;
+            issuance_subject_ref_hash text;
+            issuance_semantic_truth_hash text;
+            issuance_policy_state text;
+            registry_hash text;
+            claim jsonb;
+            template_kind text;
+            template_path text;
+            template_body text;
+            template_pattern text;
+            renderings text[] := ARRAY[]::text[];
+            claim_index integer := 0;
+        BEGIN
+            SELECT subject_type, subject_ref_hash, semantic_truth_hash, policy_state
+              INTO issuance_subject_type, issuance_subject_ref_hash,
+                   issuance_semantic_truth_hash, issuance_policy_state
+              FROM public.trust_envelope_issuance_log
+             WHERE tenant_id = NEW.tenant_id
+               AND envelope_hash = NEW.source_issuance_envelope_hash;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b27_explanation_requires_durable_issuance:%',
+                    NEW.source_issuance_envelope_hash
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.source_semantic_truth_hash
+                   IS DISTINCT FROM issuance_semantic_truth_hash
+               OR NEW.subject_type IS DISTINCT FROM issuance_subject_type
+               OR NEW.subject_ref_hash IS DISTINCT FROM issuance_subject_ref_hash
+            THEN
+                RAISE EXCEPTION
+                    'b27_explanation_source_disagrees_with_issuance:%',
+                    NEW.source_issuance_envelope_hash
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Authority monotonicity, physically: an explanation restates the
+            -- source policy state, it never re-grades it.
+            IF NEW.policy_state IS DISTINCT FROM issuance_policy_state THEN
+                RAISE EXCEPTION
+                    'b27_explanation_policy_state_not_conserved:% vs %',
+                    NEW.policy_state, issuance_policy_state
+                    USING ERRCODE = '42501';
+            END IF;
+
+            SELECT r.registry_hash INTO registry_hash
+              FROM public.b27_narrative_template_registry AS r
+             WHERE r.registry_hash = NEW.explanation_template_registry_hash;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b27_explanation_template_registry_unknown:%',
+                    NEW.explanation_template_registry_hash
+                    USING ERRCODE = '42501';
+            END IF;
+
+            IF NEW.claim_count IS DISTINCT FROM jsonb_array_length(NEW.claims) THEN
+                RAISE EXCEPTION
+                    'b27_explanation_claim_count_disagrees:% vs %',
+                    NEW.claim_count, jsonb_array_length(NEW.claims)
+                    USING ERRCODE = '42501';
+            END IF;
+
+            -- The derivation law. Every sentence must be an instance of a
+            -- registered frame filled with a machine-grammar value, and the
+            -- narrative must be the exact join of those instances. Free prose
+            -- has no representable position, which is what makes this closed
+            -- under language the corpus has never seen.
+            FOR claim IN SELECT * FROM jsonb_array_elements(NEW.claims)
+            LOOP
+                claim_index := claim_index + 1;
+                IF jsonb_typeof(claim) <> 'object'
+                   OR claim ->> 'template_id' IS NULL
+                   OR claim ->> 'value_text' IS NULL
+                   OR claim ->> 'rendered' IS NULL
+                   OR claim ->> 'claim_kind' IS NULL
+                   OR claim ->> 'source_path' IS NULL
+                THEN
+                    RAISE EXCEPTION
+                        'b27_explanation_claim_shape:%', claim_index
+                        USING ERRCODE = '42501';
+                END IF;
+                SELECT t.claim_kind, t.source_path, t.template_text, t.value_pattern
+                  INTO template_kind, template_path, template_body, template_pattern
+                  FROM public.b27_narrative_templates AS t
+                 WHERE t.template_id = claim ->> 'template_id';
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION
+                        'b27_explanation_template_unknown:%:%',
+                        claim_index, claim ->> 'template_id'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF template_kind IS DISTINCT FROM claim ->> 'claim_kind'
+                   OR template_path IS DISTINCT FROM claim ->> 'source_path'
+                THEN
+                    RAISE EXCEPTION
+                        'b27_explanation_template_not_admitted_for_source:%:%',
+                        claim_index, claim ->> 'template_id'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF (claim ->> 'value_text') !~ template_pattern THEN
+                    RAISE EXCEPTION
+                        'b27_explanation_value_grammar_violated:%:%',
+                        claim_index, claim ->> 'template_id'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF (claim ->> 'rendered')
+                   IS DISTINCT FROM replace(template_body, '{value}',
+                                            claim ->> 'value_text')
+                THEN
+                    RAISE EXCEPTION
+                        'b27_explanation_rendering_not_derived:%:%',
+                        claim_index, claim ->> 'template_id'
+                        USING ERRCODE = '42501';
+                END IF;
+                renderings := renderings || (claim ->> 'rendered');
+            END LOOP;
+
+            IF NEW.narrative IS DISTINCT FROM array_to_string(renderings, ' ') THEN
+                RAISE EXCEPTION
+                    'b27_explanation_narrative_not_derived_from_claims'
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+
+
+
+CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            principal_is_superuser boolean;
+            table_owner_oid oid;
+            old_row jsonb;
+            new_row jsonb;
+            column_name text;
+        BEGIN
+            SELECT rolsuper INTO principal_is_superuser
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+            SELECT relowner INTO table_owner_oid
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+            IF COALESCE(principal_is_superuser, false)
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+            THEN
+                RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+            END IF;
+            IF TG_OP = 'DELETE' THEN
+                RAISE EXCEPTION
+                    'b27_explanation_materialization_immutable:delete'
+                    USING ERRCODE = '42501';
+            END IF;
+            old_row := to_jsonb(OLD);
+            new_row := to_jsonb(NEW);
+            FOR column_name IN SELECT jsonb_object_keys(new_row)
+            LOOP
+                IF column_name IN ('stale', 'superseded_at') THEN
+                    CONTINUE;
+                END IF;
+                IF (new_row -> column_name) IS DISTINCT FROM (old_row -> column_name)
+                THEN
+                    RAISE EXCEPTION
+                        'b27_explanation_materialization_immutable:%', column_name
+                        USING ERRCODE = '42501';
+                END IF;
+            END LOOP;
+            -- Staleness is one-way. An explanation superseded by newer Trust
+            -- cannot be revived into currency.
+            IF OLD.stale AND NOT NEW.stale THEN
+                RAISE EXCEPTION
+                    'b27_explanation_materialization_immutable:stale_reversal'
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+
+
+
 CREATE FUNCTION public.b27_supersede_stale_explanations() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -2336,6 +2521,211 @@ CREATE FUNCTION public.b28_enforce_allocation_conservation() RETURNS trigger
             RETURN NEW;
         END;
         $_$;
+
+
+
+CREATE FUNCTION public.b28_enforce_downstream_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            principal_is_superuser boolean;
+            table_owner_oid oid;
+        BEGIN
+            SELECT rolsuper INTO principal_is_superuser
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+            SELECT relowner INTO table_owner_oid
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+            IF COALESCE(principal_is_superuser, false)
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+            THEN
+                RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+            END IF;
+            RAISE EXCEPTION
+                'b28_downstream_record_immutable:%:%', TG_TABLE_NAME, TG_OP
+                USING ERRCODE = '42501';
+        END;
+        $$;
+
+
+
+CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            result_tenant_id uuid;
+            result_envelope_id text;
+            result_action_authority text;
+            result_allocations jsonb;
+        BEGIN
+            SELECT tenant_id, source_envelope_id, action_authority, allocations
+              INTO result_tenant_id, result_envelope_id,
+                   result_action_authority, result_allocations
+              FROM public.b28_simulation_results
+             WHERE id = NEW.result_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_proposal_requires_simulation_result:%', NEW.result_id
+                    USING ERRCODE = '42501';
+            END IF;
+            IF result_tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+                RAISE EXCEPTION
+                    'b28_proposal_tenant_mismatch' USING ERRCODE = '42501';
+            END IF;
+            IF NEW.source_envelope_id IS DISTINCT FROM result_envelope_id
+               OR NEW.action_authority IS DISTINCT FROM result_action_authority
+               OR NEW.allocations IS DISTINCT FROM result_allocations
+            THEN
+                RAISE EXCEPTION
+                    'b28_proposal_disagrees_with_result:%', NEW.result_id
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+
+
+
+CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            issuance_semantic_truth_hash text;
+            issuance_policy_state text;
+            admissible text[] := ARRAY['simulation_only', 'proposal_required', 'approval_required']::text[];
+        BEGIN
+            SELECT semantic_truth_hash, policy_state
+              INTO issuance_semantic_truth_hash, issuance_policy_state
+              FROM public.trust_envelope_issuance_log
+             WHERE tenant_id = NEW.tenant_id
+               AND envelope_hash = NEW.source_issuance_envelope_hash;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_request_requires_durable_issuance:%',
+                    NEW.source_issuance_envelope_hash
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.source_semantic_truth_hash
+                   IS DISTINCT FROM issuance_semantic_truth_hash
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_source_trust_mismatch:%',
+                    NEW.source_issuance_envelope_hash
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Admission, physically. `read_only` and `blocked` are strictly
+            -- weaker than simulating, so a request against them is refused
+            -- rather than downgraded into a result-shaped no-op.
+            IF NOT (issuance_policy_state = ANY(admissible)) THEN
+                RAISE EXCEPTION
+                    'b28_request_policy_forbids:%', issuance_policy_state
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.sufficiency_policy_version
+                   <> 'b25-p14-sufficiency-v1'
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_sufficiency_policy_unknown:%',
+                    NEW.sufficiency_policy_version
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+
+
+
+CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            request_tenant_id uuid;
+            request_envelope_id text;
+            request_semantic_truth_hash text;
+            request_snapshot_hash text;
+            request_budget bigint;
+            request_currency text;
+            request_channel_count integer;
+            request_source_envelope_hash text;
+            issuance_policy_state text;
+            derived_authority text;
+        BEGIN
+            SELECT tenant_id, source_envelope_id, source_semantic_truth_hash,
+                   input_snapshot_hash, total_budget_minor, currency,
+                   channel_count, source_issuance_envelope_hash
+              INTO request_tenant_id, request_envelope_id,
+                   request_semantic_truth_hash, request_snapshot_hash,
+                   request_budget, request_currency, request_channel_count,
+                   request_source_envelope_hash
+              FROM public.b28_simulation_requests
+             WHERE id = NEW.request_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_result_requires_explicit_request:%', NEW.request_id
+                    USING ERRCODE = '42501';
+            END IF;
+            IF request_tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+                RAISE EXCEPTION
+                    'b28_result_tenant_mismatch' USING ERRCODE = '42501';
+            END IF;
+            -- Field-by-field agreement. A foreign key proves a request row
+            -- exists; this proves the result is a consequence *of that request*
+            -- rather than an independent claim that happens to cite one.
+            IF NEW.source_envelope_id IS DISTINCT FROM request_envelope_id
+               OR NEW.source_semantic_truth_hash
+                   IS DISTINCT FROM request_semantic_truth_hash
+               OR NEW.input_snapshot_hash IS DISTINCT FROM request_snapshot_hash
+               OR NEW.total_budget_minor IS DISTINCT FROM request_budget
+               OR NEW.currency IS DISTINCT FROM request_currency
+            THEN
+                RAISE EXCEPTION
+                    'b28_result_disagrees_with_request:%', NEW.request_id
+                    USING ERRCODE = '42501';
+            END IF;
+            IF jsonb_array_length(NEW.allocations)
+                   IS DISTINCT FROM request_channel_count
+            THEN
+                RAISE EXCEPTION
+                    'b28_result_channel_count_disagrees:% vs %',
+                    jsonb_array_length(NEW.allocations), request_channel_count
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.solver_profile <> 'b25-p14-deterministic-largest-remainder-v1' THEN
+                RAISE EXCEPTION
+                    'b28_result_solver_profile_ungoverned:%', NEW.solver_profile
+                    USING ERRCODE = '42501';
+            END IF;
+
+            SELECT policy_state INTO issuance_policy_state
+              FROM public.trust_envelope_issuance_log
+             WHERE tenant_id = NEW.tenant_id
+               AND envelope_hash = request_source_envelope_hash;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_result_requires_durable_issuance:%',
+                    request_source_envelope_hash
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Authority is the weaker of the source policy and P14's own
+            -- proposal ceiling, computed rather than asserted.
+            derived_authority := CASE
+                WHEN issuance_policy_state IN (
+                    'blocked', 'read_only', 'simulation_only', 'proposal_required'
+                ) THEN issuance_policy_state
+                ELSE 'proposal_required'
+            END;
+            IF NEW.action_authority IS DISTINCT FROM derived_authority THEN
+                RAISE EXCEPTION
+                    'b28_result_action_authority_not_derived:% vs %',
+                    NEW.action_authority, derived_authority
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
 
 
 
@@ -3289,6 +3679,60 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
 
 
 
+CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            principal_is_superuser boolean;
+            table_owner_oid oid;
+            mutable_columns text[] := ARRAY['replay_count', 'last_replayed_at', 'updated_at', 'issuance_state', 'issued_at', 'issuance_attempted_at', 'issuance_outcome_unknown_at', 'known_signature_at', 'issued_attempt_id', 'issued_signing_key_id', 'issued_signature_hash', 'issued_signature', 'issued_envelope', 'issuance_attempt_count', 'issuance_unknown_outcome_count']::text[];
+            old_row jsonb;
+            new_row jsonb;
+            column_name text;
+        BEGIN
+            SELECT rolsuper
+              INTO principal_is_superuser
+              FROM pg_catalog.pg_roles
+             WHERE rolname = session_user;
+            SELECT relowner INTO table_owner_oid
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+
+            -- A superuser or the owning migration principal can drop this
+            -- trigger outright, so refusing them buys no authority. C20/C21
+            -- already assert that no runtime login reaches the owner, and the
+            -- canonical-schema gate detects the trigger's removal.
+            IF COALESCE(principal_is_superuser, false)
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+            THEN
+                RETURN NEW;
+            END IF;
+
+            old_row := to_jsonb(OLD);
+            new_row := to_jsonb(NEW);
+
+            -- Total over columns, including columns that do not exist yet. A
+            -- future migration that adds a truth-bearing column inherits the
+            -- fence by default and has to opt out deliberately, which is the
+            -- direction a fail-closed system needs.
+            FOR column_name IN SELECT jsonb_object_keys(new_row)
+            LOOP
+                IF column_name = ANY(mutable_columns) THEN
+                    CONTINUE;
+                END IF;
+                IF (new_row -> column_name) IS DISTINCT FROM (old_row -> column_name)
+                THEN
+                    RAISE EXCEPTION
+                        'trust_access_log_witness_immutable:%', column_name
+                        USING ERRCODE = '42501';
+                END IF;
+            END LOOP;
+            RETURN NEW;
+        END;
+        $$;
+
+
+
 CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3346,8 +3790,10 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
             END IF;
 
             -- Layer A: only the dedicated issuer may project a terminal
-            -- consequence. The API may authorize an issuance, but cannot
-            -- assert that signing happened.
+            -- consequence.  The API principal may authorize an issuance, but
+            -- it cannot assert that signing happened: pairing an
+            -- ``authorized`` ledger row with a well-shaped terminal row is
+            -- not sufficient evidence of a completed consequence.
             SELECT oid
               INTO issuer_role_oid
               FROM pg_catalog.pg_roles
@@ -3362,9 +3808,10 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Layer B: authorization is not a consequence. The source ledger
-            -- and linked attempt must both have reached ``issued`` and retain
-            -- the same signer-confirmed artifact.
+            -- Layer B: the row must project a completed, signer-confirmed
+            -- issuance.  ``authorized`` is authorization to try, not evidence
+            -- of a consequence.  The source ledger and attempt therefore have
+            -- to be terminal and agree on the retained signature artifact.
             SELECT event_type, status, idempotency_key_hash, subject_type,
                    subject_ref_hash, envelope_hash, semantic_truth_hash,
                    policy_state, audit_hash, issuance_state, issued_attempt_id,
@@ -4400,6 +4847,8 @@ CREATE TABLE public.b27_explanation_materializations (
     stale boolean DEFAULT false NOT NULL,
     superseded_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    source_issuance_envelope_hash text NOT NULL,
+    explanation_template_registry_hash text NOT NULL,
     CONSTRAINT ck_b27_authority_class CHECK ((authority_class = 'non_authoritative_explanation'::text)),
     CONSTRAINT ck_b27_cache_identity_shape CHECK (((cache_identity_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (source_semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (subject_ref_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (projection_profile_hash ~ '^sha256:[0-9a-f]{64}$'::text))),
     CONSTRAINT ck_b27_claims_object CHECK ((jsonb_typeof(claims) = 'array'::text)),
@@ -4407,10 +4856,33 @@ CREATE TABLE public.b27_explanation_materializations (
     CONSTRAINT ck_b27_judge_authority CHECK ((judge_authority = 'none'::text)),
     CONSTRAINT ck_b27_policy_state CHECK ((policy_state = ANY (ARRAY['blocked'::text, 'read_only'::text, 'simulation_only'::text, 'proposal_required'::text, 'approval_required'::text]))),
     CONSTRAINT ck_b27_projection_profile CHECK ((projection_profile_id = 'llm_explanation_projection_safe'::text)),
-    CONSTRAINT ck_b27_stale_shape CHECK ((((stale = true) AND (superseded_at IS NOT NULL)) OR ((stale = false) AND (superseded_at IS NULL))))
+    CONSTRAINT ck_b27_stale_shape CHECK ((((stale = true) AND (superseded_at IS NOT NULL)) OR ((stale = false) AND (superseded_at IS NULL)))),
+    CONSTRAINT ck_b27_template_registry_hash_shape CHECK ((explanation_template_registry_hash ~ '^sha256:[0-9a-f]{64}$'::text))
 );
 
 ALTER TABLE ONLY public.b27_explanation_materializations FORCE ROW LEVEL SECURITY;
+
+
+
+CREATE TABLE public.b27_narrative_template_registry (
+    registry_version text NOT NULL,
+    registry_hash text NOT NULL,
+    CONSTRAINT ck_b27_template_registry_hash CHECK ((registry_hash ~ '^sha256:[0-9a-f]{64}$'::text))
+);
+
+
+
+CREATE TABLE public.b27_narrative_templates (
+    template_id text NOT NULL,
+    claim_kind text NOT NULL,
+    source_path text NOT NULL,
+    template_text text NOT NULL,
+    value_grammar text NOT NULL,
+    value_pattern text NOT NULL,
+    CONSTRAINT ck_b27_template_kind CHECK ((claim_kind = ANY (ARRAY['financial_fact'::text, 'status_fact'::text, 'confidence_statement'::text, 'policy_statement'::text, 'fallback_statement'::text, 'provenance_fact'::text]))),
+    CONSTRAINT ck_b27_template_no_fixed_numeral CHECK ((replace(template_text, '{value}'::text, ' '::text) !~ '[0-9]'::text)),
+    CONSTRAINT ck_b27_template_single_variable CHECK (((template_text ~~ '%{value}%'::text) AND ((length(template_text) - length(replace(template_text, '{value}'::text, ''::text))) = (7 * 1))))
+);
 
 
 
@@ -4448,6 +4920,7 @@ CREATE TABLE public.b28_simulation_requests (
     channel_count integer NOT NULL,
     sufficiency_policy_version text NOT NULL,
     requested_at timestamp with time zone DEFAULT now() NOT NULL,
+    source_issuance_envelope_hash text NOT NULL,
     CONSTRAINT ck_b28_request_budget CHECK ((total_budget_minor > 0)),
     CONSTRAINT ck_b28_request_channels CHECK ((channel_count > 0)),
     CONSTRAINT ck_b28_request_currency CHECK ((currency ~ '^[A-Z]{3}$'::text)),
@@ -8707,6 +9180,16 @@ ALTER TABLE ONLY public.b27_explanation_materializations
 
 
 
+ALTER TABLE ONLY public.b27_narrative_template_registry
+    ADD CONSTRAINT b27_narrative_template_registry_pkey PRIMARY KEY (registry_version);
+
+
+
+ALTER TABLE ONLY public.b27_narrative_templates
+    ADD CONSTRAINT b27_narrative_templates_pkey PRIMARY KEY (template_id);
+
+
+
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT b28_proposals_pkey PRIMARY KEY (id);
 
@@ -9519,6 +10002,11 @@ ALTER TABLE ONLY public.b24_inference_policy_registry
 
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT uq_b27_cache_identity UNIQUE (tenant_id, cache_identity_hash);
+
+
+
+ALTER TABLE ONLY public.b27_narrative_templates
+    ADD CONSTRAINT uq_b27_template_binding UNIQUE (claim_kind, source_path);
 
 
 
@@ -12280,7 +12768,11 @@ CREATE TRIGGER trg_b23_refresh_allocation_verification_update AFTER UPDATE OF st
 
 CREATE TRIGGER trg_b23_verdict_authorship_insert BEFORE INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
 
+
+
 CREATE TRIGGER trg_b23_verdict_authorship_update BEFORE UPDATE ON public.b23_match_verdicts FOR EACH ROW WHEN ((((old.status)::text IS DISTINCT FROM (new.status)::text) OR (old.confirmed_at IS DISTINCT FROM new.confirmed_at) OR (old.adjusted_at IS DISTINCT FROM new.adjusted_at) OR (old.unmatched_marked_at IS DISTINCT FROM new.unmatched_marked_at) OR ((old.match_quality)::text IS DISTINCT FROM (new.match_quality)::text) OR (old.attributed_amount_minor IS DISTINCT FROM new.attributed_amount_minor) OR (old.verified_amount_minor IS DISTINCT FROM new.verified_amount_minor) OR (old.canonical_expected_gross_amount_minor IS DISTINCT FROM new.canonical_expected_gross_amount_minor) OR (old.canonical_captured_gross_amount_minor IS DISTINCT FROM new.canonical_captured_gross_amount_minor) OR (old.canonical_net_verified_amount_minor IS DISTINCT FROM new.canonical_net_verified_amount_minor) OR (old.discrepancy_amount_minor IS DISTINCT FROM new.discrepancy_amount_minor) OR (old.discrepancy_ratio_bps IS DISTINCT FROM new.discrepancy_ratio_bps) OR ((old.discrepancy_band)::text IS DISTINCT FROM (new.discrepancy_band)::text))) EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
+
+
 
 CREATE TRIGGER trg_b24_dirty_event_authority BEFORE UPDATE ON public.b24_dirty_events FOR EACH ROW WHEN (((new.tenant_id IS DISTINCT FROM old.tenant_id) OR ((new.model_type)::text IS DISTINCT FROM (old.model_type)::text) OR ((new.model_version)::text IS DISTINCT FROM (old.model_version)::text) OR (new.source_window_start IS DISTINCT FROM old.source_window_start) OR (new.source_window_end IS DISTINCT FROM old.source_window_end) OR ((new.dirty_reason)::text IS DISTINCT FROM (old.dirty_reason)::text) OR ((new.source_family)::text IS DISTINCT FROM (old.source_family)::text) OR ((new.event_hash)::text IS DISTINCT FROM (old.event_hash)::text) OR ((new.source_event_id)::text IS DISTINCT FROM (old.source_event_id)::text) OR (new.created_at IS DISTINCT FROM old.created_at) OR ((new.source_snapshot_hash)::text IS DISTINCT FROM (old.source_snapshot_hash)::text))) EXECUTE FUNCTION public.b24_enforce_dirty_event_authority();
 
@@ -12354,11 +12846,43 @@ CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model
 
 
 
+CREATE TRIGGER trg_b27_explanation_consequence BEFORE INSERT ON public.b27_explanation_materializations FOR EACH ROW EXECUTE FUNCTION public.b27_enforce_explanation_consequence();
+
+
+
+CREATE TRIGGER trg_b27_materialization_immutable BEFORE DELETE OR UPDATE ON public.b27_explanation_materializations FOR EACH ROW EXECUTE FUNCTION public.b27_enforce_materialization_immutability();
+
+
+
 CREATE TRIGGER trg_b27_supersede_stale_explanations AFTER INSERT ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.b27_supersede_stale_explanations();
 
 
 
 CREATE TRIGGER trg_b28_allocation_conservation BEFORE INSERT OR UPDATE ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_allocation_conservation();
+
+
+
+CREATE TRIGGER trg_b28_proposal_consequence BEFORE INSERT ON public.b28_proposals FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_proposal_consequence();
+
+
+
+CREATE TRIGGER trg_b28_proposals_immutable BEFORE DELETE OR UPDATE ON public.b28_proposals FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
+
+
+
+CREATE TRIGGER trg_b28_request_consequence BEFORE INSERT ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_request_consequence();
+
+
+
+CREATE TRIGGER trg_b28_result_consequence BEFORE INSERT ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_result_consequence();
+
+
+
+CREATE TRIGGER trg_b28_simulation_requests_immutable BEFORE DELETE OR UPDATE ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
+
+
+
+CREATE TRIGGER trg_b28_simulation_results_immutable BEFORE DELETE OR UPDATE ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
 
 
 
@@ -12427,6 +12951,10 @@ CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.re
 
 
 CREATE TRIGGER trg_trust_access_log_issuance_authority_guard BEFORE INSERT OR UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_issuance_authority_guard();
+
+
+
+CREATE TRIGGER trg_trust_access_log_witness_immutability BEFORE UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_witness_immutability_guard();
 
 
 
@@ -12781,6 +13309,16 @@ ALTER TABLE ONLY public.b24_fit_recovery_outbox
 
 ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
     ADD CONSTRAINT fk_b24_replan_lineage_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY public.b27_explanation_materializations
+    ADD CONSTRAINT fk_b27_explanation_materializations_source_issuance FOREIGN KEY (tenant_id, source_issuance_envelope_hash) REFERENCES public.trust_envelope_issuance_log(tenant_id, envelope_hash);
+
+
+
+ALTER TABLE ONLY public.b28_simulation_requests
+    ADD CONSTRAINT fk_b28_simulation_requests_source_issuance FOREIGN KEY (tenant_id, source_issuance_envelope_hash) REFERENCES public.trust_envelope_issuance_log(tenant_id, envelope_hash);
 
 
 

@@ -118,7 +118,11 @@ on:
       - 'backend/tests/trust/test_b25_p14_projection_contract_floor.py'
       - 'backend/tests/trust/test_b25_p14_b27_explanation_conservation.py'
       - 'backend/tests/trust/test_b25_p14_b28_simulation_conservation.py'
+      - 'backend/tests/trust/test_b25_p14_r4_terminal_provenance.py'
+      - 'backend/tests/trust/test_b25_p14_r4_downstream_consequence.py'
       - 'scripts/ci/validate_b25_p14_downstream_authority.py'
+      - 'scripts/ci/_b25_p14_controlled_defect.py'
+      - 'scripts/ci/assert_b25_p14_container_projection_parity.py'
       - 'scripts/ci/compare_b25_p13_c21_authority_universes.py'
       - 'backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py'
       - 'backend/tests/test_b25_p13_c19_touchpoint_ingress.py'
@@ -3311,6 +3315,53 @@ jobs:
             | tee /tmp/nc_p14_04_restored.out
           grep -F '[b25-p14] downstream authority validation PASSED' /tmp/nc_p14_04_restored.out
 
+      # NC-P14-08. Corrective IV Exit Gate 2's active falsifier, stated as the
+      # directive requires it: weaken the semantic conservation *relation*, not a
+      # phrase list. Equality between the externalized narrative and the join of
+      # registered frame instances becomes prefix acceptance, which re-opens one
+      # position for an arbitrary causal proposition without touching any regex.
+      - name: NC-P14-08 weakening the narrative derivation relation turns B2.7 red
+        run: |
+          set -euo pipefail
+          cp backend/app/explanation/conservation.py /tmp/p14_conservation_pristine.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply weaken_narrative_derivation
+          if python -m pytest \
+              backend/tests/trust/test_b25_p14_b27_explanation_conservation.py \
+              -q --no-header -p no:randomly > /tmp/nc_p14_08.out 2>&1; then
+            echo "NC-P14-08 did not fire: prefix acceptance was tolerated"
+            cp /tmp/p14_conservation_pristine.py backend/app/explanation/conservation.py
+            cat /tmp/nc_p14_08.out
+            exit 1
+          fi
+          grep -F 'test_b27_r4_a_causal_sentence_appended_to_a_lawful_narrative_is_refused' /tmp/nc_p14_08.out
+          cp /tmp/p14_conservation_pristine.py backend/app/explanation/conservation.py
+          git diff --exit-code backend/app/explanation/conservation.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_b27_explanation_conservation.py \
+            -q --no-header -p no:randomly | tee /tmp/nc_p14_08_restored.out
+          grep -E "88 passed" /tmp/nc_p14_08_restored.out
+
+      # NC-P14-09. The closed frame corpus is now the boundary, so the corpus
+      # adjudicator has to be load-bearing too. Seat one frame that asserts a
+      # causal relation and require the load-time sweep to refuse it by name.
+      - name: NC-P14-09 a causal narrative frame turns the corpus gate red
+        run: |
+          set -euo pipefail
+          cp backend/app/explanation/templates.py /tmp/p14_templates_pristine.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply admit_a_causal_narrative_frame
+          if python scripts/ci/validate_b25_p14_downstream_authority.py > /tmp/nc_p14_09.out 2>&1; then
+            echo "NC-P14-09 did not fire: a causal frame entered the corpus"
+            cp /tmp/p14_templates_pristine.py backend/app/explanation/templates.py
+            cat /tmp/nc_p14_09.out
+            exit 1
+          fi
+          grep -F 'explanation_template_causal_frame' /tmp/nc_p14_09.out
+          cp /tmp/p14_templates_pristine.py backend/app/explanation/templates.py
+          git diff --exit-code backend/app/explanation/templates.py
+          python scripts/ci/validate_b25_p14_downstream_authority.py \
+            | tee /tmp/nc_p14_09_restored.out
+          grep -F '[b25-p14] downstream authority validation PASSED' /tmp/nc_p14_09_restored.out
+
       - name: P14-G1..G4 canonical projection contract floor
         run: |
           set -o pipefail
@@ -3325,7 +3376,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_b27_explanation_conservation.py \
             -q -s --no-header -p no:randomly | tee /tmp/b25_p14_b27.out
-          grep -E "44 passed" /tmp/b25_p14_b27.out
+          grep -E "88 passed" /tmp/b25_p14_b27.out
 
       - name: B2.8 simulation admission and conservation
         run: |
@@ -3395,6 +3446,29 @@ jobs:
             backend/tests/trust/test_b25_p14_gate0_issuance_consequence_authority.py \
             -q -s --no-header -p no:randomly | tee /tmp/b25_p14_gate0.out
           grep -E "14 passed" /tmp/b25_p14_gate0.out
+
+      # Corrective IV Exit Gate 1. The post-terminal witness matrix under every
+      # principal that holds UPDATE, the lawful replay path that must keep
+      # working, and the severance ladder that proves the fence -- not an absent
+      # privilege -- is what refuses the audits' counterexample.
+      - name: P14 Corrective IV terminal provenance conservation
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r4_terminal_provenance.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r4_terminal.out
+          grep -E "6 passed" /tmp/b25_p14_r4_terminal.out
+
+      # Corrective IV Exit Gates 3 and 4. One real Ed25519-signed state conducts
+      # from issuance through the terminal record into B2.7 and B2.8, and every
+      # conjunct of the downstream admission relation is severed one at a time.
+      - name: P14 Corrective IV downstream consequence binding
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r4_downstream_consequence.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r4_downstream.out
+          grep -E "10 passed" /tmp/b25_p14_r4_downstream.out
 
       # The C20 process x role x consequence contract now names the P14
       # relations and the narrowed trust-audit grants, so a future migration
