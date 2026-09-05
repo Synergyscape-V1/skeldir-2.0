@@ -2918,6 +2918,29 @@
   risk_if_removed: A Dockerfile layer change could stop shipping the projection registry, or ship a stale copy, with
     every host-run P14 gate still green - the F-11 runner-versus-container class the directive names.
   decision: keep_all
+- gate_id: b25-p14-canonical-construction-authority
+  workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  job: B2.5-P14 Downstream Projection Safety
+  script: scripts/ci/assert_canonical_construction_authority.py
+  owning_phase: B2.5-P14-Corrective-V
+  protected_invariant: One falsifiable definition of a correctly constructed production database - the migration
+    history constructs, db/schema/canonical_schema.sql only describes, and the difference is required to be present
+    rather than tolerated.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_all
+  subsuming_gate: ''
+  subsumption_evidence: The canonical-schema drift detector compares the reference to the migrations-derived schema
+    and is indifferent to grants, seeds and revision stamping, because pg_dump --no-owner --no-privileges cannot
+    express them; the C21 universe comparator compares two Alembic universes to each other. Neither decides which
+    construction may back a production process, which is what an independent audit failed the phase on.
+  negative_control_preserved_by: NC-P14-12 in .github/workflows/b2_5-p13-e2e-trust-closure.yml, plus the gate's own
+    --negative-control mode
+  local_reproduction_command: python scripts/ci/assert_canonical_construction_authority.py --negative-control
+  risk_if_removed: A supported build path could again produce a database that is structurally identical and carries
+    no governed authority graph - generic INSERT restored on the B2.8 relations, both dedicated causal authorities
+    empty, the issuer unable to append issuance history, and the narrative frame corpus unseeded.
+  decision: keep_all
 - gate_id: b25-p14-controlled-defect-applier
   workflow: .github/workflows/b2_5-p13-e2e-trust-closure.yml
   job: B2.5-P14 Downstream Projection Safety

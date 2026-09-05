@@ -142,28 +142,59 @@ def assert_production_construction_authority(
     return revision
 
 
-async def assert_database_construction_authority(session: Any) -> str:
-    """Startup-time refusal, over an async SQLAlchemy session."""
+#: The definer function the 202609061200 revision installs. The runtime
+#: principal deliberately holds no privilege on ``alembic_version`` -- the
+#: baseline revision revokes it and CI re-asserts the revoke -- so the revision
+#: is read through a function that exposes the identifiers and nothing else.
+CONSTRUCTION_REVISION_FUNCTION = "public.skeldir_database_construction_revisions"
+
+
+async def read_construction_revisions(connection: Any) -> list[str]:
+    """Read the construction revisions a runtime principal is allowed to see.
+
+    The definer function is preferred. A database below ``202609061200`` does
+    not have it yet, so the direct read remains as a fallback -- that is not a
+    bypass: it reads the same relation by a different route, and a principal
+    that can read neither yields no revisions and is refused by the caller.
+
+    Which route to take is decided by *asking the catalog*, not by trying one and
+    catching the failure. A failed statement aborts the enclosing transaction in
+    PostgreSQL, so an exception-driven fallback would poison the readiness
+    transaction it is running inside and report the wrong cause.
+    """
     from sqlalchemy import text  # noqa: PLC0415
 
+    probe = await connection.execute(
+        text(f"SELECT to_regprocedure('{CONSTRUCTION_REVISION_FUNCTION}()')")
+    )
+    statement = (
+        f"SELECT * FROM {CONSTRUCTION_REVISION_FUNCTION}()"
+        if probe.scalar() is not None
+        else "SELECT version_num FROM public.alembic_version"
+    )
+    result = await connection.execute(text(statement))
+    return [row[0] for row in result.fetchall()]
+
+
+async def assert_database_construction_authority(session: Any) -> str:
+    """Startup-time refusal, over an async SQLAlchemy session or connection."""
     try:
-        result = await session.execute(
-            text("SELECT version_num FROM public.alembic_version")
-        )
-        rows = [row[0] for row in result.fetchall()]
+        rows = await read_construction_revisions(session)
     except Exception as exc:  # pragma: no cover - defensive
         raise ConstructionAuthorityError(
-            f"database_construction_unauthoritative:alembic_version_unreadable:{exc}"
+            f"database_construction_unauthoritative:revision_unreadable:{exc}"
         ) from exc
     return assert_production_construction_authority(rows)
 
 
 __all__ = [
     "CANONICAL_SCHEMA_PATH",
+    "CONSTRUCTION_REVISION_FUNCTION",
     "ConstructionAuthorityError",
     "NON_AUTHORITATIVE_CONSTRUCTION_ROUTES",
     "PRODUCTION_CONSTRUCTION_ROUTE",
     "assert_database_construction_authority",
     "assert_production_construction_authority",
     "known_revisions",
+    "read_construction_revisions",
 ]

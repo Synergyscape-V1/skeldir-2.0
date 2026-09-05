@@ -27,6 +27,7 @@ from app.celery_app import celery_app
 from app.core.construction_authority import (
     ConstructionAuthorityError,
     assert_production_construction_authority,
+    read_construction_revisions,
 )
 from app.core.secrets import validate_runtime_secret_contract
 from app.api.problem_details import problem_details_response
@@ -388,12 +389,9 @@ async def _evaluate_readiness() -> dict[str, object]:
             # construction physically cannot forge, so that is what readiness
             # checks. A process on an unconstructed database never becomes
             # ready, and therefore never receives traffic.
-            revisions = await conn.execute(
-                text("SELECT version_num FROM public.alembic_version")
-            )
             try:
                 assert_production_construction_authority(
-                    [row[0] for row in revisions.fetchall()]
+                    await read_construction_revisions(conn)
                 )
             except ConstructionAuthorityError as exc:
                 result["construction_authority"] = "error"

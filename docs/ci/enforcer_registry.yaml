@@ -3946,6 +3946,38 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: retain
+- id: b25-p14-canonical-construction-authority
+  path: scripts/ci/assert_canonical_construction_authority.py
+  status: required
+  owning_phase: B2.5-P14-Corrective-V
+  protected_invariant: There is one falsifiable definition of a correctly constructed production database. The
+    migration history is the construction authority; db/schema/canonical_schema.sql is a structural reference that
+    cannot express the role graph, carries no governed seed rows and stamps no Alembic revision. The gate proves the
+    reference is structurally sound, requires its authority divergences to be present rather than tolerating them,
+    proves the runtime refuses a database built that way, and proves no production construction surface names it.
+  command: python scripts/ci/assert_canonical_construction_authority.py --alembic-dsn
+    "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14" --canonical-dsn
+    "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14_canonical" --evidence-out
+    artifacts/b25_p14/construction_authority.json
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P14 Downstream Projection Safety
+  local_reproduction_command: python scripts/ci/assert_canonical_construction_authority.py --negative-control
+  expected_failure_meaning: Either the structural reference stopped describing the schema the migrations produce, or
+    it quietly became constructive, or the runtime stopped refusing an unconstructed database, or a production
+    construction surface started naming it. All four re-open the ambiguity that let one supported build path produce
+    a database with no governed authority graph.
+  first_diagnostic_command: python scripts/ci/assert_canonical_construction_authority.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b25-p13-e2e-trust-closure
+  ci_visibility: inline_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: retain
 - id: b25-p14-controlled-defect-applier
   path: scripts/ci/_b25_p14_controlled_defect.py
   status: utility

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2X145MnQeuD8l196Megod8n6eliXcTT9TNWJR9Se7Rdr15btzcKt9ze8CFhoBEE
+\restrict QsUcjoLVBbEIoyyMaF4RS5kfY5mMsWSbLomjXrS662qIcRJQdpcE98GuOfjq7Jd
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.15
@@ -4308,6 +4308,18 @@ CREATE FUNCTION public.reject_reserved_trust_action_scope() RETURNS trigger
             END IF;
             RETURN NEW;
         END;
+        $$;
+
+
+--
+-- Name: skeldir_database_construction_revisions(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.skeldir_database_construction_revisions() RETURNS SETOF text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+            SELECT version_num FROM public.alembic_version
         $$;
 
 
@@ -19653,5 +19665,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 2X145MnQeuD8l196Megod8n6eliXcTT9TNWJR9Se7Rdr15btzcKt9ze8CFhoBEE
+\unrestrict QsUcjoLVBbEIoyyMaF4RS5kfY5mMsWSbLomjXrS662qIcRJQdpcE98GuOfjq7Jd
 

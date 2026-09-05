@@ -991,6 +991,48 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
+    # 7b. Reading the construction revision without reading the metadata.
+    # ------------------------------------------------------------------
+    # Exit Gate 13's runtime half asks one question at the readiness boundary:
+    # does this database carry a revision the repository declares? The obvious
+    # implementation -- `SELECT version_num FROM public.alembic_version` as the
+    # runtime principal -- cannot work, and should not: the baseline revision
+    # deliberately revokes runtime access to the migration metadata, and CI
+    # re-asserts that revoke. A readiness check that needed the grant back would
+    # be trading a real least-privilege property for a diagnostic.
+    #
+    # A SECURITY DEFINER function owned by the migration principal answers the
+    # question without granting the table. It exposes exactly the revision
+    # identifiers -- values that already live in this repository's source -- takes
+    # no arguments, so there is no injection surface, and pins its search_path.
+    # EXECUTE is revoked from PUBLIC and granted only to the principals that
+    # serve readiness.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.skeldir_database_construction_revisions()
+        RETURNS SETOF text
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = pg_catalog, public
+        AS $BODY$
+            SELECT version_num FROM public.alembic_version
+        $BODY$;
+        """
+    )
+    op.execute(
+        "REVOKE ALL ON FUNCTION public.skeldir_database_construction_revisions()"
+        " FROM PUBLIC"
+    )
+    for role in ("app_user", "app_worker", "app_ro", "app_rw"):
+        _if_role_exists(
+            role,
+            "GRANT EXECUTE ON FUNCTION"
+            " public.skeldir_database_construction_revisions()"
+            f" TO {role}",
+        )
+
+    # ------------------------------------------------------------------
     # 8. Authority follows causal responsibility.
     # ------------------------------------------------------------------
     # The generic API principal loses the ability to create a consequence it did
