@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """B2.5-P14 static downstream-authority validator.
 
-Three propositions are decided here, all of them statically, because each is a
-property of the *import closure* rather than of any single execution:
+Five propositions are decided here, all of them statically, because each is a
+property of the *import closure* or of a governed contract rather than of any
+single execution:
 
 * **Gate 9 -- no external action reachability.** Starting from every P14
   entrypoint, the transitive import closure must contain zero platform-write
@@ -15,10 +16,22 @@ property of the *import closure* rather than of any single execution:
   admission conjunction the whole admission story: a second caller would be a
   second, unaudited path to the solver.
 
+* **Corrective IV H-WIRE-02 -- nothing schedules B2.7 or B2.8.** The reverse of
+  the first check. No module outside the two P14 packages may import them, so
+  "sufficient evidence + no explicit request -> zero solver invocations" is a
+  property of the deployment graph rather than of a caller's discipline.
+
 * **P14-G1..G4 -- the contract floor loads.** The registry is read and every
   required profile validated, so a malformed or narrowed contract fails here as
   well as in pytest. This runs without a database, so it is the cheapest gate in
   the P14 set and the first to go red on a contract regression.
+
+* **Corrective IV Exit Gate 2 -- the narrative frame corpus is admissible.**
+  B2.7's causal-conservation boundary is no longer a phrase denylist; it is the
+  closed, content-addressed frame corpus a narrative must be derived from. The
+  corpus is therefore governing state, and a frame that asserts a causal
+  relation, carries a numeral of its own, or opens a second variable position
+  fails here before any explanation is composed.
 
 Exit code 0 means every proposition held. Any violation prints the specific
 offending file and symbol and exits 1 -- the P14 falsifiers require a red gate
@@ -265,6 +278,93 @@ def check_contract_floor() -> tuple[list[str], dict]:
     return violations, projection_registry_identity()
 
 
+def check_no_inbound_scheduler_reach() -> list[str]:
+    """Corrective IV H-WIRE-02: nothing schedules B2.7 or B2.8.
+
+    The outbound check above proves P14 cannot reach a task queue. This is the
+    other direction, and it is the one that decides "sufficient data + no
+    request -> zero solver invocations" under real deployment scheduling: if a
+    Celery task, a beat schedule, a startup hook or an outbox consumer imported
+    either package, the request-driven property would depend on that caller's
+    discipline rather than on P14's own admission conjunction.
+
+    Only the two P14 packages may import themselves. Every other first-party
+    module that reaches them is reported by name.
+    """
+
+    violations: list[str] = []
+    targets = tuple(f"app.{package}" for package in P14_PACKAGES)
+    for path in _iter_python(APP):
+        relative = path.relative_to(BACKEND).as_posix()
+        if any(relative.startswith(f"app/{package}/") for package in P14_PACKAGES):
+            continue
+        text = path.read_text(encoding="utf-8")
+        if not any(target in text for target in targets):
+            continue
+        tree = ast.parse(text, filename=str(path))
+        for module in sorted(_imported_modules(tree)):
+            for target in targets:
+                if module == target or module.startswith(target + "."):
+                    violations.append(
+                        f"{relative} imports {module}: P14 must stay request-driven,"
+                        " so nothing outside the package may reach it"
+                    )
+    return violations
+
+
+def check_narrative_frame_corpus() -> tuple[list[str], dict]:
+    """Corrective IV Exit Gate 2: the closed frame corpus is the whole boundary.
+
+    Loading the module runs ``assert_registry_admissible``, so a frame that
+    asserts a causal relation, carries a numeral of its own, or opens more than
+    one variable position fails here -- before a database exists and before any
+    explanation is composed. The registry's content address is emitted with the
+    profile hashes so an auditor holding only the evidence file can say which
+    corpus the run adjudicated.
+    """
+
+    sys.path.insert(0, str(BACKEND))
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from app.explanation.contract import CLAIM_CAUSAL  # noqa: PLC0415
+        from app.explanation.templates import (  # noqa: PLC0415
+            EXPLANATION_TEMPLATE_REGISTRY_VERSION,
+            EXPLANATION_TEMPLATES,
+            NARRATIVE_JOINER,
+            VALUE_PATTERNS,
+            assert_registry_admissible,
+            explanation_template_registry_hash,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return [f"narrative frame corpus failed closed: {exc}"], {}
+
+    violations: list[str] = []
+    try:
+        assert_registry_admissible()
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"narrative frame corpus inadmissible: {exc}")
+
+    for template in EXPLANATION_TEMPLATES:
+        if template.claim_kind == CLAIM_CAUSAL:
+            violations.append(f"causal frame in corpus: {template.template_id}")
+        if template.value_grammar not in VALUE_PATTERNS:
+            violations.append(
+                f"frame declares an unknown value grammar: {template.template_id}"
+            )
+    if NARRATIVE_JOINER != " ":
+        violations.append(f"narrative joiner changed: {NARRATIVE_JOINER!r}")
+
+    identity = {
+        "registry_version": EXPLANATION_TEMPLATE_REGISTRY_VERSION,
+        "registry_hash": explanation_template_registry_hash(),
+        "frame_count": len(EXPLANATION_TEMPLATES),
+        "frames": sorted(
+            template.template_id for template in EXPLANATION_TEMPLATES
+        ),
+    }
+    return violations, identity
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-out", default="")
@@ -274,9 +374,12 @@ def main() -> int:
         "no_external_action_reachability": check_no_external_action_reachability(),
         "solver_has_one_caller": check_solver_has_one_caller(),
         "sufficiency_cannot_invoke": check_sufficiency_cannot_invoke(),
+        "no_inbound_scheduler_reach": check_no_inbound_scheduler_reach(),
     }
     contract_violations, registry_identity = check_contract_floor()
     checks["projection_contract_floor"] = contract_violations
+    frame_violations, frame_identity = check_narrative_frame_corpus()
+    checks["narrative_frame_corpus"] = frame_violations
 
     failed = {name: rows for name, rows in checks.items() if rows}
     for name, rows in sorted(checks.items()):
@@ -288,6 +391,12 @@ def main() -> int:
     print(f"p14_projection_registry_version={registry_identity.get('registry_version')}")
     for profile_id, row in sorted(registry_identity.get("profiles", {}).items()):
         print(f"p14_profile={profile_id} hash={row['profile_hash']}")
+    print(
+        "p14_narrative_frame_registry_version="
+        f"{frame_identity.get('registry_version')}"
+    )
+    print(f"p14_narrative_frame_registry_hash={frame_identity.get('registry_hash')}")
+    print(f"p14_narrative_frame_count={frame_identity.get('frame_count')}")
 
     if args.evidence_out:
         out = Path(args.evidence_out)
@@ -297,6 +406,7 @@ def main() -> int:
                 {
                     "checks": {name: rows for name, rows in checks.items()},
                     "projection_registry_identity": registry_identity,
+                    "narrative_frame_registry_identity": frame_identity,
                     "verdict": "PASS" if not failed else "FAIL",
                 },
                 indent=2,

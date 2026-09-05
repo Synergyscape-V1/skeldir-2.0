@@ -14,6 +14,29 @@ produced -- and still decide correctly. A filter can only ever constrain the
 generator it lives inside, which is the failure mode where "our generator never
 does that" quietly becomes the safety argument.
 
+Corrective IV changed *how* the externalized text is decided, because the
+previous mechanism could not be right. Adjudicating free prose against a finite
+list of causal indicators is an open-world problem: two independent audits
+produced twenty ordinary English sentences that asserted causation while
+matching no listed phrase, and no finite extension of the list closes a set
+whose complement is all of English. The narrative is now decided
+*representationally* instead:
+
+    admissible(text)  iff  text == compose_narrative(
+                                     [render(template(claim), value(claim))
+                                      for claim in conserved_claims])
+
+Every sentence must be an instance of a registered frame from the closed,
+content-addressed corpus in ``app.explanation.templates``, filled with a value
+that matches that frame's machine grammar, and the whole narrative must be the
+exact join of those instances. Unseen language is refused not because it was
+recognised as causal but because it has no representable position: there is no
+prefix, suffix or interstitial slot where an unregistered sentence can live.
+
+The lexical sweeps below are retained. They are no longer the boundary -- the
+derivation law above is -- but they remain a second, independently severable
+layer, and they still name a defect in terms an auditor can read.
+
 Every refusal is a typed reason code, because the P14 falsifiers require RED
 *for the predicted causal reason*: a test that only knows the gate went red
 cannot tell a real defect from an unrelated crash.
@@ -33,7 +56,14 @@ from app.explanation.contract import (
     CLAIM_FINANCIAL,
     CLAIM_POLICY,
     ExplanationClaim,
+    ExplanationContractError,
     ExplanationResult,
+)
+from app.explanation.templates import (
+    TEMPLATE_BY_ID,
+    canonical_value_text,
+    compose_narrative,
+    template_for,
 )
 from app.trust.projection import TrustProjection, assert_authority_monotonic
 from app.trust.projection_profiles import (
@@ -187,6 +217,66 @@ def _claim_is_projected(
     return None
 
 
+def _derivation_violations(result: ExplanationResult) -> list[str]:
+    """Refuse any externalized text that is not a registered frame instance.
+
+    This is the open-world conservation relation stated as code. It is total in
+    both directions:
+
+    * every claim's ``rendered`` must equal the registry's rendering of that
+      claim's ``(claim_kind, source_path, value)`` -- so a sentence cannot say
+      more, less, or other than the frame bound to that source path says;
+    * the narrative must equal the exact join of those renderings -- so no
+      sentence can exist that is not one of them.
+
+    Weakening either half is the Exit Gate 2 falsifier: it re-opens a position
+    for an arbitrary proposition without touching any phrase list.
+    """
+
+    violations: list[str] = []
+    for claim in result.claims:
+        template = TEMPLATE_BY_ID.get(claim.template_id)
+        if template is None:
+            violations.append(
+                f"claim_template_unknown:{claim.source_path}:{claim.template_id!r}"
+            )
+            continue
+        bound = template_for(claim.claim_kind, claim.source_path)
+        if bound is None or bound.template_id != template.template_id:
+            violations.append(
+                "claim_template_not_admitted_for_source:"
+                f"{claim.claim_kind}:{claim.source_path}:{claim.template_id}"
+            )
+            continue
+        try:
+            expected_value_text = canonical_value_text(claim.source_path, claim.value)
+        except ExplanationContractError as exc:  # noqa: PERF203 - typed reason
+            violations.append(f"claim_value_not_renderable:{claim.source_path}:{exc}")
+            continue
+        if claim.value_text != expected_value_text:
+            violations.append(
+                f"claim_value_text_not_derived:{claim.source_path}:"
+                f"{claim.value_text!r}!={expected_value_text!r}"
+            )
+            continue
+        if re.match(template.value_pattern, claim.value_text) is None:
+            violations.append(
+                f"claim_value_grammar_violated:{claim.source_path}:"
+                f"{template.value_grammar}"
+            )
+            continue
+        if claim.rendered != template.render(claim.value_text):
+            violations.append(
+                f"claim_rendering_not_derived:{claim.source_path}:"
+                f"{claim.template_id}"
+            )
+
+    expected_narrative = compose_narrative([claim.rendered for claim in result.claims])
+    if result.narrative != expected_narrative:
+        violations.append("narrative_not_derived_from_claims")
+    return violations
+
+
 def adjudicate_explanation_conservation(
     *,
     projection: TrustProjection,
@@ -242,6 +332,12 @@ def adjudicate_explanation_conservation(
         )
     except Exception as exc:  # noqa: BLE001 - typed reason is the payload
         violations.append(str(exc))
+
+    # --- Representational conservation (Corrective IV, Exit Gate 2) ---------
+    # The narrative is admissible only as the exact join of frame instances.
+    # This runs before the lexical sweeps and is what actually closes the
+    # open-world causal class; the sweeps below are the second layer.
+    violations.extend(_derivation_violations(result))
 
     # --- Per-claim source correspondence ------------------------------------
     for claim in result.claims:

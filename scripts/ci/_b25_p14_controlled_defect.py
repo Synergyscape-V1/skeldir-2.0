@@ -33,6 +33,8 @@ SIMULATION_SERVICE = REPO_ROOT / "backend/app/simulation/service.py"
 EXPLANATION_SERVICE = REPO_ROOT / "backend/app/explanation/service.py"
 PROFILE_REGISTRY = REPO_ROOT / "contracts/trust-api/projection-profiles.v1.yaml"
 PRODUCTION_DOCKERFILE = REPO_ROOT / "backend/Dockerfile"
+EXPLANATION_CONSERVATION = REPO_ROOT / "backend/app/explanation/conservation.py"
+EXPLANATION_TEMPLATES = REPO_ROOT / "backend/app/explanation/templates.py"
 
 DEFAULT_LLM_PROFILE_ID = "llm_explanation_projection_safe"
 
@@ -133,12 +135,77 @@ def narrow_contract_copy_layer() -> None:
     )
 
 
+def weaken_narrative_derivation() -> None:
+    """Exit Gate 2: weaken the semantic safety *relation*, not a phrase list.
+
+    Corrective IV replaced the open-world causal denylist with a closed
+    derivation law: a narrative is admissible only as the exact join of
+    registered frame instances. This control weakens that relation from equality
+    to prefix acceptance, which is the smallest change that re-opens a position
+    for an arbitrary proposition -- an attacker appends one sentence to a
+    perfectly conserved narrative and the artifact is accepted again.
+
+    Nothing here removes a regex or a listed phrase, which is what the directive
+    requires of this falsifier: the gate must go red because the conservation
+    relation was weakened, not because an example stopped being recognised.
+    """
+
+    anchor = (
+        "    if result.narrative != expected_narrative:\n"
+        '        violations.append("narrative_not_derived_from_claims")\n'
+    )
+    replacement = (
+        "    if not result.narrative.startswith(expected_narrative):  # NC-P14-08\n"
+        '        violations.append("narrative_not_derived_from_claims")\n'
+    )
+    _replace_once(
+        EXPLANATION_CONSERVATION,
+        anchor,
+        replacement,
+        what="weaken_narrative_derivation",
+    )
+
+
+def admit_a_causal_narrative_frame() -> None:
+    """Exit Gate 2, second falsifier: admit one causal proposition to the corpus.
+
+    The closed corpus is the boundary now, so the corpus adjudicator has to be
+    load-bearing too. This seats a frame that asserts a causal relation and
+    requires the frame sweep to refuse it at load -- the failure mode being a
+    corpus that quietly grows a sentence nobody adjudicated.
+    """
+
+    anchor = (
+        "    NarrativeTemplate(\n"
+        '        template_id="policy.policy_state.v1",\n'
+    )
+    replacement = (
+        "    NarrativeTemplate(  # NC-P14-09\n"
+        '        template_id="causal.invented.v1",\n'
+        "        claim_kind=CLAIM_STATUS,\n"
+        '        source_path="schema_version",\n'
+        '        text="This revenue was caused by {value}.",\n'
+        '        value_grammar="opaque_id",\n'
+        "    ),\n"
+        "    NarrativeTemplate(\n"
+        '        template_id="policy.policy_state.v1",\n'
+    )
+    _replace_once(
+        EXPLANATION_TEMPLATES,
+        anchor,
+        replacement,
+        what="admit_a_causal_narrative_frame",
+    )
+
+
 DEFECTS = {
     "platform_write": platform_write,
     "second_solver_caller": second_solver_caller,
     "remove_required_profile": remove_required_profile,
     "untrusted_label_in_llm_profile": untrusted_label_in_llm_profile,
     "narrow_contract_copy_layer": narrow_contract_copy_layer,
+    "weaken_narrative_derivation": weaken_narrative_derivation,
+    "admit_a_causal_narrative_frame": admit_a_causal_narrative_frame,
 }
 
 
