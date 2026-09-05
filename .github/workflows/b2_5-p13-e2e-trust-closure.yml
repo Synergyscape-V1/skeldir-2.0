@@ -3514,7 +3514,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_r5_construction_authority.py \
             -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r5_construction.out
-          grep -E "6 passed" /tmp/b25_p14_r5_construction.out
+          grep -E "7 passed" /tmp/b25_p14_r5_construction.out
           python scripts/ci/assert_canonical_construction_authority.py \
             --alembic-dsn "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14" \
             --canonical-dsn "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14_canonical" \
@@ -3596,7 +3596,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_r5_construction_authority.py \
             -q --no-header -p no:randomly | tee /tmp/nc_p14_12_restored.out
-          grep -E "6 passed" /tmp/nc_p14_12_restored.out
+          grep -E "7 passed" /tmp/nc_p14_12_restored.out
 
       # NC-P14-13. Restore the generic INSERT the corrective removed, on the
       # live database with psql rather than psycopg2, and require the guard

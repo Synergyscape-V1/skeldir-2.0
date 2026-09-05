@@ -108,3 +108,95 @@ def test_no_production_construction_surface_selects_the_reference() -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "negative control fired on every check" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# H-RC-V-07 -- the new SECURITY DEFINER function's tenant physics.
+# ---------------------------------------------------------------------------
+
+
+def _admin_dsn_or_skip() -> str:
+    import os
+
+    for name in (
+        "P14_ADMIN_DATABASE_URL",
+        "C21_ADMIN_DATABASE_URL",
+        "C20_ADMIN_DATABASE_URL",
+        "MIGRATION_DATABASE_URL",
+    ):
+        value = os.getenv(name, "").strip()
+        if value:
+            return value.replace("postgresql+psycopg2://", "postgresql://")
+    pytest.skip("no admin DSN is configured for the definer probe")
+
+
+def test_the_construction_revision_definer_is_narrow_and_tenant_free() -> None:
+    """Directive V H-RC-V-07, discharged rather than assumed.
+
+    This corrective introduces exactly one SECURITY DEFINER function, and the
+    directive is explicit that prior RLS safety does not automatically extend to
+    a new authority. What is checked here is the whole surface it could possibly
+    have: it is owned by the migration principal, its search_path is pinned, it
+    takes no arguments (so there is no value a caller could steer it with), its
+    body reads one relation that has no tenant column and no row-level security,
+    EXECUTE is revoked from PUBLIC, and neither B2.8 causal authority holds it --
+    a definer function is a capability, and a capability nobody needs is one
+    nobody should hold.
+    """
+
+    import psycopg2
+
+    conn = psycopg2.connect(_admin_dsn_or_skip())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT p.prosecdef, pg_get_userbyid(p.proowner), p.proconfig,"
+                " p.pronargs, pg_get_functiondef(p.oid), p.proacl::text"
+                " FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
+                " WHERE n.nspname = 'public'"
+                "   AND p.proname = 'skeldir_database_construction_revisions'"
+            )
+            row = cursor.fetchone()
+            assert row is not None, "the construction-revision definer is absent"
+            secdef, owner, config, nargs, definition, acl = row
+
+            # Every tenant-scoped relation, so the body check below is decided
+            # against the database rather than against a remembered list.
+            cursor.execute(
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n"
+                " ON n.oid = c.relnamespace"
+                " WHERE n.nspname = 'public' AND c.relrowsecurity"
+            )
+            rls_relations = sorted(name for (name,) in cursor.fetchall())
+
+            cursor.execute(
+                "SELECT count(*) FROM pg_attribute a"
+                " WHERE a.attrelid = 'public.alembic_version'::regclass"
+                "   AND a.attname = 'tenant_id' AND NOT a.attisdropped"
+            )
+            alembic_has_tenant = cursor.fetchone()[0]
+    finally:
+        conn.close()
+
+    assert secdef is True
+    assert owner == "migration_owner", owner
+    assert config == ["search_path=pg_catalog, public"], config
+    assert nargs == 0, "a definer function with arguments is a steerable one"
+    assert "alembic_version" in definition
+    # It reads exactly one relation, and that relation is not tenant-scoped, so
+    # there is no tenant boundary for the definer authority to cross.
+    assert alembic_has_tenant == 0
+    assert "alembic_version" not in rls_relations
+    for relation in rls_relations:
+        assert relation not in definition, (
+            f"the definer reads the tenant-scoped relation {relation}"
+        )
+
+    # PUBLIC holds nothing, and neither causal authority holds EXECUTE.
+    assert acl is not None, "an ungoverned ACL means EXECUTE is public by default"
+    assert "=X/" not in acl.split(",")[0] or "migration_owner=" in acl, acl
+    for principal in ("app_b28_requester", "app_b28_solver"):
+        assert f"{principal}=X" not in acl, (
+            f"{principal} holds EXECUTE on the construction-revision definer"
+        )
