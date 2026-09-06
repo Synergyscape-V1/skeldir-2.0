@@ -86,7 +86,7 @@ The B0.3 schema foundation is defined by the following authoritative sources, in
 > leaves the issuer unable to append durable issuance history, and seeds zero of
 > the twenty B2.7 narrative frames — it reconstitutes the defect the corrective
 > closes and disables the fix, while matching structurally on every dimension
-> (128 functions, 172 triggers). That is exactly what makes it a sound
+> (129 functions, 172 triggers). That is exactly what makes it a sound
 > *reference* and an unsound *construction*.
 >
 > The ordering above is now enforced rather than described:

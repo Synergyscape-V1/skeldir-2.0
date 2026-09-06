@@ -43,7 +43,7 @@ not a production database at all:
 The last four are the decisive ones. The canonical route re-grants the generic
 API principal the very INSERT this corrective removed, and grants neither
 dedicated causal authority anything -- it reconstitutes the defect and disables
-the fix. Structurally the two universes agree exactly (128 functions, 172
+the fix. Structurally the two universes agree exactly (129 functions, 172
 triggers), which is what makes the file a sound *reference* and an unsound
 *construction*.
 
