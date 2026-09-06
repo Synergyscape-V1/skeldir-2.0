@@ -155,6 +155,14 @@ _MIN_TOTAL_REVENUE_MINOR = 1
 
 _BASIS_POINTS = 10_000
 
+# Mirrors app/trust/canonicalization.py::JSON_SAFE_INTEGER_MAX. The application
+# canonicalizer refuses an integer outside this range outright, so a request
+# carrying one has an `input_snapshot_hash` the application authority can never
+# recompute -- the row would be admissible to the database and unverifiable by
+# the tool an auditor would reach for. The two authorities must refuse the same
+# domain, not merely agree inside it.
+_JSON_SAFE_INTEGER_MAX = 9_007_199_254_740_991
+
 # The dedicated causal authorities. The names are load-bearing: the guards
 # compare them to `session_user`, which SET ROLE cannot change.
 _REQUEST_PRINCIPAL = "app_b28_requester"
@@ -250,6 +258,11 @@ def upgrade() -> None:
                 observed_channels >= 0
                 AND observed_conversions >= 0
                 AND observed_revenue_minor >= 0
+            ),
+            ADD CONSTRAINT ck_b28_request_json_safe_integers CHECK (
+                total_budget_minor <= {_JSON_SAFE_INTEGER_MAX}
+                AND observed_revenue_minor <= {_JSON_SAFE_INTEGER_MAX}
+                AND observed_conversions <= {_JSON_SAFE_INTEGER_MAX}
             )
         """
     )
@@ -746,6 +759,15 @@ def upgrade() -> None:
                         'b28_request_channel_evidence_not_integer:%', elem
                         USING ERRCODE = '42501';
                 END IF;
+                IF (elem ->> 'verified_revenue_minor')::numeric
+                       > {_JSON_SAFE_INTEGER_MAX}
+                   OR (elem ->> 'conversion_count')::numeric
+                       > {_JSON_SAFE_INTEGER_MAX}
+                THEN
+                    RAISE EXCEPTION
+                        'b28_request_value_outside_json_safe_range:%', elem
+                        USING ERRCODE = '42501';
+                END IF;
                 IF (elem ->> 'channel_id') = ANY(seen_ids) THEN
                     RAISE EXCEPTION
                         'b28_request_channel_ids_not_unique:%',
@@ -754,6 +776,13 @@ def upgrade() -> None:
                 END IF;
                 seen_ids := seen_ids || (elem ->> 'channel_id');
             END LOOP;
+
+            IF NEW.total_budget_minor > {_JSON_SAFE_INTEGER_MAX} THEN
+                RAISE EXCEPTION
+                    'b28_request_value_outside_json_safe_range:budget:%',
+                    NEW.total_budget_minor
+                    USING ERRCODE = '42501';
+            END IF;
 
             -- Corrective V, H-V-06. The snapshot hash is the hash of the row's
             -- own inputs or it is not admissible.
@@ -1180,6 +1209,7 @@ def downgrade() -> None:
         "ck_b28_request_solver_profile",
         "ck_b28_request_requested_by_derived",
         "ck_b28_request_observed_nonnegative",
+        "ck_b28_request_json_safe_integers",
     ):
         op.execute(
             "ALTER TABLE public.b28_simulation_requests"

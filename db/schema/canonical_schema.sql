@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict QsUcjoLVBbEIoyyMaF4RS5kfY5mMsWSbLomjXrS662qIcRJQdpcE98GuOfjq7Jd
+\restrict ywuvnpML7tjLd26WqUkNf8neBS6e9QCNIkFNft5OVeqfeaCUeWCjKhFevcXBuHT
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.15
@@ -3093,6 +3093,15 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                         'b28_request_channel_evidence_not_integer:%', elem
                         USING ERRCODE = '42501';
                 END IF;
+                IF (elem ->> 'verified_revenue_minor')::numeric
+                       > 9007199254740991
+                   OR (elem ->> 'conversion_count')::numeric
+                       > 9007199254740991
+                THEN
+                    RAISE EXCEPTION
+                        'b28_request_value_outside_json_safe_range:%', elem
+                        USING ERRCODE = '42501';
+                END IF;
                 IF (elem ->> 'channel_id') = ANY(seen_ids) THEN
                     RAISE EXCEPTION
                         'b28_request_channel_ids_not_unique:%',
@@ -3101,6 +3110,13 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                 END IF;
                 seen_ids := seen_ids || (elem ->> 'channel_id');
             END LOOP;
+
+            IF NEW.total_budget_minor > 9007199254740991 THEN
+                RAISE EXCEPTION
+                    'b28_request_value_outside_json_safe_range:budget:%',
+                    NEW.total_budget_minor
+                    USING ERRCODE = '42501';
+            END IF;
 
             -- Corrective V, H-V-06. The snapshot hash is the hash of the row's
             -- own inputs or it is not admissible.
@@ -5822,6 +5838,7 @@ CREATE TABLE public.b28_simulation_requests (
     CONSTRAINT ck_b28_request_channels CHECK ((channel_count > 0)),
     CONSTRAINT ck_b28_request_currency CHECK ((currency ~ '^[A-Z]{3}$'::text)),
     CONSTRAINT ck_b28_request_hashes CHECK (((source_semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (input_snapshot_hash ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT ck_b28_request_json_safe_integers CHECK (((total_budget_minor <= '9007199254740991'::bigint) AND (observed_revenue_minor <= '9007199254740991'::bigint) AND (observed_conversions <= '9007199254740991'::bigint))),
     CONSTRAINT ck_b28_request_observed_nonnegative CHECK (((observed_channels >= 0) AND (observed_conversions >= 0) AND (observed_revenue_minor >= 0))),
     CONSTRAINT ck_b28_request_requested_by_derived CHECK ((requested_by = ('agent_client:'::text || (requested_by_agent_client_id)::text))),
     CONSTRAINT ck_b28_request_solver_profile CHECK ((solver_profile = 'b25-p14-deterministic-largest-remainder-v1'::text))
@@ -19665,5 +19682,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict QsUcjoLVBbEIoyyMaF4RS5kfY5mMsWSbLomjXrS662qIcRJQdpcE98GuOfjq7Jd
+\unrestrict ywuvnpML7tjLd26WqUkNf8neBS6e9QCNIkFNft5OVeqfeaCUeWCjKhFevcXBuHT
 

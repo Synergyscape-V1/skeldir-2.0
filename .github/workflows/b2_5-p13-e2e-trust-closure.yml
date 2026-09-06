@@ -3503,7 +3503,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_r5_causal_authority.py \
             -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r5.out
-          grep -E "10 passed" /tmp/b25_p14_r5.out
+          grep -E "11 passed" /tmp/b25_p14_r5.out
 
       # Corrective V Exit Gate 13. One falsifiable definition of a correctly
       # constructed production database, decided on two real universes rather
@@ -3547,7 +3547,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_r5_causal_authority.py \
             -q --no-header -p no:randomly | tee /tmp/nc_p14_10_restored.out
-          grep -E "10 passed" /tmp/nc_p14_10_restored.out
+          grep -E "11 passed" /tmp/nc_p14_10_restored.out
 
       # NC-P14-11. Remove the constant-time secret comparison and leave the
       # prefix lookup, revocation and liveness checks intact. Knowing eight
@@ -3572,7 +3572,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_r5_causal_authority.py \
             -q --no-header -p no:randomly | tee /tmp/nc_p14_11_restored.out
-          grep -E "10 passed" /tmp/nc_p14_11_restored.out
+          grep -E "11 passed" /tmp/nc_p14_11_restored.out
 
       # NC-P14-12. Exit Gate 13's active falsifier: make the runtime accept the
       # unconstructed database a canonical bootstrap leaves behind.

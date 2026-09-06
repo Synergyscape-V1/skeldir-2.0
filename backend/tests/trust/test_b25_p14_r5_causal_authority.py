@@ -1202,3 +1202,128 @@ def test_p14_r5_no_runtime_principal_holds_b28_insert() -> None:
         assert flags[role] == (False, False)
 
     assert memberships == [], f"the causal authorities are entangled: {memberships}"
+
+
+def test_p14_r5_both_authorities_refuse_the_same_integer_domain() -> None:
+    """The twin must refuse what the authority refuses, not merely agree inside it.
+
+    An adversarial differential sweep over the PL/pgSQL twins found one place
+    where they disagreed, and it was not a computation: it was a *domain*. The
+    application canonicalizer raises ``integer_outside_json_safe_range`` above
+    2^53-1, so a request carrying a larger revenue, conversion count or budget
+    would have an ``input_snapshot_hash`` the application authority can never
+    recompute -- admissible to the database and unverifiable by the tool an
+    auditor would reach for, which is precisely the reconstruction property
+    Exit Gate 4 is about.
+
+    Agreement on every value inside a domain is worth nothing if the two
+    authorities disagree about where the domain ends, so the boundary is checked
+    from both sides: the application raises, and the database refuses by name.
+    """
+
+    from app.trust.canonicalization import (
+        JSON_SAFE_INTEGER_MAX,
+        CanonicalizationError,
+    )
+
+    over = JSON_SAFE_INTEGER_MAX + 1
+
+    # The application authority refuses outright.
+    with pytest.raises(CanonicalizationError) as exc:
+        compute_input_snapshot_hash(
+            SimulationRequest(
+                request_id="probe",
+                tenant_id="t",
+                requested_by="agent_client:x",
+                source_envelope_id="env_probe",
+                source_semantic_truth_hash=_digest(),
+                total_budget_minor=1_000,
+                currency="USD",
+                channels=(ChannelEvidence("google_ads", over, 12),),
+                requested_at="probe",
+            )
+        )
+    assert "integer_outside_json_safe_range" in str(exc.value)
+
+    admin = _admin_connection()
+    try:
+        with admin.cursor() as cursor:
+            tenant_id = _seed_tenant(cursor)
+            _token, client_id, credential_id = _seed_agent_credential(
+                cursor, tenant_id
+            )
+        signed, _registry = _sign_real_envelope(tenant_id)
+        issuance = _conduct_issuance(tenant_id, signed)
+
+        # The database refuses the same domain, by name. The snapshot hash is
+        # supplied as whatever the database itself would compute, so the only
+        # defect left in the row is the out-of-domain value.
+        oversized = (
+            ChannelEvidence("google_ads", over, 12),
+            ChannelEvidence("meta_ads", 250_000, 7),
+        )
+        with admin.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.b28_input_snapshot_hash(%s,%s,%s,%s,%s::jsonb)",
+                (
+                    issuance["envelope_id"],
+                    issuance["semantic_truth_hash"],
+                    1_000,
+                    "USD",
+                    _evidence_json(oversized),
+                ),
+            )
+            db_snapshot = cursor.fetchone()[0]
+
+        params = list(
+            _request_params(
+                tenant_id,
+                issuance,
+                requested_by=f"{REQUESTED_BY_PREFIX}{client_id}",
+                client_id=client_id,
+                credential_id=credential_id,
+                principal=B28_REQUEST_PRINCIPAL,
+                channels=SUFFICIENT_CHANNELS,
+                budget=1_000,
+            )
+        )
+        params[9] = db_snapshot
+        params[12] = len(oversized)
+        params[13] = _evidence_json(oversized)
+        adjudication = adjudicate_sufficiency(oversized)
+        params[16] = adjudication.sufficient
+        params[17] = list(adjudication.reasons)
+        params[18] = adjudication.observed_channels
+        params[19] = adjudication.observed_conversions
+        params[20] = adjudication.observed_revenue_minor
+        oversized_revenue = _attempt(
+            B28_REQUEST_PRINCIPAL, tenant_id, _REQUEST_INSERT_FULL, tuple(params)
+        )
+
+        # And on the budget, where a CHECK constraint carries it as well.
+        oversized_budget = _attempt(
+            B28_REQUEST_PRINCIPAL,
+            tenant_id,
+            _REQUEST_INSERT_FULL,
+            _request_params(
+                tenant_id,
+                issuance,
+                requested_by=f"{REQUESTED_BY_PREFIX}{client_id}",
+                client_id=client_id,
+                credential_id=credential_id,
+                principal=B28_REQUEST_PRINCIPAL,
+                budget=over,
+                snapshot=_digest(),
+            ),
+        )
+    finally:
+        admin.close()
+
+    assert "b28_request_value_outside_json_safe_range" in oversized_revenue, (
+        oversized_revenue
+    )
+    assert oversized_budget != "ALLOWED", oversized_budget
+    assert (
+        "b28_request_value_outside_json_safe_range" in oversized_budget
+        or "ck_b28_request_json_safe_integers" in oversized_budget
+    ), oversized_budget
