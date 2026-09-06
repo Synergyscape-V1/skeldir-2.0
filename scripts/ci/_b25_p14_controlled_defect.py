@@ -374,13 +374,13 @@ def compatibility_accepts_any_known_revision() -> None:
     exactly how this defect arrived the first time.
     """
 
-    anchor = (
-        "COMPATIBLE_SCHEMA_REVISIONS: frozenset[str] ="
-        " frozenset({REQUIRED_SCHEMA_REVISION})\n"
-    )
+    # The *membership test* moves, not the constant. Widening the constant at
+    # its definition site would raise NameError -- `known_revisions` is defined
+    # further down the module -- and a control that reds on an import error
+    # measures nothing about the policy it claims to falsify.
+    anchor = "    if revision not in COMPATIBLE_SCHEMA_REVISIONS:\n"
     replacement = (
-        "COMPATIBLE_SCHEMA_REVISIONS: frozenset[str] = known_revisions()"
-        "  # NC-P14-18\n"
+        "    if revision not in known_revisions(migrations_root):  # NC-P14-18\n"
     )
     _replace_once(
         CONSTRUCTION_AUTHORITY,
