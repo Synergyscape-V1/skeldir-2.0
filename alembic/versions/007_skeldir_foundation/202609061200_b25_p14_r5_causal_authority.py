@@ -900,6 +900,30 @@ def upgrade() -> None:
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Corrective V, Exit Gate 4's active falsifier. The comparison
+            -- above proves the result cites its request's snapshot; it does not
+            -- prove the request still *is* what it was admitted as. A principal
+            -- that can mutate the retained evidence after admission -- an owner
+            -- or superuser, since no runtime principal holds UPDATE here -- would
+            -- otherwise leave every derivation self-consistent over the new
+            -- bytes, and the tamper would be visible only to an auditor
+            -- recomputing the request's own hash. Re-deriving it here makes a
+            -- post-admission input change unrepresentable as a consequence
+            -- rather than merely detectable after the fact.
+            IF request_row.input_snapshot_hash IS DISTINCT FROM
+               public.b28_input_snapshot_hash(
+                   request_row.source_envelope_id,
+                   request_row.source_semantic_truth_hash,
+                   request_row.total_budget_minor,
+                   request_row.currency,
+                   request_row.channel_evidence
+               )
+            THEN
+                RAISE EXCEPTION
+                    'b28_result_request_input_witness_broken:%', NEW.request_id
+                    USING ERRCODE = '42501';
+            END IF;
+
             -- Corrective V, H-V-05. Sufficiency is a durable precondition of the
             -- consequence, not a decision the writer reports having made.
             IF NOT request_row.sufficiency_verdict THEN

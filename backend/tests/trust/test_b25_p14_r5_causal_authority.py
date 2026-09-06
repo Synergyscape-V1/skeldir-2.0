@@ -1327,3 +1327,140 @@ def test_p14_r5_both_authorities_refuse_the_same_integer_domain() -> None:
         "b28_request_value_outside_json_safe_range" in oversized_budget
         or "ck_b28_request_json_safe_integers" in oversized_budget
     ), oversized_budget
+
+
+def test_p14_r5_a_post_admission_input_change_has_no_representable_consequence() -> None:
+    """Exit Gate 4's active falsifier, as the gate words it.
+
+    The directive asks that changing a solver input *after* admission make the
+    recomputation/consequence gate go red. Comparing the result's snapshot to
+    its request's does not achieve that: both sides move together if the request
+    itself is edited. Nor does recomputing the allocation, which is scale
+    invariant -- doubling every channel's revenue leaves the largest-remainder
+    split byte-identical, so that check alone is blind to a uniform rescaling.
+
+    The result guard therefore re-derives the request's own input witness from
+    the request's own retained bytes. A row whose evidence was edited after
+    admission is not merely detectable by an auditor afterwards; it can never
+    carry a consequence at all.
+
+    The tamper is performed as the admin principal deliberately: no runtime
+    principal holds UPDATE on this relation, so the only writer who could do it
+    is one that could also drop the trigger -- which is exactly the writer the
+    gate has to be meaningful against.
+    """
+
+    admin = _admin_connection()
+    try:
+        with admin.cursor() as cursor:
+            tenant_id = _seed_tenant(cursor)
+            token, _client_id, _credential_id = _seed_agent_credential(
+                cursor, tenant_id
+            )
+        signed, _registry = _sign_real_envelope(tenant_id)
+        issuance = _conduct_issuance(tenant_id, signed)
+        envelope = _read_back_issued_envelope(tenant_id, issuance["audit_ref"])
+
+        conducted = conduct_requested_simulation(
+            envelope=envelope,
+            tenant_id=str(tenant_id),
+            presented_token=token,
+            source_issuance_envelope_hash=issuance["envelope_hash"],
+            total_budget_minor=600_000,
+            currency="USD",
+            channels=SUFFICIENT_CHANNELS,
+        )
+        request_id = conducted["request_id"]
+
+        with admin.cursor() as cursor:
+            cursor.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            # Pristine: the request's witness verifies against its own evidence.
+            cursor.execute(
+                "SELECT input_snapshot_hash = public.b28_input_snapshot_hash("
+                " source_envelope_id, source_semantic_truth_hash,"
+                " total_budget_minor, currency, channel_evidence)"
+                " FROM public.b28_simulation_requests WHERE id = %s",
+                (request_id,),
+            )
+            assert cursor.fetchone()[0] is True
+
+            # A uniform rescaling: allocation-invariant, witness-breaking.
+            cursor.execute(
+                "UPDATE public.b28_simulation_requests SET channel_evidence ="
+                " (SELECT jsonb_agg(jsonb_set(e, '{verified_revenue_minor}',"
+                "   to_jsonb((e->>'verified_revenue_minor')::bigint * 2))"
+                "   ORDER BY ord)"
+                "  FROM jsonb_array_elements(channel_evidence)"
+                "  WITH ORDINALITY AS t(e, ord))"
+                " WHERE id = %s",
+                (request_id,),
+            )
+            cursor.execute(
+                "SELECT channel_evidence, total_budget_minor, currency,"
+                " source_envelope_id, source_semantic_truth_hash"
+                " FROM public.b28_simulation_requests WHERE id = %s",
+                (request_id,),
+            )
+            evidence, budget, currency, envelope_id, truth = cursor.fetchone()
+
+        # The rescaling really is allocation-invariant: the check that would
+        # otherwise be relied on cannot see this tamper.
+        rescaled = tuple(
+            ChannelEvidence(
+                channel_id=item["channel_id"],
+                verified_revenue_minor=item["verified_revenue_minor"],
+                conversion_count=item["conversion_count"],
+            )
+            for item in evidence
+        )
+        before = [
+            (line.channel_id, line.allocation_minor, line.weight_basis_points)
+            for line in allocate_budget(
+                channels=SUFFICIENT_CHANNELS, total_budget_minor=budget
+            )
+        ]
+        after = [
+            (line.channel_id, line.allocation_minor, line.weight_basis_points)
+            for line in allocate_budget(channels=rescaled, total_budget_minor=budget)
+        ]
+        assert before == after, (
+            "this falsifier depends on the rescaling being allocation-invariant"
+        )
+
+        # And yet no consequence is representable for the tampered request.
+        refused = _attempt(
+            B28_SOLVER_PRINCIPAL,
+            tenant_id,
+            _RESULT_INSERT,
+            (
+                str(tenant_id),
+                request_id,
+                envelope_id,
+                truth,
+                _digest(),
+                conducted["outcome"].input_snapshot_hash,
+                SOLVER_PROFILE,
+                1,
+                budget,
+                budget,
+                currency,
+                "simulation_only",
+                json.dumps(
+                    [
+                        {
+                            "channel_id": c,
+                            "allocation_minor": a,
+                            "weight_basis_points": w,
+                        }
+                        for c, a, w in after
+                    ]
+                ),
+            ),
+        )
+    finally:
+        admin.close()
+
+    assert "b28_result_request_input_witness_broken" in refused, refused

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ywuvnpML7tjLd26WqUkNf8neBS6e9QCNIkFNft5OVeqfeaCUeWCjKhFevcXBuHT
+\restrict p4nZKr77VpvL7zgQbnIbMXHqlMX8rjeTBBfMi4lprMda4FGqfNQOnRB4vcfEklR
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.15
@@ -3228,6 +3228,30 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
             THEN
                 RAISE EXCEPTION
                     'b28_result_solver_profile_ungoverned:%', NEW.solver_profile
+                    USING ERRCODE = '42501';
+            END IF;
+
+            -- Corrective V, Exit Gate 4's active falsifier. The comparison
+            -- above proves the result cites its request's snapshot; it does not
+            -- prove the request still *is* what it was admitted as. A principal
+            -- that can mutate the retained evidence after admission -- an owner
+            -- or superuser, since no runtime principal holds UPDATE here -- would
+            -- otherwise leave every derivation self-consistent over the new
+            -- bytes, and the tamper would be visible only to an auditor
+            -- recomputing the request's own hash. Re-deriving it here makes a
+            -- post-admission input change unrepresentable as a consequence
+            -- rather than merely detectable after the fact.
+            IF request_row.input_snapshot_hash IS DISTINCT FROM
+               public.b28_input_snapshot_hash(
+                   request_row.source_envelope_id,
+                   request_row.source_semantic_truth_hash,
+                   request_row.total_budget_minor,
+                   request_row.currency,
+                   request_row.channel_evidence
+               )
+            THEN
+                RAISE EXCEPTION
+                    'b28_result_request_input_witness_broken:%', NEW.request_id
                     USING ERRCODE = '42501';
             END IF;
 
@@ -19682,5 +19706,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ywuvnpML7tjLd26WqUkNf8neBS6e9QCNIkFNft5OVeqfeaCUeWCjKhFevcXBuHT
+\unrestrict p4nZKr77VpvL7zgQbnIbMXHqlMX8rjeTBBfMi4lprMda4FGqfNQOnRB4vcfEklR
 
