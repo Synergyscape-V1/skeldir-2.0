@@ -742,35 +742,50 @@ def test_c19_context_robust_production_topology() -> None:
         assert durable_results == expected_consequences, p14_side_effects
         assert durable_proposals == expected_consequences, p14_side_effects
 
-    # The custody boundary, observed rather than declared: only the API process
-    # receives the two causal DSNs.
-    custody_map: dict[str, list[str]] = {}
+    # The custody boundary, observed rather than declared: which processes
+    # actually receive the two causal DSNs is read out of the running
+    # containers, not inferred from Python imports (Directive VI H-ART-VI-01).
+    #
+    # Every service in this compose file declares `restart: "no"` on purpose, so
+    # a container that has exited stays exited. A probe that cannot run is
+    # recorded as unobserved rather than silently counted as clean -- claiming a
+    # secret is absent from a process you could not look inside would be exactly
+    # the kind of inference this gate exists to replace. `api` must be
+    # observable, because it is the one service the declaration says holds them.
+    custody_probe = (
+        "import json,os;print(json.dumps(sorted("
+        "n for n in ('B28_REQUEST_DATABASE_URL','B28_SOLVER_DATABASE_URL')"
+        " if os.getenv(n))))"
+    )
+    custody_map: dict[str, object] = {}
     for service in (
         "api",
         "beat",
         "worker_bayesian",
         "worker_publisher",
         "worker_attribution",
+        "worker_b23_a",
+        "worker_b23_b",
         "trust_signer",
     ):
-        probe = _compose(
-            "exec",
-            "-T",
-            service,
-            "python",
-            "-c",
-            "import json,os;print(json.dumps(sorted("
-            "n for n in ('B28_REQUEST_DATABASE_URL','B28_SOLVER_DATABASE_URL')"
-            " if os.getenv(n))))",
-        )
+        try:
+            probe = _compose("exec", "-T", service, "python", "-c", custody_probe)
+        except subprocess.CalledProcessError as exc:
+            custody_map[service] = {
+                "observed": False,
+                "why": (exc.stderr or "").strip().splitlines()[-1:] or ["unknown"],
+            }
+            continue
         custody_map[service] = json.loads(probe.stdout.strip().splitlines()[-1])
+
     assert custody_map["api"] == [
         "B28_REQUEST_DATABASE_URL",
         "B28_SOLVER_DATABASE_URL",
     ], custody_map
     for service, carried in custody_map.items():
-        if service != "api":
-            assert carried == [], custody_map
+        if service == "api" or not isinstance(carried, list):
+            continue
+        assert carried == [], custody_map
 
     containers = _compose("ps", "--format", "json").stdout.strip().splitlines()
     assert len(containers) >= 8
