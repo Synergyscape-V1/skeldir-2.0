@@ -624,17 +624,30 @@ def test_c19_context_robust_production_topology() -> None:
     # therefore forbids a durable B2.8 consequence over conducted Trust, and the
     # database says so by name before any row exists. That is measured here on
     # physically conducted state rather than inferred from the code.
+    # Selected by the *envelope's own* semantic truth, not by recency. The
+    # journey issues more than one Trust for this tenant, and the request guard
+    # binds `source_semantic_truth_hash` to the issuance row named by
+    # `source_issuance_envelope_hash` before it looks at policy at all -- so
+    # picking the newest row makes the leg measure a binding failure rather than
+    # the authority law it exists to measure. This is the Trust the proof above
+    # verified from the public JWKS.
     issued = _fetch_one(
         """
         SELECT envelope_hash, semantic_truth_hash, policy_state, audit_ref
           FROM public.trust_envelope_issuance_log
-         WHERE tenant_id = %s AND status = 'success'
+         WHERE tenant_id = %s
+           AND status = 'success'
+           AND semantic_truth_hash = %s
          ORDER BY created_at DESC
          LIMIT 1
         """,
-        (control_a["tenant_id"],),
+        (control_a["tenant_id"], envelope["semantic_truth_hash"]),
     )
-    assert issued is not None, "no durable issuance to conduct into P14"
+    assert issued is not None, (
+        "the Trust verified from the public JWKS has no durable issuance record:"
+        f" semantic_truth_hash={envelope['semantic_truth_hash']}"
+    )
+    assert issued[1] == envelope["semantic_truth_hash"]
     conducted_policy_state = issued[2]
 
     # The simulation input is itself conducted state: the channel evidence is
