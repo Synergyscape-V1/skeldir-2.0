@@ -22,24 +22,24 @@ This monorepo contains the complete Skeldir 2.0 Attribution Intelligence platfor
 
 ```
 .
-├── backend/          # FastAPI application (modular monolith)
-│   ├── app/          # Application code (ingestion, attribution, auth, webhooks)
-│   ├── db/           # Database migrations, seeds, snapshots
-│   ├── alembic/      # Alembic configuration
-│   └── tests/        # Backend unit tests
-├── frontend/         # Replit UI (to be migrated)
-│   ├── src/          # Frontend source code
-│   └── public/       # Static assets
-├── contracts/        # OpenAPI 3.1.0 contract specifications (includes original skeldir-api-contracts content)
-│   ├── openapi/      # Original repository structure preserved
-│   │   └── v1/       # Version 1 API contracts
-│   └── baselines/    # Frozen baselines for breaking change detection
-├── api-contracts/    # Legacy contracts directory (preserved for reference)
-├── docs/             # Shared documentation
-│   └── database/     # Database governance documentation
-├── scripts/          # Shared utility scripts
-├── tests/            # Integration tests (Playwright)
-└── .github/          # CI/CD workflows
+â”œâ”€â”€ backend/          # FastAPI application (modular monolith)
+â”‚   â”œâ”€â”€ app/          # Application code (ingestion, attribution, auth, webhooks)
+â”‚   â”œâ”€â”€ db/           # Database migrations, seeds, snapshots
+â”‚   â”œâ”€â”€ alembic/      # Alembic configuration
+â”‚   â””â”€â”€ tests/        # Backend unit tests
+â”œâ”€â”€ frontend/         # Replit UI (to be migrated)
+â”‚   â”œâ”€â”€ src/          # Frontend source code
+â”‚   â””â”€â”€ public/       # Static assets
+â”œâ”€â”€ contracts/        # OpenAPI 3.1.0 contract specifications (includes original skeldir-api-contracts content)
+â”‚   â”œâ”€â”€ openapi/      # Original repository structure preserved
+â”‚   â”‚   â””â”€â”€ v1/       # Version 1 API contracts
+â”‚   â””â”€â”€ baselines/    # Frozen baselines for breaking change detection
+â”œâ”€â”€ api-contracts/    # Legacy contracts directory (preserved for reference)
+â”œâ”€â”€ docs/             # Shared documentation
+â”‚   â””â”€â”€ database/     # Database governance documentation
+â”œâ”€â”€ scripts/          # Shared utility scripts
+â”œâ”€â”€ tests/            # Integration tests (Playwright)
+â””â”€â”€ .github/          # CI/CD workflows
 ```
 
 ## Quick Start
@@ -194,3 +194,5 @@ For questions:
 - See [monorepo structure guide](docs/MONOREPO_STRUCTURE.md) for folder organization
 # Test CI with line 129 fixed
 # Line 129 verified to have dash - forcing reparse
+
+<!-- ci-fidelity-probe-after: docs-only post-remediation measurement -->
