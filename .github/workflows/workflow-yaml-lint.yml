@@ -7,6 +7,9 @@ name: "CI: Workflow YAML Lint"
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
   push:
     branches: [main]
     paths:
