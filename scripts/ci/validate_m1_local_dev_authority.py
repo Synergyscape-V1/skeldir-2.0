@@ -187,6 +187,13 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docker-compose.e2e.yml",
     "contracts-internal/governance/b03_phase2_required_status_checks.main.json",
     "contracts-internal/governance/main_branch_protection_integrity.main.json",
+    # CI throughput remediation (v1.21.0): machine-readable proof-conservation
+    # contract and remediation evidence. Governance/forensics surfaces carrying
+    # no product semantics; every B2.3/provider/dependency/migration prohibition
+    # below is retained unchanged.
+    "contracts-internal/governance/ci_proof_conservation.v1.json",
+    "docs/forensics/CI_THROUGHPUT_REMEDIATION_EVIDENCE.md",
+    "docs/forensics/ci_throughput_remediation.evidence.json",
     "Makefile",
     "pytest.ini",
     "scripts/guard_no_docker.py",

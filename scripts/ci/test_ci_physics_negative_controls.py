@@ -172,8 +172,77 @@ jobs:
 PIN_CONTRACT = json.dumps(
     {
         "contract_id": "example.pin",
+        # "gate" is a job id in the fan-out fixtures, so the lane classifies as
+        # required and the advisory burst rules stay out of the pin test's way.
+        "required_contexts": ["gate"],
         "required_ci_job": {"job_id": "leaf0", "job_name": "leaf0", "needs": ["gate"]},
     }
+)
+
+# Throughput-remediation lanes: an advisory workflow (zero required contexts)
+# must not fire on merge_group and must scope pull_request with paths.
+# Required lanes keep both (totality). The contract below marks nothing as
+# required, so Example is advisory.
+# No required_contexts key: coverage is vacuous, while the lane rules still see
+# an (empty) contract and classify Example as advisory. Using a context produced
+# by nothing would trip merge-queue coverage instead of the rule under test.
+ADVISORY_CONTRACT = json.dumps({"contract_id": "example.empty"})
+REQUIRED_CONTRACT = json.dumps({"required_contexts": ["Example"]})
+
+ADVISORY_WITH_MG = CONFORMING
+
+# The MG exemption is under test here, so the fixture scopes pull_request with
+# paths to keep the pr-paths rule out of it.
+ADVISORY_WITH_MG_EXEMPTED = CONFORMING.replace(
+    "name: Example",
+    "# physics-exempt: advisory-merge-group - synthetic fixture keeps merge_group for forensics\nname: Example",
+).replace(
+    "  pull_request:\n",
+    "  pull_request:\n    paths:\n      - 'scripts/example/**'\n",
+    1,
+)
+
+ADVISORY_PR_UNFILTERED = """\
+name: Example
+on:
+  pull_request:
+  push:
+    branches: [main]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+"""
+
+ADVISORY_PR_FILTERED = """\
+name: Example
+on:
+  pull_request:
+    paths:
+      - 'scripts/example/**'
+      - '.github/workflows/example.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/example/**'
+      - '.github/workflows/example.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+"""
+
+ADVISORY_PR_EXEMPTED = ADVISORY_PR_UNFILTERED.replace(
+    "name: Example",
+    "# physics-exempt: advisory-pr-paths - synthetic cross-cutting validator\nname: Example",
 )
 
 CONTROLS: list[tuple[str, str, bool, str]] = [
@@ -246,6 +315,55 @@ EXTRA_CONTROLS: list[tuple[str, str, bool, str, str | None]] = [
         True,
         "",
         QUEUE_CTX_CONTRACT,
+    ),
+    (
+        "advisory lane occupying merge_group burst",
+        ADVISORY_WITH_MG,
+        False,
+        "merge_group",
+        ADVISORY_CONTRACT,
+    ),
+    (
+        "same advisory lane, once merge_group is removed",
+        ADVISORY_PR_FILTERED,
+        True,
+        "",
+        ADVISORY_CONTRACT,
+    ),
+    (
+        "advisory lane with an in-file merge_group exemption",
+        ADVISORY_WITH_MG_EXEMPTED,
+        True,
+        "",
+        ADVISORY_CONTRACT,
+    ),
+    (
+        "advisory lane firing on every PR without paths",
+        ADVISORY_PR_UNFILTERED,
+        False,
+        "paths",
+        ADVISORY_CONTRACT,
+    ),
+    (
+        "same advisory lane, once pull_request is path-scoped",
+        ADVISORY_PR_FILTERED,
+        True,
+        "",
+        ADVISORY_CONTRACT,
+    ),
+    (
+        "advisory lane with an in-file pr-paths exemption",
+        ADVISORY_PR_EXEMPTED,
+        True,
+        "",
+        ADVISORY_CONTRACT,
+    ),
+    (
+        "required lane missing merge_group still fails",
+        NO_MG_BUT_REQUIRED,
+        False,
+        "merge_group",
+        REQUIRED_CONTRACT,
     ),
 ]
 

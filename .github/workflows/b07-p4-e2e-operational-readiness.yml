@@ -1,10 +1,27 @@
 name: b07-p4-e2e-operational-readiness
 
 on:
-  merge_group:
   push:
+    paths:
+      - 'backend/tests/integration/test_b07_p4_operational_readiness_e2e.py'
+      - 'scripts/ci/run_b07_p4_operational_queries.sh'
+      - 'scripts/wait_for_e2e_health.py'
+      - 'scripts/wait_for_e2e_worker.py'
+      - 'docker-compose.e2e.yml'
+      - '.github/workflows/b07-p4-e2e-operational-readiness.yml'
+      - 'docs/ci/**'
+      - 'contracts-internal/governance/b03_phase2_required_status_checks.main.json'
     branches: [main]
   pull_request:
+    paths:
+      - 'backend/tests/integration/test_b07_p4_operational_readiness_e2e.py'
+      - 'scripts/ci/run_b07_p4_operational_queries.sh'
+      - 'scripts/wait_for_e2e_health.py'
+      - 'scripts/wait_for_e2e_worker.py'
+      - 'docker-compose.e2e.yml'
+      - '.github/workflows/b07-p4-e2e-operational-readiness.yml'
+      - 'docs/ci/**'
+      - 'contracts-internal/governance/b03_phase2_required_status_checks.main.json'
     branches: [main]
   workflow_dispatch:
 
@@ -14,7 +31,7 @@ concurrency:
   # the event in the group the two runs share it and cancel each other - which
   # cancelled three required contexts on PR #653 before this was fixed.
   # PR events: one live run per workflow per PR - a new push supersedes the old.
-  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # push: run_id is unique, so those runs are never cancelled
   # and never queued. The audit proof on an exact SHA always runs to completion.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

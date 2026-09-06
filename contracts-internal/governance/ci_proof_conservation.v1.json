@@ -1,0 +1,877 @@
+{
+ "audit_evidence": {
+  "artifact_fidelity": {
+   "container_proof_workflows": [
+    "b2_5-p13-e2e-trust-closure.yml",
+    "b2_4-gate-dry-run.yml"
+   ],
+   "host_only_remainder": true,
+   "negative_control": "NC-P14-07 Dockerfile parity (P13 lines 3571-3589): Dockerfile-only defect red while host gates stay green"
+  },
+  "burst": {
+   "merge_group_same_minute": 53,
+   "pr_same_minute": 48,
+   "push_main_same_minute": 52
+  },
+  "cache": {
+   "actions_cache_files": 0,
+   "pip_cache_hit_observed": "setup-python-Linux-x64-24.04-Ubuntu-python-3.11.16-pip-aedd28... restored successfully (run 34047052615)",
+   "pip_install_occurrences": 352,
+   "setup_python_pip_cache_files": 50
+  },
+  "queue": {
+   "ci_run_id": 34047052521,
+   "exec_max_min": 14.15,
+   "exec_med_min": 1.27,
+   "head_sha": "3dc192b74890c50de521b74c6a2f7a4361faf94b",
+   "n_jobs": 79,
+   "queue_max_min": 37.1,
+   "queue_med_min": 20.88,
+   "queue_p90_min": 26.98,
+   "wall_min": 38.63
+  },
+  "required_match_live": true,
+  "required_total": 80
+ },
+ "conservation_laws": [
+  "CI-C1 proof conservation",
+  "CI-C2 required-check totality",
+  "CI-C3 artifact correspondence",
+  "CI-C4 cache consequence neutrality",
+  "CI-C5 merge authority conservation"
+ ],
+ "contract_id": "ci.proof_conservation",
+ "contract_version": "v1.0.1",
+ "invariants": [
+  {
+   "advisory_owners": [
+    "B2.5-P1 Contract Authority (b2_5-p1-contracts.yml, path-filtered PR)",
+    "B2.5-P2 Canonicalization (b2_5-p2-canonicalization.yml, path-filtered PR)"
+   ],
+   "evidence_tier": "deployable-artifact (P13) + runner-host (remainder); host-green is not accepted as production-ready",
+   "id": "I-1",
+   "negative_controls": [
+    "physics guard NC suite (updated: 18 controls, all must pass)",
+    "B1.4 privacy-plane adversarial + RLS-denial proofs",
+    "P13 governance validator NC suite"
+   ],
+   "proof_obligation": "Tenant isolation physically enforced (RLS, GUC, role hygiene); no cross-tenant read/write",
+   "required_owners": [
+    {
+     "context": "B1.4 P1 Ingress Contract Sanitization",
+     "job": "b14-p1-ingress-contract-sanitization",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B1.4 P2 Session Authority Proofs",
+     "job": "b14-p2-session-authority-proofs",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B1.4 P3 Attribution Locality Proofs",
+     "job": "b14-p3-attribution-locality-proofs",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B1.4 P4 Retention + Deterministic Deletion Proofs",
+     "job": "b14-p4-retention-deletion-proofs",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B1.4 P5 Export Log Artifact No-Leak",
+     "job": "b14-p5-export-log-artifact-no-leak",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding",
+     "job": "b14-p6-proof-plane-binding",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B1.4 P7 E2E Privacy System Proofs",
+     "job": "b14-p7-e2e-privacy-system-proofs",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B1.4 P0 Privacy Authority Lock",
+     "job": "b14-p0-privacy-authority-lock",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "R2 Data-Truth Hardening",
+     "job": "r2-data-truth-hardening",
+     "workflow": "r2-data-truth-hardening.yml"
+    },
+    {
+     "context": "B2.4-P9 Worker Tenant Hygiene Proof",
+     "job": "B2.4-P9 Worker Tenant Hygiene Proof",
+     "workflow": "b2_4-gate-dry-run.yml"
+    },
+    {
+     "context": "JWT Tenant Context Invariants",
+     "job": "jwt-tenant-context-invariants",
+     "workflow": "ci.yml"
+    }
+   ],
+   "sensors": [
+    "ci.yml B1.4 privacy plane (8 jobs, per-job Postgres RLS)",
+    "r2-data-truth-hardening.yml adversarial lane",
+    "b2_4-gate-dry-run.yml P9 worker hygiene"
+   ]
+  },
+  {
+   "advisory_owners": [
+    "B2.5-P4 Money Authority (b2_5-p4-money-authority.yml, path-filtered PR, deep lane)"
+   ],
+   "evidence_tier": "runner-host deterministic; integer-cents representation enforced statically and at runtime",
+   "id": "I-2",
+   "negative_controls": [
+    "physics guard NC suite",
+    "B2.3 composite gate-level JSON names failing gate of 21",
+    "money-authority negative cases (float/decimal rejection)"
+   ],
+   "proof_obligation": "Money in integer minor units; no float/decimal arithmetic on financial truth",
+   "required_owners": [
+    {
+     "context": "B2.3 Composite Proof Harness",
+     "job": "b23-p5-composite-proof",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B2.1-P0 Runtime Authority Closeout",
+     "job": "b21-p0-runtime-authority-closeout",
+     "workflow": "ci.yml"
+    }
+   ],
+   "sensors": [
+    "ci.yml b23-p5-composite-proof (21-gate harness)",
+    "backend/tests numeric authority (test-backend job, ci.yml)"
+   ]
+  },
+  {
+   "advisory_owners": [
+    "b057-p4-llm-audit-persistence.yml (LLM audit persistence, advisory)"
+   ],
+   "evidence_tier": "static + dynamic + 7-path runtime trace (strongest-in-repo, Plane D meta-proof)",
+   "id": "I-3",
+   "negative_controls": [
+    "P12 isolation_negative_controls_fired=4 (asserted count)",
+    "physics guard NC suite",
+    "B0.7 P2 red-team LLM+redaction cases"
+   ],
+   "proof_obligation": "LLM exclusion from truth paths (explain-only; no LLM reachability into deterministic truth)",
+   "required_owners": [
+    {
+     "context": "B2.5-P12 CI Gates",
+     "job": "B2.5-P12 CI Gates",
+     "workflow": "b2_5-p12-ci-gates.yml"
+    },
+    {
+     "context": "B0.7 P2 Runtime Proof (LLM + Redaction)",
+     "job": "b07-p2-runtime-proof",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B1.7 Explanation Runtime Adjudication",
+     "job": "b17-explanation-runtime-adjudication",
+     "workflow": "ci.yml"
+    }
+   ],
+   "sensors": [
+    "b2_5-p12-ci-gates.yml trust isolation (static+dynamic+runtime trace)",
+    "ci.yml b07-p2-runtime-proof + b17-explanation-runtime-adjudication"
+   ]
+  },
+  {
+   "advisory_owners": [
+    "B2.5-P5 Trust Builder (b2_5-p5-builder.yml, path-filtered PR)",
+    "B2.5-P6 Reason Truth Matrix (b2_5-p6-reason-truth-matrix.yml, path-filtered PR)"
+   ],
+   "evidence_tier": "runner-host statistical harness + merge-blocking diagnostic semantics",
+   "id": "I-4",
+   "negative_controls": [
+    "physics guard NC suite",
+    "B2.4-P7 diagnostic-semantics negative cases",
+    "P13 downstream-projection safety NCs"
+   ],
+   "proof_obligation": "Attribution/causal separation (no uncertainty promotion to causation)",
+   "required_owners": [
+    {
+     "context": "B2.4-P5 Bayesian Runtime Harness",
+     "job": "B2.4-P5 Bayesian Runtime Harness",
+     "workflow": "b2_4-gate-dry-run.yml"
+    },
+    {
+     "context": "B2.4-P7 Diagnostic Semantics Proof",
+     "job": "B2.4-P7 Diagnostic Semantics Proof",
+     "workflow": "b2_4-gate-dry-run.yml"
+    },
+    {
+     "context": "B1.7 P4 Mixed Workload Benchmark",
+     "job": "B1.7 P4 Mixed Workload Benchmark",
+     "workflow": "b17-p4-mixed-workload-benchmark.yml"
+    },
+    {
+     "context": "B2.5-P13 E2E Trust Closure",
+     "job": "B2.5-P13 E2E Trust Closure",
+     "workflow": "b2_5-p13-e2e-trust-closure.yml"
+    }
+   ],
+   "sensors": [
+    "b2_4-gate-dry-run.yml P5/P7",
+    "b17-p4-mixed-workload-benchmark.yml (weekly scheduled + PR)",
+    "b2_5-p13 closure downstream safety"
+   ]
+  },
+  {
+   "advisory_owners": [
+    "B2.5-P7 Provenance Audit (b2_5-p7-provenance-audit.yml, path-filtered PR)",
+    "forensics INDEX governance (advisory signal, merge-blocking enforcer in ci.yml governance-guardrails)"
+   ],
+   "evidence_tier": "container-bound at tip (P13 NC-P14-07); host-only elsewhere, explicitly lower tier",
+   "id": "I-5",
+   "negative_controls": [
+    "NC-P14-07 Dockerfile parity defect (container-only defect invisible to host gates)",
+    "P12 projection_negative_controls_fired=3 (asserted count)",
+    "forensics INDEX enforcer E-VAC-01: unindexed pack GREEN->RED(2 errors)->RED(1 error)->GREEN"
+   ],
+   "proof_obligation": "Provenance conservation (downstream authority never exceeds source authority)",
+   "required_owners": [
+    {
+     "context": "B2.5-P13 E2E Trust Closure",
+     "job": "B2.5-P13 E2E Trust Closure",
+     "workflow": "b2_5-p13-e2e-trust-closure.yml"
+    },
+    {
+     "context": "B2.5-P12 CI Gates",
+     "job": "B2.5-P12 CI Gates",
+     "workflow": "b2_5-p12-ci-gates.yml"
+    },
+    {
+     "context": "Contract Semantic Drift Gate",
+     "job": "contract-semantic-drift-gate",
+     "workflow": "ci.yml"
+    }
+   ],
+   "sensors": [
+    "b2_5-p13-e2e-trust-closure.yml composition proof (real Postgres+RLS+FastAPI+builder+signer)",
+    "b2_5-p12 projection Plane A/B",
+    "ci.yml governance-guardrails INDEX enforcer"
+   ]
+  },
+  {
+   "advisory_owners": [
+    "r5-remediation.yml / r5-context-gathering.yml (determinism+scaling, advisory)"
+   ],
+   "evidence_tier": "runner-host deterministic replay + container closure (P13)",
+   "id": "I-6",
+   "negative_controls": [
+    "physics guard NC suite",
+    "B2.1-P1 replay-lock negative cases (mutation must break replay equality)",
+    "P13 closure replay checks"
+   ],
+   "proof_obligation": "Deterministic replay (attribution replays identically)",
+   "required_owners": [
+    {
+     "context": "B2.1-P1 Semantic Replay Lock",
+     "job": "b21-p1-semantic-replay-lock",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B2.5-P13 E2E Trust Closure",
+     "job": "B2.5-P13 E2E Trust Closure",
+     "workflow": "b2_5-p13-e2e-trust-closure.yml"
+    }
+   ],
+   "sensors": [
+    "ci.yml b21-p1-semantic-replay-lock",
+    "b2_5-p13 closure"
+   ]
+  },
+  {
+   "advisory_owners": [
+    "contract-artifacts.yml / contract-validation.yml / contracts.yml (advisory deep validation; required authority lives in ci.yml + P12)"
+   ],
+   "evidence_tier": "contract-bound; only P13 binds contract truth to container bytes (I-7 container binding)",
+   "id": "I-7",
+   "negative_controls": [
+    "P12 ci_gate_negative_controls_fired=7 (asserted count)",
+    "contract-publish tag gate (non-merge authority, release only)",
+    "P13 Dockerfile-parity NC (host-green/container-red possible, proven)"
+   ],
+   "proof_obligation": "Contract authority (emitted responses validate against published schemas; P12 projection safety)",
+   "required_owners": [
+    {
+     "context": "Validate Contracts",
+     "job": "validate-contracts",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "Contract Semantic Drift Gate",
+     "job": "contract-semantic-drift-gate",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B2.5-P12 CI Gates",
+     "job": "B2.5-P12 CI Gates",
+     "workflow": "b2_5-p12-ci-gates.yml"
+    },
+    {
+     "context": "B2.5-P10 Trust API Surface",
+     "job": "B2.5-P10 Trust API Surface",
+     "workflow": "b2_5-p10-trust-api-surface.yml"
+    },
+    {
+     "context": "Frontend Contract Consumption Gate",
+     "job": "frontend-contract-consumption",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "B2.5-P13 E2E Trust Closure",
+     "job": "B2.5-P13 E2E Trust Closure",
+     "workflow": "b2_5-p13-e2e-trust-closure.yml"
+    }
+   ],
+   "sensors": [
+    "ci.yml validate-contracts + drift gate",
+    "b2_5-p12 contract projection",
+    "b2_5-p10 trust API surface",
+    "b2_5-p13 container-bound closure"
+   ]
+  },
+  {
+   "advisory_owners": [
+    "b057-p3-webhook-ingestion-least-privilege.yml (advisory)",
+    "b057-p5-full-chain.yml (advisory)",
+    "channel_governance_ci.yml (advisory, path-filtered)"
+   ],
+   "evidence_tier": "runner-host adversarial load; least-privilege enforced (contents:read; R3/R4 write confined to post-merge proof anchoring)",
+   "id": "I-8",
+   "negative_controls": [
+    "physics guard NC suite",
+    "R3 harness PII-marker hard gate (raw PII in uvicorn.log must fail)",
+    "channel normalization golden tests"
+   ],
+   "proof_obligation": "Ingestion authenticity + least privilege under load",
+   "required_owners": [
+    {
+     "context": "R3 Ingestion Under Fire",
+     "job": "r3-ingestion-under-fire",
+     "workflow": "r3-ingestion-under-fire.yml"
+    },
+    {
+     "context": "B2.2-P5 Webhook Latency Adjudication",
+     "job": "b22-p5-webhook-latency-adjudication",
+     "workflow": "ci.yml"
+    }
+   ],
+   "sensors": [
+    "r3-ingestion-under-fire.yml harness",
+    "ci.yml b22-p5-webhook-latency-adjudication"
+   ]
+  },
+  {
+   "advisory_owners": [
+    "b11-p6-end-to-end-closure-pack.yml (advisory)"
+   ],
+   "evidence_tier": "runner-host failure-injection + resource-governance proofs",
+   "id": "I-9",
+   "negative_controls": [
+    "physics guard NC suite",
+    "R4/R6 failure-injection cases (worker must fail safely, must not starve)"
+   ],
+   "proof_obligation": "Worker failure semantics + resource governance (fail safely, no starvation)",
+   "required_owners": [
+    {
+     "context": "R4 Worker Failure Semantics",
+     "job": "r4-worker-failure-semantics",
+     "workflow": "r4-worker-failure-semantics.yml"
+    },
+    {
+     "context": "R6 Worker Resource Governance",
+     "job": "r6-worker-resource-governance",
+     "workflow": "r6-worker-resource-governance.yml"
+    },
+    {
+     "context": "B2.4-P6 Real Fit Worker Proof",
+     "job": "B2.4-P6 Real Fit Worker Proof",
+     "workflow": "b2_4-gate-dry-run.yml"
+    },
+    {
+     "context": "B1.2 P7 Worker Coherence Proofs",
+     "job": "b12-p7-worker-coherence-proofs",
+     "workflow": "ci.yml"
+    },
+    {
+     "context": "Celery Foundation B0.5.1",
+     "job": "celery-foundation",
+     "workflow": "ci.yml"
+    }
+   ],
+   "sensors": [
+    "r4/r6 lanes",
+    "b2_4 P6",
+    "ci.yml B1.2-P7 + celery-foundation"
+   ]
+  },
+  {
+   "advisory_owners": [],
+   "evidence_tier": "meta-proof: guards prove the proofs run (Plane D discipline); 18/18 NC must pass",
+   "id": "I-10",
+   "negative_controls": [
+    "validate_ci_physics.py NC suite 22/22 (incl. 7 new throughput NCs: advisory merge_group x3, advisory pr-paths x3, required missing-MG x1)",
+    "validate_p13_merge_governance.py NC suite",
+    "P12 Plane D (projection 3 + isolation 4 + ci_gate 7, asserted counts)",
+    "forensics INDEX enforcer E-VAC-01"
+   ],
+   "proof_obligation": "Proof-system self-integrity (guards are non-vacuous; topology changes turn red)",
+   "required_owners": [
+    {
+     "context": "CI Physics Guard",
+     "job": "CI Physics Guard",
+     "workflow": "ci-physics-guard.yml"
+    },
+    {
+     "context": "B2.4-P11 CI Gates and Negative Control Harness",
+     "job": "B2.4-P11 CI Gates and Negative Control Harness",
+     "workflow": "b2_4-gate-dry-run.yml"
+    },
+    {
+     "context": "B2.5-P12 CI Gates",
+     "job": "B2.5-P12 CI Gates",
+     "workflow": "b2_5-p12-ci-gates.yml"
+    },
+    {
+     "context": "P13 Adversarial Physics Adjudication",
+     "job": "P13 Adversarial Physics Adjudication",
+     "workflow": "p13-adversarial-physics-adjudication.yml"
+    },
+    {
+     "context": "Phase 1 Negative Controls",
+     "job": "phase1-negative-controls",
+     "workflow": "ci.yml"
+    }
+   ],
+   "sensors": [
+    "ci-physics-guard.yml (validate_ci_physics.py + NC suite + P13 merge-governance validator)",
+    "b2_4 P11 harness",
+    "ci.yml phase1-negative-controls"
+   ]
+  }
+ ],
+ "merge_authority": {
+  "branch": "main",
+  "live_match_contract": true,
+  "merge_queue": "main-merge-queue (ALLGREEN, max_entries_to_build=1, check_response_timeout=60m)",
+  "required_total": 80,
+  "strict": true
+ },
+ "remediation_scope": "Orchestration and execution physics only. No required context renamed, removed, or weakened. Non-required (advisory) lanes are risk-selected (paths) and removed from merge_group; required lanes untouched. ci.yml job names untouched; only environment-construction steps accelerated (Playwright/Go caches).",
+ "residual_debt": [
+  "Required-lane consolidation (ci.yml 68-job monolith decomposition into lane workflows) requires governance migration (new lane contexts + branch-protection update) with 10-run paired corpus per directive 4.6; proposed as Phase 2, NOT executed here to preserve monotonic authority.",
+  "Nightly forensic recertification lane (F) stub exists as weekly benchmark only; nightly NC sweep proposed as Phase 2."
+ ],
+ "required_coverage": [
+  {
+   "context": "B0.6 Phase 2 Adjudication",
+   "workflow": "b060_phase2_adjudication.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "B0.7 P2 Runtime Proof (LLM + Redaction)",
+   "workflow": "ci.yml",
+   "invariant": "I-3"
+  },
+  {
+   "context": "B1.2 P6 RBAC Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.2 P7 Worker Coherence Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "B1.2 P8 Error Contract Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.2 P9 E2E System Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P0 Governance & Scope Lock",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P1 Contract Authority Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P10 Provider Tranche Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P11 E2E System Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P2 Handshake State Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P3 Durable Lifecycle Schema Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P4 Boundary Hardening Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P5 Adapter Layer Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P6 Runtime Lifecycle Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P7 Refresh Orchestration Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P8 Failure & Baseline Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.3 P9 Core Substrate Closure Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B1.4 P0 Privacy Authority Lock",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.4 P1 Ingress Contract Sanitization",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.4 P2 Session Authority Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.4 P3 Attribution Locality Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.4 P4 Retention + Deterministic Deletion Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.4 P5 Export Log Artifact No-Leak",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.4 P7 E2E Privacy System Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B1.7 Explanation Runtime Adjudication",
+   "workflow": "ci.yml",
+   "invariant": "I-3"
+  },
+  {
+   "context": "B1.7 P4 Mixed Workload Benchmark",
+   "workflow": "b17-p4-mixed-workload-benchmark.yml",
+   "invariant": "I-4"
+  },
+  {
+   "context": "B2.1-P0 Runtime Authority Closeout",
+   "workflow": "ci.yml",
+   "invariant": "I-2"
+  },
+  {
+   "context": "B2.1-P1 Semantic Replay Lock",
+   "workflow": "ci.yml",
+   "invariant": "I-6"
+  },
+  {
+   "context": "B2.1-P2 Strategy Kernel + Session Boundary Proofs",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B2.1-P3 Persistence Authority + Minimal Read Surface",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B2.1-P4 Queue Isolation + Performance Semantics Lock",
+   "workflow": "ci.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "B2.1-P5 Non-Vacuous Proof Harness + Merge-Blocking Adjudication",
+   "workflow": "ci.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "B2.1-P6 Full End-to-End Closure + Downstream Readiness",
+   "workflow": "ci.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "B2.2-P5 Webhook Latency Adjudication",
+   "workflow": "ci.yml",
+   "invariant": "I-8"
+  },
+  {
+   "context": "B2.2-P6 Merge-Blocking Closure + Downstream Readiness",
+   "workflow": "ci.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "B2.3 Composite Proof Harness",
+   "workflow": "ci.yml",
+   "invariant": "I-2"
+  },
+  {
+   "context": "B2.4 Gate Dry Run",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "B2.4-P1 DB Proof",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B2.4-P10 Read-Only Projection Proof",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-5"
+  },
+  {
+   "context": "B2.4-P11 CI Gates and Negative Control Harness",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "B2.4-P12 Internal E2E Proof Harness",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "B2.4-P4 PostgreSQL Runtime Proof",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B2.4-P5 Bayesian Runtime Harness",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-4"
+  },
+  {
+   "context": "B2.4-P5 PostgreSQL Runtime Proof",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B2.4-P6 Real Fit Worker Proof",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "B2.4-P7 Diagnostic Semantics Proof",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-4"
+  },
+  {
+   "context": "B2.4-P8 Artifact Lifecycle Proof",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B2.4-P9 Worker Tenant Hygiene Proof",
+   "workflow": "b2_4-gate-dry-run.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "B2.5-P10 Trust API Surface",
+   "workflow": "b2_5-p10-trust-api-surface.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B2.5-P11 Export Compatibility",
+   "workflow": "b2_5-p11-export-compatibility.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "B2.5-P12 CI Gates",
+   "workflow": "b2_5-p12-ci-gates.yml",
+   "invariant": "I-3"
+  },
+  {
+   "context": "B2.5-P13 E2E Trust Closure",
+   "workflow": "b2_5-p13-e2e-trust-closure.yml",
+   "invariant": "I-4"
+  },
+  {
+   "context": "B2.5-P8 Signing Verification",
+   "workflow": "b2_5-p8-signing-verification.yml",
+   "invariant": "I-5"
+  },
+  {
+   "context": "B2.5-P9 Machine Identity",
+   "workflow": "b2_5-p9-machine-identity.yml",
+   "invariant": "I-5"
+  },
+  {
+   "context": "CI Physics Guard",
+   "workflow": "ci-physics-guard.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "Celery Foundation B0.5.1",
+   "workflow": "ci.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "Checkout Code",
+   "workflow": "ci.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "Contract Semantic Drift Gate",
+   "workflow": "ci.yml",
+   "invariant": "I-5"
+  },
+  {
+   "context": "Frontend Contract Consumption Gate",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "JWT Tenant Context Invariants",
+   "workflow": "ci.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "Mock Usability Gate",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "P13 Adversarial Physics Adjudication",
+   "workflow": "p13-adversarial-physics-adjudication.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "Phase 1 Negative Controls",
+   "workflow": "ci.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "Phase 1 Runtime Conformance",
+   "workflow": "ci.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "Phase 8 Regression Gate (Full Physics)",
+   "workflow": "b07-phase8-full-physics-staging.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "Phase Gates (B0.3)",
+   "workflow": "ci.yml (matrix leg of \"Phase Gates\")",
+   "invariant": "I-10"
+  },
+  {
+   "context": "R2 Data-Truth Hardening",
+   "workflow": "r2-data-truth-hardening.yml",
+   "invariant": "I-1"
+  },
+  {
+   "context": "R3 Ingestion Under Fire",
+   "workflow": "r3-ingestion-under-fire.yml",
+   "invariant": "I-8"
+  },
+  {
+   "context": "R4 Worker Failure Semantics",
+   "workflow": "r4-worker-failure-semantics.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "R6 Worker Resource Governance",
+   "workflow": "r6-worker-resource-governance.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "Validate Contracts",
+   "workflow": "ci.yml",
+   "invariant": "I-7"
+  },
+  {
+   "context": "b11-p2-readiness-gate",
+   "workflow": "b11-p2-secret-readiness-adjudication.yml",
+   "invariant": "I-8"
+  },
+  {
+   "context": "b11-p2-secret-chokepoint-gate",
+   "workflow": "b11-p2-secret-readiness-adjudication.yml",
+   "invariant": "I-8"
+  },
+  {
+   "context": "b11-p4-ci-audit-gate",
+   "workflow": "b11-p4-db-provider-ci-audit-adjudication.yml",
+   "invariant": "I-8"
+  },
+  {
+   "context": "b11-p4-static-and-runtime-gate",
+   "workflow": "b11-p4-db-provider-ci-audit-adjudication.yml",
+   "invariant": "I-8"
+  },
+  {
+   "context": "m0-maintainability-scope-lock",
+   "workflow": "m0-maintainability-scope-lock.yml",
+   "invariant": "I-10"
+  },
+  {
+   "context": "runtime-ops-proofs",
+   "workflow": "m4-operational-runbooks.yml",
+   "invariant": "I-9"
+  },
+  {
+   "context": "validate-ops-runbooks",
+   "workflow": "m4-operational-runbooks.yml",
+   "invariant": "I-9"
+  }
+ ],
+ "coverage_note": "Every live required context (80/80) maps to exactly one primary invariant and one producing workflow. Matrix legs (e.g. Phase Gates (B0.3)) resolve via stem to the matrix job. Falsifier: if any required context has no producer firing on merge_group, validate_ci_physics.py check_merge_queue_coverage fails."
+}
