@@ -116,8 +116,19 @@ def test_no_production_construction_surface_selects_the_reference() -> None:
 
 
 def _admin_dsn_or_skip() -> str:
+    """Resolve an admin DSN, or skip.
+
+    The rest of this suite is pure Python and runs in every lane, which is the
+    point: the construction ontology is decided without a database. This one
+    probe needs a provisioned role graph, so it is gated on the same flag the
+    other P14 database proofs use rather than on the mere presence of a DSN --
+    several lanes export `MIGRATION_DATABASE_URL` without standing a PostgreSQL
+    up, and a probe that connected there would fail for the wrong reason.
+    """
     import os
 
+    if os.getenv("SKELDIR_B25_P14_GATE0_PROOF") != "1":
+        pytest.skip("the definer probe requires a provisioned production role graph")
     for name in (
         "P14_ADMIN_DATABASE_URL",
         "C21_ADMIN_DATABASE_URL",

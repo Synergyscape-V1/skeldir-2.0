@@ -92,6 +92,14 @@ ALLOWED_DOCKER_PATHS = {
     # mutation narrows a COPY layer in that same authorized Dockerfile.
     Path("scripts/ci/assert_b25_p14_container_projection_parity.py"),
     Path("scripts/ci/_b25_p14_controlled_defect.py"),
+    # P14 Corrective V's construction-authority gate names Docker surfaces in
+    # order to *refuse* them: it scans compose files, Dockerfiles, entrypoints
+    # and deploy workflows to prove that none of them constructs a database from
+    # `db/schema/canonical_schema.sql`. It runs no container and adds no
+    # substrate -- the references are the subject of the check, not a use of it,
+    # and removing them would make the gate blind to the exact surfaces Exit
+    # Gate 13 requires it to watch.
+    Path("scripts/ci/assert_canonical_construction_authority.py"),
     Path("scripts/ci/validate_m0_scope_lock.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),

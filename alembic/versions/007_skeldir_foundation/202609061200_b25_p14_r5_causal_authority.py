@@ -1171,25 +1171,36 @@ def downgrade() -> None:
         )
 
     op.execute("DROP INDEX IF EXISTS public.idx_b28_request_requester")
-    op.execute(
-        """
-        ALTER TABLE public.b28_simulation_requests
-            DROP CONSTRAINT IF EXISTS ck_b28_request_channel_evidence,
-            DROP CONSTRAINT IF EXISTS ck_b28_request_solver_profile,
-            DROP CONSTRAINT IF EXISTS ck_b28_request_requested_by_derived,
-            DROP CONSTRAINT IF EXISTS ck_b28_request_observed_nonnegative,
-            DROP COLUMN IF EXISTS requested_by_agent_client_id,
-            DROP COLUMN IF EXISTS requested_by_credential_id,
-            DROP COLUMN IF EXISTS request_authority_principal,
-            DROP COLUMN IF EXISTS channel_evidence,
-            DROP COLUMN IF EXISTS solver_profile,
-            DROP COLUMN IF EXISTS sufficiency_verdict,
-            DROP COLUMN IF EXISTS sufficiency_reasons,
-            DROP COLUMN IF EXISTS observed_channels,
-            DROP COLUMN IF EXISTS observed_conversions,
-            DROP COLUMN IF EXISTS observed_revenue_minor
-        """
-    )
+    # Each removal is stated on its own line so the migration safety validator
+    # adjudicates it individually. Every one of these objects is created by this
+    # revision's own `upgrade()`, so a downgrade removes exactly what it added
+    # and destroys nothing the predecessor contract knows about.
+    for constraint in (
+        "ck_b28_request_channel_evidence",
+        "ck_b28_request_solver_profile",
+        "ck_b28_request_requested_by_derived",
+        "ck_b28_request_observed_nonnegative",
+    ):
+        op.execute(
+            "ALTER TABLE public.b28_simulation_requests"
+            f" DROP CONSTRAINT IF EXISTS {constraint}"  # CI:DESTRUCTIVE_OK - undoes this revision
+        )
+    for column in (
+        "requested_by_agent_client_id",
+        "requested_by_credential_id",
+        "request_authority_principal",
+        "channel_evidence",
+        "solver_profile",
+        "sufficiency_verdict",
+        "sufficiency_reasons",
+        "observed_channels",
+        "observed_conversions",
+        "observed_revenue_minor",
+    ):
+        op.execute(
+            "ALTER TABLE public.b28_simulation_requests"
+            f" DROP COLUMN IF EXISTS {column}"  # CI:DESTRUCTIVE_OK - undoes this revision
+        )
 
     # The 202609051200 request guard.
     op.execute(
