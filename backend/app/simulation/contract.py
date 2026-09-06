@@ -38,6 +38,22 @@ SIMULATION_ADMISSIBLE_POLICY_STATES: frozenset[str] = frozenset(
 # executable; it makes it a proposal that a human may approve elsewhere.
 MAX_PROPOSAL_AUTHORITY = "proposal_required"
 
+# B2.5-P14 Corrective VI, Exit Gate 3, Architecture B. The one value
+# `b28_simulation_results.solver_consequence_kind` may take, and the exact
+# proposition it asserts:
+#
+#     the persisted allocation IS the value of the governed deterministic
+#     function over the admitted input
+#
+# and nothing beyond it. It is deliberately *not* a claim that any particular
+# process executed a solver. The database has no execution witness -- it verifies
+# the claim by recomputing the function in `b28_recompute_allocation` -- and a
+# witness minted and verified by the same authority would prove nothing anyway.
+# The entering tree persisted `solver_invocations = 1`, which reads as an event
+# count; an independent audit inserted an exact allocation with that value having
+# never invoked the solver, and the row was accepted.
+SOLVER_CONSEQUENCE_KIND = "governed_deterministic_consequence"
+
 # Reason codes. Every refusal names one, so a red gate can be checked for the
 # predicted cause rather than merely for redness.
 REASON_NO_EXPLICIT_REQUEST = "simulation_no_explicit_request"

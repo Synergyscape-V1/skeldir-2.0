@@ -30,11 +30,14 @@ import pytest
 
 from app.core.construction_authority import (
     CANONICAL_SCHEMA_PATH,
+    COMPATIBLE_SCHEMA_REVISIONS,
     NON_AUTHORITATIVE_CONSTRUCTION_ROUTES,
     PRODUCTION_CONSTRUCTION_ROUTE,
+    REQUIRED_SCHEMA_REVISION,
     ConstructionAuthorityError,
     assert_production_construction_authority,
     known_revisions,
+    migration_graph_head,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -73,9 +76,50 @@ def test_a_divergent_or_foreign_history_is_refused_by_name() -> None:
 
 def test_the_current_head_is_accepted() -> None:
     revisions = known_revisions()
+    assert REQUIRED_SCHEMA_REVISION in revisions
     assert "202609061200" in revisions, "the Corrective V revision is not declared"
     assert "202609051200" in revisions
-    assert assert_production_construction_authority(["202609061200"]) == "202609061200"
+    assert (
+        assert_production_construction_authority([REQUIRED_SCHEMA_REVISION])
+        == REQUIRED_SCHEMA_REVISION
+    )
+
+
+def test_the_compatibility_contract_equals_the_migration_graph_head() -> None:
+    """Corrective VI, Exit Gate 6, and the reason the contract cannot rot.
+
+    ``REQUIRED_SCHEMA_REVISION`` is a constant, so on its own it is a claim.
+    ``migration_graph_head`` derives the same value from the migration chain, so
+    a revision landing without the contract moving turns this red rather than
+    shipping a build that refuses its own schema.
+    """
+    assert REQUIRED_SCHEMA_REVISION == migration_graph_head()
+    assert COMPATIBLE_SCHEMA_REVISIONS == frozenset({REQUIRED_SCHEMA_REVISION})
+
+
+def test_a_known_but_incompatible_revision_is_refused_by_name() -> None:
+    """The Corrective-VI blocker, as a unit proposition.
+
+    ``202609051200`` was ACCEPTED as production-ready by the real readiness path
+    on the entering tree, as both ``migration_owner`` and ``app_user``. It grants
+    the generic API principal INSERT on all three B2.8 relations, retains no
+    channel evidence and has no allocation recomputation -- it is the schema
+    whose fabrication surface Corrective V removed. Being *known* is not being
+    *compatible*, and the refusal says which one failed.
+    """
+    for stale in ("202609051200", "202609061200"):
+        assert stale in known_revisions()
+        with pytest.raises(ConstructionAuthorityError) as refusal:
+            assert_production_construction_authority([stale])
+        assert "incompatible_revision" in str(refusal.value)
+        assert stale in str(refusal.value)
+        assert REQUIRED_SCHEMA_REVISION in str(refusal.value)
+
+    # And an unknown revision is still a *different* refusal, so an operator can
+    # tell "not ours" from "ours, but not this build's".
+    with pytest.raises(ConstructionAuthorityError) as unknown:
+        assert_production_construction_authority(["999912311200"])
+    assert "unknown_revision" in str(unknown.value)
 
 
 def test_the_structural_reference_still_exists_and_is_a_pg_dump_artifact() -> None:

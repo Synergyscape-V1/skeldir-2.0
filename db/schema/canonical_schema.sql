@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict p4nZKr77VpvL7zgQbnIbMXHqlMX8rjeTBBfMi4lprMda4FGqfNQOnRB4vcfEklR
+\restrict txWZMMXsNp7glCyAUGwhm16E06ifyWdsjU346Ke1K2cd3M2A5qdirNbVvBfgbdc
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.15
@@ -2746,6 +2746,143 @@ CREATE FUNCTION public.b28_adjudicate_sufficiency(p_channel_evidence jsonb) RETU
 
 
 --
+-- Name: b28_authenticate_request_possession(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_presented_token text, p_request_ref text, p_source_issuance_envelope_hash text, p_input_snapshot_hash text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            principal_is_trusted boolean;
+            v_prefix text;
+            v_presented_hash text;
+            v_credential_id uuid;
+            v_client_id uuid;
+            v_token_hash text;
+            v_hash_algorithm text;
+            v_status text;
+            v_revoked_at timestamptz;
+            v_expires_at timestamptz;
+            v_credential_tenant uuid;
+            v_client_status text;
+            v_client_tenant uuid;
+            v_binding text;
+            v_witness uuid;
+        BEGIN
+            SELECT COALESCE(rolsuper, false) INTO principal_is_trusted
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+            principal_is_trusted := COALESCE(principal_is_trusted, false)
+                OR pg_catalog.pg_has_role(
+                       session_user, 'migration_owner', 'USAGE'
+                   );
+            IF NOT principal_is_trusted
+               AND session_user <> 'app_b28_requester'
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_principal_not_authorized:%',
+                    session_user
+                    USING ERRCODE = '42501';
+            END IF;
+
+            IF p_presented_token IS NULL
+               OR length(p_presented_token) < 8
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_token_malformed'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF p_tenant_id IS NULL THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_tenant_required'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            v_prefix := left(p_presented_token, 8);
+            v_presented_hash := encode(
+                sha256(convert_to(p_presented_token, 'UTF8')), 'hex'
+            );
+
+            SELECT cred.id, cred.agent_client_id, cred.token_hash,
+                   cred.hash_algorithm, cred.status, cred.revoked_at,
+                   cred.expires_at, cred.tenant_id
+              INTO v_credential_id, v_client_id, v_token_hash,
+                   v_hash_algorithm, v_status, v_revoked_at,
+                   v_expires_at, v_credential_tenant
+              FROM public.agent_service_credentials AS cred
+             WHERE cred.tenant_id = p_tenant_id
+               AND cred.token_prefix = v_prefix
+             LIMIT 1;
+
+            -- A wrong prefix and a wrong secret are the same refusal on
+            -- purpose: a caller must not learn which prefixes exist.
+            IF NOT FOUND
+               OR COALESCE(v_hash_algorithm, 'sha256')
+                      <> 'sha256'
+               OR v_token_hash IS NULL
+               OR v_token_hash <> v_presented_hash
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_credential_unknown'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            IF EXISTS (
+                SELECT 1 FROM public.agent_token_revocations
+                 WHERE tenant_id = p_tenant_id AND token_prefix = v_prefix
+            ) THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_credential_revoked'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF v_status IS DISTINCT FROM 'active'
+               OR v_revoked_at IS NOT NULL
+               OR (v_expires_at IS NOT NULL AND v_expires_at <= now())
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_credential_not_live:%',
+                    COALESCE(v_status, 'null')
+                    USING ERRCODE = '42501';
+            END IF;
+            IF v_credential_tenant IS DISTINCT FROM p_tenant_id THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_tenant_mismatch'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            SELECT status, tenant_id INTO v_client_status, v_client_tenant
+              FROM public.agent_clients WHERE id = v_client_id;
+            IF NOT FOUND
+               OR v_client_status IS DISTINCT FROM 'active'
+               OR v_client_tenant IS DISTINCT FROM p_tenant_id
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_client_not_live:%',
+                    COALESCE(v_client_status, 'null')
+                    USING ERRCODE = '42501';
+            END IF;
+
+            v_binding := public.b28_request_authentication_binding(
+                p_tenant_id,
+                p_request_ref,
+                p_source_issuance_envelope_hash,
+                p_input_snapshot_hash
+            );
+
+            INSERT INTO public.b28_request_authentications (
+                tenant_id, agent_client_id, credential_id,
+                request_binding, authenticated_by_principal
+            ) VALUES (
+                p_tenant_id, v_client_id, v_credential_id,
+                v_binding, session_user
+            )
+            RETURNING id INTO v_witness;
+            RETURN v_witness;
+        END;
+        $$;
+
+
+--
 -- Name: b28_canonical_input_material(text, text, bigint, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3158,6 +3295,79 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
 
 
 --
+-- Name: b28_enforce_request_possession(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            w_tenant uuid;
+            w_client uuid;
+            w_credential uuid;
+            w_binding text;
+            w_at timestamptz;
+            expected_binding text;
+        BEGIN
+            SELECT tenant_id, agent_client_id, credential_id,
+                   request_binding, authenticated_at
+              INTO w_tenant, w_client, w_credential, w_binding, w_at
+              FROM public.b28_request_authentications
+             WHERE id = NEW.request_authentication_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_witness_unknown:%',
+                    NEW.request_authentication_id
+                    USING ERRCODE = '42501';
+            END IF;
+            IF w_tenant IS DISTINCT FROM NEW.tenant_id THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_witness_tenant_mismatch'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF w_client IS DISTINCT FROM NEW.requested_by_agent_client_id THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_witness_client_mismatch:% vs %',
+                    w_client, NEW.requested_by_agent_client_id
+                    USING ERRCODE = '42501';
+            END IF;
+            IF w_credential IS DISTINCT FROM NEW.requested_by_credential_id THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_witness_credential_mismatch:% vs %',
+                    w_credential, NEW.requested_by_credential_id
+                    USING ERRCODE = '42501';
+            END IF;
+
+            -- The witness authorises this row and no other. Re-deriving the
+            -- binding here rather than comparing a stored copy means a witness
+            -- minted for a cheaper request cannot be spent on a richer one.
+            expected_binding := public.b28_request_authentication_binding(
+                NEW.tenant_id,
+                NEW.request_ref,
+                NEW.source_issuance_envelope_hash,
+                NEW.input_snapshot_hash
+            );
+            IF w_binding IS DISTINCT FROM expected_binding THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_binding_mismatch:% vs %',
+                    w_binding, expected_binding
+                    USING ERRCODE = '42501';
+            END IF;
+            IF w_at IS NULL
+               OR w_at <= now()
+                   - interval '900 seconds'
+            THEN
+                RAISE EXCEPTION
+                    'b28_request_possession_witness_expired:%', w_at
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+
+
+--
 -- Name: b28_enforce_result_consequence(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3231,16 +3441,11 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective V, Exit Gate 4's active falsifier. The comparison
-            -- above proves the result cites its request's snapshot; it does not
-            -- prove the request still *is* what it was admitted as. A principal
-            -- that can mutate the retained evidence after admission -- an owner
-            -- or superuser, since no runtime principal holds UPDATE here -- would
-            -- otherwise leave every derivation self-consistent over the new
-            -- bytes, and the tamper would be visible only to an auditor
-            -- recomputing the request's own hash. Re-deriving it here makes a
-            -- post-admission input change unrepresentable as a consequence
-            -- rather than merely detectable after the fact.
+            -- Corrective V, Exit Gate 4's active falsifier. The comparison above
+            -- proves the result cites its request's snapshot; it does not prove
+            -- the request still *is* what it was admitted as. Re-deriving it
+            -- here makes a post-admission input change unrepresentable as a
+            -- consequence rather than merely detectable after the fact.
             IF request_row.input_snapshot_hash IS DISTINCT FROM
                public.b28_input_snapshot_hash(
                    request_row.source_envelope_id,
@@ -3264,16 +3469,21 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective V, H-V-04. The allocation is not compared to the
-            -- request; it is recomputed from it. `solver_invocations` stops
-            -- being evidence and becomes a shape: a lawful admission runs the
-            -- deterministic solver exactly once.
-            IF NEW.solver_invocations IS DISTINCT FROM 1 THEN
+            -- Corrective VI, Gate 3 Architecture B. The persisted vocabulary
+            -- names the proposition this guard actually establishes: the row is
+            -- the value of the governed deterministic function over the admitted
+            -- input. `solver_invocations` is gone because the database cannot
+            -- witness an execution and the schema must not claim what it cannot
+            -- prove.
+            IF NEW.solver_consequence_kind
+                   IS DISTINCT FROM 'governed_deterministic_consequence'
+            THEN
                 RAISE EXCEPTION
-                    'b28_result_solver_invocations_not_one:%',
-                    NEW.solver_invocations
+                    'b28_result_consequence_kind_ungoverned:%',
+                    COALESCE(NEW.solver_consequence_kind, 'null')
                     USING ERRCODE = '42501';
             END IF;
+        
             recomputed := public.b28_recompute_allocation(
                 request_row.channel_evidence,
                 request_row.total_budget_minor
@@ -3454,6 +3664,37 @@ CREATE FUNCTION public.b28_recompute_allocation(p_channel_evidence jsonb, p_tota
             END LOOP;
             RETURN lines;
         END;
+        $$;
+
+
+--
+-- Name: b28_request_authentication_binding(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b28_request_authentication_binding(p_tenant_id uuid, p_request_ref text, p_source_issuance_envelope_hash text, p_input_snapshot_hash text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+            SELECT 'sha256:' || encode(
+                sha256(
+                    convert_to(
+                        '{"binding_version":"b25-p14-c6-request-binding-v1"'
+                        || ',"tenant_id":'
+                        || to_jsonb(COALESCE(p_tenant_id::text, ''))::text
+                        || ',"request_ref":'
+                        || to_jsonb(COALESCE(p_request_ref, ''))::text
+                        || ',"source_issuance_envelope_hash":'
+                        || to_jsonb(
+                               COALESCE(p_source_issuance_envelope_hash, '')
+                           )::text
+                        || ',"input_snapshot_hash":'
+                        || to_jsonb(COALESCE(p_input_snapshot_hash, ''))::text
+                        || '}',
+                        'UTF8'
+                    )
+                ),
+                'hex'
+            )
         $$;
 
 
@@ -5830,6 +6071,25 @@ ALTER TABLE ONLY public.b28_proposals FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: b28_request_authentications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b28_request_authentications (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    agent_client_id uuid NOT NULL,
+    credential_id uuid NOT NULL,
+    request_binding text NOT NULL,
+    authenticated_at timestamp with time zone DEFAULT now() NOT NULL,
+    authenticated_by_principal text NOT NULL,
+    CONSTRAINT ck_b28_request_authentication_binding CHECK ((request_binding ~ '^sha256:[0-9a-f]{64}$'::text)),
+    CONSTRAINT ck_b28_request_authentication_principal CHECK (((length(authenticated_by_principal) >= 1) AND (length(authenticated_by_principal) <= 63)))
+);
+
+ALTER TABLE ONLY public.b28_request_authentications FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: b28_simulation_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5857,6 +6117,7 @@ CREATE TABLE public.b28_simulation_requests (
     observed_channels integer NOT NULL,
     observed_conversions integer NOT NULL,
     observed_revenue_minor bigint NOT NULL,
+    request_authentication_id uuid NOT NULL,
     CONSTRAINT ck_b28_request_budget CHECK ((total_budget_minor > 0)),
     CONSTRAINT ck_b28_request_channel_evidence CHECK (((jsonb_typeof(channel_evidence) = 'array'::text) AND (jsonb_array_length(channel_evidence) = channel_count) AND (jsonb_array_length(channel_evidence) >= 1))),
     CONSTRAINT ck_b28_request_channels CHECK ((channel_count > 0)),
@@ -5884,7 +6145,6 @@ CREATE TABLE public.b28_simulation_results (
     projection_profile_hash text NOT NULL,
     input_snapshot_hash text NOT NULL,
     solver_profile text NOT NULL,
-    solver_invocations integer NOT NULL,
     total_budget_minor bigint NOT NULL,
     allocated_total_minor bigint NOT NULL,
     currency text NOT NULL,
@@ -5893,6 +6153,7 @@ CREATE TABLE public.b28_simulation_results (
     llm_authority_over_allocation text DEFAULT 'none'::text NOT NULL,
     allocations jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    solver_consequence_kind text NOT NULL,
     CONSTRAINT ck_b28_result_action_authority CHECK ((action_authority = ANY (ARRAY['blocked'::text, 'read_only'::text, 'simulation_only'::text, 'proposal_required'::text]))),
     CONSTRAINT ck_b28_result_allocations CHECK ((jsonb_typeof(allocations) = 'array'::text)),
     CONSTRAINT ck_b28_result_authority_class CHECK ((authority_class = 'deterministic_simulation'::text)),
@@ -5900,7 +6161,7 @@ CREATE TABLE public.b28_simulation_results (
     CONSTRAINT ck_b28_result_conserved CHECK ((allocated_total_minor = total_budget_minor)),
     CONSTRAINT ck_b28_result_hashes CHECK (((source_semantic_truth_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (projection_profile_hash ~ '^sha256:[0-9a-f]{64}$'::text) AND (input_snapshot_hash ~ '^sha256:[0-9a-f]{64}$'::text))),
     CONSTRAINT ck_b28_result_llm_authority CHECK ((llm_authority_over_allocation = 'none'::text)),
-    CONSTRAINT ck_b28_result_solver_ran CHECK ((solver_invocations >= 1))
+    CONSTRAINT ck_b28_result_solver_consequence_kind CHECK ((solver_consequence_kind = 'governed_deterministic_consequence'::text))
 );
 
 ALTER TABLE ONLY public.b28_simulation_results FORCE ROW LEVEL SECURITY;
@@ -10685,6 +10946,14 @@ ALTER TABLE ONLY public.b28_proposals
 
 
 --
+-- Name: b28_request_authentications b28_request_authentications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b28_request_authentications
+    ADD CONSTRAINT b28_request_authentications_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: b28_simulation_requests b28_simulation_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14195,6 +14464,13 @@ CREATE INDEX idx_b24_worker_process_authority_active ON public.b24_worker_proces
 
 
 --
+-- Name: idx_b28_request_authentication_credential; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b28_request_authentication_credential ON public.b28_request_authentications USING btree (tenant_id, credential_id);
+
+
+--
 -- Name: idx_b28_request_requester; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15032,6 +15308,13 @@ CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_
 --
 
 CREATE UNIQUE INDEX uq_b24_fit_dispatch_outbox_attempt ON public.b24_fit_dispatch_outbox USING btree (tenant_id, attempt_id);
+
+
+--
+-- Name: uq_b28_request_authentication; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_b28_request_authentication ON public.b28_simulation_requests USING btree (request_authentication_id);
 
 
 --
@@ -16981,6 +17264,13 @@ CREATE TRIGGER trg_b28_request_consequence BEFORE INSERT ON public.b28_simulatio
 
 
 --
+-- Name: b28_simulation_requests trg_b28_request_possession; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b28_request_possession BEFORE INSERT ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_request_possession();
+
+
+--
 -- Name: b28_simulation_results trg_b28_result_consequence; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -17479,6 +17769,38 @@ ALTER TABLE ONLY public.b28_proposals
 
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT b28_proposals_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b28_request_authentications b28_request_authentications_agent_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b28_request_authentications
+    ADD CONSTRAINT b28_request_authentications_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: b28_request_authentications b28_request_authentications_credential_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b28_request_authentications
+    ADD CONSTRAINT b28_request_authentications_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.agent_service_credentials(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: b28_request_authentications b28_request_authentications_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b28_request_authentications
+    ADD CONSTRAINT b28_request_authentications_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b28_simulation_requests b28_simulation_requests_request_authentication_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b28_simulation_requests
+    ADD CONSTRAINT b28_simulation_requests_request_authentication_id_fkey FOREIGN KEY (request_authentication_id) REFERENCES public.b28_request_authentications(id) ON DELETE RESTRICT;
 
 
 --
@@ -18326,6 +18648,12 @@ ALTER TABLE public.b27_explanation_materializations ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.b28_proposals ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: b28_request_authentications; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b28_request_authentications ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: b28_simulation_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19234,6 +19562,13 @@ CREATE POLICY tenant_isolation_policy_b28_proposals ON public.b28_proposals USIN
 
 
 --
+-- Name: b28_request_authentications tenant_isolation_policy_b28_request_authentications; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b28_request_authentications ON public.b28_request_authentications USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
 -- Name: b28_simulation_requests tenant_isolation_policy_b28_simulation_requests; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -19706,5 +20041,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict p4nZKr77VpvL7zgQbnIbMXHqlMX8rjeTBBfMi4lprMda4FGqfNQOnRB4vcfEklR
+\unrestrict txWZMMXsNp7glCyAUGwhm16E06ifyWdsjU346Ke1K2cd3M2A5qdirNbVvBfgbdc
 

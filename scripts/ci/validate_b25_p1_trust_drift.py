@@ -179,6 +179,14 @@ ALLOWED_NON_RUNTIME_PATHS = (
     # process.
     "backend/tests/trust/test_b25_p14_r5_causal_authority.py",
     "backend/tests/trust/test_b25_p14_r5_construction_authority.py",
+    # B2.5-P14 Corrective VI: proven request possession, honest solver
+    # semantics, pinned schema compatibility. Same classification again. The
+    # possession proof reuses the Corrective IV signing helper for its source
+    # Trust -- one envelope, signed at test time through the P5/P8 path -- and
+    # models nothing of its own; its subjects are a database possession witness,
+    # a column-comment taxonomy and a revision-compatibility predicate, none of
+    # which is an envelope surface.
+    "backend/tests/trust/test_b25_p14_r6_possession_authority.py",
 )
 
 

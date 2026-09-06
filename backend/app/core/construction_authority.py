@@ -50,13 +50,24 @@ triggers), which is what makes the file a sound *reference* and an unsound
 So the ontology is settled as: **structural reference, never production**. This
 module makes that physical rather than conventional. ``alembic_version`` is the
 unforgeable marker -- a canonical bootstrap cannot stamp it, because pg_dump
-carries no rows -- and a production process refuses to serve a database that
-does not carry a revision this repository knows.
+carries no rows.
+
+**Corrective VI narrows the second half.** Carrying *a* revision this repository
+knows was never the right admission test, and a fresh measurement proved it
+admitted the wrong database: the immediate predecessor ``202609051200`` was
+accepted as production-ready by the real readiness path, as both the owner and
+the runtime principal, while granting ``app_user`` INSERT on every B2.8 relation.
+Readiness now requires an *explicitly compatible* revision --
+``COMPATIBLE_SCHEMA_REVISIONS``, today exactly ``REQUIRED_SCHEMA_REVISION`` --
+and the required revision is asserted equal to the migration graph's own head, so
+the contract cannot drift away from the schema it describes.
 """
 
 from __future__ import annotations
 
-import re
+import ast
+import configparser
+import os
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -77,7 +88,143 @@ NON_AUTHORITATIVE_CONSTRUCTION_ROUTES: dict[str, str] = {
     ),
 }
 
-_REVISION_RE = re.compile(r"^revision\s*=\s*[\"']([0-9A-Za-z_]+)[\"']", re.M)
+def _module_revision_identifiers(source: str) -> tuple[str | None, tuple[str, ...]]:
+    """Read ``revision`` and ``down_revision`` out of one migration module.
+
+    Parsed rather than pattern-matched, because the repository's 171 migration
+    modules declare these four ways -- bare, annotated (``revision: str = ...``),
+    tuple-valued for merge revisions, and ``None`` for the root -- and a regex
+    that handles one form silently ignores the others. The entering tree's
+    ``^revision =`` pattern matched 39 of 171 files, so the "every revision this
+    repository knows" set was in fact a small arbitrary subset. That did not make
+    a database *more* acceptable, but a predicate whose domain is accidental
+    cannot be reasoned about, and Corrective VI needs this one to be exact.
+    """
+
+    revision: str | None = None
+    parents: list[str] = []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:  # pragma: no cover - a broken migration fails elsewhere
+        return None, ()
+
+    def _identifiers(node: ast.AST) -> list[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, (ast.Tuple, ast.List)):
+            found: list[str] = []
+            for element in node.elts:
+                found.extend(_identifiers(element))
+            return found
+        return []
+
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            targets = [t.id for t in statement.targets if isinstance(t, ast.Name)]
+            value = statement.value
+        elif isinstance(statement, ast.AnnAssign) and isinstance(
+            statement.target, ast.Name
+        ):
+            targets = [statement.target.id]
+            value = statement.value
+        else:
+            continue
+        if value is None:
+            continue
+        if "revision" in targets:
+            found = _identifiers(value)
+            revision = found[0] if found else None
+        if "down_revision" in targets:
+            parents.extend(_identifiers(value))
+    return revision, tuple(parents)
+
+
+def _chain_directories(migrations_root: Path) -> tuple[Path, ...]:
+    """The version directories Alembic itself loads, per ``alembic.ini``.
+
+    ``version_locations`` is the authority for what constitutes the chain, and
+    the repository has at least one directory outside it
+    (``alembic/versions/005_webhook_secrets``) holding a revision Alembic never
+    loads. Scanning the whole tree would therefore report an orphan file as a
+    second head and make a linear chain look divergent -- a head computation that
+    disagrees with the tool that applies the migrations is worse than none.
+    """
+
+    ini = REPOSITORY_ROOT / "alembic.ini"
+    if not ini.exists():  # pragma: no cover - defensive
+        return (migrations_root,)
+    parser = configparser.ConfigParser()
+    parser.read(ini, encoding="utf-8")
+    declared = parser.get("alembic", "version_locations", fallback="").strip()
+    if not declared:
+        return (migrations_root,)
+    separator = parser.get("alembic", "version_path_separator", fallback=";").strip()
+    separator = {"os": os.pathsep, "space": " ", ":": ":", ";": ";"}.get(
+        separator, separator or ";"
+    )
+    directories = [
+        (REPOSITORY_ROOT / entry.strip()).resolve()
+        for entry in declared.split(separator)
+        if entry.strip()
+    ]
+    return tuple(path for path in directories if path.is_dir()) or (migrations_root,)
+
+
+def _migration_modules(migrations_root: Path | None = None):
+    root = migrations_root or MIGRATIONS_ROOT
+    directories = _chain_directories(root) if migrations_root is None else (root,)
+    for directory in directories:
+        for path in sorted(directory.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            # `utf-8-sig`, not `utf-8`: at least one migration module carries a
+            # BOM, and `ast.parse` refuses a source string that starts with one.
+            # Read as plain utf-8 it parsed as a SyntaxError, was silently
+            # skipped, and its parent became a phantom second head.
+            yield _module_revision_identifiers(path.read_text(encoding="utf-8-sig"))
+
+
+# ---------------------------------------------------------------------------
+# B2.5-P14 Corrective VI, closing H-VI-08 / H-VI-09 / Exit Gate 6.
+# ---------------------------------------------------------------------------
+# The entering tree accepted any revision string that appeared anywhere under
+# `alembic/versions/**`. Measured on a fresh PostgreSQL 15 through the real
+# `/health/ready` code path, the immediately preceding revision was accepted as
+# production-ready by both `migration_owner` and `app_user`:
+#
+#     stale_known_202609051200:migration_owner   ACCEPTED revision=202609051200
+#     stale_known_202609051200:app_user          ACCEPTED revision=202609051200
+#
+# A `202609051200` database grants `app_user` INSERT on all three B2.8
+# relations, retains no `channel_evidence`, and has no `b28_recompute_allocation`
+# -- it is the exact schema whose fabrication surface Corrective V removed. The
+# predicate was measuring familiarity, not fitness, which is the
+# anti-corroboration trap Directive VI names verbatim:
+#
+#     revision is somewhere in repository history  ->  ready        REFUSED
+#     revision is explicitly compatible with this build  ->  ready  REQUIRED
+#
+# Skeldir's operational answer is the simple one Directive VI section 13 says to
+# prefer when it is sufficient: **exact head**. Every deployment migrates before
+# it serves, there is no rolling multi-version window in the design-partner
+# topology, and a bounded window would have to be justified by an upgrade
+# choreography that does not exist. `COMPATIBLE_SCHEMA_REVISIONS` is the seam a
+# future window would widen through, and it is machine-checkable either way:
+# `REQUIRED_SCHEMA_REVISION` must equal the head computed from the migration
+# graph, and `backend/tests/trust/test_b25_p14_r6_possession_authority.py`
+# asserts exactly that -- so the contract cannot drift away from the schema it
+# claims to describe.
+
+#: The single Alembic revision this build's code requires. Asserted equal to the
+#: migration graph's head by a merge-blocking test; never hand-maintained
+#: independently of the chain.
+REQUIRED_SCHEMA_REVISION = "202609071200"
+
+#: Every revision a process running this build may serve traffic against.
+#: Exactly one today. Widening this set is a deliberate, reviewable act that
+#: must come with evidence that the older schema carries every authority control
+#: the running code depends on.
+COMPATIBLE_SCHEMA_REVISIONS: frozenset[str] = frozenset({REQUIRED_SCHEMA_REVISION})
 
 
 class ConstructionAuthorityError(RuntimeError):
@@ -85,16 +232,43 @@ class ConstructionAuthorityError(RuntimeError):
 
 
 def known_revisions(migrations_root: Path | None = None) -> frozenset[str]:
-    """Every revision identifier the repository's migration history declares."""
-    root = migrations_root or MIGRATIONS_ROOT
-    found: set[str] = set()
-    for path in sorted(root.rglob("*.py")):
-        if "__pycache__" in path.parts:
+    """Every revision identifier the repository's migration history declares.
+
+    Retained because "is this revision one of ours at all?" and "may this build
+    serve it?" are different questions with different answers, and an operator
+    reading a refusal needs to know which one fired. It is no longer the
+    admission predicate.
+    """
+    return frozenset(
+        revision
+        for revision, _parents in _migration_modules(migrations_root)
+        if revision
+    )
+
+
+def migration_graph_head(migrations_root: Path | None = None) -> str:
+    """The single head of the repository's migration graph.
+
+    Computed from the graph rather than declared, so ``REQUIRED_SCHEMA_REVISION``
+    can be *checked* rather than trusted: a merge-blocking test asserts they are
+    equal, and a head that moved without the contract moving turns that test red.
+    More than one head means a divergent history, over which a compatibility
+    contract has no meaning -- so this raises rather than picking one.
+    """
+    revisions: set[str] = set()
+    parents: set[str] = set()
+    for revision, module_parents in _migration_modules(migrations_root):
+        if not revision:
             continue
-        match = _REVISION_RE.search(path.read_text(encoding="utf-8"))
-        if match:
-            found.add(match.group(1))
-    return frozenset(found)
+        revisions.add(revision)
+        parents.update(module_parents)
+    heads = sorted(revisions - parents)
+    if len(heads) != 1:
+        raise ConstructionAuthorityError(
+            "database_construction_unauthoritative:migration_chain_not_linear:"
+            + ",".join(heads)
+        )
+    return heads[0]
 
 
 def assert_production_construction_authority(
@@ -117,7 +291,16 @@ def assert_production_construction_authority(
         merge accident rather than a state to serve traffic from.
 
     ``unknown revision``
-        a database ahead of, behind, or beside this deployment's own history.
+        a database beside this deployment's own history entirely -- ahead of it,
+        or from another repository.
+
+    ``incompatible revision``
+        a revision this repository does know, and this build may not run
+        against. Corrective VI: recognising a revision is not the same as being
+        able to serve it. ``202609051200`` is known, structurally plausible, and
+        grants the generic API principal INSERT on every B2.8 relation; a
+        Corrective-VI process on that schema would reconstitute the exact
+        fabrication surface two audits exploited.
     """
 
     revisions = [str(value) for value in observed_revisions if value is not None]
@@ -138,6 +321,12 @@ def assert_production_construction_authority(
     if revision not in known:
         raise ConstructionAuthorityError(
             f"database_construction_unauthoritative:unknown_revision:{revision}"
+        )
+    if revision not in COMPATIBLE_SCHEMA_REVISIONS:
+        raise ConstructionAuthorityError(
+            "database_construction_unauthoritative:incompatible_revision:"
+            f"{revision};this build requires "
+            + ",".join(sorted(COMPATIBLE_SCHEMA_REVISIONS))
         )
     return revision
 
@@ -189,12 +378,15 @@ async def assert_database_construction_authority(session: Any) -> str:
 
 __all__ = [
     "CANONICAL_SCHEMA_PATH",
+    "COMPATIBLE_SCHEMA_REVISIONS",
     "CONSTRUCTION_REVISION_FUNCTION",
     "ConstructionAuthorityError",
     "NON_AUTHORITATIVE_CONSTRUCTION_ROUTES",
     "PRODUCTION_CONSTRUCTION_ROUTE",
+    "REQUIRED_SCHEMA_REVISION",
     "assert_database_construction_authority",
     "assert_production_construction_authority",
     "known_revisions",
+    "migration_graph_head",
     "read_construction_revisions",
 ]

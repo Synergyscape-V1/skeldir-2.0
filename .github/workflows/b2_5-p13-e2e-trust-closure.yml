@@ -122,12 +122,16 @@ on:
       - 'backend/tests/trust/test_b25_p14_r4_downstream_consequence.py'
       - 'backend/tests/trust/test_b25_p14_r5_causal_authority.py'
       - 'backend/tests/trust/test_b25_p14_r5_construction_authority.py'
+      - 'backend/tests/trust/test_b25_p14_r6_possession_authority.py'
       - 'backend/app/simulation/**'
       - 'backend/app/core/construction_authority.py'
       - 'scripts/ci/assert_canonical_construction_authority.py'
       - 'scripts/ci/validate_b25_p14_downstream_authority.py'
       - 'scripts/ci/_b25_p14_controlled_defect.py'
       - 'scripts/ci/assert_b25_p14_container_projection_parity.py'
+      - 'scripts/ci/assert_b25_p14_custody_manifest.py'
+      - 'scripts/ci/assert_b25_p14_field_semantics.py'
+      - 'docker-compose.c19.yml'
       - 'scripts/ci/compare_b25_p13_c21_authority_universes.py'
       - 'backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py'
       - 'backend/tests/test_b25_p13_c19_touchpoint_ingress.py'
@@ -3505,6 +3509,178 @@ jobs:
             -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r5.out
           grep -E "12 passed" /tmp/b25_p14_r5.out
 
+      # Corrective VI Exit Gates 1, 2, 3 and 6. Four propositions the
+      # independent audit reproduced as false on the entering tree, driven here
+      # against the corrected schema:
+      #
+      #   a token-less request                 -> refused, no witness to name
+      #   the request principal minting one    -> refused, nobody holds INSERT
+      #   an exact allocation claiming an event-> refused, the vocabulary is gone
+      #   a stale-but-known DB revision        -> refused as incompatible
+      #
+      # plus the layer-severance ladder: the trigger and the NOT NULL foreign
+      # key each refuse without the other, so neither is decorative.
+      - name: P14 Corrective VI request possession and solver semantics
+        run: |
+          set -o pipefail
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r6_possession_authority.py \
+            -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r6.out
+          grep -E "12 passed" /tmp/b25_p14_r6.out
+
+      # Directive VI section 15. Every durable B2.8 field declares which of four
+      # things it is and what physical evidence makes it true, checked against
+      # the live catalog rather than against a document. On the entering tree
+      # every one of these comments was NULL.
+      - name: P14 Corrective VI durable field semantics
+        run: |
+          set -o pipefail
+          python scripts/ci/assert_b25_p14_field_semantics.py \
+            --database-url "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14" \
+            --evidence-out artifacts/b25_p14/b25_p14_field_semantics.json \
+            | tee /tmp/b25_p14_fields.out
+          grep -F '[b25-p14] field semantics PASSED' /tmp/b25_p14_fields.out
+
+      # Directive VI H-ART-VI-01 / Exit Gate 2. Which processes actually receive
+      # the two causal credentials is read out of the deployed composition, not
+      # inferred from Python imports, and compared against the boundary the
+      # module declares.
+      - name: P14 Corrective VI credential custody manifest
+        run: |
+          set -o pipefail
+          python scripts/ci/assert_b25_p14_custody_manifest.py \
+            --evidence-out artifacts/b25_p14/b25_p14_custody_manifest.json \
+            | tee /tmp/b25_p14_custody.out
+          grep -F '[b25-p14] custody manifest PASSED' /tmp/b25_p14_custody.out
+
+      # NC-P14-16. Corrective VI Exit Gate 1's active falsifier: keep the
+      # possession proof and sever its *binding* to the request it authorises.
+      # A witness that proves possession of something must not authorise
+      # anything.
+      - name: NC-P14-16 an unbound possession witness turns Gate 1 red
+        run: |
+          set -euo pipefail
+          cp backend/app/simulation/persistence.py /tmp/p14_persist_16.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply \
+            possession_witness_unbound
+          if python -m pytest \
+              backend/tests/trust/test_b25_p14_r6_possession_authority.py \
+              -q --no-header -p no:randomly > /tmp/nc_p14_16.out 2>&1; then
+            echo "NC-P14-16 did not fire: an unbound witness authorised a request"
+            cp /tmp/p14_persist_16.py backend/app/simulation/persistence.py
+            cat /tmp/nc_p14_16.out
+            exit 1
+          fi
+          grep -F 'b28_request_possession_binding_mismatch' /tmp/nc_p14_16.out
+          cp /tmp/p14_persist_16.py backend/app/simulation/persistence.py
+          git diff --exit-code -- backend/app/simulation/persistence.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r6_possession_authority.py \
+            -q --no-header -p no:randomly | tee /tmp/nc_p14_16_restored.out
+          grep -E "12 passed" /tmp/nc_p14_16_restored.out
+
+      # NC-P14-17. Corrective VI Exit Gate 3. The allocation stays exactly the
+      # governed function's output; only the *claim about it* is widened back
+      # into an execution event. What must turn red is the semantics, not the
+      # money -- which is the distinction the entering tree could not make.
+      - name: NC-P14-17 an execution claim turns the solver semantics gate red
+        run: |
+          set -euo pipefail
+          cp backend/app/simulation/persistence.py /tmp/p14_persist_17.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply \
+            solver_execution_vocabulary
+          if python -m pytest \
+              backend/tests/trust/test_b25_p14_r6_possession_authority.py \
+              -q --no-header -p no:randomly > /tmp/nc_p14_17.out 2>&1; then
+            echo "NC-P14-17 did not fire: an unwitnessed execution claim persisted"
+            cp /tmp/p14_persist_17.py backend/app/simulation/persistence.py
+            cat /tmp/nc_p14_17.out
+            exit 1
+          fi
+          grep -F 'b28_result_consequence_kind_ungoverned' /tmp/nc_p14_17.out
+          cp /tmp/p14_persist_17.py backend/app/simulation/persistence.py
+          git diff --exit-code -- backend/app/simulation/persistence.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r6_possession_authority.py \
+            -q --no-header -p no:randomly | tee /tmp/nc_p14_17_restored.out
+          grep -E "12 passed" /tmp/nc_p14_17_restored.out
+
+      # NC-P14-18. Corrective VI Exit Gate 6's active falsifier, verbatim from
+      # the directive: alter the compatibility policy to accept the known
+      # incompatible pre-Corrective-V revision. Measured on the entering tree,
+      # `202609051200` was ACCEPTED as production-ready by both the owner and
+      # the runtime principal through the real readiness path.
+      - name: NC-P14-18 a known-implies-compatible policy turns Gate 6 red
+        run: |
+          set -euo pipefail
+          cp backend/app/core/construction_authority.py /tmp/p14_construct_18.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply \
+            compatibility_accepts_any_known_revision
+          if python -m pytest \
+              backend/tests/trust/test_b25_p14_r5_construction_authority.py \
+              backend/tests/trust/test_b25_p14_r6_possession_authority.py \
+              -q --no-header -p no:randomly > /tmp/nc_p14_18.out 2>&1; then
+            echo "NC-P14-18 did not fire: a stale known revision stayed ready"
+            cp /tmp/p14_construct_18.py backend/app/core/construction_authority.py
+            cat /tmp/nc_p14_18.out
+            exit 1
+          fi
+          grep -F 'readiness_refuses_a_known_incompatible_revision' /tmp/nc_p14_18.out
+          cp /tmp/p14_construct_18.py backend/app/core/construction_authority.py
+          git diff --exit-code -- backend/app/core/construction_authority.py
+          python -m pytest \
+            backend/tests/trust/test_b25_p14_r5_construction_authority.py \
+            backend/tests/trust/test_b25_p14_r6_possession_authority.py \
+            -q --no-header -p no:randomly | tee /tmp/nc_p14_18_restored.out
+          grep -E "21 passed" /tmp/nc_p14_18_restored.out
+
+      # NC-P14-19. Directive VI section 17. Narrow the *declared* boundary while
+      # changing nothing physical: the gate must catch a description that has
+      # stopped matching custody, which is the exact defect the audit found.
+      - name: NC-P14-19 an overclaimed custody boundary turns Gate 2 red
+        run: |
+          set -euo pipefail
+          cp backend/app/simulation/consequence_custody.py /tmp/p14_custody_19.py
+          python scripts/ci/_b25_p14_controlled_defect.py apply \
+            custody_boundary_overclaimed
+          if python scripts/ci/assert_b25_p14_custody_manifest.py \
+              > /tmp/nc_p14_19.out 2>&1; then
+            echo "NC-P14-19 did not fire: an overclaimed boundary was accepted"
+            cp /tmp/p14_custody_19.py backend/app/simulation/consequence_custody.py
+            cat /tmp/nc_p14_19.out
+            exit 1
+          fi
+          grep -F "declared trust boundary is 'module'" /tmp/nc_p14_19.out
+          cp /tmp/p14_custody_19.py backend/app/simulation/consequence_custody.py
+          git diff --exit-code -- backend/app/simulation/consequence_custody.py
+          python scripts/ci/assert_b25_p14_custody_manifest.py \
+            | tee /tmp/nc_p14_19_restored.out
+          grep -F '[b25-p14] custody manifest PASSED' /tmp/nc_p14_19_restored.out
+
+      # NC-P14-20. Directive VI H-ART-VI-01's falsifier: expose the credential
+      # one trust boundary wider than declared. The beat scheduler has no reason
+      # to hold a B2.8 causal credential and does not receive one; handing it
+      # one is a compose edit that no import graph would notice.
+      - name: NC-P14-20 a wider credential blast radius turns Gate 2 red
+        run: |
+          set -euo pipefail
+          cp docker-compose.c19.yml /tmp/p14_compose_20.yml
+          python scripts/ci/_b25_p14_controlled_defect.py apply \
+            custody_secret_reaches_an_untrusted_container
+          if python scripts/ci/assert_b25_p14_custody_manifest.py \
+              > /tmp/nc_p14_20.out 2>&1; then
+            echo "NC-P14-20 did not fire: an untrusted container took the secret"
+            cp /tmp/p14_compose_20.yml docker-compose.c19.yml
+            cat /tmp/nc_p14_20.out
+            exit 1
+          fi
+          grep -F "untrusted service 'beat' receives" /tmp/nc_p14_20.out
+          cp /tmp/p14_compose_20.yml docker-compose.c19.yml
+          git diff --exit-code -- docker-compose.c19.yml
+          python scripts/ci/assert_b25_p14_custody_manifest.py \
+            | tee /tmp/nc_p14_20_restored.out
+          grep -F '[b25-p14] custody manifest PASSED' /tmp/nc_p14_20_restored.out
+
       # Corrective V Exit Gate 13. One falsifiable definition of a correctly
       # constructed production database, decided on two real universes rather
       # than declared in a comment.
@@ -3514,7 +3690,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_r5_construction_authority.py \
             -q -s --no-header -p no:randomly | tee /tmp/b25_p14_r5_construction.out
-          grep -E "7 passed" /tmp/b25_p14_r5_construction.out
+          grep -E "9 passed" /tmp/b25_p14_r5_construction.out
           python scripts/ci/assert_canonical_construction_authority.py \
             --alembic-dsn "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14" \
             --canonical-dsn "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14_canonical" \
@@ -3596,7 +3772,7 @@ jobs:
           python -m pytest \
             backend/tests/trust/test_b25_p14_r5_construction_authority.py \
             -q --no-header -p no:randomly | tee /tmp/nc_p14_12_restored.out
-          grep -E "7 passed" /tmp/nc_p14_12_restored.out
+          grep -E "9 passed" /tmp/nc_p14_12_restored.out
 
       # NC-P14-13. Restore the generic INSERT the corrective removed, on the
       # live database with psql rather than psycopg2, and require the guard
@@ -3621,7 +3797,7 @@ jobs:
           # writer: every derivation the guard checks is already satisfied.
           if PGPASSWORD=app_user psql -h 127.0.0.1 -U app_user -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
               -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
-              -c "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref, requested_by, requested_by_agent_client_id, requested_by_credential_id, request_authority_principal, source_envelope_id, source_semantic_truth_hash, source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor, currency, channel_count, channel_evidence, solver_profile, sufficiency_policy_version, sufficiency_verdict, sufficiency_reasons, observed_channels, observed_conversions, observed_revenue_minor) SELECT tenant_id, 'req_nc_p14_13', requested_by, requested_by_agent_client_id, requested_by_credential_id, 'app_b28_requester', source_envelope_id, source_semantic_truth_hash, source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor, currency, channel_count, channel_evidence, solver_profile, sufficiency_policy_version, sufficiency_verdict, sufficiency_reasons, observed_channels, observed_conversions, observed_revenue_minor FROM public.b28_simulation_requests WHERE tenant_id = '$tenant' LIMIT 1;"; then
+              -c "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref, requested_by, requested_by_agent_client_id, requested_by_credential_id, request_authority_principal, request_authentication_id, source_envelope_id, source_semantic_truth_hash, source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor, currency, channel_count, channel_evidence, solver_profile, sufficiency_policy_version, sufficiency_verdict, sufficiency_reasons, observed_channels, observed_conversions, observed_revenue_minor) SELECT tenant_id, 'req_nc_p14_13', requested_by, requested_by_agent_client_id, requested_by_credential_id, 'app_b28_requester', request_authentication_id, source_envelope_id, source_semantic_truth_hash, source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor, currency, channel_count, channel_evidence, solver_profile, sufficiency_policy_version, sufficiency_verdict, sufficiency_reasons, observed_channels, observed_conversions, observed_revenue_minor FROM public.b28_simulation_requests WHERE tenant_id = '$tenant' LIMIT 1;"; then
             echo "NC-P14-13 did not fire: the API principal manufactured a request"
             exit 1
           fi
@@ -3661,7 +3837,7 @@ jobs:
           # Pristine: the recomputation refuses it.
           if PGPASSWORD=app_b28_solver psql -h 127.0.0.1 -U app_b28_solver -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
               -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
-              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1',1,$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
+              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_consequence_kind, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1','governed_deterministic_consequence',$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
             echo "NC-P14-14 precondition failed: an uncomputed result was already durable"
             exit 1
           fi
@@ -3669,7 +3845,7 @@ jobs:
             -c "DROP TRIGGER trg_b28_result_consequence ON public.b28_simulation_results;"
           if ! PGPASSWORD=app_b28_solver psql -h 127.0.0.1 -U app_b28_solver -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
               -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
-              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1',1,$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
+              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_consequence_kind, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1','governed_deterministic_consequence',$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
             echo "NC-P14-14 is vacuous: the severed state refused for an unrelated reason"
             psql -h 127.0.0.1 -U postgres -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q -c "$triggerdef"
             exit 1
@@ -3682,7 +3858,7 @@ jobs:
           test "$triggerdef" = "$restored"
           if PGPASSWORD=app_b28_solver psql -h 127.0.0.1 -U app_b28_solver -d skeldir_b25_p14 -v ON_ERROR_STOP=1 -q \
               -c "SELECT set_config('app.current_tenant_id', '$tenant', false);" \
-              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1',1,$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
+              -c "INSERT INTO public.b28_simulation_results (tenant_id, request_id, source_envelope_id, source_semantic_truth_hash, projection_profile_hash, input_snapshot_hash, solver_profile, solver_consequence_kind, total_budget_minor, allocated_total_minor, currency, action_authority, allocations) VALUES ('$tenant','$reqid','$envid','$truth','sha256:' || repeat('a',64),'$snap','b25-p14-deterministic-largest-remainder-v1','governed_deterministic_consequence',$budget,$budget,'$cur','simulation_only','$forged'::jsonb);"; then
             echo "NC-P14-14 did not restore: an uncomputed result is still durable"
             exit 1
           fi
