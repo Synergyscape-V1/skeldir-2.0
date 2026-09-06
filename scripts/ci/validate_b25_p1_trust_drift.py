@@ -168,6 +168,17 @@ ALLOWED_NON_RUNTIME_PATHS = (
     # back comes out of PostgreSQL.
     "backend/tests/trust/test_b25_p14_r4_terminal_provenance.py",
     "backend/tests/trust/test_b25_p14_r4_downstream_consequence.py",
+    # B2.5-P14 Corrective V: genuine B2.8 request intent and solver consequence.
+    # Same classification, and for the same reason. The causal-authority proof
+    # reuses the Corrective IV signing helper -- one envelope, signed at test
+    # time through the P5/P8 path with a key generated there -- so the journey
+    # it measures is a real cryptographic consequence rather than a fixture; it
+    # models no envelope of its own, and every field it adjudicates is read back
+    # out of PostgreSQL. The construction-authority proof touches no envelope at
+    # all: its subject is which database constructions may back a production
+    # process.
+    "backend/tests/trust/test_b25_p14_r5_causal_authority.py",
+    "backend/tests/trust/test_b25_p14_r5_construction_authority.py",
 )
 
 

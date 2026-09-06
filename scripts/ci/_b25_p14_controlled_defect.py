@@ -35,6 +35,9 @@ PROFILE_REGISTRY = REPO_ROOT / "contracts/trust-api/projection-profiles.v1.yaml"
 PRODUCTION_DOCKERFILE = REPO_ROOT / "backend/Dockerfile"
 EXPLANATION_CONSERVATION = REPO_ROOT / "backend/app/explanation/conservation.py"
 EXPLANATION_TEMPLATES = REPO_ROOT / "backend/app/explanation/templates.py"
+SIMULATION_PERSISTENCE = REPO_ROOT / "backend/app/simulation/persistence.py"
+REQUESTER_IDENTITY = REPO_ROOT / "backend/app/simulation/requester_identity.py"
+CONSTRUCTION_AUTHORITY = REPO_ROOT / "backend/app/core/construction_authority.py"
 
 DEFAULT_LLM_PROFILE_ID = "llm_explanation_projection_safe"
 
@@ -198,6 +201,98 @@ def admit_a_causal_narrative_frame() -> None:
     )
 
 
+def caller_authored_requester_identity() -> None:
+    """Corrective V Exit Gate 1: let the caller name itself again.
+
+    The entering protected-main tree accepted
+    ``requested_by='attacker:not-a-real-caller'`` because the field was text a
+    writer chose. The repair makes it a *derivation* of an authenticated
+    credential, performed twice by two authorities that cannot both be the
+    caller: the request-entry boundary derives it, and the database re-derives
+    it from the row's own foreign keys and refuses any disagreement.
+
+    This control severs the application half -- ``persist_simulation_request``
+    starts trusting an environment-supplied identity instead of the verified
+    principal -- while leaving the credential lookup, the foreign keys and the
+    guard intact. The suite must still go red, because the database's own
+    derivation disagrees. That is the point: the two halves are each other's
+    falsifier, and a control that broke only one of them would prove nothing.
+    """
+
+    anchor = (
+        '                        "requested_by": requester.requested_by,\n'
+        '                        "agent_client_id": requester.agent_client_id,\n'
+    )
+    replacement = (
+        '                        "requested_by": "attacker:not-a-real-caller",'
+        "  # NC-P14-10\n"
+        '                        "agent_client_id": requester.agent_client_id,\n'
+    )
+    _replace_once(
+        SIMULATION_PERSISTENCE,
+        anchor,
+        replacement,
+        what="caller_authored_requester_identity",
+    )
+
+
+def unauthenticated_requester() -> None:
+    """Corrective V Exit Gate 1: accept a credential without verifying it.
+
+    ``authenticate_simulation_requester`` is the library-boundary answer to the
+    audits' finding that no caller authentication existed at all. This control
+    removes the constant-time secret comparison while leaving the prefix lookup,
+    the revocation check and the liveness checks in place -- so a caller who
+    knows only a token *prefix* is admitted. Knowing eight characters is not
+    proving custody of a credential, and the suite must say so.
+    """
+
+    anchor = (
+        "        if not verify_machine_token(\n"
+        "            presented_token, str(token_hash), "
+        'str(hash_algorithm or "sha256")\n'
+        "        ):\n"
+    )
+    replacement = "        if False:  # NC-P14-11\n"
+    _replace_once(
+        REQUESTER_IDENTITY,
+        anchor,
+        replacement,
+        what="unauthenticated_requester",
+    )
+
+
+def canonical_bootstrap_is_authoritative() -> None:
+    """Corrective V Exit Gate 13: re-open the construction-authority question.
+
+    The phase's answer is that ``db/schema/canonical_schema.sql`` is a
+    structural reference and never a production construction route, and the
+    physical expression of that is a runtime refusal keyed on the one marker a
+    pg_dump cannot forge -- an ``alembic_version`` row. This control makes the
+    refusal accept an unconstructed database, which is exactly the state a
+    canonical bootstrap leaves behind: structurally identical, with the generic
+    API principal's INSERT restored, both dedicated causal authorities holding
+    nothing, and the frame corpus empty.
+    """
+
+    anchor = (
+        "    if not revisions:\n"
+        "        raise ConstructionAuthorityError(\n"
+    )
+    replacement = (
+        "    if not revisions:  # NC-P14-12\n"
+        '        return "unconstructed"\n'
+        "    if False:\n"
+        "        raise ConstructionAuthorityError(\n"
+    )
+    _replace_once(
+        CONSTRUCTION_AUTHORITY,
+        anchor,
+        replacement,
+        what="canonical_bootstrap_is_authoritative",
+    )
+
+
 DEFECTS = {
     "platform_write": platform_write,
     "second_solver_caller": second_solver_caller,
@@ -206,6 +301,9 @@ DEFECTS = {
     "narrow_contract_copy_layer": narrow_contract_copy_layer,
     "weaken_narrative_derivation": weaken_narrative_derivation,
     "admit_a_causal_narrative_frame": admit_a_causal_narrative_frame,
+    "caller_authored_requester_identity": caller_authored_requester_identity,
+    "unauthenticated_requester": unauthenticated_requester,
+    "canonical_bootstrap_is_authoritative": canonical_bootstrap_is_authoritative,
 }
 
 

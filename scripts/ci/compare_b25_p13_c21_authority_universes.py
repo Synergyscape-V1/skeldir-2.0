@@ -180,15 +180,38 @@ CAPABILITY_MATRIX = (
     ("app_user", "b27_explanation_materializations", "DELETE", False),
     ("app_worker", "b27_explanation_materializations", "INSERT", False),
     ("app_rw", "b27_explanation_materializations", "SELECT", False),
-    ("app_user", "b28_simulation_requests", "INSERT", True),
+    # B2.5-P14 Corrective V. A durable request is the claim that a verified
+    # caller asked, and a durable result is the claim that the governed solver
+    # ran. Both were writable by `app_user` until 202609061200, so one authority
+    # domain could author the alleged cause and the alleged consequence. Each
+    # claim now has its own login; the generic API principal reads only.
+    ("app_user", "b28_simulation_requests", "INSERT", False),
+    ("app_user", "b28_simulation_requests", "SELECT", True),
     ("app_user", "b28_simulation_requests", "UPDATE", False),
     ("app_worker", "b28_simulation_requests", "INSERT", False),
-    ("app_user", "b28_simulation_results", "INSERT", True),
+    ("app_b28_requester", "b28_simulation_requests", "INSERT", True),
+    ("app_b28_requester", "b28_simulation_requests", "UPDATE", False),
+    ("app_b28_requester", "b28_simulation_requests", "DELETE", False),
+    ("app_b28_solver", "b28_simulation_requests", "INSERT", False),
+    ("app_user", "b28_simulation_results", "INSERT", False),
+    ("app_user", "b28_simulation_results", "SELECT", True),
     ("app_user", "b28_simulation_results", "UPDATE", False),
     ("app_worker", "b28_simulation_results", "INSERT", False),
-    ("app_user", "b28_proposals", "INSERT", True),
+    ("app_b28_requester", "b28_simulation_results", "INSERT", False),
+    ("app_b28_solver", "b28_simulation_results", "INSERT", True),
+    ("app_b28_solver", "b28_simulation_results", "UPDATE", False),
+    ("app_b28_solver", "b28_simulation_results", "DELETE", False),
+    ("app_user", "b28_proposals", "INSERT", False),
+    ("app_user", "b28_proposals", "SELECT", True),
     ("app_user", "b28_proposals", "UPDATE", False),
     ("app_worker", "b28_proposals", "INSERT", False),
+    ("app_b28_requester", "b28_proposals", "INSERT", False),
+    ("app_b28_solver", "b28_proposals", "INSERT", True),
+    ("app_b28_solver", "b28_proposals", "UPDATE", False),
+    ("app_b28_solver", "b28_proposals", "DELETE", False),
+    # Neither causal authority reaches the B2.7 surface.
+    ("app_b28_requester", "b27_explanation_materializations", "INSERT", False),
+    ("app_b28_solver", "b27_explanation_materializations", "INSERT", False),
 )
 
 # The migration path renders ``ANY ((ARRAY['x'::character varying, ...])::text[])``.

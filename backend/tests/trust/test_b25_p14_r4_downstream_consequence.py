@@ -50,8 +50,20 @@ from app.explanation.templates import (
     EXPLANATION_TEMPLATE_REGISTRY_VERSION,
     registry_rows,
 )
+from app.simulation.admission import compute_input_snapshot_hash
+from app.simulation.consequence_custody import (
+    B28_REQUEST_DATABASE_URL_ENV,
+    B28_REQUEST_PRINCIPAL,
+    B28_SOLVER_DATABASE_URL_ENV,
+    B28_SOLVER_PRINCIPAL,
+)
 from app.simulation.contract import ChannelEvidence, SimulationRequest, SimulationResult
+from app.simulation.persistence import conduct_requested_simulation
+from app.simulation.requester_identity import REQUESTED_BY_PREFIX
 from app.simulation.service import propose_from_result, simulate_from_trust
+from app.simulation.solver import allocate_budget
+from app.simulation.sufficiency import adjudicate_sufficiency
+from app.trust.machine_identity import generate_machine_token
 from app.trust.canonicalization import (
     canonicalize_envelope_payload,
     canonicalize_signature_material,
@@ -122,6 +134,89 @@ def _role_connection(role: str):
     )
     conn.autocommit = False
     return conn
+
+
+def _dsn_for_principal(principal: str) -> str:
+    parts = urlsplit(_admin_dsn())
+    return (
+        f"postgresql://{principal}:{principal}@{parts.hostname}:"
+        f"{parts.port or 5432}{parts.path}"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _b28_consequence_custody(monkeypatch):
+    """B2.5-P14 Corrective V. The two causal authorities have their own DSNs,
+    as the deployment gives them, so this suite exercises the real wiring."""
+    monkeypatch.setenv(
+        B28_REQUEST_DATABASE_URL_ENV, _dsn_for_principal(B28_REQUEST_PRINCIPAL)
+    )
+    monkeypatch.setenv(
+        B28_SOLVER_DATABASE_URL_ENV, _dsn_for_principal(B28_SOLVER_PRINCIPAL)
+    )
+    yield
+
+
+def _seed_agent_credential(cursor, tenant_id) -> dict[str, str]:
+    """One live machine principal. Corrective V made the requester identity a
+    consequence of a credential rather than a string, so every lawful request
+    below needs a real one."""
+    secret = generate_machine_token()
+    client_id = uuid.uuid4()
+    credential_id = uuid.uuid4()
+    cursor.execute(
+        "INSERT INTO public.agent_clients (id, tenant_id, client_name,"
+        " client_display_hash, audience, status)"
+        " VALUES (%s,%s,%s,%s,'trust-api','active')",
+        (str(client_id), str(tenant_id), f"p14r4-{client_id.hex[:8]}", _digest()),
+    )
+    cursor.execute(
+        "INSERT INTO public.agent_service_credentials (id, tenant_id,"
+        " agent_client_id, token_prefix, token_hash, status)"
+        " VALUES (%s,%s,%s,%s,%s,'active')",
+        (
+            str(credential_id),
+            str(tenant_id),
+            str(client_id),
+            secret.token_prefix,
+            secret.token_hash,
+        ),
+    )
+    return {
+        "token": secret.plaintext,
+        "agent_client_id": str(client_id),
+        "credential_id": str(credential_id),
+        "requested_by": f"{REQUESTED_BY_PREFIX}{client_id}",
+    }
+
+
+def _evidence_json(channels) -> str:
+    return json.dumps(
+        [
+            {
+                "channel_id": channel.channel_id,
+                "verified_revenue_minor": channel.verified_revenue_minor,
+                "conversion_count": channel.conversion_count,
+            }
+            for channel in channels
+        ]
+    )
+
+
+def _solver_allocations_json(channels, budget: int) -> str:
+    """The only allocation the corrected result guard accepts: the solver's."""
+    return json.dumps(
+        [
+            {
+                "channel_id": line.channel_id,
+                "allocation_minor": line.allocation_minor,
+                "weight_basis_points": line.weight_basis_points,
+            }
+            for line in allocate_budget(
+                channels=channels, total_budget_minor=budget
+            )
+        ]
+    )
 
 
 def _bind_tenant(cursor, tenant_id) -> None:
@@ -535,6 +630,7 @@ def test_p14_r4_one_real_signed_state_conducts_into_b27_and_b28() -> None:
     try:
         with admin.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
+            principal = _seed_agent_credential(cursor, tenant_id)
         signed, registry = _sign_real_envelope(tenant_id)
         issuance = _conduct_issuance(tenant_id, signed)
 
@@ -562,22 +658,27 @@ def test_p14_r4_one_real_signed_state_conducts_into_b27_and_b28() -> None:
             ),
         )
 
-        simulation = simulate_from_trust(
-            retained,
-            request=SimulationRequest(
-                request_id="req_" + uuid.uuid4().hex,
-                tenant_id=str(tenant_id),
-                requested_by="agent:p14-r4-composition",
-                source_envelope_id=retained["envelope_id"],
-                source_semantic_truth_hash=retained["semantic_truth_hash"],
-                total_budget_minor=1_000_000,
-                currency=retained.get("currency", "USD"),
-                channels=SUFFICIENT_CHANNELS,
-                requested_at=retained["created_at"],
-            ),
+        # Corrective V. B2.8 conducts through the real production wiring: the
+        # caller presents a credential, the request-entry authority establishes
+        # who it is and records the request, and the solver authority persists
+        # exactly what the governed solver computed. No row on this path is
+        # assembled by the test.
+        conducted = conduct_requested_simulation(
+            envelope=retained,
+            tenant_id=str(tenant_id),
+            presented_token=principal["token"],
+            source_issuance_envelope_hash=issuance["envelope_hash"],
+            total_budget_minor=1_000_000,
+            currency=retained.get("currency", "USD"),
+            channels=SUFFICIENT_CHANNELS,
         )
+        simulation = conducted["outcome"]
         assert isinstance(simulation, SimulationResult), simulation
-        proposal = propose_from_result(simulation)
+        proposal = conducted["proposal"]
+        request_id = conducted["request_id"]
+        result_id = conducted["identifiers"]["result_id"]
+        assert conducted["requested_by"] == principal["requested_by"]
+        assert propose_from_result(simulation).allocations == proposal.allocations
 
         user = _role_connection("app_user")
         try:
@@ -585,73 +686,6 @@ def test_p14_r4_one_real_signed_state_conducts_into_b27_and_b28() -> None:
                 _bind_tenant(cursor, tenant_id)
                 materialization_id = _persist_explanation(
                     cursor, tenant_id, issuance, explanation
-                )
-                cursor.execute(
-                    "INSERT INTO public.b28_simulation_requests (tenant_id,"
-                    " request_ref, requested_by, source_envelope_id,"
-                    " source_semantic_truth_hash, source_issuance_envelope_hash,"
-                    " input_snapshot_hash, total_budget_minor, currency,"
-                    " channel_count, sufficiency_policy_version)"
-                    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
-                    (
-                        str(tenant_id),
-                        simulation.request_id,
-                        "agent:p14-r4-composition",
-                        simulation.source_envelope_id,
-                        simulation.source_semantic_truth_hash,
-                        issuance["envelope_hash"],
-                        simulation.input_snapshot_hash,
-                        simulation.total_budget_minor,
-                        simulation.currency,
-                        len(simulation.allocations),
-                        SUFFICIENCY_POLICY_VERSION,
-                    ),
-                )
-                request_id = cursor.fetchone()[0]
-                allocations = [
-                    {
-                        "channel_id": allocation.channel_id,
-                        "allocation_minor": allocation.allocation_minor,
-                    }
-                    for allocation in simulation.allocations
-                ]
-                cursor.execute(
-                    "INSERT INTO public.b28_simulation_results (tenant_id, request_id,"
-                    " source_envelope_id, source_semantic_truth_hash,"
-                    " projection_profile_hash, input_snapshot_hash, solver_profile,"
-                    " solver_invocations, total_budget_minor, allocated_total_minor,"
-                    " currency, action_authority, allocations)"
-                    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)"
-                    " RETURNING id",
-                    (
-                        str(tenant_id),
-                        str(request_id),
-                        simulation.source_envelope_id,
-                        simulation.source_semantic_truth_hash,
-                        explanation.profile_hash,
-                        simulation.input_snapshot_hash,
-                        SOLVER_PROFILE,
-                        simulation.solver_invocations,
-                        simulation.total_budget_minor,
-                        sum(a["allocation_minor"] for a in allocations),
-                        simulation.currency,
-                        simulation.action_authority,
-                        json.dumps(allocations),
-                    ),
-                )
-                result_id = cursor.fetchone()[0]
-                cursor.execute(
-                    "INSERT INTO public.b28_proposals (tenant_id, result_id,"
-                    " proposal_ref, source_envelope_id, action_authority, allocations)"
-                    " VALUES (%s,%s,%s,%s,%s,%s::jsonb)",
-                    (
-                        str(tenant_id),
-                        str(result_id),
-                        proposal.proposal_id,
-                        proposal.source_envelope_id,
-                        proposal.action_authority,
-                        json.dumps(allocations),
-                    ),
                 )
             user.commit()
         finally:
@@ -695,6 +729,9 @@ def test_p14_r4_one_real_signed_state_conducts_into_b27_and_b28() -> None:
         assert row[8] == "issued"
         assert row[9] == "issued"
         lineage = {
+            "requested_by": conducted["requested_by"],
+            "request_authority_principal": B28_REQUEST_PRINCIPAL,
+            "solver_authority_principal": B28_SOLVER_PRINCIPAL,
             "tenant_id": str(tenant_id),
             "envelope_id": signed["envelope_id"],
             "envelope_hash": issuance["envelope_hash"],
@@ -718,12 +755,17 @@ def test_p14_r4_a_severed_source_binding_is_refused() -> None:
     belongs to a different journey, and to project a semantic truth that no
     issuance carries. Either would make the downstream artifact a second
     universe with a plausible citation.
+
+    Corrective V note: the probes run as the dedicated request authority, so
+    what refuses them is the source-binding guard rather than an absent
+    privilege. The privilege layer is proved separately.
     """
 
     admin = _admin_connection()
     try:
         with admin.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
+            principal = _seed_agent_credential(cursor, tenant_id)
         signed_a, _ = _sign_real_envelope(tenant_id)
         issuance_a = _conduct_issuance(tenant_id, signed_a)
         signed_b, _ = _sign_real_envelope(
@@ -731,74 +773,35 @@ def test_p14_r4_a_severed_source_binding_is_refused() -> None:
         )
         issuance_b = _conduct_issuance(tenant_id, signed_b)
 
-        outcomes = []
-        user = _role_connection("app_user")
-        try:
-            with user.cursor() as cursor:
-                _bind_tenant(cursor, tenant_id)
-                # A real issuance, but not the one whose semantic truth is cited.
-                try:
-                    cursor.execute(
-                        "INSERT INTO public.b28_simulation_requests (tenant_id,"
-                        " request_ref, requested_by, source_envelope_id,"
-                        " source_semantic_truth_hash, source_issuance_envelope_hash,"
-                        " input_snapshot_hash, total_budget_minor, currency,"
-                        " channel_count, sufficiency_policy_version)"
-                        " VALUES (%s,%s,'agent:p14',%s,%s,%s,%s,1000,'USD',1,%s)",
-                        (
-                            str(tenant_id),
-                            "req_" + uuid.uuid4().hex,
-                            signed_a["envelope_id"],
-                            issuance_a["semantic_truth_hash"],
-                            issuance_b["envelope_hash"],
-                            _digest(),
-                            SUFFICIENCY_POLICY_VERSION,
-                        ),
-                    )
-                    outcomes.append(("crossed_issuance", "ALLOWED"))
-                except psycopg2.Error as exc:
-                    user.rollback()
-                    outcomes.append(("crossed_issuance", str(exc).splitlines()[0]))
-        finally:
-            user.close()
-
-        user = _role_connection("app_user")
-        try:
-            with user.cursor() as cursor:
-                _bind_tenant(cursor, tenant_id)
-                try:
-                    cursor.execute(
-                        "INSERT INTO public.b28_simulation_requests (tenant_id,"
-                        " request_ref, requested_by, source_envelope_id,"
-                        " source_semantic_truth_hash, source_issuance_envelope_hash,"
-                        " input_snapshot_hash, total_budget_minor, currency,"
-                        " channel_count, sufficiency_policy_version)"
-                        " VALUES (%s,%s,'agent:p14',%s,%s,%s,%s,1000,'USD',1,%s)",
-                        (
-                            str(tenant_id),
-                            "req_" + uuid.uuid4().hex,
-                            signed_a["envelope_id"],
-                            _digest(),
-                            _digest(),
-                            _digest(),
-                            SUFFICIENCY_POLICY_VERSION,
-                        ),
-                    )
-                    outcomes.append(("no_issuance", "ALLOWED"))
-                except psycopg2.Error as exc:
-                    user.rollback()
-                    outcomes.append(("no_issuance", str(exc).splitlines()[0]))
-        finally:
-            user.close()
+        # A real issuance, but not the one whose semantic truth is cited.
+        crossed = _fabrication_attempt(
+            tenant_id,
+            _REQUEST_INSERT,
+            _request_params(
+                tenant_id,
+                principal,
+                envelope_id=signed_a["envelope_id"],
+                semantic_truth_hash=issuance_a["semantic_truth_hash"],
+                issuance_envelope_hash=issuance_b["envelope_hash"],
+            ),
+        )
+        # A semantic truth and an issuance that exist nowhere.
+        unbound = _fabrication_attempt(
+            tenant_id,
+            _REQUEST_INSERT,
+            _request_params(
+                tenant_id,
+                principal,
+                envelope_id=signed_a["envelope_id"],
+                semantic_truth_hash=_digest(),
+                issuance_envelope_hash=_digest(),
+            ),
+        )
     finally:
         admin.close()
 
-    assert dict(outcomes)["crossed_issuance"].startswith(
-        "b28_request_source_trust_mismatch"
-    ), outcomes
-    assert dict(outcomes)["no_issuance"].startswith(
-        "b28_request_requires_durable_issuance"
-    ), outcomes
+    assert crossed.startswith("b28_request_source_trust_mismatch"), crossed
+    assert unbound.startswith("b28_request_requires_durable_issuance"), unbound
 
 
 # ---------------------------------------------------------------------------
@@ -806,8 +809,23 @@ def test_p14_r4_a_severed_source_binding_is_refused() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _fabrication_attempt(tenant_id, statement: str, params: tuple[Any, ...]) -> str:
-    conn = _role_connection("app_user")
+def _fabrication_attempt(
+    tenant_id,
+    statement: str,
+    params: tuple[Any, ...],
+    *,
+    role: str = B28_REQUEST_PRINCIPAL,
+) -> str:
+    """Attempt one write as a named principal.
+
+    Corrective V moved B2.8 writes off ``app_user`` entirely, so a probe that
+    still ran as ``app_user`` would measure the privilege layer and never reach
+    the guard it means to test. The default is therefore the request authority;
+    result and proposal probes name the solver authority explicitly. The
+    privilege layer is proved separately, by
+    ``test_p14_r4_b28_writes_are_refused_to_every_generic_principal``.
+    """
+    conn = _role_connection(role)
     try:
         with conn.cursor() as cursor:
             _bind_tenant(cursor, tenant_id)
@@ -823,11 +841,75 @@ def _fabrication_attempt(tenant_id, statement: str, params: tuple[Any, ...]) -> 
 
 _REQUEST_INSERT = (
     "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref,"
-    " requested_by, source_envelope_id, source_semantic_truth_hash,"
-    " source_issuance_envelope_hash, input_snapshot_hash, total_budget_minor,"
-    " currency, channel_count, sufficiency_policy_version)"
-    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+    " requested_by, requested_by_agent_client_id, requested_by_credential_id,"
+    " request_authority_principal, source_envelope_id,"
+    " source_semantic_truth_hash, source_issuance_envelope_hash,"
+    " input_snapshot_hash, total_budget_minor, currency, channel_count,"
+    " channel_evidence, solver_profile, sufficiency_policy_version,"
+    " sufficiency_verdict, sufficiency_reasons, observed_channels,"
+    " observed_conversions, observed_revenue_minor)"
+    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s)"
 )
+
+
+def _request_params(
+    tenant_id,
+    principal_row,
+    *,
+    envelope_id: str,
+    semantic_truth_hash: str,
+    issuance_envelope_hash: str,
+    channels=None,
+    budget: int = 1_000,
+    currency: str = "USD",
+    requested_by: str | None = None,
+    sufficiency_policy_version: str = SUFFICIENCY_POLICY_VERSION,
+    authority_principal: str = B28_REQUEST_PRINCIPAL,
+    snapshot: str | None = None,
+) -> tuple[Any, ...]:
+    """One request row whose every derived field is genuinely derived.
+
+    Corrective V made four of these fields functions of the others -- the
+    snapshot hash of the retained evidence, the sufficiency verdict of the
+    adjudicator, the requester identity of the credential -- so a probe that
+    wants to test one conjunct has to satisfy the rest honestly.
+    """
+    channels = SUFFICIENT_CHANNELS if channels is None else channels
+    adjudication = adjudicate_sufficiency(channels)
+    probe = SimulationRequest(
+        request_id="probe",
+        tenant_id=str(tenant_id),
+        requested_by=principal_row["requested_by"],
+        source_envelope_id=envelope_id,
+        source_semantic_truth_hash=semantic_truth_hash,
+        total_budget_minor=budget,
+        currency=currency,
+        channels=channels,
+        requested_at="probe",
+    )
+    return (
+        str(tenant_id),
+        "req_" + uuid.uuid4().hex,
+        principal_row["requested_by"] if requested_by is None else requested_by,
+        principal_row["agent_client_id"],
+        principal_row["credential_id"],
+        authority_principal,
+        envelope_id,
+        semantic_truth_hash,
+        issuance_envelope_hash,
+        compute_input_snapshot_hash(probe) if snapshot is None else snapshot,
+        budget,
+        currency,
+        len(channels),
+        _evidence_json(channels),
+        SOLVER_PROFILE,
+        sufficiency_policy_version,
+        adjudication.sufficient,
+        list(adjudication.reasons),
+        adjudication.observed_channels,
+        adjudication.observed_conversions,
+        adjudication.observed_revenue_minor,
+    )
 
 _RESULT_INSERT = (
     "INSERT INTO public.b28_simulation_results (tenant_id, request_id,"
@@ -838,33 +920,66 @@ _RESULT_INSERT = (
 )
 
 
-def _lawful_request(cursor, tenant_id, issuance, *, budget=1000, channels=1):
-    request_id = uuid.uuid4()
-    snapshot = _digest()
-    cursor.execute(
-        _REQUEST_INSERT + " RETURNING id",
-        (
-            str(tenant_id),
-            "req_" + uuid.uuid4().hex,
-            "agent:p14",
-            issuance["envelope_id"],
-            issuance["semantic_truth_hash"],
-            issuance["envelope_hash"],
-            snapshot,
-            budget,
-            "USD",
-            channels,
-            SUFFICIENCY_POLICY_VERSION,
-        ),
+def _lawful_request(
+    cursor, tenant_id, principal, issuance, *, budget=1000, channels=None
+):
+    """One admissible request, every derived field genuinely derived."""
+    channels = SUFFICIENT_CHANNELS if channels is None else channels
+    params = _request_params(
+        tenant_id,
+        principal,
+        envelope_id=issuance["envelope_id"],
+        semantic_truth_hash=issuance["semantic_truth_hash"],
+        issuance_envelope_hash=issuance["envelope_hash"],
+        channels=channels,
+        budget=budget,
     )
+    cursor.execute(_REQUEST_INSERT + " RETURNING id", params)
     return {
         "id": cursor.fetchone()[0],
-        "snapshot": snapshot,
+        "snapshot": params[9],
         "budget": budget,
         "channels": channels,
         "envelope_id": issuance["envelope_id"],
         "semantic_truth_hash": issuance["semantic_truth_hash"],
     }
+
+
+def _request_principal_connection(tenant_id):
+    conn = _role_connection(B28_REQUEST_PRINCIPAL)
+    with conn.cursor() as cursor:
+        _bind_tenant(cursor, tenant_id)
+    return conn
+
+
+def test_p14_r4_b28_writes_are_refused_to_every_generic_principal() -> None:
+    """Corrective V, the privilege layer beneath every guard below.
+
+    The guards are measured as the dedicated authorities elsewhere in this file
+    so that a refusal names the conjunct it tests. That is only sound while the
+    generic principals cannot reach the relations at all, which is what this
+    decides -- before any trigger runs, for every runtime login the deployment
+    actually issues.
+    """
+
+    admin = _admin_connection()
+    try:
+        with admin.cursor() as cursor:
+            cursor.execute(
+                "SELECT r.rolname, c.relname,"
+                " has_table_privilege(r.rolname, c.oid, 'INSERT')"
+                " FROM pg_class c CROSS JOIN pg_roles r"
+                " WHERE c.relname IN ('b28_simulation_requests',"
+                " 'b28_simulation_results','b28_proposals')"
+                " AND r.rolname IN ('app_user','app_worker','app_rw','app_ro',"
+                " 'app_trust_issuer','app_trust_signer','app_dispatch_publisher',"
+                " 'app_celery_transport')"
+                " ORDER BY 2, 1"
+            )
+            holders = [(row[0], row[1]) for row in cursor if row[2]]
+    finally:
+        admin.close()
+    assert holders == [], f"generic principals still write B2.8: {holders}"
 
 
 def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
@@ -876,6 +991,8 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
         with admin.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
             other_tenant = _seed_tenant(cursor)
+            principal = _seed_agent_credential(cursor, tenant_id)
+            other_principal = _seed_agent_credential(cursor, other_tenant)
         signed, _ = _sign_real_envelope(tenant_id)
         issuance = _conduct_issuance(tenant_id, signed)
         read_only_signed, _ = _sign_real_envelope(tenant_id, policy_state="read_only")
@@ -884,83 +1001,95 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
         findings["request_names_no_issuance"] = _fabrication_attempt(
             tenant_id,
             _REQUEST_INSERT,
-            (
-                str(tenant_id),
-                "req_" + uuid.uuid4().hex,
-                "attacker:not-a-real-caller",
-                "env_never_issued",
-                _digest(),
-                _digest(),
-                _digest(),
-                1_000_000,
-                "USD",
-                3,
-                SUFFICIENCY_POLICY_VERSION,
+            _request_params(
+                tenant_id,
+                principal,
+                envelope_id="env_never_issued",
+                semantic_truth_hash=_digest(),
+                issuance_envelope_hash=_digest(),
             ),
         )
         findings["request_over_read_only_source"] = _fabrication_attempt(
             tenant_id,
             _REQUEST_INSERT,
-            (
-                str(tenant_id),
-                "req_" + uuid.uuid4().hex,
-                "agent:p14",
-                read_only_issuance["envelope_id"],
-                read_only_issuance["semantic_truth_hash"],
-                read_only_issuance["envelope_hash"],
-                _digest(),
-                1_000,
-                "USD",
-                1,
-                SUFFICIENCY_POLICY_VERSION,
+            _request_params(
+                tenant_id,
+                principal,
+                envelope_id=read_only_issuance["envelope_id"],
+                semantic_truth_hash=read_only_issuance["semantic_truth_hash"],
+                issuance_envelope_hash=read_only_issuance["envelope_hash"],
             ),
         )
         findings["request_ungoverned_sufficiency_policy"] = _fabrication_attempt(
             tenant_id,
             _REQUEST_INSERT,
-            (
-                str(tenant_id),
-                "req_" + uuid.uuid4().hex,
-                "agent:p14",
-                issuance["envelope_id"],
-                issuance["semantic_truth_hash"],
-                issuance["envelope_hash"],
-                _digest(),
-                1_000,
-                "USD",
-                1,
-                "v-fabricated",
+            _request_params(
+                tenant_id,
+                principal,
+                envelope_id=issuance["envelope_id"],
+                semantic_truth_hash=issuance["semantic_truth_hash"],
+                issuance_envelope_hash=issuance["envelope_hash"],
+                sufficiency_policy_version="v-fabricated",
             ),
         )
         findings["request_wrong_tenant"] = _fabrication_attempt(
             other_tenant,
             _REQUEST_INSERT,
-            (
-                str(other_tenant),
-                "req_" + uuid.uuid4().hex,
-                "agent:p14",
-                issuance["envelope_id"],
-                issuance["semantic_truth_hash"],
-                issuance["envelope_hash"],
-                _digest(),
-                1_000,
-                "USD",
-                1,
-                SUFFICIENCY_POLICY_VERSION,
+            _request_params(
+                other_tenant,
+                other_principal,
+                envelope_id=issuance["envelope_id"],
+                semantic_truth_hash=issuance["semantic_truth_hash"],
+                issuance_envelope_hash=issuance["envelope_hash"],
+            ),
+        )
+        # Corrective V additions to the same battery.
+        findings["request_invented_requester"] = _fabrication_attempt(
+            tenant_id,
+            _REQUEST_INSERT,
+            _request_params(
+                tenant_id,
+                principal,
+                envelope_id=issuance["envelope_id"],
+                semantic_truth_hash=issuance["semantic_truth_hash"],
+                issuance_envelope_hash=issuance["envelope_hash"],
+                requested_by="attacker:not-a-real-caller",
+            ),
+        )
+        findings["request_foreign_tenant_credential"] = _fabrication_attempt(
+            tenant_id,
+            _REQUEST_INSERT,
+            _request_params(
+                tenant_id,
+                other_principal,
+                envelope_id=issuance["envelope_id"],
+                semantic_truth_hash=issuance["semantic_truth_hash"],
+                issuance_envelope_hash=issuance["envelope_hash"],
+            ),
+        )
+        findings["request_chosen_input_snapshot"] = _fabrication_attempt(
+            tenant_id,
+            _REQUEST_INSERT,
+            _request_params(
+                tenant_id,
+                principal,
+                envelope_id=issuance["envelope_id"],
+                semantic_truth_hash=issuance["semantic_truth_hash"],
+                issuance_envelope_hash=issuance["envelope_hash"],
+                snapshot=_digest(),
             ),
         )
 
         # A lawful request, so the result battery measures the result guard.
-        user = _role_connection("app_user")
+        conn = _request_principal_connection(tenant_id)
         try:
-            with user.cursor() as cursor:
-                _bind_tenant(cursor, tenant_id)
-                request = _lawful_request(cursor, tenant_id, issuance)
-            user.commit()
+            with conn.cursor() as cursor:
+                request = _lawful_request(cursor, tenant_id, principal, issuance)
+            conn.commit()
         finally:
-            user.close()
+            conn.close()
 
-        allocations = json.dumps([{"channel_id": "a", "allocation_minor": 1000}])
+        allocations = _solver_allocations_json(request["channels"], request["budget"])
         base = [
             str(tenant_id),
             str(request["id"]),
@@ -970,8 +1099,8 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
             request["snapshot"],
             SOLVER_PROFILE,
             1,
-            1000,
-            1000,
+            request["budget"],
+            request["budget"],
             "USD",
             "simulation_only",
             allocations,
@@ -984,6 +1113,7 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
                 "source_semantic_truth_hash": 3,
                 "input_snapshot_hash": 5,
                 "solver_profile": 6,
+                "solver_invocations": 7,
                 "total_budget_minor": 8,
                 "allocated_total_minor": 9,
                 "currency": 10,
@@ -994,38 +1124,64 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
                 row[index[name]] = value
             return tuple(row)
 
-        findings["result_foreign_envelope_id"] = _fabrication_attempt(
-            tenant_id, _RESULT_INSERT, variant(source_envelope_id="env_other")
+        def result_attempt(params) -> str:
+            return _fabrication_attempt(
+                tenant_id, _RESULT_INSERT, params, role=B28_SOLVER_PRINCIPAL
+            )
+
+        findings["result_foreign_envelope_id"] = result_attempt(
+            variant(source_envelope_id="env_other")
         )
-        findings["result_foreign_semantic_truth"] = _fabrication_attempt(
-            tenant_id, _RESULT_INSERT, variant(source_semantic_truth_hash=_digest())
+        findings["result_foreign_semantic_truth"] = result_attempt(
+            variant(source_semantic_truth_hash=_digest())
         )
-        findings["result_foreign_input_snapshot"] = _fabrication_attempt(
-            tenant_id, _RESULT_INSERT, variant(input_snapshot_hash=_digest())
+        findings["result_foreign_input_snapshot"] = result_attempt(
+            variant(input_snapshot_hash=_digest())
         )
-        findings["result_ungoverned_solver_profile"] = _fabrication_attempt(
-            tenant_id, _RESULT_INSERT, variant(solver_profile="hand-written")
+        findings["result_ungoverned_solver_profile"] = result_attempt(
+            variant(solver_profile="hand-written")
         )
-        findings["result_channel_count_disagrees"] = _fabrication_attempt(
-            tenant_id,
-            _RESULT_INSERT,
+        findings["result_channel_count_disagrees"] = result_attempt(
             variant(
                 allocations=json.dumps(
                     [
-                        {"channel_id": "a", "allocation_minor": 600},
-                        {"channel_id": "b", "allocation_minor": 400},
+                        {
+                            "channel_id": "a",
+                            "allocation_minor": request["budget"],
+                            "weight_basis_points": 10_000,
+                        }
                     ]
                 )
-            ),
+            )
         )
-        findings["result_authority_not_derived"] = _fabrication_attempt(
-            tenant_id, _RESULT_INSERT, variant(action_authority="proposal_required")
+        findings["result_authority_not_derived"] = result_attempt(
+            variant(action_authority="proposal_required")
+        )
+        # Corrective V additions.
+        findings["result_uncomputed_allocation"] = result_attempt(
+            variant(
+                allocations=json.dumps(
+                    [
+                        {
+                            "channel_id": channel.channel_id,
+                            "allocation_minor": (
+                                request["budget"] if index == 0 else 0
+                            ),
+                            "weight_basis_points": 10_000 if index == 0 else 0,
+                        }
+                        for index, channel in enumerate(
+                            sorted(request["channels"], key=lambda c: c.channel_id)
+                        )
+                    ]
+                )
+            )
+        )
+        findings["result_solver_invocations_99"] = result_attempt(
+            variant(solver_invocations=99)
         )
 
         # The lawful result, then a proposal that disagrees with it.
-        findings["result_lawful"] = _fabrication_attempt(
-            tenant_id, _RESULT_INSERT, tuple(base)
-        )
+        findings["result_lawful"] = result_attempt(tuple(base))
         with admin.cursor() as cursor:
             cursor.execute(
                 "SELECT id FROM public.b28_simulation_results WHERE request_id = %s",
@@ -1046,6 +1202,7 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
                 "simulation_only",
                 json.dumps([{"channel_id": "a", "allocation_minor": 9_999_999}]),
             ),
+            role=B28_SOLVER_PRINCIPAL,
         )
     finally:
         admin.close()
@@ -1064,6 +1221,12 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
     assert findings["request_ungoverned_sufficiency_policy"].startswith(
         "b28_request_sufficiency_policy_unknown"
     )
+    assert findings["request_invented_requester"].startswith(
+        "b28_request_requested_by_not_derived"
+    )
+    assert findings["request_chosen_input_snapshot"].startswith(
+        "b28_request_input_snapshot_not_derived"
+    )
     assert findings["result_ungoverned_solver_profile"].startswith(
         "b28_result_solver_profile_ungoverned"
     )
@@ -1072,6 +1235,12 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
     )
     assert findings["result_authority_not_derived"].startswith(
         "b28_result_action_authority_not_derived"
+    )
+    assert findings["result_uncomputed_allocation"].startswith(
+        "b28_result_not_solver_consequence"
+    )
+    assert findings["result_solver_invocations_99"].startswith(
+        "b28_result_solver_invocations_not_one"
     )
     assert findings["proposal_disagrees_with_result"].startswith(
         "b28_proposal_disagrees_with_result"
@@ -1086,6 +1255,7 @@ def test_p14_r4_b28_consequence_guard_is_independently_load_bearing() -> None:
     try:
         with admin.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
+            principal = _seed_agent_credential(cursor, tenant_id)
             cursor.execute(
                 "SELECT pg_get_triggerdef(oid) FROM pg_catalog.pg_trigger"
                 " WHERE tgname = 'trg_b28_request_consequence' AND NOT tgisinternal"
@@ -1098,18 +1268,18 @@ def test_p14_r4_b28_consequence_guard_is_independently_load_bearing() -> None:
             constraintdef = cursor.fetchone()[0]
         assert triggerdef and constraintdef
 
-        fabricated = (
-            str(tenant_id),
-            "req_" + uuid.uuid4().hex,
-            "attacker:not-a-real-caller",
-            "env_never_issued",
-            _digest(),
-            _digest(),
-            _digest(),
-            1_000_000,
-            "USD",
-            3,
-            SUFFICIENCY_POLICY_VERSION,
+        # The requester identity is well formed and the credential is live, so
+        # the CHECK constraint and the foreign keys are satisfied. What is not
+        # satisfied is the source binding: this request names an issuance that
+        # never happened. With the guard and the FK in place that is refused;
+        # with both severed it becomes durable, which is what makes them
+        # load-bearing rather than decorative.
+        fabricated = _request_params(
+            tenant_id,
+            principal,
+            envelope_id="env_never_issued",
+            semantic_truth_hash=_digest(),
+            issuance_envelope_hash=_digest(),
         )
         assert (
             _fabrication_attempt(tenant_id, _REQUEST_INSERT, fabricated) != "ALLOWED"
@@ -1130,8 +1300,8 @@ def test_p14_r4_b28_consequence_guard_is_independently_load_bearing() -> None:
         finally:
             with admin.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM public.b28_simulation_requests WHERE requested_by ="
-                    " 'attacker:not-a-real-caller'"
+                    "DELETE FROM public.b28_simulation_requests"
+                    " WHERE source_envelope_id = 'env_never_issued'"
                 )
                 cursor.execute(
                     "ALTER TABLE public.b28_simulation_requests ADD CONSTRAINT"
@@ -1168,6 +1338,20 @@ _MATERIALIZATION_INSERT = (
     " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'llm_explanation_projection_safe','v1',%s,"
     " 'b25-p14-explanation-v1',%s,'unavailable',NULL,false,%s,%s,%s::jsonb)"
 )
+
+
+def _b27_attempt(tenant_id, params) -> str:
+    """B2.7 writes stay on ``app_user``.
+
+    Corrective V moved only the B2.8 relations to dedicated causal authorities.
+    B2.7's guard already had the physics Corrective V brings to B2.8 -- it
+    re-derives the narrative from the registered frame corpus rather than
+    comparing it to anything -- and both independent audits found it sound, so
+    narrowing its privilege was outside the demonstrated failure.
+    """
+    return _fabrication_attempt(
+        tenant_id, _MATERIALIZATION_INSERT, params, role="app_user"
+    )
 
 
 def _materialization_params(
@@ -1223,14 +1407,12 @@ def test_p14_r4_b27_persistence_requires_a_derived_narrative() -> None:
         signed, _ = _sign_real_envelope(tenant_id, policy_state="read_only")
         issuance = _conduct_issuance(tenant_id, signed)
 
-        findings["lawful"] = _fabrication_attempt(
+        findings["lawful"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(tenant_id, issuance, claims=[lawful_claim]),
         )
-        findings["free_prose_narrative"] = _fabrication_attempt(
+        findings["free_prose_narrative"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(
                 tenant_id,
                 issuance,
@@ -1241,9 +1423,8 @@ def test_p14_r4_b27_persistence_requires_a_derived_narrative() -> None:
                 ),
             ),
         )
-        findings["appended_sentence"] = _fabrication_attempt(
+        findings["appended_sentence"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(
                 tenant_id,
                 issuance,
@@ -1254,18 +1435,16 @@ def test_p14_r4_b27_persistence_requires_a_derived_narrative() -> None:
                 ),
             ),
         )
-        findings["unknown_template"] = _fabrication_attempt(
+        findings["unknown_template"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(
                 tenant_id,
                 issuance,
                 claims=[{**lawful_claim, "template_id": "causal.invented.v1"}],
             ),
         )
-        findings["template_bound_to_other_path"] = _fabrication_attempt(
+        findings["template_bound_to_other_path"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(
                 tenant_id,
                 issuance,
@@ -1281,9 +1460,8 @@ def test_p14_r4_b27_persistence_requires_a_derived_narrative() -> None:
                 ],
             ),
         )
-        findings["value_grammar_smuggling"] = _fabrication_attempt(
+        findings["value_grammar_smuggling"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(
                 tenant_id,
                 issuance,
@@ -1299,9 +1477,8 @@ def test_p14_r4_b27_persistence_requires_a_derived_narrative() -> None:
                 ],
             ),
         )
-        findings["rendering_not_derived"] = _fabrication_attempt(
+        findings["rendering_not_derived"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(
                 tenant_id,
                 issuance,
@@ -1313,16 +1490,14 @@ def test_p14_r4_b27_persistence_requires_a_derived_narrative() -> None:
                 ],
             ),
         )
-        findings["claim_count_disagrees"] = _fabrication_attempt(
+        findings["claim_count_disagrees"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(
                 tenant_id, issuance, claims=[lawful_claim], claim_count=7
             ),
         )
-        findings["policy_state_upgraded"] = _fabrication_attempt(
+        findings["policy_state_upgraded"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             _materialization_params(
                 tenant_id,
                 issuance,
@@ -1330,9 +1505,8 @@ def test_p14_r4_b27_persistence_requires_a_derived_narrative() -> None:
                 policy_state="approval_required",
             ),
         )
-        findings["unknown_registry_hash"] = _fabrication_attempt(
+        findings["unknown_registry_hash"] = _b27_attempt(
             tenant_id,
-            _MATERIALIZATION_INSERT,
             tuple(
                 value if index != 5 else _digest()
                 for index, value in enumerate(
@@ -1385,17 +1559,17 @@ def test_p14_r4_downstream_records_are_append_only() -> None:
     try:
         with admin.cursor() as cursor:
             tenant_id = _seed_tenant(cursor)
+            principal = _seed_agent_credential(cursor, tenant_id)
         signed, _ = _sign_real_envelope(tenant_id)
         issuance = _conduct_issuance(tenant_id, signed)
 
-        user = _role_connection("app_user")
+        conn = _request_principal_connection(tenant_id)
         try:
-            with user.cursor() as cursor:
-                _bind_tenant(cursor, tenant_id)
-                _lawful_request(cursor, tenant_id, issuance)
-            user.commit()
+            with conn.cursor() as cursor:
+                _lawful_request(cursor, tenant_id, principal, issuance)
+            conn.commit()
         finally:
-            user.close()
+            conn.close()
 
         # Privilege first: no runtime principal holds UPDATE or DELETE at all.
         with admin.cursor() as cursor:
@@ -1405,15 +1579,22 @@ def test_p14_r4_downstream_records_are_append_only() -> None:
                 "b28_simulation_results",
                 "b28_proposals",
             ):
-                for principal in ("app_user", "app_worker", "app_rw", "app_ro"):
+                for role in (
+                    "app_user",
+                    "app_worker",
+                    "app_rw",
+                    "app_ro",
+                    B28_REQUEST_PRINCIPAL,
+                    B28_SOLVER_PRINCIPAL,
+                ):
                     for operation in ("UPDATE", "DELETE"):
                         cursor.execute(
                             "SELECT has_table_privilege(%s, %s, %s)",
-                            (principal, f"public.{relation}", operation),
+                            (role, f"public.{relation}", operation),
                         )
                         assert cursor.fetchone()[0] is False, (
                             relation,
-                            principal,
+                            role,
                             operation,
                         )
 
@@ -1421,10 +1602,10 @@ def test_p14_r4_downstream_records_are_append_only() -> None:
             # so the fence is proved rather than the absent grant.
             cursor.execute(
                 "GRANT UPDATE, DELETE ON TABLE public.b28_simulation_requests"
-                " TO app_user"
+                f" TO {B28_REQUEST_PRINCIPAL}"
             )
         try:
-            conn = _role_connection("app_user")
+            conn = _role_connection(B28_REQUEST_PRINCIPAL)
             try:
                 with conn.cursor() as cursor:
                     _bind_tenant(cursor, tenant_id)
@@ -1452,7 +1633,7 @@ def test_p14_r4_downstream_records_are_append_only() -> None:
             with admin.cursor() as cursor:
                 cursor.execute(
                     "REVOKE UPDATE, DELETE ON TABLE public.b28_simulation_requests"
-                    " FROM app_user"
+                    f" FROM {B28_REQUEST_PRINCIPAL}"
                 )
     finally:
         admin.close()
@@ -1524,29 +1705,25 @@ def test_p14_r4_downstream_relations_reject_a_caller_selected_tenant() -> None:
         with admin.cursor() as cursor:
             tenant_a = _seed_tenant(cursor)
             tenant_b = _seed_tenant(cursor)
+            principal_a = _seed_agent_credential(cursor, tenant_a)
+            principal_b = _seed_agent_credential(cursor, tenant_b)
         signed, _ = _sign_real_envelope(tenant_a)
         issuance = _conduct_issuance(tenant_a, signed)
 
-        def attempt(guc, tenant_column) -> str:
-            conn = _role_connection("app_user")
+        def attempt(guc, tenant_column, principal) -> str:
+            conn = _role_connection(B28_REQUEST_PRINCIPAL)
             try:
                 with conn.cursor() as cursor:
                     if guc is not None:
                         _bind_tenant(cursor, guc)
                     cursor.execute(
                         _REQUEST_INSERT,
-                        (
-                            str(tenant_column),
-                            "req_" + uuid.uuid4().hex,
-                            "agent:p14",
-                            issuance["envelope_id"],
-                            issuance["semantic_truth_hash"],
-                            issuance["envelope_hash"],
-                            _digest(),
-                            1000,
-                            "USD",
-                            1,
-                            SUFFICIENCY_POLICY_VERSION,
+                        _request_params(
+                            tenant_column,
+                            principal,
+                            envelope_id=issuance["envelope_id"],
+                            semantic_truth_hash=issuance["semantic_truth_hash"],
+                            issuance_envelope_hash=issuance["envelope_hash"],
                         ),
                     )
                 conn.commit()
@@ -1557,10 +1734,10 @@ def test_p14_r4_downstream_relations_reject_a_caller_selected_tenant() -> None:
             finally:
                 conn.close()
 
-        unset = attempt(None, tenant_a)
-        wrong = attempt(tenant_b, tenant_a)
-        cross = attempt(tenant_b, tenant_b)
-        lawful = attempt(tenant_a, tenant_a)
+        unset = attempt(None, tenant_a, principal_a)
+        wrong = attempt(tenant_b, tenant_a, principal_a)
+        cross = attempt(tenant_b, tenant_b, principal_b)
+        lawful = attempt(tenant_a, tenant_a, principal_a)
     finally:
         admin.close()
 

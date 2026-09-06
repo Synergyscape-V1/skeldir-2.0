@@ -49,28 +49,52 @@ The B0.3 schema foundation is defined by the following authoritative sources, in
    - Authority Level: Authoritative (Conceptual Spec)
    - Owner: Backend Schema Steward
 
-2. **Canonical Executable Schema** (`db/schema/canonical_schema.sql`)
-   - Declarative contract describing exact tables, columns, constraints, RLS
-   - Authority Level: Authoritative (Executable Spec)
+2. **Alembic Migration Chain** (`alembic/versions/**`)
+   - The only route that constructs a database a process may serve
+   - Authority Level: **Authoritative (Construction Authority)**
+   - Owner: Migration Author + Reviewer
+
+3. **Canonical Structural Reference** (`db/schema/canonical_schema.sql`)
+   - Declarative description of the tables, columns, constraints and RLS the
+     migration chain produces; the subject of the drift detector
+   - Authority Level: **Structural reference — never a construction route**
    - Owner: Backend Schema Steward
    - Evidence: Git hash + checksum recorded per release
 
-3. **Canonical Schema YAML** (`db/schema/canonical_schema.yaml`)
+4. **Canonical Schema YAML** (`db/schema/canonical_schema.yaml`)
    - Structured metadata mirror for tooling/tests
-   - Authority Level: Authoritative (Metadata Spec)
+   - Authority Level: Structural reference (Metadata Mirror)
    - Owner: Data Platform Partner
-
-4. **Alembic Migration Chain** (`alembic/versions/**`)
-   - Mechanism to reach canonical baseline from empty DB
-   - Authority Level: Derived (Procedural)
-   - Owner: Migration Author + Reviewer
 
 5. **B0.3 Implementation Docs** (`docs/database/`)
    - RLS coverage, matviews, privacy/indexing/retention constraints
    - Authority Level: Informational (Supporting)
    - Owner: Assigned document authors
 
-**Precedence Rule**: Architecture Guide & ADRs → Canonical SQL → YAML → Migrations → Docs
+**Precedence Rule**: Architecture Guide & ADRs → Migrations → Canonical SQL → YAML → Docs
+
+> **B2.5-P14 Corrective V correction.** This list previously ranked the canonical
+> SQL as the *executable spec* and the migration chain as *derived*, and an
+> independent audit read that ordering as licensing the canonical file as a
+> supported production construction route. It cannot be one, and the reason is a
+> property of the generator rather than of policy: the file is produced by
+> `pg_dump --schema-only --no-owner --no-privileges`, so it has no vocabulary for
+> grants or ownership, carries no governed seed rows, and leaves
+> `alembic_version` empty. Measured on PostgreSQL 15 at head `202609061200`, a
+> canonically-bootstrapped database restores the generic API principal's INSERT
+> on the B2.8 relations, grants neither dedicated causal authority anything,
+> leaves the issuer unable to append durable issuance history, and seeds zero of
+> the twenty B2.7 narrative frames — it reconstitutes the defect the corrective
+> closes and disables the fix, while matching structurally on every dimension
+> (129 functions, 172 triggers). That is exactly what makes it a sound
+> *reference* and an unsound *construction*.
+>
+> The ordering above is now enforced rather than described:
+> `backend/app/core/construction_authority.py` refuses an unconstructed database
+> at the readiness boundary, and
+> `scripts/ci/assert_canonical_construction_authority.py` is merge-blocking and
+> proves all four §10.1 conditions on two real universes, with its own negative
+> control.
 
 Any divergence between sources requires:
 - ADR ID referenced in migration metadata

@@ -122,6 +122,11 @@ export C19_PUBLISHER_SYNC_DATABASE_URL='postgresql://app_dispatch_publisher:app_
 export C19_TRANSPORT_DATABASE_URL='postgresql+asyncpg://app_celery_transport:app_celery_transport@postgres:5432/skeldir_c19'
 export C19_SIGNER_DATABASE_URL='postgresql+asyncpg://app_trust_signer:app_trust_signer@postgres:5432/skeldir_c19'
 export C19_ISSUER_DATABASE_URL='postgresql+asyncpg://app_trust_issuer:app_trust_issuer@postgres:5432/skeldir_c19'
+# B2.5-P14 Corrective V. Two dedicated causal authorities, on the same footing
+# as the issuer and signer: a durable B2.8 request is the claim that a verified
+# caller asked, and a durable result is the claim that the governed solver ran.
+export C19_B28_REQUEST_DATABASE_URL='postgresql://app_b28_requester:app_b28_requester@postgres:5432/skeldir_c19'
+export C19_B28_SOLVER_DATABASE_URL='postgresql://app_b28_solver:app_b28_solver@postgres:5432/skeldir_c19'
 export C19_CELERY_BROKER_URL='sqla+postgresql://app_celery_transport:app_celery_transport@postgres:5432/skeldir_c19'
 export C19_CELERY_RESULT_BACKEND='db+postgresql://app_celery_transport:app_celery_transport@postgres:5432/skeldir_c19'
 
@@ -137,6 +142,7 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
     C19_API_DATABASE_URL C19_WORKER_DATABASE_URL
     C19_PUBLISHER_DATABASE_URL C19_PUBLISHER_SYNC_DATABASE_URL
     C19_TRANSPORT_DATABASE_URL C19_SIGNER_DATABASE_URL C19_ISSUER_DATABASE_URL
+    C19_B28_REQUEST_DATABASE_URL C19_B28_SOLVER_DATABASE_URL
     C19_CELERY_BROKER_URL C19_CELERY_RESULT_BACKEND
     C19_AUTH_JWT_PUBLIC_KEY_RING_JSON C19_TRUST_PUBLIC_JWKS_JSON
     C19_TRUST_SIGNING_KEY_SEED_B64URL C19_TRUST_SIGNING_KEY_ID
@@ -270,6 +276,7 @@ if [[ "$python_bin" == *.exe ]]; then
     C19_API_DATABASE_URL C19_WORKER_DATABASE_URL
     C19_PUBLISHER_DATABASE_URL C19_PUBLISHER_SYNC_DATABASE_URL
     C19_TRANSPORT_DATABASE_URL C19_SIGNER_DATABASE_URL C19_ISSUER_DATABASE_URL
+    C19_B28_REQUEST_DATABASE_URL C19_B28_SOLVER_DATABASE_URL
     SKELDIR_B25_P13_C19_TOPOLOGY_PROOF SKELDIR_B25_P13_C20_RUNTIME_AUTHORITY_PROOF
     C20_ADMIN_DATABASE_URL C20_EVIDENCE_PATH
     SKELDIR_B25_P13_C21_AUTHORITY_PROOF

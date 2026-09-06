@@ -229,7 +229,7 @@ psql "$DATABASE_URL" -c "SELECT code, family FROM channel_taxonomy;"
 ## References
 
 ### Documentation
-- [Canonical Schema](../db/schema/canonical_schema.sql) - Updated 2025-12-08 via pg_dump
+- [Canonical Structural Reference](../db/schema/canonical_schema.sql) - regenerated via `pg_dump --schema-only --no-owner --no-privileges`. Not a production construction route: it cannot express the role graph, carries no governed seed rows and stamps no Alembic revision (B2.5-P14 Corrective V, Exit Gate 13)
 - [Schema Reconciliation](../db/schema/RECONCILIATION_COMPLETE.md) - Canonical-migration drift resolution
 - [Alembic Configuration](../alembic.ini) - Multi-directory structure (Windows semicolon separator)
 

@@ -74,6 +74,10 @@ class AuthorityConfig:
     trust_issuer_password: str = "app_trust_issuer"
     trust_signer_user: str = "app_trust_signer"
     trust_signer_password: str = "app_trust_signer"
+    b28_requester_user: str = "app_b28_requester"
+    b28_requester_password: str = "app_b28_requester"
+    b28_solver_user: str = "app_b28_solver"
+    b28_solver_password: str = "app_b28_solver"
     rotate_existing_credentials: bool = False
 
 
@@ -103,6 +107,10 @@ def _parse_args() -> AuthorityConfig:
     parser.add_argument("--trust-issuer-password", default="app_trust_issuer")
     parser.add_argument("--trust-signer-user", default="app_trust_signer")
     parser.add_argument("--trust-signer-password", default="app_trust_signer")
+    parser.add_argument("--b28-requester-user", default="app_b28_requester")
+    parser.add_argument("--b28-requester-password", default="app_b28_requester")
+    parser.add_argument("--b28-solver-user", default="app_b28_solver")
+    parser.add_argument("--b28-solver-password", default="app_b28_solver")
     parser.add_argument(
         "--rotate-existing-credentials",
         action="store_true",
@@ -133,6 +141,10 @@ def _parse_args() -> AuthorityConfig:
         trust_issuer_password=args.trust_issuer_password,
         trust_signer_user=args.trust_signer_user,
         trust_signer_password=args.trust_signer_password,
+        b28_requester_user=args.b28_requester_user,
+        b28_requester_password=args.b28_requester_password,
+        b28_solver_user=args.b28_solver_user,
+        b28_solver_password=args.b28_solver_password,
         rotate_existing_credentials=bool(args.rotate_existing_credentials),
     )
 
@@ -270,6 +282,28 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                 cursor,
                 config.trust_signer_user,
                 config.trust_signer_password,
+                rotate_existing=rotate,
+            )
+            # B2.5-P14 Corrective V. A durable B2.8 request is the claim that a
+            # verified caller asked for a simulation, and a durable result is
+            # the claim that the governed solver ran. On the entering tree both
+            # were writable by the generic `app_user` login, so one authority
+            # domain could author the alleged cause and the alleged consequence.
+            # Each claim now has its own login principal, and the consequence
+            # guards key on `session_user`, which SET ROLE cannot forge. Like
+            # the issuer and signer, neither is a member of app_rw, app_ro,
+            # app_user or app_worker, and neither reaches the other: their only
+            # table privileges are granted by the 202609061200 migration.
+            _create_or_alter_login_role(
+                cursor,
+                config.b28_requester_user,
+                config.b28_requester_password,
+                rotate_existing=rotate,
+            )
+            _create_or_alter_login_role(
+                cursor,
+                config.b28_solver_user,
+                config.b28_solver_password,
                 rotate_existing=rotate,
             )
             # The migration principal must be a member of the worker role:
@@ -496,6 +530,8 @@ def main() -> int:
     print(f"transport_user={config.transport_user}")
     print(f"trust_issuer_user={config.trust_issuer_user}")
     print(f"trust_signer_user={config.trust_signer_user}")
+    print(f"b28_requester_user={config.b28_requester_user}")
+    print(f"b28_solver_user={config.b28_solver_user}")
     print("runtime_schema_privileges=" + ",".join(GOVERNED_RUNTIME_SCHEMA_PRIVILEGES))
     print(f"runtime_schema_hardening_applied={str(hardened).lower()}")
     print(

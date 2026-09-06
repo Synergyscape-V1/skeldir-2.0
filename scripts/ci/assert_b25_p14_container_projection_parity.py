@@ -146,6 +146,48 @@ reset_solver_invocations()
 refusal = simulate_from_trust(envelope, request=None)
 result["b28_no_request_reason"] = getattr(refusal, "reason_code", None)
 result["b28_solver_invocations"] = solver_invocations()
+
+# B2.5-P14 Corrective V. The corrected causal-authority surface has to be
+# resolvable *inside the shipped image*, not merely on the runner: a host-correct
+# and container-stale copy graph is the exact H-ART-V-02 failure this gate owns.
+# Four things are checked, and each would be silently absent in a stale image:
+# the persistence boundary exists at all, custody is fenced to it, the requester
+# identity type has no field a caller could author, and the construction-authority
+# refusal is present with the head this tree declares.
+from app.simulation.consequence_custody import (
+    B28_REQUEST_PRINCIPAL,
+    B28_SOLVER_PRINCIPAL,
+    SimulationCustodyError,
+    request_custody,
+)
+from app.simulation.requester_identity import REQUESTED_BY_PREFIX, VerifiedRequester
+from app.core.construction_authority import (
+    ConstructionAuthorityError,
+    assert_production_construction_authority,
+    known_revisions,
+)
+import dataclasses
+
+result["b28_request_principal"] = B28_REQUEST_PRINCIPAL
+result["b28_solver_principal"] = B28_SOLVER_PRINCIPAL
+result["b28_requested_by_prefix"] = REQUESTED_BY_PREFIX
+result["b28_verified_requester_fields"] = sorted(
+    field.name for field in dataclasses.fields(VerifiedRequester)
+)
+try:
+    with request_custody():
+        result["b28_custody_fenced"] = False
+except SimulationCustodyError as exc:
+    result["b28_custody_fenced"] = "untrusted_caller" in str(exc)
+except Exception as exc:  # a missing DSN is also a closed door, but a different one
+    result["b28_custody_fenced"] = False
+    result["b28_custody_reason"] = type(exc).__name__
+try:
+    assert_production_construction_authority([])
+    result["b28_unconstructed_db_refused"] = False
+except ConstructionAuthorityError:
+    result["b28_unconstructed_db_refused"] = True
+result["b28_known_revision_count"] = len(known_revisions())
 print(json.dumps(result, sort_keys=True))
 """
 
@@ -172,6 +214,15 @@ def _container_behaviour(image: str, runtime: str) -> dict:
             f"(exit {completed.returncode}): {completed.stderr.strip()}"
         )
     return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+def _known_revisions_on_host() -> frozenset[str]:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
+    from app.core.construction_authority import (  # noqa: PLC0415
+        known_revisions,
+    )
+
+    return known_revisions()
 
 
 def main() -> int:
@@ -226,6 +277,52 @@ def main() -> int:
         mismatches.append(
             "the container invoked the solver without a request: "
             f"{behaviour.get('b28_solver_invocations')}"
+        )
+    # Corrective V's surface, resolved inside the shipped image.
+    if behaviour.get("b28_request_principal") != "app_b28_requester":
+        mismatches.append(
+            "the container does not carry the request consequence principal: "
+            f"{behaviour.get('b28_request_principal')}"
+        )
+    if behaviour.get("b28_solver_principal") != "app_b28_solver":
+        mismatches.append(
+            "the container does not carry the solver consequence principal: "
+            f"{behaviour.get('b28_solver_principal')}"
+        )
+    if behaviour.get("b28_requested_by_prefix") != "agent_client:":
+        mismatches.append(
+            "the container derives a different requester identity shape: "
+            f"{behaviour.get('b28_requested_by_prefix')}"
+        )
+    expected_fields = [
+        "agent_client_id",
+        "credential_id",
+        "tenant_id",
+        "token_prefix",
+    ]
+    if behaviour.get("b28_verified_requester_fields") != expected_fields:
+        # A field that exists can be set. The image shipping a wider
+        # VerifiedRequester would mean a caller could name itself again.
+        mismatches.append(
+            "the container's verified-requester type has different fields: "
+            f"{behaviour.get('b28_verified_requester_fields')}"
+        )
+    if not behaviour.get("b28_custody_fenced"):
+        mismatches.append(
+            "the container does not fence consequence custody to the "
+            "persistence boundary: "
+            f"{behaviour.get('b28_custody_reason', 'accepted')}"
+        )
+    if not behaviour.get("b28_unconstructed_db_refused"):
+        mismatches.append(
+            "the container accepts an unconstructed database as production"
+        )
+    host_revisions = len(_known_revisions_on_host())
+    if behaviour.get("b28_known_revision_count") != host_revisions:
+        mismatches.append(
+            "the container ships a different migration history: "
+            f"host={host_revisions} container="
+            f"{behaviour.get('b28_known_revision_count')}"
         )
     host_profiles = host_projection["profiles"]
     container_profiles = container_projection["profiles"]

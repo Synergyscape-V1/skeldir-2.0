@@ -109,6 +109,13 @@ AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
         "app_ro": {"SELECT"},
         "app_rw": {"SELECT"},
         "app_trust_issuer": {"SELECT", "INSERT"},
+        # B2.5-P14 Corrective V. Both B2.8 consequence guards read the terminal
+        # issuance to decide source binding and to derive the action authority,
+        # and a trigger function runs under the caller's own privileges. SELECT
+        # is therefore a precondition of the guards working at all -- and it is
+        # a read: neither principal can add to durable issuance history.
+        "app_b28_requester": {"SELECT"},
+        "app_b28_solver": {"SELECT"},
     },
     # The same 202607011200 blanket grant reached both of these, and both are
     # written by the same API code path, so both are narrowed the same way.
@@ -148,23 +155,35 @@ AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
         "app_ro": {"SELECT"},
         "app_rw": set(),
     },
+    # B2.5-P14 Corrective V. A durable request is the claim that a verified
+    # caller asked, and a durable result is the claim that the governed solver
+    # ran. Both were writable by `app_user` until 202609061200, so one authority
+    # domain could author the alleged cause and the alleged consequence -- the
+    # issuance self-certification defect, applied to P14's own relations. Each
+    # claim now has its own login, and the generic API principal reads only.
     "b28_simulation_requests": {
-        "app_user": {"SELECT", "INSERT"},
+        "app_user": {"SELECT"},
         "app_worker": {"SELECT"},
         "app_ro": {"SELECT"},
         "app_rw": set(),
+        "app_b28_requester": {"SELECT", "INSERT"},
+        "app_b28_solver": {"SELECT"},
     },
     "b28_simulation_results": {
-        "app_user": {"SELECT", "INSERT"},
+        "app_user": {"SELECT"},
         "app_worker": {"SELECT"},
         "app_ro": {"SELECT"},
         "app_rw": set(),
+        "app_b28_requester": set(),
+        "app_b28_solver": {"SELECT", "INSERT"},
     },
     "b28_proposals": {
-        "app_user": {"SELECT", "INSERT"},
+        "app_user": {"SELECT"},
         "app_worker": {"SELECT"},
         "app_ro": {"SELECT"},
         "app_rw": set(),
+        "app_b28_requester": set(),
+        "app_b28_solver": {"SELECT", "INSERT"},
     },
 }
 
@@ -179,6 +198,8 @@ PRINCIPALS = (
     "app_celery_transport",
     "app_trust_issuer",
     "app_trust_signer",
+    "app_b28_requester",
+    "app_b28_solver",
 )
 
 OPERATIONS = ("SELECT", "INSERT", "UPDATE", "DELETE")

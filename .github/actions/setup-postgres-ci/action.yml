@@ -69,6 +69,7 @@ inputs:
 runs:
   using: composite
   steps:
+    # Fixed-name principals come from the script's declared defaults.
     - name: Prepare migration authority boundary
       shell: bash
       run: |
@@ -86,19 +87,19 @@ runs:
           --publisher-user "${{ inputs.publisher-user }}" \
           --publisher-password "${{ inputs.publisher-password }}" \
           --trust-issuer-user "${{ inputs.trust-issuer-user }}" \
-          --trust-issuer-password "${{ inputs.trust-issuer-password }}" \
-          --trust-signer-user app_trust_signer \
-          --trust-signer-password app_trust_signer
+          --trust-issuer-password "${{ inputs.trust-issuer-password }}"
 
     # B2.5-P13 Corrective XVI (XVI-B). Every job that provisions this boundary
     # gets the issuance DSN automatically, so no job can silently run the Trust
     # API with issuance-consequence authority folded back into the ordinary
-    # runtime principal.
+    # runtime principal. 202609061200 extends it to the two B2.8 authorities.
     - name: Export Trust issuance custody DSN
       shell: bash
       run: |
         echo "TRUST_ISSUANCE_DATABASE_URL=postgresql://${{ inputs.trust-issuer-user }}:${{ inputs.trust-issuer-password }}@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
         echo "TRUST_SIGNER_DATABASE_URL=postgresql://app_trust_signer:app_trust_signer@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
+        echo "B28_REQUEST_DATABASE_URL=postgresql://app_b28_requester:app_b28_requester@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
+        echo "B28_SOLVER_DATABASE_URL=postgresql://app_b28_solver:app_b28_solver@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
 
     - name: Run Alembic migrations
       shell: bash
