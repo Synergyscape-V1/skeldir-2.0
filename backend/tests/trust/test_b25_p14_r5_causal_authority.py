@@ -1430,37 +1430,84 @@ def test_p14_r5_a_post_admission_input_change_has_no_representable_consequence()
             "this falsifier depends on the rescaling being allocation-invariant"
         )
 
-        # And yet no consequence is representable for the tampered request.
-        refused = _attempt(
-            B28_SOLVER_PRINCIPAL,
-            tenant_id,
-            _RESULT_INSERT,
-            (
-                str(tenant_id),
-                request_id,
-                envelope_id,
-                truth,
-                _digest(),
-                conducted["outcome"].input_snapshot_hash,
-                SOLVER_PROFILE,
-                1,
-                budget,
-                budget,
-                currency,
-                "simulation_only",
-                json.dumps(
-                    [
-                        {
-                            "channel_id": c,
-                            "allocation_minor": a,
-                            "weight_basis_points": w,
-                        }
-                        for c, a, w in after
-                    ]
+        def attempt_consequence() -> str:
+            return _attempt(
+                B28_SOLVER_PRINCIPAL,
+                tenant_id,
+                _RESULT_INSERT,
+                (
+                    str(tenant_id),
+                    request_id,
+                    envelope_id,
+                    truth,
+                    _digest(),
+                    conducted["outcome"].input_snapshot_hash,
+                    SOLVER_PROFILE,
+                    1,
+                    budget,
+                    budget,
+                    currency,
+                    "simulation_only",
+                    json.dumps(
+                        [
+                            {
+                                "channel_id": c,
+                                "allocation_minor": a,
+                                "weight_basis_points": w,
+                            }
+                            for c, a, w in after
+                        ]
+                    ),
                 ),
-            ),
-        )
+            )
+
+        # RED: no consequence is representable for the tampered request.
+        refused = attempt_consequence()
+
+        # Exact restoration, then GREEN again -- the four-step control pattern
+        # the directive requires of every falsifier, applied inside the proof.
+        # A test that tampers and walks away leaves the subject in a state its
+        # own reconstruction reports as a defect, which is the contamination
+        # class audit 71's first-red ledger had to correct for.
+        with admin.cursor() as cursor:
+            cursor.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            cursor.execute(
+                "UPDATE public.b28_simulation_requests SET channel_evidence ="
+                " (SELECT jsonb_agg(jsonb_set(e, '{verified_revenue_minor}',"
+                "   to_jsonb((e->>'verified_revenue_minor')::bigint / 2))"
+                "   ORDER BY ord)"
+                "  FROM jsonb_array_elements(channel_evidence)"
+                "  WITH ORDINALITY AS t(e, ord))"
+                " WHERE id = %s",
+                (request_id,),
+            )
+            cursor.execute(
+                "SELECT input_snapshot_hash = public.b28_input_snapshot_hash("
+                " source_envelope_id, source_semantic_truth_hash,"
+                " total_budget_minor, currency, channel_evidence)"
+                " FROM public.b28_simulation_requests WHERE id = %s",
+                (request_id,),
+            )
+            restored_verifies = cursor.fetchone()[0]
+
+            # And no row anywhere in this tenant is left failing verification.
+            cursor.execute(
+                "SELECT count(*) FROM public.b28_simulation_requests"
+                " WHERE tenant_id = %s"
+                "   AND input_snapshot_hash <> public.b28_input_snapshot_hash("
+                "       source_envelope_id, source_semantic_truth_hash,"
+                "       total_budget_minor, currency, channel_evidence)",
+                (str(tenant_id),),
+            )
+            still_broken = cursor.fetchone()[0]
     finally:
         admin.close()
 
     assert "b28_result_request_input_witness_broken" in refused, refused
+    assert restored_verifies is True, "the exact restoration did not restore"
+    assert still_broken == 0, (
+        f"{still_broken} request rows left failing witness verification"
+    )
