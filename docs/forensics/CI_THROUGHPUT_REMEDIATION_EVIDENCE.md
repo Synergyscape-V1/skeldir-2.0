@@ -42,13 +42,27 @@ Root cause restated: **excess fan-out against a 20-slot quota** (docs/ci/CI_TOPO
 - Forensics INDEX E-VAC re-run (disposable worktree, nothing pushed): unindexed pack RED with exact message → indexed GREEN. (Nuance vs 09-05 audit: basename-only entry now passes; sensitivity confirmed, specificity note recorded.)
 - YAML: all 33 edited workflow files parse; evidence-placement passes; the two new forensics files are registered in `docs/forensics/INDEX.md` with full paths (exact-path semantics).
 
-## 4. Honest gate accounting
+## 4. Deterministic fan-out (static, model validated live)
+
+GitHub path-filter semantics evaluated per workflow at `origin/main` vs this head (PR-event declarers):
+
+| Change class | Before | After | Δ |
+|---|---|---|---|
+| docs-only (README) | 38 | 22 | −42% |
+| trust-only | 46 | 31 | −33% |
+| backend-app | 39 | 27 | −31% |
+| workflow-infra (this PR) | 46 | 47 | +1 (new path-filtered yaml-lint PR trigger — intended) |
+| `merge_group` declarers | 52 | 21 | −60% |
+
+Model validation: before/docs-only static 38 + 4 `pull_request_target` doubles = 42 = live disposable PR #716 burst (**exact**). Live: PR #715 (this 41-file change) 56 runs — every extra lane matches by self-file/docs paths, i.e. CI-infra edits exercise everything by design. PR #717 (after-branch docs-only) measured 55 for the same construction reason and was closed as methodologically invalid for steady state; valid steady-state re-measurement is residual Phase-2 step 3.
+
+## 5. Honest gate accounting
 
 - **Green now**: proof conservation (C-02), negative-control conservation (C-03), artifact fidelity posture unchanged + browser-cache neutrality (C-07), trigger totality for required lanes incl. matrix stems (C-08), fault-corpus non-vacuity (C-09), continuity (C-10: no rebase/freeze/bypass; required triggers untouched), audit evidence (C-11).
-- **Predicted, pending live re-measurement**: C-04/C-05/C-06 and Gates 1/2/9. Merge-group burst −58% is structural (source-declared, guard-enforced); queue/wall deltas must be measured on disposable PRs post-merge (pre/post distributions per §4.6). The 15-min wall budget remains aspirational while the 69-job `ci.yml` monolith and 14-min Phase Chain dominate the critical path — Phase 2 (required-lane consolidation with monotonic context migration) is proposed, explicitly NOT smuggled into this phase.
+- **Structural, pending live re-measurement**: C-04/C-05/C-06 and Gates 1/2/9. Merge-queue burst −60% and PR burst −31…−42% are source-declared and guard-enforced; queue/wall deltas must be measured on post-merge disposable PRs (pre/post distributions per §4.6). The 15-min wall budget remains aspirational while the 69-job `ci.yml` monolith and 14-min Phase Chain dominate the critical path — Phase 2 (required-lane consolidation with monotonic context migration) is proposed, explicitly NOT smuggled into this phase.
 - **Landing**: via `main-merge-queue` ALLGREEN (C-01), no admin bypass.
 
-## 5. Residual debt (Phase 2 proposal, not executed)
+## 6. Residual debt (Phase 2 proposal, not executed)
 
 1. Required-lane consolidation (`ci.yml` decomposition) with new lane contexts + branch-protection migration + 10-run paired corpus (directive §4.6).
 2. Nightly forensic NC sweep (lane F; today only the weekly benchmark is scheduled).

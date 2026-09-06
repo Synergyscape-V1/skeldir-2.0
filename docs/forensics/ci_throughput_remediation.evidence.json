@@ -79,5 +79,43 @@
   }
  ],
  "vac_recheck": "disposable worktree: unindexed pack RED (exact causal message) -> indexed GREEN; basename nuance differs from 2026-09-05 audit (now passes) - sensitivity confirmed, noted",
- "residual": "live queue/wall re-measurement requires disposable PRs post-merge; required-lane consolidation (ci.yml 69-job monolith) proposed as Phase 2 with 10-run paired corpus per directive 4.6"
+ "residual": "live queue/wall re-measurement requires disposable PRs post-merge; required-lane consolidation (ci.yml 69-job monolith) proposed as Phase 2 with 10-run paired corpus per directive 4.6",
+ "fanout_table_static": {
+  "method": "GitHub path-filter semantics evaluated per workflow (fnmatch) at origin/main vs remediation head; PR-event declarers only",
+  "validation": "before/docs-only static 38 + 4 pull_request_target doubles = 42 = live-observed PR #716 burst (exact)",
+  "rows": {
+   "docs-only (README.md)": {
+    "before": 38,
+    "after": 22,
+    "delta_pct": -42
+   },
+   "trust-only": {
+    "before": 46,
+    "after": 31,
+    "delta_pct": -33
+   },
+   "backend-app (export.py)": {
+    "before": 39,
+    "after": 27,
+    "delta_pct": -31
+   },
+   "workflow-infra (41-file change)": {
+    "before": 46,
+    "after": 47,
+    "delta_pct": 2,
+    "note": "+1 is the new path-filtered yaml-lint PR trigger (intended)"
+   },
+   "merge_group declarers": {
+    "before": 52,
+    "after": 21,
+    "delta_pct": -60
+   }
+  },
+  "live_probes": {
+   "PR716 docs-only pre-remediation": 42,
+   "PR715 remediation change (41 files)": 56,
+   "PR717 after-branch docs-only": 55,
+   "PR717_note": "methodology invalid for steady-state: branch carries the 41-file remediation commit, so self-included advisory paths match by construction; valid post-merge re-measurement defined as residual Phase-2 step 3"
+  }
+ }
 }
