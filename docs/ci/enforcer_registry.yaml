@@ -3978,6 +3978,67 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: retain
+- id: b25-p14-field-semantics
+  path: scripts/ci/assert_b25_p14_field_semantics.py
+  status: required
+  owning_phase: B2.5-P14-Corrective-VI
+  protected_invariant: Every durable B2.8 column declares which of four things it is - DERIVED VALUE, OBSERVED EVENT,
+    AUTHORITY IDENTITY or PROVENANCE REFERENCE - and what physical evidence makes it true, checked against the live
+    catalog rather than a document. In particular solver_consequence_kind must keep stating both halves of its
+    meaning, and the execution-event column it replaced must stay absent.
+  command: python scripts/ci/assert_b25_p14_field_semantics.py --database-url
+    "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b25_p14" --evidence-out
+    artifacts/b25_p14/b25_p14_field_semantics.json
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P14 Downstream Projection Safety
+  local_reproduction_command: python scripts/ci/assert_b25_p14_field_semantics.py --database-url
+    "postgresql://postgres:postgres@127.0.0.1:5432/skeldir_local"
+  expected_failure_meaning: A durable B2.8 field says nothing about itself, declares a classification outside the
+    governed four, names a classification without evidence for it, or reacquires an execution-event claim the
+    database has no witness for. The entering tree carried no column comments at all and persisted
+    solver_invocations, which an audit set to 1 with the solver never invoked.
+  first_diagnostic_command: psql "$DATABASE_URL" -c "SELECT a.attname, col_description(a.attrelid, a.attnum) FROM
+    pg_attribute a WHERE a.attrelid = 'public.b28_simulation_results'::regclass AND a.attnum > 0 AND NOT
+    a.attisdropped ORDER BY a.attnum"
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b25-p13-e2e-trust-closure
+  ci_visibility: inline_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: retain
+- id: b25-p14-custody-manifest
+  path: scripts/ci/assert_b25_p14_custody_manifest.py
+  status: required
+  owning_phase: B2.5-P14-Corrective-VI
+  protected_invariant: The declared B2.8 credential-custody boundary is the physical one. The module declares
+    process, which is what an in-process direct connect demonstrated, and the deployed composition delivers the two
+    causal DSNs to exactly the declared services and to no other - read out of docker-compose.c19.yml rather than
+    inferred from Python imports.
+  command: python scripts/ci/assert_b25_p14_custody_manifest.py --evidence-out
+    artifacts/b25_p14/b25_p14_custody_manifest.json
+  workflow_references:
+  - .github/workflows/b2_5-p13-e2e-trust-closure.yml
+  workflow_job_name: B2.5-P14 Downstream Projection Safety
+  local_reproduction_command: python scripts/ci/assert_b25_p14_custody_manifest.py
+  expected_failure_meaning: Either the declaration narrowed without a physical mechanism behind it - the exact defect
+    an audit refuted with custody_dsn_direct_connect ALLOWED - or a container that should never hold a B2.8 causal
+    credential started receiving one, or a new service appeared with no custody classification at all.
+  first_diagnostic_command: python scripts/ci/assert_b25_p14_custody_manifest.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b25-p13-e2e-trust-closure
+  ci_visibility: inline_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: retain
 - id: b25-p14-controlled-defect-applier
   path: scripts/ci/_b25_p14_controlled_defect.py
   status: utility

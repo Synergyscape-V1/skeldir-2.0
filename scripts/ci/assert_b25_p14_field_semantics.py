@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -90,25 +89,28 @@ SOLVER_COMMENT_REQUIREMENTS = (
 
 
 def _database_url(explicit: str) -> str:
-    for candidate in (
-        explicit,
-        os.getenv("P14_ADMIN_DATABASE_URL", ""),
-        os.getenv("MIGRATION_DATABASE_URL", ""),
-        os.getenv("DATABASE_URL", ""),
-    ):
-        if candidate:
-            return candidate.replace("postgresql+psycopg2://", "postgresql://").replace(
-                "postgresql+asyncpg://", "postgresql://"
-            )
-    raise SystemExit(
-        "[b25-p14-fields] no database URL: pass --database-url or set"
-        " P14_ADMIN_DATABASE_URL / MIGRATION_DATABASE_URL / DATABASE_URL"
+    """Resolve the target from the argument alone.
+
+    Deliberately no environment fallback. The B1.1-P4 DSN-callsite scan forbids
+    an enforcer reaching for `DATABASE_URL` or `MIGRATION_DATABASE_URL` out of
+    the ambient environment, and it is right to: a gate that silently picks up
+    whatever credentials happen to be exported can report on a database nobody
+    intended it to read. The caller names the universe.
+    """
+
+    if not explicit:
+        raise SystemExit(
+            "[b25-p14-fields] --database-url is required; this gate does not read"
+            " ambient database credentials"
+        )
+    return explicit.replace("postgresql+psycopg2://", "postgresql://").replace(
+        "postgresql+asyncpg://", "postgresql://"
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--database-url", default="")
+    parser.add_argument("--database-url", default="", required=True)
     parser.add_argument("--evidence-out", default="")
     args = parser.parse_args()
 
