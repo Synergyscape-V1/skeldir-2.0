@@ -38,6 +38,8 @@ EXPLANATION_TEMPLATES = REPO_ROOT / "backend/app/explanation/templates.py"
 SIMULATION_PERSISTENCE = REPO_ROOT / "backend/app/simulation/persistence.py"
 REQUESTER_IDENTITY = REPO_ROOT / "backend/app/simulation/requester_identity.py"
 CONSTRUCTION_AUTHORITY = REPO_ROOT / "backend/app/core/construction_authority.py"
+CONSEQUENCE_CUSTODY = REPO_ROOT / "backend/app/simulation/consequence_custody.py"
+C19_COMPOSE = REPO_ROOT / "docker-compose.c19.yml"
 
 DEFAULT_LLM_PROFILE_ID = "llm_explanation_projection_safe"
 
@@ -293,6 +295,150 @@ def canonical_bootstrap_is_authoritative() -> None:
     )
 
 
+def possession_witness_unbound() -> None:
+    """Corrective VI Exit Gate 1: prove possession of *something*, not of this.
+
+    The witness is bound to the exact request it authorises, and the guard
+    re-derives that binding from the row rather than comparing a stored copy. A
+    witness minted for a different reference would otherwise be spendable on any
+    request the same principal wanted to write -- which is possession evidence
+    for one act being reused to authorise another.
+
+    This control severs the binding on the application side only: the caller
+    still presents a real token, the database still verifies it, the witness is
+    still single-use. Only the *link* between the proof and the request it is a
+    proof of is broken, so what the suite must catch is precisely that link.
+    """
+
+    anchor = (
+        "            authentication_id = prove_request_possession(\n"
+        "                connection,\n"
+        "                tenant_id=str(tenant_id),\n"
+        "                presented_token=presented_token,\n"
+        "                request_ref=durable_request_ref,\n"
+    )
+    replacement = (
+        "            authentication_id = prove_request_possession(  # NC-P14-16\n"
+        "                connection,\n"
+        "                tenant_id=str(tenant_id),\n"
+        "                presented_token=presented_token,\n"
+        '                request_ref="req_unbound",\n'
+    )
+    _replace_once(
+        SIMULATION_PERSISTENCE,
+        anchor,
+        replacement,
+        what="possession_witness_unbound",
+    )
+
+
+def solver_execution_vocabulary() -> None:
+    """Corrective VI Exit Gate 3: reacquire an execution claim the DB cannot witness.
+
+    The entering tree persisted ``solver_invocations = 1``, which reads as an
+    event count, and an audit inserted an exact allocation carrying it having
+    never invoked the solver. Architecture B replaced the field with a value
+    claim the database verifies by recomputation.
+
+    This control makes the writer assert the old, stronger proposition. Nothing
+    about the allocation changes -- it is still exactly the governed function's
+    output -- so what must turn the suite red is the *semantics*, not the money.
+    """
+
+    anchor = '                        "solver_consequence_kind": SOLVER_CONSEQUENCE_KIND,\n'
+    replacement = (
+        '                        "solver_consequence_kind":'
+        ' "application_solver_executed",  # NC-P14-17\n'
+    )
+    _replace_once(
+        SIMULATION_PERSISTENCE,
+        anchor,
+        replacement,
+        what="solver_execution_vocabulary",
+    )
+
+
+def compatibility_accepts_any_known_revision() -> None:
+    """Corrective VI Exit Gate 6: restore "known implies compatible".
+
+    This is the entering tree's predicate, verbatim in effect: any revision that
+    appears anywhere in migration history satisfies readiness. Measured on a
+    fresh cluster through the real readiness path, that admitted
+    ``202609051200`` -- which grants ``app_user`` INSERT on all three B2.8
+    relations -- as production-ready, to both the owner and the runtime
+    principal.
+
+    The compatible set is widened to the known set rather than the check being
+    deleted, so the control reproduces the defect rather than merely removing a
+    guard: an operator reading the diff would see a policy choice, which is
+    exactly how this defect arrived the first time.
+    """
+
+    anchor = (
+        "COMPATIBLE_SCHEMA_REVISIONS: frozenset[str] ="
+        " frozenset({REQUIRED_SCHEMA_REVISION})\n"
+    )
+    replacement = (
+        "COMPATIBLE_SCHEMA_REVISIONS: frozenset[str] = known_revisions()"
+        "  # NC-P14-18\n"
+    )
+    _replace_once(
+        CONSTRUCTION_AUTHORITY,
+        anchor,
+        replacement,
+        what="compatibility_accepts_any_known_revision",
+    )
+
+
+def custody_boundary_overclaimed() -> None:
+    """Corrective VI Exit Gate 2: declare a boundary narrower than custody.
+
+    The entering module claimed the credential was reachable by one code path.
+    A four-line probe refuted it. The repair was to state the true boundary --
+    ``process`` -- rather than to pretend a Python frame check is a kernel one.
+
+    This control narrows the declaration back to ``module`` while changing
+    nothing physical, so the gate must catch a *description* that has stopped
+    matching custody. A control that also moved the credential would be testing
+    two things and proving neither.
+    """
+
+    _replace_once(
+        CONSEQUENCE_CUSTODY,
+        'CUSTODY_TRUST_BOUNDARY = "process"',
+        'CUSTODY_TRUST_BOUNDARY = "module"  # NC-P14-19',
+        what="custody_boundary_overclaimed",
+    )
+
+
+def custody_secret_reaches_an_untrusted_container() -> None:
+    """Corrective VI H-ART-VI-01: widen custody by one container.
+
+    Directive VI §17's falsifier: expose the credential one trust boundary wider
+    than declared. The beat scheduler has no reason to hold a B2.8 causal
+    credential and, in the deployed topology, does not. Handing it one is a
+    compose-file edit nobody would notice in review, which is why the check reads
+    the composition rather than the imports.
+    """
+
+    anchor = (
+        "      DATABASE_URL: ${C19_TRANSPORT_DATABASE_URL?missing"
+        " C19_TRANSPORT_DATABASE_URL}\n"
+    )
+    replacement = (
+        "      DATABASE_URL: ${C19_TRANSPORT_DATABASE_URL?missing"
+        " C19_TRANSPORT_DATABASE_URL}\n"
+        "      B28_SOLVER_DATABASE_URL: ${C19_B28_SOLVER_DATABASE_URL?missing"
+        " C19_B28_SOLVER_DATABASE_URL}  # NC-P14-20\n"
+    )
+    _replace_once(
+        C19_COMPOSE,
+        anchor,
+        replacement,
+        what="custody_secret_reaches_an_untrusted_container",
+    )
+
+
 DEFECTS = {
     "platform_write": platform_write,
     "second_solver_caller": second_solver_caller,
@@ -304,6 +450,15 @@ DEFECTS = {
     "caller_authored_requester_identity": caller_authored_requester_identity,
     "unauthenticated_requester": unauthenticated_requester,
     "canonical_bootstrap_is_authoritative": canonical_bootstrap_is_authoritative,
+    "possession_witness_unbound": possession_witness_unbound,
+    "solver_execution_vocabulary": solver_execution_vocabulary,
+    "compatibility_accepts_any_known_revision": (
+        compatibility_accepts_any_known_revision
+    ),
+    "custody_boundary_overclaimed": custody_boundary_overclaimed,
+    "custody_secret_reaches_an_untrusted_container": (
+        custody_secret_reaches_an_untrusted_container
+    ),
 }
 
 

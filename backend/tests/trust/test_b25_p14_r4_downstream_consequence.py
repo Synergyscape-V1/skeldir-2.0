@@ -7,7 +7,7 @@ only as the consequence of a real issued TrustEnvelope and, for a result, of the
 explicit request that authorized it. On protected main this was false: with no
 application code involved, the real ``app_user`` login inserted a simulation
 request naming an envelope that was never issued, a result claiming
-``solver_invocations = 1``, a proposal, and an explanation whose narrative read
+the governed deterministic consequence, a proposal, and an explanation read
 "The email channel caused $9,999,999 of incremental revenue." The ``NOT NULL``
 request foreign key proved a request *row* existed; nothing proved a request was
 *made*, and nothing bound either artifact to real Trust.
@@ -57,7 +57,12 @@ from app.simulation.consequence_custody import (
     B28_SOLVER_DATABASE_URL_ENV,
     B28_SOLVER_PRINCIPAL,
 )
-from app.simulation.contract import ChannelEvidence, SimulationRequest, SimulationResult
+from app.simulation.contract import (
+    SOLVER_CONSEQUENCE_KIND,
+    ChannelEvidence,
+    SimulationRequest,
+    SimulationResult,
+)
 from app.simulation.persistence import conduct_requested_simulation
 from app.simulation.requester_identity import REQUESTED_BY_PREFIX
 from app.simulation.service import propose_from_result, simulate_from_trust
@@ -741,7 +746,7 @@ def test_p14_r4_one_real_signed_state_conducts_into_b27_and_b28() -> None:
             "b28_request_id": str(request_id),
             "b28_result_id": str(result_id),
             "action_authority": simulation.action_authority,
-            "solver_invocations": simulation.solver_invocations,
+            "solver_invocations_in_process": simulation.solver_invocations,
         }
     finally:
         admin.close()
@@ -842,14 +847,49 @@ def _fabrication_attempt(
 _REQUEST_INSERT = (
     "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref,"
     " requested_by, requested_by_agent_client_id, requested_by_credential_id,"
-    " request_authority_principal, source_envelope_id,"
+    " request_authority_principal, request_authentication_id,"
+    " source_envelope_id,"
     " source_semantic_truth_hash, source_issuance_envelope_hash,"
     " input_snapshot_hash, total_budget_minor, currency, channel_count,"
     " channel_evidence, solver_profile, sufficiency_policy_version,"
     " sufficiency_verdict, sufficiency_reasons, observed_channels,"
     " observed_conversions, observed_revenue_minor)"
-    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s)"
+    " VALUES"
+    " (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s)"
 )
+
+
+def _mint_possession_witness(
+    cursor,
+    tenant_id,
+    principal_row,
+    *,
+    request_ref: str,
+    issuance_envelope_hash: str,
+    snapshot: str,
+) -> str:
+    """Corrective VI: turn the plaintext secret into a durable, bound witness.
+
+    Every request row below needs one, because the ``NOT NULL`` foreign key on
+    ``request_authentication_id`` makes a request without a possession proof
+    unrepresentable. The probes here are about *other* conjuncts, so they take
+    the lawful route to the witness and let their own predicate decide.
+    """
+
+    cursor.execute(
+        "SELECT set_config('app.current_tenant_id', %s, false)", (str(tenant_id),)
+    )
+    cursor.execute(
+        "SELECT public.b28_authenticate_request_possession(%s::uuid,%s,%s,%s,%s)",
+        (
+            str(tenant_id),
+            principal_row["token"],
+            request_ref,
+            issuance_envelope_hash,
+            snapshot,
+        ),
+    )
+    return str(cursor.fetchone()[0])
 
 
 def _request_params(
@@ -866,6 +906,8 @@ def _request_params(
     sufficiency_policy_version: str = SUFFICIENCY_POLICY_VERSION,
     authority_principal: str = B28_REQUEST_PRINCIPAL,
     snapshot: str | None = None,
+    witness: str | None = None,
+    request_ref: str | None = None,
 ) -> tuple[Any, ...]:
     """One request row whose every derived field is genuinely derived.
 
@@ -889,11 +931,14 @@ def _request_params(
     )
     return (
         str(tenant_id),
-        "req_" + uuid.uuid4().hex,
+        request_ref if request_ref is not None else "req_" + uuid.uuid4().hex,
         principal_row["requested_by"] if requested_by is None else requested_by,
         principal_row["agent_client_id"],
         principal_row["credential_id"],
         authority_principal,
+        # Corrective VI. A probe with no lawful witness is testing the
+        # possession fence itself; every other probe supplies one.
+        witness if witness is not None else str(uuid.uuid4()),
         envelope_id,
         semantic_truth_hash,
         issuance_envelope_hash,
@@ -914,7 +959,8 @@ def _request_params(
 _RESULT_INSERT = (
     "INSERT INTO public.b28_simulation_results (tenant_id, request_id,"
     " source_envelope_id, source_semantic_truth_hash, projection_profile_hash,"
-    " input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor,"
+    " input_snapshot_hash, solver_profile, solver_consequence_kind,"
+    " total_budget_minor,"
     " allocated_total_minor, currency, action_authority, allocations)"
     " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)"
 )
@@ -925,6 +971,25 @@ def _lawful_request(
 ):
     """One admissible request, every derived field genuinely derived."""
     channels = SUFFICIENT_CHANNELS if channels is None else channels
+    request_ref = "req_" + uuid.uuid4().hex
+    probe_params = _request_params(
+        tenant_id,
+        principal,
+        envelope_id=issuance["envelope_id"],
+        semantic_truth_hash=issuance["semantic_truth_hash"],
+        issuance_envelope_hash=issuance["envelope_hash"],
+        channels=channels,
+        budget=budget,
+        request_ref=request_ref,
+    )
+    witness = _mint_possession_witness(
+        cursor,
+        tenant_id,
+        principal,
+        request_ref=request_ref,
+        issuance_envelope_hash=issuance["envelope_hash"],
+        snapshot=probe_params[10],
+    )
     params = _request_params(
         tenant_id,
         principal,
@@ -933,11 +998,13 @@ def _lawful_request(
         issuance_envelope_hash=issuance["envelope_hash"],
         channels=channels,
         budget=budget,
+        request_ref=request_ref,
+        witness=witness,
     )
     cursor.execute(_REQUEST_INSERT + " RETURNING id", params)
     return {
         "id": cursor.fetchone()[0],
-        "snapshot": params[9],
+        "snapshot": params[10],
         "budget": budget,
         "channels": channels,
         "envelope_id": issuance["envelope_id"],
@@ -1098,7 +1165,7 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
             _digest(),
             request["snapshot"],
             SOLVER_PROFILE,
-            1,
+            SOLVER_CONSEQUENCE_KIND,
             request["budget"],
             request["budget"],
             "USD",
@@ -1113,7 +1180,7 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
                 "source_semantic_truth_hash": 3,
                 "input_snapshot_hash": 5,
                 "solver_profile": 6,
-                "solver_invocations": 7,
+                "solver_consequence_kind": 7,
                 "total_budget_minor": 8,
                 "allocated_total_minor": 9,
                 "currency": 10,
@@ -1176,8 +1243,11 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
                 )
             )
         )
-        findings["result_solver_invocations_99"] = result_attempt(
-            variant(solver_invocations=99)
+        # Corrective VI. The durable schema no longer carries an execution
+        # count; what a writer can still attempt is to widen the value claim
+        # into an execution claim, which the CHECK and the guard both refuse.
+        findings["result_execution_vocabulary"] = result_attempt(
+            variant(solver_consequence_kind="application_solver_executed")
         )
 
         # The lawful result, then a proposal that disagrees with it.
@@ -1239,9 +1309,9 @@ def test_p14_r4_b28_persistence_is_consequence_bound() -> None:
     assert findings["result_uncomputed_allocation"].startswith(
         "b28_result_not_solver_consequence"
     )
-    assert findings["result_solver_invocations_99"].startswith(
-        "b28_result_solver_invocations_not_one"
-    )
+    assert findings["result_execution_vocabulary"].startswith(
+        "b28_result_consequence_kind_ungoverned"
+    ), findings["result_execution_vocabulary"]
     assert findings["proposal_disagrees_with_result"].startswith(
         "b28_proposal_disagrees_with_result"
     )
@@ -1274,15 +1344,62 @@ def test_p14_r4_b28_consequence_guard_is_independently_load_bearing() -> None:
         # never happened. With the guard and the FK in place that is refused;
         # with both severed it becomes durable, which is what makes them
         # load-bearing rather than decorative.
+        fabricated_ref = "req_" + uuid.uuid4().hex
+        fabricated_issuance_hash = _digest()
+        fabricated_truth_hash = _digest()
+        probe_params = _request_params(
+            tenant_id,
+            principal,
+            envelope_id="env_never_issued",
+            semantic_truth_hash=fabricated_truth_hash,
+            issuance_envelope_hash=fabricated_issuance_hash,
+            request_ref=fabricated_ref,
+        )
+        # Corrective VI added a third independent layer, so isolating the
+        # source-binding layer now means satisfying the possession layer
+        # honestly: a witness is minted for this exact fabricated row. Naming an
+        # issuance that never happened is not something possession has any
+        # opinion about, which is precisely why the two are independent.
+        with admin.cursor() as cursor:
+            fabricated_witness = _mint_possession_witness(
+                cursor,
+                tenant_id,
+                principal,
+                request_ref=fabricated_ref,
+                issuance_envelope_hash=fabricated_issuance_hash,
+                snapshot=probe_params[10],
+            )
         fabricated = _request_params(
             tenant_id,
             principal,
             envelope_id="env_never_issued",
-            semantic_truth_hash=_digest(),
-            issuance_envelope_hash=_digest(),
+            semantic_truth_hash=fabricated_truth_hash,
+            issuance_envelope_hash=fabricated_issuance_hash,
+            request_ref=fabricated_ref,
+            witness=fabricated_witness,
         )
         assert (
             _fabrication_attempt(tenant_id, _REQUEST_INSERT, fabricated) != "ALLOWED"
+        )
+
+        # And the possession layer refuses on its own, with the consequence
+        # guard and the source foreign key both still installed. The row here is
+        # lawful in every respect the *other* layers examine -- it names a real
+        # issuance, a live credential and a derived identity -- so the only thing
+        # left to refuse it is the witness, which is what makes the layer
+        # independently load-bearing rather than merely present.
+        real_signed, _ = _sign_real_envelope(tenant_id)
+        real_issuance = _conduct_issuance(tenant_id, real_signed)
+        assert "b28_request_possession_witness_unknown" in _fabrication_attempt(
+            tenant_id,
+            _REQUEST_INSERT,
+            _request_params(
+                tenant_id,
+                principal,
+                envelope_id=real_issuance["envelope_id"],
+                semantic_truth_hash=real_issuance["semantic_truth_hash"],
+                issuance_envelope_hash=real_issuance["envelope_hash"],
+            ),
         )
 
         try:
@@ -1710,7 +1827,28 @@ def test_p14_r4_downstream_relations_reject_a_caller_selected_tenant() -> None:
         signed, _ = _sign_real_envelope(tenant_a)
         issuance = _conduct_issuance(tenant_a, signed)
 
-        def attempt(guc, tenant_column, principal) -> str:
+        def attempt(guc, tenant_column, principal, witness_tenant) -> str:
+            # Corrective VI: mint the witness first, as the owner and in the
+            # credential's own tenant, so what this probe measures is the tenant
+            # binding rather than the possession fence.
+            request_ref = "req_" + uuid.uuid4().hex
+            probe_params = _request_params(
+                tenant_column,
+                principal,
+                envelope_id=issuance["envelope_id"],
+                semantic_truth_hash=issuance["semantic_truth_hash"],
+                issuance_envelope_hash=issuance["envelope_hash"],
+                request_ref=request_ref,
+            )
+            with admin.cursor() as cursor:
+                witness = _mint_possession_witness(
+                    cursor,
+                    witness_tenant,
+                    principal,
+                    request_ref=request_ref,
+                    issuance_envelope_hash=issuance["envelope_hash"],
+                    snapshot=probe_params[10],
+                )
             conn = _role_connection(B28_REQUEST_PRINCIPAL)
             try:
                 with conn.cursor() as cursor:
@@ -1724,6 +1862,8 @@ def test_p14_r4_downstream_relations_reject_a_caller_selected_tenant() -> None:
                             envelope_id=issuance["envelope_id"],
                             semantic_truth_hash=issuance["semantic_truth_hash"],
                             issuance_envelope_hash=issuance["envelope_hash"],
+                            request_ref=request_ref,
+                            witness=witness,
                         ),
                     )
                 conn.commit()
@@ -1734,10 +1874,10 @@ def test_p14_r4_downstream_relations_reject_a_caller_selected_tenant() -> None:
             finally:
                 conn.close()
 
-        unset = attempt(None, tenant_a, principal_a)
-        wrong = attempt(tenant_b, tenant_a, principal_a)
-        cross = attempt(tenant_b, tenant_b, principal_b)
-        lawful = attempt(tenant_a, tenant_a, principal_a)
+        unset = attempt(None, tenant_a, principal_a, tenant_a)
+        wrong = attempt(tenant_b, tenant_a, principal_a, tenant_a)
+        cross = attempt(tenant_b, tenant_b, principal_b, tenant_b)
+        lawful = attempt(tenant_a, tenant_a, principal_a, tenant_a)
     finally:
         admin.close()
 

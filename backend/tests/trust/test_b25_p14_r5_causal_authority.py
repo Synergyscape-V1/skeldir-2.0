@@ -56,7 +56,11 @@ from app.simulation.consequence_custody import (
     custody_is_separated,
     request_custody,
 )
-from app.simulation.contract import ChannelEvidence, SimulationRequest
+from app.simulation.contract import (
+    SOLVER_CONSEQUENCE_KIND,
+    ChannelEvidence,
+    SimulationRequest,
+)
 from app.simulation.persistence import conduct_requested_simulation
 from app.simulation.requester_identity import (
     REASON_CREDENTIAL_NOT_LIVE,
@@ -202,19 +206,21 @@ def _attempt(role: str, tenant_id, statement: str, params) -> str:
 _REQUEST_INSERT_FULL = (
     "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref,"
     " requested_by, requested_by_agent_client_id, requested_by_credential_id,"
-    " request_authority_principal, source_envelope_id,"
+    " request_authority_principal, request_authentication_id,"
+    " source_envelope_id,"
     " source_semantic_truth_hash, source_issuance_envelope_hash,"
     " input_snapshot_hash, total_budget_minor, currency, channel_count,"
     " channel_evidence, solver_profile, sufficiency_policy_version,"
     " sufficiency_verdict, sufficiency_reasons, observed_channels,"
     " observed_conversions, observed_revenue_minor)"
-    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s)"
+    " VALUES"
+    " (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s)"
 )
 
 _RESULT_INSERT = (
     "INSERT INTO public.b28_simulation_results (tenant_id, request_id,"
     " source_envelope_id, source_semantic_truth_hash, projection_profile_hash,"
-    " input_snapshot_hash, solver_profile, solver_invocations,"
+    " input_snapshot_hash, solver_profile, solver_consequence_kind,"
     " total_budget_minor, allocated_total_minor, currency, action_authority,"
     " allocations) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)"
 )
@@ -233,6 +239,43 @@ def _evidence_json(channels: tuple[ChannelEvidence, ...]) -> str:
     )
 
 
+def _mint_possession_witness(
+    admin_cursor,
+    tenant_id,
+    *,
+    presented_token: str,
+    request_ref: str,
+    issuance,
+    snapshot: str,
+) -> str:
+    """Mint a lawful Corrective-VI possession witness, as the owner.
+
+    Every probe below that is *about* something other than possession needs a
+    lawful witness so that the property it does test is the one that decides the
+    outcome. The owner is used deliberately: the possession derivation runs for
+    every principal including the owner (it is a statement about truth, not
+    about authority), so a witness obtained this way is exactly as strong as one
+    the request principal would obtain -- it still requires the plaintext token.
+    """
+
+    # The definer function executes as `migration_owner`, which does not hold
+    # `rolbypassrls`; the credential relations are tenant-scoped, so the GUC has
+    # to be bound even on a superuser connection or the lookup sees no rows and
+    # refuses with `credential_unknown`.
+    _bind_tenant(admin_cursor, tenant_id)
+    admin_cursor.execute(
+        "SELECT public.b28_authenticate_request_possession(%s::uuid,%s,%s,%s,%s)",
+        (
+            str(tenant_id),
+            presented_token,
+            request_ref,
+            issuance["envelope_hash"],
+            snapshot,
+        ),
+    )
+    return str(admin_cursor.fetchone()[0])
+
+
 def _request_params(
     tenant_id,
     issuance,
@@ -241,6 +284,8 @@ def _request_params(
     client_id: str,
     credential_id: str,
     principal: str,
+    witness: str | None = None,
+    request_ref: str | None = None,
     channels: tuple[ChannelEvidence, ...] = SUFFICIENT_CHANNELS,
     budget: int = 1_000_000,
     snapshot: str | None = None,
@@ -260,11 +305,15 @@ def _request_params(
     )
     return (
         str(tenant_id),
-        "req_" + uuid.uuid4().hex,
+        request_ref if request_ref is not None else "req_" + uuid.uuid4().hex,
         requested_by,
         client_id,
         credential_id,
         principal,
+        # Corrective VI. A probe that supplies no witness is testing the
+        # possession fence itself; every other probe passes a lawful one so its
+        # own predicate decides the outcome.
+        witness if witness is not None else str(uuid.uuid4()),
         issuance["envelope_id"],
         issuance["semantic_truth_hash"],
         issuance["envelope_hash"],
@@ -360,6 +409,33 @@ def test_p14_r5_generic_runtime_principals_cannot_author_a_request() -> None:
             ),
         )
         # Even the request principal may not author an undeclared identity.
+        # Corrective VI: this probe is about the *identity derivation*, so it
+        # carries a lawful possession witness -- a probe that failed for want of
+        # a witness would prove nothing about `requested_by`.
+        invented_ref = "req_" + uuid.uuid4().hex
+        with admin.cursor() as cursor:
+            invented_witness = _mint_possession_witness(
+                cursor,
+                tenant_id,
+                presented_token=token,
+                request_ref=invented_ref,
+                issuance=issuance,
+                snapshot=compute_input_snapshot_hash(
+                    SimulationRequest(
+                        request_id="probe",
+                        tenant_id=str(tenant_id),
+                        requested_by=f"{REQUESTED_BY_PREFIX}{client_id}",
+                        source_envelope_id=issuance["envelope_id"],
+                        source_semantic_truth_hash=issuance[
+                            "semantic_truth_hash"
+                        ],
+                        total_budget_minor=1_000_000,
+                        currency="USD",
+                        channels=SUFFICIENT_CHANNELS,
+                        requested_at="probe",
+                    )
+                ),
+            )
         findings["REQ_PRINCIPAL_INVENTED_IDENTITY"] = _attempt(
             B28_REQUEST_PRINCIPAL,
             tenant_id,
@@ -371,6 +447,8 @@ def test_p14_r5_generic_runtime_principals_cannot_author_a_request() -> None:
                 client_id=client_id,
                 credential_id=credential_id,
                 principal=B28_REQUEST_PRINCIPAL,
+                witness=invented_witness,
+                request_ref=invented_ref,
             ),
         )
         findings["REQ_PRINCIPAL_UNKNOWN_CREDENTIAL"] = _attempt(
@@ -548,10 +626,19 @@ def test_p14_r5_a_result_must_be_the_solver_consequence() -> None:
         )
         del second
 
+        spare_ref = "req_" + uuid.uuid4().hex
         with admin.cursor() as cursor:
             cursor.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(tenant_id),),
+            )
+            spare_witness = _mint_possession_witness(
+                cursor,
+                tenant_id,
+                presented_token=token,
+                request_ref=spare_ref,
+                issuance=issuance,
+                snapshot=outcome.input_snapshot_hash,
             )
             cursor.execute(
                 _REQUEST_INSERT_FULL + " RETURNING id",
@@ -562,6 +649,8 @@ def test_p14_r5_a_result_must_be_the_solver_consequence() -> None:
                     client_id=client_id,
                     credential_id=credential_id,
                     principal="postgres",
+                    witness=spare_witness,
+                    request_ref=spare_ref,
                 ),
             )
             spare_request = cursor.fetchone()[0]
@@ -574,7 +663,7 @@ def test_p14_r5_a_result_must_be_the_solver_consequence() -> None:
             _digest(),
             outcome.input_snapshot_hash,
             SOLVER_PROFILE,
-            1,
+            SOLVER_CONSEQUENCE_KIND,
             1_000_000,
             1_000_000,
             "USD",
@@ -662,11 +751,16 @@ def test_p14_r5_a_result_must_be_the_solver_consequence() -> None:
             _RESULT_INSERT,
             base + (json.dumps(reweighted),),
         )
-        findings["RESULT_SOLVER_INVOCATIONS_99"] = _attempt(
+        # Corrective VI. The event-count vocabulary is gone; what a writer can
+        # still try is to widen the *value* claim into an execution claim.
+        findings["RESULT_EXECUTION_VOCABULARY"] = _attempt(
             B28_SOLVER_PRINCIPAL,
             tenant_id,
             _RESULT_INSERT,
-            base[:7] + (99,) + base[8:] + (lawful_allocations,),
+            base[:7]
+            + ("application_solver_executed",)
+            + base[8:]
+            + (lawful_allocations,),
         )
         # The lawful consequence, persisted by the lawful authority.
         findings["RESULT_LAWFUL"] = _attempt(
@@ -691,9 +785,9 @@ def test_p14_r5_a_result_must_be_the_solver_consequence() -> None:
             or "b28_result_channel_count_disagrees" in findings[key]
         ), f"{key}: {findings[key]}"
     assert (
-        "b28_result_solver_invocations_not_one"
-        in findings["RESULT_SOLVER_INVOCATIONS_99"]
-    )
+        "b28_result_consequence_kind_ungoverned"
+        in findings["RESULT_EXECUTION_VOCABULARY"]
+    ), findings["RESULT_EXECUTION_VOCABULARY"]
     assert findings["RESULT_LAWFUL"] == "ALLOWED"
     assert request_id
 
@@ -739,7 +833,8 @@ def test_p14_r5_the_input_witness_is_reconstructible_and_bound() -> None:
                 )
                 row = cursor.fetchone()
                 cursor.execute(
-                    "SELECT allocations, solver_invocations, input_snapshot_hash"
+                    "SELECT allocations, solver_consequence_kind,"
+                    " input_snapshot_hash"
                     " FROM public.b28_simulation_results WHERE request_id = %s",
                     (conducted["request_id"],),
                 )
@@ -791,7 +886,7 @@ def test_p14_r5_the_input_witness_is_reconstructible_and_bound() -> None:
     )
     assert compute_input_snapshot_hash(probe) == snapshot_hash
     assert result_row[2] == snapshot_hash
-    assert result_row[1] == 1
+    assert result_row[1] == SOLVER_CONSEQUENCE_KIND
     assert authority_principal == B28_REQUEST_PRINCIPAL
     assert requested_by.startswith(REQUESTED_BY_PREFIX)
 
@@ -1287,15 +1382,18 @@ def test_p14_r5_both_authorities_refuse_the_same_integer_domain() -> None:
                 budget=1_000,
             )
         )
-        params[9] = db_snapshot
-        params[12] = len(oversized)
-        params[13] = _evidence_json(oversized)
+        # Positional indices count from `_REQUEST_INSERT_FULL`'s column list,
+        # which gained `request_authentication_id` at position 6 in Corrective
+        # VI; everything after it moved by one.
+        params[10] = db_snapshot
+        params[13] = len(oversized)
+        params[14] = _evidence_json(oversized)
         adjudication = adjudicate_sufficiency(oversized)
-        params[16] = adjudication.sufficient
-        params[17] = list(adjudication.reasons)
-        params[18] = adjudication.observed_channels
-        params[19] = adjudication.observed_conversions
-        params[20] = adjudication.observed_revenue_minor
+        params[17] = adjudication.sufficient
+        params[18] = list(adjudication.reasons)
+        params[19] = adjudication.observed_channels
+        params[20] = adjudication.observed_conversions
+        params[21] = adjudication.observed_revenue_minor
         oversized_revenue = _attempt(
             B28_REQUEST_PRINCIPAL, tenant_id, _REQUEST_INSERT_FULL, tuple(params)
         )

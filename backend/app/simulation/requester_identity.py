@@ -28,6 +28,36 @@ explicit revocation and expiry checks.
 accepts a ``requested_by`` argument. The database then re-derives the same value
 from the same two foreign keys and refuses any disagreement, so the identity is
 checked twice by two authorities that cannot both be the caller.
+
+----------------------------------------------------------------------------
+Corrective VI -- the conclusion becomes durable
+----------------------------------------------------------------------------
+
+Corrective V's verification was honest and left no trace. The independent audit
+reproduced the consequence on a fresh cluster: a session holding only the
+``app_b28_requester`` DSN inserted a fully FK-valid request naming a live
+credential, with the correctly derived ``requested_by``, **without ever
+presenting the plaintext token** (``GATE_F_tokenless_request ALLOWED``). Every
+check the database ran was a statement about the credential *row*; none was a
+statement about the caller.
+
+``prove_request_possession`` closes that gap by moving the possession proof to
+the authority that owns the durable claim. It calls
+``b28_authenticate_request_possession``, a ``SECURITY DEFINER`` function that
+recomputes ``sha256(presented_token)`` against the stored ``token_hash``,
+re-checks liveness at the database's own clock, derives the request binding
+itself, and writes a single-use ``b28_request_authentications`` row. The request
+insert then names that row through a ``NOT NULL`` foreign key with a ``UNIQUE``
+index, so:
+
+    durable requested_by = X
+    =>
+    somebody presented X's secret, for this exact request, once
+
+The application check below is *kept* rather than replaced. It is no longer the
+trust root -- the database is -- but it is what turns a wrong credential into a
+named refusal at the boundary instead of a generic SQL error three frames later,
+and it is the second of the two authorities that must agree.
 """
 
 from __future__ import annotations
@@ -56,6 +86,18 @@ REASON_CREDENTIAL_UNKNOWN = "simulation_requester_credential_unknown"
 REASON_CREDENTIAL_NOT_LIVE = "simulation_requester_credential_not_live"
 REASON_CLIENT_NOT_LIVE = "simulation_requester_client_not_live"
 REASON_TENANT_MISMATCH = "simulation_requester_tenant_mismatch"
+REASON_POSSESSION_UNPROVEN = "simulation_requester_possession_unproven"
+
+#: The database function that is the sole writer of a possession witness. It is
+#: ``SECURITY DEFINER``: the key that mints a witness is the caller's secret, not
+#: the caller's grant, so no privilege escalation produces one.
+POSSESSION_WITNESS_FUNCTION = "public.b28_authenticate_request_possession"
+
+#: Mirrors ``_POSSESSION_WITNESS_TTL_SECONDS`` in the ``202609071200``
+#: migration. A witness is bound to its exact request, so a stale one could only
+#: re-authorise the identical row the unique index already refuses; the window is
+#: defence in depth, not the mechanism.
+POSSESSION_WITNESS_TTL_SECONDS = 900
 
 
 class SimulationRequesterError(RuntimeError):
@@ -212,14 +254,69 @@ def authenticate_simulation_requester(
     )
 
 
+_POSSESSION_SQL = f"""
+    SELECT {POSSESSION_WITNESS_FUNCTION}(
+        %(tenant_id)s::uuid, %(presented_token)s, %(request_ref)s,
+        %(source_issuance_envelope_hash)s, %(input_snapshot_hash)s
+    )
+"""
+
+
+def prove_request_possession(
+    connection: Any,
+    *,
+    tenant_id: str,
+    presented_token: str,
+    request_ref: str,
+    source_issuance_envelope_hash: str,
+    input_snapshot_hash: str,
+) -> str:
+    """Make the possession proof durable, and return the witness identity.
+
+    The arguments other than the token are exactly the material the witness is
+    *bound* to. They are not decoration: the guard on
+    ``b28_simulation_requests`` re-derives the binding from the row being
+    inserted and requires equality, so a witness minted for one request cannot
+    be spent on another, and the caller cannot decouple the proof from what it
+    is a proof of.
+
+    What the caller cannot pass is equally load-bearing. There is no
+    ``agent_client_id`` parameter and no ``credential_id`` parameter: both are
+    read out of the row the presented secret resolves to. A caller that could
+    name them would be back to proving a row rather than a possession.
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _POSSESSION_SQL,
+            {
+                "tenant_id": str(tenant_id),
+                "presented_token": presented_token,
+                "request_ref": request_ref,
+                "source_issuance_envelope_hash": source_issuance_envelope_hash,
+                "input_snapshot_hash": input_snapshot_hash,
+            },
+        )
+        row = cursor.fetchone()
+    if row is None or row[0] is None:
+        raise SimulationRequesterError(
+            REASON_POSSESSION_UNPROVEN, "no possession witness was returned"
+        )
+    return str(row[0])
+
+
 __all__ = [
+    "POSSESSION_WITNESS_FUNCTION",
+    "POSSESSION_WITNESS_TTL_SECONDS",
     "REASON_CLIENT_NOT_LIVE",
     "REASON_CREDENTIAL_NOT_LIVE",
     "REASON_CREDENTIAL_UNKNOWN",
+    "REASON_POSSESSION_UNPROVEN",
     "REASON_TENANT_MISMATCH",
     "REASON_TOKEN_MALFORMED",
     "REQUESTED_BY_PREFIX",
     "SimulationRequesterError",
     "VerifiedRequester",
     "authenticate_simulation_requester",
+    "prove_request_possession",
 ]

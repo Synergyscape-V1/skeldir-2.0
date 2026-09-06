@@ -30,6 +30,30 @@ the same ``simulate_from_trust`` boundary any caller would, so the persisted
 allocation is the solver's output because it came from the solver -- and the
 database independently agrees, because it recomputes the deterministic function
 itself and refuses anything else.
+
+----------------------------------------------------------------------------
+Corrective VI
+----------------------------------------------------------------------------
+
+Two changes, both narrowing what a durable row is allowed to mean.
+
+**The request write now carries a possession proof.** Corrective V's redundancy
+was real but incomplete: the database half checked the credential *row*, not the
+caller. The independent audit inserted a valid request as the request principal
+with no token at all. ``persist_simulation_request`` now calls
+``prove_request_possession`` first, so the request names a single-use
+``b28_request_authentications`` row that only a presented secret can create. The
+order matters and is deliberate: the snapshot hash is computed before the
+witness is minted, because the witness is *bound* to that hash.
+
+**The result write stops claiming an execution event.** ``solver_invocations``
+is no longer a durable column. What the system can prove about a persisted
+result is extensional -- the allocation is the value of the governed
+deterministic function over the admitted input, which the database verifies by
+recomputing it -- and ``solver_consequence_kind`` is the vocabulary that says
+exactly that. The in-process counter survives in ``SimulationResult`` because
+there it *is* an honest observation: it is what makes "a refusal ran no solver"
+a measurement rather than an inference.
 """
 
 from __future__ import annotations
@@ -45,6 +69,7 @@ from app.simulation.consequence_custody import (
     solver_custody,
 )
 from app.simulation.contract import (
+    SOLVER_CONSEQUENCE_KIND,
     ChannelEvidence,
     Proposal,
     SimulationRefusal,
@@ -54,6 +79,7 @@ from app.simulation.contract import (
 from app.simulation.requester_identity import (
     VerifiedRequester,
     authenticate_simulation_requester,
+    prove_request_possession,
 )
 from app.simulation.service import propose_from_result, simulate_from_trust
 from app.simulation.solver import SOLVER_PROFILE
@@ -72,7 +98,7 @@ _REQUEST_INSERT = """
     INSERT INTO public.b28_simulation_requests (
         tenant_id, request_ref, requested_by,
         requested_by_agent_client_id, requested_by_credential_id,
-        request_authority_principal,
+        request_authority_principal, request_authentication_id,
         source_envelope_id, source_semantic_truth_hash,
         source_issuance_envelope_hash, input_snapshot_hash,
         total_budget_minor, currency, channel_count, channel_evidence,
@@ -82,6 +108,7 @@ _REQUEST_INSERT = """
     ) VALUES (
         %(tenant_id)s, %(request_ref)s, %(requested_by)s,
         %(agent_client_id)s, %(credential_id)s, %(authority_principal)s,
+        %(request_authentication_id)s,
         %(source_envelope_id)s, %(source_semantic_truth_hash)s,
         %(source_issuance_envelope_hash)s, %(input_snapshot_hash)s,
         %(total_budget_minor)s, %(currency)s, %(channel_count)s,
@@ -97,12 +124,13 @@ _RESULT_INSERT = """
     INSERT INTO public.b28_simulation_results (
         tenant_id, request_id, source_envelope_id, source_semantic_truth_hash,
         projection_profile_hash, input_snapshot_hash, solver_profile,
-        solver_invocations, total_budget_minor, allocated_total_minor,
+        solver_consequence_kind, total_budget_minor, allocated_total_minor,
         currency, action_authority, allocations
     ) VALUES (
         %(tenant_id)s, %(request_id)s, %(source_envelope_id)s,
         %(source_semantic_truth_hash)s, %(projection_profile_hash)s,
-        %(input_snapshot_hash)s, %(solver_profile)s, %(solver_invocations)s,
+        %(input_snapshot_hash)s, %(solver_profile)s,
+        %(solver_consequence_kind)s,
         %(total_budget_minor)s, %(allocated_total_minor)s, %(currency)s,
         %(action_authority)s, %(allocations)s::jsonb
     )
@@ -197,17 +225,32 @@ def persist_simulation_request(
                 requested_at="pending",
             )
             snapshot_hash = compute_input_snapshot_hash(request)
+            durable_request_ref = request_ref or f"req_{uuid.uuid4().hex}"
+
+            # Corrective VI. The witness is minted after the snapshot hash and
+            # the reference exist, because it is bound to both: the guard
+            # re-derives that binding from the row and refuses a witness that
+            # was proven for anything else.
+            authentication_id = prove_request_possession(
+                connection,
+                tenant_id=str(tenant_id),
+                presented_token=presented_token,
+                request_ref=durable_request_ref,
+                source_issuance_envelope_hash=source_issuance_envelope_hash,
+                input_snapshot_hash=snapshot_hash,
+            )
 
             with connection.cursor() as cursor:
                 cursor.execute(
                     _REQUEST_INSERT,
                     {
                         "tenant_id": str(tenant_id),
-                        "request_ref": request_ref or f"req_{uuid.uuid4().hex}",
+                        "request_ref": durable_request_ref,
                         "requested_by": requester.requested_by,
                         "agent_client_id": requester.agent_client_id,
                         "credential_id": requester.credential_id,
                         "authority_principal": B28_REQUEST_PRINCIPAL,
+                        "request_authentication_id": authentication_id,
                         "source_envelope_id": source_envelope_id,
                         "source_semantic_truth_hash": source_semantic_truth_hash,
                         "source_issuance_envelope_hash": (
@@ -291,7 +334,11 @@ def persist_simulation_consequence(
                         "projection_profile_hash": outcome.projection_profile_hash,
                         "input_snapshot_hash": outcome.input_snapshot_hash,
                         "solver_profile": outcome.solver_profile,
-                        "solver_invocations": outcome.solver_invocations,
+                        # Not `outcome.solver_invocations`. That number is an
+                        # honest in-process observation and an unwitnessable
+                        # durable claim; the durable contract states the
+                        # property the database actually verifies.
+                        "solver_consequence_kind": SOLVER_CONSEQUENCE_KIND,
                         "total_budget_minor": outcome.total_budget_minor,
                         "allocated_total_minor": sum(
                             line.allocation_minor for line in outcome.allocations

@@ -37,6 +37,7 @@ import psycopg2
 import pytest
 
 from app.explanation.templates import EXPLANATION_TEMPLATE_REGISTRY_HASH
+from app.trust.machine_identity import generate_machine_token
 
 
 pytestmark = pytest.mark.skipif(
@@ -1008,7 +1009,11 @@ def _seed_agent_credential(cursor, tenant_id) -> dict[str, str]:
     representable request."""
     client_id = uuid.uuid4()
     credential_id = uuid.uuid4()
-    prefix = uuid.uuid4().hex[:8]
+    # Corrective VI: a real CSPRNG token whose plaintext the caller keeps. The
+    # entering fixture stored `sha256(random bytes)` with no known preimage,
+    # which was sufficient while the database only checked the credential *row*
+    # and is not sufficient now that it verifies possession of the secret.
+    secret = generate_machine_token()
     cursor.execute(
         "INSERT INTO public.agent_clients (id, tenant_id, client_name,"
         " client_display_hash, audience, status)"
@@ -1023,11 +1028,14 @@ def _seed_agent_credential(cursor, tenant_id) -> dict[str, str]:
             str(credential_id),
             str(tenant_id),
             str(client_id),
-            prefix,
-            hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
+            secret.token_prefix,
+            secret.token_hash,
         ),
     )
     return {
+        # Corrective VI: the plaintext is what mints a possession witness, so a
+        # seeder that discarded it could no longer produce a lawful request.
+        "token": secret.plaintext,
         "agent_client_id": str(client_id),
         "credential_id": str(credential_id),
         "requested_by": f"agent_client:{client_id}",
@@ -1178,16 +1186,32 @@ def _insert_request(
     }
     _bind_tenant(cursor, tenant_id)
     verdict = _sufficiency(channels)
+    # Corrective VI: a request names a durable possession witness, and the only
+    # way to obtain one is to present the credential's plaintext secret. This
+    # helper is seeding lawful state for probes about *other* conjuncts, so it
+    # takes the lawful route.
+    cursor.execute(
+        "SELECT public.b28_authenticate_request_possession(%s::uuid,%s,%s,%s,%s)",
+        (
+            str(tenant_id),
+            principal["token"],
+            request["request_ref"],
+            request["source_issuance_envelope_hash"],
+            request["input_snapshot_hash"],
+        ),
+    )
+    request["request_authentication_id"] = str(cursor.fetchone()[0])
     cursor.execute(
         "INSERT INTO public.b28_simulation_requests (tenant_id, request_ref,"
         " requested_by, requested_by_agent_client_id, requested_by_credential_id,"
-        " request_authority_principal, source_envelope_id,"
+        " request_authority_principal, request_authentication_id,"
+        " source_envelope_id,"
         " source_semantic_truth_hash, source_issuance_envelope_hash,"
         " input_snapshot_hash, total_budget_minor, currency, channel_count,"
         " channel_evidence, solver_profile, sufficiency_policy_version,"
         " sufficiency_verdict, sufficiency_reasons, observed_channels,"
         " observed_conversions, observed_revenue_minor)"
-        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,"
+        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,"
         " 'b25-p14-deterministic-largest-remainder-v1',"
         " 'b25-p14-sufficiency-v1',%s,%s,%s,%s,%s) RETURNING id",
         (
@@ -1197,6 +1221,7 @@ def _insert_request(
             principal["agent_client_id"],
             principal["credential_id"],
             _session_user(cursor),
+            request["request_authentication_id"],
             request["source_envelope_id"],
             request["source_semantic_truth_hash"],
             request["source_issuance_envelope_hash"],
@@ -1250,10 +1275,11 @@ def _result_params(
 _RESULT_INSERT = (
     "INSERT INTO public.b28_simulation_results (tenant_id, request_id,"
     " source_envelope_id, source_semantic_truth_hash, projection_profile_hash,"
-    " input_snapshot_hash, solver_profile, solver_invocations, total_budget_minor,"
+    " input_snapshot_hash, solver_profile, solver_consequence_kind,"
+    " total_budget_minor,"
     " allocated_total_minor, currency, action_authority, allocations)"
     " VALUES (%s, %s, %s, %s, %s, %s, 'b25-p14-deterministic-largest-remainder-v1',"
-    " 1, %s, %s, %s, %s, %s::jsonb)"
+    " 'governed_deterministic_consequence', %s, %s, %s, %s, %s::jsonb)"
 )
 
 
