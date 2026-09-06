@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.20.0",
+  "contract_version": "1.21.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -120,14 +120,14 @@
     "merge_method": "MERGE",
     "grouping_strategy": "ALLGREEN",
     "strict_retained": true,
-    "rationale": "The merge queue validates the speculative merge commit - the object that actually becomes main - against all 75 required contexts before it lands. This closes a real audit gap: required contexts are evaluated against the PR head SHA while PRs land as merge commits, so the exact SHA on protected/main previously had no regression matrix attached to it.",
+    "rationale": "The merge queue validates the speculative merge commit - the object that actually becomes main - against all 80 required contexts before it lands. This closes a real audit gap: required contexts are evaluated against the PR head SHA while PRs land as merge commits, so the exact SHA on protected/main previously had no regression matrix attached to it.",
     "strict_note": "strict=true is RETAINED. An earlier attempt on the same day set strict=false on the assumption that a merge queue requires it; that assumption was wrong and it turned B1.3-P11 and B2.4-P11 red on main. A queue ruleset and strict=true coexist. All four gates that assert strict against the live API were verified passing with the queue active: enforce_b13_p11_e2e_system_proofs, validate_live_branch_protection (B2.4-P11), enforce_b14_p7_e2e_privacy_system_proofs and capture_b14_p7_branch_protection_evidence.",
     "verified": [
-      "capture_b13_p11_branch_protection_evidence: authority_mode=live_branch_protection_api live_strict=true contexts=75",
+      "capture_b13_p11_branch_protection_evidence: authority_mode=live_branch_protection_api live_strict=true contexts=80",
       "capture_b14_p7_branch_protection_evidence: live_strict=true",
       "validate_live_branch_protection --mode main: B24_P11_LIVE_BRANCH_PROTECTION_VALIDATION_PASS",
       "enforce_required_status_checks: passed",
-      "all 75 required contexts produced by a workflow firing on merge_group (physics guard rule 5)"
+      "all 80 required contexts produced by a workflow firing on merge_group (physics guard rule 5; advisory lanes excluded by rules advisory-merge-group/advisory-pr-paths since v1.21.0)"
     ]
   },
   "p13_merge_blocking_physics": {

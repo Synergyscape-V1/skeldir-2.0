@@ -2923,6 +2923,17 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Restore Playwright browsers
+        # Cache-consequence neutrality (Law CI-C4): key binds OS + lockfile
+        # (browser version is pinned via package.json devDependencies), and the
+        # unconditional `playwright install --with-deps` below still runs, so a
+        # hit and a miss converge on identical installed browsers + OS deps.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - name: Install B1.5-P7 dependencies
         run: |
           pip install -r backend/requirements.txt
@@ -3817,6 +3828,17 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+      - name: Restore Playwright browsers
+        # Cache-consequence neutrality (Law CI-C4): key binds OS + lockfile
+        # (browser version is pinned via package.json devDependencies), and the
+        # unconditional `playwright install --with-deps` below still runs, so a
+        # hit and a miss converge on identical installed browsers + OS deps.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -3947,6 +3969,17 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+      - name: Restore Playwright browsers
+        # Cache-consequence neutrality (Law CI-C4): key binds OS + lockfile
+        # (browser version is pinned via package.json devDependencies), and the
+        # unconditional `playwright install --with-deps` below still runs, so a
+        # hit and a miss converge on identical installed browsers + OS deps.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:

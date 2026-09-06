@@ -1,12 +1,32 @@
 name: b11-p1-control-plane-adjudication
 
 on:
-  merge_group:
   pull_request:
+    paths:
+      - 'scripts/security/b11_p1_*.py'
+      - 'backend/tests/test_b11_p1_*.py'
+      - 'infra/**'
+      - '.github/workflows/b11-p1-control-plane-adjudication.yml'
+      - 'docs/ci/**'
+      - 'contracts-internal/governance/b03_phase2_required_status_checks.main.json'
     branches: [main]
   pull_request_target:
+    paths:
+      - 'scripts/security/b11_p1_*.py'
+      - 'backend/tests/test_b11_p1_*.py'
+      - 'infra/**'
+      - '.github/workflows/b11-p1-control-plane-adjudication.yml'
+      - 'docs/ci/**'
+      - 'contracts-internal/governance/b03_phase2_required_status_checks.main.json'
     branches: [main]
   push:
+    paths:
+      - 'scripts/security/b11_p1_*.py'
+      - 'backend/tests/test_b11_p1_*.py'
+      - 'infra/**'
+      - '.github/workflows/b11-p1-control-plane-adjudication.yml'
+      - 'docs/ci/**'
+      - 'contracts-internal/governance/b03_phase2_required_status_checks.main.json'
     branches: [main]
   workflow_dispatch:
 
@@ -16,7 +36,7 @@ concurrency:
   # the event in the group the two runs share it and cancel each other - which
   # cancelled three required contexts on PR #653 before this was fixed.
   # PR events: one live run per workflow per PR - a new push supersedes the old.
-  # push / merge_group: run_id is unique, so those runs are never cancelled
+  # push: run_id is unique, so those runs are never cancelled
   # and never queued. The audit proof on an exact SHA always runs to completion.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

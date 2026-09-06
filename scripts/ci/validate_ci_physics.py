@@ -16,7 +16,16 @@ A workflow opts out by carrying, anywhere in the file:
     # physics-exempt: <rule> - <reason>
 
 The exemption lives in the workflow it applies to, so it is visible in review
-and travels with the file. Valid rules: concurrency, merge_group, cache, fanout.
+and travels with the file. Valid rules: concurrency, merge_group, cache, fanout,
+advisory-merge-group, advisory-pr-paths.
+
+Rules merge_group/advisory-merge-group/advisory-pr-paths distinguish REQUIRED
+lanes (produce >=1 context from the required-status-checks contract, matrix
+stems included) from ADVISORY lanes (produce none):
+- required lanes MUST fire on merge_group (rules merge_group + coverage);
+- advisory lanes MUST NOT occupy merge_group burst (rule advisory-merge-group)
+  and MUST declare pull_request paths (rule advisory-pr-paths), so advisory
+  execution is risk-selected while merge authority stays total.
 
 Usage:  python scripts/ci/validate_ci_physics.py [--verbose]
 """
@@ -40,9 +49,62 @@ from _workflow_physics import (  # noqa: E402
 WORKFLOWS = Path(".github/workflows")
 VERBOSE = "--verbose" in sys.argv
 
+CONTRACT = Path("contracts-internal/governance/b03_phase2_required_status_checks.main.json")
+
 # A job depended on by more than this many jobs is a fan-out barrier. It is only
 # legitimate if it actually hands state to its dependents.
 MAX_FANIN_WITHOUT_DATAFLOW = 5
+
+
+def load_required_contexts() -> set[str] | None:
+    """Required contexts from the in-repo governance contract.
+
+    Returns None when the contract is missing or unparseable. Callers treat
+    None as "authority unreadable" and fail closed: every pull_request workflow
+    is assumed required, so missing merge_group still fails. An unreadable
+    contract must never silently excuse a lane from merge authority.
+    """
+    import json
+
+    try:
+        doc = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    contexts = doc.get("required_contexts", [])
+    return set(contexts) if isinstance(contexts, list) else set()
+
+
+def produced_names(doc: dict) -> set[str]:
+    """Every check-run name a workflow file can emit (workflow + job names)."""
+    names: set[str] = set()
+    if doc.get("name"):
+        names.add(str(doc["name"]))
+    for jid, body in (doc.get("jobs") or {}).items():
+        names.add(str(jid))
+        if isinstance(body, dict) and body.get("name"):
+            names.add(str(body["name"]))
+    return names
+
+
+def produces_required(doc: dict, contexts: set[str] | None) -> tuple[bool, list[str]]:
+    """Whether the workflow produces >=1 required context.
+
+    Matrix-expanded names (e.g. "Phase Gates (B0.3)") never appear literally in
+    YAML, so a context also matches via its stem ("Phase Gates"). When contexts
+    is None (contract unreadable) the workflow is treated as required: fail
+    closed, never silently advisory.
+    """
+    names = produced_names(doc)
+    if contexts is None:
+        return True, []
+    matched = [c for c in contexts if c in names]
+    if not matched:
+        stems = {c.split(" (")[0] for c in contexts if " (" in c}
+        matched = [c for c in contexts if c.split(" (")[0] in names and c.split(" (")[0] in stems]
+        # Also match when the stem itself is a declared name.
+        stem_hits = [s for s in stems if s in names]
+        matched = sorted(set(matched) | {c for c in contexts for s in stem_hits if c.startswith(s + " (") or c == s})
+    return (len(matched) > 0), sorted(set(matched))
 
 
 def exempt(src: str, rule: str) -> str | None:
@@ -65,7 +127,7 @@ def norm_needs(body: dict) -> list[str]:
     return [n] if isinstance(n, str) else list(n)
 
 
-def check_workflow(path: Path) -> list[str]:
+def check_workflow(path: Path, contexts: set[str] | None = None) -> list[str]:
     src = path.read_text(encoding="utf-8")
     try:
         doc = yaml.safe_load(src)
@@ -77,6 +139,7 @@ def check_workflow(path: Path) -> list[str]:
     fails: list[str] = []
     trig = triggers(doc)
     on_pr = "pull_request" in trig or "pull_request_target" in trig
+    is_required, _matched = produces_required(doc, contexts)
 
     # --- rule: concurrency -------------------------------------------------
     if on_pr:
@@ -117,13 +180,63 @@ def check_workflow(path: Path) -> list[str]:
                     f"would share this group, cancelling each other."
                 )
 
-    # --- rule: merge_group -------------------------------------------------
-    if on_pr and "merge_group" not in trig and exempt(src, "merge_group") is None:
+    # --- rule: merge_group (REQUIRED lanes) ---------------------------------
+    # Only lanes that produce merge-blocking contexts must fire on merge_group.
+    # Advisory lanes are forbidden there by advisory-merge-group below; the two
+    # rules together give exactly-one burst membership per lane class.
+    if (
+        on_pr
+        and is_required
+        and "merge_group" not in trig
+        and exempt(src, "merge_group") is None
+    ):
         fails.append(
-            f"{path.name}: runs on pull_request but not on merge_group, so the merge "
-            f"queue would not run it against the exact merge commit. Add `merge_group:` "
-            f"or `# physics-exempt: merge_group - <reason>`."
+            f"{path.name}: runs on pull_request and produces a required context but "
+            f"not on merge_group, so the merge queue would not run it against the "
+            f"exact merge commit. Add `merge_group:` or "
+            f"`# physics-exempt: merge_group - <reason>`."
         )
+
+    # --- rule: advisory-merge-group (ADVISORY lanes) ---------------------------
+    # A lane that produces zero required contexts purchases no merge information:
+    # the queue adjudicates it to nothing. Firing it there anyway holds one of 20
+    # shared slots per run while the required lanes it accompanies sit queued.
+    if (
+        "merge_group" in trig
+        and not is_required
+        and exempt(src, "advisory-merge-group") is None
+    ):
+        fails.append(
+            f"{path.name}: produces no required context but fires on merge_group, "
+            f"occupying merge-queue burst while adjudicating nothing. Remove "
+            f"`merge_group:` (keep push/schedule/dispatch for post-merge forensics) "
+            f"or `# physics-exempt: advisory-merge-group - <reason>`."
+        )
+
+    # --- rule: advisory-pr-paths (ADVISORY lanes) ------------------------------
+    # An advisory lane that fires unconditionally on every pull_request taxes
+    # every change for the benefit of none in particular. It must declare
+    # pull_request paths scoping it to its owned surface (including its own
+    # workflow file, docs/ci and the governance contract when CI-infra edits
+    # must exercise it), or exempt with a universality reason. Required lanes
+    # stay unfiltered: a path-filtered required check that never reports blocks
+    # its PR forever (P12 precedent).
+    if on_pr and not is_required and exempt(src, "advisory-pr-paths") is None:
+        pr_block = trig.get("pull_request")
+        has_paths = isinstance(pr_block, dict) and "paths" in (pr_block or {})
+        prt_block = trig.get("pull_request_target")
+        has_prt_paths = isinstance(prt_block, dict) and "paths" in (prt_block or {})
+        needs_paths = ("pull_request" in trig and not has_paths) or (
+            "pull_request_target" in trig and not has_prt_paths
+        )
+        if needs_paths:
+            fails.append(
+                f"{path.name}: produces no required context but fires on "
+                f"pull_request without `paths:`, taxing every PR. Scope it to its "
+                f"owned surface (including its own workflow file so CI-infra edits "
+                f"still exercise it) or "
+                f"`# physics-exempt: advisory-pr-paths - <reason>`."
+            )
 
     # --- rule: cache -------------------------------------------------------
     # Only jobs that actually install dependencies need a cache key. Adding one
@@ -198,9 +311,6 @@ def check_workflow(path: Path) -> list[str]:
     return fails
 
 
-CONTRACT = Path("contracts-internal/governance/b03_phase2_required_status_checks.main.json")
-
-
 def check_merge_queue_coverage(files: list[Path]) -> list[str]:
     """Every required context must be produced by a workflow that fires on merge_group.
 
@@ -267,9 +377,10 @@ def main() -> int:
         print("no workflow files found", file=sys.stderr)
         return 1
 
+    contexts = load_required_contexts()
     all_fails: list[str] = check_merge_queue_coverage(files)
     for path in files:
-        fails = check_workflow(path)
+        fails = check_workflow(path, contexts)
         all_fails.extend(fails)
         if VERBOSE and not fails:
             print(f"  ok  {path.name}")

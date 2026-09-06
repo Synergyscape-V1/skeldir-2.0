@@ -2,7 +2,7 @@
 
 **Audience:** any agent or engineer who adds a workflow, adds a phase, or changes `.github/workflows/`.
 **Enforced by:** `.github/workflows/ci-physics-guard.yml` → `scripts/ci/validate_ci_physics.py`
-**Non-vacuity:** `scripts/ci/test_ci_physics_negative_controls.py` (15 controls)
+**Non-vacuity:** `scripts/ci/test_ci_physics_negative_controls.py` (22 controls)
 
 If you only read one section, read [§5 Adding a phase](#5-adding-a-phase).
 
@@ -77,7 +77,7 @@ checks**. Only the ordering constraint was removed, and only where nothing
 depended on it: the jobs that read `needs.<job>.result`, and the jobs whose
 `needs:` a governance contract pins, all kept their edges (see rule 4).
 
-Nothing was removed, skipped, or made optional. All 75 required contexts remain
+Nothing was removed, skipped, or made optional. All 80 required contexts remain
 required — `Checkout Code` and `CI Physics Guard` were **added** to that set, the
 first because removing its edges meant its assertions had to block merges
 explicitly rather than by starving downstream contexts.
@@ -126,7 +126,7 @@ merge. The proof on an exact SHA always runs to completion.
 Every workflow with a `pull_request` trigger also declares `merge_group:`.
 
 **A merge queue is enabled on `main`**, validating the speculative merge commit —
-the object that actually becomes `main` — against all 75 required contexts before
+the object that actually becomes `main` — against all 80 required contexts before
 it lands.
 
 **`strict: true` is retained alongside it.** A first attempt set `strict: false`
@@ -230,7 +230,31 @@ the queue entry waiting until it times out, and the symptom reads as "the merge
 queue is broken" rather than "that workflow is missing a trigger". The repository
 has been bitten by the same shape before — `b2_5-p13-e2e-trust-closure.yml`
 records a path-filtered required check blocking PRs forever, found in P12 and
-again across P8-P11.
+again across P8–P11.
+
+### Rule 6 — advisory lanes stay out of the merge queue
+
+**A workflow that produces zero required contexts must not declare
+`merge_group:`.** The queue adjudicates it to nothing, so firing it there holds
+a shared slot while required lanes queue behind it. Advisory signal continues on
+`pull_request` (risk-selected, rule 7) and `push` (post-merge forensics).
+
+This removed 31 advisory workflows from merge-queue burst with zero authority
+change: every removed producer emits no required context, verified per-file by
+rule 5's coverage check running in the same guard invocation.
+
+### Rule 7 — advisory lanes scope their PR trigger with paths
+
+**A workflow that produces zero required contexts and fires on `pull_request`
+must declare `paths:` scoping it to its owned surface** — including its own
+workflow file, `docs/ci/**`, and the governance contract, so CI-infra edits
+still exercise it. Required lanes stay unfiltered: a path-filtered required
+check that never reports blocks its PR forever (the P12 precedent rule 2 cites).
+
+`empirical-validation.yml` is the one exemption: a cross-cutting
+directive-compliance validator that runs on every PR by design
+(`# physics-exempt: advisory-pr-paths`), advisory-only so merge authority is
+unaffected.
 
 ## 5. Adding a phase
 
@@ -256,7 +280,8 @@ Put the exemption **in the workflow it applies to**:
 # physics-exempt: concurrency - R0 determinism requires every run to complete
 ```
 
-Valid rules: `concurrency`, `merge_group`, `cache`, `fanout`. The exemption lives
+Valid rules: `concurrency`, `merge_group`, `cache`, `fanout`,
+`advisory-merge-group`, `advisory-pr-paths`. The exemption lives
 in the file, so it is visible in review and travels with the workflow. **There is
 deliberately no central exemption list** — a central list rots, drifts out of
 sync with reality, and becomes a liability nobody dares delete from.
@@ -284,11 +309,14 @@ sub-linearly**. That is the property future phases depend on.
 
 ## 7. What was deliberately not done
 
-- **Path filters.** Skipping the schema suite when no `.sql` changed is the
-  obvious answer and the one that rots: every new module needs a filter entry,
-  every missed entry is a silent hole in the trust chain, and the failure mode is
-  invisible until an auditor finds it. The P13 workflow header already documents
-  this defect being found in P12 and again across P8–P11.
+- **Path filters on required lanes.** Skipping the schema suite when no `.sql`
+  changed is the obvious answer and the one that rots: every new module needs a
+  filter entry, every missed entry is a silent hole in the trust chain, and the
+  failure mode is invisible until an auditor finds it. The P13 workflow header
+  already documents this defect being found in P12 and again across P8–P11.
+  Required lanes therefore stay unfiltered (rules 2 and 5). *Advisory* lanes are
+  different — a missed advisory signal delays feedback but cannot block a merge —
+  so rules 6–7 risk-select them under guard enforcement instead of convention.
 - **Splitting `ci.yml`.** Its 69 jobs already run concurrently; splitting
   redistributes the same CPU against the same cap and returns zero minutes. The
   file's size is a maintainability problem, not a throughput one.

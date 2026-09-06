@@ -1,0 +1,83 @@
+{
+ "before": {
+  "measured_at": "2026-09-06T17:00Z",
+  "head_sha": "3dc192b74890c50de521b74c6a2f7a4361faf94b",
+  "burst_same_minute": {
+   "pull_request": 48,
+   "push_main": 52,
+   "merge_group": 53
+  },
+  "ci_run_id": 34047052521,
+  "ci_wall_min": 38.63,
+  "queue_med_min": 20.88,
+  "queue_p90_min": 26.98,
+  "queue_max_min": 37.1,
+  "exec_med_min": 1.27,
+  "exec_max_min": 14.15,
+  "n_jobs": 79,
+  "pip_install_occurrences": 352,
+  "services_blocks": 93,
+  "setup_python_pip_cache_files": 50,
+  "actions_cache_files": 0,
+  "required_live": 80,
+  "required_contract": 80,
+  "required_match": true,
+  "docker_referencing_workflows": [
+   "b2_4-gate-dry-run.yml",
+   "b2_5-p13-e2e-trust-closure.yml"
+  ],
+  "merge_group_workflows": 62,
+  "paths_filtered": 31,
+  "nonrequired_merge_group": 31,
+  "nonrequired_pr_unfiltered": 17,
+  "pull_request_target_workflows": 4
+ },
+ "after_static": {
+  "merge_group_workflows": 22,
+  "merge_group_reduction": "62->22 source declarations; live merge-group burst 53->~22 predicted (required-only)",
+  "nonrequired_merge_group": 0,
+  "nonrequired_pr_unfiltered": 0,
+  "advisory_exemptions": [
+   "empirical-validation.yml advisory-pr-paths (cross-cutting by design)"
+  ],
+  "pip_cache": "setup-python pip cache retained (50 files); Playwright browser cache added to 3 jobs (B1.5-P7, phase-gates, phase-chain)",
+  "guard": "validate_ci_physics.py GREEN (64 workflows)",
+  "nc": "22/22",
+  "p13_governance": "validator GREEN; NC suite GREEN",
+  "coverage": "80/80 required contexts produced by merge_group-firing workflows",
+  "yaml": "all 33 edited workflow files parse"
+ },
+ "falsification": [
+  {
+   "fault": "F1 trigger/path-selection corruption (advisory universal fan-out)",
+   "guard_exit": 1,
+   "red": true,
+   "needle_hit": true
+  },
+  {
+   "fault": "F2 cache-identity corruption (uncached pip install)",
+   "guard_exit": 1,
+   "red": true,
+   "needle_hit": true
+  },
+  {
+   "fault": "F3 required-context/governance removal (required lane drops merge_group)",
+   "guard_exit": 1,
+   "red": true,
+   "needle_hit": true
+  },
+  {
+   "fault": "F4 wrapper/governance baseline (P13 validator on remediated tree)",
+   "guard_exit": 0,
+   "red": false
+  },
+  {
+   "fault": "F5 production-artifact parity (NC-P14-07 present in P13 lane; executed per-PR by lane, not re-run locally)",
+   "guard_exit": 0,
+   "red": false,
+   "lane_owned": true
+  }
+ ],
+ "vac_recheck": "disposable worktree: unindexed pack RED (exact causal message) -> indexed GREEN; basename nuance differs from 2026-09-05 audit (now passes) - sensitivity confirmed, noted",
+ "residual": "live queue/wall re-measurement requires disposable PRs post-merge; required-lane consolidation (ci.yml 69-job monolith) proposed as Phase 2 with 10-run paired corpus per directive 4.6"
+}
