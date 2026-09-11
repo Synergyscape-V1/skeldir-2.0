@@ -20,6 +20,7 @@ MUTATOR = ROOT / "scripts/ci/_b26_p1_controlled_defect.py"
 CONTRACT = ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 SEMANTIC_MODULE = ROOT / "backend/app/finance_reconciliation/semantic_contract.py"
 COVERAGE_AUTHORITY_MODULE = ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
+CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 
 STATIC_CONTROLS = (
@@ -49,6 +50,31 @@ STATIC_CONTROLS = (
         "unregistered_coverage_origin",
         SEMANTIC_MODULE,
         "b26_unregistered_coverage_origin",
+    ),
+    (
+        "tenant_authority_bypass",
+        COVERAGE_AUTHORITY_MODULE,
+        "coverage_tenant_authority_not_enforced",
+    ),
+    (
+        "session_capability_injection",
+        CANONICAL_SINK_MODULE,
+        "canonical_executor_accepts_session_capability",
+    ),
+    (
+        "final_field_override_permit",
+        CANONICAL_SINK_MODULE,
+        "canonical_adjunct_guard_not_enforced",
+    ),
+    (
+        "successor_provenance_omission",
+        CONTRACT,
+        "semantic_contract_refused",
+    ),
+    (
+        "unregistered_canonical_output",
+        SEMANTIC_MODULE,
+        "b26_unregistered_canonical_output",
     ),
 )
 

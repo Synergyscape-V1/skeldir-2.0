@@ -28,7 +28,21 @@ jobs:
   b26-p1-static-authority:
     name: B2.6-P1 Static Semantic Authority
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v4
@@ -57,6 +71,22 @@ jobs:
           python scripts/ci/test_b26_p1_negative_controls.py \
             --evidence-out artifacts/b26_p1/static/negative-controls.json
           git diff --exit-code
+
+      - name: Provision consequence-battery database
+        run: |
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database-name skeldir_b26_p1_consequence
+          MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence \
+          DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence \
+            python -m alembic upgrade head
+
+      - name: Prove Corrective-V consequence cells (V-1 through V-7)
+        env:
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python -m pytest backend/tests/finance_reconciliation/ -q
 
       - name: Upload static authority evidence
         uses: actions/upload-artifact@v4

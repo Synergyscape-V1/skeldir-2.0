@@ -1,20 +1,24 @@
 phase_id: B2.6-P1
-contract_version: b2.6-p1-semantic-authority-v4
+contract_version: b2.6-p1-semantic-authority-v5
 maturity_mode: DESIGN_PARTNER_MODE
 authority_kind: semantic_constitution_not_financial_result
 
-# Version-identity record (Corrective IV): this constitution replaces the
-# Corrective-III transferable seal with scope-only sovereign re-derivation.
-# No caller-supplied observation can become canonical; canonical sinks accept
-# scope identity only and invoke the sovereign B2.3 boundary themselves, with
-# mathematics independently re-derived from the integer legs. Diagnostic
-# output carries only the one-way tenant hash. Two semantically different
-# constitutions MUST NOT share a human-readable version; identity is
-# (contract_path, contract_version, source_sha256). Historical v1/v2/v3 proof
-# artifacts remain distinguishable by version AND hash.
+# Version-identity record (Corrective V): this constitution replaces the
+# Corrective-IV scope-coherence seam with executable consumer authority.
+# Canonical truth is available only through the governed sink framework,
+# which owns its database capability, enforces transaction-bound tenant
+# unity, re-derives sovereign B2.3 state on every execution, and
+# materializes authoritative fields itself after projection callbacks
+# return. No caller-supplied observation can become canonical; mathematics
+# is re-derived from integer legs under a pinned Decimal context, and
+# diagnostic/external output carries only the one-way tenant hash. Two
+# semantically different constitutions MUST NOT share a human-readable
+# version; identity is (contract_path, contract_version, source_sha256).
+# Historical v1/v2/v3/v4 proof artifacts remain distinguishable by version
+# AND hash.
 supersession:
-  supersedes: b2.6-p1-semantic-authority-v3
-  reason: scope_only_sovereign_rederivation_no_transferable_token_with_math_rederivation_and_tenant_hash_diagnostic
+  supersedes: b2.6-p1-semantic-authority-v4
+  reason: executable_canonical_consumer_with_tenant_unity_and_framework_owned_final_fields
 
 migration_authority:
   schema_change_required_in_P1: false
@@ -67,14 +71,16 @@ coverage_authority:
     total_business_minor: 100000
     required_percent: "95.00"
     forbidden_percent: "76.00"
-  # Scope-only sovereign authority seam (Corrective IV): canonical coverage is
-  # whatever resolve_canonical_coverage re-derives from the sovereign B2.3
-  # source for a governed scope in the same execution. There is no
-  # transferable token: admit_canonical_verification_coverage always refuses
-  # caller-supplied observations (fail-closed), mathematics is re-derived
-  # from integer legs through an independent oracle, and diagnostic output
-  # carries only the one-way tenant hash. Numeric coincidence with the golden
-  # vector never confers authority.
+  # Scope-only sovereign authority seam (Corrective V): canonical coverage is
+  # whatever the governed sink framework re-derives from the sovereign B2.3
+  # source for a server-derived scope in the same execution, through its own
+  # governed database capability, with transaction-bound tenant unity proven
+  # before aggregation. There is no transferable token:
+  # admit_canonical_verification_coverage always refuses caller-supplied
+  # observations (fail-closed), mathematics is re-derived from integer legs
+  # through an independent oracle under a pinned Decimal context, and
+  # diagnostic/external output carries only the one-way tenant hash. Numeric
+  # coincidence with the golden vector never confers authority.
   canonical_admission_seam:
     module: app.finance_reconciliation.coverage_authority
     sealed_type: app.finance_reconciliation.coverage_authority.CanonicalVerificationCoverage
@@ -88,6 +94,11 @@ coverage_authority:
     admitter_behavior: always_refuses_caller_observation_fail_closed
     mathematics: independently_rederived_from_integer_minor_legs
     diagnostic_tenant: one_way_hash_only_raw_uuid_never_emitted
+    tenant_authority_mode: transaction_bound_db_tenant_equals_scope_tenant
+    database_capability_mode: framework_owned_governed_session_factory_only
+    sink_framework: app.finance_reconciliation.canonical_sink.execute_governed_sink
+    final_field_owner: canonical_sink_framework_post_callback_materialization
+    provenance_law: re_derive_on_read_at_every_canonical_boundary
 
 truth_status:
   coverage_is_not_final_finance_confirmation: true
@@ -283,6 +294,38 @@ prohibited_P1_product_machinery:
   - finance_reconciliation_export
   - TrustEnvelope_reconciliation_fields
 
+# Executable canonical-consumer authority (Corrective V): canonical status
+# is available only through the governed sink framework executing a
+# registered sink implementation. The framework accepts scope only, owns
+# its database capability, enforces tenant unity, re-derives sovereign
+# truth on every execution, and materializes authoritative fields itself.
+canonical_sink_framework:
+  module: app.finance_reconciliation.canonical_sink
+  executor: app.finance_reconciliation.canonical_sink.execute_governed_sink
+  final_output_type: app.finance_reconciliation.canonical_sink.FinalCanonicalOutput
+  governed_sink_ids:
+    - future_B2.6_deterministic_reconciliation_projection_boundary
+    - future_finance_projection
+    - future_B2.6_TrustEnvelope_projection
+  provenance_mode: RE_DERIVE_ON_READ
+  projection_policy: adjunct_only_authoritative_fields_framework_owned
+  tenant_authority_mode: transaction_bound_db_tenant_equals_scope_tenant
+  database_capability_mode: framework_owned_governed_session_factory_only
+  governed_principals:
+    - app_user
+    - app_worker
+
+# Successor durable-provenance constitution (Corrective V): P1 creates no
+# durable canonical state, but no later phase may register canonical
+# persistence without declaring one governed provenance mode and its
+# required runtime proofs. Omission is refused by machine law, not prose.
+successor_provenance_law:
+  status: provenance_mode_required_no_persistence_in_P1
+  allowed_modes:
+    - RE_DERIVE_ON_READ
+    - DURABLE_SOURCE_BINDING
+  enforcement: app.finance_reconciliation.canonical_sink.authorize_successor_persistence+static_successor_fence
+
 # Phase-lifetime gate for product machinery (Corrective II-2): at P1 closure
 # (status none) the AST product-machinery fence is enforced. A governed later
 # phase retires this closure check ONLY via an explicit recorded authorization
@@ -336,6 +379,8 @@ authority_classes:
   proof_artifact_identity_requirements: PERMANENT_MACHINE_ENFORCED
   prohibited_P1_product_machinery: PHASE_LOCAL_CLOSURE_FACT
   successor_product_authorization: PERMANENT_MACHINE_ENFORCED
+  canonical_sink_framework: PERMANENT_MACHINE_ENFORCED
+  successor_provenance_law: PERMANENT_MACHINE_ENFORCED
   closure_snapshot: PHASE_LOCAL_CLOSURE_FACT
 
 closure_snapshot:
@@ -346,6 +391,6 @@ closure_snapshot:
     - coverage_authority.py
     - legacy_quarantine.py
   p1_closure_proof_cell_count: 5
-  p1_closure_contract_version: b2.6-p1-semantic-authority-v4
+  p1_closure_contract_version: b2.6-p1-semantic-authority-v5
   p1_closure_collapsed_reason_count: 9
   note: historical_closure_facts_not_permanent_law

@@ -65,11 +65,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.finance_reconciliation.tenant_authority import assert_tenant_authority
 
 if TYPE_CHECKING:  # Import-time light: sovereign modules load only on use.
     from app.revenue_verification.verification_coverage import (
@@ -221,9 +223,14 @@ def independent_coverage_percent(
         )
     if denominator == 0:
         return (_INDEPENDENT_ZERO_PERCENT, True)
-    percent = (
-        (Decimal(numerator) * _INDEPENDENT_PERCENT) / Decimal(denominator)
-    ).quantize(_INDEPENDENT_QUANTIZER, rounding=ROUND_HALF_UP)
+    # Pinned local context: ambient Decimal precision must never couple into
+    # canonical mathematics. Sovereign compute and this oracle share explicit
+    # half-up two-place law under identical precision.
+    with localcontext() as context:
+        context.prec = 28
+        percent = (
+            (Decimal(numerator) * _INDEPENDENT_PERCENT) / Decimal(denominator)
+        ).quantize(_INDEPENDENT_QUANTIZER, rounding=ROUND_HALF_UP)
     return (percent, False)
 
 
@@ -322,7 +329,14 @@ async def resolve_canonical_coverage(
     computation through the independent oracle, and returns the execution
     result. The return value is canonical in this execution; serializing,
     copying, or transferring it to another execution strips authority.
+
+    Corrective V tenant law: the transaction-bound database tenant observed
+    on ``session`` must be present and equal to ``tenant_id`` before the
+    sovereign read and unchanged after it. Divergence or absence refuses
+    here -- it can never become a canonical zero downstream. Only governed
+    least-privilege principals (``app_user``/``app_worker``) are admitted.
     """
+    await assert_tenant_authority(session, tenant_id)
     sovereign = _sovereign()
     platforms = _normalize_platforms(supported_platforms)
     aggregate = await sovereign.fetch_verification_coverage_aggregate(
@@ -333,6 +347,7 @@ async def resolve_canonical_coverage(
         supported_platforms=platforms,
         currency_code=currency_code,
     )
+    await assert_tenant_authority(session, tenant_id)
     result = sovereign.VERIFICATION_COVERAGE.compute(aggregate)
     candidate = CanonicalVerificationCoverage(
         aggregate=aggregate,
