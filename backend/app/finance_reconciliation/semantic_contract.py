@@ -28,8 +28,8 @@ _REPO_ROOT = (
 B26_P1_SEMANTIC_CONTRACT_PATH = (
     _REPO_ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 )
-B26_P1_CONTRACT_VERSION = "b2.6-p1-semantic-authority-v3"
-B26_P1_SUPERSEDES_VERSION = "b2.6-p1-semantic-authority-v2"
+B26_P1_CONTRACT_VERSION = "b2.6-p1-semantic-authority-v4"
+B26_P1_SUPERSEDES_VERSION = "b2.6-p1-semantic-authority-v3"
 
 _REQUIRED_TOP_LEVEL = frozenset(
     {
@@ -403,7 +403,7 @@ def _validate_contract(document: Mapping[str, Any]) -> None:
         "fetch_verification_coverage_aggregate"
         "+app.revenue_verification.verification_coverage."
         "VERIFICATION_COVERAGE.compute"
-        and seam_decl.get("law") == "only_sealed_B2.3_origin_may_be_canonical",
+        and seam_decl.get("law") == "only_sovereign_rederivation_may_be_canonical",
         "b26_p1_coverage_admission_seam_drift",
     )
 

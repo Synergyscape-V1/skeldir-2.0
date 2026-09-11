@@ -153,8 +153,8 @@ def legacy_network_client_in_canonical_surface() -> None:
 def legacy_route_reference_in_canonical_surface() -> None:
     _replace_once(
         COVERAGE_AUTHORITY_MODULE,
-        'CANONICAL_COVERAGE_LAW = "only_sealed_B2.3_origin_may_be_canonical"\n',
-        'CANONICAL_COVERAGE_LAW = "only_sealed_B2.3_origin_may_be_canonical"\n'
+        'CANONICAL_COVERAGE_LAW = "only_sovereign_rederivation_may_be_canonical"\n',
+        'CANONICAL_COVERAGE_LAW = "only_sovereign_rederivation_may_be_canonical"\n'
         '_NC_LEGACY_ROUTE = "/api/reconciliation/status"  # NC-B26-P1-III-ROUTE\n',
         defect="legacy_route_reference_in_canonical_surface",
     )

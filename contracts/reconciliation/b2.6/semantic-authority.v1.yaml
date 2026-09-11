@@ -1,17 +1,20 @@
 phase_id: B2.6-P1
-contract_version: b2.6-p1-semantic-authority-v3
+contract_version: b2.6-p1-semantic-authority-v4
 maturity_mode: DESIGN_PARTNER_MODE
 authority_kind: semantic_constitution_not_financial_result
 
-# Version-identity record (Corrective III): this constitution materially
-# extends the v2 taxonomy with a positive coverage-origin admission seam, an
-# explicit legacy-authority quarantine, and Alembic-native migration physics.
-# Two semantically different constitutions MUST NOT share a human-readable
-# version; identity is (contract_path, contract_version, source_sha256).
-# Historical v1/v2 proof artifacts remain distinguishable by version AND hash.
+# Version-identity record (Corrective IV): this constitution replaces the
+# Corrective-III transferable seal with scope-only sovereign re-derivation.
+# No caller-supplied observation can become canonical; canonical sinks accept
+# scope identity only and invoke the sovereign B2.3 boundary themselves, with
+# mathematics independently re-derived from the integer legs. Diagnostic
+# output carries only the one-way tenant hash. Two semantically different
+# constitutions MUST NOT share a human-readable version; identity is
+# (contract_path, contract_version, source_sha256). Historical v1/v2/v3 proof
+# artifacts remain distinguishable by version AND hash.
 supersession:
-  supersedes: b2.6-p1-semantic-authority-v2
-  reason: positive_B2.3_coverage_origin_admission_with_legacy_quarantine_and_native_migration_physics
+  supersedes: b2.6-p1-semantic-authority-v3
+  reason: scope_only_sovereign_rederivation_no_transferable_token_with_math_rederivation_and_tenant_hash_diagnostic
 
 migration_authority:
   schema_change_required_in_P1: false
@@ -64,9 +67,14 @@ coverage_authority:
     total_business_minor: 100000
     required_percent: "95.00"
     forbidden_percent: "76.00"
-  # Positive origin admission seam (Corrective III): canonical coverage is
-  # whatever the sovereign producer below seals through the admission module.
-  # Numeric coincidence with the golden vector never confers authority.
+  # Scope-only sovereign authority seam (Corrective IV): canonical coverage is
+  # whatever resolve_canonical_coverage re-derives from the sovereign B2.3
+  # source for a governed scope in the same execution. There is no
+  # transferable token: admit_canonical_verification_coverage always refuses
+  # caller-supplied observations (fail-closed), mathematics is re-derived
+  # from integer legs through an independent oracle, and diagnostic output
+  # carries only the one-way tenant hash. Numeric coincidence with the golden
+  # vector never confers authority.
   canonical_admission_seam:
     module: app.finance_reconciliation.coverage_authority
     sealed_type: app.finance_reconciliation.coverage_authority.CanonicalVerificationCoverage
@@ -74,7 +82,12 @@ coverage_authority:
     admitter: app.finance_reconciliation.coverage_authority.admit_canonical_verification_coverage
     scope_verifier: app.finance_reconciliation.coverage_authority.require_canonical_scope
     sovereign_producer: app.revenue_verification.verification_coverage.fetch_verification_coverage_aggregate+app.revenue_verification.verification_coverage.VERIFICATION_COVERAGE.compute
-    law: only_sealed_B2.3_origin_may_be_canonical
+    law: only_sovereign_rederivation_may_be_canonical
+    provenance_model: scope_only_sovereign_rederivation_no_transferable_token
+    resolver: app.finance_reconciliation.coverage_authority.resolve_canonical_coverage
+    admitter_behavior: always_refuses_caller_observation_fail_closed
+    mathematics: independently_rederived_from_integer_minor_legs
+    diagnostic_tenant: one_way_hash_only_raw_uuid_never_emitted
 
 truth_status:
   coverage_is_not_final_finance_confirmation: true
@@ -333,6 +346,6 @@ closure_snapshot:
     - coverage_authority.py
     - legacy_quarantine.py
   p1_closure_proof_cell_count: 5
-  p1_closure_contract_version: b2.6-p1-semantic-authority-v3
+  p1_closure_contract_version: b2.6-p1-semantic-authority-v4
   p1_closure_collapsed_reason_count: 9
   note: historical_closure_facts_not_permanent_law
