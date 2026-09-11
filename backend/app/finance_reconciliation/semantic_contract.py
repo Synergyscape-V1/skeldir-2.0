@@ -28,8 +28,8 @@ _REPO_ROOT = (
 B26_P1_SEMANTIC_CONTRACT_PATH = (
     _REPO_ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 )
-B26_P1_CONTRACT_VERSION = "b2.6-p1-semantic-authority-v4"
-B26_P1_SUPERSEDES_VERSION = "b2.6-p1-semantic-authority-v3"
+B26_P1_CONTRACT_VERSION = "b2.6-p1-semantic-authority-v5"
+B26_P1_SUPERSEDES_VERSION = "b2.6-p1-semantic-authority-v4"
 
 _REQUIRED_TOP_LEVEL = frozenset(
     {
@@ -58,6 +58,8 @@ _REQUIRED_TOP_LEVEL = frozenset(
         "proof_artifact_identity_requirements",
         "prohibited_P1_product_machinery",
         "successor_product_authorization",
+        "canonical_sink_framework",
+        "successor_provenance_law",
         "authority_classes",
         "closure_snapshot",
     }
@@ -254,6 +256,8 @@ B26_REQUIRED_AUTHORITY_CLASSES = {    "phase_id": "PERMANENT_MACHINE_ENFORCED",
     "proof_artifact_identity_requirements": "PERMANENT_MACHINE_ENFORCED",
     "prohibited_P1_product_machinery": "PHASE_LOCAL_CLOSURE_FACT",
     "successor_product_authorization": "PERMANENT_MACHINE_ENFORCED",
+    "canonical_sink_framework": "PERMANENT_MACHINE_ENFORCED",
+    "successor_provenance_law": "PERMANENT_MACHINE_ENFORCED",
     "closure_snapshot": "PHASE_LOCAL_CLOSURE_FACT",
 }
 
@@ -405,6 +409,75 @@ def _validate_contract(document: Mapping[str, Any]) -> None:
         "VERIFICATION_COVERAGE.compute"
         and seam_decl.get("law") == "only_sovereign_rederivation_may_be_canonical",
         "b26_p1_coverage_admission_seam_drift",
+    )
+    _require(
+        seam_decl.get("tenant_authority_mode")
+        == "transaction_bound_db_tenant_equals_scope_tenant",
+        "b26_p1_tenant_authority_mode_drift",
+    )
+    _require(
+        seam_decl.get("database_capability_mode")
+        == "framework_owned_governed_session_factory_only",
+        "b26_p1_database_capability_mode_drift",
+    )
+    _require(
+        seam_decl.get("sink_framework")
+        == "app.finance_reconciliation.canonical_sink.execute_governed_sink",
+        "b26_p1_sink_framework_identity_drift",
+    )
+    _require(
+        seam_decl.get("final_field_owner")
+        == "canonical_sink_framework_post_callback_materialization",
+        "b26_p1_final_field_owner_drift",
+    )
+    _require(
+        seam_decl.get("provenance_law")
+        == "re_derive_on_read_at_every_canonical_boundary",
+        "b26_p1_provenance_law_drift",
+    )
+
+    sink_framework = document["canonical_sink_framework"]
+    _require(isinstance(sink_framework, dict), "b26_p1_sink_framework_not_object")
+    _require(
+        sink_framework.get("module") == "app.finance_reconciliation.canonical_sink"
+        and sink_framework.get("executor")
+        == "app.finance_reconciliation.canonical_sink.execute_governed_sink"
+        and sink_framework.get("final_output_type")
+        == "app.finance_reconciliation.canonical_sink.FinalCanonicalOutput"
+        and sink_framework.get("provenance_mode") == "RE_DERIVE_ON_READ"
+        and sink_framework.get("projection_policy")
+        == "adjunct_only_authoritative_fields_framework_owned"
+        and sink_framework.get("tenant_authority_mode")
+        == "transaction_bound_db_tenant_equals_scope_tenant"
+        and sink_framework.get("database_capability_mode")
+        == "framework_owned_governed_session_factory_only",
+        "b26_p1_sink_framework_drift",
+    )
+    _require(
+        set(sink_framework.get("governed_sink_ids", []))
+        == {
+            "future_B2.6_deterministic_reconciliation_projection_boundary",
+            "future_finance_projection",
+            "future_B2.6_TrustEnvelope_projection",
+        },
+        "b26_p1_sink_framework_ids_drift",
+    )
+    _require(
+        set(sink_framework.get("governed_principals", []))
+        == {"app_user", "app_worker"},
+        "b26_p1_sink_framework_principals_drift",
+    )
+    successor_law = document["successor_provenance_law"]
+    _require(isinstance(successor_law, dict), "b26_p1_successor_law_not_object")
+    _require(
+        successor_law.get("status")
+        == "provenance_mode_required_no_persistence_in_P1"
+        and set(successor_law.get("allowed_modes", []))
+        == {"RE_DERIVE_ON_READ", "DURABLE_SOURCE_BINDING"}
+        and successor_law.get("enforcement")
+        == "app.finance_reconciliation.canonical_sink."
+        "authorize_successor_persistence+static_successor_fence",
+        "b26_p1_successor_provenance_law_drift",
     )
 
     truth_status = document["truth_status"]

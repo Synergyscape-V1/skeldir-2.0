@@ -116,7 +116,7 @@ def test_b26_p1_authority_classes_distinguish_permanent_from_closure() -> None:
 def test_b26_p1_version_identity_is_unambiguous() -> None:
     contract = load_b26_p1_semantic_contract()
 
-    assert B26_P1_CONTRACT_VERSION == "b2.6-p1-semantic-authority-v4"
+    assert B26_P1_CONTRACT_VERSION == "b2.6-p1-semantic-authority-v5"
     assert contract["contract_version"] == B26_P1_CONTRACT_VERSION
     supersession = contract["supersession"]
     assert supersession["supersedes"] == B26_P1_SUPERSEDES_VERSION
@@ -172,6 +172,28 @@ def test_b26_p1_canonical_admission_seam_is_declared() -> None:
     assert (
         seam["resolver"]
         == "app.finance_reconciliation.coverage_authority.resolve_canonical_coverage"
+    )
+    # Corrective V executable authority: tenant unity, owned capability,
+    # framework-owned final fields, re-derive-on-read at every boundary.
+    assert (
+        seam["tenant_authority_mode"]
+        == "transaction_bound_db_tenant_equals_scope_tenant"
+    )
+    assert (
+        seam["database_capability_mode"]
+        == "framework_owned_governed_session_factory_only"
+    )
+    assert (
+        seam["sink_framework"]
+        == "app.finance_reconciliation.canonical_sink.execute_governed_sink"
+    )
+    assert (
+        seam["final_field_owner"]
+        == "canonical_sink_framework_post_callback_materialization"
+    )
+    assert (
+        seam["provenance_law"]
+        == "re_derive_on_read_at_every_canonical_boundary"
     )
     assert contract["authority_classes"]["coverage_authority.canonical_admission_seam"] == (
         "PERMANENT_MACHINE_ENFORCED"
@@ -444,6 +466,64 @@ def test_b26_p1_canonical_sinks_are_positively_governed() -> None:
     assert not is_governed_canonical_sink("neutral_analytics_helper")
     with pytest.raises(CanonicalCoverageAuthorityError):
         require_governed_canonical_sink("neutral_analytics_helper")
+
+
+def test_b26_p1_canonical_sink_framework_is_declared() -> None:
+    contract = load_b26_p1_semantic_contract()
+    framework = contract["canonical_sink_framework"]
+
+    assert (
+        framework["module"] == "app.finance_reconciliation.canonical_sink"
+    )
+    assert (
+        framework["executor"]
+        == "app.finance_reconciliation.canonical_sink.execute_governed_sink"
+    )
+    assert (
+        framework["final_output_type"]
+        == "app.finance_reconciliation.canonical_sink.FinalCanonicalOutput"
+    )
+    assert set(framework["governed_sink_ids"]) == {
+        "future_B2.6_deterministic_reconciliation_projection_boundary",
+        "future_finance_projection",
+        "future_B2.6_TrustEnvelope_projection",
+    }
+    assert framework["provenance_mode"] == "RE_DERIVE_ON_READ"
+    assert set(framework["governed_principals"]) == {"app_user", "app_worker"}
+    assert contract["authority_classes"]["canonical_sink_framework"] == (
+        "PERMANENT_MACHINE_ENFORCED"
+    )
+
+    law = contract["successor_provenance_law"]
+    assert law["status"] == "provenance_mode_required_no_persistence_in_P1"
+    assert set(law["allowed_modes"]) == {
+        "RE_DERIVE_ON_READ",
+        "DURABLE_SOURCE_BINDING",
+    }
+    assert contract["authority_classes"]["successor_provenance_law"] == (
+        "PERMANENT_MACHINE_ENFORCED"
+    )
+
+
+def test_b26_p1_canonical_sinks_are_executably_registered() -> None:
+    from app.finance_reconciliation.canonical_sink import (
+        SINK_REGISTRY,
+        executor_signature_has_no_session_capability,
+        require_registered_sink,
+    )
+
+    assert set(SINK_REGISTRY) == {
+        "future_B2.6_deterministic_reconciliation_projection_boundary",
+        "future_finance_projection",
+        "future_B2.6_TrustEnvelope_projection",
+    }
+    for sink_id in SINK_REGISTRY:
+        registration = require_registered_sink(sink_id)
+        assert registration.contract_version == B26_P1_CONTRACT_VERSION
+        assert registration.required_runtime_proof_ids
+    # Session injection is structurally impossible: the executor takes no
+    # session/engine/factory capability parameter at all.
+    assert executor_signature_has_no_session_capability() is True
 
 
 def test_b26_p1_migration_graph_is_alembic_native() -> None:

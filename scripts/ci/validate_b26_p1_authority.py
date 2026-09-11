@@ -221,6 +221,16 @@ CANONICAL_SEALED_TYPE_NAME = "CanonicalVerificationCoverage"
 CANONICAL_SEAL_DEFINING_FILE = (
     "backend/app/finance_reconciliation/coverage_authority.py"
 )
+# Executable canonical-output fence (Corrective V): the framework-owned
+# final output type may only be constructed inside its defining framework
+# module; every other first-party application module constructing it is an
+# unregistered canonical origin and is RED. Ordinary analytics that never
+# touch this type stay GREEN: canonicality is the governed interface, not
+# the ability to compute a ratio.
+FINAL_OUTPUT_TYPE_NAME = "FinalCanonicalOutput"
+FINAL_OUTPUT_DEFINING_FILE = (
+    "backend/app/finance_reconciliation/canonical_sink.py"
+)
 # AST names that would create P1-prohibited product machinery inside a B2.6
 # surface (tables, APIs, workers/schedulers, outbox). Docstrings/comments are
 # not AST names, so prose mentioning these words stays GREEN.
@@ -923,6 +933,25 @@ def _validate_repo_wide_false_authority(
                             f"b26_unregistered_coverage_origin:{rel}:{node.lineno}"
                         )
                         break
+        # Corrective V executable-output fence: the framework-owned final
+        # output type may only be constructed inside the canonical-sink
+        # framework module. Ordinary analytics never names it (GREEN).
+        if rel != FINAL_OUTPUT_DEFINING_FILE:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    func = node.func
+                    called = (
+                        func.id
+                        if isinstance(func, ast.Name)
+                        else func.attr
+                        if isinstance(func, ast.Attribute)
+                        else ""
+                    )
+                    if called == FINAL_OUTPUT_TYPE_NAME:
+                        violations.append(
+                            f"b26_unregistered_canonical_output:{rel}:{node.lineno}"
+                        )
+                        break
         if _is_b26_surface(path) or rel in KNOWN_GRANDFATHERED_SURFACE_SIGNATURES:
             # Canonical package already checked above to avoid duplicate lines.
             if path.is_relative_to(B26_PACKAGE):
@@ -1070,10 +1099,232 @@ def _validate_governance(violations: list[str], details: dict[str, Any]) -> None
     details["aggregate_producers"] = sorted(PRODUCER_JOBS)
 
 
+def _validate_corrective_v_authority(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Executable Corrective-V authority: registry, executor, guards, law."""
+    sys.path.insert(0, str(BACKEND))
+    try:
+        from app.finance_reconciliation import tenant_authority as authority_module  # noqa: PLC0415
+        from app.finance_reconciliation.canonical_sink import (  # noqa: PLC0415
+            SINK_REGISTRY,
+            CanonicalSinkError,
+            FinalCanonicalOutput,
+            _project_external_fields,
+            authorize_successor_persistence,
+            deregister_successor_persistence,
+            executor_signature_has_no_session_capability,
+            register_successor_persistence,
+            reject_authoritative_adjunct,
+            require_registered_sink,
+        )
+        from app.finance_reconciliation.coverage_authority import (  # noqa: PLC0415
+            GOVERNED_CANONICAL_SINK_NAMES,
+        )
+        from app.finance_reconciliation.semantic_contract import (  # noqa: PLC0415
+            B26_P1_CONTRACT_VERSION,
+            load_b26_p1_semantic_contract,
+        )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"corrective_v_authority_unresolvable:{exc}")
+        return
+
+    try:
+        contract = load_b26_p1_semantic_contract()
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"semantic_contract_refused:{exc}")
+        return
+    seam = contract["coverage_authority"]["canonical_admission_seam"]
+    framework = contract["canonical_sink_framework"]
+    if seam.get("tenant_authority_mode") != authority_module.TENANT_AUTHORITY_MODE:
+        violations.append("corrective_v_tenant_authority_mode_mismatch")
+    if seam.get("database_capability_mode") != authority_module.DATABASE_CAPABILITY_MODE:
+        violations.append("corrective_v_database_capability_mode_mismatch")
+    if (
+        seam.get("sink_framework")
+        != "app.finance_reconciliation.canonical_sink.execute_governed_sink"
+    ):
+        violations.append("corrective_v_sink_framework_identity_mismatch")
+    if set(framework.get("governed_sink_ids", [])) != set(
+        GOVERNED_CANONICAL_SINK_NAMES
+    ):
+        violations.append("corrective_v_sink_id_set_mismatch")
+    if set(framework.get("governed_principals", [])) != set(
+        authority_module.GOVERNED_CANONICAL_PRINCIPALS
+    ):
+        violations.append("corrective_v_governed_principals_mismatch")
+
+    # Every governed sink id resolves to an importable executable with a
+    # versioned registration bound to the current contract.
+    for sink_id in sorted(GOVERNED_CANONICAL_SINK_NAMES):
+        try:
+            registration = require_registered_sink(sink_id)
+        except Exception:  # noqa: BLE001
+            violations.append(f"corrective_v_sink_not_executable:{sink_id}")
+            continue
+        if registration.contract_version != B26_P1_CONTRACT_VERSION:
+            violations.append(f"corrective_v_sink_contract_stale:{sink_id}")
+        if not registration.required_runtime_proof_ids:
+            violations.append(f"corrective_v_sink_proofs_missing:{sink_id}")
+        try:
+            module_name, _, attribute = registration.implementation.rpartition(".")
+            implementation = getattr(
+                importlib.import_module(module_name), attribute
+            )
+        except Exception:  # noqa: BLE001
+            violations.append(f"corrective_v_sink_implementation_dead:{sink_id}")
+            continue
+        if not callable(implementation):
+            violations.append(f"corrective_v_sink_implementation_dead:{sink_id}")
+    try:
+        if require_registered_sink("neutral_analytics_helper"):
+            violations.append("corrective_v_unregistered_sink_admitted")
+    except Exception:  # noqa: BLE001
+        pass
+
+    # The canonical executor must take no session capability parameter:
+    # injection is structurally impossible, not merely refused.
+    try:
+        if not executor_signature_has_no_session_capability():
+            violations.append("canonical_executor_accepts_session_capability")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_executor_signature_unverifiable:{exc}")
+
+    # Tenant-authority bracketing must be present at the sovereign resolver:
+    # one observation before aggregation, one after (mid-transaction switch
+    # detection). Static sensor; behavior is proven by the DB consequence
+    # battery, which is the load-bearing leg.
+    try:
+        resolver_source = (
+            REPO_ROOT
+            / "backend/app/finance_reconciliation/coverage_authority.py"
+        ).read_text(encoding="utf-8")
+        if resolver_source.count("await assert_tenant_authority(session, tenant_id)") < 2:
+            violations.append("coverage_tenant_authority_not_enforced")
+    except OSError as exc:
+        violations.append(f"coverage_resolver_source_unreadable:{exc}")
+
+    # Adjunct guard is live on every run: authoritative keys refuse, benign
+    # adjuncts pass, tenant-bearing keys refuse.
+    try:
+        reject_authoritative_adjunct({"note": "lawful adjunct"})
+        for hostile in (
+            {"coverage_percent": "11.11"},
+            {"matched_minor": 1},
+            {"tenant_id": "raw"},
+            {"tenant_label": "raw"},
+        ):
+            try:
+                reject_authoritative_adjunct(hostile)
+            except Exception:  # noqa: BLE001
+                pass
+            else:
+                violations.append(
+                    "canonical_adjunct_guard_not_enforced:"
+                    f"{sorted(hostile)}"
+                )
+    except CanonicalSinkError as exc:
+        violations.append(f"canonical_adjunct_guard_rejects_lawful:{exc}")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_adjunct_guard_error:{exc}")
+
+    # Successor provenance law is live: unknown refused, ungoverned mode
+    # unregistrable, valid synthetic authorizes (then removed).
+    try:
+        try:
+            authorize_successor_persistence("no_such_successor_registration")
+        except Exception:  # noqa: BLE001
+            pass
+        else:
+            violations.append("successor_provenance_law_not_enforced:unknown")
+        try:
+            register_successor_persistence(
+                registration_id="validator_probe_invalid",
+                provenance_mode="anything",
+                required_runtime_proof_ids=("V-6",),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        else:
+            violations.append("successor_provenance_law_not_enforced:mode")
+            deregister_successor_persistence("validator_probe_invalid")
+        register_successor_persistence(
+            registration_id="validator_probe_valid",
+            provenance_mode="RE_DERIVE_ON_READ",
+            required_runtime_proof_ids=("V-6",),
+        )
+        try:
+            if authorize_successor_persistence("validator_probe_valid") is not True:
+                violations.append("successor_provenance_law_valid_not_authorized")
+        finally:
+            deregister_successor_persistence("validator_probe_valid")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"successor_provenance_law_error:{exc}")
+
+    # Approved external projection never carries raw tenant identity.
+    try:
+        from app.trust.refusal import tenant_hash  # noqa: PLC0415
+
+        probe_output = FinalCanonicalOutput(
+            authority="canonical_B2.6_financial_truth",
+            sink_id="future_finance_projection",
+            contract_version=B26_P1_CONTRACT_VERSION,
+            tenant_id_hash=tenant_hash("11111111-1111-1111-1111-111111111111"),
+            currency_code="USD",
+            window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            supported_platforms=("stripe",),
+            matched_minor=76000,
+            connected_minor=80000,
+            coverage_percent=Decimal("95.00"),
+            zero_denominator=False,
+            provenance_mode="RE_DERIVE_ON_READ",
+            sovereign_producer="probe",
+            provenance_nonce="validator-probe",
+            adjunct_json="{}",
+        )
+        rendered = _project_external_fields(probe_output)
+        if "tenant_id" in rendered:
+            violations.append("canonical_external_emits_raw_tenant")
+        if rendered.get("tenant_id_hash") != tenant_hash(
+            "11111111-1111-1111-1111-111111111111"
+        ):
+            violations.append("canonical_external_tenant_hash_mismatch")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_external_projection_error:{exc}")
+
+    # Independent oracle is pinned against ambient Decimal-context coupling.
+    try:
+        from decimal import getcontext  # noqa: PLC0415
+
+        from app.finance_reconciliation.coverage_authority import (  # noqa: PLC0415
+            independent_coverage_percent,
+        )
+
+        previous = getcontext().prec
+        getcontext().prec = 2
+        try:
+            if independent_coverage_percent(76000, 80000) != (
+                Decimal("95.00"),
+                False,
+            ):
+                violations.append("coverage_oracle_context_coupled")
+        finally:
+            getcontext().prec = previous
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"coverage_oracle_pinning_error:{exc}")
+
+    details["corrective_v_sinks"] = sorted(SINK_REGISTRY)
+    details["corrective_v_executor"] = (
+        "app.finance_reconciliation.canonical_sink.execute_governed_sink"
+    )
+
+
 def validate() -> tuple[list[str], dict[str, Any]]:
     violations: list[str] = []
     details: dict[str, Any] = {}
     _validate_contract_and_b23_binding(violations, details)
+    _validate_corrective_v_authority(violations, details)
     enforce_machinery = not _successor_authorizes_machinery()
     _validate_b26_namespace(
         violations, details, enforce_product_machinery=enforce_machinery

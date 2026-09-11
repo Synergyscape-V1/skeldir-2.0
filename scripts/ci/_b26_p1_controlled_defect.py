@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 SEMANTIC_MODULE = ROOT / "backend/app/finance_reconciliation/semantic_contract.py"
 COVERAGE_AUTHORITY_MODULE = ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
+CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 DOCKERFILE = ROOT / "backend/Dockerfile"
 
@@ -103,8 +104,13 @@ def tenant_policy_weakening() -> None:
 def insertion_seam_corruption() -> None:
     _replace_once(
         CONTRACT,
-        "  - future_finance_projection\n",
-        "",
+        "  - future_B2.6_deterministic_reconciliation_projection_boundary\n"
+        "  - future_finance_projection\n"
+        "  - future_B2.6_TrustEnvelope_projection\n"
+        "\nnegative_control_registry:",
+        "  - future_B2.6_deterministic_reconciliation_projection_boundary\n"
+        "  - future_B2.6_TrustEnvelope_projection\n"
+        "\nnegative_control_registry:",
         defect="insertion_seam_corruption",
     )
 
@@ -174,6 +180,62 @@ def unregistered_coverage_origin() -> None:
     )
 
 
+def tenant_authority_bypass() -> None:
+    _replace_once(
+        COVERAGE_AUTHORITY_MODULE,
+        "    await assert_tenant_authority(session, tenant_id)\n    sovereign = _sovereign()",
+        "    sovereign = _sovereign()",
+        defect="tenant_authority_bypass",
+    )
+
+
+def session_capability_injection() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "async def execute_governed_sink(\n    sink_id: str,\n    *,",
+        "async def execute_governed_sink(\n    sink_id: str,\n    session: Any = None,\n    *,",
+        defect="session_capability_injection",
+    )
+
+
+def final_field_override_permit() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '        if name in AUTHORITATIVE_FIELD_NAMES or "tenant" in name.lower():',
+        "        if False:  # NC-B26-P1-V-OVERRIDE",
+        defect="final_field_override_permit",
+    )
+
+
+def successor_provenance_omission() -> None:
+    _replace_once(
+        CONTRACT,
+        "  status: provenance_mode_required_no_persistence_in_P1\n",
+        "  status: optional\n",
+        defect="successor_provenance_omission",
+    )
+
+
+def unregistered_canonical_output() -> None:
+    _replace_once(
+        SEMANTIC_MODULE,
+        'if __name__ == "__main__":\n'
+        "    print(json.dumps(semantic_contract_identity().__dict__, sort_keys=True))",
+        'if __name__ == "__main__":\n'
+        "    _nc_forged_output = FinalCanonicalOutput(  # NC-B26-P1-V-OUTPUT\n"
+        '        authority="forged", sink_id="forged", contract_version="forged",\n'
+        '        tenant_id_hash="forged", currency_code="USD",\n'
+        "        window_start=None, window_end=None, supported_platforms=(),\n"
+        "        matched_minor=0, connected_minor=0, coverage_percent=None,\n"
+        '        zero_denominator=False, provenance_mode="forged",\n'
+        '        sovereign_producer="forged", provenance_nonce="forged",\n'
+        '        adjunct_json="{}"\n'
+        "    )\n"
+        "    print(json.dumps(semantic_contract_identity().__dict__, sort_keys=True))",
+        defect="unregistered_canonical_output",
+    )
+
+
 DEFECTS: dict[str, Callable[[], None]] = {
     "mandatory_semantic_element": mandatory_semantic_element,
     "coverage_authority_reference": coverage_authority_reference,
@@ -191,6 +253,11 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "legacy_network_client_in_canonical_surface": legacy_network_client_in_canonical_surface,
     "legacy_route_reference_in_canonical_surface": legacy_route_reference_in_canonical_surface,
     "unregistered_coverage_origin": unregistered_coverage_origin,
+    "tenant_authority_bypass": tenant_authority_bypass,
+    "session_capability_injection": session_capability_injection,
+    "final_field_override_permit": final_field_override_permit,
+    "successor_provenance_omission": successor_provenance_omission,
+    "unregistered_canonical_output": unregistered_canonical_output,
 }
 
 
