@@ -4,10 +4,12 @@ The legacy reconciliation surfaces below remain mounted in the production
 application for contract compatibility only. They are explicitly
 non-authoritative: no canonical B2.6 financial consumer may derive truth
 from them through import, dynamic load, helper, database relation, or
-network/service invocation. Canonical verification coverage is admitted
-solely through
-``app.finance_reconciliation.coverage_authority.admit_canonical_verification_coverage``,
-which refuses every legacy origin.
+network/service invocation. Canonical verification coverage is obtained
+solely by resolving scope through
+``app.finance_reconciliation.coverage_authority.resolve_canonical_coverage``,
+which re-derives truth from the sovereign B2.3 source. Caller-supplied
+observations -- including legacy values wrapped in the current DTO shape --
+are always refused by the fail-closed admission shim.
 
 This module declares quarantine facts. It performs no network fetch and
 mints no canonical value, so declaration here can never become authority.
@@ -74,16 +76,14 @@ def mark_legacy_diagnostic(payload: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def is_canonical_b26_authority(candidate: Any) -> bool:
-    """Report whether a value already carries sealed canonical authority."""
-    from app.finance_reconciliation.coverage_authority import (  # noqa: PLC0415
-        CanonicalVerificationCoverage,
-        admit_canonical_verification_coverage,
-    )
+    """Report whether a value already carries sealed canonical authority.
 
-    if not isinstance(candidate, CanonicalVerificationCoverage):
-        return False
-    try:
-        admit_canonical_verification_coverage(candidate)
-    except ValueError:
-        return False
-    return True
+    Corrective IV removed transferable canonical tokens: no in-memory object
+    carries authority by itself, so this helper always reports False. The
+    only canonical values are fresh return values of the sovereign resolver
+    in the execution that performed the sovereign read; every other value --
+    including resolver copies, diagnostic rebuilds, and legacy wrappers --
+    is structurally non-canonical. Sinks must resolve scope rather than
+    inspecting object identity.
+    """
+    return False

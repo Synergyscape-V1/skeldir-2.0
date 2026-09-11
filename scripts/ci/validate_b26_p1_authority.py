@@ -489,6 +489,11 @@ def _validate_contract_and_b23_binding(violations: list[str], details: dict[str,
         admitter = getattr(seam_module, "admit_canonical_verification_coverage")
         scope_verifier = getattr(seam_module, "require_canonical_scope")
         producer = getattr(seam_module, "B23_SOVEREIGN_COVERAGE_PRODUCER")
+        resolver = getattr(seam_module, "resolve_canonical_coverage")
+        oracle = getattr(seam_module, "independent_coverage_percent")
+        diagnostic = getattr(seam_module, "to_diagnostic_dict")
+        law = getattr(seam_module, "CANONICAL_COVERAGE_LAW")
+        provenance_model = getattr(seam_module, "CANONICAL_PROVENANCE_MODEL")
     except Exception as exc:  # noqa: BLE001
         violations.append(f"coverage_admission_seam_unresolvable:{exc}")
         return
@@ -500,8 +505,21 @@ def _validate_contract_and_b23_binding(violations: list[str], details: dict[str,
         or admitter.__module__ != "app.finance_reconciliation.coverage_authority"
         or scope_verifier.__module__
         != "app.finance_reconciliation.coverage_authority"
+        or resolver.__module__ != "app.finance_reconciliation.coverage_authority"
     ):
         violations.append("coverage_admission_seam_not_authority_owned")
+    if law != seam.get("law"):
+        violations.append("coverage_admission_law_mismatch")
+    if law != "only_sovereign_rederivation_may_be_canonical":
+        violations.append("coverage_admission_law_not_scope_only_rederivation")
+    if provenance_model != seam.get("provenance_model"):
+        violations.append("coverage_provenance_model_mismatch")
+    if seam.get("admitter_behavior") != "always_refuses_caller_observation_fail_closed":
+        violations.append("coverage_admitter_behavior_not_fail_closed")
+    if seam.get("resolver") != (
+        "app.finance_reconciliation.coverage_authority.resolve_canonical_coverage"
+    ):
+        violations.append("coverage_resolver_identity_mismatch")
     # The seam must refuse a numerically correct but unregistered value:
     # origin refusal is runtime physics, not lexical coincidence.
     try:
@@ -510,10 +528,115 @@ def _validate_contract_and_b23_binding(violations: list[str], details: dict[str,
         pass
     else:
         violations.append("coverage_admission_seam_accepts_unregistered_origin")
+    # Corrective IV non-vacuity: the transferable seal is removed, and every
+    # caller-manufactured representation -- however shaped, however
+    # numerically correct -- is refused by the fail-closed admission shim.
+    # These falsifiers run on every validator execution so a green validator
+    # implies red forgeries (proof plane targets consequence, not form).
+    try:
+        from app.revenue_verification.verification_coverage import (  # noqa: PLC0415
+            VerificationCoverageResult,
+        )
+
+        from app.finance_reconciliation.coverage_authority import (  # noqa: PLC0415
+            CanonicalVerificationCoverage,
+        )
+
+        if hasattr(CanonicalVerificationCoverage, "_sealed") or (
+            "_sealed" in getattr(sealed_type, "__dataclass_fields__", {})
+        ):
+            violations.append("coverage_transferable_seal_survives")
+        golden_aggregate = VerificationCoverageAggregate(
+            tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            currency_code="USD",
+            window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            matched_webhook_revenue_minor=76000,
+            connected_platform_revenue_minor=80000,
+        )
+        golden_result = VerificationCoverageResult(
+            tenant_id=golden_aggregate.tenant_id,
+            currency_code="USD",
+            window_start=golden_aggregate.window_start,
+            window_end=golden_aggregate.window_end,
+            numerator_matched_webhook_revenue_minor=76000,
+            denominator_connected_platform_revenue_minor=80000,
+            coverage_percent=Decimal("95.00"),
+            zero_denominator=False,
+        )
+        forged_correct = CanonicalVerificationCoverage(
+            aggregate=golden_aggregate,
+            result=golden_result,
+            producer=producer,
+            supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
+        )
+        for probe, probe_id in (
+            (forged_correct, "forged_correct_shape"),
+            (9500, "plain_scalar"),
+            ({"coverage_percent": "95.00"}, "plain_mapping"),
+        ):
+            try:
+                admitter(probe)
+            except Exception:  # noqa: BLE001
+                pass
+            else:
+                violations.append(
+                    f"coverage_admission_accepts_caller_observation:{probe_id}"
+                )
+        wrong_result = VerificationCoverageResult(
+            tenant_id=golden_aggregate.tenant_id,
+            currency_code="USD",
+            window_start=golden_aggregate.window_start,
+            window_end=golden_aggregate.window_end,
+            numerator_matched_webhook_revenue_minor=76000,
+            denominator_connected_platform_revenue_minor=80000,
+            coverage_percent=Decimal("76.00"),
+            zero_denominator=False,
+        )
+        forged_wrong = CanonicalVerificationCoverage(
+            aggregate=golden_aggregate,
+            result=wrong_result,
+            producer=producer,
+            supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
+        )
+        try:
+            scope_verifier(
+                forged_wrong,
+                tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                currency_code="USD",
+                window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                supported_platforms=["paypal", "shopify", "stripe", "woocommerce"],
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        else:
+            violations.append("coverage_scope_verifier_trusts_wrong_mathematics")
+        # Independent oracle (never calls sovereign compute for expected):
+        if oracle(76000, 80000) != (Decimal("95.00"), False):
+            violations.append("coverage_independent_oracle_wrong_95")
+        if oracle(0, 0) != (Decimal("0.00"), True):
+            violations.append("coverage_independent_oracle_wrong_zero")
+        # Diagnostic must project only the one-way tenant hash, never raw UUID.
+        rendered = diagnostic(forged_correct)
+        if "tenant_id" in rendered:
+            violations.append("coverage_diagnostic_emits_raw_tenant_id")
+        if "tenant_id_hash" not in rendered:
+            violations.append("coverage_diagnostic_missing_tenant_hash")
+        else:
+            from app.trust.refusal import tenant_hash  # noqa: PLC0415
+
+            if rendered["tenant_id_hash"] != tenant_hash(
+                UUID("11111111-1111-1111-1111-111111111111")
+            ):
+                violations.append("coverage_diagnostic_tenant_hash_mismatch")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"coverage_corrective_iv_falsifier_error:{exc}")
     details["coverage_admission_seam"] = {
         "module": seam["module"],
         "law": seam["law"],
         "producer": producer,
+        "provenance_model": provenance_model,
     }
 
     coverage_source = REPO_ROOT / "backend/app/revenue_verification/verification_coverage.py"
@@ -777,6 +900,29 @@ def _validate_repo_wide_false_authority(
                 dynamic_hits.append(f"{rel}:{dynamic}")
                 violations.append(f"b26_dynamic_false_authority_import:{rel}:{dynamic}")
         _check_repo_wide_coverage_and_denominator(path, source, tree, violations)
+        # Corrective IV positive consumer governance (repo-wide, not surface
+        # selected): the canonical coverage type may only be constructed
+        # inside its defining authority module. Any other first-party
+        # application module constructing it -- however named, however
+        # pathed -- is an unregistered canonical origin and is RED. The
+        # runtime root is stronger (admission always refuses), so this fence
+        # is defense-in-depth that makes neutral emitters merge-blocking.
+        if rel != CANONICAL_SEAL_DEFINING_FILE:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    func = node.func
+                    called = (
+                        func.id
+                        if isinstance(func, ast.Name)
+                        else func.attr
+                        if isinstance(func, ast.Attribute)
+                        else ""
+                    )
+                    if called == CANONICAL_SEALED_TYPE_NAME:
+                        violations.append(
+                            f"b26_unregistered_coverage_origin:{rel}:{node.lineno}"
+                        )
+                        break
         if _is_b26_surface(path) or rel in KNOWN_GRANDFATHERED_SURFACE_SIGNATURES:
             # Canonical package already checked above to avoid duplicate lines.
             if path.is_relative_to(B26_PACKAGE):

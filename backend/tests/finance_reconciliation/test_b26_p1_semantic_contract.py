@@ -116,7 +116,7 @@ def test_b26_p1_authority_classes_distinguish_permanent_from_closure() -> None:
 def test_b26_p1_version_identity_is_unambiguous() -> None:
     contract = load_b26_p1_semantic_contract()
 
-    assert B26_P1_CONTRACT_VERSION == "b2.6-p1-semantic-authority-v3"
+    assert B26_P1_CONTRACT_VERSION == "b2.6-p1-semantic-authority-v4"
     assert contract["contract_version"] == B26_P1_CONTRACT_VERSION
     supersession = contract["supersession"]
     assert supersession["supersedes"] == B26_P1_SUPERSEDES_VERSION
@@ -160,7 +160,19 @@ def test_b26_p1_canonical_admission_seam_is_declared() -> None:
     seam = contract["coverage_authority"]["canonical_admission_seam"]
 
     assert seam["module"] == "app.finance_reconciliation.coverage_authority"
-    assert seam["law"] == "only_sealed_B2.3_origin_may_be_canonical"
+    assert seam["law"] == "only_sovereign_rederivation_may_be_canonical"
+    assert (
+        seam["provenance_model"]
+        == "scope_only_sovereign_rederivation_no_transferable_token"
+    )
+    assert (
+        seam["admitter_behavior"]
+        == "always_refuses_caller_observation_fail_closed"
+    )
+    assert (
+        seam["resolver"]
+        == "app.finance_reconciliation.coverage_authority.resolve_canonical_coverage"
+    )
     assert contract["authority_classes"]["coverage_authority.canonical_admission_seam"] == (
         "PERMANENT_MACHINE_ENFORCED"
     )
@@ -187,8 +199,10 @@ def test_b26_p1_unregistered_coverage_origin_is_refused() -> None:
         with pytest.raises(CanonicalCoverageAuthorityError):
             admit_canonical_verification_coverage(candidate)
 
-    # Forged sealed-type construction outside the authority module is
-    # unsealed and refused even with sovereign field values.
+    # Corrective IV: there is no transferable token. Even a same-type
+    # instance with sovereign field values and correct mathematics is a
+    # caller observation and is always refused. Authority is obtained only
+    # by resolving scope through the sovereign boundary.
     forged = CanonicalVerificationCoverage(
         aggregate=aggregate,
         result=result,
@@ -198,7 +212,7 @@ def test_b26_p1_unregistered_coverage_origin_is_refused() -> None:
         "VERIFICATION_COVERAGE.compute",
         supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
     )
-    assert forged._sealed is False
+    assert not hasattr(forged, "_sealed")
     with pytest.raises(CanonicalCoverageAuthorityError):
         admit_canonical_verification_coverage(forged)
 
@@ -211,33 +225,46 @@ def test_b26_p1_canonical_scope_mismatch_is_refused() -> None:
 
     from app.finance_reconciliation.coverage_authority import (
         CanonicalCoverageAuthorityError,
-        _seal,
+        CanonicalVerificationCoverage,
         admit_canonical_verification_coverage,
         require_canonical_scope,
     )
 
     aggregate, result = _b26_p1_test_aggregate_and_result()
     platforms = ("paypal", "shopify", "stripe", "woocommerce")
-    sealed = _seal(aggregate, result, platforms)
+    coherent = CanonicalVerificationCoverage(
+        aggregate=aggregate,
+        result=result,
+        producer="app.revenue_verification.verification_coverage."
+        "fetch_verification_coverage_aggregate"
+        "+app.revenue_verification.verification_coverage."
+        "VERIFICATION_COVERAGE.compute",
+        supported_platforms=platforms,
+    )
 
-    # Sovereign origin with governed scope admits.
-    assert admit_canonical_verification_coverage(sealed) is sealed
+    # No caller observation is admissible, however coherent.
+    with pytest.raises(CanonicalCoverageAuthorityError):
+        admit_canonical_verification_coverage(coherent)
+
+    # Scope coherence reports scope/math coherence only; it is necessary but
+    # not sufficient for provenance. Coherent scope with correct mathematics
+    # reports coherence here (provenance still requires sovereign resolve).
     assert (
         require_canonical_scope(
-            sealed,
+            coherent,
             tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
             currency_code="USD",
             window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
             window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
             supported_platforms=list(platforms),
         )
-        is sealed
+        is coherent
     )
 
     # Same digits, foreign tenant scope: refused.
     with pytest.raises(CanonicalCoverageAuthorityError):
         require_canonical_scope(
-            sealed,
+            coherent,
             tenant_id=UUID("22222222-2222-2222-2222-222222222222"),
             currency_code="USD",
             window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
@@ -249,7 +276,7 @@ def test_b26_p1_canonical_scope_mismatch_is_refused() -> None:
     from app.finance_reconciliation.coverage_authority import to_diagnostic_dict
 
     with pytest.raises(CanonicalCoverageAuthorityError):
-        admit_canonical_verification_coverage(to_diagnostic_dict(sealed))
+        admit_canonical_verification_coverage(to_diagnostic_dict(coherent))
 
 
 def test_b26_p1_legacy_quarantine_is_declared_and_enforced() -> None:
@@ -281,6 +308,142 @@ def test_b26_p1_legacy_quarantine_is_declared_and_enforced() -> None:
     diagnostic = mark_legacy_diagnostic({"revenue_verified": 1})
     assert diagnostic["authority"] == "non_authoritative_legacy_diagnostic"
     assert is_canonical_b26_authority(diagnostic) is False
+
+
+def test_b26_p1_math_is_independently_derived_from_integer_legs() -> None:
+    """MI battery (DB-less): independent oracle, never sovereign compute."""
+    import pytest
+
+    from app.finance_reconciliation.coverage_authority import (
+        CanonicalCoverageAuthorityError,
+        independent_coverage_percent,
+    )
+
+    # Hardcoded expectations: no production helper produces these answers.
+    assert independent_coverage_percent(76000, 80000) == (Decimal("95.00"), False)
+    assert independent_coverage_percent(0, 0) == (Decimal("0.00"), True)
+    assert independent_coverage_percent(0, 80000) == (Decimal("0.00"), False)
+    assert independent_coverage_percent(80000, 80000) == (Decimal("100.00"), False)
+    # Rounding boundary (half-up): 1/6 = 16.666.. -> 16.67.
+    assert independent_coverage_percent(1, 6) == (Decimal("16.67"), False)
+    with pytest.raises(CanonicalCoverageAuthorityError):
+        independent_coverage_percent(80001, 80000)
+    with pytest.raises(CanonicalCoverageAuthorityError):
+        independent_coverage_percent(-1, 80000)
+    with pytest.raises(CanonicalCoverageAuthorityError):
+        independent_coverage_percent(76000, -80000)
+
+
+def test_b26_p1_wrong_mathematics_is_refused_at_scope_boundary() -> None:
+    """MI-02/MI-07: caller percent/flag never trusted, always re-derived."""
+    import pytest
+
+    from datetime import datetime, timezone
+    from uuid import UUID
+
+    from app.finance_reconciliation.coverage_authority import (
+        CanonicalCoverageAuthorityError,
+        CanonicalVerificationCoverage,
+        require_canonical_scope,
+    )
+    from app.revenue_verification.verification_coverage import (
+        VerificationCoverageAggregate,
+        VerificationCoverageResult,
+    )
+
+    aggregate = VerificationCoverageAggregate(
+        tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        currency_code="USD",
+        window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        matched_webhook_revenue_minor=76000,
+        connected_platform_revenue_minor=80000,
+    )
+    scope = dict(
+        tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        currency_code="USD",
+        window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        supported_platforms=["paypal", "shopify", "stripe", "woocommerce"],
+    )
+    for bad_percent in (Decimal("76.00"), Decimal("94.99"), Decimal("95.01")):
+        bad = CanonicalVerificationCoverage(
+            aggregate=aggregate,
+            result=VerificationCoverageResult(
+                tenant_id=aggregate.tenant_id,
+                currency_code="USD",
+                window_start=aggregate.window_start,
+                window_end=aggregate.window_end,
+                numerator_matched_webhook_revenue_minor=76000,
+                denominator_connected_platform_revenue_minor=80000,
+                coverage_percent=bad_percent,
+                zero_denominator=False,
+            ),
+            producer="app.revenue_verification.verification_coverage."
+            "fetch_verification_coverage_aggregate"
+            "+app.revenue_verification.verification_coverage."
+            "VERIFICATION_COVERAGE.compute",
+            supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
+        )
+        with pytest.raises(CanonicalCoverageAuthorityError):
+            require_canonical_scope(bad, **scope)
+
+
+def test_b26_p1_diagnostic_is_tenant_safe_and_non_reconstructible() -> None:
+    """TE/SP battery (DB-less): hash only, rebuild refused."""
+    import pytest
+
+    from app.finance_reconciliation.coverage_authority import (
+        CanonicalCoverageAuthorityError,
+        admit_canonical_verification_coverage,
+        to_diagnostic_dict,
+    )
+    from app.trust.refusal import tenant_hash
+
+    aggregate, result = _b26_p1_test_aggregate_and_result()
+    from app.finance_reconciliation.coverage_authority import (
+        CanonicalVerificationCoverage,
+    )
+
+    coherent = CanonicalVerificationCoverage(
+        aggregate=aggregate,
+        result=result,
+        producer="app.revenue_verification.verification_coverage."
+        "fetch_verification_coverage_aggregate"
+        "+app.revenue_verification.verification_coverage."
+        "VERIFICATION_COVERAGE.compute",
+        supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
+    )
+    rendered = to_diagnostic_dict(coherent)
+    assert rendered["authority"] == "non_authoritative_diagnostic_copy"
+    assert "tenant_id" not in rendered
+    assert rendered["tenant_id_hash"] == tenant_hash(aggregate.tenant_id)
+    # Serialized round trip cannot recreate authority.
+    with pytest.raises(CanonicalCoverageAuthorityError):
+        admit_canonical_verification_coverage(dict(rendered))
+    import copy
+
+    with pytest.raises(CanonicalCoverageAuthorityError):
+        admit_canonical_verification_coverage(copy.deepcopy(coherent))
+
+
+def test_b26_p1_canonical_sinks_are_positively_governed() -> None:
+    import pytest
+
+    from app.finance_reconciliation.coverage_authority import (
+        CanonicalCoverageAuthorityError,
+        is_governed_canonical_sink,
+        require_governed_canonical_sink,
+    )
+
+    assert is_governed_canonical_sink(
+        "future_B2.6_deterministic_reconciliation_projection_boundary"
+    )
+    assert is_governed_canonical_sink("future_finance_projection")
+    assert is_governed_canonical_sink("future_B2.6_TrustEnvelope_projection")
+    assert not is_governed_canonical_sink("neutral_analytics_helper")
+    with pytest.raises(CanonicalCoverageAuthorityError):
+        require_governed_canonical_sink("neutral_analytics_helper")
 
 
 def test_b26_p1_migration_graph_is_alembic_native() -> None:
