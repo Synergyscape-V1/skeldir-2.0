@@ -88,6 +88,15 @@ class CanonicalPrincipalError(TenantAuthorityError):
     """The database principal is not a governed canonical principal."""
 
 
+class UnknownTenantError(TenantAuthorityError):
+    """The authenticated tenant has no durable tenant row.
+
+    Absence of a tenant row is authorization failure, never governed zero:
+    a canonical ``0/0`` value is lawful only for an existing tenant whose
+    sovereign B2.3 legs are both zero.
+    """
+
+
 async def read_db_authority(session: AsyncSession) -> Mapping[str, Any]:
     """Observe sovereign database authority directly on the live session.
 
@@ -174,3 +183,32 @@ async def open_governed_b23_session(
         await assert_tenant_authority(session, tenant_id)
         yield session
         await assert_tenant_authority(session, tenant_id)
+
+
+async def require_tenant_row_exists(
+    session: AsyncSession, tenant_id: UUID | str
+) -> None:
+    """Require a durable tenant row for the authenticated scope tenant.
+
+    A verified JWT can name a tenant UUID that was never provisioned (or
+    that has been removed). Without this check the sovereign B2.3 read
+    observes zero rows and the boundary would emit a canonical-looking
+    ``0/0`` value for a tenant that does not exist. Absence therefore
+    refuses here -- it can never become governed zero downstream. Only a
+    lawful zero-leg tenant (existing row, both legs zero) may observe
+    ``zero_denominator=True``.
+    """
+    requested = str(tenant_id).strip()
+    if not requested:
+        raise MissingTenantAuthorityError(
+            "canonical_scope_tenant_missing_before_existence_check"
+        )
+    row = (
+        (await session.execute(text("SELECT 1 AS present FROM public.tenants WHERE id = :tenant_id"), {"tenant_id": requested}))
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise UnknownTenantError(
+            "authenticated_tenant_has_no_durable_tenant_row"
+        )

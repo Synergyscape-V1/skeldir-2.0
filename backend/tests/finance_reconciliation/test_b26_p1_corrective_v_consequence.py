@@ -1,4 +1,4 @@
-"""B2.6-P1 Corrective-V consequence proof battery (cells V-1 through V-7).
+"""B2.6-P1 Corrective-VI consequence proof battery (cells V-1 through V-7).
 
 Every cell proves a user-visible canonical consequence, never helper
 representation: pristine GREEN, one consequence-bearing mutation RED,
@@ -6,6 +6,21 @@ exact restore GREEN. Hardcoded expectations never call production
 computation to establish truth. Database cells seed minimal physical
 B2.3 fixtures (single matched row plus unmatched filler) and assert
 against hardcoded integer legs and percentages.
+
+Corrective-VI law (see ``app.finance_reconciliation.canonical_sink``):
+
+* the executor binds its tenant only from a server-verified RS256 JWT
+  (``auth_token``); no ``tenant_id`` or callable parameter exists;
+* there is no transferable canonical token: issuance maps, mint helpers,
+  nonces, and boolean predicates are deleted; detached objects are never
+  canonical and ``verify_output_integrity`` reports digest integrity only;
+* duplicate sink registration is refused and the live executable hash is
+  re-verified on every execution;
+* proof identifiers must equal the governed manifest set for the live
+  contract version;
+* P1 authorizes no durable successor persistence (always refuses);
+* the canonical path executes only the statically registered projection
+  implementation (no arbitrary callbacks, no LLM reachability).
 """
 
 from __future__ import annotations
@@ -23,31 +38,37 @@ from sqlalchemy import text
 
 from app.finance_reconciliation.class_sweep import (
     GOVERNED_SINKS,
-    decoy_percent,
     plan,
     ratio_for,
 )
 from app.finance_reconciliation.canonical_sink import (
     AUTHORITATIVE_FIELD_NAMES,
     SINK_REGISTRY,
+    DuplicateSinkError,
     FinalCanonicalOutput,
     FinalFieldSubstitutionError,
+    SuccessorProvenanceError,
     UnregisteredSinkError,
     _project_external_fields,
     authorize_successor_persistence,
+    canonical_sink,
     deregister_successor_persistence,
     execute_governed_sink,
+    executor_binds_tenant_from_verified_auth_only,
     executor_signature_has_no_session_capability,
-    is_canonical_output,
     register_successor_persistence,
     reject_authoritative_adjunct,
     require_registered_sink,
     to_canonical_external,
+    verify_output_integrity,
 )
 from app.finance_reconciliation.coverage_authority import (
     CanonicalCoverageAuthorityError,
     independent_coverage_percent,
     resolve_canonical_coverage,
+)
+from app.finance_reconciliation.proof_manifest import (
+    REQUIRED_SINK_PROOFS,
 )
 from app.finance_reconciliation.semantic_contract import B26_P1_CONTRACT_VERSION
 from app.finance_reconciliation.tenant_authority import (
@@ -86,10 +107,21 @@ def _admin_dsn() -> str:
     dsn = os.environ.get("MIGRATION_DATABASE_URL", "").strip()
     if not dsn:
         raise RuntimeError(
-            "Corrective-V consequence battery needs MIGRATION_DATABASE_URL"
+            "Corrective-VI consequence battery needs MIGRATION_DATABASE_URL"
             " for physical fixture seeding."
         )
     return dsn
+
+
+def _auth_token(tenant_id: UUID) -> str:
+    """Mint a server-verified JWT for one tenant (test holds signing key)."""
+    from app.security.auth import mint_internal_jwt  # noqa: PLC0415
+
+    return mint_internal_jwt(
+        tenant_id=tenant_id,
+        user_id=uuid.uuid4(),
+        expires_in_seconds=300,
+    )
 
 
 def _seed_ratio_tenant(matched: int, connected: int, tag: str) -> UUID:
@@ -240,14 +272,21 @@ def _seed_empty_tenant(tag: str) -> UUID:
     return tenant_id
 
 
-def _scope(tenant_id: UUID) -> dict[str, Any]:
+def _scope() -> dict[str, Any]:
     return {
-        "tenant_id": tenant_id,
         "window_start": WINDOW_START,
         "window_end": WINDOW_END,
         "supported_platforms": ["stripe"],
         "currency_code": "USD",
     }
+
+
+async def _execute(sink_id: str, tenant_id: UUID, **overrides: Any):
+    scope = _scope()
+    scope.update(overrides)
+    return await execute_governed_sink(
+        sink_id, auth_token=_auth_token(tenant_id), **scope
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -285,14 +324,56 @@ def test_v4_sink_registry_is_executable_not_declarative() -> None:
     for sink_id in GOVERNED_SINKS:
         registration = require_registered_sink(sink_id)
         assert registration.contract_version == B26_P1_CONTRACT_VERSION
-        assert registration.required_runtime_proof_ids
+        assert tuple(registration.required_runtime_proof_ids) == tuple(
+            REQUIRED_SINK_PROOFS[sink_id]
+        )
+        assert len(registration.implementation_hash) == 64
         module_name, _, attribute = registration.implementation.rpartition(".")
         import importlib
 
-        assert callable(getattr(importlib.import_module(module_name), attribute))
+        implementation = getattr(importlib.import_module(module_name), attribute)
+        assert callable(implementation)
+        from app.finance_reconciliation.canonical_sink import (  # noqa: PLC0415
+            _implementation_hash,
+        )
+
+        assert _implementation_hash(implementation) == registration.implementation_hash
     with pytest.raises(UnregisteredSinkError):
         require_registered_sink("neutral_analytics_helper")
     assert executor_signature_has_no_session_capability() is True
+    assert executor_binds_tenant_from_verified_auth_only() is True
+
+
+def test_v4_duplicate_sink_registration_is_refused() -> None:
+    def _other_impl(context: Any) -> dict[str, Any]:
+        return {}
+
+    with pytest.raises(DuplicateSinkError):
+        canonical_sink(
+            sink_id="future_finance_projection",
+            version="v9.9",
+            required_runtime_proof_ids=("V-2", "V-3", "V-4"),
+        )(_other_impl)
+
+
+def test_v4_forged_proof_registration_is_refused() -> None:
+    def _evil_impl(context: Any) -> dict[str, Any]:
+        return {}
+
+    for forged in (("FAKE",), ("V-999",), (), ("V-2",)):
+        with pytest.raises(Exception):
+            canonical_sink(
+                sink_id="future_finance_projection",
+                version="v5.0",
+                required_runtime_proof_ids=forged,
+            )(_evil_impl)
+    with pytest.raises(Exception):
+        canonical_sink(
+            sink_id="auditor_self_registered_sink",
+            version="v1.0",
+            required_runtime_proof_ids=("V-2", "V-3", "V-4"),
+        )(_evil_impl)
+    assert "auditor_self_registered_sink" not in SINK_REGISTRY
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +389,8 @@ def test_v2_final_field_guard_refuses_substitution() -> None:
     for key in sorted(AUTHORITATIVE_FIELD_NAMES):
         with pytest.raises(FinalFieldSubstitutionError):
             reject_authoritative_adjunct({key: "substitute"})
+    assert "provenance_nonce" not in AUTHORITATIVE_FIELD_NAMES
+    assert "content_digest" in AUTHORITATIVE_FIELD_NAMES
     with pytest.raises(FinalFieldSubstitutionError):
         reject_authoritative_adjunct({"tenant_label": "raw"})
     with pytest.raises(FinalFieldSubstitutionError):
@@ -315,7 +398,7 @@ def test_v2_final_field_guard_refuses_substitution() -> None:
 
 
 # ---------------------------------------------------------------------------
-# V-6: successor provenance constitution.
+# V-6: successor provenance constitution (P1 authorizes no durability).
 # ---------------------------------------------------------------------------
 
 
@@ -326,7 +409,7 @@ def test_v6_successor_provenance_law_is_machine_enforced() -> None:
         register_successor_persistence(
             registration_id="v6_probe_invalid",
             provenance_mode="anything",
-            required_runtime_proof_ids=("V-6",),
+            required_runtime_proof_ids=("VI-6",),
         )
     with pytest.raises(Exception):
         register_successor_persistence(
@@ -334,13 +417,29 @@ def test_v6_successor_provenance_law_is_machine_enforced() -> None:
             provenance_mode="RE_DERIVE_ON_READ",
             required_runtime_proof_ids=(),
         )
+    with pytest.raises(Exception):
+        register_successor_persistence(
+            registration_id="v6_probe_fake",
+            provenance_mode="RE_DERIVE_ON_READ",
+            required_runtime_proof_ids=("FAKE-PROOF",),
+        )
+    with pytest.raises(Exception):
+        register_successor_persistence(
+            registration_id="v6_probe_rel",
+            provenance_mode="DURABLE_SOURCE_BINDING",
+            required_runtime_proof_ids=("VI-6",),
+            backing_relation="public.revenue_ledger",
+        )
+    # A well-formed declaration registers but authorizes nothing durable:
+    # P1 has no migration-backed durable binding, so authorization refuses.
     register_successor_persistence(
         registration_id="v6_probe_valid",
         provenance_mode="DURABLE_SOURCE_BINDING",
-        required_runtime_proof_ids=("V-6",),
+        required_runtime_proof_ids=("VI-6",),
     )
     try:
-        assert authorize_successor_persistence("v6_probe_valid") is True
+        with pytest.raises(SuccessorProvenanceError):
+            authorize_successor_persistence("v6_probe_valid")
     finally:
         deregister_successor_persistence("v6_probe_valid")
     with pytest.raises(Exception):
@@ -349,12 +448,14 @@ def test_v6_successor_provenance_law_is_machine_enforced() -> None:
 
 # ---------------------------------------------------------------------------
 # V-7 (pure part): external projection carries hash only; direct builds are
-# non-canonical.
+# non-authoritative (no transferable canonical token exists).
 # ---------------------------------------------------------------------------
 
 
 def test_v7_external_projection_hash_only_and_direct_build_noncanonical() -> None:
     tenant_id = UUID("11111111-1111-1111-1111-111111111111")
+    assert verify_output_integrity({"coverage_percent": "95.00"}) is False
+    assert verify_output_integrity("95.00") is False
     direct = FinalCanonicalOutput(
         authority="canonical_B2.6_financial_truth",
         sink_id="future_finance_projection",
@@ -370,10 +471,10 @@ def test_v7_external_projection_hash_only_and_direct_build_noncanonical() -> Non
         zero_denominator=False,
         provenance_mode="RE_DERIVE_ON_READ",
         sovereign_producer="probe",
-        provenance_nonce="unissued",
+        content_digest="synthetic",
         adjunct_json="{}",
     )
-    assert is_canonical_output(direct) is False
+    assert verify_output_integrity(direct) is False
     rendered = _project_external_fields(direct)
     assert "tenant_id" not in rendered
     assert rendered["tenant_id_hash"] == tenant_hash(tenant_id)
@@ -382,7 +483,7 @@ def test_v7_external_projection_hash_only_and_direct_build_noncanonical() -> Non
 
 
 # ---------------------------------------------------------------------------
-# V-1: tenant authority unity (TA-01 through TA-10).
+# V-1: tenant authority unity (TA-01 through TA-10, resolver level).
 # ---------------------------------------------------------------------------
 
 
@@ -391,14 +492,22 @@ async def test_v1_lawful_scope_is_green_with_governed_zero_preserved() -> None:
     from app.db.session import get_b23_session
 
     async with get_b23_session(tenant_a) as session:
-        coverage = await resolve_canonical_coverage(session, **_scope(tenant_a))
+        coverage = await resolve_canonical_coverage(
+            session,
+            tenant_id=tenant_a,
+            **_scope(),
+        )
     assert coverage.aggregate.matched_webhook_revenue_minor == 76000
     assert coverage.aggregate.connected_platform_revenue_minor == 80000
     assert coverage.result.coverage_percent == Decimal("95.00")
 
     tenant_e = _seed_empty_tenant("v1-empty")
     async with get_b23_session(tenant_e) as session:
-        empty = await resolve_canonical_coverage(session, **_scope(tenant_e))
+        empty = await resolve_canonical_coverage(
+            session,
+            tenant_id=tenant_e,
+            **_scope(),
+        )
     assert empty.aggregate.matched_webhook_revenue_minor == 0
     assert empty.aggregate.connected_platform_revenue_minor == 0
     assert empty.result.coverage_percent == Decimal("0.00")
@@ -412,17 +521,23 @@ async def test_v1_mismatch_missing_and_foreign_scope_are_red_not_zero() -> None:
 
     async with get_b23_session(tenant_a) as session:
         with pytest.raises(TenantAuthorityMismatchError):
-            await resolve_canonical_coverage(session, **_scope(tenant_b))
+            await resolve_canonical_coverage(
+                session, tenant_id=tenant_b, **_scope()
+            )
     async with B23AsyncSessionLocal() as session:
         with pytest.raises(MissingTenantAuthorityError):
-            await resolve_canonical_coverage(session, **_scope(tenant_a))
+            await resolve_canonical_coverage(
+                session, tenant_id=tenant_a, **_scope()
+            )
     async with get_b23_session(tenant_a) as session:
         await session.execute(
             text("SELECT set_config('app.current_tenant_id', :t, false)"),
             {"t": str(tenant_b)},
         )
         with pytest.raises(TenantAuthorityMismatchError):
-            await resolve_canonical_coverage(session, **_scope(tenant_a))
+            await resolve_canonical_coverage(
+                session, tenant_id=tenant_a, **_scope()
+            )
 
 
 async def test_v1_connection_reuse_carries_no_stale_authority() -> None:
@@ -431,9 +546,13 @@ async def test_v1_connection_reuse_carries_no_stale_authority() -> None:
     from app.db.session import get_b23_session
 
     async with get_b23_session(tenant_a) as session:
-        first = await resolve_canonical_coverage(session, **_scope(tenant_a))
+        first = await resolve_canonical_coverage(
+            session, tenant_id=tenant_a, **_scope()
+        )
     async with get_b23_session(tenant_b) as session:
-        second = await resolve_canonical_coverage(session, **_scope(tenant_b))
+        second = await resolve_canonical_coverage(
+            session, tenant_id=tenant_b, **_scope()
+        )
     assert (
         first.aggregate.matched_webhook_revenue_minor,
         first.result.coverage_percent,
@@ -463,7 +582,9 @@ async def test_v1_nongoverned_principal_is_red() -> None:
                 {"t": str(tenant_a)},
             )
             with pytest.raises(CanonicalPrincipalError):
-                await resolve_canonical_coverage(session, **_scope(tenant_a))
+                await resolve_canonical_coverage(
+                    session, tenant_id=tenant_a, **_scope()
+                )
     finally:
         await engine.dispose()
 
@@ -516,24 +637,20 @@ async def test_v1_stub_session_authority_is_observed_not_trusted() -> None:
 
 async def test_v2_framework_output_is_sovereign_result() -> None:
     tenant_a = _seed_ratio_tenant(76000, 80000, "v2-sovereign")
-    output = await execute_governed_sink(
-        "future_finance_projection", **_scope(tenant_a)
-    )
+    output = await _execute("future_finance_projection", tenant_a)
     assert output.matched_minor == 76000
     assert output.connected_minor == 80000
     assert output.coverage_percent == Decimal("95.00")
     assert output.zero_denominator is False
-    assert is_canonical_output(output) is True
+    assert verify_output_integrity(output) is True
     external = to_canonical_external(output)
     assert "tenant_id" not in external
     assert external["tenant_id_hash"] == tenant_hash(tenant_a)
 
 
-async def test_v2_nonce_reuse_across_content_is_noncanonical() -> None:
+async def test_v2_tampered_content_is_not_integral() -> None:
     tenant_a = _seed_ratio_tenant(76000, 80000, "v2-binding")
-    output = await execute_governed_sink(
-        "future_finance_projection", **_scope(tenant_a)
-    )
+    output = await _execute("future_finance_projection", tenant_a)
     forged = FinalCanonicalOutput(
         authority=output.authority,
         sink_id=output.sink_id,
@@ -549,26 +666,37 @@ async def test_v2_nonce_reuse_across_content_is_noncanonical() -> None:
         zero_denominator=False,
         provenance_mode=output.provenance_mode,
         sovereign_producer=output.sovereign_producer,
-        provenance_nonce=output.provenance_nonce,
+        content_digest=output.content_digest,
         adjunct_json=output.adjunct_json,
     )
-    assert is_canonical_output(forged) is False
+    assert verify_output_integrity(forged) is False
+    with pytest.raises(Exception):
+        to_canonical_external(forged)
 
 
 # ---------------------------------------------------------------------------
-# V-3: resolver-decoy battery (RD-01 through RD-07 directions).
+# V-3: no callable reaches the canonical path; registered projection only.
 # ---------------------------------------------------------------------------
 
 
-async def test_v3_lawful_sink_with_benign_adjunct_is_green() -> None:
+async def test_v3_lawful_sink_with_registered_projection_is_green() -> None:
     tenant_a = _seed_ratio_tenant(76000, 80000, "v3-lawful")
-    output = await execute_governed_sink(
-        "future_finance_projection",
-        **_scope(tenant_a),
-        adjunct_provider=lambda context: {"note": "lawful adjunct"},
-    )
+    output = await _execute("future_finance_projection", tenant_a)
     assert output.coverage_percent == Decimal("95.00")
-    assert is_canonical_output(output) is True
+    assert output.adjunct_json == "{}"
+    assert verify_output_integrity(output) is True
+
+
+async def test_v3_arbitrary_callback_surface_is_gone() -> None:
+    tenant_a = _seed_ratio_tenant(76000, 80000, "v3-nocallback")
+    assert executor_binds_tenant_from_verified_auth_only() is True
+    with pytest.raises(TypeError):
+        await execute_governed_sink(
+            "future_finance_projection",
+            auth_token=_auth_token(tenant_a),
+            adjunct_provider=lambda context: {"note": "lawful adjunct"},  # type: ignore[call-arg]
+            **_scope(),
+        )
 
 
 @pytest.mark.parametrize(
@@ -582,31 +710,21 @@ async def test_v3_lawful_sink_with_benign_adjunct_is_green() -> None:
         {"sink_id": "future_finance_projection"},
     ],
 )
-async def test_v3_decoy_substitution_is_red(hostile: dict[str, Any]) -> None:
-    tenant_a = _seed_ratio_tenant(
-        76000, 80000, f"v3-decoy-{abs(hash(str(sorted(hostile)))) % 100000}"
-    )
+def test_v3_decoy_substitution_is_red(hostile: dict[str, Any]) -> None:
     with pytest.raises(FinalFieldSubstitutionError):
-        await execute_governed_sink(
-            "future_finance_projection",
-            **_scope(tenant_a),
-            adjunct_provider=lambda context: dict(hostile),
-        )
+        reject_authoritative_adjunct(dict(hostile))
 
 
 @pytest.mark.parametrize(
     "origin", ["llm", "b24", "b213", "legacy", "caller", "network"]
 )
-async def test_v3_adjacent_domain_decoy_is_red(origin: str) -> None:
-    tenant_a = _seed_ratio_tenant(76000, 80000, f"v3-{origin}")
+def test_v3_adjacent_domain_decoy_is_red(origin: str) -> None:
     with pytest.raises(FinalFieldSubstitutionError):
-        await execute_governed_sink(
-            "future_finance_projection",
-            **_scope(tenant_a),
-            adjunct_provider=lambda context: {
+        reject_authoritative_adjunct(
+            {
                 "coverage_percent": Decimal("37.13"),
                 f"{origin}_note": "origin label cannot confer authority",
-            },
+            }
         )
 
 
@@ -618,15 +736,15 @@ async def test_v3_adjacent_domain_decoy_is_red(origin: str) -> None:
 async def test_v4_unregistered_emitter_is_noncanonical() -> None:
     tenant_a = _seed_ratio_tenant(76000, 80000, "v4-unregistered")
     with pytest.raises(UnregisteredSinkError):
-        await execute_governed_sink("neutral_analytics_helper", **_scope(tenant_a))
+        await _execute("neutral_analytics_helper", tenant_a)
 
     def neutral_analytics_ratio(matched: int, connected: int) -> str:
         percent, _ = independent_coverage_percent(matched, connected)
         return str(percent)
 
     assert neutral_analytics_ratio(37130, 100000) == "37.13"
-    assert is_canonical_output({"coverage_percent": "95.00"}) is False
-    assert is_canonical_output("95.00") is False
+    assert verify_output_integrity({"coverage_percent": "95.00"}) is False
+    assert verify_output_integrity("95.00") is False
 
 
 # ---------------------------------------------------------------------------
@@ -643,20 +761,18 @@ async def test_v5_caller_serialized_state_is_ignored() -> None:
         "tenant_id": str(tenant_a),
     }
     caller_json = json.dumps(caller_claim)
-    output = await execute_governed_sink(
-        "future_finance_projection", **_scope(tenant_a)
-    )
+    output = await _execute("future_finance_projection", tenant_a)
     assert output.matched_minor == 76000
     assert output.coverage_percent == Decimal("95.00")
     assert output.coverage_percent != Decimal(
         json.loads(caller_json)["coverage_percent"]
     )
-    with pytest.raises(FinalFieldSubstitutionError):
-        await execute_governed_sink(
-            "future_finance_projection",
-            **_scope(tenant_a),
-            adjunct_provider=lambda context: dict(json.loads(caller_json)),
-        )
+    # Caller state has no parameter to enter through: the executor takes
+    # scope identity (plus verified auth) only.
+    import inspect as _inspect
+
+    assert "caller_claim" not in _inspect.signature(execute_governed_sink).parameters
+    assert "dto" not in _inspect.signature(execute_governed_sink).parameters
 
 
 # ---------------------------------------------------------------------------
@@ -670,40 +786,33 @@ async def _run_holdout(seed: int) -> dict[str, Any]:
     tenant = _seed_ratio_tenant(matched, connected, sweep.tenant_tag)
     other = _seed_empty_tenant(f"{sweep.tenant_tag}-other")
 
-    output = await execute_governed_sink(sweep.sink_id, **_scope(tenant))
+    output = await _execute(sweep.sink_id, tenant)
     assert output.matched_minor == matched
     assert output.connected_minor == connected
     assert output.coverage_percent == Decimal(expected)
-    assert is_canonical_output(output) is True
+    assert verify_output_integrity(output) is True
 
-    hostile_value = decoy_percent(sweep)
-    for origin in sweep.decoy_origins:
-        with pytest.raises(FinalFieldSubstitutionError):
-            await execute_governed_sink(
-                sweep.sink_id,
-                **_scope(tenant),
-                adjunct_provider=lambda context, o=origin: {
-                    "coverage_percent": hostile_value,
-                    f"{o}_marker": "holdout",
-                },
-            )
+    assert executor_binds_tenant_from_verified_auth_only() is True
 
     from app.db.session import get_b23_session
 
     async with get_b23_session(tenant) as session:
         with pytest.raises(TenantAuthorityMismatchError):
-            await resolve_canonical_coverage(session, **_scope(other))
+            await resolve_canonical_coverage(
+                session, tenant_id=other, **_scope()
+            )
     with pytest.raises(UnregisteredSinkError):
-        await execute_governed_sink("holdout_unregistered_sink", **_scope(tenant))
+        await _execute("holdout_unregistered_sink", tenant)
 
     registration_id = f"holdout_successor_{seed}"
     register_successor_persistence(
         registration_id=registration_id,
         provenance_mode="RE_DERIVE_ON_READ",
-        required_runtime_proof_ids=("V-6",),
+        required_runtime_proof_ids=("VI-6",),
     )
     try:
-        assert authorize_successor_persistence(registration_id) is True
+        with pytest.raises(SuccessorProvenanceError):
+            authorize_successor_persistence(registration_id)
     finally:
         deregister_successor_persistence(registration_id)
     return {"seed": seed, "ratio": expected, "sink": sweep.sink_id}

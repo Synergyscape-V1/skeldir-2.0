@@ -13,6 +13,7 @@ CONTRACT = ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 SEMANTIC_MODULE = ROOT / "backend/app/finance_reconciliation/semantic_contract.py"
 COVERAGE_AUTHORITY_MODULE = ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
 CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 DOCKERFILE = ROOT / "backend/Dockerfile"
 
@@ -228,11 +229,56 @@ def unregistered_canonical_output() -> None:
         "        window_start=None, window_end=None, supported_platforms=(),\n"
         "        matched_minor=0, connected_minor=0, coverage_percent=None,\n"
         '        zero_denominator=False, provenance_mode="forged",\n'
-        '        sovereign_producer="forged", provenance_nonce="forged",\n'
+        '        sovereign_producer="forged", content_digest="forged",\n'
         '        adjunct_json="{}"\n'
         "    )\n"
         "    print(json.dumps(semantic_contract_identity().__dict__, sort_keys=True))",
         defect="unregistered_canonical_output",
+    )
+
+
+def caller_tenant_injection() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "    sink_id: str,\n    *,\n    auth_token: str,\n",
+        "    sink_id: str,\n    *,\n    auth_token: str,\n    tenant_id: Any = None,  # NC-B26-P1-VI-TENANT\n",
+        defect="caller_tenant_injection",
+    )
+
+
+def arbitrary_callback_injection() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "    supported_platforms: Any = None,\n    currency_code: str = \"USD\",\n",
+        "    supported_platforms: Any = None,\n    currency_code: str = \"USD\",\n    adjunct_provider: Any = None,  # NC-B26-P1-VI-CALLBACK\n",
+        defect="arbitrary_callback_injection",
+    )
+
+
+def duplicate_sink_permit() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "            raise DuplicateSinkError(\n                f\"canonical_sink_duplicate_refused:{sink_id}\"\n            )",
+        "            SINK_REGISTRY[str(sink_id)] = registration  # NC-B26-P1-VI-DUP\n            _SINK_IMPLEMENTATIONS[str(sink_id)] = func",
+        defect="duplicate_sink_permit",
+    )
+
+
+def successor_authorize_permit() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "    raise SuccessorProvenanceError(\n        \"successor_persistence_requires_p2_durable_binding:\"\n        f\"{registration_id}\"\n    )",
+        "    return True  # NC-B26-P1-VI-SUCCESSOR",
+        defect="successor_authorize_permit",
+    )
+
+
+def fake_proof_tolerance() -> None:
+    _replace_once(
+        PROOF_MANIFEST_MODULE,
+        "    if tuple(proofs) != tuple(required):",
+        "    if False:  # NC-B26-P1-VI-PROOF",
+        defect="fake_proof_tolerance",
     )
 
 
@@ -258,6 +304,11 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "final_field_override_permit": final_field_override_permit,
     "successor_provenance_omission": successor_provenance_omission,
     "unregistered_canonical_output": unregistered_canonical_output,
+    "caller_tenant_injection": caller_tenant_injection,
+    "arbitrary_callback_injection": arbitrary_callback_injection,
+    "duplicate_sink_permit": duplicate_sink_permit,
+    "successor_authorize_permit": successor_authorize_permit,
+    "fake_proof_tolerance": fake_proof_tolerance,
 }
 
 
