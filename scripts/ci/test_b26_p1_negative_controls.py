@@ -21,6 +21,7 @@ CONTRACT = ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 SEMANTIC_MODULE = ROOT / "backend/app/finance_reconciliation/semantic_contract.py"
 COVERAGE_AUTHORITY_MODULE = ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
 CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 
 STATIC_CONTROLS = (
@@ -75,6 +76,31 @@ STATIC_CONTROLS = (
         "unregistered_canonical_output",
         SEMANTIC_MODULE,
         "b26_unregistered_canonical_output",
+    ),
+    (
+        "caller_tenant_injection",
+        CANONICAL_SINK_MODULE,
+        "canonical_executor_tenant_not_auth_bound",
+    ),
+    (
+        "arbitrary_callback_injection",
+        CANONICAL_SINK_MODULE,
+        "canonical_executor_tenant_not_auth_bound",
+    ),
+    (
+        "duplicate_sink_permit",
+        CANONICAL_SINK_MODULE,
+        "canonical_sink_duplicate_not_refused",
+    ),
+    (
+        "successor_authorize_permit",
+        CANONICAL_SINK_MODULE,
+        "successor_provenance_law_not_enforced:authorize",
+    ),
+    (
+        "fake_proof_tolerance",
+        PROOF_MANIFEST_MODULE,
+        "proof_manifest_required_set_not_enforced",
     ),
 )
 

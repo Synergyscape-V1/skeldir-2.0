@@ -1102,17 +1102,22 @@ def _validate_governance(violations: list[str], details: dict[str, Any]) -> None
 def _validate_corrective_v_authority(
     violations: list[str], details: dict[str, Any]
 ) -> None:
-    """Executable Corrective-V authority: registry, executor, guards, law."""
+    """Executable Corrective-VI authority: registry, executor, guards, law."""
     sys.path.insert(0, str(BACKEND))
     try:
         from app.finance_reconciliation import tenant_authority as authority_module  # noqa: PLC0415
         from app.finance_reconciliation.canonical_sink import (  # noqa: PLC0415
             SINK_REGISTRY,
             CanonicalSinkError,
+            DuplicateSinkError,
             FinalCanonicalOutput,
+            SuccessorProvenanceError,
+            _SINK_IMPLEMENTATIONS,
             _project_external_fields,
             authorize_successor_persistence,
+            canonical_sink,
             deregister_successor_persistence,
+            executor_binds_tenant_from_verified_auth_only,
             executor_signature_has_no_session_capability,
             register_successor_persistence,
             reject_authoritative_adjunct,
@@ -1120,6 +1125,10 @@ def _validate_corrective_v_authority(
         )
         from app.finance_reconciliation.coverage_authority import (  # noqa: PLC0415
             GOVERNED_CANONICAL_SINK_NAMES,
+        )
+        from app.finance_reconciliation.proof_manifest import (  # noqa: PLC0415
+            REQUIRED_SINK_PROOFS,
+            require_proofs_bound,
         )
         from app.finance_reconciliation.semantic_contract import (  # noqa: PLC0415
             B26_P1_CONTRACT_VERSION,
@@ -1155,7 +1164,8 @@ def _validate_corrective_v_authority(
         violations.append("corrective_v_governed_principals_mismatch")
 
     # Every governed sink id resolves to an importable executable with a
-    # versioned registration bound to the current contract.
+    # versioned registration bound to the current contract, a stable
+    # executable hash, and the governed manifest proof set.
     for sink_id in sorted(GOVERNED_CANONICAL_SINK_NAMES):
         try:
             registration = require_registered_sink(sink_id)
@@ -1164,8 +1174,15 @@ def _validate_corrective_v_authority(
             continue
         if registration.contract_version != B26_P1_CONTRACT_VERSION:
             violations.append(f"corrective_v_sink_contract_stale:{sink_id}")
-        if not registration.required_runtime_proof_ids:
-            violations.append(f"corrective_v_sink_proofs_missing:{sink_id}")
+        if tuple(registration.required_runtime_proof_ids) != tuple(
+            REQUIRED_SINK_PROOFS.get(sink_id, ())
+        ):
+            violations.append(f"corrective_v_sink_proofs_unbound:{sink_id}")
+        if (
+            not isinstance(registration.implementation_hash, str)
+            or len(registration.implementation_hash) != 64
+        ):
+            violations.append(f"corrective_v_sink_executable_unbound:{sink_id}")
         try:
             module_name, _, attribute = registration.implementation.rpartition(".")
             implementation = getattr(
@@ -1182,11 +1199,103 @@ def _validate_corrective_v_authority(
     except Exception:  # noqa: BLE001
         pass
 
+    # Duplicate sink registration is refused: the first binding wins and a
+    # second binding with different executable identity must not replace it.
+    try:
+        pristine_registration = SINK_REGISTRY.get("future_finance_projection")
+        pristine_implementation = _SINK_IMPLEMENTATIONS.get(
+            "future_finance_projection"
+        )
+
+        def _validator_probe_impl(context: Any) -> dict[str, Any]:
+            return {}
+
+        try:
+            canonical_sink(
+                sink_id="future_finance_projection",
+                version="v9.9-validator-probe",
+                required_runtime_proof_ids=("V-2", "V-3", "V-4"),
+            )(_validator_probe_impl)
+        except DuplicateSinkError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            violations.append(f"canonical_sink_duplicate_wrong_refusal:{exc}")
+        else:
+            violations.append("canonical_sink_duplicate_not_refused")
+        finally:
+            if pristine_registration is not None:
+                SINK_REGISTRY["future_finance_projection"] = pristine_registration
+            if pristine_implementation is not None:
+                _SINK_IMPLEMENTATIONS["future_finance_projection"] = (
+                    pristine_implementation
+                )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_sink_duplicate_probe_error:{exc}")
+
+    # Forged proof identifiers are refused at declaration time.
+    try:
+        require_proofs_bound(
+            sink_id="future_finance_projection",
+            required_runtime_proof_ids=("FAKE",),
+            contract_version=B26_P1_CONTRACT_VERSION,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    else:
+        violations.append("proof_manifest_forgery_not_refused")
+    try:
+        require_proofs_bound(
+            sink_id="future_finance_projection",
+            required_runtime_proof_ids=("V-5",),
+            contract_version=B26_P1_CONTRACT_VERSION,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    else:
+        violations.append("proof_manifest_required_set_not_enforced")
+
+    # No transferable canonical token may exist: the issuance map, the mint
+    # helper, the nonce predicate, and the boolean predicate are deleted.
+    # NOTE: the ``canonical_sink`` decorator re-exported on the package
+    # shadows the submodule for ``import ... as`` bindings; importlib
+    # returns the real module under test (a function binding would pass
+    # these checks vacuously).
+    try:
+        sink_module = importlib.import_module(
+            "app.finance_reconciliation.canonical_sink"
+        )
+
+        for deleted in (
+            "_ISSUED_PROVENANCE_DIGESTS",
+            "_issue_provenance",
+            "is_canonical_output",
+            "require_canonical_output",
+        ):
+            if hasattr(sink_module, deleted):
+                violations.append(
+                    f"canonical_transferable_authority_present:{deleted}"
+                )
+        import dataclasses as _dataclasses  # noqa: PLC0415
+
+        output_fields = {
+            field.name for field in _dataclasses.fields(FinalCanonicalOutput)
+        }
+        if "provenance_nonce" in output_fields:
+            violations.append("canonical_transferable_nonce_present")
+        if "content_digest" not in output_fields:
+            violations.append("canonical_content_digest_missing")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_transferable_authority_unverifiable:{exc}")
+
     # The canonical executor must take no session capability parameter:
-    # injection is structurally impossible, not merely refused.
+    # injection is structurally impossible, not merely refused. It must
+    # additionally bind its tenant only from verified server auth: no
+    # caller-supplied tenant and no callable parameter may exist.
     try:
         if not executor_signature_has_no_session_capability():
             violations.append("canonical_executor_accepts_session_capability")
+        if not executor_binds_tenant_from_verified_auth_only():
+            violations.append("canonical_executor_tenant_not_auth_bound")
     except Exception as exc:  # noqa: BLE001
         violations.append(f"canonical_executor_signature_unverifiable:{exc}")
 
@@ -1229,7 +1338,9 @@ def _validate_corrective_v_authority(
         violations.append(f"canonical_adjunct_guard_error:{exc}")
 
     # Successor provenance law is live: unknown refused, ungoverned mode
-    # unregistrable, valid synthetic authorizes (then removed).
+    # unregistrable, forged proofs unregistrable, and -- because P1 has no
+    # migration-backed durable binding -- even a well-formed declaration
+    # authorizes nothing durable.
     try:
         try:
             authorize_successor_persistence("no_such_successor_registration")
@@ -1241,21 +1352,37 @@ def _validate_corrective_v_authority(
             register_successor_persistence(
                 registration_id="validator_probe_invalid",
                 provenance_mode="anything",
-                required_runtime_proof_ids=("V-6",),
+                required_runtime_proof_ids=("VI-6",),
             )
         except Exception:  # noqa: BLE001
             pass
         else:
             violations.append("successor_provenance_law_not_enforced:mode")
             deregister_successor_persistence("validator_probe_invalid")
+        try:
+            register_successor_persistence(
+                registration_id="validator_probe_fake",
+                provenance_mode="RE_DERIVE_ON_READ",
+                required_runtime_proof_ids=("FAKE-PROOF",),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        else:
+            violations.append("successor_provenance_law_not_enforced:proof")
+            deregister_successor_persistence("validator_probe_fake")
         register_successor_persistence(
             registration_id="validator_probe_valid",
             provenance_mode="RE_DERIVE_ON_READ",
-            required_runtime_proof_ids=("V-6",),
+            required_runtime_proof_ids=("VI-6",),
         )
         try:
-            if authorize_successor_persistence("validator_probe_valid") is not True:
-                violations.append("successor_provenance_law_valid_not_authorized")
+            authorize_successor_persistence("validator_probe_valid")
+        except SuccessorProvenanceError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            violations.append(f"successor_provenance_law_wrong_refusal:{exc}")
+        else:
+            violations.append("successor_provenance_law_not_enforced:authorize")
         finally:
             deregister_successor_persistence("validator_probe_valid")
     except Exception as exc:  # noqa: BLE001
@@ -1280,7 +1407,7 @@ def _validate_corrective_v_authority(
             zero_denominator=False,
             provenance_mode="RE_DERIVE_ON_READ",
             sovereign_producer="probe",
-            provenance_nonce="validator-probe",
+            content_digest="validator-probe",
             adjunct_json="{}",
         )
         rendered = _project_external_fields(probe_output)
