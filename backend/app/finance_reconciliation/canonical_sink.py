@@ -1,7 +1,40 @@
-"""B2.6-P1 executable canonical-consumer framework (Corrective VI).
+"""B2.6-P1 executable canonical-consumer framework (Corrective VII).
 
-Defect classes closed here
---------------------------
+Corrective-VII law (see per-defect theorems below)
+--------------------------------------------------
+
+VII-A. **Complete access-token authority.** The executor composes the full
+sovereign access-token state machine -- cryptographic verification plus
+mandatory-claim extraction plus current lifecycle enforcement -- so a
+credential the normal authenticated-request path rejects (revoked,
+invalidated, structurally incomplete) can never obtain canonical truth.
+Authenticity without current authorization is not authority.
+
+VII-B. **Integrity never confers external canonical form.** No function in
+this module maps a detached :class:`FinalCanonicalOutput` to canonical
+external form: the object-accepting renderer is deleted, not fenced. The
+only approved external projection,
+:func:`render_governed_external`, executes the governed sink itself and
+projects the fresh consequence. A digest-correct synthetic therefore has
+no approved renderer to be called on -- promotion is unrepresentable by
+API shape, not by caller discipline.
+
+VII-C. **Governed executable identity (bounded trust).** Same-process
+Python memory is explicitly inside the trusted computing base: ordinary
+first-party code that coherently replaces both the registry entry and the
+implementation can become the registered projection. The enforced theorem
+is narrower and physical: authoritative financial fields are materialized
+by the framework from the sovereign derivation *after* the projection
+runs, authoritative/tenant-bearing adjunct keys are refused, and the
+approved external projection omits adjuncts entirely -- so a coordinated
+substitution demonstrably cannot alter canonical financial truth, only
+non-authoritative adjuncts that never externalize. Repository-source
+identity for the reviewable bytes remains bound by per-execution
+source-hash re-verification plus CI adjudication of the exact candidate
+SHA/tree on protected main.
+
+Defect classes closed here (Corrective VI, preserved)
+-----------------------------------------------------
 
 1. **Caller-selected tenant.** The executor took a ``tenant_id`` UUID from
    ordinary application code and opened the matching governed session, so an
@@ -231,10 +264,13 @@ class FinalCanonicalOutput:
     A value of this type is a consequence of a fresh governed execution,
     never a bearer of authority: there is no predicate, map, nonce, seal,
     or helper that can certify a detached instance as canonical.
-    :func:`verify_output_integrity` reports digest integrity only.
-    Downstream canonical consumers must execute
-    :func:`execute_governed_sink` themselves; accepting a transferred
-    object as authority is a class violation regardless of its shape.
+    :func:`verify_output_integrity` reports digest integrity only, and no
+    function in this module renders a detached instance as canonical
+    external form -- the only approved projection,
+    :func:`render_governed_external`, executes the governed sink itself.
+    Downstream canonical consumers must execute the governed sink (or the
+    executing renderer) themselves; accepting a transferred object as
+    authority is a class violation regardless of its shape.
     """
 
     authority: str
@@ -389,31 +425,42 @@ def verify_output_integrity(candidate: Any) -> bool:
     return True
 
 
-def resolve_authenticated_tenant(auth_token: str) -> UUID:
-    """Resolve the server-authenticated tenant from a verified JWT.
+async def resolve_authenticated_tenant(auth_token: str) -> UUID:
+    """Resolve the server-authenticated tenant from a currently-authorized token.
 
-    The token is verified against the sovereign RS256 public-key ring by
-    ``app.security.auth`` (B2.5/B1.2 authentication substrate, reused here
-    so B2.6 introduces no second identity ontology). Only a token minted
-    with the signing private material verifies; ordinary application code
-    holding no signing key cannot select, forge, or substitute a tenant.
-    Every verification failure refuses -- it can never become a tenant.
+    Class-closure theorem (AUTHENTICITY != CURRENT AUTHORIZATION): the
+    canonical boundary composes the *complete* sovereign access-token
+    state machine owned by ``app.security.auth`` (the B2.5/B1.2
+    authentication substrate -- B2.6 introduces no second identity
+    ontology):
+
+    1. ``decode_and_verify_jwt`` -- RS256 signature, algorithm, key,
+       issuer, audience, expiry;
+    2. ``extract_access_token_claims`` -- mandatory ``tenant_id``,
+       ``user_id``/``sub``, ``jti``, ``iat``/``exp`` claims;
+    3. ``assert_access_token_active`` -- current lifecycle state: jti
+       denylist (revocation) plus ``tokens_invalid_before`` cutoff.
+
+    A credential rejected by the normal authenticated-request path --
+    revoked after logout, invalidated by a kill-switch cutoff, expired, or
+    structurally incomplete -- is refused here before any tenant, session,
+    or aggregation can be observed. Every verification failure refuses;
+    it can never become a tenant. No scope contract governs this seam, so
+    none is manufactured: authentication-alone sufficiency is the
+    documented production law, composed exactly, never reimplemented.
     """
     if not isinstance(auth_token, str) or not auth_token.strip():
         raise CanonicalSinkError("governed_sink_requires_verified_server_auth")
     from app.security.auth import (  # noqa: PLC0415
+        assert_access_token_active,
         decode_and_verify_jwt,
-        unauthorized_auth_error,
+        extract_access_token_claims,
     )
 
     claims = decode_and_verify_jwt(auth_token.strip())
-    raw_tenant = claims.get("tenant_id")
-    if not raw_tenant:
-        raise unauthorized_auth_error()
-    try:
-        return UUID(str(raw_tenant))
-    except ValueError as exc:
-        raise unauthorized_auth_error() from exc
+    token_claims = extract_access_token_claims(claims)
+    await assert_access_token_active(token_claims)
+    return token_claims.tenant_id
 
 
 def canonical_sink(
@@ -526,9 +573,46 @@ def _tenant_external_id(tenant_id: UUID | str) -> str:
     return tenant_hash(tenant_id)
 
 
-def _project_external_fields(output: FinalCanonicalOutput) -> dict[str, Any]:
-    """Render the approved external projection (hash identity only)."""
-    return {
+async def render_governed_external(
+    sink_id: str,
+    *,
+    auth_token: str,
+    window_start: datetime,
+    window_end: datetime,
+    supported_platforms: Any = None,
+    currency_code: str = "USD",
+) -> dict[str, Any]:
+    """Execute the governed sink and project its fresh consequence externally.
+
+    Class-closure theorem (REPRESENTATION CONSISTENCY != CAUSAL
+    PROVENANCE): this is the *only* approved canonical external
+    projection, and it accepts no object, mapping, DTO, financial value,
+    session, or callable -- only the same scope identity plus verified
+    auth the executor takes. It executes :func:`execute_governed_sink`
+    itself and projects the just-materialized consequence inline. There is
+    deliberately no ``FinalCanonicalOutput``-accepting renderer at any
+    visibility in this module, so a digest-correct synthetic, copy,
+    rebuild, JSON round-trip, or cross-process transfer has no approved
+    function that could emit it as canonical external form: promotion is
+    unrepresentable by API shape. Introspection helper
+    :func:`external_renderer_signature_is_execution_bound` plus the CI
+    structural sensor prove that shape on every run.
+
+    The projection carries only the sovereign one-way tenant hash (raw
+    tenant identity never leaves this boundary) and omits adjuncts
+    entirely: adjuncts are non-authoritative by type and never
+    externalize, so a coordinated projection substitution cannot reach an
+    external consumer even where it captures registration.
+    """
+    output = await execute_governed_sink(
+        sink_id,
+        auth_token=auth_token,
+        window_start=window_start,
+        window_end=window_end,
+        supported_platforms=supported_platforms,
+        currency_code=currency_code,
+    )
+    rendered = {
         "authority": output.authority,
         "sink_id": output.sink_id,
         "contract_version": output.contract_version,
@@ -544,26 +628,29 @@ def _project_external_fields(output: FinalCanonicalOutput) -> dict[str, Any]:
         "provenance_mode": output.provenance_mode,
         "sovereign_producer": output.sovereign_producer,
     }
-
-
-def to_canonical_external(output: FinalCanonicalOutput) -> dict[str, Any]:
-    """Serialize framework output for approved consumers.
-
-    This is a projection renderer, not an authority predicate: it requires
-    digest-intact framework output and emits only the sovereign one-way
-    tenant hash (raw tenant identity never leaves this boundary). A
-    digest-correct synthetic value renders here exactly as framework output
-    would -- and confers nothing, because no canonical consumer accepts
-    transferred objects.
-    """
-    if not verify_output_integrity(output):
-        raise CanonicalSinkError(
-            f"value_is_not_framework_output:{type(output).__name__}"
-        )
-    rendered = _project_external_fields(output)
-    if "tenant_id" in rendered:
-        raise CanonicalSinkError("canonical_external_emits_raw_tenant_id")
     return rendered
+
+
+def external_renderer_signature_is_execution_bound() -> bool:
+    """Introspect that the only approved renderer executes instead of accepting."""
+    parameters = inspect.signature(render_governed_external).parameters
+    forbidden = {
+        "output",
+        "candidate",
+        "carrier",
+        "dto",
+        "mapping",
+        "value",
+        "tenant_id",
+        "tenant",
+        "session",
+        "engine",
+        "factory",
+        "callback",
+        "adjunct_provider",
+    }
+    names = set(parameters)
+    return "auth_token" in names and not (names & forbidden)
 
 
 async def execute_governed_sink(
@@ -587,7 +674,7 @@ async def execute_governed_sink(
     adjuncts only, and materializes the authoritative fields itself.
     """
     registration = require_registered_sink(sink_id)
-    tenant_id = resolve_authenticated_tenant(auth_token)
+    tenant_id = await resolve_authenticated_tenant(auth_token)
     implementation = _SINK_IMPLEMENTATIONS[str(sink_id)]
     async with open_governed_b23_session(tenant_id) as session:
         await require_tenant_row_exists(session, tenant_id)

@@ -49,17 +49,17 @@ from app.finance_reconciliation.canonical_sink import (
     FinalFieldSubstitutionError,
     SuccessorProvenanceError,
     UnregisteredSinkError,
-    _project_external_fields,
     authorize_successor_persistence,
     canonical_sink,
     deregister_successor_persistence,
     execute_governed_sink,
     executor_binds_tenant_from_verified_auth_only,
     executor_signature_has_no_session_capability,
+    external_renderer_signature_is_execution_bound,
     register_successor_persistence,
     reject_authoritative_adjunct,
+    render_governed_external,
     require_registered_sink,
-    to_canonical_external,
     verify_output_integrity,
 )
 from app.finance_reconciliation.coverage_authority import (
@@ -447,12 +447,13 @@ def test_v6_successor_provenance_law_is_machine_enforced() -> None:
 
 
 # ---------------------------------------------------------------------------
-# V-7 (pure part): external projection carries hash only; direct builds are
-# non-authoritative (no transferable canonical token exists).
+# V-7 (Corrective-VII law): the only approved external projection executes
+# the governed sink itself; direct builds are non-authoritative and have no
+# approved renderer (no transferable canonical token exists).
 # ---------------------------------------------------------------------------
 
 
-def test_v7_external_projection_hash_only_and_direct_build_noncanonical() -> None:
+def test_v7_direct_build_is_not_integral() -> None:
     tenant_id = UUID("11111111-1111-1111-1111-111111111111")
     assert verify_output_integrity({"coverage_percent": "95.00"}) is False
     assert verify_output_integrity("95.00") is False
@@ -475,11 +476,19 @@ def test_v7_external_projection_hash_only_and_direct_build_noncanonical() -> Non
         adjunct_json="{}",
     )
     assert verify_output_integrity(direct) is False
-    rendered = _project_external_fields(direct)
+    assert external_renderer_signature_is_execution_bound() is True
+
+
+async def test_v7_executing_projection_is_hash_only() -> None:
+    tenant_a = _seed_ratio_tenant(76000, 80000, "v7-projection")
+    rendered = await render_governed_external(
+        "future_finance_projection", auth_token=_auth_token(tenant_a), **_scope()
+    )
     assert "tenant_id" not in rendered
-    assert rendered["tenant_id_hash"] == tenant_hash(tenant_id)
-    with pytest.raises(Exception):
-        to_canonical_external(direct)
+    assert str(tenant_a) not in str(rendered)
+    assert rendered["tenant_id_hash"] == tenant_hash(tenant_a)
+    assert rendered["coverage_percent"] == "95.00"
+    assert rendered["authority"] == "canonical_B2.6_financial_truth"
 
 
 # ---------------------------------------------------------------------------
@@ -643,7 +652,9 @@ async def test_v2_framework_output_is_sovereign_result() -> None:
     assert output.coverage_percent == Decimal("95.00")
     assert output.zero_denominator is False
     assert verify_output_integrity(output) is True
-    external = to_canonical_external(output)
+    external = await render_governed_external(
+        "future_finance_projection", auth_token=_auth_token(tenant_a), **_scope()
+    )
     assert "tenant_id" not in external
     assert external["tenant_id_hash"] == tenant_hash(tenant_a)
 
@@ -670,8 +681,12 @@ async def test_v2_tampered_content_is_not_integral() -> None:
         adjunct_json=output.adjunct_json,
     )
     assert verify_output_integrity(forged) is False
-    with pytest.raises(Exception):
-        to_canonical_external(forged)
+    # No approved renderer accepts a detached object at all (Corrective-VII
+    # law): the only approved projection executes the governed sink itself,
+    # so a tampered value has no promotion path. Refusal-by-absence is
+    # proven in the VII battery (VII-2); here the load-bearing fact is the
+    # integrity predicate itself refusing the tamper.
+    assert external_renderer_signature_is_execution_bound() is True
 
 
 # ---------------------------------------------------------------------------

@@ -102,6 +102,26 @@ STATIC_CONTROLS = (
         PROOF_MANIFEST_MODULE,
         "proof_manifest_required_set_not_enforced",
     ),
+    (
+        "revoked_token_tolerance",
+        CANONICAL_SINK_MODULE,
+        "canonical_revocation_law_not_composed",
+    ),
+    (
+        "required_claims_tolerance",
+        CANONICAL_SINK_MODULE,
+        "canonical_required_claims_not_enforced",
+    ),
+    (
+        "external_promotion_permit",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_promotion_surface_present",
+    ),
+    (
+        "framework_materialization_bypass",
+        CANONICAL_SINK_MODULE,
+        "canonical_framework_materialization_bypassed",
+    ),
 )
 
 
