@@ -1113,14 +1113,15 @@ def _validate_corrective_v_authority(
             FinalCanonicalOutput,
             SuccessorProvenanceError,
             _SINK_IMPLEMENTATIONS,
-            _project_external_fields,
             authorize_successor_persistence,
             canonical_sink,
             deregister_successor_persistence,
             executor_binds_tenant_from_verified_auth_only,
             executor_signature_has_no_session_capability,
+            external_renderer_signature_is_execution_bound,
             register_successor_persistence,
             reject_authoritative_adjunct,
+            render_governed_external,
             require_registered_sink,
         )
         from app.finance_reconciliation.coverage_authority import (  # noqa: PLC0415
@@ -1389,34 +1390,42 @@ def _validate_corrective_v_authority(
         violations.append(f"successor_provenance_law_error:{exc}")
 
     # Approved external projection never carries raw tenant identity.
+    # Corrective-VII law: the projection is execution-bound (it renders the
+    # fresh consequence of its own governed execution), so this DB-less
+    # sensor proves the projection's static shape -- the exact emitted key
+    # census of the `rendered` mapping -- while the consequence battery
+    # proves runtime behavior with a database.
     try:
-        from app.trust.refusal import tenant_hash  # noqa: PLC0415
+        import inspect as _inspect  # noqa: PLC0415
 
-        probe_output = FinalCanonicalOutput(
-            authority="canonical_B2.6_financial_truth",
-            sink_id="future_finance_projection",
-            contract_version=B26_P1_CONTRACT_VERSION,
-            tenant_id_hash=tenant_hash("11111111-1111-1111-1111-111111111111"),
-            currency_code="USD",
-            window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            supported_platforms=("stripe",),
-            matched_minor=76000,
-            connected_minor=80000,
-            coverage_percent=Decimal("95.00"),
-            zero_denominator=False,
-            provenance_mode="RE_DERIVE_ON_READ",
-            sovereign_producer="probe",
-            content_digest="validator-probe",
-            adjunct_json="{}",
-        )
-        rendered = _project_external_fields(probe_output)
-        if "tenant_id" in rendered:
+        render_tree = ast.parse(_inspect.getsource(render_governed_external))
+        emitted_keys: set[str] = set()
+        for node in ast.walk(render_tree):
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "rendered"
+                for target in node.targets
+            ):
+                # Only Dict keys count as emitted projection fields; string
+                # values (hashes, modes, labels) are not fields.
+                if isinstance(node.value, ast.Dict):
+                    for key_node in node.value.keys:
+                        if isinstance(key_node, ast.Constant) and isinstance(
+                            key_node.value, str
+                        ):
+                            emitted_keys.add(key_node.value)
+        if "tenant_id" in emitted_keys:
             violations.append("canonical_external_emits_raw_tenant")
-        if rendered.get("tenant_id_hash") != tenant_hash(
-            "11111111-1111-1111-1111-111111111111"
-        ):
+        if "tenant_id_hash" not in emitted_keys:
             violations.append("canonical_external_tenant_hash_mismatch")
+        if "adjunct_json" in emitted_keys:
+            violations.append("canonical_external_emits_non_authoritative_adjunct")
+        if not external_renderer_signature_is_execution_bound():
+            violations.append("canonical_external_renderer_not_execution_bound")
+        renderer_source = (
+            REPO_ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+        ).read_text(encoding="utf-8")
+        if "await execute_governed_sink(" not in renderer_source:
+            violations.append("canonical_external_renderer_not_execution_bound")
     except Exception as exc:  # noqa: BLE001
         violations.append(f"canonical_external_projection_error:{exc}")
 
@@ -1447,11 +1456,124 @@ def _validate_corrective_v_authority(
     )
 
 
+def _returns_mapping(returns: ast.AST | None) -> bool:
+    """Report whether a return annotation denotes a mapping projection."""
+    if returns is None:
+        return False
+    if isinstance(returns, ast.Name) and returns.id == "dict":
+        return True
+    if isinstance(returns, ast.Subscript) and isinstance(returns.value, ast.Name):
+        return returns.value.id == "dict"
+    if isinstance(returns, ast.Constant) and isinstance(returns.value, str):
+        return returns.value.strip().startswith("dict")
+    return False
+
+
+def _validate_corrective_vii_authority(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Executable Corrective-VII authority: token lifecycle, renderer shape, materialization."""
+    sys.path.insert(0, str(BACKEND))
+    sink_path = REPO_ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+    try:
+        sink_source = sink_path.read_text(encoding="utf-8")
+        sink_tree = ast.parse(sink_source)
+    except (OSError, SyntaxError) as exc:
+        violations.append(f"corrective_vii_sink_source_unreadable:{exc}")
+        return
+
+    # VII-A: the canonical boundary composes the complete sovereign
+    # access-token state machine -- mandatory-claim extraction plus current
+    # lifecycle enforcement -- never signature verification alone.
+    if "extract_access_token_claims(claims)" not in sink_source:
+        violations.append("canonical_required_claims_not_enforced")
+    if "await assert_access_token_active(token_claims)" not in sink_source:
+        violations.append("canonical_revocation_law_not_composed")
+
+    # VII-B: no detached-object renderer may exist at any visibility; the
+    # only approved projection executes the governed sink itself.
+    try:
+        sink_module = importlib.import_module(
+            "app.finance_reconciliation.canonical_sink"
+        )
+        for deleted in ("to_canonical_external", "_project_external_fields"):
+            if hasattr(sink_module, deleted):
+                violations.append(
+                    "canonical_external_promotion_surface_present"
+                )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"corrective_vii_sink_module_unresolvable:{exc}")
+    if "async def render_governed_external" not in sink_source:
+        violations.append("canonical_execution_bound_renderer_missing")
+    for node in ast.walk(sink_tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        takes_detached_output = any(
+            "FinalCanonicalOutput" in ast.dump(a.annotation)
+            for a in (*node.args.args, *node.args.kwonlyargs)
+            if a.annotation is not None
+        )
+        if not takes_detached_output:
+            continue
+        emits_mapping = _returns_mapping(node.returns) or any(
+            isinstance(child, ast.Return) and isinstance(child.value, ast.Dict)
+            for child in ast.walk(node)
+        )
+        if emits_mapping:
+            violations.append("canonical_object_accepting_renderer_present")
+            break
+
+    # VII-C: authoritative fields are materialized from the sovereign
+    # derivation (the `context` readout), never from projection output.
+    # Only `adjunct_json` may derive from the governed `cleaned` adjuncts.
+    found_output_construction = False
+    for node in ast.walk(sink_tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        called = (
+            func.id
+            if isinstance(func, ast.Name)
+            else func.attr
+            if isinstance(func, ast.Attribute)
+            else ""
+        )
+        if called != "FinalCanonicalOutput":
+            continue
+        found_output_construction = True
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                continue
+            names = {
+                child.id for child in ast.walk(keyword.value)
+                if isinstance(child, ast.Name)
+            }
+            if keyword.arg == "adjunct_json":
+                if "cleaned" not in names:
+                    violations.append("canonical_adjunct_channel_not_governed")
+            elif names & {"cleaned", "raw_adjunct"}:
+                violations.append("canonical_framework_materialization_bypassed")
+    if not found_output_construction:
+        violations.append("canonical_framework_materialization_unverifiable")
+
+    details["corrective_vii_sensors"] = sorted(
+        [
+            "canonical_required_claims_not_enforced",
+            "canonical_revocation_law_not_composed",
+            "canonical_external_promotion_surface_present",
+            "canonical_object_accepting_renderer_present",
+            "canonical_execution_bound_renderer_missing",
+            "canonical_framework_materialization_bypassed",
+        ]
+    )
+
+
 def validate() -> tuple[list[str], dict[str, Any]]:
     violations: list[str] = []
     details: dict[str, Any] = {}
     _validate_contract_and_b23_binding(violations, details)
     _validate_corrective_v_authority(violations, details)
+    _validate_corrective_vii_authority(violations, details)
     enforce_machinery = not _successor_authorizes_machinery()
     _validate_b26_namespace(
         violations, details, enforce_product_machinery=enforce_machinery

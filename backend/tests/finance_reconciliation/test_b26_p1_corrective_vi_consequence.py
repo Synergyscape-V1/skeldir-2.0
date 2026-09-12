@@ -40,9 +40,9 @@ from app.finance_reconciliation.canonical_sink import (
     execute_governed_sink,
     executor_binds_tenant_from_verified_auth_only,
     register_successor_persistence,
+    render_governed_external,
     require_registered_sink,
     resolve_authenticated_tenant,
-    to_canonical_external,
     verify_output_integrity,
 )
 from app.finance_reconciliation.class_sweep import plan as _plan
@@ -121,7 +121,7 @@ async def test_vi1_forged_empty_and_foreign_tokens_refuse() -> None:
 async def test_vi1_nonexistent_tenant_refuses_never_zero() -> None:
     ghost = uuid.uuid4()
     token = _auth_token(ghost)
-    assert resolve_authenticated_tenant(token) == ghost
+    assert await resolve_authenticated_tenant(token) == ghost
     with pytest.raises(UnknownTenantError):
         await execute_governed_sink(
             "future_finance_projection", auth_token=token, **_scope()
@@ -382,7 +382,9 @@ async def test_vi7_live_http_auth_path_binds_tenant() -> None:
         if scheme.lower() != "bearer" or not token.strip():
             return JSONResponse(status_code=401, content={"refused": True})
         try:
-            output = await execute_governed_sink(
+            # Corrective-VII law: the approved projection executes the
+            # governed sink itself; no detached object is rendered.
+            rendered = await render_governed_external(
                 sink_id,
                 auth_token=token.strip(),
                 window_start=WINDOW_START,
@@ -392,7 +394,7 @@ async def test_vi7_live_http_auth_path_binds_tenant() -> None:
             )
         except Exception:  # noqa: BLE001 -- any auth/authority failure refuses
             return JSONResponse(status_code=401, content={"refused": True})
-        return JSONResponse(status_code=200, content=to_canonical_external(output))
+        return JSONResponse(status_code=200, content=rendered)
 
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -422,8 +424,9 @@ async def test_vi7_live_http_auth_path_binds_tenant() -> None:
 
 async def test_vi8_external_projection_never_emits_raw_tenant() -> None:
     tenant_a = _seed_ratio_tenant(76000, 80000, "vi8-a")
-    output = await _execute("future_finance_projection", tenant_a)
-    external = to_canonical_external(output)
+    external = await render_governed_external(
+        "future_finance_projection", auth_token=_auth_token(tenant_a), **_scope()
+    )
     assert "tenant_id" not in external
     assert str(tenant_a) not in str(external)
     assert external["tenant_id_hash"] == tenant_hash(tenant_a)

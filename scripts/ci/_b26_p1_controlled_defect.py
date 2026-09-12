@@ -240,8 +240,8 @@ def unregistered_canonical_output() -> None:
 def caller_tenant_injection() -> None:
     _replace_once(
         CANONICAL_SINK_MODULE,
-        "    sink_id: str,\n    *,\n    auth_token: str,\n",
-        "    sink_id: str,\n    *,\n    auth_token: str,\n    tenant_id: Any = None,  # NC-B26-P1-VI-TENANT\n",
+        "async def execute_governed_sink(\n    sink_id: str,\n    *,\n    auth_token: str,\n",
+        "async def execute_governed_sink(\n    sink_id: str,\n    *,\n    auth_token: str,\n    tenant_id: Any = None,  # NC-B26-P1-VI-TENANT\n",
         defect="caller_tenant_injection",
     )
 
@@ -249,7 +249,9 @@ def caller_tenant_injection() -> None:
 def arbitrary_callback_injection() -> None:
     _replace_once(
         CANONICAL_SINK_MODULE,
+        "async def execute_governed_sink(\n    sink_id: str,\n    *,\n    auth_token: str,\n    window_start: datetime,\n    window_end: datetime,\n"
         "    supported_platforms: Any = None,\n    currency_code: str = \"USD\",\n",
+        "async def execute_governed_sink(\n    sink_id: str,\n    *,\n    auth_token: str,\n    window_start: datetime,\n    window_end: datetime,\n"
         "    supported_platforms: Any = None,\n    currency_code: str = \"USD\",\n    adjunct_provider: Any = None,  # NC-B26-P1-VI-CALLBACK\n",
         defect="arbitrary_callback_injection",
     )
@@ -282,6 +284,54 @@ def fake_proof_tolerance() -> None:
     )
 
 
+def revoked_token_tolerance() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "    await assert_access_token_active(token_claims)",
+        "    pass  # NC-B26-P1-VII-REVOKED: lifecycle enforcement removed",
+        defect="revoked_token_tolerance",
+    )
+
+
+def required_claims_tolerance() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "    token_claims = extract_access_token_claims(claims)",
+        "    token_claims = None  # NC-B26-P1-VII-CLAIMS: required-claim law skipped\n"
+        '    _nc_tenant = claims.get("tenant_id")  # NC-B26-P1-VII-CLAIMS',
+        defect="required_claims_tolerance",
+    )
+
+
+def external_promotion_permit() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "async def render_governed_external(",
+        "def to_canonical_external(output: FinalCanonicalOutput) -> dict[str, Any]:  # NC-B26-P1-VII-EXTERNAL\n"
+        '    return {"authority": output.authority}  # NC-B26-P1-VII-EXTERNAL\n'
+        "\n\n"
+        "async def render_governed_external(",
+        defect="external_promotion_permit",
+    )
+
+
+def framework_materialization_bypass() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "            matched_minor=context.matched_minor,\n"
+        "            connected_minor=context.connected_minor,\n"
+        "            coverage_percent=context.coverage_percent,\n"
+        "            zero_denominator=context.zero_denominator,\n"
+        "            provenance_mode=SINK_PROVENANCE_MODE,",
+        "            matched_minor=int(cleaned.get(\"matched_minor\", context.matched_minor)),  # NC-B26-P1-VII-MATERIAL\n"
+        "            connected_minor=context.connected_minor,\n"
+        "            coverage_percent=context.coverage_percent,\n"
+        "            zero_denominator=context.zero_denominator,\n"
+        "            provenance_mode=SINK_PROVENANCE_MODE,",
+        defect="framework_materialization_bypass",
+    )
+
+
 DEFECTS: dict[str, Callable[[], None]] = {
     "mandatory_semantic_element": mandatory_semantic_element,
     "coverage_authority_reference": coverage_authority_reference,
@@ -309,6 +359,10 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "duplicate_sink_permit": duplicate_sink_permit,
     "successor_authorize_permit": successor_authorize_permit,
     "fake_proof_tolerance": fake_proof_tolerance,
+    "revoked_token_tolerance": revoked_token_tolerance,
+    "required_claims_tolerance": required_claims_tolerance,
+    "external_promotion_permit": external_promotion_permit,
+    "framework_materialization_bypass": framework_materialization_bypass,
 }
 
 
