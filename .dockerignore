@@ -1,0 +1,16 @@
+# Production-image TCB hygiene (B2.6-P1 Corrective VIII, Gate VIII-5).
+#
+# The production image must not ship test/debug mutation tooling: no test
+# module may reach canonical mutable state in production. App code never
+# imports backend.tests (repo-wide fence + reachability census), and no
+# workflow executes pytest inside the image -- tests run from the source
+# checkout. Excluding the test tree therefore narrows the packaged TCB
+# without changing production behavior. The pytest/pytest-asyncio packages
+# remain installed via backend/requirements.txt (shared with CI test jobs);
+# with no test modules packaged and no app-code import path, they are
+# inert. A future split of prod/test requirements may remove them.
+backend/tests
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.hypothesis

@@ -11,7 +11,9 @@ from typing import Callable
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 SEMANTIC_MODULE = ROOT / "backend/app/finance_reconciliation/semantic_contract.py"
-COVERAGE_AUTHORITY_MODULE = ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
+COVERAGE_AUTHORITY_MODULE = (
+    ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
+)
 CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
@@ -26,7 +28,12 @@ def _replace_once(path: Path, old: str, new: str, *, defect: str) -> None:
 
 
 def mandatory_semantic_element() -> None:
-    _replace_once(CONTRACT, "maturity_mode: DESIGN_PARTNER_MODE\n", "", defect="mandatory_semantic_element")
+    _replace_once(
+        CONTRACT,
+        "maturity_mode: DESIGN_PARTNER_MODE\n",
+        "",
+        defect="mandatory_semantic_element",
+    )
 
 
 def coverage_authority_reference() -> None:
@@ -250,9 +257,9 @@ def arbitrary_callback_injection() -> None:
     _replace_once(
         CANONICAL_SINK_MODULE,
         "async def execute_governed_sink(\n    sink_id: str,\n    *,\n    auth_token: str,\n    window_start: datetime,\n    window_end: datetime,\n"
-        "    supported_platforms: Any = None,\n    currency_code: str = \"USD\",\n",
+        '    supported_platforms: Any = None,\n    currency_code: str = "USD",\n',
         "async def execute_governed_sink(\n    sink_id: str,\n    *,\n    auth_token: str,\n    window_start: datetime,\n    window_end: datetime,\n"
-        "    supported_platforms: Any = None,\n    currency_code: str = \"USD\",\n    adjunct_provider: Any = None,  # NC-B26-P1-VI-CALLBACK\n",
+        '    supported_platforms: Any = None,\n    currency_code: str = "USD",\n    adjunct_provider: Any = None,  # NC-B26-P1-VI-CALLBACK\n',
         defect="arbitrary_callback_injection",
     )
 
@@ -260,7 +267,7 @@ def arbitrary_callback_injection() -> None:
 def duplicate_sink_permit() -> None:
     _replace_once(
         CANONICAL_SINK_MODULE,
-        "            raise DuplicateSinkError(\n                f\"canonical_sink_duplicate_refused:{sink_id}\"\n            )",
+        '            raise DuplicateSinkError(f"canonical_sink_duplicate_refused:{sink_id}")',
         "            SINK_REGISTRY[str(sink_id)] = registration  # NC-B26-P1-VI-DUP\n            _SINK_IMPLEMENTATIONS[str(sink_id)] = func",
         defect="duplicate_sink_permit",
     )
@@ -269,7 +276,7 @@ def duplicate_sink_permit() -> None:
 def successor_authorize_permit() -> None:
     _replace_once(
         CANONICAL_SINK_MODULE,
-        "    raise SuccessorProvenanceError(\n        \"successor_persistence_requires_p2_durable_binding:\"\n        f\"{registration_id}\"\n    )",
+        '    raise SuccessorProvenanceError(\n        "successor_persistence_requires_p2_durable_binding:" f"{registration_id}"\n    )',
         "    return True  # NC-B26-P1-VI-SUCCESSOR",
         defect="successor_authorize_permit",
     )
@@ -318,17 +325,56 @@ def external_promotion_permit() -> None:
 def framework_materialization_bypass() -> None:
     _replace_once(
         CANONICAL_SINK_MODULE,
-        "            matched_minor=context.matched_minor,\n"
-        "            connected_minor=context.connected_minor,\n"
-        "            coverage_percent=context.coverage_percent,\n"
-        "            zero_denominator=context.zero_denominator,\n"
-        "            provenance_mode=SINK_PROVENANCE_MODE,",
-        "            matched_minor=int(cleaned.get(\"matched_minor\", context.matched_minor)),  # NC-B26-P1-VII-MATERIAL\n"
-        "            connected_minor=context.connected_minor,\n"
-        "            coverage_percent=context.coverage_percent,\n"
-        "            zero_denominator=context.zero_denominator,\n"
-        "            provenance_mode=SINK_PROVENANCE_MODE,",
+        "            matched_minor=_s_matched_minor,\n"
+        "            connected_minor=_s_connected_minor,\n"
+        "            coverage_percent=_s_coverage_percent,\n"
+        "            zero_denominator=_s_zero_denominator,\n"
+        "            provenance_mode=_s_provenance_mode,",
+        '            matched_minor=int(cleaned.get("matched_minor", _s_matched_minor)),  # NC-B26-P1-VII-MATERIAL\n'
+        "            connected_minor=_s_connected_minor,\n"
+        "            coverage_percent=_s_coverage_percent,\n"
+        "            zero_denominator=_s_zero_denominator,\n"
+        "            provenance_mode=_s_provenance_mode,",
         defect="framework_materialization_bypass",
+    )
+
+
+def post_derivation_alias_reread() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "            matched_minor=_s_matched_minor,\n"
+        "            connected_minor=_s_connected_minor,\n"
+        "            coverage_percent=_s_coverage_percent,\n"
+        "            zero_denominator=_s_zero_denominator,\n"
+        "            provenance_mode=_s_provenance_mode,",
+        "            matched_minor=projection_view.matched_minor,  # NC-B26-P1-VIII-ALIAS\n"
+        "            connected_minor=projection_view.connected_minor,  # NC-B26-P1-VIII-ALIAS\n"
+        "            coverage_percent=projection_view.coverage_percent,  # NC-B26-P1-VIII-ALIAS\n"
+        "            zero_denominator=projection_view.zero_denominator,  # NC-B26-P1-VIII-ALIAS\n"
+        "            provenance_mode=_s_provenance_mode,",
+        defect="post_derivation_alias_reread",
+    )
+
+
+def executable_check_use_divergence() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "        raw_adjunct = verified_implementation(projection_view)",
+        "        implementation = _SINK_IMPLEMENTATIONS[str(sink_id)]  # NC-B26-P1-VIII-TOCTOU\n"
+        "        raw_adjunct = implementation(projection_view)",
+        defect="executable_check_use_divergence",
+    )
+
+
+def executable_capture_before_awaits() -> None:
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "        final_registration, verified_implementation = _capture_verified_implementation(\n"
+        "            sink_id\n"
+        "        )",
+        "        final_registration = require_registered_sink(sink_id)  # NC-B26-P1-VIII-STALE\n"
+        "        verified_implementation = _SINK_IMPLEMENTATIONS.get(str(sink_id))  # NC-B26-P1-VIII-STALE",
+        defect="executable_capture_before_awaits",
     )
 
 
@@ -363,6 +409,9 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "required_claims_tolerance": required_claims_tolerance,
     "external_promotion_permit": external_promotion_permit,
     "framework_materialization_bypass": framework_materialization_bypass,
+    "post_derivation_alias_reread": post_derivation_alias_reread,
+    "executable_check_use_divergence": executable_check_use_divergence,
+    "executable_capture_before_awaits": executable_capture_before_awaits,
 }
 
 

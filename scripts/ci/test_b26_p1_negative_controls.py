@@ -19,7 +19,9 @@ VALIDATOR = ROOT / "scripts/ci/validate_b26_p1_authority.py"
 MUTATOR = ROOT / "scripts/ci/_b26_p1_controlled_defect.py"
 CONTRACT = ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 SEMANTIC_MODULE = ROOT / "backend/app/finance_reconciliation/semantic_contract.py"
-COVERAGE_AUTHORITY_MODULE = ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
+COVERAGE_AUTHORITY_MODULE = (
+    ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
+)
 CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
@@ -29,12 +31,20 @@ STATIC_CONTROLS = (
     ("coverage_authority_reference", CONTRACT, "semantic_contract_refused"),
     ("legacy_false_authority_import", SEMANTIC_MODULE, "b26_false_authority_import"),
     ("ontological_authority", CONTRACT, "semantic_contract_refused"),
-    ("workflow_execution_identity", WORKFLOW, "b26_required_context_event_identity_ambiguous"),
+    (
+        "workflow_execution_identity",
+        WORKFLOW,
+        "b26_required_context_event_identity_ambiguous",
+    ),
     ("reason_identity_substitution", CONTRACT, "semantic_contract_refused"),
     ("discrepancy_member_removal", CONTRACT, "semantic_contract_refused"),
     ("tenant_policy_weakening", CONTRACT, "semantic_contract_refused"),
     ("insertion_seam_corruption", CONTRACT, "semantic_contract_refused"),
-    ("discrepancy_addition_without_version_bump", CONTRACT, "semantic_contract_refused"),
+    (
+        "discrepancy_addition_without_version_bump",
+        CONTRACT,
+        "semantic_contract_refused",
+    ),
     ("unclassified_normative_field", CONTRACT, "b26_p1_unclassified_normative_field"),
     ("dynamic_legacy_import", SEMANTIC_MODULE, "b26_dynamic_false_authority_import"),
     (
@@ -121,6 +131,21 @@ STATIC_CONTROLS = (
         "framework_materialization_bypass",
         CANONICAL_SINK_MODULE,
         "canonical_framework_materialization_bypassed",
+    ),
+    (
+        "post_derivation_alias_reread",
+        CANONICAL_SINK_MODULE,
+        "canonical_authoritative_snapshot_not_isolated",
+    ),
+    (
+        "executable_check_use_divergence",
+        CANONICAL_SINK_MODULE,
+        "canonical_executable_check_use_diverged",
+    ),
+    (
+        "executable_capture_before_awaits",
+        CANONICAL_SINK_MODULE,
+        "canonical_executable_binding_not_atomic",
     ),
 )
 
@@ -232,7 +257,9 @@ def _proof_identity_control() -> dict[str, Any]:
         cell["candidate_sha"] = "0" * 40
         unhashed = {key: value for key, value in cell.items() if key != "artifact_hash"}
         cell["artifact_hash"] = hashlib.sha256(canonical_json(unhashed)).hexdigest()
-        target.write_text(json.dumps(cell, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(cell, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         try:
             adjudicate(
                 artifact_root=root,
@@ -372,9 +399,7 @@ def _proof_required_additional_cell_control() -> dict[str, Any]:
                     )
                 except AdjudicationError as exc:
                     if "unexpected" not in str(exc):
-                        raise RuntimeError(
-                            f"unregistered_cell_wrong_reason:{exc}"
-                        )
+                        raise RuntimeError(f"unregistered_cell_wrong_reason:{exc}")
                 else:
                     raise RuntimeError("unregistered_cell_did_not_turn_red")
                 (root / "B26-P2-SIM-UNREGISTERED.json").unlink()
@@ -421,7 +446,9 @@ def run_battery() -> list[dict[str, Any]]:
         try:
             applied = _run(sys.executable, str(MUTATOR), "apply", defect)
             if applied.returncode != 0:
-                raise RuntimeError(f"mutator_failed:{defect}:{applied.stdout}{applied.stderr}")
+                raise RuntimeError(
+                    f"mutator_failed:{defect}:{applied.stdout}{applied.stderr}"
+                )
             red = _validator()
             red_text = red.stdout + red.stderr
             if red.returncode == 0 or expected_red not in red_text:
@@ -432,7 +459,9 @@ def run_battery() -> list[dict[str, Any]]:
             raise RuntimeError(f"restore_hash_mismatch:{defect}")
         green = _validator()
         if green.returncode != 0:
-            raise RuntimeError(f"restore_not_green:{defect}:{green.stdout}{green.stderr}")
+            raise RuntimeError(
+                f"restore_not_green:{defect}:{green.stdout}{green.stderr}"
+            )
         ledger.append(
             {
                 "control": defect,
