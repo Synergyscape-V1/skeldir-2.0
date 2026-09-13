@@ -26,7 +26,9 @@ CONTRACT_PATH = REPO_ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1
 PROOF_REQUIREMENTS_PATH = (
     REPO_ROOT / "contracts/reconciliation/b2.6/proof-requirements.v1.yaml"
 )
-GOVERNANCE_PATH = REPO_ROOT / "contracts/reconciliation/b2.6/expected-governance.v1.yaml"
+GOVERNANCE_PATH = (
+    REPO_ROOT / "contracts/reconciliation/b2.6/expected-governance.v1.yaml"
+)
 REQUIRED_STATUS_PATH = (
     REPO_ROOT
     / "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
@@ -228,9 +230,7 @@ CANONICAL_SEAL_DEFINING_FILE = (
 # touch this type stay GREEN: canonicality is the governed interface, not
 # the ability to compute a ratio.
 FINAL_OUTPUT_TYPE_NAME = "FinalCanonicalOutput"
-FINAL_OUTPUT_DEFINING_FILE = (
-    "backend/app/finance_reconciliation/canonical_sink.py"
-)
+FINAL_OUTPUT_DEFINING_FILE = "backend/app/finance_reconciliation/canonical_sink.py"
 # AST names that would create P1-prohibited product machinery inside a B2.6
 # surface (tables, APIs, workers/schedulers, outbox). Docstrings/comments are
 # not AST names, so prose mentioning these words stays GREEN.
@@ -304,9 +304,8 @@ def _dynamic_imports(tree: ast.AST) -> Iterable[str]:
             if node.args and isinstance(node.args[0], ast.Constant):
                 value = node.args[0].value
                 target = value if isinstance(value, str) else None
-        elif (
-            isinstance(func, ast.Name)
-            and (func.id == "__import__" or func.id in import_module_aliases)
+        elif isinstance(func, ast.Name) and (
+            func.id == "__import__" or func.id in import_module_aliases
         ):
             if node.args and isinstance(node.args[0], ast.Constant):
                 value = node.args[0].value
@@ -430,7 +429,10 @@ def _check_migration_ancestry(
         details["migration_ancestry"] = "at_p1_closure_head"
         return
     head = next(iter(migration_heads))
-    if expected_closure_head not in graph and expected_closure_head not in migration_heads:
+    if (
+        expected_closure_head not in graph
+        and expected_closure_head not in migration_heads
+    ):
         # Closure revision file missing entirely: history was rewritten.
         violations.append(
             f"b26_p1_closure_head_missing_from_history:expected={expected_closure_head}"
@@ -445,7 +447,9 @@ def _check_migration_ancestry(
     details["migration_ancestry"] = f"descendant_of_{expected_closure_head}"
 
 
-def _validate_contract_and_b23_binding(violations: list[str], details: dict[str, Any]) -> None:
+def _validate_contract_and_b23_binding(
+    violations: list[str], details: dict[str, Any]
+) -> None:
     os.environ.setdefault(
         "DATABASE_URL",
         "postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/b26_p1_static",
@@ -482,7 +486,10 @@ def _validate_contract_and_b23_binding(violations: list[str], details: dict[str,
         violations.append(f"coverage_authority_unresolvable:{exc}")
         return
 
-    if aggregate_callable.__module__ != "app.revenue_verification.verification_coverage":
+    if (
+        aggregate_callable.__module__
+        != "app.revenue_verification.verification_coverage"
+    ):
         violations.append("coverage_aggregate_callable_not_b23_sovereign")
     if metric.__class__.__module__ != "app.revenue_verification.verification_coverage":
         violations.append("coverage_metric_object_not_b23_sovereign")
@@ -513,8 +520,7 @@ def _validate_contract_and_b23_binding(violations: list[str], details: dict[str,
         sealed_type.__module__ != "app.finance_reconciliation.coverage_authority"
         or loader.__module__ != "app.finance_reconciliation.coverage_authority"
         or admitter.__module__ != "app.finance_reconciliation.coverage_authority"
-        or scope_verifier.__module__
-        != "app.finance_reconciliation.coverage_authority"
+        or scope_verifier.__module__ != "app.finance_reconciliation.coverage_authority"
         or resolver.__module__ != "app.finance_reconciliation.coverage_authority"
     ):
         violations.append("coverage_admission_seam_not_authority_owned")
@@ -649,7 +655,9 @@ def _validate_contract_and_b23_binding(violations: list[str], details: dict[str,
         "provenance_model": provenance_model,
     }
 
-    coverage_source = REPO_ROOT / "backend/app/revenue_verification/verification_coverage.py"
+    coverage_source = (
+        REPO_ROOT / "backend/app/revenue_verification/verification_coverage.py"
+    )
     source_ast_hash = hashlib.sha256(
         ast.dump(
             ast.parse(coverage_source.read_text(encoding="utf-8")),
@@ -750,9 +758,7 @@ def _check_b26_file_semantics(
             called = (
                 func.id
                 if isinstance(func, ast.Name)
-                else func.attr
-                if isinstance(func, ast.Attribute)
-                else ""
+                else func.attr if isinstance(func, ast.Attribute) else ""
             )
             if (
                 called == CANONICAL_SEALED_TYPE_NAME
@@ -762,33 +768,41 @@ def _check_b26_file_semantics(
                     f"b26_unregistered_coverage_origin:{rel}:{node.lineno}"
                 )
         if enforce_product_machinery:
-            if isinstance(node, ast.Name) and node.id in FORBIDDEN_B26_PRODUCT_MACHINERY_NAMES:
-                violations.append(f"b26_prohibited_product_machinery:{rel}:{node.id}:{node.lineno}")
+            if (
+                isinstance(node, ast.Name)
+                and node.id in FORBIDDEN_B26_PRODUCT_MACHINERY_NAMES
+            ):
+                violations.append(
+                    f"b26_prohibited_product_machinery:{rel}:{node.id}:{node.lineno}"
+                )
             if (
                 isinstance(node, ast.Attribute)
                 and node.attr in FORBIDDEN_B26_PRODUCT_MACHINERY_NAMES
             ):
-                violations.append(f"b26_prohibited_product_machinery:{rel}:{node.attr}:{node.lineno}")
+                violations.append(
+                    f"b26_prohibited_product_machinery:{rel}:{node.attr}:{node.lineno}"
+                )
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             lowered = node.value.lower()
             if "select " in lowered or "sum(" in lowered:
                 if any(token in lowered for token in FORBIDDEN_SQL_AUTHORITY_TOKENS):
-                    violations.append(f"b26_duplicate_financial_sql:{rel}:{node.lineno}")
+                    violations.append(
+                        f"b26_duplicate_financial_sql:{rel}:{node.lineno}"
+                    )
             if (
                 "total_business" in lowered
                 and rel not in TOTAL_BUSINESS_ALLOWLIST_FILES
             ):
-                violations.append(f"b26_total_business_denominator_authority:{rel}:{node.lineno}")
+                violations.append(
+                    f"b26_total_business_denominator_authority:{rel}:{node.lineno}"
+                )
             if rel not in LEGACY_ROUTE_LITERAL_ALLOWLIST_FILES and any(
                 literal in node.value for literal in LEGACY_QUARANTINED_ROUTE_LITERALS
             ):
                 violations.append(
                     f"b26_legacy_route_reference_in_canonical_surface:{rel}:{node.lineno}"
                 )
-    if (
-        "total_business" in source.lower()
-        and rel not in TOTAL_BUSINESS_ALLOWLIST_FILES
-    ):
+    if "total_business" in source.lower() and rel not in TOTAL_BUSINESS_ALLOWLIST_FILES:
         # Catch non-string occurrences (variable names, comments excluded by AST
         # are intentionally not distinguished: B2.6 surfaces must not name a
         # total-business denominator at all).
@@ -819,10 +833,16 @@ def _validate_b26_namespace(
         try:
             tree = ast.parse(source, filename=str(path))
         except SyntaxError as exc:
-            violations.append(f"b26_package_syntax_error:{path.relative_to(REPO_ROOT)}:{exc}")
+            violations.append(
+                f"b26_package_syntax_error:{path.relative_to(REPO_ROOT)}:{exc}"
+            )
             continue
         _check_b26_file_semantics(
-            path, source, tree, violations, enforce_product_machinery=enforce_product_machinery
+            path,
+            source,
+            tree,
+            violations,
+            enforce_product_machinery=enforce_product_machinery,
         )
     details["b26_namespace_files"] = [
         path.relative_to(REPO_ROOT).as_posix() for path in files
@@ -924,9 +944,7 @@ def _validate_repo_wide_false_authority(
                     called = (
                         func.id
                         if isinstance(func, ast.Name)
-                        else func.attr
-                        if isinstance(func, ast.Attribute)
-                        else ""
+                        else func.attr if isinstance(func, ast.Attribute) else ""
                     )
                     if called == CANONICAL_SEALED_TYPE_NAME:
                         violations.append(
@@ -943,9 +961,7 @@ def _validate_repo_wide_false_authority(
                     called = (
                         func.id
                         if isinstance(func, ast.Name)
-                        else func.attr
-                        if isinstance(func, ast.Attribute)
-                        else ""
+                        else func.attr if isinstance(func, ast.Attribute) else ""
                     )
                     if called == FINAL_OUTPUT_TYPE_NAME:
                         violations.append(
@@ -986,7 +1002,9 @@ def _validate_governance(violations: list[str], details: dict[str, Any]) -> None
         WORKFLOW_PATH,
     ):
         if not path.is_file():
-            violations.append(f"required_authority_file_missing:{path.relative_to(REPO_ROOT)}")
+            violations.append(
+                f"required_authority_file_missing:{path.relative_to(REPO_ROOT)}"
+            )
     if violations:
         return
     governance = _load_yaml(GOVERNANCE_PATH)
@@ -1047,7 +1065,11 @@ def _validate_governance(violations: list[str], details: dict[str, Any]) -> None
         violations.append("b26_proof_additional_cells_malformed")
     else:
         for entry in additional:
-            if not isinstance(entry, dict) or "gate_id" not in entry or "producer" not in entry:
+            if (
+                not isinstance(entry, dict)
+                or "gate_id" not in entry
+                or "producer" not in entry
+            ):
                 violations.append("b26_proof_additional_cells_malformed")
                 break
             if "required" in entry and not isinstance(entry["required"], bool):
@@ -1058,7 +1080,10 @@ def _validate_governance(violations: list[str], details: dict[str, Any]) -> None
                     f"b26_proof_additional_cell_collides:{entry['gate_id']}"
                 )
                 break
-    if set(requirements.get("required_identity_fields", [])) != EXPECTED_IDENTITY_FIELDS:
+    if (
+        set(requirements.get("required_identity_fields", []))
+        != EXPECTED_IDENTITY_FIELDS
+    ):
         violations.append("b26_proof_identity_fields_drift")
     try:
         sys.path.insert(0, str(BACKEND))
@@ -1105,7 +1130,9 @@ def _validate_corrective_v_authority(
     """Executable Corrective-VI authority: registry, executor, guards, law."""
     sys.path.insert(0, str(BACKEND))
     try:
-        from app.finance_reconciliation import tenant_authority as authority_module  # noqa: PLC0415
+        from app.finance_reconciliation import (
+            tenant_authority as authority_module,
+        )  # noqa: PLC0415
         from app.finance_reconciliation.canonical_sink import (  # noqa: PLC0415
             SINK_REGISTRY,
             CanonicalSinkError,
@@ -1148,7 +1175,10 @@ def _validate_corrective_v_authority(
     framework = contract["canonical_sink_framework"]
     if seam.get("tenant_authority_mode") != authority_module.TENANT_AUTHORITY_MODE:
         violations.append("corrective_v_tenant_authority_mode_mismatch")
-    if seam.get("database_capability_mode") != authority_module.DATABASE_CAPABILITY_MODE:
+    if (
+        seam.get("database_capability_mode")
+        != authority_module.DATABASE_CAPABILITY_MODE
+    ):
         violations.append("corrective_v_database_capability_mode_mismatch")
     if (
         seam.get("sink_framework")
@@ -1186,9 +1216,7 @@ def _validate_corrective_v_authority(
             violations.append(f"corrective_v_sink_executable_unbound:{sink_id}")
         try:
             module_name, _, attribute = registration.implementation.rpartition(".")
-            implementation = getattr(
-                importlib.import_module(module_name), attribute
-            )
+            implementation = getattr(importlib.import_module(module_name), attribute)
         except Exception:  # noqa: BLE001
             violations.append(f"corrective_v_sink_implementation_dead:{sink_id}")
             continue
@@ -1204,9 +1232,7 @@ def _validate_corrective_v_authority(
     # second binding with different executable identity must not replace it.
     try:
         pristine_registration = SINK_REGISTRY.get("future_finance_projection")
-        pristine_implementation = _SINK_IMPLEMENTATIONS.get(
-            "future_finance_projection"
-        )
+        pristine_implementation = _SINK_IMPLEMENTATIONS.get("future_finance_projection")
 
         def _validator_probe_impl(context: Any) -> dict[str, Any]:
             return {}
@@ -1273,9 +1299,7 @@ def _validate_corrective_v_authority(
             "require_canonical_output",
         ):
             if hasattr(sink_module, deleted):
-                violations.append(
-                    f"canonical_transferable_authority_present:{deleted}"
-                )
+                violations.append(f"canonical_transferable_authority_present:{deleted}")
         import dataclasses as _dataclasses  # noqa: PLC0415
 
         output_fields = {
@@ -1306,10 +1330,12 @@ def _validate_corrective_v_authority(
     # battery, which is the load-bearing leg.
     try:
         resolver_source = (
-            REPO_ROOT
-            / "backend/app/finance_reconciliation/coverage_authority.py"
+            REPO_ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
         ).read_text(encoding="utf-8")
-        if resolver_source.count("await assert_tenant_authority(session, tenant_id)") < 2:
+        if (
+            resolver_source.count("await assert_tenant_authority(session, tenant_id)")
+            < 2
+        ):
             violations.append("coverage_tenant_authority_not_enforced")
     except OSError as exc:
         violations.append(f"coverage_resolver_source_unreadable:{exc}")
@@ -1330,8 +1356,7 @@ def _validate_corrective_v_authority(
                 pass
             else:
                 violations.append(
-                    "canonical_adjunct_guard_not_enforced:"
-                    f"{sorted(hostile)}"
+                    "canonical_adjunct_guard_not_enforced:" f"{sorted(hostile)}"
                 )
     except CanonicalSinkError as exc:
         violations.append(f"canonical_adjunct_guard_rejects_lawful:{exc}")
@@ -1498,9 +1523,7 @@ def _validate_corrective_vii_authority(
         )
         for deleted in ("to_canonical_external", "_project_external_fields"):
             if hasattr(sink_module, deleted):
-                violations.append(
-                    "canonical_external_promotion_surface_present"
-                )
+                violations.append("canonical_external_promotion_surface_present")
     except Exception as exc:  # noqa: BLE001
         violations.append(f"corrective_vii_sink_module_unresolvable:{exc}")
     if "async def render_governed_external" not in sink_source:
@@ -1534,9 +1557,7 @@ def _validate_corrective_vii_authority(
         called = (
             func.id
             if isinstance(func, ast.Name)
-            else func.attr
-            if isinstance(func, ast.Attribute)
-            else ""
+            else func.attr if isinstance(func, ast.Attribute) else ""
         )
         if called != "FinalCanonicalOutput":
             continue
@@ -1545,7 +1566,8 @@ def _validate_corrective_vii_authority(
             if keyword.arg is None:
                 continue
             names = {
-                child.id for child in ast.walk(keyword.value)
+                child.id
+                for child in ast.walk(keyword.value)
                 if isinstance(child, ast.Name)
             }
             if keyword.arg == "adjunct_json":
@@ -1568,12 +1590,172 @@ def _validate_corrective_vii_authority(
     )
 
 
+def _validate_corrective_viii_authority(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Executable Corrective-VIII authority: snapshot isolation + executable binding.
+
+    VIII-A: every authoritative FinalCanonicalOutput field must derive
+    from the framework-private ``_s_*`` snapshot locals (or a module
+    constant for authority/provenance/producer identity) -- never from
+    any projection-visible object (``context``, ``projection_view``,
+    ``projection``, ``raw_adjunct``, ``cleaned``, ``adjunct``). Only
+    ``adjunct_json`` may derive from the governed ``cleaned`` adjuncts.
+
+    VIII-B: executable identity must be verified and captured atomically
+    via ``_capture_verified_implementation`` after the last framework
+    ``await``, and the captured ``verified_implementation`` reference
+    must be the object invoked on the separate ``projection_view``.
+    The legacy split pattern (verify-then-subscript-lookup across an
+    ``await``) is refused.
+    """
+    sys.path.insert(0, str(BACKEND))
+    sink_path = REPO_ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+    try:
+        sink_source = sink_path.read_text(encoding="utf-8")
+        sink_tree = ast.parse(sink_source)
+    except (OSError, SyntaxError) as exc:
+        violations.append(f"corrective_viii_sink_source_unreadable:{exc}")
+        return
+
+    projection_visible = {
+        "context",
+        "projection_view",
+        "projection",
+        "raw_adjunct",
+        "cleaned",
+        "adjunct",
+    }
+    snapshot_derived_fields = {
+        "sink_id",
+        "contract_version",
+        "tenant_id_hash",
+        "currency_code",
+        "window_start",
+        "window_end",
+        "supported_platforms",
+        "matched_minor",
+        "connected_minor",
+        "coverage_percent",
+        "zero_denominator",
+    }
+    found_output_construction = False
+    for node in ast.walk(sink_tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        called = (
+            func.id
+            if isinstance(func, ast.Name)
+            else func.attr if isinstance(func, ast.Attribute) else ""
+        )
+        if called != "FinalCanonicalOutput":
+            continue
+        found_output_construction = True
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                continue
+            names = {
+                child.id
+                for child in ast.walk(keyword.value)
+                if isinstance(child, ast.Name)
+            }
+            if keyword.arg == "adjunct_json":
+                if "cleaned" not in names:
+                    violations.append("canonical_adjunct_channel_not_governed")
+                continue
+            if names & projection_visible:
+                violations.append(
+                    "canonical_authoritative_snapshot_not_isolated:" f"{keyword.arg}"
+                )
+            elif keyword.arg in snapshot_derived_fields and not (
+                any(name.startswith("_s_") for name in names)
+            ):
+                violations.append(
+                    "canonical_authoritative_snapshot_not_isolated:" f"{keyword.arg}"
+                )
+    if not found_output_construction:
+        violations.append("canonical_authoritative_snapshot_unverifiable")
+
+    # VIII-A structural shape: a private snapshot and a separate view.
+    if "projection_view = AdjunctContext(" not in sink_source:
+        violations.append("canonical_authoritative_snapshot_not_isolated:view")
+    if (
+        "_s_matched_minor" not in sink_source
+        or "_s_coverage_percent" not in sink_source
+    ):
+        violations.append("canonical_authoritative_snapshot_not_isolated:snapshot")
+    if "verified_implementation(projection_view)" not in sink_source:
+        violations.append("canonical_authoritative_snapshot_not_isolated:invoke")
+
+    # VIII-B structural shape: atomic capture, no split lookup.
+    if "def _capture_verified_implementation(" not in sink_source:
+        violations.append("canonical_executable_binding_not_atomic")
+    if "_capture_verified_implementation(sink_id)" not in sink_source:
+        violations.append("canonical_executable_binding_not_atomic")
+    if "implementation = _SINK_IMPLEMENTATIONS[str(sink_id)]" in sink_source:
+        violations.append("canonical_executable_check_use_diverged")
+    # VIII-B ordering law: inside execute_governed_sink, the final atomic
+    # capture must occur AFTER the last framework await that precedes the
+    # projection invocation, so no suspension can split verification from
+    # execution. Presence of the call is insufficient; position is law.
+    executor = next(
+        (
+            node
+            for node in ast.walk(sink_tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+            and node.name == "execute_governed_sink"
+        ),
+        None,
+    )
+    if executor is None:
+        violations.append("canonical_executable_binding_not_atomic:executor")
+    else:
+        invoke_lineno: int | None = None
+        capture_linenos: list[int] = []
+        await_linenos: list[int] = []
+        for node in ast.walk(executor):
+            if isinstance(node, ast.Call):
+                func = node.func
+                called = (
+                    func.id
+                    if isinstance(func, ast.Name)
+                    else func.attr if isinstance(func, ast.Attribute) else ""
+                )
+                if called == "_capture_verified_implementation":
+                    capture_linenos.append(node.lineno)
+                elif called == "verified_implementation":
+                    invoke_lineno = node.lineno
+            elif isinstance(node, ast.Await):
+                await_linenos.append(node.lineno)
+        if invoke_lineno is None:
+            violations.append("canonical_executable_binding_not_atomic:invoke")
+        elif not capture_linenos:
+            violations.append("canonical_executable_binding_not_atomic:capture")
+        else:
+            prior_awaits = [n for n in await_linenos if n < invoke_lineno]
+            prior_captures = [n for n in capture_linenos if n < invoke_lineno]
+            if prior_awaits and max(prior_captures) < max(prior_awaits):
+                violations.append("canonical_executable_binding_not_atomic:order")
+
+    details["corrective_viii_sensors"] = sorted(
+        [
+            "canonical_authoritative_snapshot_not_isolated",
+            "canonical_authoritative_snapshot_unverifiable",
+            "canonical_adjunct_channel_not_governed",
+            "canonical_executable_binding_not_atomic",
+            "canonical_executable_check_use_diverged",
+        ]
+    )
+
+
 def validate() -> tuple[list[str], dict[str, Any]]:
     violations: list[str] = []
     details: dict[str, Any] = {}
     _validate_contract_and_b23_binding(violations, details)
     _validate_corrective_v_authority(violations, details)
     _validate_corrective_vii_authority(violations, details)
+    _validate_corrective_viii_authority(violations, details)
     enforce_machinery = not _successor_authorizes_machinery()
     _validate_b26_namespace(
         violations, details, enforce_product_machinery=enforce_machinery

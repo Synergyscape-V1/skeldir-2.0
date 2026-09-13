@@ -1,7 +1,33 @@
-"""B2.6-P1 executable canonical-consumer framework (Corrective VII).
+"""B2.6-P1 executable canonical-consumer framework (Corrective VIII).
 
-Corrective-VII law (see per-defect theorems below)
---------------------------------------------------
+Corrective-VIII law (see per-defect theorems below)
+---------------------------------------------------
+
+VIII-A. **Post-derivation authority conservation.** The framework captures
+the complete authoritative B2.3-derived state into private immutable
+scalar locals (S) BEFORE any projection code executes, hands the
+projection a causally separate observation object (P) built from copies
+of those scalars, and materializes :class:`FinalCanonicalOutput`
+exclusively from S -- never by rereading P. ``mutate(P)`` therefore
+cannot alter ``Materialize(S)`` through any Python primitive
+(``object.__setattr__``, ``__dict__``, descriptor, class-state,
+retained-reference, helper, closure, post-return, or nested-mutable
+mechanism): the alias relation is closed by construction, not by
+``frozen=True`` (which is ergonomics, never authority).
+
+VIII-B. **Verified executable == executed executable.** Executable
+identity is verified and captured atomically in one synchronous step
+with no ``await`` between verification and capture, and the final
+capture occurs after the last framework ``await`` with no mutable
+registry re-read before invocation. The exact callable object whose
+source hash and proof binding were accepted is the object invoked --
+``VERIFIED_CALLABLE_REFERENCE == EXECUTED_CALLABLE_REFERENCE`` by
+construction. A concurrent substitution during an earlier suspension
+can at most affect which binding the final atomic capture observes;
+it can never split verification from execution.
+
+Corrective-VII law (preserved)
+------------------------------
 
 VII-A. **Complete access-token authority.** The executor composes the full
 sovereign access-token state machine -- cryptographic verification plus
@@ -19,19 +45,16 @@ projects the fresh consequence. A digest-correct synthetic therefore has
 no approved renderer to be called on -- promotion is unrepresentable by
 API shape, not by caller discipline.
 
-VII-C. **Governed executable identity (bounded trust).** Same-process
-Python memory is explicitly inside the trusted computing base: ordinary
-first-party code that coherently replaces both the registry entry and the
-implementation can become the registered projection. The enforced theorem
-is narrower and physical: authoritative financial fields are materialized
-by the framework from the sovereign derivation *after* the projection
-runs, authoritative/tenant-bearing adjunct keys are refused, and the
-approved external projection omits adjuncts entirely -- so a coordinated
-substitution demonstrably cannot alter canonical financial truth, only
-non-authoritative adjuncts that never externalize. Repository-source
-identity for the reviewable bytes remains bound by per-execution
-source-hash re-verification plus CI adjudication of the exact candidate
-SHA/tree on protected main.
+VII-C (superseded by VIII-A/VIII-B, adjunct half preserved). Same-process
+Python memory remains inside the trusted computing base, but the
+Corrective-VII materialization claim ("fields materialized after the
+projection runs") is withdrawn as insufficient: post-derivation reread
+of projection-visible state is now forbidden. What remains from VII-C:
+authoritative/tenant-bearing adjunct keys are refused, and the approved
+external projection omits adjuncts entirely. Repository-source identity
+for the reviewable bytes remains bound by per-execution source-hash
+re-verification plus CI adjudication of the exact candidate SHA/tree
+on protected main.
 
 Defect classes closed here (Corrective VI, preserved)
 -----------------------------------------------------
@@ -511,9 +534,7 @@ def canonical_sink(
         if existing is not None:
             if existing == registration:
                 return func
-            raise DuplicateSinkError(
-                f"canonical_sink_duplicate_refused:{sink_id}"
-            )
+            raise DuplicateSinkError(f"canonical_sink_duplicate_refused:{sink_id}")
         SINK_REGISTRY[str(sink_id)] = registration
         _SINK_IMPLEMENTATIONS[str(sink_id)] = func
         return func
@@ -521,12 +542,20 @@ def canonical_sink(
     return decorate
 
 
-def require_registered_sink(sink_id: str) -> SinkRegistration:
-    """Require a machine-governed executable sink registration.
+def _capture_verified_implementation(
+    sink_id: str,
+) -> tuple[SinkRegistration, Callable[..., Any]]:
+    """Atomically verify and capture the executable that will run.
 
-    Re-verifies the live executable hash and the proof binding on every
-    call: a mutated registry entry or a swapped implementation is refused
-    here even when the registry strings still name the sink.
+    Corrective-VIII-B law: verification and capture occur in one
+    synchronous step with no ``await`` between them and no second mutable
+    lookup afterward. The returned callable object is the exact object
+    whose source hash and proof binding were accepted: the caller must
+    invoke the returned reference directly and must never re-read
+    ``_SINK_IMPLEMENTATIONS`` after this call. A concurrent registry or
+    implementation substitution during an earlier framework suspension
+    can at most change which binding this final capture observes; it can
+    never split the verified reference from the executed reference.
     """
     registration = SINK_REGISTRY.get(str(sink_id))
     if registration is None:
@@ -535,9 +564,7 @@ def require_registered_sink(sink_id: str) -> SinkRegistration:
     if implementation is None:
         raise UnregisteredSinkError(f"canonical_sink_implementation_missing:{sink_id}")
     if _implementation_hash(implementation) != registration.implementation_hash:
-        raise CanonicalSinkError(
-            f"canonical_sink_implementation_diverged:{sink_id}"
-        )
+        raise CanonicalSinkError(f"canonical_sink_implementation_diverged:{sink_id}")
     require_proofs_bound(
         sink_id=str(sink_id),
         required_runtime_proof_ids=registration.required_runtime_proof_ids,
@@ -545,6 +572,21 @@ def require_registered_sink(sink_id: str) -> SinkRegistration:
     )
     if registration.contract_version != B26_P1_CONTRACT_VERSION:
         raise CanonicalSinkError(f"canonical_sink_contract_stale:{sink_id}")
+    return registration, implementation
+
+
+def require_registered_sink(sink_id: str) -> SinkRegistration:
+    """Require a machine-governed executable sink registration.
+
+    Re-verifies the live executable hash and the proof binding on every
+    call: a mutated registry entry or a swapped implementation is refused
+    here even when the registry strings still name the sink. This is a
+    fail-fast preliminary check only; the load-bearing executable binding
+    for a canonical execution is the final atomic capture performed by
+    :func:`_capture_verified_implementation` after the last framework
+    ``await`` (see :func:`execute_governed_sink`).
+    """
+    registration, _ = _capture_verified_implementation(sink_id)
     return registration
 
 
@@ -672,10 +714,30 @@ async def execute_governed_sink(
     sovereign B2.3 truth, verifies integer mathematics through the
     independent oracle, runs the registered projection implementation for
     adjuncts only, and materializes the authoritative fields itself.
+
+    Corrective-VIII causal structure (authority conservation):
+
+    1. Preliminary ``require_registered_sink`` fail-fast (before awaits).
+    2. Authenticated tenant derivation, governed session, sovereign
+       coverage derivation, oracle cross-check (framework awaits).
+    3. Final atomic ``_capture_verified_implementation`` AFTER the last
+       framework ``await`` -- one synchronous step, no suspension
+       between verification and capture.
+    4. Private sovereign snapshot S into framework-local immutable
+       scalars (never exposed to projection code).
+    5. Causally separate projection view P built from copies of S.
+    6. Invoke the captured ``verified_implementation`` reference
+       directly on P with no mutable registry re-read.
+    7. Materialize :class:`FinalCanonicalOutput` exclusively from S.
+
+    No authoritative final field is ever read from P after the
+    projection executes. ``frozen=True`` on the dataclasses is API
+    ergonomics only and is never treated as authority.
     """
-    registration = require_registered_sink(sink_id)
+    # Step 1: fail fast before expensive auth/DB work (not load-bearing
+    # for executable identity; the load-bearing capture is step 3).
+    require_registered_sink(sink_id)
     tenant_id = await resolve_authenticated_tenant(auth_token)
-    implementation = _SINK_IMPLEMENTATIONS[str(sink_id)]
     async with open_governed_b23_session(tenant_id) as session:
         await require_tenant_row_exists(session, tenant_id)
         coverage = await resolve_canonical_coverage(
@@ -700,49 +762,87 @@ async def execute_governed_sink(
             raise CanonicalSinkError(
                 "governed_sink_sovereign_zero_diverged_from_oracle"
             )
-        context = AdjunctContext(
-            sink_id=str(sink_id),
-            tenant_id_hash=_tenant_external_id(aggregate.tenant_id),
-            currency_code=aggregate.currency_code,
-            window_start=aggregate.window_start,
-            window_end=aggregate.window_end,
-            supported_platforms=tuple(coverage.supported_platforms),
-            matched_minor=int(aggregate.matched_webhook_revenue_minor),
-            connected_minor=int(aggregate.connected_platform_revenue_minor),
-            coverage_percent=result.coverage_percent,
-            zero_denominator=bool(result.zero_denominator),
+        # Step 3: final atomic executable capture -- synchronous, after
+        # the last framework await, with no await before projection
+        # invocation. VERIFIED_CALLABLE_REFERENCE ==
+        # EXECUTED_CALLABLE_REFERENCE by construction.
+        final_registration, verified_implementation = _capture_verified_implementation(
+            sink_id
         )
-        raw_adjunct = implementation(context) if implementation is not None else {}
+        # Step 4: private sovereign snapshot S. Immutable scalar locals
+        # only (str/int/Decimal/bool/datetime/tuple-of-str). No object
+        # reachable by projection code aliases S: S lives in framework
+        # locals, never escapes this frame.
+        _s_sink_id = str(sink_id)
+        _s_contract_version = str(final_registration.contract_version)
+        _s_tenant_id_hash = str(_tenant_external_id(aggregate.tenant_id))
+        _s_currency_code = str(aggregate.currency_code)
+        _s_window_start = aggregate.window_start
+        _s_window_end = aggregate.window_end
+        _s_supported_platforms = tuple(coverage.supported_platforms)
+        _s_matched_minor = int(aggregate.matched_webhook_revenue_minor)
+        _s_connected_minor = int(aggregate.connected_platform_revenue_minor)
+        _s_coverage_percent = result.coverage_percent
+        _s_zero_denominator = bool(result.zero_denominator)
+        _s_provenance_mode = str(SINK_PROVENANCE_MODE)
+        _s_sovereign_producer = str(B23_SOVEREIGN_COVERAGE_PRODUCER)
+        # Step 5: causally separate projection view P. A distinct object
+        # holding copies of immutable scalar values: mutating P (by any
+        # primitive, including object.__setattr__ or __dict__) cannot
+        # mutate S, because S fields are immutable values in framework
+        # locals, not references to P or its storage.
+        projection_view = AdjunctContext(
+            sink_id=_s_sink_id,
+            tenant_id_hash=_s_tenant_id_hash,
+            currency_code=_s_currency_code,
+            window_start=_s_window_start,
+            window_end=_s_window_end,
+            supported_platforms=tuple(_s_supported_platforms),
+            matched_minor=_s_matched_minor,
+            connected_minor=_s_connected_minor,
+            coverage_percent=_s_coverage_percent,
+            zero_denominator=_s_zero_denominator,
+        )
+        # Step 6: invoke the captured reference directly. No registry
+        # re-read occurs here or afterward. The implementation is
+        # synchronous by contract; an awaitable return is awaited
+        # without re-reading any authority state.
+        raw_adjunct = verified_implementation(projection_view)
+        if inspect.isawaitable(raw_adjunct):
+            raw_adjunct = await raw_adjunct
         cleaned = reject_authoritative_adjunct(raw_adjunct)
+        # Step 7: materialize exclusively from S. Every authoritative
+        # field below names an ``_s_*`` local; none names
+        # ``projection_view``, ``raw_adjunct``, or ``cleaned``.
         return FinalCanonicalOutput(
             authority=CANONICAL_OUTPUT_AUTHORITY,
-            sink_id=str(sink_id),
-            contract_version=registration.contract_version,
-            tenant_id_hash=context.tenant_id_hash,
-            currency_code=context.currency_code,
-            window_start=context.window_start,
-            window_end=context.window_end,
-            supported_platforms=context.supported_platforms,
-            matched_minor=context.matched_minor,
-            connected_minor=context.connected_minor,
-            coverage_percent=context.coverage_percent,
-            zero_denominator=context.zero_denominator,
-            provenance_mode=SINK_PROVENANCE_MODE,
-            sovereign_producer=B23_SOVEREIGN_COVERAGE_PRODUCER,
+            sink_id=_s_sink_id,
+            contract_version=_s_contract_version,
+            tenant_id_hash=_s_tenant_id_hash,
+            currency_code=_s_currency_code,
+            window_start=_s_window_start,
+            window_end=_s_window_end,
+            supported_platforms=_s_supported_platforms,
+            matched_minor=_s_matched_minor,
+            connected_minor=_s_connected_minor,
+            coverage_percent=_s_coverage_percent,
+            zero_denominator=_s_zero_denominator,
+            provenance_mode=_s_provenance_mode,
+            sovereign_producer=_s_sovereign_producer,
             content_digest=_content_digest_for(
-                sink_id=str(sink_id),
-                contract_version=registration.contract_version,
-                tenant_id_hash=context.tenant_id_hash,
-                currency_code=context.currency_code,
-                window_start=context.window_start,
-                window_end=context.window_end,
-                supported_platforms=context.supported_platforms,
-                matched_minor=context.matched_minor,
-                connected_minor=context.connected_minor,
-                coverage_percent=context.coverage_percent,
-                zero_denominator=bool(context.zero_denominator),
-                provenance_mode=SINK_PROVENANCE_MODE,
-                sovereign_producer=B23_SOVEREIGN_COVERAGE_PRODUCER,
+                sink_id=_s_sink_id,
+                contract_version=_s_contract_version,
+                tenant_id_hash=_s_tenant_id_hash,
+                currency_code=_s_currency_code,
+                window_start=_s_window_start,
+                window_end=_s_window_end,
+                supported_platforms=_s_supported_platforms,
+                matched_minor=_s_matched_minor,
+                connected_minor=_s_connected_minor,
+                coverage_percent=_s_coverage_percent,
+                zero_denominator=bool(_s_zero_denominator),
+                provenance_mode=_s_provenance_mode,
+                sovereign_producer=_s_sovereign_producer,
             ),
             adjunct_json=_canonical_json(cleaned),
         )
@@ -843,8 +943,7 @@ def authorize_successor_persistence(registration_id: str) -> bool:
             f"successor_persistence_not_registered:{registration_id}"
         )
     raise SuccessorProvenanceError(
-        "successor_persistence_requires_p2_durable_binding:"
-        f"{registration_id}"
+        "successor_persistence_requires_p2_durable_binding:" f"{registration_id}"
     )
 
 
