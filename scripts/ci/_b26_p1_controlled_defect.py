@@ -378,6 +378,49 @@ def executable_capture_before_awaits() -> None:
     )
 
 
+def shared_mutable_alias() -> None:
+    """Class IX-A representative: snapshot list shared with projection view.
+
+    Preserves every superficial ``_s_*`` lexical marker while creating
+    genuine shared mutable backing storage: the snapshot becomes a ``list``
+    and the projection view receives the same list object. In-place
+    mutation (``append``/``extend``/item assignment) then corrupts the
+    authoritative snapshot even though final materialization still reads
+    ``_s_*`` names. Distinct from any permanent positive-test shape, which
+    never mutates framework source.
+    """
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "        _s_supported_platforms = freeze_platform_scope(coverage.supported_platforms)",
+        "        _s_supported_platforms = list(coverage.supported_platforms)  # NC-B26-P1-IX-ALIAS",
+        defect="shared_mutable_alias",
+    )
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "            supported_platforms=freeze_platform_scope(_s_supported_platforms),",
+        "            supported_platforms=_s_supported_platforms,  # NC-B26-P1-IX-ALIAS",
+        defect="shared_mutable_alias",
+    )
+
+
+def authoritative_field_census_gap() -> None:
+    """New authoritative field without isolation declaration.
+
+    Adds a dataclass field to ``FinalCanonicalOutput`` without a matching
+    ``AUTHORITATIVE_FIELD_REGISTRY`` entry. The census sensor must turn RED:
+    future authoritative fields cannot silently escape snapshot-isolation
+    proof coverage.
+    """
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "    content_digest: str\n    adjunct_json: str\n",
+        "    content_digest: str\n"
+        "    adjunct_json: str\n"
+        "    phantom_authoritative_field: str  # NC-B26-P1-IX-CENSUS\n",
+        defect="authoritative_field_census_gap",
+    )
+
+
 DEFECTS: dict[str, Callable[[], None]] = {
     "mandatory_semantic_element": mandatory_semantic_element,
     "coverage_authority_reference": coverage_authority_reference,
@@ -412,6 +455,8 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "post_derivation_alias_reread": post_derivation_alias_reread,
     "executable_check_use_divergence": executable_check_use_divergence,
     "executable_capture_before_awaits": executable_capture_before_awaits,
+    "shared_mutable_alias": shared_mutable_alias,
+    "authoritative_field_census_gap": authoritative_field_census_gap,
 }
 
 

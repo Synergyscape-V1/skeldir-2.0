@@ -147,6 +147,16 @@ STATIC_CONTROLS = (
         CANONICAL_SINK_MODULE,
         "canonical_executable_binding_not_atomic",
     ),
+    (
+        "shared_mutable_alias",
+        CANONICAL_SINK_MODULE,
+        "canonical_authoritative_snapshot_not_immutable",
+    ),
+    (
+        "authoritative_field_census_gap",
+        CANONICAL_SINK_MODULE,
+        "canonical_authoritative_census_incomplete",
+    ),
 )
 
 

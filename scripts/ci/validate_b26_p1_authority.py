@@ -1749,6 +1749,240 @@ def _validate_corrective_viii_authority(
     )
 
 
+def _validate_corrective_ix_authority(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Executable Corrective-IX authority: mutable-alias class closure.
+
+    IX-A law: authoritative state S and projection-visible state P must never
+    share mutable storage that can change a later canonical consequence::
+
+        MUTABLE_REACHABLE_GRAPH(P) ∩ AUTHORITATIVE_MATERIALIZATION_GRAPH(S) = ∅
+
+    Static defense-in-depth (behavioral consequence proof is the load-bearing
+    leg; this sensor makes the alias shape merge-blocking):
+
+    1. Authoritative field census: the registry in
+       ``app.finance_reconciliation.authoritative_fields`` must exactly cover
+       the ``FinalCanonicalOutput`` dataclass. A new authoritative field
+       without a registry declaration (sovereign source, snapshot point,
+       allowed type family, projection representation, alias policy,
+       externalization policy) is RED.
+    2. Immutable snapshot construction: every ``_s_*`` snapshot assignment
+       must normalize through an immutable boundary (``freeze_*`` / ``tuple``
+       / ``str`` / ``int`` / ``Decimal`` / ``bool``); direct mutable
+       constructors (``list(`` / ``dict(`` / ``set(`` / ``bytearray(``) or
+       collection literals for snapshot locals are RED.
+    3. Projection view independence: the mutable-risk scope field handed to
+       ``AdjunctContext`` must be an immutable copy construction
+       (``freeze_platform_scope(_s_*)`` or ``tuple(_s_*)``), never a bare
+       ``_s_*`` alias that could share mutable backing storage.
+    4. Runtime tripwire presence: the pre/post-projection snapshot digest
+       comparison plus the snapshot type invariant must be present in
+       ``execute_governed_sink``. Removing the tripwire while keeping names
+       is RED.
+    """
+    sys.path.insert(0, str(BACKEND))
+    sink_path = REPO_ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+    try:
+        sink_source = sink_path.read_text(encoding="utf-8")
+        sink_tree = ast.parse(sink_source)
+    except (OSError, SyntaxError) as exc:
+        violations.append(f"corrective_ix_sink_source_unreadable:{exc}")
+        return
+
+    # 1. Field census: registry exactly covers the canonical output type.
+    try:
+        from app.finance_reconciliation.authoritative_fields import (  # noqa: PLC0415
+            AUTHORITATIVE_FIELD_REGISTRY,
+            assert_registry_covers_output,
+        )
+        from app.finance_reconciliation.canonical_sink import (  # noqa: PLC0415
+            FinalCanonicalOutput,
+        )
+
+        try:
+            assert_registry_covers_output(FinalCanonicalOutput)
+        except ValueError as exc:
+            violations.append(f"canonical_authoritative_census_incomplete:{exc}")
+        else:
+            import dataclasses as _dataclasses  # noqa: PLC0415
+
+            declared = {
+                field.name for field in _dataclasses.fields(FinalCanonicalOutput)
+            }
+            if set(AUTHORITATIVE_FIELD_REGISTRY) != declared:
+                violations.append(
+                    "canonical_authoritative_census_incomplete:registry_drift"
+                )
+            for name, spec in AUTHORITATIVE_FIELD_REGISTRY.items():
+                for required in (
+                    "sovereign_source",
+                    "snapshot_point",
+                    "allowed_type_family",
+                    "projection_representation",
+                    "alias_policy",
+                    "externalization_policy",
+                ):
+                    if not getattr(spec, required, ""):
+                        violations.append(
+                            "canonical_authoritative_census_incomplete:"
+                            f"{name}:{required}"
+                        )
+                        break
+            details["corrective_ix_census_fields"] = sorted(declared)
+            details["corrective_ix_authoritative_fields"] = sorted(
+                name
+                for name, spec in AUTHORITATIVE_FIELD_REGISTRY.items()
+                if spec.authoritative
+            )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_authoritative_census_unverifiable:{exc}")
+
+    # 2. Snapshot construction must be immutable-normalizing.
+    executor = next(
+        (
+            node
+            for node in ast.walk(sink_tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+            and node.name == "execute_governed_sink"
+        ),
+        None,
+    )
+    if executor is None:
+        violations.append("canonical_authoritative_snapshot_not_immutable:executor")
+    else:
+        snapshot_assigns: dict[str, ast.AST] = {}
+        for node in ast.walk(executor):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id.startswith("_s_"):
+                        snapshot_assigns[target.id] = node.value
+        if "_s_supported_platforms" not in snapshot_assigns:
+            violations.append(
+                "canonical_authoritative_snapshot_not_immutable:missing_platforms"
+            )
+        else:
+            rhs = snapshot_assigns["_s_supported_platforms"]
+            # Direct mutable constructors or literals for the snapshot are RED.
+            if isinstance(rhs, (ast.List, ast.Dict, ast.Set)):
+                violations.append(
+                    "canonical_authoritative_snapshot_not_immutable:"
+                    "supported_platforms_literal"
+                )
+            elif isinstance(rhs, ast.Call):
+                func = rhs.func
+                called = (
+                    func.id
+                    if isinstance(func, ast.Name)
+                    else func.attr if isinstance(func, ast.Attribute) else ""
+                )
+                if called in {"list", "dict", "set", "bytearray"}:
+                    violations.append(
+                        "canonical_authoritative_snapshot_not_immutable:"
+                        f"supported_platforms_{called}"
+                    )
+                elif called not in {
+                    "tuple",
+                    "freeze_platform_scope",
+                    "frozenset",
+                }:
+                    # Unknown constructor for the mutable-risk field: fail
+                    # closed so a new aliasing shape must be declared first.
+                    violations.append(
+                        "canonical_authoritative_snapshot_not_immutable:"
+                        f"supported_platforms_{called}"
+                    )
+            else:
+                violations.append(
+                    "canonical_authoritative_snapshot_not_immutable:"
+                    "supported_platforms_shape"
+                )
+        # Any snapshot assignment calling a mutable constructor is RED,
+        # regardless of field (sibling-surface sweep).
+        for name, rhs in snapshot_assigns.items():
+            if isinstance(rhs, ast.Call):
+                func = rhs.func
+                called = (
+                    func.id
+                    if isinstance(func, ast.Name)
+                    else func.attr if isinstance(func, ast.Attribute) else ""
+                )
+                if called in {"list", "dict", "set", "bytearray"}:
+                    violations.append(
+                        f"canonical_authoritative_snapshot_not_immutable:{name}"
+                    )
+
+    # 3. Projection view independence for the mutable-risk scope field.
+    found_view = False
+    for node in ast.walk(sink_tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        called = (
+            func.id
+            if isinstance(func, ast.Name)
+            else func.attr if isinstance(func, ast.Attribute) else ""
+        )
+        if called != "AdjunctContext":
+            continue
+        found_view = True
+        for keyword in node.keywords:
+            if keyword.arg != "supported_platforms":
+                continue
+            value = keyword.value
+            if isinstance(value, ast.Name) and value.id.startswith("_s_"):
+                violations.append(
+                    "canonical_projection_view_shares_mutable_storage:"
+                    "supported_platforms_bare_alias"
+                )
+            elif isinstance(value, ast.Call):
+                func2 = value.func
+                called2 = (
+                    func2.id
+                    if isinstance(func2, ast.Name)
+                    else func2.attr if isinstance(func2, ast.Attribute) else ""
+                )
+                if called2 not in {"tuple", "freeze_platform_scope", "frozenset"}:
+                    violations.append(
+                        "canonical_projection_view_shares_mutable_storage:"
+                        f"supported_platforms_{called2}"
+                    )
+            else:
+                violations.append(
+                    "canonical_projection_view_shares_mutable_storage:"
+                    "supported_platforms_shape"
+                )
+    if not found_view:
+        violations.append("canonical_projection_view_shares_mutable_storage:view")
+
+    # 4. Runtime tripwire presence (defense that converts alias to refusal).
+    for token, rule in (
+        ("freeze_platform_scope", "canonical_snapshot_alias_tripwire_missing:freeze"),
+        (
+            "assert_snapshot_types_immutable",
+            "canonical_snapshot_alias_tripwire_missing:type_invariant",
+        ),
+        (
+            "authoritative_snapshot_mutated_during_projection",
+            "canonical_snapshot_alias_tripwire_missing:digest_tripwire",
+        ),
+        ("_s_pre_digest", "canonical_snapshot_alias_tripwire_missing:pre_digest"),
+        ("_s_post_digest", "canonical_snapshot_alias_tripwire_missing:post_digest"),
+    ):
+        if token not in sink_source:
+            violations.append(rule)
+
+    details["corrective_ix_sensors"] = sorted(
+        [
+            "canonical_authoritative_census_incomplete",
+            "canonical_authoritative_snapshot_not_immutable",
+            "canonical_projection_view_shares_mutable_storage",
+            "canonical_snapshot_alias_tripwire_missing",
+        ]
+    )
+
+
 def validate() -> tuple[list[str], dict[str, Any]]:
     violations: list[str] = []
     details: dict[str, Any] = {}
@@ -1756,6 +1990,7 @@ def validate() -> tuple[list[str], dict[str, Any]]:
     _validate_corrective_v_authority(violations, details)
     _validate_corrective_vii_authority(violations, details)
     _validate_corrective_viii_authority(violations, details)
+    _validate_corrective_ix_authority(violations, details)
     enforce_machinery = not _successor_authorizes_machinery()
     _validate_b26_namespace(
         violations, details, enforce_product_machinery=enforce_machinery

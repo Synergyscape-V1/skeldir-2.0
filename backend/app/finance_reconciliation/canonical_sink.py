@@ -1,7 +1,26 @@
-"""B2.6-P1 executable canonical-consumer framework (Corrective VIII).
+"""B2.6-P1 executable canonical-consumer framework (Corrective IX).
 
-Corrective-VIII law (see per-defect theorems below)
----------------------------------------------------
+Corrective-IX law (defect class IX-A: mutable authority alias reintroduction)
+-----------------------------------------------------------------------------
+AUTHORITATIVE STATE AND NON-AUTHORITATIVE PROJECTION STATE MUST NEVER SHARE
+MUTABLE STORAGE THAT CAN CHANGE A LATER CANONICAL CONSEQUENCE::
+
+    MUTABLE_REACHABLE_GRAPH(P) ∩ AUTHORITATIVE_MATERIALIZATION_GRAPH(S) = ∅
+
+for all mutable objects. Immutable shared values are lawful; mutable shared
+storage is not. Enforcement is threefold: (1) immutable value normalization
+at the snapshot boundary (``freeze_platform_scope`` converts any future
+mutable scope to an independent immutable tuple; non-sequence shapes refuse
+fail-closed); (2) a runtime type invariant (``assert_snapshot_types_immutable``)
+plus a pre/post-projection snapshot digest comparison that converts any
+residual alias mutation into refusal instead of drift; (3) a permanent
+proof plane (static alias-shape sensor + shared-storage in-place consequence
+battery + authoritative field census) that turns merge-blocking RED on the
+class. See ``app.finance_reconciliation.authoritative_fields`` for the
+single machine-readable field registry.
+
+Corrective-VIII law (preserved, see per-defect theorems below)
+--------------------------------------------------------------
 
 VIII-A. **Post-derivation authority conservation.** The framework captures
 the complete authoritative B2.3-derived state into private immutable
@@ -152,6 +171,10 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from app.finance_reconciliation.authoritative_fields import (
+    assert_snapshot_types_immutable,
+    freeze_platform_scope,
+)
 from app.finance_reconciliation.coverage_authority import (
     B23_SOVEREIGN_COVERAGE_PRODUCER,
     independent_coverage_percent,
@@ -770,34 +793,81 @@ async def execute_governed_sink(
             sink_id
         )
         # Step 4: private sovereign snapshot S. Immutable scalar locals
-        # only (str/int/Decimal/bool/datetime/tuple-of-str). No object
-        # reachable by projection code aliases S: S lives in framework
-        # locals, never escapes this frame.
+        # only (str/int/Decimal/bool/datetime/tuple-of-str). No mutable
+        # object reachable by projection code may alias S: S lives in
+        # framework locals, never escapes this frame. Corrective-IX
+        # hardening: the platform scope passes through the immutable
+        # freeze boundary (tuple-of-str normalization; future mutable
+        # shapes convert instead of aliasing, ungoverned shapes refuse),
+        # and the runtime type invariant below refuses any snapshot field
+        # outside its allowed immutable family before projection runs.
         _s_sink_id = str(sink_id)
         _s_contract_version = str(final_registration.contract_version)
         _s_tenant_id_hash = str(_tenant_external_id(aggregate.tenant_id))
         _s_currency_code = str(aggregate.currency_code)
         _s_window_start = aggregate.window_start
         _s_window_end = aggregate.window_end
-        _s_supported_platforms = tuple(coverage.supported_platforms)
+        _s_supported_platforms = freeze_platform_scope(coverage.supported_platforms)
         _s_matched_minor = int(aggregate.matched_webhook_revenue_minor)
         _s_connected_minor = int(aggregate.connected_platform_revenue_minor)
         _s_coverage_percent = result.coverage_percent
         _s_zero_denominator = bool(result.zero_denominator)
         _s_provenance_mode = str(SINK_PROVENANCE_MODE)
         _s_sovereign_producer = str(B23_SOVEREIGN_COVERAGE_PRODUCER)
+        try:
+            assert_snapshot_types_immutable(
+                sink_id=_s_sink_id,
+                contract_version=_s_contract_version,
+                tenant_id_hash=_s_tenant_id_hash,
+                currency_code=_s_currency_code,
+                window_start=_s_window_start,
+                window_end=_s_window_end,
+                supported_platforms=_s_supported_platforms,
+                matched_minor=_s_matched_minor,
+                connected_minor=_s_connected_minor,
+                coverage_percent=_s_coverage_percent,
+                zero_denominator=_s_zero_denominator,
+                provenance_mode=_s_provenance_mode,
+                sovereign_producer=_s_sovereign_producer,
+            )
+        except ValueError as exc:
+            raise CanonicalSinkError(f"authoritative_snapshot_type_refused:{exc}") from exc
+        # Pre-projection snapshot digest: recomputed after projection
+        # returns (across the awaitable-projection await). Divergence
+        # proves projection-reachable storage mutated authoritative state
+        # through a shared-mutable alias, and execution refuses instead of
+        # emitting corrupted canonical truth. On pristine bytes the
+        # digests are always equal: no behavior change.
+        _s_pre_digest = _content_digest_for(
+            sink_id=_s_sink_id,
+            contract_version=_s_contract_version,
+            tenant_id_hash=_s_tenant_id_hash,
+            currency_code=_s_currency_code,
+            window_start=_s_window_start,
+            window_end=_s_window_end,
+            supported_platforms=_s_supported_platforms,
+            matched_minor=_s_matched_minor,
+            connected_minor=_s_connected_minor,
+            coverage_percent=_s_coverage_percent,
+            zero_denominator=bool(_s_zero_denominator),
+            provenance_mode=_s_provenance_mode,
+            sovereign_producer=_s_sovereign_producer,
+        )
         # Step 5: causally separate projection view P. A distinct object
         # holding copies of immutable scalar values: mutating P (by any
-        # primitive, including object.__setattr__ or __dict__) cannot
-        # mutate S, because S fields are immutable values in framework
-        # locals, not references to P or its storage.
+        # primitive, including object.__setattr__, __dict__, or in-place
+        # mutation of projection-visible storage) cannot mutate S, because
+        # S fields are deeply immutable values in framework locals, not
+        # references to P or its storage. Sharing an immutable tuple value
+        # is lawful; sharing mutable storage is refused by the invariant
+        # above and detected by the digest comparison below.
         projection_view = AdjunctContext(
             sink_id=_s_sink_id,
             tenant_id_hash=_s_tenant_id_hash,
             currency_code=_s_currency_code,
             window_start=_s_window_start,
             window_end=_s_window_end,
-            supported_platforms=tuple(_s_supported_platforms),
+            supported_platforms=freeze_platform_scope(_s_supported_platforms),
             matched_minor=_s_matched_minor,
             connected_minor=_s_connected_minor,
             coverage_percent=_s_coverage_percent,
@@ -811,6 +881,25 @@ async def execute_governed_sink(
         if inspect.isawaitable(raw_adjunct):
             raw_adjunct = await raw_adjunct
         cleaned = reject_authoritative_adjunct(raw_adjunct)
+        _s_post_digest = _content_digest_for(
+            sink_id=_s_sink_id,
+            contract_version=_s_contract_version,
+            tenant_id_hash=_s_tenant_id_hash,
+            currency_code=_s_currency_code,
+            window_start=_s_window_start,
+            window_end=_s_window_end,
+            supported_platforms=_s_supported_platforms,
+            matched_minor=_s_matched_minor,
+            connected_minor=_s_connected_minor,
+            coverage_percent=_s_coverage_percent,
+            zero_denominator=bool(_s_zero_denominator),
+            provenance_mode=_s_provenance_mode,
+            sovereign_producer=_s_sovereign_producer,
+        )
+        if _s_post_digest != _s_pre_digest:
+            raise CanonicalSinkError(
+                "authoritative_snapshot_mutated_during_projection"
+            )
         # Step 7: materialize exclusively from S. Every authoritative
         # field below names an ``_s_*`` local; none names
         # ``projection_view``, ``raw_adjunct``, or ``cleaned``.

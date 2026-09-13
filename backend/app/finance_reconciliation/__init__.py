@@ -42,6 +42,15 @@ from .canonical_sink import (
     resolve_authenticated_tenant,
     verify_output_integrity,
 )
+from .authoritative_fields import (
+    AUTHORITATIVE_FIELD_REGISTRY,
+    AuthoritativeFieldSpec,
+    assert_registry_covers_output,
+    assert_snapshot_types_immutable,
+    authoritative_field_names,
+    freeze_platform_scope,
+    non_authoritative_field_names,
+)
 from .proof_manifest import (
     B26_P1_PROOF_MANIFEST_VERSION,
     DENYLISTED_PROOF_IDS,
@@ -133,6 +142,13 @@ from .semantic_contract import (
 
 __all__ = [
     "AUTHORITATIVE_FIELD_NAMES",
+    "AUTHORITATIVE_FIELD_REGISTRY",
+    "AuthoritativeFieldSpec",
+    "assert_registry_covers_output",
+    "assert_snapshot_types_immutable",
+    "authoritative_field_names",
+    "freeze_platform_scope",
+    "non_authoritative_field_names",
     "CANONICAL_OUTPUT_AUTHORITY",
     "CANONICAL_SINK_EXECUTOR",
     "CANONICAL_SINK_MODULE",
