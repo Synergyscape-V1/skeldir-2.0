@@ -23,6 +23,9 @@ COVERAGE_AUTHORITY_MODULE = (
     ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
 )
 CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+AUTHORITATIVE_FIELDS_MODULE = (
+    ROOT / "backend/app/finance_reconciliation/authoritative_fields.py"
+)
 PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 
@@ -156,6 +159,76 @@ STATIC_CONTROLS = (
         "authoritative_field_census_gap",
         CANONICAL_SINK_MODULE,
         "canonical_authoritative_census_incomplete",
+    ),
+    (
+        "x_external_extra_literal_key",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_undeclared_key",
+    ),
+    (
+        "x_external_extra_dynamic_key",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_key_closure_not_statically_provable",
+    ),
+    (
+        "x_external_missing_key",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_required_key_missing",
+    ),
+    (
+        "x_external_wrong_source",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_value_source_not_sovereign",
+    ),
+    (
+        "x_detached_typed_renderer",
+        CANONICAL_SINK_MODULE,
+        "canonical_detached_authority_emission",
+    ),
+    (
+        "x_detached_untyped_renderer",
+        CANONICAL_SINK_MODULE,
+        "canonical_detached_authority_emission",
+    ),
+    (
+        "x_detached_mapping_dto_renderer",
+        CANONICAL_SINK_MODULE,
+        "canonical_detached_authority_emission",
+    ),
+    (
+        "x_sibling_authority_emitter",
+        COVERAGE_AUTHORITY_MODULE,
+        "canonical_detached_authority_emission",
+    ),
+    (
+        "x_serializer_promotion",
+        CANONICAL_SINK_MODULE,
+        "canonical_serialization_promotion",
+    ),
+    (
+        "x_raw_tenant_externalized",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_emits_raw_tenant",
+    ),
+    (
+        "x_adjunct_externalized",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_emits_non_authoritative_adjunct",
+    ),
+    (
+        "x_llm_wired_value",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_value_source_not_sovereign",
+    ),
+    (
+        "x_schema_drift",
+        AUTHORITATIVE_FIELDS_MODULE,
+        "canonical_external_registry_drift",
+    ),
+    (
+        "x_unapproved_authority_label",
+        CANONICAL_SINK_MODULE,
+        "canonical_detached_authority_emission",
     ),
 )
 

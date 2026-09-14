@@ -1983,6 +1983,464 @@ def _validate_corrective_ix_authority(
     )
 
 
+def _validate_corrective_x_authority(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Executable Corrective-X authority: closed external universe + lineage.
+
+    Theorem X-A (CLOSED EXTERNAL FIELD UNIVERSE): actual emitted keys must
+    equal the governed external keys -- not merely avoid three forbidden
+    keys. The runtime leg (``validate_external_rendering`` inside the only
+    approved renderer) refuses extra/missing/prohibited keys on the FINAL
+    mapping regardless of construction primitive; this static leg pins the
+    exact census merge-blocking and additionally requires the renderer to
+    stay in statically provable form (no dynamic key mutation whose result
+    a literal census cannot observe).
+
+    Theorem X-B (EXTERNAL FIELD CAUSAL ORIGIN): every emitted value must
+    name its declared ``FinalCanonicalOutput`` source attribute and no
+    caller/projection/detached/adjacent-domain state.
+
+    Theorem X-C (NO DETACHED AUTHORITY PROMOTION): no function outside the
+    governed externalization boundary may return canonical-looking B2.6
+    authority, independently of annotations, parameter/function names,
+    DTO class, dict-vs-dataclass form, or construction syntax. The sensor
+    keys on the behavioral structure (canonical authority marker +
+    financial semantics in a returned mapping, or canonical-type
+    serialization promotion), never on a type annotation or a name.
+    """
+    sys.path.insert(0, str(BACKEND))
+    sink_path = REPO_ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+    try:
+        from app.finance_reconciliation.authoritative_fields import (  # noqa: PLC0415
+            EXTERNAL_FIELD_RENDER_ATTRS,
+            EXTERNAL_FIELD_SOURCES,
+            GOVERNED_EXTERNAL_KEYS,
+            PROHIBITED_EXTERNAL_KEYS,
+            REQUIRED_EXTERNAL_KEYS,
+            assert_external_keys_derive_from_registry,
+            authoritative_field_names,
+            governed_external_keys,
+            validate_external_rendering,
+        )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"corrective_x_external_contract_unresolvable:{exc}")
+        return
+
+    # 0. Single-source unity: the external universe must be a mechanical
+    # registry projection; every authoritative field must externalize
+    # (no silent internal-only authoritative drift); the source map must
+    # cover every governed key with non-empty obligations.
+    try:
+        assert_external_keys_derive_from_registry()
+    except ValueError as exc:
+        violations.append(f"canonical_external_registry_drift:{exc}")
+    try:
+        if set(authoritative_field_names()) != set(governed_external_keys()):
+            violations.append(
+                "canonical_external_registry_drift:authoritative_not_external"
+            )
+        if set(REQUIRED_EXTERNAL_KEYS) != set(GOVERNED_EXTERNAL_KEYS):
+            violations.append(
+                "canonical_external_registry_drift:required_not_governed"
+            )
+        for key in GOVERNED_EXTERNAL_KEYS:
+            if key in PROHIBITED_EXTERNAL_KEYS:
+                violations.append(
+                    f"canonical_external_registry_drift:governed_prohibited:{key}"
+                )
+        for key, spec in EXTERNAL_FIELD_SOURCES.items():
+            for required in (
+                "canonical_source",
+                "transform",
+                "authority_class",
+                "render_attr",
+            ):
+                if not spec.get(required, ""):
+                    violations.append(
+                        "canonical_external_lineage_obligation_missing:"
+                        f"{key}:{required}"
+                    )
+                    break
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_external_registry_unverifiable:{exc}")
+
+    # The proof-oracle pin: the exact governed census. This pin lives in
+    # the proof plane as the oracle against which the mechanical
+    # derivation is checked; changing external semantics requires changing
+    # the registry row AND this pin together (a governed contract change),
+    # never a renderer-only edit.
+    expected_external_keys = frozenset(
+        {
+            "authority",
+            "sink_id",
+            "contract_version",
+            "tenant_id_hash",
+            "currency_code",
+            "window_start",
+            "window_end",
+            "supported_platforms",
+            "matched_minor",
+            "connected_minor",
+            "coverage_percent",
+            "zero_denominator",
+            "provenance_mode",
+            "sovereign_producer",
+        }
+    )
+    if set(GOVERNED_EXTERNAL_KEYS) != set(expected_external_keys):
+        violations.append("canonical_external_census_pin_mismatch")
+
+    # Runtime leg liveness: the validator executes the refusal itself so a
+    # green validator implies red forgeries (never a dead import).
+    try:
+        validate_external_rendering(dict.fromkeys(expected_external_keys, 1))
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_external_runtime_leg_dead:lawful:{exc}")
+    else:
+        for probe, probe_id in (
+            (dict.fromkeys([*expected_external_keys, "verified_revenue_minor"], 1), "extra"),
+            ({k: 1 for k in expected_external_keys if k != "matched_minor"}, "missing"),
+            ({**dict.fromkeys(expected_external_keys, 1), "tenant_id": "raw"}, "prohibited"),
+        ):
+            try:
+                validate_external_rendering(probe)
+            except ValueError:
+                pass
+            else:
+                violations.append(
+                    f"canonical_external_runtime_leg_dead:{probe_id}"
+                )
+    try:
+        sink_source = sink_path.read_text(encoding="utf-8")
+        sink_tree = ast.parse(sink_source)
+    except (OSError, SyntaxError) as exc:
+        violations.append(f"corrective_x_sink_source_unreadable:{exc}")
+        return
+
+    # 1-3. Approved-renderer census + provability + value lineage.
+    renderer = next(
+        (
+            node
+            for node in ast.walk(sink_tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+            and node.name == "render_governed_external"
+        ),
+        None,
+    )
+    if renderer is None:
+        violations.append("canonical_execution_bound_renderer_missing")
+    else:
+        # Dynamic key construction on `rendered` escapes a literal census,
+        # so the frozen renderer must stay in statically provable form.
+        # (The runtime leg still refuses any dynamic extra at execution.)
+        for node in ast.walk(renderer):
+            if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+                if node.target.id == "rendered":
+                    violations.append(
+                        "canonical_external_key_closure_not_statically_provable:"
+                        "aug_assign"
+                    )
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Subscript) and isinstance(
+                        target.value, ast.Name
+                    ):
+                        if target.value.id == "rendered":
+                            violations.append(
+                                "canonical_external_key_closure_not_statically_provable:"
+                                "subscript_store"
+                            )
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if (
+                    isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "rendered"
+                    and node.func.attr in {"update", "setdefault", "__setitem__"}
+                ):
+                    violations.append(
+                        "canonical_external_key_closure_not_statically_provable:"
+                        f"{node.func.attr}"
+                    )
+        literal_keys: set[str] = set()
+        rendered_dict: ast.Dict | None = None
+        for node in ast.walk(renderer):
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "rendered"
+                for target in node.targets
+            ):
+                if isinstance(node.value, ast.Dict):
+                    rendered_dict = node.value
+                    for key_node in node.value.keys:
+                        if key_node is None:
+                            violations.append(
+                                "canonical_external_key_closure_not_statically_provable:"
+                                "star_expansion"
+                            )
+                        elif isinstance(key_node, ast.Constant) and isinstance(
+                            key_node.value, str
+                        ):
+                            literal_keys.add(key_node.value)
+                elif isinstance(node.value, (ast.DictComp, ast.Call)):
+                    violations.append(
+                        "canonical_external_key_closure_not_statically_provable:"
+                        "non_literal_rendered"
+                    )
+        if literal_keys != set(GOVERNED_EXTERNAL_KEYS):
+            violations.append(
+                "canonical_external_undeclared_key:"
+                f"emitted={sorted(literal_keys)}"
+            )
+        missing_required = set(REQUIRED_EXTERNAL_KEYS) - literal_keys
+        if missing_required:
+            violations.append(
+                "canonical_external_required_key_missing:"
+                f"{sorted(missing_required)}"
+            )
+        if set(literal_keys) & set(PROHIBITED_EXTERNAL_KEYS):
+            violations.append("canonical_external_prohibited_key:rendered")
+        # Value lineage: each emitted value must name its declared
+        # FinalCanonicalOutput source attribute and no foreign state.
+        if rendered_dict is not None:
+            allowed_call_roots = {"output", "list", "int", "str", "bool"}
+            for key_node, value_node in zip(
+                rendered_dict.keys, rendered_dict.values
+            ):
+                if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
+                    continue
+                key = key_node.value
+                expected_attr = EXTERNAL_FIELD_RENDER_ATTRS.get(key)
+                if expected_attr is None:
+                    violations.append(
+                        f"canonical_external_undeclared_key:{key}"
+                    )
+                    continue
+                output_attrs = {
+                    child.attr
+                    for child in ast.walk(value_node)
+                    if isinstance(child, ast.Attribute)
+                    and isinstance(child.value, ast.Name)
+                    and child.value.id == "output"
+                }
+                if expected_attr not in output_attrs:
+                    violations.append(
+                        "canonical_external_value_source_not_sovereign:"
+                        f"{key}"
+                    )
+                foreign = {
+                    child.id
+                    for child in ast.walk(value_node)
+                    if isinstance(child, ast.Name)
+                } - allowed_call_roots
+                if foreign:
+                    violations.append(
+                        "canonical_external_value_source_not_sovereign:"
+                        f"{key}:{sorted(foreign)}"
+                    )
+
+    details["corrective_x_governed_external_keys"] = sorted(GOVERNED_EXTERNAL_KEYS)
+    details["corrective_x_sensors"] = sorted(
+        [
+            "canonical_external_registry_drift",
+            "canonical_external_census_pin_mismatch",
+            "canonical_external_undeclared_key",
+            "canonical_external_required_key_missing",
+            "canonical_external_prohibited_key",
+            "canonical_external_value_source_not_sovereign",
+            "canonical_external_key_closure_not_statically_provable",
+            "canonical_detached_authority_emission",
+            "canonical_serialization_promotion",
+        ]
+    )
+
+
+_CANONICAL_AUTHORITY_MARKER = "canonical_B2.6_financial_truth"
+_X_FINANCE_KEY_HINTS = frozenset(
+    {
+        "sink_id",
+        "contract_version",
+        "tenant_id_hash",
+        "currency_code",
+        "window_start",
+        "window_end",
+        "supported_platforms",
+        "matched_minor",
+        "connected_minor",
+        "coverage_percent",
+        "zero_denominator",
+        "provenance_mode",
+        "sovereign_producer",
+    }
+)
+_X_FINANCE_AFFIX_HINTS = ("_minor", "_revenue", "_amount", "revenue", "coverage")
+
+
+def _x_dict_has_canonical_claim(
+    dict_node: ast.Dict,
+) -> tuple[bool, bool]:
+    """Report (authority_marker, finance_hint) for a returned mapping.
+
+    The authority marker is recognized by VALUE semantics -- the literal
+    canonical label, the framework constant, or a carried ``.authority``
+    attribute -- never by parameter names or type annotations. Finance
+    hints recognize governed keys and finance affixes.
+    """
+    marker = False
+    literal_marker = False
+    finance = False
+    for key_node, value_node in zip(dict_node.keys, dict_node.values):
+        if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
+            continue
+        key = key_node.value
+        if key in _X_FINANCE_KEY_HINTS or key.endswith(_X_FINANCE_AFFIX_HINTS) or key.startswith(
+            ("verified_", "settled_", "reconciled_", "attributed_", "canonical_")
+        ):
+            finance = True
+        if key != "authority":
+            continue
+        if isinstance(value_node, ast.Constant) and isinstance(value_node.value, str):
+            if _CANONICAL_AUTHORITY_MARKER in value_node.value:
+                marker = True
+                literal_marker = True
+        elif isinstance(value_node, ast.Name):
+            if value_node.id in {
+                "CANONICAL_OUTPUT_AUTHORITY",
+                "authority",
+                "canonical_authority",
+            }:
+                marker = True
+        elif isinstance(value_node, ast.Attribute):
+            if value_node.attr in {"CANONICAL_OUTPUT_AUTHORITY", "authority"}:
+                marker = True
+        elif isinstance(value_node, ast.Call):
+            # Laundered label: kwargs.get("authority", <canonical marker>)
+            # or dict(...)/Mapping constructions carrying the marker.
+            for child in ast.walk(value_node):
+                if (
+                    isinstance(child, ast.Constant)
+                    and isinstance(child.value, str)
+                    and _CANONICAL_AUTHORITY_MARKER in child.value
+                ):
+                    marker = True
+                    literal_marker = True
+                    break
+                if isinstance(child, ast.Name) and child.id in {
+                    "CANONICAL_OUTPUT_AUTHORITY",
+                }:
+                    marker = True
+                    break
+    return marker, (literal_marker or finance)
+
+
+_X_SERIALIZER_CALLS = frozenset(
+    {"asdict", "model_dump", "model_dump_json", "jsonable_encoder", "vars"}
+)
+
+
+def _x_is_serializer_call(called: str) -> bool:
+    """Recognize generic serializers independently of import aliasing."""
+    if called in _X_SERIALIZER_CALLS:
+        return True
+    # Aliased imports (``asdict as _nc_asdict``) keep the capability name
+    # as a suffix; a bare unrelated name never matches this shape.
+    return any(
+        called == name or called.endswith(f"_{name}") or called.endswith(f".{name}")
+        for name in _X_SERIALIZER_CALLS
+    )
+
+
+def _x_function_references_canonical(func: ast.AST) -> bool:
+    for child in ast.walk(func):
+        if isinstance(child, ast.Name) and child.id in {
+            "FinalCanonicalOutput",
+            "CANONICAL_OUTPUT_AUTHORITY",
+        }:
+            return True
+        if isinstance(child, ast.Attribute) and child.attr in {
+            "FinalCanonicalOutput",
+            "CANONICAL_OUTPUT_AUTHORITY",
+        }:
+            return True
+        if (
+            isinstance(child, ast.Constant)
+            and isinstance(child.value, str)
+            and _CANONICAL_AUTHORITY_MARKER in child.value
+        ):
+            return True
+    return False
+
+
+def _validate_corrective_x_detached_sensors(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Repo-wide annotation-independent detached-promotion sensors."""
+    app_root = BACKEND / "app"
+    scanned_functions = 0
+    for path in sorted(app_root.rglob("*.py")):
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+        except (OSError, SyntaxError):
+            continue
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            scanned_functions += 1
+            approved = (
+                rel == "backend/app/finance_reconciliation/canonical_sink.py"
+                and node.name in {"render_governed_external", "execute_governed_sink"}
+            )
+            if approved:
+                continue
+            for child in ast.walk(node):
+                if not isinstance(child, ast.Return) or not isinstance(
+                    child.value, ast.Dict
+                ):
+                    continue
+                marker, finance = _x_dict_has_canonical_claim(child.value)
+                if marker and finance:
+                    violations.append(
+                        "canonical_detached_authority_emission:"
+                        f"{rel}:{node.name}"
+                    )
+                    break
+            else:
+                # Serialization promotion: a canonical-referencing function
+                # that returns a generic serialization of a value it was
+                # given can launder a detached object into canonical-looking
+                # external form without a Dict literal. Serialization itself
+                # is lawful everywhere; the canonical reference is the
+                # authority claim that makes neutral emission RED.
+                if _x_function_references_canonical(node):
+                    for child in ast.walk(node):
+                        if not isinstance(child, ast.Return):
+                            continue
+                        value = child.value
+                        if isinstance(value, ast.Call) and isinstance(
+                            value.func, (ast.Name, ast.Attribute)
+                        ):
+                            called = (
+                                value.func.id
+                                if isinstance(value.func, ast.Name)
+                                else value.func.attr
+                            )
+                            if _x_is_serializer_call(called):
+                                violations.append(
+                                    "canonical_serialization_promotion:"
+                                    f"{rel}:{node.name}"
+                                )
+                                break
+                        elif isinstance(value, ast.Attribute) and value.attr in {
+                            "__dict__",
+                        }:
+                            violations.append(
+                                "canonical_serialization_promotion:"
+                                f"{rel}:{node.name}"
+                            )
+                            break
+    details["corrective_x_functions_scanned"] = scanned_functions
+
+
 def validate() -> tuple[list[str], dict[str, Any]]:
     violations: list[str] = []
     details: dict[str, Any] = {}
@@ -1991,6 +2449,8 @@ def validate() -> tuple[list[str], dict[str, Any]]:
     _validate_corrective_vii_authority(violations, details)
     _validate_corrective_viii_authority(violations, details)
     _validate_corrective_ix_authority(violations, details)
+    _validate_corrective_x_authority(violations, details)
+    _validate_corrective_x_detached_sensors(violations, details)
     enforce_machinery = not _successor_authorizes_machinery()
     _validate_b26_namespace(
         violations, details, enforce_product_machinery=enforce_machinery
