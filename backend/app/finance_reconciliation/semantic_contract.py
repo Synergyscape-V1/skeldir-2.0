@@ -28,8 +28,8 @@ _REPO_ROOT = (
 B26_P1_SEMANTIC_CONTRACT_PATH = (
     _REPO_ROOT / "contracts/reconciliation/b2.6/semantic-authority.v1.yaml"
 )
-B26_P1_CONTRACT_VERSION = "b2.6-p1-semantic-authority-v5"
-B26_P1_SUPERSEDES_VERSION = "b2.6-p1-semantic-authority-v4"
+B26_P1_CONTRACT_VERSION = "b2.6-p1-semantic-authority-v6"
+B26_P1_SUPERSEDES_VERSION = "b2.6-p1-semantic-authority-v5"
 
 _REQUIRED_TOP_LEVEL = frozenset(
     {
@@ -62,6 +62,7 @@ _REQUIRED_TOP_LEVEL = frozenset(
         "successor_provenance_law",
         "authority_classes",
         "closure_snapshot",
+        "external_semantics_authority",
     }
 )
 
@@ -79,6 +80,47 @@ B26_KNOWN_AUTHORITY_CLASSES = frozenset(
 # Successor-phase product-machinery gate values.
 B26_SUCCESSOR_STATUS_NONE = "none"
 B26_SUCCESSOR_STATUS_AUTHORIZED = "authorized_p2_product_growth"
+
+# Corrective-XI external semantic contract: the frozen key census, the
+# stable transform identifiers, and the governed egress surface set. These
+# are the constitution's own statement of external meaning -- independent
+# of the implementation module (external_semantics.py), which the contract
+# additionally pins by AST hash below.
+B26_REQUIRED_EXTERNAL_SEMANTIC_KEYS = frozenset(
+    {
+        "authority",
+        "sink_id",
+        "contract_version",
+        "tenant_id_hash",
+        "currency_code",
+        "window_start",
+        "window_end",
+        "supported_platforms",
+        "matched_minor",
+        "connected_minor",
+        "coverage_percent",
+        "zero_denominator",
+        "provenance_mode",
+        "sovereign_producer",
+    }
+)
+B26_REQUIRED_EXTERNAL_TRANSFORM_IDS = {
+    "authority": "governed_label_identity",
+    "sink_id": "str_identity",
+    "contract_version": "str_identity",
+    "tenant_id_hash": "one_way_hash_identity",
+    "currency_code": "str_identity",
+    "window_start": "instant_iso8601",
+    "window_end": "instant_iso8601",
+    "supported_platforms": "frozen_tuple_exact_materialization",
+    "matched_minor": "integer_minor_identity",
+    "connected_minor": "integer_minor_identity",
+    "coverage_percent": "decimal_2dp_exact_string",
+    "zero_denominator": "bool_identity",
+    "provenance_mode": "governed_label_identity",
+    "sovereign_producer": "governed_label_identity",
+}
+B26_REQUIRED_EXTERNAL_EGRESS_SURFACES = ["render_governed_external"]
 
 # Governed taxonomy minor-version bumps: v1 bare iff no additive reasons.
 B26_DISCREPANCY_TAXONOMY_V1 = "b2.6-discrepancy-taxonomy-v1"
@@ -259,6 +301,18 @@ B26_REQUIRED_AUTHORITY_CLASSES = {    "phase_id": "PERMANENT_MACHINE_ENFORCED",
     "canonical_sink_framework": "PERMANENT_MACHINE_ENFORCED",
     "successor_provenance_law": "PERMANENT_MACHINE_ENFORCED",
     "closure_snapshot": "PHASE_LOCAL_CLOSURE_FACT",
+    "external_semantics_authority": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.module": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.law": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.ast_sha256": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.governed_external_keys": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.transform_ids": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.egress_capability": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.egress_capability.sealed_type": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.egress_capability.admitter": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.egress_capability.governed_surfaces": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.egress_capability.law": "PERMANENT_MACHINE_ENFORCED",
+    "external_semantics_authority.evolution_law": "PERMANENT_MACHINE_ENFORCED",
 }
 
 
@@ -716,6 +770,53 @@ def _validate_contract(document: Mapping[str, Any]) -> None:
     _require(
         len(document["negative_control_registry"]) >= 7,
         "b26_p1_negative_control_registry_incomplete",
+    )
+    _validate_external_semantics_section(document)
+
+
+def _validate_external_semantics_section(document: Mapping[str, Any]) -> None:
+    """Corrective-XI: the constitution owns external meaning and egress law."""
+    section = document["external_semantics_authority"]
+    _require(isinstance(section, dict), "b26_p1_external_semantics_not_object")
+    _require(
+        section.get("module") == "app.finance_reconciliation.external_semantics",
+        "b26_p1_external_semantics_module_drift",
+    )
+    _require(
+        section.get("law") == "external_meaning_only_through_executable_transform_contract",
+        "b26_p1_external_semantics_law_drift",
+    )
+    pinned_hash = section.get("ast_sha256")
+    _require(
+        isinstance(pinned_hash, str)
+        and len(pinned_hash) == 64
+        and all(character in "0123456789abcdef" for character in pinned_hash),
+        "b26_p1_external_semantics_hash_invalid",
+    )
+    _require(
+        set(section.get("governed_external_keys", []))
+        == B26_REQUIRED_EXTERNAL_SEMANTIC_KEYS,
+        "b26_p1_external_semantics_keys_drift",
+    )
+    _require(
+        section.get("transform_ids") == B26_REQUIRED_EXTERNAL_TRANSFORM_IDS,
+        "b26_p1_external_semantics_transform_ids_drift",
+    )
+    capability = section.get("egress_capability", {})
+    _require(
+        capability.get("sealed_type")
+        == "app.finance_reconciliation.canonical_sink.CanonicalExternalTruth"
+        and capability.get("admitter")
+        == "app.finance_reconciliation.canonical_sink.admit_canonical_external"
+        and capability.get("governed_surfaces") == B26_REQUIRED_EXTERNAL_EGRESS_SURFACES
+        and capability.get("law")
+        == "only_governed_egress_issuance_confers_canonical_external_authority",
+        "b26_p1_external_egress_capability_drift",
+    )
+    _require(
+        section.get("evolution_law")
+        == "external_semantic_change_requires_contract_version_supersession",
+        "b26_p1_external_semantics_evolution_law_drift",
     )
 
 

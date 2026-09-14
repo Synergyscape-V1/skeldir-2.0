@@ -472,7 +472,7 @@ def test_p_ix_4_freeze_boundary_normalizes_mutable_class() -> None:
 def test_p_ix_5_snapshot_type_invariant_refuses_mutable() -> None:
     lawful = {
         "sink_id": "future_finance_projection",
-        "contract_version": "b2.6-p1-semantic-authority-v5",
+        "contract_version": "b2.6-p1-semantic-authority-v6",
         "tenant_id_hash": "hash",
         "currency_code": "USD",
         "window_start": datetime(2026, 1, 1),

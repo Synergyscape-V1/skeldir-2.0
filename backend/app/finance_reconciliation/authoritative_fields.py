@@ -59,6 +59,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Mapping
 
+from app.finance_reconciliation.external_semantics import EXTERNAL_SEMANTICS
+
 
 @dataclass(frozen=True)
 class AuthoritativeFieldSpec:
@@ -280,96 +282,44 @@ PROHIBITED_EXTERNAL_KEYS: frozenset[str] = frozenset(
     {"tenant_id", "content_digest", "adjunct_json"}
 )
 
-# Machine-readable value-lineage map (Theorem X-B): every governed external
-# key derives ONLY from its declared canonical source through its declared
-# transform. The static validator enforces that the approved renderer's
-# emitted value for each key names the mapped FinalCanonicalOutput attribute
-# and no caller/projection/detached/adjacent-domain state.
+# Machine-readable value-lineage map (Theorem X-B, Corrective-XI hardening):
+# every governed external key derives ONLY from its declared canonical
+# source through its declared transform. Since Corrective XI this map is a
+# MECHANICAL PROJECTION of the frozen executable transform contract
+# (``external_semantics.EXTERNAL_SEMANTICS``): ``render_attr`` is the
+# contract's ``source_attr`` and ``transform`` is the contract's stable
+# ``transform_id``. The prose ``canonical_source`` rows remain human-facing
+# documentation of sovereign origin. The map can no longer self-authorize
+# a wrong lineage: a source substitution must change the transform
+# contract module, which the semantic contract pins by AST hash and the
+# CI validator pins by value-blind key->source data.
+_EXTERNAL_CANONICAL_SOURCE_PROSE: dict[str, str] = {
+    "authority": "framework constant CANONICAL_OUTPUT_AUTHORITY",
+    "sink_id": "caller scope sink_id bound at final atomic capture (_s_sink_id)",
+    "contract_version": "registration contract_version == B26_P1_CONTRACT_VERSION (_s_contract_version)",
+    "tenant_id_hash": "aggregate.tenant_id via app.trust.refusal.tenant_hash (_s_tenant_id_hash)",
+    "currency_code": "aggregate.currency_code, B2.3 sovereign derivation (_s_currency_code)",
+    "window_start": "aggregate.window_start, B2.3 sovereign derivation (_s_window_start)",
+    "window_end": "aggregate.window_end, B2.3 sovereign derivation (_s_window_end)",
+    "supported_platforms": "coverage.supported_platforms via freeze_platform_scope (_s_supported_platforms)",
+    "matched_minor": "aggregate.matched_webhook_revenue_minor, integer minor units (_s_matched_minor)",
+    "connected_minor": "aggregate.connected_platform_revenue_minor, integer minor units (_s_connected_minor)",
+    "coverage_percent": "result.coverage_percent cross-checked via independent oracle (_s_coverage_percent)",
+    "zero_denominator": "result.zero_denominator cross-checked via independent oracle (_s_zero_denominator)",
+    "provenance_mode": "framework constant SINK_PROVENANCE_MODE (_s_provenance_mode)",
+    "sovereign_producer": "framework constant B23_SOVEREIGN_COVERAGE_PRODUCER (_s_sovereign_producer)",
+}
+
 EXTERNAL_FIELD_SOURCES: dict[str, dict[str, str]] = {
-    "authority": {
-        "canonical_source": "framework constant CANONICAL_OUTPUT_AUTHORITY",
-        "transform": "identity",
+    spec.external_key: {
+        "canonical_source": _EXTERNAL_CANONICAL_SOURCE_PROSE.get(
+            spec.external_key, "undeclared external semantic"
+        ),
+        "transform": spec.transform_id,
         "authority_class": "authoritative",
-        "render_attr": "authority",
-    },
-    "sink_id": {
-        "canonical_source": "caller scope sink_id bound at final atomic capture (_s_sink_id)",
-        "transform": "identity",
-        "authority_class": "authoritative",
-        "render_attr": "sink_id",
-    },
-    "contract_version": {
-        "canonical_source": "registration contract_version == B26_P1_CONTRACT_VERSION (_s_contract_version)",
-        "transform": "identity",
-        "authority_class": "authoritative",
-        "render_attr": "contract_version",
-    },
-    "tenant_id_hash": {
-        "canonical_source": "aggregate.tenant_id via app.trust.refusal.tenant_hash (_s_tenant_id_hash)",
-        "transform": "one-way hash (raw UUID never externalized)",
-        "authority_class": "authoritative",
-        "render_attr": "tenant_id_hash",
-    },
-    "currency_code": {
-        "canonical_source": "aggregate.currency_code, B2.3 sovereign derivation (_s_currency_code)",
-        "transform": "identity",
-        "authority_class": "authoritative",
-        "render_attr": "currency_code",
-    },
-    "window_start": {
-        "canonical_source": "aggregate.window_start, B2.3 sovereign derivation (_s_window_start)",
-        "transform": "datetime to ISO-8601",
-        "authority_class": "authoritative",
-        "render_attr": "window_start",
-    },
-    "window_end": {
-        "canonical_source": "aggregate.window_end, B2.3 sovereign derivation (_s_window_end)",
-        "transform": "datetime to ISO-8601",
-        "authority_class": "authoritative",
-        "render_attr": "window_end",
-    },
-    "supported_platforms": {
-        "canonical_source": "coverage.supported_platforms via freeze_platform_scope (_s_supported_platforms)",
-        "transform": "immutable tuple to list",
-        "authority_class": "authoritative",
-        "render_attr": "supported_platforms",
-    },
-    "matched_minor": {
-        "canonical_source": "aggregate.matched_webhook_revenue_minor, integer minor units (_s_matched_minor)",
-        "transform": "int identity",
-        "authority_class": "authoritative",
-        "render_attr": "matched_minor",
-    },
-    "connected_minor": {
-        "canonical_source": "aggregate.connected_platform_revenue_minor, integer minor units (_s_connected_minor)",
-        "transform": "int identity",
-        "authority_class": "authoritative",
-        "render_attr": "connected_minor",
-    },
-    "coverage_percent": {
-        "canonical_source": "result.coverage_percent cross-checked via independent oracle (_s_coverage_percent)",
-        "transform": "Decimal to string",
-        "authority_class": "authoritative",
-        "render_attr": "coverage_percent",
-    },
-    "zero_denominator": {
-        "canonical_source": "result.zero_denominator cross-checked via independent oracle (_s_zero_denominator)",
-        "transform": "bool identity",
-        "authority_class": "authoritative",
-        "render_attr": "zero_denominator",
-    },
-    "provenance_mode": {
-        "canonical_source": "framework constant SINK_PROVENANCE_MODE (_s_provenance_mode)",
-        "transform": "identity",
-        "authority_class": "authoritative",
-        "render_attr": "provenance_mode",
-    },
-    "sovereign_producer": {
-        "canonical_source": "framework constant B23_SOVEREIGN_COVERAGE_PRODUCER (_s_sovereign_producer)",
-        "transform": "identity",
-        "authority_class": "authoritative",
-        "render_attr": "sovereign_producer",
-    },
+        "render_attr": spec.source_attr,
+    }
+    for spec in EXTERNAL_SEMANTICS.values()
 }
 
 # External key to the FinalCanonicalOutput attribute it must derive from.
@@ -385,7 +335,9 @@ def assert_external_keys_derive_from_registry() -> None:
 
     The governed external set, the required set, the source map, and the
     render-attr map must all agree with the registry emission obligations:
-    no independently maintained external truth may exist.
+    no independently maintained external truth may exist. Since Corrective
+    XI the lineage map must ALSO be a mechanical projection of the frozen
+    executable transform contract -- prose cannot self-authorize lineage.
     """
     derived = governed_external_keys()
     if set(GOVERNED_EXTERNAL_KEYS) != set(derived):
@@ -404,12 +356,27 @@ def assert_external_keys_derive_from_registry() -> None:
         raise ValueError(
             "canonical_external_registry_drift:render_attr_map_not_derived"
         )
+    if set(EXTERNAL_SEMANTICS) != set(derived):
+        raise ValueError(
+            "canonical_external_registry_drift:transform_contract_not_derived"
+        )
     for name, spec in EXTERNAL_FIELD_SOURCES.items():
         for required in ("canonical_source", "transform", "authority_class", "render_attr"):
             if not spec.get(required, ""):
                 raise ValueError(
                     f"canonical_external_lineage_obligation_missing:{name}:{required}"
                 )
+        contract_spec = EXTERNAL_SEMANTICS[name]
+        if spec["render_attr"] != contract_spec.source_attr:
+            raise ValueError(
+                "canonical_external_registry_drift:render_attr_not_contract_projection:"
+                f"{name}"
+            )
+        if spec["transform"] != contract_spec.transform_id:
+            raise ValueError(
+                "canonical_external_registry_drift:transform_not_contract_projection:"
+                f"{name}"
+            )
 
 
 def validate_external_rendering(rendered: Mapping[str, Any]) -> None:

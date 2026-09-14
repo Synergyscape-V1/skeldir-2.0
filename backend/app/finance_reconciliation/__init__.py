@@ -13,6 +13,7 @@ from .canonical_sink import (
     CANONICAL_SINK_MODULE,
     FINAL_FIELD_OWNER,
     FINAL_OUTPUT_TYPE,
+    GOVERNED_EGRESS_SURFACES,
     PROJECTION_POLICY,
     SINK_PROVENANCE_MODE,
     SINK_REGISTRY,
@@ -20,7 +21,9 @@ from .canonical_sink import (
     SUCCESSOR_PERSISTENCE_REGISTRY,
     SUCCESSOR_PROVENANCE_MODES,
     AdjunctContext,
+    CanonicalExternalTruth,
     CanonicalSinkError,
+    GovernedEgressSurface,
     DuplicateSinkError,
     FinalCanonicalOutput,
     FinalFieldSubstitutionError,
@@ -33,6 +36,8 @@ from .canonical_sink import (
     deregister_successor_persistence,
     execute_governed_sink,
     executor_binds_tenant_from_verified_auth_only,
+    admit_canonical_external,
+    assert_canonical_external_semantics,
     executor_signature_has_no_session_capability,
     external_renderer_signature_is_execution_bound,
     register_successor_persistence,
@@ -41,6 +46,15 @@ from .canonical_sink import (
     require_registered_sink,
     resolve_authenticated_tenant,
     verify_output_integrity,
+)
+from .external_semantics import (
+    EXTERNAL_SEMANTIC_KEYS,
+    EXTERNAL_SEMANTICS,
+    ExternalFieldSemantics,
+    ExternalSemanticsError,
+    check_external_semantics,
+    external_semantics_ast_sha256,
+    project_external_fields,
 )
 from .authoritative_fields import (
     AUTHORITATIVE_FIELD_REGISTRY,

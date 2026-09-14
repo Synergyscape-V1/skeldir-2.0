@@ -1,5 +1,25 @@
 """B2.6-P1 executable canonical-consumer framework (Corrective IX).
 
+Corrective-XI law (defect classes XI-A/XI-B/XI-C: transform semantic drift,
+canonical authority capability escape, validate-A/return-B divergence)
+-----------------------------------------------------------------------------
+1. External meaning is executable, not referenced: the approved renderer
+   contains no per-field transform expressions; every external value is
+   the execution of the frozen transform contract
+   (``app.finance_reconciliation.external_semantics``) over its declared
+   sovereign source attribute, and this module refuses to load unless the
+   semantic contract pins that module's AST identity
+   (:func:`verify_external_semantics_contract_pin`).
+2. Canonical authority is a capability, not a string: the renderer returns
+   a sealed ``CanonicalExternalTruth`` issued only here; admission
+   (:func:`admit_canonical_external`) accepts only that exact type.
+   Reproducing the lawful bytes -- by any construction primitive --
+   yields ordinary data, never authority. The egress surfaces form the
+   registered closed set ``GOVERNED_EGRESS_SURFACES``.
+3. The validated representation IS the returned representation: the
+   capability constructor validates exactly the fields it freezes into an
+   immutable proxy; there is no post-validation transformation surface.
+
 Corrective-IX law (defect class IX-A: mutable authority alias reintroduction)
 -----------------------------------------------------------------------------
 AUTHORITATIVE STATE AND NON-AUTHORITATIVE PROJECTION STATE MUST NEVER SHARE
@@ -168,6 +188,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from types import MappingProxyType
 from typing import Any
 from uuid import UUID
 
@@ -181,12 +202,19 @@ from app.finance_reconciliation.coverage_authority import (
     independent_coverage_percent,
     resolve_canonical_coverage,
 )
+from app.finance_reconciliation.external_semantics import (
+    EXTERNAL_SEMANTICS,
+    check_external_semantics,
+    external_semantics_ast_sha256,
+    project_external_fields,
+)
 from app.finance_reconciliation.proof_manifest import (
     require_proofs_bound,
     require_successor_proofs_bound,
 )
 from app.finance_reconciliation.semantic_contract import (
     B26_P1_CONTRACT_VERSION,
+    load_b26_p1_semantic_contract,
 )
 from app.finance_reconciliation.tenant_authority import (
     DATABASE_CAPABILITY_MODE,
@@ -206,6 +234,10 @@ SINK_PROVENANCE_MODE = "RE_DERIVE_ON_READ"
 PROJECTION_POLICY = "adjunct_only_authoritative_fields_framework_owned"
 
 CANONICAL_OUTPUT_AUTHORITY = "canonical_B2.6_financial_truth"
+
+# Corrective-XI governed canonical egress surface identity. The registered
+# closed set of egress surfaces lives in GOVERNED_EGRESS_SURFACES below.
+_EGRESS_SURFACE_ID = "render_governed_external"
 
 # Fields the trusted framework materializes from the sovereign derivation.
 # A projection implementation returning any of these (or any tenant-bearing
@@ -268,6 +300,213 @@ class FinalFieldSubstitutionError(CanonicalSinkError):
 
 class SuccessorProvenanceError(CanonicalSinkError):
     """A successor persistence declaration or authorization is not governed."""
+
+
+# ---------------------------------------------------------------------------
+# Corrective-XI law (defect classes XI-B/XI-C: canonical authority capability
+# escape and validate-A/return-B divergence).
+#
+# CANONICAL AUTHORITY IS A CAPABILITY, NOT A STRING. Possessing the bytes of
+# the lawful external representation -- the authority label, the finance
+# keys, even every value -- confers ZERO canonical authority, because no
+# consumer admits a representation: consumers admit instances of
+# CanonicalExternalTruth, an exact type that can only be issued inside this
+# governed egress module through the closure-born issuance secret below
+# (sealed-type precedent: CanonicalVerificationCoverage). Construct-then-
+# return, dict(...), Mapping subclasses, DTOs, wrappers, lambdas, renamed
+# serializers, aliased/concatenated/computed authority markers, and JSON
+# round-trips all remain perfectly lawful ORDINARY DATA -- and ordinary data
+# is never admitted. The repo-wide CI census makes forging the capability
+# outside this module merge-blocking; in-process introspection of closure
+# cells sits inside the declared same-process trusted computing base
+# (unchanged since Corrective VII) and still confers no authority without a
+# registered egress surface.
+#
+# VALIDATED == RETURNED, BY CONSTRUCTION. The issuer derives the fields
+# through the executable transform contract, and the capability constructor
+# validates exactly the fields it freezes into an immutable MappingProxy.
+# There is no intermediate mapping in which a validate-A/return-B split can
+# exist: the validated representation IS the returned representation.
+# ---------------------------------------------------------------------------
+
+
+def _make_canonical_external_truth() -> tuple[type, object]:
+    """Birth the sealed canonical external-truth type and its issuance secret.
+
+    The issuance secret exists only in this closure (and, through it, in the
+    module-private ``_EGRESS_ISSUANCE`` used exclusively by the governed
+    issuer below). It is a per-process identity object: unforgeable by
+    value, so reproducing the bytes of a lawful rendering -- by any Python
+    construction primitive -- cannot produce a admissible object.
+    """
+    issuance_secret = object()
+
+    class CanonicalExternalTruth(Mapping):
+        """The governed canonical external representation of B2.6 truth.
+
+        Instances are issued ONLY by :func:`_issue_canonical_external` inside
+        this module, which is called ONLY by the execution-bound approved
+        renderer. The type is the admission token: ``type(x) is
+        CanonicalExternalTruth`` (exact identity, never isinstance, so
+        subclass forgeries refuse) plus the semantic law re-verified at
+        admission. A byte-identical dict is ordinary data and is refused by
+        :func:`admit_canonical_external` -- resemblance is not authority.
+        """
+
+        __slots__ = ("_fields",)
+
+        def __init__(self, fields: Mapping[str, Any], issuance: object) -> None:
+            if issuance is not issuance_secret:
+                raise CanonicalSinkError("canonical_egress_capability_refused")
+            # Validate exactly what is frozen: the validated representation
+            # IS the returned representation (Corrective-XI, class XI-C).
+            validate_external_rendering(fields)
+            assert_canonical_external_semantics(fields)
+            object.__setattr__(self, "_fields", MappingProxyType(dict(fields)))
+
+        def __getitem__(self, key: str) -> Any:
+            return self._fields[key]
+
+        def __iter__(self):
+            return iter(self._fields)
+
+        def __len__(self) -> int:
+            return len(self._fields)
+
+        def __repr__(self) -> str:  # pragma: no cover - diagnostic only
+            return f"CanonicalExternalTruth({dict(self._fields)!r})"
+
+        @property
+        def issued_by(self) -> str:
+            return _EGRESS_SURFACE_ID
+
+    return CanonicalExternalTruth, issuance_secret
+
+
+CanonicalExternalTruth, _EGRESS_ISSUANCE = _make_canonical_external_truth()
+
+
+def assert_canonical_external_semantics(fields: Mapping[str, Any]) -> None:
+    """Enforce the full executable external semantic law on a final mapping.
+
+    Composes the pure shape law of the transform contract with this
+    module's governed constant-label law (authority, provenance, producer,
+    contract version): labels are exact governed constants, never
+    caller-supplied lookalikes.
+    """
+    check_external_semantics(fields)
+    if fields["authority"] != CANONICAL_OUTPUT_AUTHORITY:
+        raise CanonicalSinkError("canonical_external_label_not_governed:authority")
+    if fields["provenance_mode"] != SINK_PROVENANCE_MODE:
+        raise CanonicalSinkError("canonical_external_label_not_governed:provenance_mode")
+    if fields["sovereign_producer"] != B23_SOVEREIGN_COVERAGE_PRODUCER:
+        raise CanonicalSinkError(
+            "canonical_external_label_not_governed:sovereign_producer"
+        )
+    if fields["contract_version"] != B26_P1_CONTRACT_VERSION:
+        raise CanonicalSinkError("canonical_external_label_not_governed:contract_version")
+
+
+def _issue_canonical_external(output: FinalCanonicalOutput) -> CanonicalExternalTruth:
+    """Governed issuance: contract projection, then sealed, validated freeze.
+
+    Called only by :func:`render_governed_external` with that renderer's
+    fresh sovereign execution result. The fields are derived by executing
+    the frozen transform contract (never by a local expression), and the
+    constructor validates-then-freezes them; the returned object is the
+    only form any consumer may admit as canonical external truth.
+    """
+    fields = project_external_fields(output)
+    return CanonicalExternalTruth(fields, _EGRESS_ISSUANCE)
+
+
+def admit_canonical_external(candidate: Any) -> CanonicalExternalTruth:
+    """The canonical admission seam for external consumers (XI-B law).
+
+    Admission is by capability identity, never by representation: an exact-
+    type CanonicalExternalTruth issued by the governed egress, with its
+    semantic law re-verified live. Dictionaries -- however lawful their
+    keys, values, and authority label look -- are ordinary data and refuse.
+    """
+    if type(candidate) is not CanonicalExternalTruth:
+        raise CanonicalSinkError(
+            "canonical_external_admission_refused:not_governed_egress_capability:"
+            f"{type(candidate).__name__}"
+        )
+    assert_canonical_external_semantics(dict(candidate.items()))
+    if candidate.issued_by not in GOVERNED_EGRESS_SURFACES:
+        raise CanonicalSinkError(
+            "canonical_external_admission_refused:egress_surface_not_governed"
+        )
+    return candidate
+
+
+@dataclass(frozen=True)
+class GovernedEgressSurface:
+    """Machine-readable registration of one governed canonical egress surface."""
+
+    surface_id: str
+    callable_path: str
+    egress_kind: str
+    consumes: str
+    serializer: str
+    capability_type: str
+    admission: str
+    downstream_consumers: str
+
+
+# The closed set of surfaces that may expose canonical B2.6 authority.
+# Adding a surface is a governed authority-registration event: this registry,
+# the CI validator's census pin, and the consequence battery's pin must all
+# change together -- a silent second egress is merge-blocking, and runtime
+# admission refuses capabilities whose issuer is not registered here.
+GOVERNED_EGRESS_SURFACES: dict[str, GovernedEgressSurface] = {
+    "render_governed_external": GovernedEgressSurface(
+        surface_id="render_governed_external",
+        callable_path=(
+            "app.finance_reconciliation.canonical_sink.render_governed_external"
+        ),
+        egress_kind="FUTURE_ONLY_CANONICAL",
+        consumes="fresh execute_governed_sink execution (auth_token + scope only)",
+        serializer=(
+            "app.finance_reconciliation.external_semantics.project_external_fields"
+        ),
+        capability_type=(
+            "app.finance_reconciliation.canonical_sink.CanonicalExternalTruth"
+        ),
+        admission=(
+            "app.finance_reconciliation.canonical_sink.admit_canonical_external"
+        ),
+        downstream_consumers=(
+            "none_in_P1 (future: finance export, B2.5 Trust adapter and machine"
+            " agents, always through admit_canonical_external)"
+        ),
+    ),
+}
+
+
+def verify_external_semantics_contract_pin() -> str:
+    """Bind the live transform contract to the frozen semantic contract.
+
+    The semantic contract (YAML) pins the AST identity of
+    ``external_semantics`` and its exact key census; this check runs at
+    import so the governed egress cannot even load with a drifted,
+    unpinned, or substituted transform contract -- in any environment,
+    including the compiled production image.
+    """
+    document = load_b26_p1_semantic_contract()
+    section = document["external_semantics_authority"]
+    live = external_semantics_ast_sha256()
+    if live != section["ast_sha256"]:
+        raise CanonicalSinkError(
+            f"canonical_external_semantics_not_pinned:{live}!={section['ast_sha256']}"
+        )
+    if set(section["governed_external_keys"]) != set(EXTERNAL_SEMANTICS):
+        raise CanonicalSinkError("canonical_external_semantics_census_drift")
+    return live
+
+
+_XI_CONTRACT_PIN_AST_SHA256 = verify_external_semantics_contract_pin()
 
 
 @dataclass(frozen=True)
@@ -647,40 +886,41 @@ async def render_governed_external(
     window_end: datetime,
     supported_platforms: Any = None,
     currency_code: str = "USD",
-) -> dict[str, Any]:
-    """Execute the governed sink and project its fresh consequence externally.
+) -> CanonicalExternalTruth:
+    """Execute the governed sink and issue its fresh consequence externally.
 
     Class-closure theorem (REPRESENTATION CONSISTENCY != CAUSAL
-    PROVENANCE): this is the *only* approved canonical external
-    projection, and it accepts no object, mapping, DTO, financial value,
-    session, or callable -- only the same scope identity plus verified
-    auth the executor takes. It executes :func:`execute_governed_sink`
-    itself and projects the just-materialized consequence inline. There is
-    deliberately no ``FinalCanonicalOutput``-accepting renderer at any
-    visibility in this module, so a digest-correct synthetic, copy,
-    rebuild, JSON round-trip, or cross-process transfer has no approved
-    function that could emit it as canonical external form: promotion is
-    unrepresentable by API shape. Introspection helper
-    :func:`external_renderer_signature_is_execution_bound` plus the CI
-    structural sensor prove that shape on every run.
+    PROVENANCE): this is the *only* approved canonical external projection
+    (the sole entry of the registered closed set
+    ``GOVERNED_EGRESS_SURFACES``), and it accepts no object, mapping, DTO,
+    financial value, session, or callable -- only the same scope identity
+    plus verified auth the executor takes. It executes
+    :func:`execute_governed_sink` itself and issues the just-materialized
+    consequence through the governed capability
+    (:func:`_issue_canonical_external`). There is deliberately no
+    ``FinalCanonicalOutput``-accepting renderer at any visibility, so a
+    digest-correct synthetic, copy, rebuild, JSON round-trip, or
+    cross-process transfer has no approved function that could emit it as
+    canonical external form: promotion is unrepresentable by API shape.
 
-    Corrective-X law (CLOSED EXTERNAL FIELD UNIVERSE, Theorem X-A): the
-    emitted mapping is validated against the single governed external
-    contract (``authoritative_fields.GOVERNED_EXTERNAL_KEYS``, mechanically
-    derived from the registry) BEFORE return. Any extra, missing, or
-    prohibited key refuses instead of emitting: the check observes the
-    FINAL runtime mapping, so no construction primitive (literal, dict(),
-    comprehension, ** expansion, update(), |= merge, helper mapping,
-    conditional/loop insertion, Mapping subclass, response-model
-    serialization) can bypass the census. A new external semantic requires
-    amending the registry obligation itself -- a renderer-only edit can
-    never extend canonical authority.
+    Corrective-X law (CLOSED EXTERNAL FIELD UNIVERSE): the emitted mapping
+    is validated against the single governed external contract before it
+    can exist as a capability at all -- the constructor refuses extra,
+    missing, or prohibited keys on exactly the fields it freezes,
+    independent of construction primitive.
 
-    The projection carries only the sovereign one-way tenant hash (raw
-    tenant identity never leaves this boundary) and omits adjuncts
-    entirely: adjuncts are non-authoritative by type and never
-    externalize, so a coordinated projection substitution cannot reach an
-    external consumer even where it captures registration.
+    Corrective-XI law (GOVERNED TRANSFORM + GOVERNED EGRESS): this renderer
+    contains NO per-field transform expressions. Every external value is
+    the execution of the frozen transform contract
+    (``external_semantics.EXTERNAL_SEMANTICS``) over its declared sovereign
+    source attribute, so meaning drift at this layer is unrepresentable --
+    it requires changing the contract module itself, which the semantic
+    contract pins by AST hash and this module refuses to load unpinned.
+    The return value is a sealed ``CanonicalExternalTruth``: the validated
+    representation IS the returned representation, and only that exact type
+    is admissible as canonical anywhere (see
+    :func:`admit_canonical_external`). The projection carries only the
+    sovereign one-way tenant hash; adjuncts never externalize.
     """
     output = await execute_governed_sink(
         sink_id,
@@ -690,27 +930,7 @@ async def render_governed_external(
         supported_platforms=supported_platforms,
         currency_code=currency_code,
     )
-    rendered = {
-        "authority": output.authority,
-        "sink_id": output.sink_id,
-        "contract_version": output.contract_version,
-        "tenant_id_hash": output.tenant_id_hash,
-        "currency_code": output.currency_code,
-        "window_start": output.window_start.isoformat(),
-        "window_end": output.window_end.isoformat(),
-        "supported_platforms": list(output.supported_platforms),
-        "matched_minor": int(output.matched_minor),
-        "connected_minor": int(output.connected_minor),
-        "coverage_percent": str(output.coverage_percent),
-        "zero_denominator": bool(output.zero_denominator),
-        "provenance_mode": output.provenance_mode,
-        "sovereign_producer": output.sovereign_producer,
-    }
-    try:
-        validate_external_rendering(rendered)
-    except ValueError as exc:
-        raise CanonicalSinkError(f"canonical_external_closure_refused:{exc}") from exc
-    return rendered
+    return _issue_canonical_external(output)
 
 
 def external_renderer_signature_is_execution_bound() -> bool:

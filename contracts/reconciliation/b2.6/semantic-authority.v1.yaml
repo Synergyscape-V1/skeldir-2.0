@@ -1,5 +1,5 @@
 phase_id: B2.6-P1
-contract_version: b2.6-p1-semantic-authority-v5
+contract_version: b2.6-p1-semantic-authority-v6
 maturity_mode: DESIGN_PARTNER_MODE
 authority_kind: semantic_constitution_not_financial_result
 
@@ -17,7 +17,14 @@ authority_kind: semantic_constitution_not_financial_result
 # Historical v1/v2/v3/v4 proof artifacts remain distinguishable by version
 # AND hash.
 supersession:
-  supersedes: b2.6-p1-semantic-authority-v4
+  supersedes: b2.6-p1-semantic-authority-v5
+  reason: >-
+    Corrective XI: the constitution now owns external meaning and canonical
+    egress law directly. External fields are executable transform contracts
+    (external_semantics.py, pinned below by AST identity), and canonical
+    external authority is a sealed egress capability (CanonicalExternalTruth)
+    admitted only through admit_canonical_external -- representation
+    resemblance confers zero authority.
   reason: executable_canonical_consumer_with_tenant_unity_and_framework_owned_final_fields
 
 migration_authority:
@@ -382,6 +389,18 @@ authority_classes:
   canonical_sink_framework: PERMANENT_MACHINE_ENFORCED
   successor_provenance_law: PERMANENT_MACHINE_ENFORCED
   closure_snapshot: PHASE_LOCAL_CLOSURE_FACT
+  external_semantics_authority: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.module: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.law: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.ast_sha256: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.governed_external_keys: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.transform_ids: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.egress_capability: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.egress_capability.sealed_type: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.egress_capability.admitter: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.egress_capability.governed_surfaces: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.egress_capability.law: PERMANENT_MACHINE_ENFORCED
+  external_semantics_authority.evolution_law: PERMANENT_MACHINE_ENFORCED
 
 closure_snapshot:
   p1_closure_migration_head: "202609072001"
@@ -391,6 +410,53 @@ closure_snapshot:
     - coverage_authority.py
     - legacy_quarantine.py
   p1_closure_proof_cell_count: 5
-  p1_closure_contract_version: b2.6-p1-semantic-authority-v5
+  p1_closure_contract_version: b2.6-p1-semantic-authority-v6
   p1_closure_collapsed_reason_count: 9
   note: historical_closure_facts_not_permanent_law
+
+
+# Corrective XI: the executable external semantic contract and the governed
+# canonical egress capability. External meaning lives in ONE frozen module
+# (pinned by AST identity); canonical external authority is a sealed
+# capability issued only by the governed egress surface registered below.
+external_semantics_authority:
+  module: app.finance_reconciliation.external_semantics
+  law: external_meaning_only_through_executable_transform_contract
+  ast_sha256: aae396385e9347f813b5ddf2fc4593c7a0d46bb10bea6ff6324ac6cec1d51e9f
+  governed_external_keys:
+    - authority
+    - connected_minor
+    - contract_version
+    - coverage_percent
+    - currency_code
+    - matched_minor
+    - provenance_mode
+    - sink_id
+    - sovereign_producer
+    - supported_platforms
+    - tenant_id_hash
+    - window_end
+    - window_start
+    - zero_denominator
+  transform_ids:
+    authority: governed_label_identity
+    sink_id: str_identity
+    contract_version: str_identity
+    tenant_id_hash: one_way_hash_identity
+    currency_code: str_identity
+    window_start: instant_iso8601
+    window_end: instant_iso8601
+    supported_platforms: frozen_tuple_exact_materialization
+    matched_minor: integer_minor_identity
+    connected_minor: integer_minor_identity
+    coverage_percent: decimal_2dp_exact_string
+    zero_denominator: bool_identity
+    provenance_mode: governed_label_identity
+    sovereign_producer: governed_label_identity
+  egress_capability:
+    sealed_type: app.finance_reconciliation.canonical_sink.CanonicalExternalTruth
+    admitter: app.finance_reconciliation.canonical_sink.admit_canonical_external
+    governed_surfaces:
+      - render_governed_external
+    law: only_governed_egress_issuance_confers_canonical_external_authority
+  evolution_law: external_semantic_change_requires_contract_version_supersession

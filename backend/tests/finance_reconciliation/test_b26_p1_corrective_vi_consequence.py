@@ -394,7 +394,10 @@ async def test_vi7_live_http_auth_path_binds_tenant() -> None:
             )
         except Exception:  # noqa: BLE001 -- any auth/authority failure refuses
             return JSONResponse(status_code=401, content={"refused": True})
-        return JSONResponse(status_code=200, content=rendered)
+        # Governed consumer pattern (Corrective XI): admit the capability,
+        # then serialize its dict form -- raw tenant identity still never
+        # appears in the response body.
+        return JSONResponse(status_code=200, content=dict(rendered))
 
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

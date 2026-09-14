@@ -1423,21 +1423,14 @@ def _validate_corrective_v_authority(
     try:
         import inspect as _inspect  # noqa: PLC0415
 
-        render_tree = ast.parse(_inspect.getsource(render_governed_external))
-        emitted_keys: set[str] = set()
-        for node in ast.walk(render_tree):
-            if isinstance(node, ast.Assign) and any(
-                isinstance(target, ast.Name) and target.id == "rendered"
-                for target in node.targets
-            ):
-                # Only Dict keys count as emitted projection fields; string
-                # values (hashes, modes, labels) are not fields.
-                if isinstance(node.value, ast.Dict):
-                    for key_node in node.value.keys:
-                        if isinstance(key_node, ast.Constant) and isinstance(
-                            key_node.value, str
-                        ):
-                            emitted_keys.add(key_node.value)
+        from app.finance_reconciliation.external_semantics import (  # noqa: PLC0415
+            EXTERNAL_SEMANTICS as _emitted_contract,
+        )
+
+        # Since Corrective XI the emitted universe IS the transform
+        # contract's key census (the renderer derives every field through
+        # it); the raw-tenant/adjunct exclusion law is unchanged.
+        emitted_keys: set[str] = set(_emitted_contract)
         if "tenant_id" in emitted_keys:
             violations.append("canonical_external_emits_raw_tenant")
         if "tenant_id_hash" not in emitted_keys:
@@ -2023,6 +2016,9 @@ def _validate_corrective_x_authority(
             governed_external_keys,
             validate_external_rendering,
         )
+        from app.finance_reconciliation.external_semantics import (  # noqa: PLC0415
+            EXTERNAL_SEMANTICS,
+        )
     except Exception as exc:  # noqa: BLE001
         violations.append(f"corrective_x_external_contract_unresolvable:{exc}")
         return
@@ -2118,7 +2114,12 @@ def _validate_corrective_x_authority(
         violations.append(f"corrective_x_sink_source_unreadable:{exc}")
         return
 
-    # 1-3. Approved-renderer census + provability + value lineage.
+    # 1-3. Approved-renderer census + provability + value lineage. Since
+    # Corrective XI the renderer derives every value through the frozen
+    # transform contract and returns a sealed capability: the census pins
+    # the contract-derived universe (checked in XI-2 above) and this leg
+    # pins the renderer's structural provability -- no hand-written
+    # external mapping may reappear at the renderer layer.
     renderer = next(
         (
             node
@@ -2131,111 +2132,37 @@ def _validate_corrective_x_authority(
     if renderer is None:
         violations.append("canonical_execution_bound_renderer_missing")
     else:
-        # Dynamic key construction on `rendered` escapes a literal census,
-        # so the frozen renderer must stay in statically provable form.
-        # (The runtime leg still refuses any dynamic extra at execution.)
+        # A hand-written external mapping (Dict literal, dict() call,
+        # comprehension, or dynamic mutation) escapes the contract census,
+        # so the frozen renderer must stay in statically provable form:
+        # execution plus sealed issuance, nothing else.
         for node in ast.walk(renderer):
-            if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
-                if node.target.id == "rendered":
-                    violations.append(
-                        "canonical_external_key_closure_not_statically_provable:"
-                        "aug_assign"
-                    )
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Subscript) and isinstance(
-                        target.value, ast.Name
-                    ):
-                        if target.value.id == "rendered":
-                            violations.append(
-                                "canonical_external_key_closure_not_statically_provable:"
-                                "subscript_store"
-                            )
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                if (
-                    isinstance(node.func.value, ast.Name)
-                    and node.func.value.id == "rendered"
-                    and node.func.attr in {"update", "setdefault", "__setitem__"}
-                ):
-                    violations.append(
-                        "canonical_external_key_closure_not_statically_provable:"
-                        f"{node.func.attr}"
-                    )
-        literal_keys: set[str] = set()
-        rendered_dict: ast.Dict | None = None
-        for node in ast.walk(renderer):
-            if isinstance(node, ast.Assign) and any(
-                isinstance(target, ast.Name) and target.id == "rendered"
-                for target in node.targets
+            if isinstance(node, ast.Dict):
+                violations.append(
+                    "canonical_external_key_closure_not_statically_provable:"
+                    "renderer_dict_literal"
+                )
+            elif isinstance(node, ast.DictComp):
+                violations.append(
+                    "canonical_external_key_closure_not_statically_provable:"
+                    "renderer_dict_comp"
+                )
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "dict"
             ):
-                if isinstance(node.value, ast.Dict):
-                    rendered_dict = node.value
-                    for key_node in node.value.keys:
-                        if key_node is None:
-                            violations.append(
-                                "canonical_external_key_closure_not_statically_provable:"
-                                "star_expansion"
-                            )
-                        elif isinstance(key_node, ast.Constant) and isinstance(
-                            key_node.value, str
-                        ):
-                            literal_keys.add(key_node.value)
-                elif isinstance(node.value, (ast.DictComp, ast.Call)):
-                    violations.append(
-                        "canonical_external_key_closure_not_statically_provable:"
-                        "non_literal_rendered"
-                    )
-        if literal_keys != set(GOVERNED_EXTERNAL_KEYS):
+                violations.append(
+                    "canonical_external_key_closure_not_statically_provable:"
+                    "renderer_dict_call"
+                )
+        # The emitted universe is the contract projection: pin it against
+        # the governed keys right here as well (census unity).
+        if set(EXTERNAL_SEMANTICS) != set(GOVERNED_EXTERNAL_KEYS):
             violations.append(
                 "canonical_external_undeclared_key:"
-                f"emitted={sorted(literal_keys)}"
+                f"contract={sorted(EXTERNAL_SEMANTICS)}"
             )
-        missing_required = set(REQUIRED_EXTERNAL_KEYS) - literal_keys
-        if missing_required:
-            violations.append(
-                "canonical_external_required_key_missing:"
-                f"{sorted(missing_required)}"
-            )
-        if set(literal_keys) & set(PROHIBITED_EXTERNAL_KEYS):
-            violations.append("canonical_external_prohibited_key:rendered")
-        # Value lineage: each emitted value must name its declared
-        # FinalCanonicalOutput source attribute and no foreign state.
-        if rendered_dict is not None:
-            allowed_call_roots = {"output", "list", "int", "str", "bool"}
-            for key_node, value_node in zip(
-                rendered_dict.keys, rendered_dict.values
-            ):
-                if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
-                    continue
-                key = key_node.value
-                expected_attr = EXTERNAL_FIELD_RENDER_ATTRS.get(key)
-                if expected_attr is None:
-                    violations.append(
-                        f"canonical_external_undeclared_key:{key}"
-                    )
-                    continue
-                output_attrs = {
-                    child.attr
-                    for child in ast.walk(value_node)
-                    if isinstance(child, ast.Attribute)
-                    and isinstance(child.value, ast.Name)
-                    and child.value.id == "output"
-                }
-                if expected_attr not in output_attrs:
-                    violations.append(
-                        "canonical_external_value_source_not_sovereign:"
-                        f"{key}"
-                    )
-                foreign = {
-                    child.id
-                    for child in ast.walk(value_node)
-                    if isinstance(child, ast.Name)
-                } - allowed_call_roots
-                if foreign:
-                    violations.append(
-                        "canonical_external_value_source_not_sovereign:"
-                        f"{key}:{sorted(foreign)}"
-                    )
 
     details["corrective_x_governed_external_keys"] = sorted(GOVERNED_EXTERNAL_KEYS)
     details["corrective_x_sensors"] = sorted(
@@ -2441,6 +2368,555 @@ def _validate_corrective_x_detached_sensors(
     details["corrective_x_functions_scanned"] = scanned_functions
 
 
+# ---------------------------------------------------------------------------
+# Corrective XI — executable external semantic contract + governed canonical
+# egress capability. Independent pins (value-blind, hard-coded HERE in the
+# proof plane): the lawful external mapping, per-key source/transform data,
+# transform execution vectors, refusal vectors, renderer/issuer structure,
+# capability census, egress registry census, and admission liveness.
+# ---------------------------------------------------------------------------
+
+_XI_EXPECTED_SOURCE_ATTRS = {
+    "authority": "authority",
+    "sink_id": "sink_id",
+    "contract_version": "contract_version",
+    "tenant_id_hash": "tenant_id_hash",
+    "currency_code": "currency_code",
+    "window_start": "window_start",
+    "window_end": "window_end",
+    "supported_platforms": "supported_platforms",
+    "matched_minor": "matched_minor",
+    "connected_minor": "connected_minor",
+    "coverage_percent": "coverage_percent",
+    "zero_denominator": "zero_denominator",
+    "provenance_mode": "provenance_mode",
+    "sovereign_producer": "sovereign_producer",
+}
+
+_XI_EXPECTED_TRANSFORM_IDS = {
+    "authority": "governed_label_identity",
+    "sink_id": "str_identity",
+    "contract_version": "str_identity",
+    "tenant_id_hash": "one_way_hash_identity",
+    "currency_code": "str_identity",
+    "window_start": "instant_iso8601",
+    "window_end": "instant_iso8601",
+    "supported_platforms": "frozen_tuple_exact_materialization",
+    "matched_minor": "integer_minor_identity",
+    "connected_minor": "integer_minor_identity",
+    "coverage_percent": "decimal_2dp_exact_string",
+    "zero_denominator": "bool_identity",
+    "provenance_mode": "governed_label_identity",
+    "sovereign_producer": "governed_label_identity",
+}
+
+_XI_EXPECTED_EGRESS_SURFACES = {"render_governed_external"}
+
+# The proof plane's own statement of the lawful external representation:
+# every value is hard-coded evidence data, never derived from the modules it
+# adjudicates (value-blind: a wrong source that happens to carry an equal
+# value cannot pass a source-identity pin that compares data, not values).
+_XI_LAWFUL_FIELDS = {
+    "authority": "canonical_B2.6_financial_truth",
+    "sink_id": "future_finance_projection",
+    "contract_version": "b2.6-p1-semantic-authority-v6",
+    "tenant_id_hash": "sha256:" + "ab" * 32,
+    "currency_code": "USD",
+    "window_start": "2026-01-01T00:00:00+00:00",
+    "window_end": "2026-02-01T12:30:05+02:00",
+    "supported_platforms": ["paypal", "stripe"],
+    "matched_minor": 76000,
+    "connected_minor": 80000,
+    "coverage_percent": "95.00",
+    "zero_denominator": False,
+    "provenance_mode": "RE_DERIVE_ON_READ",
+    "sovereign_producer": (
+        "app.revenue_verification.verification_coverage."
+        "fetch_verification_coverage_aggregate"
+        "+app.revenue_verification.verification_coverage."
+        "VERIFICATION_COVERAGE.compute"
+    ),
+}
+
+# Per-field semantic corruptions: every member is a real representative of
+# class XI-A (meaning drift) that the executable law must refuse.
+_XI_FIELD_CORRUPTIONS = (
+    ("window_start", "2026-01-01"),
+    ("window_start", "2026-01-01T00:00:00"),
+    ("window_end", "2026-02-01"),
+    ("matched_minor", "76000"),
+    ("matched_minor", 76000.0),
+    ("matched_minor", -76000),
+    ("matched_minor", True),
+    ("connected_minor", True),
+    ("coverage_percent", "9.500"),
+    ("coverage_percent", "95.0"),
+    ("coverage_percent", 95.00),
+    ("supported_platforms", ("paypal", "stripe")),
+    ("supported_platforms", ["paypal", 1]),
+    ("supported_platforms", "paypal"),
+    ("tenant_id_hash", "ab" * 31),
+    ("tenant_id_hash", "ab" * 32),
+    ("tenant_id_hash", ("sha256:" + "ab" * 32).upper()),
+    ("currency_code", "usd"),
+    ("authority", "canonical_B2.6_financial_truth "),
+    ("zero_denominator", 0),
+    ("zero_denominator", "false"),
+    ("provenance_mode", "DURABLE_SOURCE_BINDING"),
+    ("sovereign_producer", "app.services.revenue_reconciliation"),
+    ("contract_version", "b2.6-p1-semantic-authority-v5"),
+    ("sink_id", ""),
+)
+
+
+def _validate_corrective_xi_authority(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Executable Corrective-XI authority: frozen transforms + sealed egress.
+
+    Theorem XI-A (GOVERNED EXTERNAL TRANSFORM): every external value equals
+    the execution of its frozen transform over its declared sovereign source
+    attribute -- pinned here four independent ways: (1) the semantic
+    contract pins the transform module's AST identity (re-verified at
+    canonical-sink import, fail-closed in any image); (2) the validator's
+    own value-blind key->source/transform data pins lineage without reading
+    the module's maps; (3) hard-coded execution vectors and refusal vectors
+    exercise every transform; (4) the renderer contains no per-field
+    expressions at all (structural law).
+
+    Theorem XI-B (GOVERNED CANONICAL EGRESS CAPABILITY): canonical external
+    authority is an exact-type sealed capability issued only inside the
+    governed egress module; admission accepts only that type; the egress
+    surfaces form a registered closed set census-pinned here; and forging
+    the capability anywhere else in backend/app is merge-blocking.
+    """
+    sys.path.insert(0, str(BACKEND))
+    sink_path = REPO_ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+    semantics_path = (
+        REPO_ROOT / "backend/app/finance_reconciliation/external_semantics.py"
+    )
+    try:
+        from app.finance_reconciliation.external_semantics import (  # noqa: PLC0415
+            EXTERNAL_SEMANTICS,
+            ExternalSemanticsError,
+            external_semantics_ast_sha256,
+            project_external_fields,
+        )
+        from app.finance_reconciliation.semantic_contract import (  # noqa: PLC0415
+            load_b26_p1_semantic_contract,
+        )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"corrective_xi_contract_unresolvable:{exc}")
+        return
+
+    # XI-1: the frozen contract pins the transform module's AST identity.
+    try:
+        document = load_b26_p1_semantic_contract()
+        section = document["external_semantics_authority"]
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"corrective_xi_contract_unresolvable:{exc}")
+        return
+    live_ast = external_semantics_ast_sha256()
+    if live_ast != section.get("ast_sha256"):
+        violations.append("canonical_external_semantics_not_pinned")
+    if set(section.get("governed_external_keys", [])) != set(EXTERNAL_SEMANTICS):
+        violations.append("canonical_external_semantics_census_drift")
+
+    # XI-2: value-blind lineage pin (independent of module maps).
+    for key, expected_attr in _XI_EXPECTED_SOURCE_ATTRS.items():
+        spec = EXTERNAL_SEMANTICS.get(key)
+        if spec is None or spec.source_attr != expected_attr:
+            violations.append(
+                f"canonical_external_value_source_not_sovereign:{key}"
+            )
+    for key, expected_id in _XI_EXPECTED_TRANSFORM_IDS.items():
+        spec = EXTERNAL_SEMANTICS.get(key)
+        if spec is None or spec.transform_id != expected_id:
+            violations.append(
+                f"canonical_external_transform_id_not_governed:{key}"
+            )
+    try:
+        from app.finance_reconciliation.authoritative_fields import (  # noqa: PLC0415
+            EXTERNAL_FIELD_RENDER_ATTRS,
+        )
+
+        for key, expected_attr in _XI_EXPECTED_SOURCE_ATTRS.items():
+            if EXTERNAL_FIELD_RENDER_ATTRS.get(key) != expected_attr:
+                violations.append(
+                    "canonical_external_value_source_not_sovereign:"
+                    f"lineage_map:{key}"
+                )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"corrective_xi_lineage_map_unresolvable:{exc}")
+
+    # XI-3: the governed egress module loads only under the frozen pin.
+    try:
+        from app.finance_reconciliation.canonical_sink import (  # noqa: PLC0415
+            GOVERNED_EGRESS_SURFACES,
+            _EGRESS_ISSUANCE,
+            _issue_canonical_external,
+            admit_canonical_external,
+            assert_canonical_external_semantics,
+            render_governed_external,
+            verify_external_semantics_contract_pin,
+        )
+        from app.finance_reconciliation.canonical_sink import (  # noqa: PLC0415
+            CanonicalExternalTruth,
+        )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_egress_module_refused_load:{exc}")
+        return
+
+    # XI-4: executable law on the complete lawful mapping (liveness), then
+    # every class-XI-A corruption must refuse (RED-capable checker).
+    try:
+        assert_canonical_external_semantics(_XI_LAWFUL_FIELDS)
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_external_semantic_law_dead:lawful:{exc}")
+    for key, bad in _XI_FIELD_CORRUPTIONS:
+        probe = dict(_XI_LAWFUL_FIELDS)
+        probe[key] = bad
+        try:
+            assert_canonical_external_semantics(probe)
+        except ValueError:
+            pass
+        except Exception:  # noqa: BLE001
+            pass
+        else:
+            violations.append(
+                f"canonical_external_semantic_law_dead:corruption:{key}"
+            )
+
+    # XI-5: projection equivalence -- the renderer's serializer produces
+    # exactly the pinned lawful mapping from the sovereign source shapes.
+    from datetime import timedelta, timezone as _tz  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    sovereign_shaped = SimpleNamespace(
+        authority="canonical_B2.6_financial_truth",
+        sink_id="future_finance_projection",
+        contract_version="b2.6-p1-semantic-authority-v6",
+        tenant_id_hash="sha256:" + "ab" * 32,
+        currency_code="USD",
+        window_start=datetime(2026, 1, 1, tzinfo=_tz.utc),
+        window_end=datetime(2026, 2, 1, 12, 30, 5, tzinfo=_tz(timedelta(hours=2))),
+        supported_platforms=("paypal", "stripe"),
+        matched_minor=76000,
+        connected_minor=80000,
+        coverage_percent=Decimal("95.00"),
+        zero_denominator=False,
+        provenance_mode="RE_DERIVE_ON_READ",
+        sovereign_producer=_XI_LAWFUL_FIELDS["sovereign_producer"],
+    )
+    try:
+        projected = project_external_fields(sovereign_shaped)
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_external_projection_failed:{exc}")
+    else:
+        if projected != _XI_LAWFUL_FIELDS:
+            violations.append("canonical_external_projection_not_equivalent")
+    # Transform refusal vectors (fail-closed family law).
+    refusal_vectors = (
+        ("window_start", datetime(2026, 1, 1)),
+        ("window_end", "2026-02-01"),
+        ("matched_minor", True),
+        ("matched_minor", -5),
+        ("matched_minor", 76000.0),
+        ("connected_minor", "80000"),
+        ("coverage_percent", Decimal("95.005")),
+        ("coverage_percent", "95.00"),
+        ("supported_platforms", ["paypal", "stripe"]),
+        ("supported_platforms", "paypal"),
+        ("zero_denominator", 1),
+        ("authority", ""),
+        ("sink_id", None),
+    )
+    for key, source in refusal_vectors:
+        try:
+            EXTERNAL_SEMANTICS[key].transform(source)
+        except ExternalSemanticsError:
+            pass
+        except Exception:  # noqa: BLE001
+            pass
+        else:
+            violations.append(f"canonical_external_transform_refusal_dead:{key}")
+
+    # XI-6: renderer and issuer structure -- no per-field transform surface.
+    try:
+        sink_source = sink_path.read_text(encoding="utf-8")
+        sink_tree = ast.parse(sink_source)
+    except (OSError, SyntaxError) as exc:
+        violations.append(f"corrective_xi_sink_source_unreadable:{exc}")
+        sink_tree = None
+    if sink_tree is not None:
+        renderer = next(
+            (
+                node
+                for node in ast.walk(sink_tree)
+                if isinstance(node, ast.AsyncFunctionDef)
+                and node.name == "render_governed_external"
+            ),
+            None,
+        )
+        issuer = next(
+            (
+                node
+                for node in ast.walk(sink_tree)
+                if isinstance(node, ast.FunctionDef)
+                and node.name == "_issue_canonical_external"
+            ),
+            None,
+        )
+        if renderer is None or issuer is None:
+            violations.append("canonical_execution_bound_renderer_missing")
+        else:
+            for scope_name, scope in (("renderer", renderer), ("issuer", issuer)):
+                for node in ast.walk(scope):
+                    if isinstance(node, ast.Dict):
+                        violations.append(
+                            "canonical_renderer_bypasses_transform_contract:"
+                            f"{scope_name}:dict_literal"
+                        )
+                    if isinstance(node, ast.DictComp):
+                        violations.append(
+                            "canonical_renderer_bypasses_transform_contract:"
+                            f"{scope_name}:dict_comp"
+                        )
+                    if (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id == "dict"
+                    ):
+                        violations.append(
+                            "canonical_renderer_bypasses_transform_contract:"
+                            f"{scope_name}:dict_call"
+                        )
+            # Renderer: exactly one return, and it is the sealed issuance.
+            renderer_segment = ast.get_source_segment(sink_source, renderer)
+            if renderer_segment is None or "await execute_governed_sink(" not in renderer_segment:
+                violations.append("canonical_external_renderer_not_execution_bound")
+            returns = [
+                node.value
+                for node in ast.walk(renderer)
+                if isinstance(node, ast.Return) and node.value is not None
+            ]
+            if len(returns) != 1 or not (
+                isinstance(returns[0], ast.Call)
+                and isinstance(returns[0].func, ast.Name)
+                and returns[0].func.id == "_issue_canonical_external"
+            ):
+                violations.append(
+                    "canonical_external_key_closure_not_statically_provable:"
+                    "renderer_return_not_issuance"
+                )
+            # Renderer never touches per-field output attributes.
+            for node in ast.walk(renderer):
+                if (
+                    isinstance(node, ast.Attribute)
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id == "output"
+                ):
+                    violations.append(
+                        "canonical_renderer_bypasses_transform_contract:"
+                        "output_attribute_access"
+                    )
+            # Issuer: fields from the contract projection, sealed issuance
+            # of exactly those fields, nothing else.
+            issuer_text = ast.get_source_segment(sink_source, issuer) or ""
+            if "project_external_fields(" not in issuer_text:
+                violations.append(
+                    "canonical_renderer_bypasses_transform_contract:"
+                    "issuer_not_contract_projection"
+                )
+            if "CanonicalExternalTruth(fields, _EGRESS_ISSUANCE)" not in issuer_text:
+                violations.append(
+                    "canonical_external_key_closure_not_statically_provable:"
+                    "issuer_not_sealed_issuance"
+                )
+            for node in ast.walk(issuer):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                    if node.func.id not in {
+                        "project_external_fields",
+                        "CanonicalExternalTruth",
+                    }:
+                        violations.append(
+                            "canonical_external_key_closure_not_statically_provable:"
+                            f"issuer_call:{node.func.id}"
+                        )
+
+    # XI-7: capability census -- nobody outside the governed egress module
+    # may construct, subclass, or reference the capability or its issuance.
+    app_root = BACKEND / "app"
+    governed_rel = "backend/app/finance_reconciliation/canonical_sink.py"
+    for path in sorted(app_root.rglob("*.py")):
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        if rel == governed_rel:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id in {
+                "CanonicalExternalTruth",
+                "_EGRESS_ISSUANCE",
+                "_issue_canonical_external",
+            }:
+                violations.append(f"canonical_egress_capability_forged:{rel}:{node.id}")
+            if isinstance(node, ast.Attribute) and node.attr in {
+                "CanonicalExternalTruth",
+                "_EGRESS_ISSUANCE",
+                "_issue_canonical_external",
+            }:
+                violations.append(f"canonical_egress_capability_forged:{rel}:{node.attr}")
+            # Aliased imports (``from ...canonical_sink import
+            # CanonicalExternalTruth as _C``) bind the capability without
+            # ever naming it: governing the ImportFrom binding itself is
+            # spelling-independent (any use requires the import).
+            if isinstance(node, ast.ImportFrom) and (node.module or "").endswith(
+                "finance_reconciliation.canonical_sink"
+            ):
+                for alias in node.names:
+                    if alias.name in {
+                        "CanonicalExternalTruth",
+                        "_EGRESS_ISSUANCE",
+                        "_issue_canonical_external",
+                    }:
+                        violations.append(
+                            "canonical_egress_capability_forged:"
+                            f"{rel}:import:{alias.name}"
+                        )
+            # Attribute-name assembly with constants (``getattr(sink,
+            # "_EGRESS_ISSUANCE")``) binds the capability without an
+            # import statement; govern the constant too.
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and len(node.args) >= 2
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+                and node.args[1].value in {
+                    "CanonicalExternalTruth",
+                    "_EGRESS_ISSUANCE",
+                    "_issue_canonical_external",
+                }
+            ):
+                violations.append(
+                    "canonical_egress_capability_forged:"
+                    f"{rel}:getattr:{node.args[1].value}"
+                )
+
+    # XI-8: egress registry census -- the closed set of canonical surfaces.
+    if set(GOVERNED_EGRESS_SURFACES) != _XI_EXPECTED_EGRESS_SURFACES:
+        violations.append("canonical_egress_registry_census_mismatch")
+    else:
+        surface = GOVERNED_EGRESS_SURFACES["render_governed_external"]
+        if (
+            surface.callable_path
+            != "app.finance_reconciliation.canonical_sink.render_governed_external"
+            or surface.serializer
+            != "app.finance_reconciliation.external_semantics.project_external_fields"
+            or surface.capability_type
+            != "app.finance_reconciliation.canonical_sink.CanonicalExternalTruth"
+            or surface.admission
+            != "app.finance_reconciliation.canonical_sink.admit_canonical_external"
+        ):
+            violations.append("canonical_egress_registry_binding_drift")
+
+    # XI-9: admission liveness -- lookalikes never acquire authority, the
+    # sealed capability path works, and immutability holds.
+    from types import MappingProxyType  # noqa: PLC0415
+
+    lookalikes = (
+        dict(_XI_LAWFUL_FIELDS),
+        MappingProxyType(dict(_XI_LAWFUL_FIELDS)),
+        type("Lookalike", (dict,), {})(dict(_XI_LAWFUL_FIELDS)),
+    )
+    for index, lookalike in enumerate(lookalikes):
+        try:
+            admit_canonical_external(lookalike)
+        except ValueError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            violations.append(
+                f"canonical_external_admission_dead:lookalike:{index}:{exc}"
+            )
+        else:
+            violations.append(
+                f"canonical_external_admission_dead:lookalike:{index}"
+            )
+    try:
+        forged_subclass = object.__new__(
+            type("Forged", (CanonicalExternalTruth,), {})
+        )
+        admit_canonical_external(forged_subclass)
+    except ValueError:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_external_admission_dead:subclass:{exc}")
+    else:
+        violations.append("canonical_external_admission_dead:subclass_forgery")
+    try:
+        CanonicalExternalTruth(dict(_XI_LAWFUL_FIELDS), object())
+    except ValueError:
+        pass
+    else:
+        violations.append("canonical_egress_capability_proof_dead")
+    try:
+        capability = CanonicalExternalTruth(dict(_XI_LAWFUL_FIELDS), _EGRESS_ISSUANCE)
+        assert admit_canonical_external(capability) is capability
+        try:
+            capability["matched_minor"] = 0
+        except TypeError:
+            pass
+        else:
+            violations.append("canonical_external_fields_mutable")
+        try:
+            capability._fields["matched_minor"] = 0  # noqa: SLF001
+        except TypeError:
+            pass
+        else:
+            violations.append("canonical_external_fields_mutable:storage")
+        if capability.issued_by != "render_governed_external":
+            violations.append("canonical_egress_surface_identity_drift")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_egress_issuance_dead:{exc}")
+
+    # The import-time pin must actually execute at egress load: a module
+    # that skips verification ships unpinned semantics without ever
+    # comparing them to the frozen contract.
+    _sink_module = importlib.import_module(
+        "app.finance_reconciliation.canonical_sink"
+    )
+
+    if getattr(_sink_module, "_XI_CONTRACT_PIN_AST_SHA256", None) != live_ast:
+        violations.append("canonical_egress_contract_pin_not_executed")
+
+    details["corrective_xi_transform_contract_ast_sha256"] = live_ast
+    details["corrective_xi_governed_egress_surfaces"] = sorted(GOVERNED_EGRESS_SURFACES)
+    details["corrective_xi_sensors"] = sorted(
+        [
+            "canonical_external_semantics_not_pinned",
+            "canonical_external_semantics_census_drift",
+            "canonical_external_value_source_not_sovereign",
+            "canonical_external_transform_id_not_governed",
+            "canonical_egress_module_refused_load",
+            "canonical_external_semantic_law_dead",
+            "canonical_external_projection_not_equivalent",
+            "canonical_external_transform_refusal_dead",
+            "canonical_renderer_bypasses_transform_contract",
+            "canonical_external_key_closure_not_statically_provable",
+            "canonical_egress_capability_forged",
+            "canonical_egress_registry_census_mismatch",
+            "canonical_egress_registry_binding_drift",
+            "canonical_external_admission_dead",
+            "canonical_egress_capability_proof_dead",
+            "canonical_external_fields_mutable",
+        ]
+    )
+
+
 def validate() -> tuple[list[str], dict[str, Any]]:
     violations: list[str] = []
     details: dict[str, Any] = {}
@@ -2451,6 +2927,7 @@ def validate() -> tuple[list[str], dict[str, Any]]:
     _validate_corrective_ix_authority(violations, details)
     _validate_corrective_x_authority(violations, details)
     _validate_corrective_x_detached_sensors(violations, details)
+    _validate_corrective_xi_authority(violations, details)
     enforce_machinery = not _successor_authorizes_machinery()
     _validate_b26_namespace(
         violations, details, enforce_product_machinery=enforce_machinery
