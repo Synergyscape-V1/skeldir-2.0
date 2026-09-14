@@ -239,6 +239,211 @@ AUTHORITATIVE_FIELD_REGISTRY: dict[str, AuthoritativeFieldSpec] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Corrective-X law (defect classes X-A/X-B: external canonical census escape
+# and detached authority reacquisition).
+#
+# ONE semantic contract governs canonical external representation. The
+# internal registry above remains the single source of truth for field
+# obligations; everything below is a MECHANICALLY DERIVED projection of it,
+# never a second independently editable schema:
+#
+#   GOVERNED_EXTERNAL_KEYS == {registry names whose externalization_policy
+#                              is an emission ("emitted ...")}
+#
+# A renderer, serializer, helper, compatibility function, export path,
+# response model, or future adapter may not add a financial semantic outside
+# this set: the approved renderer refuses extra/missing/prohibited keys at
+# runtime (construction-primitive independent -- dict.update, |= merge,
+# comprehension, helper mapping, conditional/loop insertion all funnel
+# through the validated final mapping), and the static validator pins the
+# exact census merge-blocking. A new external semantic requires amending
+# the registry obligation row itself, which is a governed contract change,
+# not a renderer edit.
+# ---------------------------------------------------------------------------
+
+
+def governed_external_keys() -> frozenset[str]:
+    """Derive the governed external key universe from registry obligations."""
+    return frozenset(
+        name
+        for name, spec in AUTHORITATIVE_FIELD_REGISTRY.items()
+        if spec.externalization_policy.startswith("emitted")
+    )
+
+
+GOVERNED_EXTERNAL_KEYS: frozenset[str] = governed_external_keys()
+
+REQUIRED_EXTERNAL_KEYS: frozenset[str] = GOVERNED_EXTERNAL_KEYS
+
+PROHIBITED_EXTERNAL_KEYS: frozenset[str] = frozenset(
+    {"tenant_id", "content_digest", "adjunct_json"}
+)
+
+# Machine-readable value-lineage map (Theorem X-B): every governed external
+# key derives ONLY from its declared canonical source through its declared
+# transform. The static validator enforces that the approved renderer's
+# emitted value for each key names the mapped FinalCanonicalOutput attribute
+# and no caller/projection/detached/adjacent-domain state.
+EXTERNAL_FIELD_SOURCES: dict[str, dict[str, str]] = {
+    "authority": {
+        "canonical_source": "framework constant CANONICAL_OUTPUT_AUTHORITY",
+        "transform": "identity",
+        "authority_class": "authoritative",
+        "render_attr": "authority",
+    },
+    "sink_id": {
+        "canonical_source": "caller scope sink_id bound at final atomic capture (_s_sink_id)",
+        "transform": "identity",
+        "authority_class": "authoritative",
+        "render_attr": "sink_id",
+    },
+    "contract_version": {
+        "canonical_source": "registration contract_version == B26_P1_CONTRACT_VERSION (_s_contract_version)",
+        "transform": "identity",
+        "authority_class": "authoritative",
+        "render_attr": "contract_version",
+    },
+    "tenant_id_hash": {
+        "canonical_source": "aggregate.tenant_id via app.trust.refusal.tenant_hash (_s_tenant_id_hash)",
+        "transform": "one-way hash (raw UUID never externalized)",
+        "authority_class": "authoritative",
+        "render_attr": "tenant_id_hash",
+    },
+    "currency_code": {
+        "canonical_source": "aggregate.currency_code, B2.3 sovereign derivation (_s_currency_code)",
+        "transform": "identity",
+        "authority_class": "authoritative",
+        "render_attr": "currency_code",
+    },
+    "window_start": {
+        "canonical_source": "aggregate.window_start, B2.3 sovereign derivation (_s_window_start)",
+        "transform": "datetime to ISO-8601",
+        "authority_class": "authoritative",
+        "render_attr": "window_start",
+    },
+    "window_end": {
+        "canonical_source": "aggregate.window_end, B2.3 sovereign derivation (_s_window_end)",
+        "transform": "datetime to ISO-8601",
+        "authority_class": "authoritative",
+        "render_attr": "window_end",
+    },
+    "supported_platforms": {
+        "canonical_source": "coverage.supported_platforms via freeze_platform_scope (_s_supported_platforms)",
+        "transform": "immutable tuple to list",
+        "authority_class": "authoritative",
+        "render_attr": "supported_platforms",
+    },
+    "matched_minor": {
+        "canonical_source": "aggregate.matched_webhook_revenue_minor, integer minor units (_s_matched_minor)",
+        "transform": "int identity",
+        "authority_class": "authoritative",
+        "render_attr": "matched_minor",
+    },
+    "connected_minor": {
+        "canonical_source": "aggregate.connected_platform_revenue_minor, integer minor units (_s_connected_minor)",
+        "transform": "int identity",
+        "authority_class": "authoritative",
+        "render_attr": "connected_minor",
+    },
+    "coverage_percent": {
+        "canonical_source": "result.coverage_percent cross-checked via independent oracle (_s_coverage_percent)",
+        "transform": "Decimal to string",
+        "authority_class": "authoritative",
+        "render_attr": "coverage_percent",
+    },
+    "zero_denominator": {
+        "canonical_source": "result.zero_denominator cross-checked via independent oracle (_s_zero_denominator)",
+        "transform": "bool identity",
+        "authority_class": "authoritative",
+        "render_attr": "zero_denominator",
+    },
+    "provenance_mode": {
+        "canonical_source": "framework constant SINK_PROVENANCE_MODE (_s_provenance_mode)",
+        "transform": "identity",
+        "authority_class": "authoritative",
+        "render_attr": "provenance_mode",
+    },
+    "sovereign_producer": {
+        "canonical_source": "framework constant B23_SOVEREIGN_COVERAGE_PRODUCER (_s_sovereign_producer)",
+        "transform": "identity",
+        "authority_class": "authoritative",
+        "render_attr": "sovereign_producer",
+    },
+}
+
+# External key to the FinalCanonicalOutput attribute it must derive from.
+# 1:1 by law: same key name, wrong source (adjunct/caller/detached/B2.4/
+# B2.13/LLM/helper) is a lineage violation even when the key set is lawful.
+EXTERNAL_FIELD_RENDER_ATTRS: dict[str, str] = {
+    key: spec["render_attr"] for key, spec in EXTERNAL_FIELD_SOURCES.items()
+}
+
+
+def assert_external_keys_derive_from_registry() -> None:
+    """Require the external universe to be a mechanical registry projection.
+
+    The governed external set, the required set, the source map, and the
+    render-attr map must all agree with the registry emission obligations:
+    no independently maintained external truth may exist.
+    """
+    derived = governed_external_keys()
+    if set(GOVERNED_EXTERNAL_KEYS) != set(derived):
+        raise ValueError(
+            "canonical_external_registry_drift:governed_set_not_derived"
+        )
+    if set(REQUIRED_EXTERNAL_KEYS) != set(derived):
+        raise ValueError(
+            "canonical_external_registry_drift:required_set_not_derived"
+        )
+    if set(EXTERNAL_FIELD_SOURCES) != set(derived):
+        raise ValueError(
+            "canonical_external_registry_drift:source_map_not_derived"
+        )
+    if set(EXTERNAL_FIELD_RENDER_ATTRS) != set(derived):
+        raise ValueError(
+            "canonical_external_registry_drift:render_attr_map_not_derived"
+        )
+    for name, spec in EXTERNAL_FIELD_SOURCES.items():
+        for required in ("canonical_source", "transform", "authority_class", "render_attr"):
+            if not spec.get(required, ""):
+                raise ValueError(
+                    f"canonical_external_lineage_obligation_missing:{name}:{required}"
+                )
+
+
+def validate_external_rendering(rendered: Mapping[str, Any]) -> None:
+    """Refuse any external mapping outside the governed external universe.
+
+    Construction-primitive independent: validates the FINAL runtime mapping,
+    so literal, dict(), comprehension, ** expansion, update(), |= merge,
+    helper-produced, conditional, loop, Mapping-subclass, or response-model
+    insertions are all governed identically. Extra key, missing required
+    key, or prohibited internal-only/adjunct/raw-tenant key raises.
+    """
+    if not isinstance(rendered, Mapping):
+        raise ValueError("canonical_external_rendering_not_mapping")
+    actual = set(rendered.keys())
+    governed = set(GOVERNED_EXTERNAL_KEYS)
+    extra = sorted(actual - governed)
+    if extra:
+        raise ValueError(
+            f"canonical_external_undeclared_key:{','.join(extra)}"
+        )
+    missing = sorted(set(REQUIRED_EXTERNAL_KEYS) - actual)
+    if missing:
+        raise ValueError(
+            f"canonical_external_required_key_missing:{','.join(missing)}"
+        )
+    prohibited = sorted(actual & set(PROHIBITED_EXTERNAL_KEYS))
+    if prohibited:
+        raise ValueError(
+            f"canonical_external_prohibited_key:{','.join(prohibited)}"
+        )
+    if "tenant_id" in actual:
+        raise ValueError("canonical_external_emits_raw_tenant")
+
+
 def authoritative_field_names() -> frozenset[str]:
     """Return the authoritative field names requiring snapshot isolation."""
     return frozenset(

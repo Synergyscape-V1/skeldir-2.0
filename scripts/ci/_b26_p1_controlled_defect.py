@@ -15,6 +15,9 @@ COVERAGE_AUTHORITY_MODULE = (
     ROOT / "backend/app/finance_reconciliation/coverage_authority.py"
 )
 CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+AUTHORITATIVE_FIELDS_MODULE = (
+    ROOT / "backend/app/finance_reconciliation/authoritative_fields.py"
+)
 PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 DOCKERFILE = ROOT / "backend/Dockerfile"
@@ -421,6 +424,184 @@ def authoritative_field_census_gap() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Corrective-X family: external census escape (X-A) and detached authority
+# reacquisition (X-B). Each defect is a genuine member of its class through
+# a distinct primitive; the proof must RED on every one (X-NC-1..X-NC-14).
+# ---------------------------------------------------------------------------
+
+
+def x_external_extra_literal_key() -> None:
+    """X-NC-1: renderer-only extra authoritative finance field (literal)."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '        "sovereign_producer": output.sovereign_producer,\n',
+        '        "sovereign_producer": output.sovereign_producer,\n'
+        '        "verified_revenue_minor": int(output.matched_minor),  # NC-B26-P1-X-NC1\n',
+        defect="x_external_extra_literal_key",
+    )
+
+
+def x_external_extra_dynamic_key() -> None:
+    """X-NC-2: extra field via update() rather than literal insertion."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "    try:\n        validate_external_rendering(rendered)\n",
+        '    rendered.update({"settled_revenue_minor": 1})  # NC-B26-P1-X-NC2\n'
+        "    try:\n        validate_external_rendering(rendered)\n",
+        defect="x_external_extra_dynamic_key",
+    )
+
+
+def x_external_missing_key() -> None:
+    """X-NC-3: required external field removed from the renderer."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '        "matched_minor": int(output.matched_minor),\n',
+        "",
+        defect="x_external_missing_key",
+    )
+
+
+def x_external_wrong_source() -> None:
+    """X-NC-4: lawful key sourced from projection state, not the snapshot."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '        "matched_minor": int(output.matched_minor),\n',
+        "        \"matched_minor\": int(projection_view.matched_minor),  # NC-B26-P1-X-NC4\n",
+        defect="x_external_wrong_source",
+    )
+
+
+def x_detached_typed_renderer() -> None:
+    """X-NC-5: typed detached renderer (annotated variant)."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "async def render_governed_external(",
+        "def emit_canonical_from_transfer(output: FinalCanonicalOutput) -> dict:  # NC-B26-P1-X-NC5\n"
+        '    return {"authority": output.authority, "matched_minor": output.matched_minor, "coverage_percent": str(output.coverage_percent)}  # NC-B26-P1-X-NC5\n'
+        "\n\n"
+        "async def render_governed_external(",
+        defect="x_detached_typed_renderer",
+    )
+
+
+def x_detached_untyped_renderer() -> None:
+    """X-NC-6: untyped detached renderer (annotation dropped)."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "async def render_governed_external(",
+        "def render_detached_external(output):  # NC-B26-P1-X-NC6\n"
+        '    return {"authority": output.authority, "matched_minor": getattr(output, "matched_minor", 0), "coverage_percent": str(getattr(output, "coverage_percent", "0"))}  # NC-B26-P1-X-NC6\n'
+        "\n\n"
+        "async def render_governed_external(",
+        defect="x_detached_untyped_renderer",
+    )
+
+
+def x_detached_mapping_dto_renderer() -> None:
+    """X-NC-7: Mapping/dict DTO detached renderer."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "async def render_governed_external(",
+        "def export_canonical_dto(dto: Mapping[str, Any]) -> dict:  # NC-B26-P1-X-NC7\n"
+        '    return {"authority": "canonical_B2.6_financial_truth", "matched_minor": int(dto.get("matched_minor", 0)), "coverage_percent": str(dto.get("coverage_percent", "0"))}  # NC-B26-P1-X-NC7\n'
+        "\n\n"
+        "async def render_governed_external(",
+        defect="x_detached_mapping_dto_renderer",
+    )
+
+
+def x_sibling_authority_emitter() -> None:
+    """X-NC-8: sibling-module canonical authority emitter (coverage_authority)."""
+    _replace_once(
+        COVERAGE_AUTHORITY_MODULE,
+        '        "coverage_percent": str(result.coverage_percent),\n'
+        '        "zero_denominator": bool(result.zero_denominator),\n'
+        "    }\n",
+        '        "coverage_percent": str(result.coverage_percent),\n'
+        '        "zero_denominator": bool(result.zero_denominator),\n'
+        "    }\n"
+        "\n\n"
+        "def sibling_canonical_export(record):  # NC-B26-P1-X-NC8\n"
+        '    return {"authority": "canonical_B2.6_financial_truth", "matched_minor": int(record.get("matched_minor", 0)), "coverage_percent": str(record.get("coverage_percent", "0"))}  # NC-B26-P1-X-NC8\n',
+        defect="x_sibling_authority_emitter",
+    )
+
+
+def x_serializer_promotion() -> None:
+    """X-NC-9: generic serializer promoted as canonical renderer."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "async def render_governed_external(",
+        "def dump_detached_canonical(output: FinalCanonicalOutput):  # NC-B26-P1-X-NC9\n"
+        "    from dataclasses import asdict as _nc_asdict  # NC-B26-P1-X-NC9\n"
+        "    return _nc_asdict(output)  # NC-B26-P1-X-NC9\n"
+        "\n\n"
+        "async def render_governed_external(",
+        defect="x_serializer_promotion",
+    )
+
+
+def x_raw_tenant_externalized() -> None:
+    """X-NC-10: raw tenant UUID externalized through the renderer."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '        "tenant_id_hash": output.tenant_id_hash,\n',
+        '        "tenant_id_hash": output.tenant_id_hash,\n'
+        '        "tenant_id": output.tenant_id_hash,  # NC-B26-P1-X-NC10\n',
+        defect="x_raw_tenant_externalized",
+    )
+
+
+def x_adjunct_externalized() -> None:
+    """X-NC-11: adjunct field externalized as a finance semantic."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '        "sovereign_producer": output.sovereign_producer,\n',
+        '        "sovereign_producer": output.sovereign_producer,\n'
+        '        "adjunct_json": output.adjunct_json,  # NC-B26-P1-X-NC11\n',
+        defect="x_adjunct_externalized",
+    )
+
+
+def x_llm_wired_value() -> None:
+    """X-NC-12: existing canonical field wired to adjacent-domain state."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '        "currency_code": output.currency_code,\n',
+        '        "currency_code": str(cleaned.get("currency_code", output.currency_code)),  # NC-B26-P1-X-NC12\n',
+        defect="x_llm_wired_value",
+    )
+
+
+def x_schema_drift() -> None:
+    """X-NC-13: internal/external schema desynchronization (policy drift)."""
+    _replace_once(
+        AUTHORITATIVE_FIELDS_MODULE,
+        '        projection_representation="scalar copy in AdjunctContext.sink_id",\n'
+        '        alias_policy="immutable value sharing lawful; mutable sharing forbidden",\n'
+        '        externalization_policy="emitted as render key",\n',
+        '        projection_representation="scalar copy in AdjunctContext.sink_id",\n'
+        '        alias_policy="immutable value sharing lawful; mutable sharing forbidden",\n'
+        '        externalization_policy="NOT emitted externally (X drift)",  # NC-B26-P1-X-NC13\n',
+        defect="x_schema_drift",
+    )
+
+
+def x_unapproved_authority_label() -> None:
+    """X-NC-14: canonical authority label emitted via **kwargs function."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        "async def render_governed_external(",
+        "def publish_canonical(**kwargs):  # NC-B26-P1-X-NC14\n"
+        '    return {"authority": kwargs.get("authority", "canonical_B2.6_financial_truth"), "matched_minor": int(kwargs.get("matched_minor", 0)), "coverage_percent": str(kwargs.get("coverage_percent", "0"))}  # NC-B26-P1-X-NC14\n'
+        "\n\n"
+        "async def render_governed_external(",
+        defect="x_unapproved_authority_label",
+    )
+
+
 DEFECTS: dict[str, Callable[[], None]] = {
     "mandatory_semantic_element": mandatory_semantic_element,
     "coverage_authority_reference": coverage_authority_reference,
@@ -457,6 +638,20 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "executable_capture_before_awaits": executable_capture_before_awaits,
     "shared_mutable_alias": shared_mutable_alias,
     "authoritative_field_census_gap": authoritative_field_census_gap,
+    "x_external_extra_literal_key": x_external_extra_literal_key,
+    "x_external_extra_dynamic_key": x_external_extra_dynamic_key,
+    "x_external_missing_key": x_external_missing_key,
+    "x_external_wrong_source": x_external_wrong_source,
+    "x_detached_typed_renderer": x_detached_typed_renderer,
+    "x_detached_untyped_renderer": x_detached_untyped_renderer,
+    "x_detached_mapping_dto_renderer": x_detached_mapping_dto_renderer,
+    "x_sibling_authority_emitter": x_sibling_authority_emitter,
+    "x_serializer_promotion": x_serializer_promotion,
+    "x_raw_tenant_externalized": x_raw_tenant_externalized,
+    "x_adjunct_externalized": x_adjunct_externalized,
+    "x_llm_wired_value": x_llm_wired_value,
+    "x_schema_drift": x_schema_drift,
+    "x_unapproved_authority_label": x_unapproved_authority_label,
 }
 
 

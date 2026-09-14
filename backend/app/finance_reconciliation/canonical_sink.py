@@ -174,6 +174,7 @@ from uuid import UUID
 from app.finance_reconciliation.authoritative_fields import (
     assert_snapshot_types_immutable,
     freeze_platform_scope,
+    validate_external_rendering,
 )
 from app.finance_reconciliation.coverage_authority import (
     B23_SOVEREIGN_COVERAGE_PRODUCER,
@@ -663,6 +664,18 @@ async def render_governed_external(
     :func:`external_renderer_signature_is_execution_bound` plus the CI
     structural sensor prove that shape on every run.
 
+    Corrective-X law (CLOSED EXTERNAL FIELD UNIVERSE, Theorem X-A): the
+    emitted mapping is validated against the single governed external
+    contract (``authoritative_fields.GOVERNED_EXTERNAL_KEYS``, mechanically
+    derived from the registry) BEFORE return. Any extra, missing, or
+    prohibited key refuses instead of emitting: the check observes the
+    FINAL runtime mapping, so no construction primitive (literal, dict(),
+    comprehension, ** expansion, update(), |= merge, helper mapping,
+    conditional/loop insertion, Mapping subclass, response-model
+    serialization) can bypass the census. A new external semantic requires
+    amending the registry obligation itself -- a renderer-only edit can
+    never extend canonical authority.
+
     The projection carries only the sovereign one-way tenant hash (raw
     tenant identity never leaves this boundary) and omits adjuncts
     entirely: adjuncts are non-authoritative by type and never
@@ -693,6 +706,10 @@ async def render_governed_external(
         "provenance_mode": output.provenance_mode,
         "sovereign_producer": output.sovereign_producer,
     }
+    try:
+        validate_external_rendering(rendered)
+    except ValueError as exc:
+        raise CanonicalSinkError(f"canonical_external_closure_refused:{exc}") from exc
     return rendered
 
 
