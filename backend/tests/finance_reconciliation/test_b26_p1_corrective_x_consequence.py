@@ -68,10 +68,15 @@ from app.finance_reconciliation.authoritative_fields import (
 )
 from app.finance_reconciliation.canonical_sink import (
     CANONICAL_OUTPUT_AUTHORITY,
+    CanonicalExternalTruth,
     FinalCanonicalOutput,
     external_renderer_signature_is_execution_bound,
     render_governed_external,
     verify_output_integrity,
+)
+from app.finance_reconciliation.external_semantics import (
+    EXTERNAL_SEMANTICS,
+    project_external_fields,
 )
 from app.finance_reconciliation.coverage_authority import (
     CanonicalCoverageAuthorityError,
@@ -193,6 +198,9 @@ def test_px2_runtime_refusal_construction_independent() -> None:
 
 
 def test_px3_renderer_shape_mirrors_contract() -> None:
+    # Since Corrective XI the renderer contains no per-field transform
+    # expressions at all: every external value is derived by executing the
+    # frozen transform contract, and the return is the sealed issuance.
     source = inspect.getsource(render_governed_external)
     tree = ast.parse(source)
     func = next(
@@ -200,40 +208,34 @@ def test_px3_renderer_shape_mirrors_contract() -> None:
         for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     )
-    rendered_dict: ast.Dict | None = None
     for node in ast.walk(func):
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == "rendered"
-            for target in node.targets
-        ):
-            assert isinstance(node.value, ast.Dict)
-            rendered_dict = node.value
-    assert rendered_dict is not None
-    literal_keys = {
-        key.value
-        for key in rendered_dict.keys
-        if isinstance(key, ast.Constant) and isinstance(key.value, str)
-    }
-    assert literal_keys == set(PINNED_EXTERNAL_KEYS)
-    allowed_roots = {"output", "list", "int", "str", "bool"}
-    for key_node, value_node in zip(rendered_dict.keys, rendered_dict.values):
-        assert isinstance(key_node, ast.Constant)
-        key = key_node.value
-        expected_attr = EXTERNAL_FIELD_RENDER_ATTRS[key]
-        output_attrs = {
-            child.attr
-            for child in ast.walk(value_node)
-            if isinstance(child, ast.Attribute)
-            and isinstance(child.value, ast.Name)
-            and child.value.id == "output"
-        }
-        assert expected_attr in output_attrs
-        foreign = {
-            child.id for child in ast.walk(value_node) if isinstance(child, ast.Name)
-        } - allowed_roots
-        assert not foreign
+        assert not isinstance(node, ast.Dict)
+        assert not isinstance(node, ast.DictComp)
+        assert not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "dict"
+        )
+        assert not (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "output"
+        )
+    returns = [
+        node.value for node in ast.walk(func) if isinstance(node, ast.Return)
+    ]
+    assert len(returns) == 1
+    assert isinstance(returns[0], ast.Call)
+    assert returns[0].func.id == "_issue_canonical_external"  # type: ignore[attr-defined]
     assert external_renderer_signature_is_execution_bound()
     assert "await execute_governed_sink(" in source
+    # The transform contract is the single serializer: keys, sources, and
+    # transforms are pinned here independently of the renderer.
+    assert set(EXTERNAL_SEMANTICS) == set(PINNED_EXTERNAL_KEYS)
+    for key, spec in EXTERNAL_SEMANTICS.items():
+        assert spec.source_attr == EXTERNAL_FIELD_RENDER_ATTRS[key]
+        assert spec.transform_id
+        assert spec.omission_law == "never_omitted"
 
 
 # ---------------------------------------------------------------------------
@@ -248,8 +250,11 @@ async def test_px4_lawful_render_exact_census_sovereign_values() -> None:
         "future_finance_projection", auth_token=_auth_token(tenant_id), **scope
     )
     assert set(rendered.keys()) == set(PINNED_EXTERNAL_KEYS)
+    assert type(rendered) is CanonicalExternalTruth
     validate_external_rendering(rendered)
     assert rendered["authority"] == CANONICAL_OUTPUT_AUTHORITY
+    assert rendered["window_start"] == "2026-01-01T00:00:00+00:00"
+    assert rendered["window_end"] == "2026-02-01T00:00:00+00:00"
     assert rendered["matched_minor"] == 76000
     assert rendered["connected_minor"] == 80000
     assert rendered["coverage_percent"] == "95.00"

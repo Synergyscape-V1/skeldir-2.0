@@ -116,7 +116,7 @@ def test_b26_p1_authority_classes_distinguish_permanent_from_closure() -> None:
 def test_b26_p1_version_identity_is_unambiguous() -> None:
     contract = load_b26_p1_semantic_contract()
 
-    assert B26_P1_CONTRACT_VERSION == "b2.6-p1-semantic-authority-v5"
+    assert B26_P1_CONTRACT_VERSION == "b2.6-p1-semantic-authority-v6"
     assert contract["contract_version"] == B26_P1_CONTRACT_VERSION
     supersession = contract["supersession"]
     assert supersession["supersedes"] == B26_P1_SUPERSEDES_VERSION

@@ -28,7 +28,7 @@ jobs:
   b26-p1-static-authority:
     name: B2.6-P1 Static Semantic Authority
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:15-alpine

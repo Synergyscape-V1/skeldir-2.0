@@ -26,6 +26,13 @@ CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sin
 AUTHORITATIVE_FIELDS_MODULE = (
     ROOT / "backend/app/finance_reconciliation/authoritative_fields.py"
 )
+EXTERNAL_SEMANTICS_MODULE = (
+    ROOT / "backend/app/finance_reconciliation/external_semantics.py"
+)
+TRUST_REFUSAL_MODULE = ROOT / "backend/app/trust/refusal.py"
+VERIFICATION_COVERAGE_MODULE = (
+    ROOT / "backend/app/revenue_verification/verification_coverage.py"
+)
 PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 
@@ -162,22 +169,22 @@ STATIC_CONTROLS = (
     ),
     (
         "x_external_extra_literal_key",
-        CANONICAL_SINK_MODULE,
-        "canonical_external_undeclared_key",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
     ),
     (
         "x_external_extra_dynamic_key",
-        CANONICAL_SINK_MODULE,
-        "canonical_external_key_closure_not_statically_provable",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
     ),
     (
         "x_external_missing_key",
-        CANONICAL_SINK_MODULE,
-        "canonical_external_required_key_missing",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
     ),
     (
         "x_external_wrong_source",
-        CANONICAL_SINK_MODULE,
+        EXTERNAL_SEMANTICS_MODULE,
         "canonical_external_value_source_not_sovereign",
     ),
     (
@@ -207,18 +214,20 @@ STATIC_CONTROLS = (
     ),
     (
         "x_raw_tenant_externalized",
-        CANONICAL_SINK_MODULE,
-        "canonical_external_emits_raw_tenant",
+        EXTERNAL_SEMANTICS_MODULE,
+        # An uncensused semantic refuses at the frozen-contract pin before
+        # the egress can even load -- the strongest available first RED.
+        "canonical_external_semantics_not_pinned",
     ),
     (
         "x_adjunct_externalized",
-        CANONICAL_SINK_MODULE,
-        "canonical_external_emits_non_authoritative_adjunct",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
     ),
     (
         "x_llm_wired_value",
-        CANONICAL_SINK_MODULE,
-        "canonical_external_value_source_not_sovereign",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
     ),
     (
         "x_schema_drift",
@@ -229,6 +238,113 @@ STATIC_CONTROLS = (
         "x_unapproved_authority_label",
         CANONICAL_SINK_MODULE,
         "canonical_detached_authority_emission",
+    ),
+    # Corrective-XI controls: transform-contract drift (XI-A), forged
+    # capabilities / unregistered egress (XI-B), issuer divergence (XI-C).
+    (
+        "xi_nc01_window_date_truncation",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
+    ),
+    (
+        "xi_nc02_timezone_stripping",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
+    ),
+    (
+        "xi_nc03_money_zeroing",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
+    ),
+    (
+        "xi_nc04_platform_subset",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
+    ),
+    (
+        "xi_nc05_forged_capability_construct_then_return",
+        COVERAGE_AUTHORITY_MODULE,
+        "canonical_egress_capability_forged",
+    ),
+    (
+        "xi_nc06_forged_capability_dict_call",
+        COVERAGE_AUTHORITY_MODULE,
+        "canonical_egress_capability_forged",
+    ),
+    (
+        "xi_nc07_forged_capability_wrapper_class",
+        COVERAGE_AUTHORITY_MODULE,
+        "canonical_egress_capability_forged",
+    ),
+    (
+        "xi_nc08_forged_capability_renamed_serializer",
+        COVERAGE_AUTHORITY_MODULE,
+        "canonical_egress_capability_forged",
+    ),
+    (
+        "xi_nc09_forged_capability_alias_marker",
+        COVERAGE_AUTHORITY_MODULE,
+        "canonical_egress_capability_forged",
+    ),
+    (
+        "xi_nc10_unregistered_egress_surface",
+        CANONICAL_SINK_MODULE,
+        "canonical_egress_registry_census_mismatch",
+    ),
+    (
+        "xi_nc11_unregistered_trust_adapter",
+        TRUST_REFUSAL_MODULE,
+        "canonical_egress_capability_forged",
+    ),
+    (
+        "xi_nc12_validate_return_divergence",
+        CANONICAL_SINK_MODULE,
+        "canonical_renderer_bypasses_transform_contract",
+    ),
+    (
+        "xi_nc13_source_co_drift",
+        (AUTHORITATIVE_FIELDS_MODULE, EXTERNAL_SEMANTICS_MODULE),
+        "canonical_external_semantics_not_pinned",
+    ),
+    (
+        "xi_nc14_adjacent_domain_transform_dependency",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
+    ),
+    (
+        "xi_nc15_contract_pin_removed",
+        CANONICAL_SINK_MODULE,
+        "canonical_egress_contract_pin_not_executed",
+    ),
+    (
+        "xi_nc16_admission_weakened",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_admission_dead",
+    ),
+    (
+        "xi_nc17_renderer_handwritten_mapping",
+        CANONICAL_SINK_MODULE,
+        "canonical_renderer_bypasses_transform_contract",
+    ),
+    (
+        "xi_nc18_transform_contract_unpinned_from_yaml",
+        CONTRACT,
+        "canonical_external_semantics_not_pinned",
+    ),
+    (
+        "xi_nc19_capability_seal_removed",
+        CANONICAL_SINK_MODULE,
+        "canonical_egress_capability_proof_dead",
+    ),
+    (
+        "xi_nc20_denominator_regression",
+        VERIFICATION_COVERAGE_MODULE,
+        "coverage_implementation_identity_mismatch",
+    ),
+    (
+        "xi_immutable_fields_removed",
+        CANONICAL_SINK_MODULE,
+        "canonical_external_fields_mutable",
     ),
 )
 
@@ -524,8 +640,9 @@ def run_battery() -> list[dict[str, Any]]:
         raise RuntimeError(f"pristine_validator_red:{pristine.stdout}{pristine.stderr}")
     ledger: list[dict[str, Any]] = []
     for defect, target, expected_red in STATIC_CONTROLS:
-        original = target.read_bytes()
-        pristine_hash = _sha(original)
+        targets = target if isinstance(target, tuple) else (target,)
+        originals = [t.read_bytes() for t in targets]
+        pristine_hashes = [_sha(o) for o in originals]
         try:
             applied = _run(sys.executable, str(MUTATOR), "apply", defect)
             if applied.returncode != 0:
@@ -537,8 +654,11 @@ def run_battery() -> list[dict[str, Any]]:
             if red.returncode == 0 or expected_red not in red_text:
                 raise RuntimeError(f"control_did_not_red:{defect}:{red_text}")
         finally:
-            target.write_bytes(original)
-        if _sha(target.read_bytes()) != pristine_hash:
+            for t, o in zip(targets, originals):
+                t.write_bytes(o)
+        if any(
+            _sha(t.read_bytes()) != h for t, h in zip(targets, pristine_hashes)
+        ):
             raise RuntimeError(f"restore_hash_mismatch:{defect}")
         green = _validator()
         if green.returncode != 0:
@@ -548,9 +668,9 @@ def run_battery() -> list[dict[str, Any]]:
         ledger.append(
             {
                 "control": defect,
-                "pristine_hash": pristine_hash,
+                "pristine_hash": pristine_hashes[0],
                 "observed_red": expected_red,
-                "restoration_hash": _sha(target.read_bytes()),
+                "restoration_hash": _sha(targets[0].read_bytes()),
                 "restored_green": True,
             }
         )
