@@ -1101,6 +1101,30 @@ async def execute_governed_sink(
             raise CanonicalSinkError(
                 "governed_sink_sovereign_zero_diverged_from_oracle"
             )
+        # B2.6-P2 live scope wiring (synchronous, no suspension): every
+        # canonical execution classifies its own sovereign scope through the
+        # single P2 normalization authority and fails closed on incoherence.
+        # This is the production-natural caller for per-candidate-equivalent
+        # aggregate scope: real tenant, real currency, real window, and real
+        # provider set from the sovereign derivation above, never fixtures.
+        # No money, tenant, or coverage value is altered here; incoherence
+        # refuses before any authoritative field materializes.
+        try:
+            from app.finance_reconciliation import (  # noqa: PLC0415
+                scope_authority as _p2_scope,
+            )
+
+            _p2_scope.assert_aggregate_scope_supported(
+                tenant_id=tenant_id,
+                supported_platforms=tuple(coverage.supported_platforms),
+                currency_code=aggregate.currency_code,
+                window_start=aggregate.window_start,
+                window_end=aggregate.window_end,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise CanonicalSinkError(
+                f"governed_sink_p2_scope_incoherent:{exc}"
+            ) from exc
         # Step 3: final atomic executable capture -- synchronous, after
         # the last framework await, with no await before projection
         # invocation. VERIFIED_CALLABLE_REFERENCE ==

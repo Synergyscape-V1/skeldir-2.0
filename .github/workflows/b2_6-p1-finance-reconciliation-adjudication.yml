@@ -72,6 +72,17 @@ jobs:
             --evidence-out artifacts/b26_p1/static/negative-controls.json
           git diff --exit-code
 
+      - name: Validate B2.6-P2 scope authority
+        run: |
+          python scripts/ci/validate_b26_p2_scope_authority.py \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 sensors are non-vacuous
+        run: |
+          python scripts/ci/test_b26_p2_negative_controls.py \
+            --evidence-out artifacts/b26_p2/static/negative-controls.json
+          git diff --exit-code
+
       - name: Provision consequence-battery database
         run: |
           python scripts/database/prepare_migration_authority_boundary.py \
@@ -93,6 +104,13 @@ jobs:
         with:
           name: b26-p1-static-${{ github.run_id }}
           path: artifacts/b26_p1/static/*.json
+          if-no-files-found: error
+
+      - name: Upload B2.6-P2 static scope evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: b26-p2-static-${{ github.run_id }}
+          path: artifacts/b26_p2/static/*.json
           if-no-files-found: error
 
   b26-p1-container-equivalence:
@@ -141,11 +159,43 @@ jobs:
             --evidence-out artifacts/b26_p1/container/container-equivalence.json
           git diff --exit-code -- backend/Dockerfile
 
+      - name: Prove B2.6-P2 scope authority inside the pristine image
+        run: |
+          python scripts/ci/assert_b26_p2_container_equivalence.py \
+            --image skeldir-b26-p1:${{ github.sha }} \
+            --evidence-out artifacts/b26_p2/container/container-equivalence.json
+
+      - name: NC-B26-P2 image-layer scope-policy drift turns red then restores green
+        run: |
+          set -euo pipefail
+          pristine_hash="$(sha256sum contracts/reconciliation/b2.6/scope-policy.v1.yaml | awk '{print $1}')"
+          cp contracts/reconciliation/b2.6/scope-policy.v1.yaml "$RUNNER_TEMP/b26-p2-scope-policy.yaml"
+          python scripts/ci/_b26_p2_controlled_defect.py p2_contract_universe_widening
+          docker build -f backend/Dockerfile -t skeldir-b26-p2-defect:${{ github.sha }} .
+          if python scripts/ci/assert_b26_p2_container_equivalence.py \
+            --image skeldir-b26-p2-defect:${{ github.sha }}; then
+            echo "B26-P2 stale scope-policy did not turn red"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/b26-p2-scope-policy.yaml" contracts/reconciliation/b2.6/scope-policy.v1.yaml
+          test "$(sha256sum contracts/reconciliation/b2.6/scope-policy.v1.yaml | awk '{print $1}')" = "$pristine_hash"
+          python scripts/ci/assert_b26_p2_container_equivalence.py \
+            --image skeldir-b26-p1:${{ github.sha }} \
+            --evidence-out artifacts/b26_p2/container/container-equivalence.json
+          git diff --exit-code -- contracts/reconciliation/b2.6/scope-policy.v1.yaml
+
       - name: Upload container evidence
         uses: actions/upload-artifact@v4
         with:
           name: b26-p1-container-${{ github.run_id }}
           path: artifacts/b26_p1/container/*.json
+          if-no-files-found: error
+
+      - name: Upload B2.6-P2 container scope evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: b26-p2-container-${{ github.run_id }}
+          path: artifacts/b26_p2/container/*.json
           if-no-files-found: error
 
   b26-p1-inherited-conduction:
@@ -226,6 +276,13 @@ jobs:
           path: artifacts/b26_p1/all
           merge-multiple: true
 
+      - name: Download B2.6-P2 subordinate evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: b26-p2-*-${{ github.run_id }}
+          path: artifacts/b26_p2/all
+          merge-multiple: true
+
       - name: Adjudicate exact candidate proof plane
         run: |
           python scripts/ci/adjudicate_b26_p1_proof_plane.py \
@@ -236,9 +293,26 @@ jobs:
             --workflow "$GITHUB_WORKFLOW" \
             --capsule-out artifacts/b26_p1/aggregate/governance-capsule.json
 
+      - name: Adjudicate B2.6-P2 subordinate proof plane
+        run: |
+          python scripts/ci/adjudicate_b26_p2_proof_plane.py \
+            --artifact-root artifacts/b26_p2/all \
+            --candidate-sha "$B26_CANDIDATE_SHA" \
+            --event-type "$GITHUB_EVENT_NAME" \
+            --run-id "$GITHUB_RUN_ID" \
+            --workflow "$GITHUB_WORKFLOW" \
+            --capsule-out artifacts/b26_p2/aggregate/governance-capsule.json
+
       - name: Upload adjudicated governance capsule
         uses: actions/upload-artifact@v4
         with:
           name: b26-p1-governance-capsule-${{ github.run_id }}
           path: artifacts/b26_p1/aggregate/governance-capsule.json
+          if-no-files-found: error
+
+      - name: Upload adjudicated B2.6-P2 capsule
+        uses: actions/upload-artifact@v4
+        with:
+          name: b26-p2-governance-capsule-${{ github.run_id }}
+          path: artifacts/b26_p2/aggregate/governance-capsule.json
           if-no-files-found: error

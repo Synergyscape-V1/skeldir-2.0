@@ -245,27 +245,42 @@ def _supported_currency_universe() -> frozenset[str]:
 def _normalize_platforms(
     supported_platforms: Sequence[str] | None,
 ) -> tuple[str, ...]:
-    if supported_platforms is None:
-        return tuple(sorted(_supported_platform_universe()))
-    normalized = tuple(
-        sorted(
-            {
-                str(item).strip().lower()
-                for item in supported_platforms
-                if str(item).strip()
-            }
-        )
+    """Normalize one B2.6 provider set through the single P2 authority.
+
+    B2.6-P2 closure (duplicate normalization authority): this function is a
+    thin delegating caller over
+    ``app.finance_reconciliation.scope_authority.normalize_provider_set``.
+    No independent B2.6 membership, alias, ordering, or universe logic lives
+    here; mutating the P2 authority changes this path, and no second B2.6
+    truth-path normalizer remains. The sovereign B2.3 universe stays the
+    upstream reference checked inside the P2 authority itself.
+    """
+    from app.finance_reconciliation import (  # noqa: PLC0415
+        scope_authority as p2_scope,
     )
-    if not normalized:
+
+    if supported_platforms is None:
+        try:
+            return p2_scope.normalize_provider_set(None)
+        except p2_scope.ScopeAuthorityError as exc:
+            raise CanonicalCoverageAuthorityError(
+                f"canonical_coverage_scope_refused:{exc}"
+            ) from exc
+    try:
+        return p2_scope.normalize_provider_set(supported_platforms)
+    except p2_scope.ScopeAuthorityError as exc:
+        message = str(exc)
+        if "unsupported_provider_excluded" in message:
+            raise CanonicalCoverageAuthorityError(
+                f"canonical_coverage_unsupported_platform:{message}"
+            ) from exc
+        if "empty_set" in message or "blank" in message:
+            raise CanonicalCoverageAuthorityError(
+                "canonical_coverage_supported_platforms_required"
+            ) from exc
         raise CanonicalCoverageAuthorityError(
-            "canonical_coverage_supported_platforms_required"
-        )
-    unsupported = set(normalized) - set(_supported_platform_universe())
-    if unsupported:
-        raise CanonicalCoverageAuthorityError(
-            f"canonical_coverage_unsupported_platform:{sorted(unsupported)}"
-        )
-    return normalized
+            f"canonical_coverage_scope_refused:{message}"
+        ) from exc
 
 
 def _verify_math_against_legs(value: CanonicalVerificationCoverage) -> None:

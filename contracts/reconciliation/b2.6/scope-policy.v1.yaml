@@ -1,0 +1,99 @@
+phase_id: B2.6-P2
+scope_policy_version: b2.6-p2-scope-policy-v1
+authority_kind: scope_normalization_authority_not_financial_result
+maturity_mode: DESIGN_PARTNER_MODE
+
+# P2 scope-policy constitution: ONE governed classification boundary over
+# provider/platform/rail, currency, window, tenant, and disposition semantics.
+# This file owns meaning; backend/app/finance_reconciliation/scope_authority.py
+# executes it. Any semantic change requires a version bump below (evolution_law).
+supersession:
+  supersedes: none
+  reason: genesis_canonical_scope_rail_normalization_authority
+
+# Canonical provider/platform identities. Rail identity equals provider
+# identity for P2 (1:1); future rail refinement requires a version bump.
+canonical_providers:
+  - paypal
+  - shopify
+  - stripe
+  - woocommerce
+canonical_rails:
+  - paypal
+  - shopify
+  - stripe
+  - woocommerce
+rail_identity_law: rail_identity_equals_provider_identity_for_P2
+
+# Alias law: governed normalization is strip plus ASCII lower plus exact
+# membership only. No legacy alias promotion: historical route-local names
+# below MUST NOT normalize to a supported canonical identity. They receive
+# explicit exclusion, never silent promotion and never silent disappearance.
+alias_law: strip_ascii_lower_exact_match_only
+legacy_names_never_promoted:
+  - facebook
+  - meta
+  - google
+  - google_ads
+  - tiktok
+  - tik_tok
+  - linkedin
+  - woo
+  - woo_commerce
+  - square
+  - unknown
+
+# Sovereign scope references: P2 composes these universes, never redefines.
+# The module reads them on use and refuses on divergence from this contract.
+provider_scope_reference: app.revenue_verification.verification_coverage.SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS
+currency_scope_reference: app.revenue_verification.verification_coverage.SUPPORTED_VERIFICATION_COVERAGE_CURRENCIES
+supported_currencies:
+  - USD
+
+window_semantics:
+  interval: half_open
+  lower_bound: inclusive
+  upper_bound: exclusive
+  clock_source: persisted_webhook_ingress_identities.event_timestamp
+  timezone: UTC
+  naive_event_time: refused
+
+# P2 disposition vocabulary: every candidate resolves to exactly one.
+dispositions:
+  - SUPPORTED_AND_IN_SCOPE
+  - SUPPORTED_BUT_UNRESOLVED
+  - EXPLICITLY_EXCLUDED
+  - INVALID_OR_REFUSED
+
+# Governed reason codes. Exclusion reasons reuse the P1 scope-disposition
+# vocabulary so later phases cannot reconstruct scope meaning independently.
+reasons:
+  supported_in_scope: supported_in_scope
+  supported_unresolved_source_identity: source_identity_unresolved
+  unsupported_provider_excluded: unsupported_provider_excluded
+  unsupported_currency_excluded: unsupported_currency_excluded
+  outside_governed_window_excluded: outside_governed_window_excluded
+  invalid_tenant: invalid_tenant_authority
+  invalid_window: invalid_window_authority
+  invalid_event_time: invalid_event_time_authority
+  invalid_provider_shape: invalid_provider_shape
+  invalid_currency_shape: invalid_currency_shape
+  invalid_policy_version: invalid_scope_policy_version
+  aggregate_scope_incoherent: aggregate_scope_incoherent
+
+# Multiple simultaneous exclusions resolve deterministically by priority.
+exclusion_priority:
+  - unsupported_provider_excluded
+  - unsupported_currency_excluded
+  - outside_governed_window_excluded
+
+tenant_law: server_derived_uuid_only_missing_or_malformed_refused
+money_law: normalization_never_changes_money_no_amount_path
+replay_law: same_evidence_same_policy_version_same_identity_and_disposition
+evolution_law: alias_rail_currency_window_meaning_change_requires_version_bump
+
+# Executable-module pin (P2 proof plane): the canonical module above is
+# frozen into this contract by AST identity. Any semantic change to the
+# module without a reviewed repin turns the P2 validator RED.
+module: app.finance_reconciliation.scope_authority
+module_ast_sha256: aac03f98a9e179dae56ca53e5aa274b9249a19f9a34dc3d475d1db3194205560
