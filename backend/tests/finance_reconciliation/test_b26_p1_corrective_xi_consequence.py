@@ -118,7 +118,7 @@ LAWFUL_EXTERNAL = {
     "currency_code": "USD",
     "window_start": "2026-01-01T00:00:00+00:00",
     "window_end": "2026-02-01T12:30:05+02:00",
-    "supported_platforms": ["paypal", "stripe"],
+    "supported_platforms": ("paypal", "stripe"),
     "matched_minor": 76000,
     "connected_minor": 80000,
     "coverage_percent": "95.00",
@@ -187,8 +187,11 @@ def test_pxi2_executable_law_refuses_semantic_corruption() -> None:
         ("coverage_percent", "95.0"),
         ("coverage_percent", "9.500"),
         ("coverage_percent", 95.00),
-        ("supported_platforms", ("paypal", "stripe")),
+        ("supported_platforms", ["paypal", "stripe"]),
         ("supported_platforms", ["paypal", 1]),
+        ("supported_platforms", ("paypal", 1)),
+        ("supported_platforms", ("",)),
+        ("supported_platforms", {"paypal"}),
         ("tenant_id_hash", "ab" * 31),
         ("tenant_id_hash", "ab" * 32),
         ("currency_code", "usd"),
@@ -230,8 +233,8 @@ def test_pxi3_transform_vectors_execution_and_refusal() -> None:
         with pytest.raises(ExternalSemanticsError):
             money(bad)
     platforms = EXTERNAL_SEMANTICS["supported_platforms"].transform
-    assert platforms(("paypal", "stripe")) == ["paypal", "stripe"]
-    assert platforms(()) == []
+    assert platforms(("paypal", "stripe")) == ("paypal", "stripe")
+    assert platforms(()) == ()
     for bad in (["paypal"], "paypal", ("paypal", 1), {"paypal"}):
         with pytest.raises(ExternalSemanticsError):
             platforms(bad)
@@ -293,7 +296,7 @@ async def test_pxi4_lawful_render_absolute_matrix() -> None:
     assert rendered["window_end"] == "2026-02-01T00:00:00+00:00"
     assert FULL_INSTANT.match(rendered["window_start"])
     assert FULL_INSTANT.match(rendered["window_end"])
-    assert rendered["supported_platforms"] == ["stripe"]
+    assert rendered["supported_platforms"] == ("stripe",)
     assert type(rendered["matched_minor"]) is int and rendered["matched_minor"] == 76000
     assert type(rendered["connected_minor"]) is int and rendered["connected_minor"] == 80000
     assert rendered["coverage_percent"] == "95.00"
@@ -593,7 +596,7 @@ def test_pxi11_transform_contract_is_pure() -> None:
             imported.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
-    assert imported <= {"__future__", "ast", "hashlib", "re", "dataclasses", "datetime", "decimal", "pathlib", "typing"}
+    assert imported <= {"__future__", "ast", "hashlib", "re", "dataclasses", "datetime", "decimal", "pathlib", "types", "typing"}
     assert "os.environ" not in source
     assert "__import__" not in source
     assert "open(" not in source

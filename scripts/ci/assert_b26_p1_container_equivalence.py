@@ -75,6 +75,11 @@ report["window_vector_ok"] = (
 )
 money = EXTERNAL_SEMANTICS["matched_minor"].transform
 report["money_vector_ok"] = money(76000) == 76000 and type(money(76000)) is int
+platforms = EXTERNAL_SEMANTICS["supported_platforms"].transform
+report["platforms_vector_ok"] = (
+    platforms(("paypal", "stripe")) == ("paypal", "stripe")
+    and type(platforms(("paypal", "stripe"))) is tuple
+)
 refusals = True
 for key, bad in (
     ("window_start", datetime(2026, 1, 1)),
@@ -126,7 +131,7 @@ report["projection_ok"] = project_external_fields(sovereign) == {
     "currency_code": "USD",
     "window_start": "2026-01-01T00:00:00+00:00",
     "window_end": "2026-02-01T12:30:05+02:00",
-    "supported_platforms": ["paypal", "stripe"],
+    "supported_platforms": ("paypal", "stripe"),
     "matched_minor": 76000,
     "connected_minor": 80000,
     "coverage_percent": "95.00",
@@ -174,6 +179,60 @@ except TypeError:
     report["immutable"] = True
 else:
     report["immutable"] = False
+
+# 6. Corrective-XII deep-immutability physics inside the image: nested
+# mutation refuses, conversions share no mutable storage, the slot cannot
+# be rebound, wire copies are fresh and isolated, and the live registry is
+# read-only.
+from app.finance_reconciliation.external_semantics import to_wire_dict
+
+deep_ok = True
+try:
+    capability["supported_platforms"].append("shopify")
+except (AttributeError, TypeError):
+    pass
+else:
+    deep_ok = False
+try:
+    capability["supported_platforms"].clear()
+except (AttributeError, TypeError):
+    pass
+else:
+    deep_ok = False
+try:
+    dict(capability)["supported_platforms"].append("shopify")
+except (AttributeError, TypeError):
+    pass
+else:
+    deep_ok = False
+if capability["supported_platforms"] != ("paypal", "stripe"):
+    deep_ok = False
+try:
+    capability._fields = MappingProxyType({})
+except AttributeError:
+    pass
+else:
+    deep_ok = False
+wire = to_wire_dict(capability)
+if type(wire["supported_platforms"]) is not list:
+    deep_ok = False
+wire["supported_platforms"].append("shopify")
+if capability["supported_platforms"] != ("paypal", "stripe"):
+    deep_ok = False
+try:
+    admit(wire)
+except ValueError:
+    pass
+else:
+    deep_ok = False
+try:
+    EXTERNAL_SEMANTICS["xii_probe"] = 1
+except TypeError:
+    pass
+else:
+    deep_ok = False
+report["deep_immutability_ok"] = deep_ok
+report["storage_is_tuple"] = type(capability["supported_platforms"]) is tuple
 
 print("XI_IN_IMAGE_BATTERY " + json.dumps(report, sort_keys=True))
 '''

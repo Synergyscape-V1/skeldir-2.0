@@ -577,7 +577,7 @@ async def test_p_ix_8_renderer_emits_sovereign_under_in_place_mutation() -> None
         rendered = await render_governed_external(
             sink_id, auth_token=_auth_token(tenant_a), **_scope()
         )
-        assert rendered["supported_platforms"] == ["stripe"]
+        assert rendered["supported_platforms"] == ("stripe",)
         assert rendered["matched_minor"] == 76000
         assert rendered["connected_minor"] == 80000
         assert rendered["coverage_percent"] == "95.00"

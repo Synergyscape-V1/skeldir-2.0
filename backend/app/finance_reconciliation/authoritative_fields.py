@@ -155,8 +155,12 @@ AUTHORITATIVE_FIELD_REGISTRY: dict[str, AuthoritativeFieldSpec] = {
         allowed_type_family="tuple[str, ...] deeply immutable (str members only)",
         projection_representation="immutable tuple copy in AdjunctContext.supported_platforms",
         alias_policy="MUST be storage-disjoint from projection for mutable storage; "
-        "immutable tuple sharing lawful only when deeply immutable",
-        externalization_policy="emitted as list render key (materialized from snapshot only)",
+        "immutable tuple sharing lawful only when deeply immutable; "
+        "canonical external storage is a fresh recursively frozen tuple "
+        "(Corrective-XII), never a caller- or serializer-owned list",
+        externalization_policy="emitted as immutable tuple[str] canonical state; "
+        "wire projection as a fresh list only at the non-authoritative wire "
+        "boundary (external_semantics.to_wire_dict)",
     ),
     "matched_minor": AuthoritativeFieldSpec(
         field_name="matched_minor",

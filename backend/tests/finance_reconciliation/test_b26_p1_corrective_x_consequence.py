@@ -260,7 +260,7 @@ async def test_px4_lawful_render_exact_census_sovereign_values() -> None:
     assert rendered["coverage_percent"] == "95.00"
     assert rendered["zero_denominator"] is False
     assert rendered["currency_code"] == "USD"
-    assert rendered["supported_platforms"] == ["stripe"]
+    assert rendered["supported_platforms"] == ("stripe",)
     assert "tenant_id" not in rendered
     assert "adjunct_json" not in rendered
     assert "content_digest" not in rendered

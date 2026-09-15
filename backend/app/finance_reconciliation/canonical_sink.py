@@ -20,6 +20,23 @@ canonical authority capability escape, validate-A/return-B divergence)
    capability constructor validates exactly the fields it freezes into an
    immutable proxy; there is no post-validation transformation surface.
 
+Corrective-XII law (defect class XII-A: post-issuance authoritative state
+mutation through shared mutable references)
+-----------------------------------------------------------------------------
+DEEP AUTHORITY IMMUTABILITY BY CONSTRUCTION. The capability constructor
+freeze-verifies every field into deeply immutable storage (ordered
+sequences to fresh tuples, mappings to fresh read-only mappings, unknown
+families refused) and seals it; attribute assignment and deletion on the
+capability always refuse, so the storage slot cannot be rebound through
+ordinary access. Reads return stored immutable references -- which cannot
+expose write-through aliases -- while mutable JSON-facing presentation
+comes only from fresh non-authoritative wire copies
+(``external_semantics.to_wire_dict``). The live transform registry is
+exposed read-only and its import-time spec identity is re-verified at
+issuance and admission, so post-import in-memory replacement refuses
+fail-closed. No digest confers authority: authority remains governed
+execution plus the closure-born issuance capability.
+
 Corrective-IX law (defect class IX-A: mutable authority alias reintroduction)
 -----------------------------------------------------------------------------
 AUTHORITATIVE STATE AND NON-AUTHORITATIVE PROJECTION STATE MUST NEVER SHARE
@@ -204,8 +221,10 @@ from app.finance_reconciliation.coverage_authority import (
 )
 from app.finance_reconciliation.external_semantics import (
     EXTERNAL_SEMANTICS,
+    assert_canonical_value_frozen,
     check_external_semantics,
     external_semantics_ast_sha256,
+    freeze_canonical_value,
     project_external_fields,
 )
 from app.finance_reconciliation.proof_manifest import (
@@ -360,11 +379,37 @@ def _make_canonical_external_truth() -> tuple[type, object]:
                 raise CanonicalSinkError("canonical_egress_capability_refused")
             # Validate exactly what is frozen: the validated representation
             # IS the returned representation (Corrective-XI, class XI-C).
+            # Corrective-XII (class XII-A): freeze-then-verify. Every value
+            # is deep-frozen into immutable storage and the frozen form is
+            # verified before sealing, so no consumer-reachable reference --
+            # getitem, dict(), items(), values(), iteration, or the storage
+            # slot -- can later alter canonical meaning.
+            _verify_live_semantics_identity()
             validate_external_rendering(fields)
-            assert_canonical_external_semantics(fields)
-            object.__setattr__(self, "_fields", MappingProxyType(dict(fields)))
+            frozen = {
+                key: freeze_canonical_value(fields[key], field=str(key))
+                for key in fields
+            }
+            for key, value in frozen.items():
+                assert_canonical_value_frozen(value, field=str(key))
+            assert_canonical_external_semantics(frozen)
+            object.__setattr__(self, "_fields", MappingProxyType(frozen))
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            # Corrective-XII: the storage slot cannot be rebound through
+            # ordinary access (construction uses object.__setattr__
+            # directly). Attribute assignment always refuses.
+            raise AttributeError("canonical_external_truth_immutable")
+
+        def __delattr__(self, name: str) -> None:
+            # Corrective-XII: attribute deletion always refuses.
+            raise AttributeError("canonical_external_truth_immutable")
 
         def __getitem__(self, key: str) -> Any:
+            # Corrective-XII read-alias law: storage is deeply immutable, so
+            # returning the stored reference cannot expose a write-through
+            # alias. Mutable presentation copies come only from the
+            # non-authoritative wire boundary (to_wire_dict).
             return self._fields[key]
 
         def __iter__(self):
@@ -433,6 +478,7 @@ def admit_canonical_external(candidate: Any) -> CanonicalExternalTruth:
             "canonical_external_admission_refused:not_governed_egress_capability:"
             f"{type(candidate).__name__}"
         )
+    _verify_live_semantics_identity()
     assert_canonical_external_semantics(dict(candidate.items()))
     if candidate.issued_by not in GOVERNED_EGRESS_SURFACES:
         raise CanonicalSinkError(
@@ -507,6 +553,39 @@ def verify_external_semantics_contract_pin() -> str:
 
 
 _XI_CONTRACT_PIN_AST_SHA256 = verify_external_semantics_contract_pin()
+
+
+# Corrective-XII live-semantics identity: the exact spec objects bound at
+# import (under the frozen contract pin) are captured here. Issuance and
+# admission re-verify that the live registry still holds these objects, so
+# a post-import in-memory replacement of a transform or source binding
+# refuses fail-closed instead of redefining canonical meaning. This sensor
+# confers no authority by itself: authority remains governed execution plus
+# the closure-born issuance capability (a detached object can never satisfy
+# the exact-type admission gate however intact the registry is).
+_PINNED_EXTERNAL_SPECS: dict[str, Any] = {
+    key: EXTERNAL_SEMANTICS[key] for key in EXTERNAL_SEMANTICS
+}
+
+
+def _verify_live_semantics_identity() -> None:
+    """Refuse issuance/admission under drifted live semantic specs.
+
+    The frozen on-disk contract pin (import time) proves the reviewed bytes
+    loaded; this re-verification proves the live objects still in use are
+    those bytes' specs. Ordinary item replacement against the read-only
+    live registry already refuses at the mapping boundary; this closes the
+    residual primitive of mutating the registry's private store through
+    module internals.
+    """
+    live = EXTERNAL_SEMANTICS
+    if set(live) != set(_PINNED_EXTERNAL_SPECS):
+        raise CanonicalSinkError("canonical_live_semantics_identity_drift:census")
+    for key, pinned in _PINNED_EXTERNAL_SPECS.items():
+        if live[key] is not pinned:
+            raise CanonicalSinkError(
+                f"canonical_live_semantics_identity_drift:{key}"
+            )
 
 
 @dataclass(frozen=True)

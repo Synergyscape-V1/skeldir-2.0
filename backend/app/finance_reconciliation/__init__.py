@@ -52,9 +52,13 @@ from .external_semantics import (
     EXTERNAL_SEMANTICS,
     ExternalFieldSemantics,
     ExternalSemanticsError,
+    GOVERNED_CANONICAL_EXTERNAL_TYPES,
+    assert_canonical_value_frozen,
     check_external_semantics,
     external_semantics_ast_sha256,
+    freeze_canonical_value,
     project_external_fields,
+    to_wire_dict,
 )
 from .authoritative_fields import (
     AUTHORITATIVE_FIELD_REGISTRY,
