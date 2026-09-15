@@ -119,6 +119,11 @@ ALLOWED_DOCKER_PATHS = {
     Path("scripts/ci/validate_b26_p1_authority.py"),
     Path("scripts/ci/_b26_p1_controlled_defect.py"),
     Path(".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"),
+    # B2.6-P2 Gate 2 statically asserts the same already-authorized
+    # `backend/Dockerfile` COPY layer still ships the reconciliation contract
+    # tree (now including the scope-policy file). Same reason as the P1 entry:
+    # it checks the authorized substrate, it does not add one.
+    Path("scripts/ci/validate_b26_p2_scope_authority.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),

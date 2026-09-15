@@ -1,0 +1,38 @@
+phase: B2.6-P2
+manifest_version: b2.6-p2-proof-requirements-v1
+manifest_evolution_policy: additive_only
+contract_path: contracts/reconciliation/b2.6/scope-policy.v1.yaml
+required_cells:
+  - gate_id: B26-P2-G2-NORMALIZATION-AUTHORITY
+    producer: b26-p2-static-authority
+    scenario_id: scope-authority-pristine
+    falsifier_id: p2-second-alias-dict-through-live-wiring-removal
+  - gate_id: B26-P2-G10-NEGATIVE-CONTROLS
+    producer: b26-p2-static-authority
+    scenario_id: red-restore-green-ledger
+    falsifier_id: p2-12-control-battery
+  - gate_id: B26-P2-G9-PRODUCTION-ARTIFACT-EQUIVALENCE
+    producer: b26-p2-container-equivalence
+    scenario_id: candidate-production-image
+    falsifier_id: p2-stale-artifact-substitution
+accepted_status: PASS
+accepted_events:
+  - pull_request
+  - merge_group
+  - push
+required_identity_fields:
+  - gate_id
+  - phase
+  - contract_version
+  - contract_hash
+  - candidate_sha
+  - candidate_tree
+  - migration_head
+  - producer
+  - workflow
+  - event_type
+  - run_id
+  - artifact_hash
+  - scenario_id
+  - falsifier_id
+  - status
