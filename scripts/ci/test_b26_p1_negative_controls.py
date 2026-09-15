@@ -346,6 +346,110 @@ STATIC_CONTROLS = (
         CANONICAL_SINK_MODULE,
         "canonical_external_fields_mutable",
     ),
+    # Corrective-XII controls: deep canonical immutability (XII-A),
+    # live-registry freezing (XII-B), and the closed authoritative type
+    # universe. NC-13..NC-18 preserve XI/IX/B2.3/auth/successor substrates
+    # under the XII battery namespace.
+    (
+        "xii_nc01_platform_storage_mutable_list",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_platform_storage_not_immutable",
+    ),
+    (
+        "xii_nc02_shallow_freeze_mapping_child",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_recursive_freeze_dead",
+    ),
+    (
+        "xii_nc03_getitem_alias_freeze_passthrough",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_recursive_freeze_dead",
+    ),
+    (
+        "xii_nc04_dict_conversion_shares_child",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_read_alias_isolation_dead",
+    ),
+    (
+        "xii_nc05_future_list_field_without_policy",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_authoritative_type_universe_open",
+    ),
+    (
+        "xii_nc06_future_dict_field_without_policy",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_authoritative_type_universe_open",
+    ),
+    (
+        "xii_nc07_tuple_with_mutable_child",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_recursive_freeze_dead",
+    ),
+    (
+        "xii_nc08_immutability_assertion_disabled",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_immutability_assertion_dead",
+    ),
+    (
+        "xii_nc09_admission_reverification_removed",
+        CANONICAL_SINK_MODULE,
+        "canonical_admission_commitment_dead",
+    ),
+    (
+        "xii_nc10_post_admission_mutation",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_admission_to_consumption_drift",
+    ),
+    (
+        "xii_nc11_presentation_list_backing_store",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_xii_issuance_dead",
+    ),
+    (
+        "xii_nc12_unknown_type_family_silently_accepted",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_closed_universe_sensor_dead",
+    ),
+    (
+        "xii_nc13_xi_transform_pin_regression",
+        EXTERNAL_SEMANTICS_MODULE,
+        "canonical_external_semantics_not_pinned",
+    ),
+    (
+        "xii_nc14_xi_egress_registry_regression",
+        CANONICAL_SINK_MODULE,
+        "canonical_egress_registry_census_mismatch",
+    ),
+    (
+        "xii_nc15_ix_snapshot_alias_regression",
+        CANONICAL_SINK_MODULE,
+        "canonical_authoritative_snapshot_not_immutable",
+    ),
+    (
+        "xii_nc16_b23_denominator_regression",
+        VERIFICATION_COVERAGE_MODULE,
+        "coverage_implementation_identity_mismatch",
+    ),
+    (
+        "xii_nc17_token_lifecycle_regression",
+        CANONICAL_SINK_MODULE,
+        "canonical_revocation_law_not_composed",
+    ),
+    (
+        "xii_nc18_successor_authorization_regression",
+        CANONICAL_SINK_MODULE,
+        "successor_provenance_law_not_enforced:authorize",
+    ),
+    (
+        "xii_nc19_live_registry_unfrozen",
+        (EXTERNAL_SEMANTICS_MODULE, CONTRACT),
+        "canonical_live_semantics_not_frozen",
+    ),
+    (
+        "xii_nc20_slot_rebind_permitted",
+        CANONICAL_SINK_MODULE,
+        "canonical_deep_immutability_dead",
+    ),
 )
 
 

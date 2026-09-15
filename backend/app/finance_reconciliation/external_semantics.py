@@ -35,6 +35,28 @@ This module is deliberately pure: standard library only, no application
 imports, no I/O, no environment reads. Adjacent-domain state (LLM output,
 B2.4 estimates, B2.13 counterfactuals, caller input) has no syntactic
 entry point here.
+
+Corrective-XII law (defect class XII-A: post-issuance authoritative state
+mutation through shared mutable references)
+-------------------------------------------------------------------------
+CANONICAL STORAGE IS DEEPLY IMMUTABLE; WIRE FORMAT IS A FRESH COPY. The
+governed platform scope is stored as an immutable ``tuple[str, ...]`` --
+never as the JSON-facing ``list`` -- and every canonical value passes
+through :func:`freeze_canonical_value`, which converts ordered sequences
+to fresh tuples, mappings to fresh deeply-frozen read-only mappings, and
+refuses every type family without an explicit freeze policy (sets,
+bytearrays, custom objects, datetimes, Decimals, ``None``). The closed
+universe of authoritative ``external_type`` labels is
+:data:`GOVERNED_CANONICAL_EXTERNAL_TYPES`; a spec carrying any other label
+refuses fail-closed in :func:`check_external_semantics` instead of passing
+silently. :func:`to_wire_dict` projects a fresh JSON-ready mapping (tuples
+to fresh lists) at the non-authoritative serialization boundary: mutating
+wire data can never write back into canonical storage, and wire data is
+never admissible as canonical. The live contract registry itself is
+exposed as a read-only mapping over a private store so post-import item
+replacement through ordinary access refuses; issuance and admission
+additionally re-verify live spec identity (see
+``canonical_sink._verify_live_semantics_identity``).
 """
 
 from __future__ import annotations
@@ -46,6 +68,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
 
@@ -92,12 +115,16 @@ def _instant_iso8601(value: Any) -> str:
     return encoded
 
 
-def _platform_scope_list(value: Any) -> list[str]:
-    """Immutable snapshot tuple to external list, members and order preserved.
+def _platform_scope_tuple(value: Any) -> tuple[str, ...]:
+    """Immutable snapshot tuple to canonical immutable tuple, order preserved.
 
     The snapshot boundary already normalized and froze the governed scope;
-    this transform is exact materialization -- no subsetting, supersets,
-    deduplication, or reordering (governed order is semantic).
+    this transform is exact materialization into canonical storage -- no
+    subsetting, supersets, deduplication, or reordering (governed order is
+    semantic). The result is a fresh immutable tuple on every call: no
+    caller, reader, or serializer ever receives mutable canonical storage.
+    The JSON-facing list form is produced only at the non-authoritative
+    wire boundary by :func:`to_wire_dict`, never stored.
     """
     if type(value) is not tuple:
         raise ExternalSemanticsError(
@@ -109,7 +136,7 @@ def _platform_scope_list(value: Any) -> list[str]:
             raise ExternalSemanticsError(
                 "external_transform_refused:platform_scope_member_not_str"
             )
-    return members
+    return tuple(members)
 
 
 def _money_minor_identity(value: Any) -> int:
@@ -169,7 +196,13 @@ class ExternalFieldSemantics:
     omission_law: str
 
 
-EXTERNAL_SEMANTICS: Mapping[str, ExternalFieldSemantics] = {
+# The executable contract lives in a private mutable store at import time
+# only; the governed public surface is a read-only mapping over it
+# (Corrective-XII, class XII-B: post-import live-registry replacement
+# through ordinary item assignment refuses instead of redefining canonical
+# meaning). Issuance and admission additionally re-verify that the live
+# specs are still the import-time pinned spec objects.
+_EXTERNAL_SEMANTICS_STORE: dict[str, ExternalFieldSemantics] = {
     "authority": ExternalFieldSemantics(
         external_key="authority",
         source_attr="authority",
@@ -236,9 +269,9 @@ EXTERNAL_SEMANTICS: Mapping[str, ExternalFieldSemantics] = {
     "supported_platforms": ExternalFieldSemantics(
         external_key="supported_platforms",
         source_attr="supported_platforms",
-        external_type="list[str]",
+        external_type="tuple[str]",
         transform_id="frozen_tuple_exact_materialization",
-        transform=_platform_scope_list,
+        transform=_platform_scope_tuple,
         normalization="exact frozen scope membership and order; no subset/superset/duplicate/reorder",
         omission_law="never_omitted",
     ),
@@ -298,7 +331,133 @@ EXTERNAL_SEMANTICS: Mapping[str, ExternalFieldSemantics] = {
     ),
 }
 
+EXTERNAL_SEMANTICS: Mapping[str, ExternalFieldSemantics] = MappingProxyType(
+    _EXTERNAL_SEMANTICS_STORE
+)
+
 EXTERNAL_SEMANTIC_KEYS: frozenset[str] = frozenset(EXTERNAL_SEMANTICS)
+
+# Closed authoritative type-family universe (Corrective-XII §24 law). Every
+# spec's ``external_type`` must be a member; any other label refuses
+# fail-closed in :func:`check_external_semantics` and turns the CI
+# validator RED. A future governed field family is added here explicitly,
+# together with its freeze policy in :func:`freeze_canonical_value` -- never
+# by silent acceptance.
+GOVERNED_CANONICAL_EXTERNAL_TYPES: frozenset[str] = frozenset(
+    {
+        "str",
+        "int",
+        "bool",
+        "tuple[str]",
+        "mapping",
+    }
+)
+
+
+def freeze_canonical_value(value: Any, *, field: str) -> Any:
+    """Recursively freeze one canonical value into deeply immutable storage.
+
+    Ordered sequences (tuple or list) become fresh tuples with recursively
+    frozen members; mappings become fresh read-only mappings with
+    recursively frozen values; exact ``str``/``int``/``bool`` pass through
+    (immutable already; ``bool`` is exact-checked so it can never enter an
+    integer-minor-unit field). Every other family -- sets, bytearrays,
+    datetimes, Decimals, ``None``, custom containers -- refuses fail-closed:
+    a future field needing a new shape must declare its freeze policy here
+    first. The result shares no mutable storage with the input.
+    """
+    if type(value) is str or type(value) is bool or type(value) is int:
+        return value
+    if isinstance(value, (tuple, list)):
+        return tuple(freeze_canonical_value(member, field=field) for member in value)
+    if isinstance(value, MappingProxyType):
+        frozen = {
+            key: freeze_canonical_value(member, field=field)
+            for key, member in value.items()
+        }
+        for key in frozen:
+            if type(key) is not str:
+                raise ExternalSemanticsError(
+                    f"external_canonical_key_not_str:{field}"
+                )
+        return MappingProxyType(frozen)
+    if isinstance(value, dict):
+        frozen = {
+            key: freeze_canonical_value(member, field=field)
+            for key, member in value.items()
+        }
+        for key in frozen:
+            if type(key) is not str:
+                raise ExternalSemanticsError(
+                    f"external_canonical_key_not_str:{field}"
+                )
+        return MappingProxyType(frozen)
+    raise ExternalSemanticsError(
+        f"external_canonical_type_not_governed:{field}:{type(value).__name__}"
+    )
+
+
+def assert_canonical_value_frozen(value: Any, *, field: str) -> None:
+    """Verify one stored canonical value is deeply immutable.
+
+    Exact ``str``/``bool``/``int``, tuples of frozen values, and read-only
+    mappings with ``str`` keys and frozen values pass. Raw ``list``/``dict``
+    -- however deeply frozen their contents -- refuse: mutable containers
+    must never be canonical backing storage, even transiently. This is the
+    verification half of the freeze-then-verify issuance law; the capability
+    constructor runs it over every frozen field before storage is sealed.
+    """
+    if type(value) is str or type(value) is bool or type(value) is int:
+        return
+    if type(value) is tuple:
+        for member in value:
+            assert_canonical_value_frozen(member, field=field)
+        return
+    if type(value) is MappingProxyType:
+        for key, member in value.items():
+            if type(key) is not str:
+                raise ExternalSemanticsError(
+                    f"external_canonical_key_not_str:{field}"
+                )
+            assert_canonical_value_frozen(member, field=field)
+        return
+    raise ExternalSemanticsError(
+        f"external_canonical_storage_mutable:{field}:{type(value).__name__}"
+    )
+
+
+def _to_wire_value(value: Any) -> Any:
+    """Project one frozen canonical value to fresh JSON-ready presentation."""
+    if type(value) is str or type(value) is bool or type(value) is int:
+        return value
+    if type(value) is tuple:
+        return [_to_wire_value(member) for member in value]
+    if type(value) is MappingProxyType:
+        return {key: _to_wire_value(member) for key, member in value.items()}
+    raise ExternalSemanticsError(
+        f"external_wire_unrepresentable:{type(value).__name__}"
+    )
+
+
+def to_wire_dict(fields: Mapping[str, Any]) -> dict[str, Any]:
+    """Project frozen canonical state to a fresh mutable wire mapping.
+
+    The result is JSON-ready presentation data (immutable tuples become
+    fresh lists, read-only mappings become fresh dicts) in contract key
+    order. It is explicitly NON-AUTHORITATIVE: mutating it cannot write
+    back into canonical storage (no object is shared), and it is refused
+    by canonical admission. This is the only lawful path from canonical
+    authority to mutable serialization -- including the future B2.5
+    TrustEnvelope adapter, which must build its payload from this copy,
+    never from capability storage.
+    """
+    if not isinstance(fields, Mapping):
+        raise ExternalSemanticsError(
+            f"external_wire_source_not_mapping:{type(fields).__name__}"
+        )
+    if set(fields) != set(EXTERNAL_SEMANTICS):
+        raise ExternalSemanticsError("external_wire_key_census_drift")
+    return {key: _to_wire_value(fields[key]) for key in EXTERNAL_SEMANTICS}
 
 
 def project_external_fields(output: Any) -> dict[str, Any]:
@@ -353,13 +512,27 @@ def check_external_semantics(fields: Mapping[str, Any]) -> None:
                 raise ExternalSemanticsError(
                     f"external_semantics_type_violation:{spec.external_key}"
                 )
-        elif spec.external_type == "list[str]":
-            if type(value) is not list or any(
+        elif spec.external_type == "tuple[str]":
+            if type(value) is not tuple or any(
                 type(member) is not str or not member for member in value
             ):
                 raise ExternalSemanticsError(
                     f"external_semantics_type_violation:{spec.external_key}"
                 )
+        elif spec.external_type == "mapping":
+            if type(value) is not MappingProxyType:
+                raise ExternalSemanticsError(
+                    f"external_semantics_type_violation:{spec.external_key}"
+                )
+            assert_canonical_value_frozen(value, field=spec.external_key)
+        else:
+            # Closed universe (Corrective-XII §24): an authoritative field
+            # type without an explicit canonical freeze policy refuses
+            # closed -- it must never silently pass.
+            raise ExternalSemanticsError(
+                f"external_semantics_type_family_not_governed:"
+                f"{spec.external_key}:{spec.external_type}"
+            )
     if fields["authority"] != GOVERNED_AUTHORITY_LABEL:
         raise ExternalSemanticsError("external_semantics_label_not_governed:authority")
     if fields["matched_minor"] < 0 or fields["connected_minor"] < 0:
@@ -399,7 +572,11 @@ __all__ = [
     "ExternalFieldSemantics",
     "ExternalSemanticsError",
     "GOVERNED_AUTHORITY_LABEL",
+    "GOVERNED_CANONICAL_EXTERNAL_TYPES",
+    "assert_canonical_value_frozen",
     "check_external_semantics",
     "external_semantics_ast_sha256",
+    "freeze_canonical_value",
     "project_external_fields",
+    "to_wire_dict",
 ]

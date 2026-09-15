@@ -2424,7 +2424,7 @@ _XI_LAWFUL_FIELDS = {
     "currency_code": "USD",
     "window_start": "2026-01-01T00:00:00+00:00",
     "window_end": "2026-02-01T12:30:05+02:00",
-    "supported_platforms": ["paypal", "stripe"],
+    "supported_platforms": ("paypal", "stripe"),
     "matched_minor": 76000,
     "connected_minor": 80000,
     "coverage_percent": "95.00",
@@ -2452,9 +2452,12 @@ _XI_FIELD_CORRUPTIONS = (
     ("coverage_percent", "9.500"),
     ("coverage_percent", "95.0"),
     ("coverage_percent", 95.00),
-    ("supported_platforms", ("paypal", "stripe")),
+    ("supported_platforms", ["paypal", "stripe"]),
     ("supported_platforms", ["paypal", 1]),
+    ("supported_platforms", ("paypal", 1)),
+    ("supported_platforms", ("",)),
     ("supported_platforms", "paypal"),
+    ("supported_platforms", {"paypal"}),
     ("tenant_id_hash", "ab" * 31),
     ("tenant_id_hash", "ab" * 32),
     ("tenant_id_hash", ("sha256:" + "ab" * 32).upper()),
@@ -2917,6 +2920,406 @@ def _validate_corrective_xi_authority(
     )
 
 
+# ---------------------------------------------------------------------------
+# Corrective XII -- deep canonical immutability by construction. Independent
+# pins (hard-coded HERE in the proof plane): the closed authoritative type
+# universe, canonical storage representation per family, recursive freeze
+# behavior, recursive assertion behavior, wire separation, capability deep
+# immutability under class-diverse mutation, read-alias isolation, live
+# registry freezing, admission-to-consumption conservation, and the
+# closed-universe structural sensor.
+# ---------------------------------------------------------------------------
+
+_XII_EXPECTED_EXTERNAL_TYPES = frozenset(
+    {
+        "str",
+        "int",
+        "bool",
+        "tuple[str]",
+        "mapping",
+    }
+)
+
+_XII_LAWFUL_WIRE_FIELDS = dict(_XI_LAWFUL_FIELDS)
+_XII_LAWFUL_WIRE_FIELDS["supported_platforms"] = ["paypal", "stripe"]
+
+
+def _validate_corrective_xii_authority(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Corrective-XII authority: the complete object graph is state-conserving.
+
+    Theorem XII-A (DEEP CANONICAL IMMUTABILITY): no authoritative semantic
+    reachable from an issued capability may be mutated through ordinary
+    consumer-accessible references -- by construction, not by convention.
+    Theorem XII-B (CLOSED AUTHORITATIVE TYPE UNIVERSE): every authoritative
+    external type family has an explicit immutable storage policy, and
+    unknown families refuse closed.
+    """
+    from types import MappingProxyType  # noqa: PLC0415
+
+    sys.path.insert(0, str(BACKEND))
+    try:
+        from app.finance_reconciliation.canonical_sink import (  # noqa: PLC0415
+            CanonicalExternalTruth,
+            CanonicalSinkError,
+            _EGRESS_ISSUANCE,
+            _verify_live_semantics_identity,
+            admit_canonical_external,
+        )
+        from app.finance_reconciliation.external_semantics import (  # noqa: PLC0415
+            EXTERNAL_SEMANTICS,
+            GOVERNED_CANONICAL_EXTERNAL_TYPES,
+            assert_canonical_value_frozen,
+            freeze_canonical_value,
+            to_wire_dict,
+        )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"corrective_xii_authority_unresolvable:{exc}")
+        return
+
+    # XII-1: the closed authoritative type universe is exactly the governed
+    # set -- a new label without a freeze policy is a universe violation.
+    if set(GOVERNED_CANONICAL_EXTERNAL_TYPES) != set(_XII_EXPECTED_EXTERNAL_TYPES):
+        violations.append("canonical_authoritative_type_universe_open:universe_set")
+    for key, spec in EXTERNAL_SEMANTICS.items():
+        if spec.external_type not in _XII_EXPECTED_EXTERNAL_TYPES:
+            violations.append(
+                f"canonical_authoritative_type_universe_open:{key}:{spec.external_type}"
+            )
+
+    # XII-2: the platform transform materializes immutable canonical
+    # storage, never a mutable list.
+    try:
+        stored = EXTERNAL_SEMANTICS["supported_platforms"].transform(
+            ("paypal", "stripe")
+        )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_platform_storage_dead:{exc}")
+    else:
+        if type(stored) is not tuple or stored != ("paypal", "stripe"):
+            violations.append("canonical_platform_storage_not_immutable")
+
+    # XII-3: recursive freeze behavior -- sequences to fresh tuples,
+    # mappings to fresh read-only mappings, unknown families refused.
+    try:
+        frozen_list = freeze_canonical_value(["a", "b"], field="xii_probe")
+        frozen_dict = freeze_canonical_value({"k": ["v"]}, field="xii_probe")
+        if (
+            type(frozen_list) is not tuple
+            or frozen_list != ("a", "b")
+            or type(frozen_dict) is not MappingProxyType
+            or type(frozen_dict["k"]) is not tuple
+        ):
+            violations.append("canonical_recursive_freeze_dead:shape")
+        for bad in (
+            bytearray(b"x"),
+            {"a", "b"},
+            frozenset({"a"}),
+            None,
+            3.5,
+            object(),
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ):
+            try:
+                freeze_canonical_value(bad, field="xii_probe")
+            except ValueError:
+                pass
+            else:
+                violations.append(
+                    f"canonical_recursive_freeze_dead:accepts:{type(bad).__name__}"
+                )
+                break
+        nested_tuple = freeze_canonical_value(("a", ["b"]), field="xii_probe")
+        if type(nested_tuple) is not tuple or type(nested_tuple[1]) is not tuple:
+            violations.append("canonical_recursive_freeze_dead:nested_tuple_child")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_recursive_freeze_dead:{exc}")
+
+    # XII-4: recursive assertion behavior -- frozen forms pass, raw mutable
+    # containers refuse even with frozen contents.
+    try:
+        assert_canonical_value_frozen(("a", "b"), field="xii_probe")
+        assert_canonical_value_frozen(
+            MappingProxyType({"k": ("v",)}), field="xii_probe"
+        )
+        for bad in (["a"], {"k": "v"}, ("a", ["b"]), {"k": ["v"]}):
+            try:
+                assert_canonical_value_frozen(bad, field="xii_probe")
+            except ValueError:
+                pass
+            else:
+                violations.append("canonical_immutability_assertion_dead:accepts_mutable")
+                break
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_immutability_assertion_dead:{exc}")
+
+    # XII-5: the live semantic registry is read-only and identity-pinned.
+    try:
+        if type(EXTERNAL_SEMANTICS) is not MappingProxyType:
+            violations.append("canonical_live_semantics_not_frozen:type")
+        else:
+            try:
+                EXTERNAL_SEMANTICS["xii_probe"] = 1  # type: ignore[index]
+            except TypeError:
+                pass
+            else:
+                violations.append("canonical_live_semantics_not_frozen:mutable")
+        _verify_live_semantics_identity()
+    except CanonicalSinkError as exc:
+        violations.append(f"canonical_live_semantics_identity_drift:{exc}")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_live_semantics_check_dead:{exc}")
+
+    # XII-6: closed-universe structural sensor -- the executable shape law
+    # must refuse unknown type families closed (defense in depth beside the
+    # static universe pin above).
+    try:
+        semantics_source = (
+            REPO_ROOT / "backend/app/finance_reconciliation/external_semantics.py"
+        ).read_text(encoding="utf-8")
+    except OSError as exc:
+        violations.append(f"corrective_xii_semantics_source_unreadable:{exc}")
+    else:
+        if "external_semantics_type_family_not_governed" not in semantics_source:
+            violations.append("canonical_closed_universe_sensor_dead")
+
+    # XII-7 through XII-10: issued-capability behavior -- deep
+    # immutability, read-alias isolation, wire separation, and
+    # admission-to-consumption conservation.
+    try:
+        capability = CanonicalExternalTruth(
+            dict(_XI_LAWFUL_FIELDS), _EGRESS_ISSUANCE
+        )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_xii_issuance_dead:{exc}")
+        return
+    if type(capability["supported_platforms"]) is not tuple:
+        violations.append("canonical_deep_immutability_dead:storage_not_tuple")
+    if admit_canonical_external(capability) is not capability:
+        violations.append("canonical_admission_to_consumption_drift:pristine")
+
+    # XII-7: class-diverse mutation attempts must all refuse.
+    deep_mutations = (
+        ("append", lambda: capability["supported_platforms"].append("shopify")),
+        ("extend", lambda: capability["supported_platforms"].extend(["x"])),
+        (
+            "index_assign",
+            lambda: capability["supported_platforms"].__setitem__(0, "other"),
+        ),
+        ("clear", lambda: capability["supported_platforms"].clear()),
+        ("pop", lambda: capability["supported_platforms"].pop()),
+        ("remove", lambda: capability["supported_platforms"].remove("paypal")),
+        ("reverse", lambda: capability["supported_platforms"].reverse()),
+        ("sort", lambda: capability["supported_platforms"].sort()),
+        (
+            "slice_assign",
+            lambda: capability["supported_platforms"].__setitem__(
+                slice(None), ["shopify"]
+            ),
+        ),
+        ("insert", lambda: capability["supported_platforms"].insert(0, "x")),
+    )
+    for name, attempt in deep_mutations:
+        try:
+            attempt()
+        except (AttributeError, TypeError):
+            pass
+        except Exception as exc:  # noqa: BLE001
+            violations.append(f"canonical_deep_immutability_dead:{name}:{exc}")
+        else:
+            violations.append(f"canonical_deep_immutability_dead:{name}_mutated")
+    try:
+        capability["matched_minor"] = 0  # type: ignore[index]
+    except (TypeError, AttributeError):
+        pass
+    else:
+        violations.append("canonical_deep_immutability_dead:top_level_setitem")
+    try:
+        capability._fields["matched_minor"] = 0  # noqa: SLF001
+    except TypeError:
+        pass
+    else:
+        violations.append("canonical_deep_immutability_dead:storage_setitem")
+    try:
+        capability._fields = MappingProxyType({})  # noqa: SLF001
+    except AttributeError:
+        pass
+    else:
+        violations.append("canonical_deep_immutability_dead:slot_rebind")
+    try:
+        del capability._fields  # noqa: SLF001
+    except AttributeError:
+        pass
+    else:
+        violations.append("canonical_deep_immutability_dead:slot_delete")
+    # The constructor must not alias caller-owned mutable inputs: a list
+    # supplied by the caller is frozen on entry, never stored by reference.
+    try:
+        caller_owned: list[str] = ["paypal", "stripe"]
+        caller_fields = dict(_XI_LAWFUL_FIELDS)
+        caller_fields["supported_platforms"] = caller_owned  # type: ignore[dict-item]
+        try:
+            caller_cap = CanonicalExternalTruth(caller_fields, _EGRESS_ISSUANCE)
+        except ValueError:
+            caller_cap = None
+        if caller_cap is not None:
+            if caller_cap["supported_platforms"] is caller_owned:
+                violations.append("canonical_deep_immutability_dead:caller_alias")
+            caller_owned.append("shopify")
+            if caller_cap["supported_platforms"] != ("paypal", "stripe"):
+                violations.append(
+                    "canonical_deep_immutability_dead:caller_write_back"
+                )
+            if admit_canonical_external(caller_cap) is not caller_cap:
+                violations.append("canonical_deep_immutability_dead:caller_admit")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_deep_immutability_dead:caller_probe:{exc}")
+
+    # XII-8: read-alias isolation -- consumer conversions share no mutable
+    # storage with canonical state.
+    try:
+        consumed = dict(capability)
+        if type(consumed["supported_platforms"]) is not tuple:
+            violations.append("canonical_read_alias_isolation_dead:conversion_type")
+        try:
+            consumed["supported_platforms"].append("shopify")
+        except (AttributeError, TypeError):
+            pass
+        else:
+            violations.append("canonical_read_alias_isolation_dead:conversion_mutable")
+        if capability["supported_platforms"] != ("paypal", "stripe"):
+            violations.append("canonical_read_alias_isolation_dead:capability_drifted")
+        items_copy = dict(capability.items())
+        try:
+            items_copy["supported_platforms"].append("shopify")
+        except (AttributeError, TypeError):
+            pass
+        else:
+            violations.append("canonical_read_alias_isolation_dead:items_mutable")
+        if capability["supported_platforms"] != ("paypal", "stripe"):
+            violations.append("canonical_read_alias_isolation_dead:items_drifted")
+        # A capability issued from a caller-owned mutable list must still
+        # isolate every consumer conversion from canonical state.
+        alias_fields = dict(_XI_LAWFUL_FIELDS)
+        alias_fields["supported_platforms"] = ["paypal", "stripe"]  # type: ignore[dict-item]
+        try:
+            alias_cap = CanonicalExternalTruth(alias_fields, _EGRESS_ISSUANCE)
+        except ValueError:
+            alias_cap = None
+        if alias_cap is not None:
+            consumed_alias = dict(alias_cap)
+            try:
+                consumed_alias["supported_platforms"].append("shopify")
+            except (AttributeError, TypeError):
+                pass
+            else:
+                violations.append(
+                    "canonical_read_alias_isolation_dead:conversion_mutable"
+                )
+            if alias_cap["supported_platforms"] != ("paypal", "stripe"):
+                violations.append("canonical_read_alias_isolation_dead:write_back")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_read_alias_isolation_dead:{exc}")
+
+    # XII-9: wire separation -- mutable presentation is fresh, isolated,
+    # JSON-ready, and never admissible.
+    try:
+        wire = to_wire_dict(capability)
+        if wire != _XII_LAWFUL_WIRE_FIELDS:
+            violations.append("canonical_wire_separation_dead:projection")
+        if type(wire["supported_platforms"]) is not list:
+            violations.append("canonical_wire_separation_dead:wire_type")
+        wire["supported_platforms"].append("shopify")
+        if capability["supported_platforms"] != ("paypal", "stripe"):
+            violations.append("canonical_wire_separation_dead:write_back")
+        try:
+            admit_canonical_external(wire)
+        except ValueError:
+            pass
+        else:
+            violations.append("canonical_wire_separation_dead:wire_admitted")
+        if to_wire_dict(capability)["supported_platforms"] is wire[
+            "supported_platforms"
+        ]:
+            violations.append("canonical_wire_separation_dead:shared_copy")
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_wire_separation_dead:{exc}")
+
+    # XII-10: admission-to-consumption conservation -- forged storage with a
+    # shape-violating value refuses (the re-verification is live), while
+    # lawful capabilities remain admitted across orderings.
+    try:
+        evil_fields = dict(_XI_LAWFUL_FIELDS)
+        evil_fields["supported_platforms"] = "stripe"
+        forged = object.__new__(CanonicalExternalTruth)
+        object.__setattr__(forged, "_fields", MappingProxyType(evil_fields))
+        try:
+            admit_canonical_external(forged)
+        except ValueError:
+            pass
+        else:
+            violations.append("canonical_admission_commitment_dead:forged_admitted")
+        if admit_canonical_external(capability) is not capability:
+            violations.append("canonical_admission_to_consumption_drift:readmit")
+        # Temporal conservation from a caller-owned mutable input: admit,
+        # attempt post-admission mutation (must refuse), consume the
+        # admitted state, re-admit.
+        temporal_fields = dict(_XI_LAWFUL_FIELDS)
+        temporal_fields["supported_platforms"] = ["paypal", "stripe"]  # type: ignore[dict-item]
+        try:
+            temporal_cap = CanonicalExternalTruth(
+                temporal_fields, _EGRESS_ISSUANCE
+            )
+        except ValueError:
+            temporal_cap = None
+        if temporal_cap is not None:
+            if admit_canonical_external(temporal_cap) is not temporal_cap:
+                violations.append(
+                    "canonical_admission_to_consumption_drift:admit"
+                )
+            try:
+                temporal_cap["supported_platforms"].append("shopify")
+            except (AttributeError, TypeError):
+                if dict(temporal_cap)["supported_platforms"] != (
+                    "paypal",
+                    "stripe",
+                ):
+                    violations.append(
+                        "canonical_admission_to_consumption_drift:consume"
+                    )
+                if admit_canonical_external(temporal_cap) is not temporal_cap:
+                    violations.append(
+                        "canonical_admission_to_consumption_drift:readmit"
+                    )
+            else:
+                violations.append(
+                    "canonical_admission_to_consumption_drift:post_admit_mutation"
+                )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"canonical_admission_check_dead:{exc}")
+
+    details["corrective_xii_expected_external_types"] = sorted(
+        _XII_EXPECTED_EXTERNAL_TYPES
+    )
+    details["corrective_xii_sensors"] = sorted(
+        [
+            "canonical_authoritative_type_universe_open",
+            "canonical_platform_storage_not_immutable",
+            "canonical_recursive_freeze_dead",
+            "canonical_immutability_assertion_dead",
+            "canonical_live_semantics_not_frozen",
+            "canonical_live_semantics_identity_drift",
+            "canonical_closed_universe_sensor_dead",
+            "canonical_deep_immutability_dead",
+            "canonical_read_alias_isolation_dead",
+            "canonical_wire_separation_dead",
+            "canonical_admission_commitment_dead",
+            "canonical_admission_to_consumption_drift",
+        ]
+    )
+
+
 def validate() -> tuple[list[str], dict[str, Any]]:
     violations: list[str] = []
     details: dict[str, Any] = {}
@@ -2928,6 +3331,7 @@ def validate() -> tuple[list[str], dict[str, Any]]:
     _validate_corrective_x_authority(violations, details)
     _validate_corrective_x_detached_sensors(violations, details)
     _validate_corrective_xi_authority(violations, details)
+    _validate_corrective_xii_authority(violations, details)
     enforce_machinery = not _successor_authorizes_machinery()
     _validate_b26_namespace(
         violations, details, enforce_product_machinery=enforce_machinery

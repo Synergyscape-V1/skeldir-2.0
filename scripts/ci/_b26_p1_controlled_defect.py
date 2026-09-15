@@ -461,11 +461,16 @@ def x_external_extra_literal_key() -> None:
 
 
 def x_external_extra_dynamic_key() -> None:
-    """X-NC-2: extra field via dynamic contract mutation after definition."""
+    """X-NC-2: extra field via dynamic contract mutation after definition.
+
+    Corrective-XII adaptation: the public registry is read-only, so the
+    dynamic mutation targets the private import-time store -- the same
+    surviving primitive (post-definition insertion outside the literal).
+    """
     _replace_once(
         EXTERNAL_SEMANTICS_MODULE,
         "EXTERNAL_SEMANTIC_KEYS: frozenset[str] = frozenset(EXTERNAL_SEMANTICS)\n",
-        'EXTERNAL_SEMANTICS["settled_revenue_minor"] = ExternalFieldSemantics(  # NC-B26-P1-X-NC2\n'
+        '_EXTERNAL_SEMANTICS_STORE["settled_revenue_minor"] = ExternalFieldSemantics(  # NC-B26-P1-X-NC2\n'
         '    external_key="settled_revenue_minor",\n'
         '    source_attr="connected_minor",\n'
         '    external_type="int",\n'
@@ -735,8 +740,8 @@ def xi_nc04_platform_subset() -> None:
     """XI-NC-04: platform membership corrupted (subset)."""
     _replace_once(
         EXTERNAL_SEMANTICS_MODULE,
-        '    return members\n',
-        '    return members[:1]  # XI-NC-04\n',
+        '    return tuple(members)\n',
+        '    return tuple(members)[:1]  # XI-NC-04\n',
         defect="xi_nc04_platform_subset",
     )
 
@@ -1030,9 +1035,295 @@ def xi_immutable_fields_removed() -> None:
     """Extra XI control: capability fields stored mutable (proxy removed)."""
     _replace_once(
         CANONICAL_SINK_MODULE,
-        '            object.__setattr__(self, "_fields", MappingProxyType(dict(fields)))\n',
-        '            object.__setattr__(self, "_fields", dict(fields))  # XI-EXTRA\n',
+        '            object.__setattr__(self, "_fields", MappingProxyType(frozen))\n',
+        '            object.__setattr__(self, "_fields", dict(frozen))  # XI-EXTRA\n',
         defect="xi_immutable_fields_removed",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Corrective-XII controlled defects (class XII-A post-issuance state
+# mutation, class XII-B live-registry replacement, closed-universe law).
+# Each applier removes exactly the load-bearing protection its sensor
+# governs; shared roots across facets (e.g. NC-04/NC-10) are documented.
+#
+# Pin-neutralization note: every edit to external_semantics.py changes its
+# AST identity, which the Corrective-XI import pin would catch before any
+# XII sensor runs. To prove the XII sensors are independently load-bearing
+# (rather than re-proving the XI pin), each module-editing XII applier
+# re-pins the YAML to the edited bytes -- the exact M6 co-drift attacker
+# model -- so the validator proceeds past the pin to the governed XII
+# sensor. The battery restores both files byte-identical afterward.
+# ---------------------------------------------------------------------------
+
+
+def _repin_external_semantics_pin(*, defect: str) -> None:
+    """Re-pin the YAML AST identity to the current (defective) module bytes."""
+    import ast as _ast
+    import hashlib as _hashlib
+    import re as _re
+
+    source = EXTERNAL_SEMANTICS_MODULE.read_text(encoding="utf-8")
+    digest = _hashlib.sha256(
+        _ast.dump(_ast.parse(source), include_attributes=False).encode("utf-8")
+    ).hexdigest()
+    text = CONTRACT.read_text(encoding="utf-8")
+    new_text, count = _re.subn(
+        r"(\n  ast_sha256: )[0-9a-f]{64}", r"\g<1>" + digest, text, count=1
+    )
+    if count != 1:
+        raise SystemExit(f"{defect}:repin_anchor_count=0")
+    CONTRACT.write_text(new_text, encoding="utf-8")
+
+
+def xii_nc01_platform_storage_mutable_list() -> None:
+    """XII-NC-01: platform canonical storage reverted to a mutable list."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    return tuple(members)\n',
+        '    return list(members)  # XII-NC-01\n',
+        defect="xii_nc01_platform_storage_mutable_list",
+    )
+    _repin_external_semantics_pin(defect="xii_nc01_platform_storage_mutable_list")
+
+
+def xii_nc02_shallow_freeze_mapping_child() -> None:
+    """XII-NC-02: mapping freeze stores children without recursive freeze."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    if isinstance(value, dict):\n'
+        '        frozen = {\n'
+        '            key: freeze_canonical_value(member, field=field)\n'
+        '            for key, member in value.items()\n'
+        '        }\n',
+        '    if isinstance(value, dict):\n'
+        '        frozen = dict(value)  # XII-NC-02\n',
+        defect="xii_nc02_shallow_freeze_mapping_child",
+    )
+    _repin_external_semantics_pin(defect="xii_nc02_shallow_freeze_mapping_child")
+
+
+def xii_nc03_getitem_alias_freeze_passthrough() -> None:
+    """XII-NC-03: sequence freeze passes storage through unfrozen (alias)."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return tuple(freeze_canonical_value(member, field=field) for member in value)\n',
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return value  # XII-NC-03\n',
+        defect="xii_nc03_getitem_alias_freeze_passthrough",
+    )
+    _repin_external_semantics_pin(
+        defect="xii_nc03_getitem_alias_freeze_passthrough"
+    )
+
+
+def _xii_neuter_immutability_assertion(*, defect: str, tag: str) -> None:
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    raise ExternalSemanticsError(\n'
+        '        f"external_canonical_storage_mutable:{field}:{type(value).__name__}"\n'
+        '    )\n',
+        f'    return  # {tag}\n',
+        defect=defect,
+    )
+
+
+def _xii_neuter_tuple_storage_check(*, defect: str, tag: str) -> None:
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '        elif spec.external_type == "tuple[str]":\n'
+        '            if type(value) is not tuple or any(\n'
+        '                type(member) is not str or not member for member in value\n'
+        '            ):\n'
+        '                raise ExternalSemanticsError(\n'
+        '                    f"external_semantics_type_violation:{spec.external_key}"\n'
+        '                )\n',
+        '        elif spec.external_type == "tuple[str]":\n'
+        f'            pass  # {tag}\n',
+        defect=defect,
+    )
+
+
+def xii_nc04_dict_conversion_shares_child() -> None:
+    """XII-NC-04: consumer conversion shares mutable child storage.
+
+    Mechanism shared with XII-NC-10 (same root: unfrozen storage): the
+    transform is reverted to a mutable list, sequence freeze passes storage
+    through, the recursive assertion is neutered, and the tuple storage
+    check is neutered, reproducing the entering defect in which
+    dict(capability) aliases mutable canonical state. The governed sensor
+    here is read-alias isolation. The layering is itself load-bearing:
+    removing any strict subset still fails closed at construction.
+    """
+    xii_nc01_platform_storage_mutable_list()
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return tuple(freeze_canonical_value(member, field=field) for member in value)\n',
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return value  # XII-NC-04\n',
+        defect="xii_nc04_dict_conversion_shares_child",
+    )
+    _xii_neuter_immutability_assertion(
+        defect="xii_nc04_dict_conversion_shares_child", tag="XII-NC-04"
+    )
+    _xii_neuter_tuple_storage_check(
+        defect="xii_nc04_dict_conversion_shares_child", tag="XII-NC-04"
+    )
+    _repin_external_semantics_pin(defect="xii_nc04_dict_conversion_shares_child")
+
+
+def xii_nc05_future_list_field_without_policy() -> None:
+    """XII-NC-05: future authoritative list field without a freeze policy."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '        external_type="tuple[str]",\n',
+        '        external_type="list[str]",  # XII-NC-05\n',
+        defect="xii_nc05_future_list_field_without_policy",
+    )
+    _repin_external_semantics_pin(
+        defect="xii_nc05_future_list_field_without_policy"
+    )
+
+
+def xii_nc06_future_dict_field_without_policy() -> None:
+    """XII-NC-06: future authoritative dict field without a freeze policy."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    "matched_minor": ExternalFieldSemantics(\n'
+        '        external_key="matched_minor",\n'
+        '        source_attr="matched_minor",\n'
+        '        external_type="int",\n',
+        '    "matched_minor": ExternalFieldSemantics(\n'
+        '        external_key="matched_minor",\n'
+        '        source_attr="matched_minor",\n'
+        '        external_type="dict",  # XII-NC-06\n',
+        defect="xii_nc06_future_dict_field_without_policy",
+    )
+    _repin_external_semantics_pin(
+        defect="xii_nc06_future_dict_field_without_policy"
+    )
+
+
+def xii_nc07_tuple_with_mutable_child() -> None:
+    """XII-NC-07: tuple freeze skips recursion over members."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return tuple(freeze_canonical_value(member, field=field) for member in value)\n',
+        '    if isinstance(value, tuple):\n'
+        '        return value  # XII-NC-07\n'
+        '    if isinstance(value, list):\n'
+        '        return tuple(freeze_canonical_value(member, field=field) for member in value)\n',
+        defect="xii_nc07_tuple_with_mutable_child",
+    )
+    _repin_external_semantics_pin(defect="xii_nc07_tuple_with_mutable_child")
+
+
+def xii_nc08_immutability_assertion_disabled() -> None:
+    """XII-NC-08: recursive immutability assertion neutered."""
+    _xii_neuter_immutability_assertion(
+        defect="xii_nc08_immutability_assertion_disabled", tag="XII-NC-08"
+    )
+    _repin_external_semantics_pin(
+        defect="xii_nc08_immutability_assertion_disabled"
+    )
+
+
+def xii_nc09_admission_reverification_removed() -> None:
+    """XII-NC-09: admission no longer re-verifies canonical semantics."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '    _verify_live_semantics_identity()\n'
+        '    assert_canonical_external_semantics(dict(candidate.items()))\n',
+        '    _verify_live_semantics_identity()\n'
+        '    pass  # XII-NC-09\n',
+        defect="xii_nc09_admission_reverification_removed",
+    )
+
+
+def xii_nc10_post_admission_mutation() -> None:
+    """XII-NC-10: admitted capability mutates before consumer use.
+
+    Mechanism shared with XII-NC-04 (same root: unfrozen storage). The
+    governed sensor here is the temporal admission-to-consumption ordering.
+    """
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return tuple(freeze_canonical_value(member, field=field) for member in value)\n',
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return value  # XII-NC-10\n',
+        defect="xii_nc10_post_admission_mutation",
+    )
+    _xii_neuter_immutability_assertion(
+        defect="xii_nc10_post_admission_mutation", tag="XII-NC-10"
+    )
+    _xii_neuter_tuple_storage_check(
+        defect="xii_nc10_post_admission_mutation", tag="XII-NC-10"
+    )
+    _repin_external_semantics_pin(defect="xii_nc10_post_admission_mutation")
+
+
+def xii_nc11_presentation_list_backing_store() -> None:
+    """XII-NC-11: immutable sequence replaced by presentation-list storage."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return tuple(freeze_canonical_value(member, field=field) for member in value)\n',
+        '    if isinstance(value, (tuple, list)):\n'
+        '        return [freeze_canonical_value(member, field=field) for member in value]  # XII-NC-11\n',
+        defect="xii_nc11_presentation_list_backing_store",
+    )
+    _repin_external_semantics_pin(
+        defect="xii_nc11_presentation_list_backing_store"
+    )
+
+
+def xii_nc12_unknown_type_family_silently_accepted() -> None:
+    """XII-NC-12: unknown authoritative type family no longer refused."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        '            raise ExternalSemanticsError(\n'
+        '                f"external_semantics_type_family_not_governed:"\n'
+        '                f"{spec.external_key}:{spec.external_type}"\n'
+        '            )\n',
+        '            pass  # XII-NC-12\n',
+        defect="xii_nc12_unknown_type_family_silently_accepted",
+    )
+    _repin_external_semantics_pin(
+        defect="xii_nc12_unknown_type_family_silently_accepted"
+    )
+
+
+def xii_nc19_live_registry_unfrozen() -> None:
+    """XII-NC-19: live semantic registry exposed as an ordinary mutable dict."""
+    _replace_once(
+        EXTERNAL_SEMANTICS_MODULE,
+        'EXTERNAL_SEMANTICS: Mapping[str, ExternalFieldSemantics] = MappingProxyType(\n'
+        '    _EXTERNAL_SEMANTICS_STORE\n'
+        ')\n',
+        'EXTERNAL_SEMANTICS: Mapping[str, ExternalFieldSemantics] = dict(  # XII-NC-19\n'
+        '    _EXTERNAL_SEMANTICS_STORE\n'
+        ')\n',
+        defect="xii_nc19_live_registry_unfrozen",
+    )
+    _repin_external_semantics_pin(defect="xii_nc19_live_registry_unfrozen")
+
+
+def xii_nc20_slot_rebind_permitted() -> None:
+    """XII-NC-20: capability storage slot rebindable through plain assignment."""
+    _replace_once(
+        CANONICAL_SINK_MODULE,
+        '        def __setattr__(self, name: str, value: Any) -> None:\n'
+        '            # Corrective-XII: the storage slot cannot be rebound through\n'
+        '            # ordinary access (construction uses object.__setattr__\n'
+        '            # directly). Attribute assignment always refuses.\n'
+        '            raise AttributeError("canonical_external_truth_immutable")\n',
+        '        def __setattr__(self, name: str, value: Any) -> None:\n'
+        '            object.__setattr__(self, name, value)  # XII-NC-20\n',
+        defect="xii_nc20_slot_rebind_permitted",
     )
 
 
@@ -1115,6 +1406,40 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "xi_nc19_capability_seal_removed": xi_nc19_capability_seal_removed,
     "xi_nc20_denominator_regression": xi_nc20_denominator_regression,
     "xi_immutable_fields_removed": xi_immutable_fields_removed,
+    "xii_nc01_platform_storage_mutable_list": xii_nc01_platform_storage_mutable_list,
+    "xii_nc02_shallow_freeze_mapping_child": xii_nc02_shallow_freeze_mapping_child,
+    "xii_nc03_getitem_alias_freeze_passthrough": (
+        xii_nc03_getitem_alias_freeze_passthrough
+    ),
+    "xii_nc04_dict_conversion_shares_child": xii_nc04_dict_conversion_shares_child,
+    "xii_nc05_future_list_field_without_policy": (
+        xii_nc05_future_list_field_without_policy
+    ),
+    "xii_nc06_future_dict_field_without_policy": (
+        xii_nc06_future_dict_field_without_policy
+    ),
+    "xii_nc07_tuple_with_mutable_child": xii_nc07_tuple_with_mutable_child,
+    "xii_nc08_immutability_assertion_disabled": (
+        xii_nc08_immutability_assertion_disabled
+    ),
+    "xii_nc09_admission_reverification_removed": (
+        xii_nc09_admission_reverification_removed
+    ),
+    "xii_nc10_post_admission_mutation": xii_nc10_post_admission_mutation,
+    "xii_nc11_presentation_list_backing_store": (
+        xii_nc11_presentation_list_backing_store
+    ),
+    "xii_nc12_unknown_type_family_silently_accepted": (
+        xii_nc12_unknown_type_family_silently_accepted
+    ),
+    "xii_nc13_xi_transform_pin_regression": xi_nc03_money_zeroing,
+    "xii_nc14_xi_egress_registry_regression": xi_nc10_unregistered_egress_surface,
+    "xii_nc15_ix_snapshot_alias_regression": shared_mutable_alias,
+    "xii_nc16_b23_denominator_regression": xi_nc20_denominator_regression,
+    "xii_nc17_token_lifecycle_regression": revoked_token_tolerance,
+    "xii_nc18_successor_authorization_regression": successor_authorize_permit,
+    "xii_nc19_live_registry_unfrozen": xii_nc19_live_registry_unfrozen,
+    "xii_nc20_slot_rebind_permitted": xii_nc20_slot_rebind_permitted,
 }
 
 
