@@ -3209,3 +3209,93 @@
   local_reproduction_command: python scripts/ci/b26_p1_evidence.py --help
   risk_if_removed: Producers could drift to incompatible or incomplete proof-cell identities.
   decision: keep_utility
+- gate_id: b26-p2-scope-authority
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: "B2.6-P1 Static Semantic Authority"
+  script: scripts/ci/validate_b26_p2_scope_authority.py
+  owning_phase: B2.6-P2
+  protected_invariant: "One B2.6 normalization authority stays bound to sovereign B2.3 universes with explicit dispositions and conserved 95.00 coverage."
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: "No inherited gate defines reconciliation scope, rail identity, or normalization dispositions; P1 fences legacy surfaces but owns no scope classifier."
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_negative_controls.py
+  local_reproduction_command: "python scripts/ci/validate_b26_p2_scope_authority.py"
+  risk_if_removed: "Later B2.6 work could reconstruct scope independently, silently drop currency or window evidence, or widen the coverage denominator."
+  decision: keep_required
+- gate_id: b26-p2-negative-controls
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: "B2.6-P1 Static Semantic Authority"
+  script: scripts/ci/test_b26_p2_negative_controls.py
+  owning_phase: B2.6-P2
+  protected_invariant: "P2 scope sensors stay non-vacuous across same, alternate, and out-of-vocabulary defect primitives."
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: "Static pass/fail alone cannot prove a sensor fires; only red-restore-green execution proves non-vacuity."
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_negative_controls.py
+  local_reproduction_command: "python scripts/ci/test_b26_p2_negative_controls.py"
+  risk_if_removed: "A weakened P2 sensor would keep reporting green over a live second normalizer or silent exclusion."
+  decision: keep_required
+- gate_id: b26-p2-container-equivalence
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: "B2.6-P1 Candidate Container Equivalence"
+  script: scripts/ci/assert_b26_p2_container_equivalence.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Shipped image scope bytes equal candidate bytes with identical in-image classification."
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: "Host-run proof cannot observe image-layer contract narrowing or stale scope-policy substitution."
+  negative_control_preserved_by: python scripts/ci/_b26_p2_controlled_defect.py p2_contract_universe_widening
+  local_reproduction_command: "python scripts/ci/assert_b26_p2_container_equivalence.py --help"
+  risk_if_removed: "Host-green scope proof could ship an image that classifies rails differently."
+  decision: keep_required
+- gate_id: b26-p2-proof-plane-adjudicator
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: "B2.6 Finance Reconciliation Adjudication"
+  script: scripts/ci/adjudicate_b26_p2_proof_plane.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Merge admission requires verified P2 subordinate evidence on exact candidate identity."
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: "Producer pass/fail alone cannot bind evidence to the merge-product tree or detect missing cells."
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_negative_controls.py
+  local_reproduction_command: "python scripts/ci/adjudicate_b26_p2_proof_plane.py --help"
+  risk_if_removed: "An unverified or foreign-tree P2 artifact could ride a green producer into protected main."
+  decision: keep_required
+- gate_id: b26-p2-controlled-defect-applier
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ""
+  script: scripts/ci/_b26_p2_controlled_defect.py
+  owning_phase: B2.6-P2
+  protected_invariant: "P2 negative-control mutations apply to real governing state with anchor assertion."
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: "Required producers import this shared applier; it is not an independently executable assertion."
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_negative_controls.py
+  local_reproduction_command: "python scripts/ci/_b26_p2_controlled_defect.py p2_second_alias_dict"
+  risk_if_removed: "Controls could drift into no-ops that keep gates green while measuring nothing."
+  decision: keep_utility
+- gate_id: b26-p2-evidence-writer
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ""
+  script: scripts/ci/b26_p2_evidence.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Proof-cell identity and content hashing have one canonical P2 implementation."
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: "Required producers import this shared implementation; it is not an independently executable assertion."
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_negative_controls.py
+  local_reproduction_command: "python scripts/ci/b26_p2_evidence.py --help"
+  risk_if_removed: "Producers could drift to incompatible or incomplete proof-cell identities."
+  decision: keep_utility

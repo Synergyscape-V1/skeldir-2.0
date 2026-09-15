@@ -4366,3 +4366,135 @@
   deprecation_reason: Utility-only; the required producer scripts import it.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-scope-authority
+  path: scripts/ci/validate_b26_p2_scope_authority.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: "Exactly one reachable B2.6 normalization authority classifies every reconciliation candidate into one governed disposition with canonical tenant, provider, rail, currency, window, and scope-policy version, while B2.3 coverage stays sovereign at 76000/80000 = 95.00."
+  command: "python scripts/ci/validate_b26_p2_scope_authority.py --evidence-dir artifacts/b26_p2/static"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: "B2.6-P1 Static Semantic Authority"
+  local_reproduction_command: "python scripts/ci/validate_b26_p2_scope_authority.py"
+  expected_failure_meaning: "A second B2.6 normalizer appeared, an alias promoted an unsupported rail, currency or window evidence vanished silently, money became reachable from normalization, or the P2 scope wiring left the governed executor."
+  first_diagnostic_command: "python scripts/ci/validate_b26_p2_scope_authority.py"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b26-p1-finance-reconciliation-adjudication
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: b26-p2-negative-controls
+  path: scripts/ci/test_b26_p2_negative_controls.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: "The P2 scope validator is non-vacuous: twelve same-primitive, alternate-primitive, and out-of-vocabulary defects each turn it red for the predicted reason and restore to green on exact byte restoration."
+  command: "python scripts/ci/test_b26_p2_negative_controls.py --evidence-out artifacts/b26_p2/static/negative-controls.json"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: "B2.6-P1 Static Semantic Authority"
+  local_reproduction_command: "python scripts/ci/test_b26_p2_negative_controls.py"
+  expected_failure_meaning: "A P2 sensor was weakened into a no-op and keeps reporting green over a live second normalizer, silent exclusion, or incoherent scope."
+  first_diagnostic_command: "python scripts/ci/test_b26_p2_negative_controls.py"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b26-p1-finance-reconciliation-adjudication
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: b26-p2-container-equivalence
+  path: scripts/ci/assert_b26_p2_container_equivalence.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: "The production image carries the exact candidate scope-policy bytes and executes identical P2 classification inside the unmodified image, with no forbidden authority environment."
+  command: "python scripts/ci/assert_b26_p2_container_equivalence.py --image skeldir-b26-p2:${B26_CANDIDATE_SHA} --evidence-out evidence/b26-p2/container/cell.json"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: "B2.6-P1 Candidate Container Equivalence"
+  local_reproduction_command: "python scripts/ci/assert_b26_p2_container_equivalence.py --help"
+  expected_failure_meaning: "The deployable image omitted or changed the scope-policy inputs, or host proof stayed green while the shipped image classified differently."
+  first_diagnostic_command: "python scripts/ci/assert_b26_p2_container_equivalence.py --help"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b26-p1-finance-reconciliation-adjudication
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: b26-p2-proof-plane-adjudicator
+  path: scripts/ci/adjudicate_b26_p2_proof_plane.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: "The required B2.6 aggregate succeeds only after independently verifying one content-addressed PASS cell from every declared P2 producer on the exact candidate SHA, tree, migration head, workflow event, scope-policy contract, scenario, and falsifier."
+  command: "python scripts/ci/adjudicate_b26_p2_proof_plane.py --artifact-root artifacts/b26_p2/all --candidate-sha $B26_CANDIDATE_SHA --event-type $GITHUB_EVENT_NAME --run-id $GITHUB_RUN_ID --workflow $GITHUB_WORKFLOW --capsule-out artifacts/b26_p2/aggregate/governance-capsule.json"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: "B2.6 Finance Reconciliation Adjudication"
+  local_reproduction_command: "python scripts/ci/adjudicate_b26_p2_proof_plane.py --help"
+  expected_failure_meaning: "A P2 proof cell is missing, stale, corrupt, self-inconsistent, or belongs to a different candidate or execution identity."
+  first_diagnostic_command: "python scripts/ci/adjudicate_b26_p2_proof_plane.py --help"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b26-p1-finance-reconciliation-adjudication
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: b26-p2-controlled-defect-applier
+  path: scripts/ci/_b26_p2_controlled_defect.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: "Each P2 negative control mutates real governing state rather than a copy, and asserts its own anchor before writing. A control that silently became a no-op because the code moved would produce a green gate that measured nothing, so an unmatched anchor is an error rather than a skip."
+  command: "python scripts/ci/_b26_p2_controlled_defect.py p2_second_alias_dict"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ""
+  local_reproduction_command: "python scripts/ci/_b26_p2_controlled_defect.py p2_second_alias_dict"
+  expected_failure_meaning: "A P2 negative control cannot apply its defect for the predicted reason."
+  first_diagnostic_command: "python scripts/ci/_b26_p2_controlled_defect.py p2_second_alias_dict"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; the required producer scripts import it.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-evidence-writer
+  path: scripts/ci/b26_p2_evidence.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: "Proof-cell identity and content hashing have one canonical P2 implementation."
+  command: "python scripts/ci/b26_p2_evidence.py --help"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ""
+  local_reproduction_command: "python scripts/ci/b26_p2_evidence.py --help"
+  expected_failure_meaning: "Proof producers cannot emit a canonical independently verifiable P2 evidence-cell identity."
+  first_diagnostic_command: "python scripts/ci/b26_p2_evidence.py --help"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; the required producer scripts import it.'
+  subsumed_by: ''
+  registry_action: utility
