@@ -65,6 +65,26 @@ dispositions:
   - EXPLICITLY_EXCLUDED
   - INVALID_OR_REFUSED
 
+# Refusal representation law (Corrective I, H-CA1-06 closure): INVALID_OR_REFUSED
+# is never returned as a CanonicalScopeClassification disposition. Every malformed
+# tenant, policy version, window, event time, or provider/currency shape raises
+# ScopeAuthorityError fail-closed. Downstream consumers therefore cannot confuse
+# refusal with absence: absence of a classification object IS the refusal signal,
+# and any caught ScopeAuthorityError must become a governing refusal
+# (CanonicalSinkError / DLQ routing), never a silent skip. Changing this
+# representation requires a version bump below (evolution_law).
+refusal_representation: exception_fail_closed_never_returned_disposition
+refusal_law: malformed_input_raises_scope_authority_error_downstream_refuses_fail_closed
+
+# Rail authority (Corrective I, H-CA1-11 closure): provider==rail 1:1 is a P2
+# design-partner maturity definition, delegated by the P1 semantic contract's
+# unsupported_rail_doctrine (later_finance_representation:
+# deferred_to_B2.6-P2_or_later). It is versioned here and incapable of silently
+# evolving: any rail-meaning change requires a version bump (evolution_law) and
+# turns the P2 validator RED via the module AST pin below.
+rail_authority: p2_design_partner_maturity_definition_delegated_by_p1_unsupported_rail_doctrine
+rail_delegation: P1_unsupported_rail_doctrine_later_finance_representation_deferred_to_B2.6-P2_or_later
+
 # Governed reason codes. Exclusion reasons reuse the P1 scope-disposition
 # vocabulary so later phases cannot reconstruct scope meaning independently.
 reasons:
@@ -82,10 +102,14 @@ reasons:
   aggregate_scope_incoherent: aggregate_scope_incoherent
 
 # Multiple simultaneous exclusions resolve deterministically by priority.
+# Priority authority (Corrective I, H-CA1-12 closure): this order is governed P2
+# semantics, not implementation convenience. Any priority change requires a
+# version bump (evolution_law); the triple-exclusion execution vector pins it.
 exclusion_priority:
   - unsupported_provider_excluded
   - unsupported_currency_excluded
   - outside_governed_window_excluded
+exclusion_priority_authority: p2_governed_deterministic_priority_versioned
 
 tenant_law: server_derived_uuid_only_missing_or_malformed_refused
 money_law: normalization_never_changes_money_no_amount_path

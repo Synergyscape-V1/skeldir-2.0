@@ -121,6 +121,16 @@ from .coverage_authority import (
     resolve_canonical_coverage,
     to_diagnostic_dict,
 )
+from .candidate_conduction import (
+    CanonicalReconciliationScope,
+    ReconciliationCandidate,
+    ScopeConductionError,
+    ScopedCandidate,
+    derive_governed_scope,
+    derive_single_candidate_scope,
+    describe_scope_summary,
+    fetch_governed_candidates,
+)
 from .scope_authority import (
     B26_P2_SCOPE_POLICY_PATH,
     B26_P2_SCOPE_POLICY_VERSION,
@@ -270,6 +280,10 @@ __all__ = [
     "B23_SOVEREIGN_COVERAGE_PRODUCER",
     "B26_P2_SCOPE_POLICY_PATH",
     "B26_P2_SCOPE_POLICY_VERSION",
+    "CanonicalReconciliationScope",
+    "ReconciliationCandidate",
+    "ScopeConductionError",
+    "ScopedCandidate",
     "DISPOSITION_EXPLICITLY_EXCLUDED",
     "DISPOSITION_INVALID_OR_REFUSED",
     "DISPOSITION_SUPPORTED_AND_IN_SCOPE",
@@ -320,6 +334,10 @@ __all__ = [
     "SemanticContractError",
     "SemanticContractIdentity",
     "admit_canonical_verification_coverage",
+    "derive_governed_scope",
+    "derive_single_candidate_scope",
+    "describe_scope_summary",
+    "fetch_governed_candidates",
     "independent_coverage_percent",
     "is_canonical_b26_authority",
     "is_governed_canonical_sink",
@@ -331,5 +349,6 @@ __all__ = [
     "require_governed_canonical_sink",
     "resolve_canonical_coverage",
     "semantic_contract_identity",
+    "single_candidate_effect",
     "to_diagnostic_dict",
 ]

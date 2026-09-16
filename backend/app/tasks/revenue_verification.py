@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Any, Dict
 from uuid import UUID
 from uuid import uuid4
 
@@ -21,6 +22,38 @@ from app.revenue_verification.state_transitions import (
     transition_stale_provisional_to_confirmed,
 )
 from app.tasks.context import run_in_worker_loop
+
+logger = logging.getLogger(__name__)
+
+
+async def _derive_p2_scope_for_window(
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+) -> Dict[str, Any]:
+    """Derive the governed P2 scope after natural B2.3 dispatch (read-only).
+
+    B2.6-P2 Corrective I natural conduction: the tenant is the task's
+    server-derived tenant (originating from verified webhook dispatch, bound
+    here through the governed B23 session), the population is re-read from
+    durable state, and every candidate is classified through the single
+    scope authority with independent conservation. Read-only observation:
+    B2.3 verdict truth is never written here.
+    """
+    from app.db.session import get_b23_session  # noqa: PLC0415
+    from app.finance_reconciliation import (  # noqa: PLC0415
+        candidate_conduction as _p2_conduction,
+    )
+
+    async with get_b23_session(tenant_id) as session:
+        scope = await _p2_conduction.derive_governed_scope(
+            session,
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+        )
+    return _p2_conduction.describe_scope_summary(scope)
 
 
 async def _fetch_b23_transition_tenant_ids() -> list[str]:
@@ -178,14 +211,46 @@ def execute_b23_batch_match_engine_task(
 ) -> Dict[str, int | str | float]:
     correlation_id = correlation_id or str(uuid4())
     set_request_correlation_id(correlation_id)
+    window_start = datetime.fromisoformat(window_start_iso)
+    window_end = datetime.fromisoformat(window_end_iso)
     result = run_in_worker_loop(
         execute_b23_batch_match_engine(
             tenant_id=UUID(tenant_id),
-            window_start=datetime.fromisoformat(window_start_iso),
-            window_end=datetime.fromisoformat(window_end_iso),
+            window_start=window_start,
+            window_end=window_end,
             chunk_size=chunk_size,
         )
     )
+    # Natural P2 conduction after B2.3 dispatch: best-effort observation that
+    # never breaks B2.3 truth. Failures log with tenant context and yield a
+    # None scope; the mandatory fail-closed edge lives in the canonical sink.
+    p2_scope: Dict[str, Any] | None = None
+    try:
+        p2_scope = run_in_worker_loop(
+            _derive_p2_scope_for_window(
+                tenant_id=UUID(tenant_id),
+                window_start=window_start,
+                window_end=window_end,
+            )
+        )
+        logger.info(
+            "b26_p2_worker_scope_derived",
+            extra={
+                "tenant_id": tenant_id,
+                "correlation_id": correlation_id,
+                "candidate_count": p2_scope.get("candidate_count"),
+                "excluded_count": p2_scope.get("excluded_count"),
+                "scope_policy_version": p2_scope.get("scope_policy_version"),
+            },
+        )
+    except Exception:
+        logger.exception(
+            "b26_p2_worker_scope_derivation_failed",
+            extra={
+                "tenant_id": tenant_id,
+                "correlation_id": correlation_id,
+            },
+        )
     return {
         "tenant_id": tenant_id,
         "task_name": self.name,
@@ -196,4 +261,5 @@ def execute_b23_batch_match_engine_task(
         "chunk_size": result.chunk_size,
         "duration_seconds": result.duration_seconds,
         "correlation_id": correlation_id,
+        "p2_scope": p2_scope,
     }

@@ -201,6 +201,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -246,6 +247,8 @@ from app.finance_reconciliation.tenant_authority import (
 CANONICAL_SINK_EXECUTOR = (
     "app.finance_reconciliation.canonical_sink.execute_governed_sink"
 )
+
+logger = logging.getLogger(__name__)
 CANONICAL_SINK_MODULE = "app.finance_reconciliation.canonical_sink"
 FINAL_OUTPUT_TYPE = "app.finance_reconciliation.canonical_sink.FinalCanonicalOutput"
 FINAL_FIELD_OWNER = "canonical_sink_framework_post_callback_materialization"
@@ -1113,6 +1116,9 @@ async def execute_governed_sink(
             from app.finance_reconciliation import (  # noqa: PLC0415
                 scope_authority as _p2_scope,
             )
+            from app.finance_reconciliation import (  # noqa: PLC0415
+                candidate_conduction as _p2_conduction,
+            )
 
             _p2_scope.assert_aggregate_scope_supported(
                 tenant_id=tenant_id,
@@ -1120,6 +1126,42 @@ async def execute_governed_sink(
                 currency_code=aggregate.currency_code,
                 window_start=aggregate.window_start,
                 window_end=aggregate.window_end,
+            )
+            # B2.6-P2 Corrective I natural per-candidate conduction (synchronous,
+            # no suspension): every durable candidate in the sovereign universe
+            # acquires its governed disposition in the same governed session
+            # that produced the coverage above. Excluded and unresolved rows
+            # are conserved with amount/count/reason/provenance instead of
+            # vanishing behind the aggregate filter. Any conservation failure
+            # refuses before any authoritative field materializes.
+            _p2_scope_result = await _p2_conduction.derive_governed_scope(
+                session,
+                tenant_id=tenant_id,
+                window_start=aggregate.window_start,
+                window_end=aggregate.window_end,
+            )
+            _p2_scope_summary = _p2_conduction.describe_scope_summary(
+                _p2_scope_result
+            )
+            logger.info(
+                "b26_p2_candidate_scope_derived",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "event_type": "b26_p2_candidate_scope_derived",
+                    "sink_id": str(sink_id),
+                    "scope_policy_version": str(
+                        _p2_scope_summary["scope_policy_version"]
+                    ),
+                    "candidate_count": int(_p2_scope_summary["candidate_count"]),
+                    "supported_count": int(_p2_scope_summary["supported_count"]),
+                    "unresolved_count": int(
+                        _p2_scope_summary["unresolved_count"]
+                    ),
+                    "excluded_count": int(_p2_scope_summary["excluded_count"]),
+                    "excluded_amount_minor": int(
+                        _p2_scope_summary["excluded_amount_minor"]
+                    ),
+                },
             )
         except Exception as exc:  # noqa: BLE001
             raise CanonicalSinkError(
