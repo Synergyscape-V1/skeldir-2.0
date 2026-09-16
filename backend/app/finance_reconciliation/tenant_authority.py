@@ -185,6 +185,80 @@ async def open_governed_b23_session(
         await assert_tenant_authority(session, tenant_id)
 
 
+@asynccontextmanager
+async def open_governed_b23_snapshot_session(
+    tenant_id: UUID,
+) -> AsyncIterator[AsyncSession]:
+    """Open one REPEATABLE READ snapshot for one P2 derivation (Corrective II).
+
+    One P2 derivation must represent one explicitly defined source state
+    (H-II-10/H-II-11, Gates 4/17). Under READ COMMITTED the population read
+    and the conservation re-read each acquire separate snapshots, so a
+    concurrent authentic ingress committing between them flips the outcome
+    between included/refused/silently-absent depending purely on commit
+    timing. This helper binds the entire derivation -- tenant checks,
+    population read, verdict read, conservation re-read, RLS inspection --
+    to a single Postgres MVCC snapshot acquired before any query.
+
+    Physics: ``SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY``
+    must be the first statement after BEGIN. The shared ``get_b23_session``
+    factory binds tenant GUCs in ``after_begin`` (a query), which would make
+    a later SET TRANSACTION illegal. This helper therefore opens a bare
+    session (no info, so ``after_begin`` returns early with no query),
+    begins, sets the isolation first, then binds tenant GUCs manually and
+    applies the B2.3 statement/lock timeouts. The derivation is read-only;
+    any write attempt refuses via the READ ONLY transaction mode (physical
+    boundary, not convention).
+
+    Callers must not reuse the yielded session for a second derivation: one
+    session yields exactly one snapshot universe.
+    """
+    if tenant_id is None or not str(tenant_id).strip():
+        raise MissingTenantAuthorityError(
+            "governed_snapshot_session_requires_server_derived_tenant"
+        )
+    from app.core.config import settings  # noqa: PLC0415
+    from app.db.session import B23AsyncSessionLocal  # noqa: PLC0415
+
+    async with B23AsyncSessionLocal() as session:
+        await session.begin()
+        try:
+            await session.execute(
+                text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            )
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            try:
+                await session.execute(
+                    text(
+                        f"SET LOCAL statement_timeout = "
+                        f"'{int(settings.B23_DATABASE_STATEMENT_TIMEOUT_MS)}ms'"
+                    ),
+                )
+            except Exception:
+                pass
+            try:
+                await session.execute(
+                    text(
+                        f"SET LOCAL lock_timeout = "
+                        f"'{int(settings.B23_DATABASE_LOCK_TIMEOUT_MS)}ms'"
+                    ),
+                )
+            except Exception:
+                pass
+            await assert_tenant_authority(session, tenant_id)
+            yield session
+            await assert_tenant_authority(session, tenant_id)
+            if session.in_transaction():
+                await session.commit()
+        except Exception:
+            if session.in_transaction():
+                await session.rollback()
+            raise
+
+
 async def require_tenant_row_exists(
     session: AsyncSession, tenant_id: UUID | str
 ) -> None:
@@ -204,11 +278,14 @@ async def require_tenant_row_exists(
             "canonical_scope_tenant_missing_before_existence_check"
         )
     row = (
-        (await session.execute(text("SELECT 1 AS present FROM public.tenants WHERE id = :tenant_id"), {"tenant_id": requested}))
+        (
+            await session.execute(
+                text("SELECT 1 AS present FROM public.tenants WHERE id = :tenant_id"),
+                {"tenant_id": requested},
+            )
+        )
         .mappings()
         .first()
     )
     if row is None:
-        raise UnknownTenantError(
-            "authenticated_tenant_has_no_durable_tenant_row"
-        )
+        raise UnknownTenantError("authenticated_tenant_has_no_durable_tenant_row")

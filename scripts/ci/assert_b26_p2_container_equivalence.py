@@ -25,7 +25,7 @@ def _run(*command: str) -> str:
     ).stdout.strip()
 
 
-_P2_IN_IMAGE_PROBE = r'''
+_P2_IN_IMAGE_PROBE = r"""
 import json
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -52,6 +52,20 @@ report["corrective_law_ok"] = (
     == "p2_design_partner_maturity_definition_delegated_by_p1_unsupported_rail_doctrine"
     and document.get("exclusion_priority_authority")
     == "p2_governed_deterministic_priority_versioned"
+)
+report["corrective_ii_law_ok"] = (
+    document.get("money_semantics") == "source_verified_gross_not_canonical_net"
+    and document.get("money_authority") == "b2.2_ingress_verified_amount_minor"
+    and document.get("canonical_net_authority")
+    == "b2.3_match_verdicts.canonical_net_verified_amount_minor_only"
+    and document.get("snapshot_isolation")
+    == "repeatable_read_single_snapshot_per_derivation"
+    and document.get("dispatch_authority_law")
+    == "worker_revalidates_broker_task_id_against_durable_dispatch_fail_closed"
+    and document.get("window_authority")
+    == "dispatch_bound_ingress_event_day_half_open_utc"
+    and document.get("identity_law")
+    == "exact_sorted_source_identity_set_bound_to_scope_identity_digest"
 )
 report["dispositions_ok"] = set(document.get("dispositions", [])) == {
     "SUPPORTED_AND_IN_SCOPE",
@@ -117,19 +131,44 @@ report["conduction_import_ok"] = (
     callable(conduction.derive_governed_scope)
     and callable(conduction.derive_single_candidate_scope)
 )
+report["conduction_ii_ok"] = (
+    conduction.P2_MONEY_SEMANTICS == "source_verified_gross_not_canonical_net"
+    and conduction.P2_MONEY_AUTHORITY == "b2.2_ingress_verified_amount_minor"
+    and "scope_identity" in conduction.CanonicalReconciliationScope.__dataclass_fields__
+    and "snapshot_isolation" in conduction.CanonicalReconciliationScope.__dataclass_fields__
+)
+from app.finance_reconciliation import dispatch_authority as dispatch
+report["dispatch_import_ok"] = (
+    callable(dispatch.resolve_dispatch_authority)
+    and callable(dispatch.derive_reconciliation_window)
+)
+from app.finance_reconciliation.tenant_authority import (
+    open_governed_b23_snapshot_session,
+)
+report["snapshot_session_ok"] = callable(open_governed_b23_snapshot_session)
+from app.core.reconciliation_window import quantize_utc_day_iso
+report["shared_window_ok"] = callable(quantize_utc_day_iso)
 webhook_source = open("app/api/webhooks.py", encoding="utf-8").read()
 report["webhook_phase_ok"] = (
     "finance_reconciliation" not in webhook_source
     and "candidate_conduction" not in webhook_source
     and "p2_scope" not in webhook_source
+    and "from app.core.reconciliation_window import" in webhook_source
+    and "dispatch_task_id" in webhook_source
 )
 task_source = open("app/tasks/revenue_verification.py", encoding="utf-8").read()
 report["task_conduction_ok"] = (
     "_derive_p2_scope_for_window(" in task_source and "p2_scope" in task_source
 )
+report["task_dispatch_ok"] = (
+    "resolve_dispatch_authority(" in task_source
+    and "broker_task_id" in task_source
+    and "open_governed_b23_snapshot_session" in task_source
+    and "p2_scope: Dict[str, Any] | None = None" not in task_source
+)
 
 print("P2_IN_IMAGE_BATTERY " + json.dumps(report, sort_keys=True))
-'''
+"""
 
 
 def _in_image_p2_battery(image: str) -> dict[str, object]:
@@ -143,7 +182,11 @@ def _in_image_p2_battery(image: str) -> dict[str, object]:
     if proc.returncode != 0:
         raise RuntimeError(f"container_p2_battery_failed:{proc.stderr[-800:]}")
     line = next(
-        (ln for ln in proc.stdout.splitlines() if ln.startswith("P2_IN_IMAGE_BATTERY ")),
+        (
+            ln
+            for ln in proc.stdout.splitlines()
+            if ln.startswith("P2_IN_IMAGE_BATTERY ")
+        ),
         None,
     )
     if line is None:

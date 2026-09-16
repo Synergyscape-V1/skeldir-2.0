@@ -10,13 +10,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCOPE_MODULE = ROOT / "backend/app/finance_reconciliation/scope_authority.py"
 CONDUCTION_MODULE = ROOT / "backend/app/finance_reconciliation/candidate_conduction.py"
+DISPATCH_MODULE = ROOT / "backend/app/finance_reconciliation/dispatch_authority.py"
+TENANT_MODULE = ROOT / "backend/app/finance_reconciliation/tenant_authority.py"
 SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
 SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 WEBHOOK_MODULE = ROOT / "backend/app/api/webhooks.py"
 B23_TASK_MODULE = ROOT / "backend/app/tasks/revenue_verification.py"
 PROBE_ALIAS = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_alias.py"
 PROBE_SQL = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_sql.py"
-PROBE_SERIALIZER = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_serializer.py"
+PROBE_SERIALIZER = (
+    ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_serializer.py"
+)
 
 
 def _replace_once(path: Path, old: str, new: str, *, defect: str) -> None:
@@ -49,14 +53,14 @@ def p2_sql_case_normalizer() -> None:
     PROBE_SQL.write_text(
         '"""P2 negative-control probe: SQL CASE normalizer (alternate primitive)."""\n'
         "\n"
-        "RAIL_CASE_SQL = \"\"\"\n"
+        'RAIL_CASE_SQL = """\n'
         "SELECT CASE provider\n"
         "  WHEN 'stripe' THEN 'stripe'\n"
         "  WHEN 'shopify' THEN 'shopify'\n"
         "  WHEN 'paypal' THEN 'paypal'\n"
         "  WHEN 'woocommerce' THEN 'woocommerce'\n"
         "  ELSE 'stripe' END AS rail\n"
-        '\"\"\"  # NC-P2-SQL-CASE\n'
+        '"""  # NC-P2-SQL-CASE\n'
         "\n"
         "\n"
         "def fetch_rail_scope(conn, provider):\n"
@@ -92,7 +96,7 @@ def p2_unsupported_promotion() -> None:
         "        and provider_token in _sovereign_provider_universe()\n"
         "    )\n",
         "    provider_supported = (\n"
-        "        provider_token in (_CANONICAL_PROVIDERS | {\"square\"})\n"
+        '        provider_token in (_CANONICAL_PROVIDERS | {"square"})\n'
         "    )\n",
         defect="p2_unsupported_promotion",
     )
@@ -119,8 +123,8 @@ def p2_window_closed_end() -> None:
 def p2_tenant_guc_bypass() -> None:
     _replace_once(
         SCOPE_MODULE,
-        'def _parse_tenant(tenant_id: Any) -> UUID:\n',
-        'def _parse_tenant(tenant_id: Any) -> UUID:  # set_config probe\n',
+        "def _parse_tenant(tenant_id: Any) -> UUID:\n",
+        "def _parse_tenant(tenant_id: Any) -> UUID:  # set_config probe\n",
         defect="p2_tenant_guc_bypass",
     )
 
@@ -139,9 +143,8 @@ def p2_nondeterministic_identity() -> None:
 def p2_reverse_write() -> None:
     _replace_once(
         SCOPE_MODULE,
-        'def validate_window(\n',
-        '# NC-P2-REVERSE-WRITE UPDATE probe\n'
-        'def validate_window(\n',
+        "def validate_window(\n",
+        "# NC-P2-REVERSE-WRITE UPDATE probe\n" "def validate_window(\n",
         defect="p2_reverse_write",
     )
 
@@ -189,8 +192,7 @@ def p2_webhook_phase_violation() -> None:
         raise SystemExit("p2_webhook_phase_violation:anchor_count!=1")
     text = text.replace(
         marker,
-        marker
-        + "from app.finance_reconciliation import (\n"
+        marker + "from app.finance_reconciliation import (\n"
         "    candidate_conduction as _p2_nc_phase_probe,  # NC-P2-PHASE-VIOLATION\n"
         ")\n",
         1,
@@ -201,8 +203,8 @@ def p2_webhook_phase_violation() -> None:
 def p2_b23_task_conduction_removal() -> None:
     _replace_once(
         B23_TASK_MODULE,
-        "            _derive_p2_scope_for_window(\n",
-        "            _derive_p2_scope_for_window_DISABLED(\n",
+        "        _derive_p2_scope_for_window(\n",
+        "        _derive_p2_scope_for_window_DISABLED(\n",
         defect="p2_b23_task_conduction_removal",
     )
 
@@ -210,9 +212,9 @@ def p2_b23_task_conduction_removal() -> None:
 def p2_conduction_prefilter() -> None:
     _replace_once(
         CONDUCTION_MODULE,
-        "                    \" ORDER BY event_timestamp ASC, id ASC\"\n",
-        "                    \" AND provider IN :supported_platforms\"\n"
-        "                    \" ORDER BY event_timestamp ASC, id ASC\"\n",
+        '                    " ORDER BY event_timestamp ASC, id ASC"\n',
+        '                    " AND provider IN :supported_platforms"\n'
+        '                    " ORDER BY event_timestamp ASC, id ASC"\n',
         defect="p2_conduction_prefilter",
     )
 
@@ -223,6 +225,81 @@ def p2_refusal_law_removal() -> None:
         "refusal_representation: exception_fail_closed_never_returned_disposition\n",
         "refusal_representation: returned_object\n",
         defect="p2_refusal_law_removal",
+    )
+
+
+def p2_dispatch_binding_removal() -> None:
+    _replace_once(
+        B23_TASK_MODULE,
+        "        authority = await _p2_dispatch.resolve_dispatch_authority(\n",
+        "        authority = await _p2_dispatch.resolve_dispatch_authority_DISABLED(\n",
+        defect="p2_dispatch_binding_removal",
+    )
+
+
+def p2_snapshot_isolation_removal() -> None:
+    _replace_once(
+        TENANT_MODULE,
+        'text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")',
+        'text("SET TRANSACTION ISOLATION LEVEL READ COMMITTED READ ONLY")',
+        defect="p2_snapshot_isolation_removal",
+    )
+
+
+def p2_identity_digest_removal() -> None:
+    _replace_once(
+        CONDUCTION_MODULE,
+        "p2_conduction_identity_not_conserved",
+        "p2_conduction_identity_removed",
+        defect="p2_identity_digest_removal",
+    )
+
+
+def p2_rls_inspection_removal() -> None:
+    _replace_once(
+        CONDUCTION_MODULE,
+        "FROM pg_policies",
+        "FROM pg_missing",
+        defect="p2_rls_inspection_removal",
+    )
+
+
+def p2_money_semantics_removal() -> None:
+    _replace_once(
+        SCOPE_CONTRACT,
+        "money_semantics: source_verified_gross_not_canonical_net\n",
+        "money_semantics: canonical_net_revenue\n",
+        defect="p2_money_semantics_removal",
+    )
+
+
+def p2_dead_edge_if_false() -> None:
+    _replace_once(
+        B23_TASK_MODULE,
+        "    p2_scope = run_in_worker_loop(\n",
+        "    p2_scope = None  # NC-P2-DEAD-EDGE name-preserving severance\n"
+        "    if False:\n"
+        "        p2_scope = run_in_worker_loop(\n",
+        defect="p2_dead_edge_if_false",
+    )
+
+
+def p2_silent_null_swallow() -> None:
+    _replace_once(
+        B23_TASK_MODULE,
+        "    p2_scope = run_in_worker_loop(\n",
+        "    p2_scope: Dict[str, Any] | None = None\n"
+        "    p2_scope = run_in_worker_loop(\n",
+        defect="p2_silent_null_swallow",
+    )
+
+
+def p2_window_delegation_removal() -> None:
+    _replace_once(
+        WEBHOOK_MODULE,
+        "    from app.core.reconciliation_window import (  # noqa: PLC0415\n",
+        "    from app.core.reconciliation_window_DISABLED import (  # noqa: PLC0415\n",
+        defect="p2_window_delegation_removal",
     )
 
 
@@ -244,6 +321,14 @@ APPLIERS = {
     "p2_b23_task_conduction_removal": p2_b23_task_conduction_removal,
     "p2_conduction_prefilter": p2_conduction_prefilter,
     "p2_refusal_law_removal": p2_refusal_law_removal,
+    "p2_dispatch_binding_removal": p2_dispatch_binding_removal,
+    "p2_snapshot_isolation_removal": p2_snapshot_isolation_removal,
+    "p2_identity_digest_removal": p2_identity_digest_removal,
+    "p2_rls_inspection_removal": p2_rls_inspection_removal,
+    "p2_money_semantics_removal": p2_money_semantics_removal,
+    "p2_dead_edge_if_false": p2_dead_edge_if_false,
+    "p2_silent_null_swallow": p2_silent_null_swallow,
+    "p2_window_delegation_removal": p2_window_delegation_removal,
 }
 
 

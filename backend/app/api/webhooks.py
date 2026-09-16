@@ -12,7 +12,7 @@ import logging
 import hashlib
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from collections.abc import Callable
 from types import MappingProxyType
@@ -567,16 +567,20 @@ async def _route_authenticated_malformed_payload(
 
 
 def _compute_recompute_window(event_timestamp: str) -> tuple[str, str]:
+    """Normalize an event timestamp into a UTC day window.
+
+    Single-implementation law (Corrective II, H-II-03): day quantization
+    is executed once in ``app.core.reconciliation_window``; this façade
+    delegates to it so the webhook dispatch window and the worker P2
+    reconciliation window cannot silently diverge. B2.3 matching and P2
+    reconciliation remain distinct authorities sharing one quantization
+    function, not one implicit window.
     """
-    Normalize an event timestamp into a UTC day window (start inclusive, end exclusive).
-    """
-    event_dt = _coerce_event_timestamp(event_timestamp)
-    window_start = event_dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    window_end = window_start + timedelta(days=1)
-    return (
-        window_start.isoformat().replace("+00:00", "Z"),
-        window_end.isoformat().replace("+00:00", "Z"),
+    from app.core.reconciliation_window import (  # noqa: PLC0415
+        quantize_utc_day_iso,
     )
+
+    return quantize_utc_day_iso(event_timestamp)
 
 
 def _schedule_downstream_tasks(
@@ -655,6 +659,15 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
         return
 
     window_start, window_end = _compute_recompute_window(event_timestamp)
+    # Corrective II durable-authority ordering: the dispatch row is the
+    # authority the worker re-resolves (keyed by broker task_id). It must be
+    # durable before the broker message is visible, otherwise a legitimate
+    # worker can observe a message with no dispatch and fail closed on a
+    # race. Generate the broker task identity here, persist dispatch in the
+    # webhook transaction, commit, then publish with that exact task_id.
+    import uuid as _dispatch_uuid  # noqa: PLC0415  (task identity only)
+
+    dispatch_task_id = str(_dispatch_uuid.uuid4())
     async with get_session(tenant_id=tenant_id) as session:
         ingress = (
             (
@@ -686,17 +699,6 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
             )
             return
 
-        async_result = execute_b23_batch_match_engine_task.apply_async(
-            args=[
-                str(tenant_id),
-                window_start,
-                window_end,
-                100,
-                str(correlation_id),
-            ],
-            queue=QUEUE_B23_MATCH_ENGINE,
-            routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
-        )
         await session.execute(
             text(
                 """
@@ -749,7 +751,7 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
             {
                 "tenant_id": str(tenant_id),
                 "webhook_ingress_identity_id": str(ingress["id"]),
-                "task_id": str(async_result.id),
+                "task_id": dispatch_task_id,
                 "task_name": execute_b23_batch_match_engine_task.name,
                 "queue": QUEUE_B23_MATCH_ENGINE,
                 "routing_key": f"{QUEUE_B23_MATCH_ENGINE}.task",
@@ -766,14 +768,28 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
                 ],
             },
         )
+        dispatch_ingress_id = str(ingress["id"])
+    async_result = execute_b23_batch_match_engine_task.apply_async(
+        args=[
+            str(tenant_id),
+            window_start,
+            window_end,
+            100,
+            str(correlation_id),
+        ],
+        task_id=dispatch_task_id,
+        queue=QUEUE_B23_MATCH_ENGINE,
+        routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+    )
     logger.info(
         "b23_match_task_naturally_dispatched",
         extra={
             "tenant_id": str(tenant_id),
             "event_id": event_id,
             "task_id": str(async_result.id),
+            "dispatch_ingress_id": dispatch_ingress_id,
             "queue": QUEUE_B23_MATCH_ENGINE,
-            "correlation_id": str(correlation_id),
+            "correlation_id": correlation_id,
         },
     )
 

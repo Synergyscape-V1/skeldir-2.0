@@ -122,6 +122,10 @@ from .coverage_authority import (
     to_diagnostic_dict,
 )
 from .candidate_conduction import (
+    P2_CANONICAL_NET_AUTHORITY,
+    P2_MONEY_AUTHORITY,
+    P2_MONEY_SEMANTICS,
+    P2_SNAPSHOT_ISOLATION_LAW,
     CanonicalReconciliationScope,
     ReconciliationCandidate,
     ScopeConductionError,
@@ -130,6 +134,13 @@ from .candidate_conduction import (
     derive_single_candidate_scope,
     describe_scope_summary,
     fetch_governed_candidates,
+)
+from .dispatch_authority import (
+    DispatchAuthority,
+    DispatchAuthorityError,
+    derive_reconciliation_window,
+    derive_reconciliation_window_iso,
+    resolve_dispatch_authority,
 )
 from .scope_authority import (
     B26_P2_SCOPE_POLICY_PATH,
@@ -176,6 +187,7 @@ from .tenant_authority import (
     UnknownTenantError,
     assert_tenant_authority,
     open_governed_b23_session,
+    open_governed_b23_snapshot_session,
     read_db_authority,
     require_tenant_row_exists,
 )
@@ -275,6 +287,7 @@ __all__ = [
     "UnknownTenantError",
     "assert_tenant_authority",
     "open_governed_b23_session",
+    "open_governed_b23_snapshot_session",
     "read_db_authority",
     "require_tenant_row_exists",
     "B23_SOVEREIGN_COVERAGE_PRODUCER",

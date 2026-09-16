@@ -1,20 +1,43 @@
-"""B2.6-P2 Corrective I natural candidate conduction boundary.
+"""B2.6-P2 Corrective II canonical scope derivation boundary.
 
-Class closed here
------------------
-The system could believe reconciliation scope is honest and complete while
-excluded or unresolved evidence never acquires a governed disposition: the
-production-adjacent P2 call classified an already-filtered aggregate set, so
-durable rows filtered upstream by the sovereign coverage read never entered
-P2 through any production-natural edge. Their absence was silent.
+Corrective I law (preserved)
+----------------------------
+Excluded or unresolved evidence never vanishes: the fetch reads ALL
+authenticity-verified ingress rows for the verified tenant with no provider,
+currency, or window pre-filter, binds each row to its durable match state,
+classifies each candidate through the single scope authority, and refuses
+fail-closed unless an independent re-read re-derives the same population.
 
-Closure theorem: every governed P2 scope result derives from the same
-sovereign durable universe that reconciliation actually uses. The fetch below
-reads ALL authenticity-verified ingress rows for the verified tenant with no
-provider, currency, or window pre-filter, binds each row to its durable
-match state, classifies each candidate through the single scope authority,
-and refuses fail-closed unless an independent row count and amount total
-re-derive the same population. A dropped member is a refusal, never silence.
+Corrective II law (added)
+-------------------------
+The live P2 edge existed but lacked authority, identity conservation,
+snapshot coherence, and non-vacuous proof. This module now closes that
+class:
+
+* One derivation equals one REPEATABLE READ snapshot (H-II-10/H-II-11).
+  Population and conservation reads share a single Postgres MVCC snapshot
+  acquired before any query. Concurrent commits after the snapshot are
+  invisible to both reads by database physics, never by timing luck. The
+  derivation refuses unless ``SHOW transaction_isolation`` reports
+  ``repeatable read`` -- READ COMMITTED callers cannot obtain scope.
+* Exact identity conservation (H-II-05/H-II-06/H-II-20). Conservation
+  compares the exact sorted source-identity set (ingress UUIDs), not just
+  count+amount arithmetic. The canonical result binds a deterministic
+  ``scope_identity`` digest over tenant/window/policy plus the sorted
+  identity/disposition/reason/amount material, so equal-value substitution,
+  omission, or duplication changes or refuses the identity.
+* Common-mode completeness (H-II-07/H-II-08/H-II-09). Both reads traverse
+  the same RLS/view/helper root in production, so agreement alone cannot
+  prove completeness. Every derivation inspects the physical RLS policy
+  definition for the ingress relation and the relation kind, refusing when
+  tenant RLS carries unauthorized provider/currency/time/status narrowing
+  or when the relation is not an ordinary table. Tenant isolation and
+  candidate completeness are separately proven obligations.
+* Money sovereignty (H-II-12/H-II-13/H-II-14). Every P2 amount is labeled
+  machine-readably as source-verified gross (B2.2 ingress), never canonical
+  net (B2.3 verdicts). The scope carries ``money_semantics``,
+  ``money_authority``, and ``canonical_net_authority`` on every result and
+  summary so no machine caller can confuse P2 gross with B2.3 net.
 
 Sovereign sources composed, never reimplemented
 -----------------------------------------------
@@ -23,13 +46,16 @@ Sovereign sources composed, never reimplemented
 * The single scope authority for every disposition decision.
 * Transaction-bound tenant authority observed on the live session.
 * The persisted commerce clock as the sole event-time authority.
+* Postgres MVCC snapshot, pg_policies catalog, and pg_class relation kind
+  as the independent completeness/snapshot oracles (observed, not rebuilt).
 * Integer minor units observed read-only; this boundary never writes rows,
   never derives coverage ratios, and never touches estimation substrates.
 
 What this module does NOT do
 ----------------------------
 * No durable state: no table, migration, trigger, view, role, grant, or
-  policy change. Scope results are immutable in-memory derivations.
+  policy change. Scope results are immutable in-memory derivations. P4's
+  durable reconciliation snapshot is absent by phase law.
 * No coverage arithmetic and no match-truth rewrite: verdict rows are read
   to determine reference presence only.
 * No per-field transform of money: amounts are carried read-only for
@@ -39,6 +65,7 @@ What this module does NOT do
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -103,6 +130,18 @@ class ScopedCandidate:
     classification: CanonicalScopeClassification
 
 
+# Machine-readable money semantics (Corrective II, H-II-12/13/14). Every P2
+# amount below is source-verified gross from B2.2 ingress, never B2.3
+# canonical net. Consumers must read these labels; field names alone are not
+# authority.
+P2_MONEY_SEMANTICS = "source_verified_gross_not_canonical_net"
+P2_MONEY_AUTHORITY = "b2.2_ingress_verified_amount_minor"
+P2_CANONICAL_NET_AUTHORITY = (
+    "b2.3_match_verdicts.canonical_net_verified_amount_minor_only"
+)
+P2_SNAPSHOT_ISOLATION_LAW = "repeatable_read_single_snapshot_per_derivation"
+
+
 @dataclass(frozen=True)
 class CanonicalReconciliationScope:
     """One immutable in-memory governed scope result for one tenant window."""
@@ -113,6 +152,11 @@ class CanonicalReconciliationScope:
     scope_policy_version: str
     policy_source_sha256: str
     policy_semantic_sha256: str
+    scope_identity: str
+    snapshot_isolation: str
+    money_semantics: str
+    money_authority: str
+    canonical_net_authority: str
     candidates: tuple[ScopedCandidate, ...]
     candidate_count: int
     total_amount_minor: int
@@ -226,7 +270,11 @@ async def fetch_governed_candidates(
         candidates.append(
             ReconciliationCandidate(
                 tenant_id=tenant,
-                ingress_id=ingress_id if isinstance(ingress_id, UUID) else UUID(str(ingress_id)),
+                ingress_id=(
+                    ingress_id
+                    if isinstance(ingress_id, UUID)
+                    else UUID(str(ingress_id))
+                ),
                 provider_raw=str(row["provider"]),
                 currency_raw=str(row["verified_amount_currency"]),
                 event_time=event_time,
@@ -237,6 +285,110 @@ async def fetch_governed_candidates(
         )
     await assert_tenant_authority(session, tenant)
     return tuple(candidates)
+
+
+async def _require_snapshot_isolation(session: AsyncSession) -> str:
+    """Require one REPEATABLE READ snapshot for this derivation.
+
+    The isolation level is database physics observed on the live
+    transaction, not a caller string. READ COMMITTED (or any other level)
+    refuses with ``p2_snapshot_isolation_not_repeatable_read`` before any
+    candidate row is read, so an undefined multi-read snapshot can never
+    produce a canonical-looking scope.
+    """
+    level_row = (
+        (await session.execute(text("SHOW transaction_isolation")))
+        .mappings()
+        .one_or_none()
+    )
+    level = str(level_row["transaction_isolation"]).strip().lower() if level_row else ""
+    if level != "repeatable read":
+        raise ScopeConductionError(
+            "p2_snapshot_isolation_not_repeatable_read:" f"{level or 'unknown'}"
+        )
+    return P2_SNAPSHOT_ISOLATION_LAW
+
+
+async def _inspect_rls_completeness(session: AsyncSession) -> None:
+    """Refuse silent candidate-universe narrowing through the visibility root.
+
+    Both production reads traverse the same RLS/view/helper root, so their
+    agreement cannot prove completeness (H-II-07). This oracle does not read
+    candidate rows at all: it observes the physical policy catalog
+    (``pg_policies``) and relation kind (``pg_class``), a separately
+    implemented root from the row reads. Tenant RLS may enforce tenant
+    authority only; any additional provider/currency/time/status predicate
+    refuses with ``p2_rls_completeness_refused`` even when cross-tenant
+    isolation still holds. A non-table relation (view/matview/foreign)
+    refuses with ``p2_source_relation_not_table``.
+    """
+    kind_row = (
+        (
+            await session.execute(
+                text(
+                    "SELECT c.relkind AS relkind"
+                    " FROM pg_class c"
+                    " JOIN pg_namespace n ON n.oid = c.relnamespace"
+                    " WHERE n.nspname = 'public'"
+                    " AND c.relname = 'webhook_ingress_identities'"
+                )
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if kind_row is None or str(kind_row["relkind"]) != "r":
+        raise ScopeConductionError(
+            "p2_source_relation_not_table:"
+            f"{kind_row['relkind'] if kind_row else 'missing'}"
+        )
+    policy_rows = (
+        (
+            await session.execute(
+                text(
+                    "SELECT policyname AS policyname,"
+                    " cmd AS cmd,"
+                    " qual AS qual,"
+                    " with_check AS with_check"
+                    " FROM pg_policies"
+                    " WHERE schemaname = 'public'"
+                    " AND tablename = 'webhook_ingress_identities'"
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    if not policy_rows:
+        raise ScopeConductionError("p2_rls_completeness_refused:no_policy_visible")
+    for policy in policy_rows:
+        name = str(policy["policyname"] or "")
+        if "tenant_isolation" not in name and "tenant" not in name:
+            continue
+        for column in ("qual", "with_check"):
+            definition = str(policy[column] or "")
+            lowered = definition.lower()
+            if not lowered.strip():
+                continue
+            if (
+                "current_setting" not in lowered
+                or "app.current_tenant_id" not in lowered
+            ):
+                raise ScopeConductionError(
+                    f"p2_rls_completeness_refused:{name}:{column}:no_tenant_root"
+                )
+            for forbidden in (
+                "provider",
+                "currency",
+                "event_timestamp",
+                "verified_commerce_ingress_state",
+                "status",
+                "verified_amount",
+            ):
+                if forbidden in lowered:
+                    raise ScopeConductionError(
+                        f"p2_rls_completeness_refused:{name}:{column}:{forbidden}"
+                    )
 
 
 async def _independent_population_totals(
@@ -268,13 +420,75 @@ async def _independent_population_totals(
         try:
             value = int(record["verified_amount_minor"])
         except (TypeError, ValueError, KeyError) as exc:
-            raise ScopeConductionError(
-                "p2_conduction_amount_not_integer"
-            ) from exc
+            raise ScopeConductionError("p2_conduction_amount_not_integer") from exc
         if value < 0:
             raise ScopeConductionError("p2_conduction_amount_negative")
         total += value
     return len(reread), total
+
+
+async def _independent_population_identities(
+    session: AsyncSession, *, tenant: UUID
+) -> tuple[str, ...]:
+    """Re-read the exact sorted source-identity set for conservation.
+
+    Identity conservation is separate from amount conservation (H-II-20):
+    hashing the set returned by a narrowed visibility domain only creates a
+    stable digest of the wrong universe. This re-read returns sorted ingress
+    UUID strings observed in the same REPEATABLE READ snapshot; the caller
+    compares the set to the derived population and refuses on any
+    substitution, omission, or duplication even when count+amount agree.
+    """
+    reread = (
+        (
+            await session.execute(
+                text(
+                    "SELECT id"
+                    " FROM public.webhook_ingress_identities"
+                    " WHERE tenant_id = :tenant_id"
+                    " AND verified_commerce_ingress_state = 'authenticity_verified'"
+                ),
+                {"tenant_id": str(tenant)},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(sorted(str(record["id"]) for record in reread))
+
+
+def _compute_scope_identity(
+    *,
+    tenant: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    scope_policy_version: str,
+    scoped: tuple[ScopedCandidate, ...],
+) -> str:
+    """Bind the exact governed producer identity set to one digest.
+
+    Material per candidate is ``ingress_id:disposition:reason:amount``;
+    the multiset is sorted so replay is stable across process/container
+    restarts and ordering changes, while any substitution/duplication/
+    omission changes the digest even when all aggregates remain equal.
+    Same authoritative source set + tenant + window + policy yields the
+    identical identity; different identity sets yield different identities.
+    """
+    lines = sorted(
+        f"{item.ingress_id}:{item.classification.disposition}:"
+        f"{item.classification.reason}:{int(item.verified_amount_minor)}"
+        for item in scoped
+    )
+    payload = "|".join(
+        [
+            str(tenant),
+            window_start.isoformat(),
+            window_end.isoformat(),
+            str(scope_policy_version),
+            *lines,
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _classify_one(
@@ -319,6 +533,8 @@ async def derive_governed_scope(
 ) -> CanonicalReconciliationScope:
     """Derive the full governed scope for one tenant window, fail-closed."""
     tenant = _coerce_tenant(tenant_id)
+    snapshot_law = await _require_snapshot_isolation(session)
+    await _inspect_rls_completeness(session)
     load_b26_p2_scope_policy()
     identity = scope_policy_identity()
     if identity.scope_policy_version != B26_P2_SCOPE_POLICY_VERSION:
@@ -332,9 +548,7 @@ async def derive_governed_scope(
     try:
         await require_tenant_row_exists(session, tenant)
     except Exception as exc:
-        raise ScopeConductionError(
-            f"p2_conduction_tenant_absent:{exc}"
-        ) from exc
+        raise ScopeConductionError(f"p2_conduction_tenant_absent:{exc}") from exc
     try:
         start, end = validate_window(window_start, window_end)
     except ScopeAuthorityError as exc:
@@ -354,6 +568,15 @@ async def derive_governed_scope(
     if total != derived_total:
         raise ScopeConductionError(
             f"p2_conduction_amount_not_conserved:derived={derived_total}:stored={total}"
+        )
+    derived_identity_set = tuple(sorted(str(item.ingress_id) for item in scoped))
+    reread_identity_set = await _independent_population_identities(
+        session, tenant=tenant
+    )
+    if derived_identity_set != reread_identity_set:
+        raise ScopeConductionError(
+            "p2_conduction_identity_not_conserved:"
+            f"derived={len(derived_identity_set)}:stored={len(reread_identity_set)}"
         )
     supported = tuple(
         item
@@ -384,6 +607,15 @@ async def derive_governed_scope(
         item.verified_amount_minor for item in excluded
     ):
         raise ScopeConductionError("p2_conduction_reason_amount_not_conserved")
+    scope_identity = _compute_scope_identity(
+        tenant=tenant,
+        window_start=start,
+        window_end=end,
+        scope_policy_version=B26_P2_SCOPE_POLICY_VERSION,
+        scoped=scoped,
+    )
+    if len(scope_identity) != 64:
+        raise ScopeConductionError("p2_scope_identity_malformed")
     return CanonicalReconciliationScope(
         tenant_id=tenant,
         window_start=start,
@@ -391,6 +623,11 @@ async def derive_governed_scope(
         scope_policy_version=B26_P2_SCOPE_POLICY_VERSION,
         policy_source_sha256=identity.source_sha256,
         policy_semantic_sha256=identity.semantic_sha256,
+        scope_identity=scope_identity,
+        snapshot_isolation=snapshot_law,
+        money_semantics=P2_MONEY_SEMANTICS,
+        money_authority=P2_MONEY_AUTHORITY,
+        canonical_net_authority=P2_CANONICAL_NET_AUTHORITY,
         candidates=scoped,
         candidate_count=len(scoped),
         total_amount_minor=derived_total,
@@ -440,6 +677,11 @@ def describe_scope_summary(scope: CanonicalReconciliationScope) -> dict[str, Any
         "scope_policy_version": scope.scope_policy_version,
         "policy_source_sha256": scope.policy_source_sha256,
         "policy_semantic_sha256": scope.policy_semantic_sha256,
+        "scope_identity": scope.scope_identity,
+        "snapshot_isolation": scope.snapshot_isolation,
+        "money_semantics": scope.money_semantics,
+        "money_authority": scope.money_authority,
+        "canonical_net_authority": scope.canonical_net_authority,
         "candidate_count": scope.candidate_count,
         "total_amount_minor": scope.total_amount_minor,
         "supported_count": scope.supported_count,
@@ -456,6 +698,10 @@ def describe_scope_summary(scope: CanonicalReconciliationScope) -> dict[str, Any
 
 
 __all__: Sequence[str] = (
+    "P2_CANONICAL_NET_AUTHORITY",
+    "P2_MONEY_AUTHORITY",
+    "P2_MONEY_SEMANTICS",
+    "P2_SNAPSHOT_ISOLATION_LAW",
     "CanonicalReconciliationScope",
     "ReconciliationCandidate",
     "ScopeConductionError",

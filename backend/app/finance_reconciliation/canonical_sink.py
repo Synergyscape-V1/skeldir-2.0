@@ -1080,7 +1080,11 @@ async def execute_governed_sink(
     # for executable identity; the load-bearing capture is step 3).
     require_registered_sink(sink_id)
     tenant_id = await resolve_authenticated_tenant(auth_token)
-    async with open_governed_b23_session(tenant_id) as session:
+    from app.finance_reconciliation.tenant_authority import (  # noqa: PLC0415
+        open_governed_b23_snapshot_session as _p2_snapshot_session,
+    )
+
+    async with _p2_snapshot_session(tenant_id) as session:
         await require_tenant_row_exists(session, tenant_id)
         coverage = await resolve_canonical_coverage(
             session,

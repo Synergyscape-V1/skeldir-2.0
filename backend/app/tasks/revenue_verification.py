@@ -31,29 +31,52 @@ async def _derive_p2_scope_for_window(
     tenant_id: UUID,
     window_start: datetime,
     window_end: datetime,
+    broker_task_id: str | None = None,
 ) -> Dict[str, Any]:
     """Derive the governed P2 scope after natural B2.3 dispatch (read-only).
 
-    B2.6-P2 Corrective I natural conduction: the tenant is the task's
-    server-derived tenant (originating from verified webhook dispatch, bound
-    here through the governed B23 session), the population is re-read from
-    durable state, and every candidate is classified through the single
-    scope authority with independent conservation. Read-only observation:
-    B2.3 verdict truth is never written here.
+    Corrective II dispatch-bound authority: the message tenant/window are
+    lower-authority claims. The worker re-resolves authoritative tenant,
+    window, and ingress provenance from the durable
+    ``b23_match_task_dispatches`` row keyed by the broker-assigned task
+    identity (``self.request.id``), compares the message claims against
+    that durable authority, and derives scope from the authoritative
+    values only. Any absence or mismatch refuses fail-closed (exception);
+    callers must propagate to task FAILURE/DLQ, never swallow to
+    ``p2_scope: None`` success. The derivation runs in one REPEATABLE READ
+    snapshot with exact identity conservation and RLS completeness
+    inspection. B2.3 verdict truth is never written here.
     """
-    from app.db.session import get_b23_session  # noqa: PLC0415
     from app.finance_reconciliation import (  # noqa: PLC0415
         candidate_conduction as _p2_conduction,
     )
+    from app.finance_reconciliation import (  # noqa: PLC0415
+        dispatch_authority as _p2_dispatch,
+    )
+    from app.finance_reconciliation.tenant_authority import (  # noqa: PLC0415
+        open_governed_b23_snapshot_session,
+    )
 
-    async with get_b23_session(tenant_id) as session:
+    async with open_governed_b23_snapshot_session(tenant_id) as session:
+        authority = await _p2_dispatch.resolve_dispatch_authority(
+            session,
+            broker_task_id=broker_task_id,
+            message_tenant_id=tenant_id,
+            message_window_start=window_start,
+            message_window_end=window_end,
+        )
         scope = await _p2_conduction.derive_governed_scope(
             session,
-            tenant_id=tenant_id,
-            window_start=window_start,
-            window_end=window_end,
+            tenant_id=authority.tenant_id,
+            window_start=authority.window_start,
+            window_end=authority.window_end,
         )
-    return _p2_conduction.describe_scope_summary(scope)
+    summary = _p2_conduction.describe_scope_summary(scope)
+    summary["dispatch_id"] = str(authority.dispatch_id)
+    summary["broker_task_id"] = str(authority.broker_task_id)
+    summary["webhook_ingress_identity_id"] = str(authority.webhook_ingress_identity_id)
+    summary["dispatch_bound"] = True
+    return summary
 
 
 async def _fetch_b23_transition_tenant_ids() -> list[str]:
@@ -221,36 +244,37 @@ def execute_b23_batch_match_engine_task(
             chunk_size=chunk_size,
         )
     )
-    # Natural P2 conduction after B2.3 dispatch: best-effort observation that
-    # never breaks B2.3 truth. Failures log with tenant context and yield a
-    # None scope; the mandatory fail-closed edge lives in the canonical sink.
-    p2_scope: Dict[str, Any] | None = None
+    # Corrective II dispatch-bound P2 conduction: B2.3 truth is already
+    # committed in its own session above, so a later P2 refusal cannot roll
+    # it back (idempotent retry preserves verdicts). P2 authority failures
+    # propagate to task FAILURE/DLQ (observable) -- never a silent
+    # ``p2_scope: None`` success. The mandatory fail-closed edge also lives
+    # in the canonical sink.
+    broker_task_id: str | None = None
     try:
-        p2_scope = run_in_worker_loop(
-            _derive_p2_scope_for_window(
-                tenant_id=UUID(tenant_id),
-                window_start=window_start,
-                window_end=window_end,
-            )
-        )
-        logger.info(
-            "b26_p2_worker_scope_derived",
-            extra={
-                "tenant_id": tenant_id,
-                "correlation_id": correlation_id,
-                "candidate_count": p2_scope.get("candidate_count"),
-                "excluded_count": p2_scope.get("excluded_count"),
-                "scope_policy_version": p2_scope.get("scope_policy_version"),
-            },
-        )
+        broker_task_id = getattr(getattr(self, "request", None), "id", None)
     except Exception:
-        logger.exception(
-            "b26_p2_worker_scope_derivation_failed",
-            extra={
-                "tenant_id": tenant_id,
-                "correlation_id": correlation_id,
-            },
+        broker_task_id = None
+    p2_scope = run_in_worker_loop(
+        _derive_p2_scope_for_window(
+            tenant_id=UUID(tenant_id),
+            window_start=window_start,
+            window_end=window_end,
+            broker_task_id=str(broker_task_id) if broker_task_id else None,
         )
+    )
+    logger.info(
+        "b26_p2_worker_scope_derived",
+        extra={
+            "tenant_id": tenant_id,
+            "correlation_id": correlation_id,
+            "candidate_count": p2_scope.get("candidate_count"),
+            "excluded_count": p2_scope.get("excluded_count"),
+            "scope_policy_version": p2_scope.get("scope_policy_version"),
+            "scope_identity": p2_scope.get("scope_identity"),
+            "dispatch_id": p2_scope.get("dispatch_id"),
+        },
+    )
     return {
         "tenant_id": tenant_id,
         "task_name": self.name,
