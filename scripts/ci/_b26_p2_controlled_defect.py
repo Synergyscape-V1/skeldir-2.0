@@ -9,8 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCOPE_MODULE = ROOT / "backend/app/finance_reconciliation/scope_authority.py"
+CONDUCTION_MODULE = ROOT / "backend/app/finance_reconciliation/candidate_conduction.py"
 SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
 SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+WEBHOOK_MODULE = ROOT / "backend/app/api/webhooks.py"
+B23_TASK_MODULE = ROOT / "backend/app/tasks/revenue_verification.py"
 PROBE_ALIAS = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_alias.py"
 PROBE_SQL = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_sql.py"
 PROBE_SERIALIZER = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_serializer.py"
@@ -170,6 +173,59 @@ def p2_live_wiring_removal() -> None:
     )
 
 
+def p2_sink_conduction_removal() -> None:
+    _replace_once(
+        SINK_MODULE,
+        "            _p2_scope_result = await _p2_conduction.derive_governed_scope(\n",
+        "            _p2_scope_result = await _p2_conduction.derive_governed_scope_DISABLED(\n",
+        defect="p2_sink_conduction_removal",
+    )
+
+
+def p2_webhook_phase_violation() -> None:
+    text = WEBHOOK_MODULE.read_text(encoding="utf-8")
+    marker = "logger = logging.getLogger(__name__)\n"
+    if text.count(marker) != 1:
+        raise SystemExit("p2_webhook_phase_violation:anchor_count!=1")
+    text = text.replace(
+        marker,
+        marker
+        + "from app.finance_reconciliation import (\n"
+        "    candidate_conduction as _p2_nc_phase_probe,  # NC-P2-PHASE-VIOLATION\n"
+        ")\n",
+        1,
+    )
+    WEBHOOK_MODULE.write_text(text, encoding="utf-8")
+
+
+def p2_b23_task_conduction_removal() -> None:
+    _replace_once(
+        B23_TASK_MODULE,
+        "            _derive_p2_scope_for_window(\n",
+        "            _derive_p2_scope_for_window_DISABLED(\n",
+        defect="p2_b23_task_conduction_removal",
+    )
+
+
+def p2_conduction_prefilter() -> None:
+    _replace_once(
+        CONDUCTION_MODULE,
+        "                    \" ORDER BY event_timestamp ASC, id ASC\"\n",
+        "                    \" AND provider IN :supported_platforms\"\n"
+        "                    \" ORDER BY event_timestamp ASC, id ASC\"\n",
+        defect="p2_conduction_prefilter",
+    )
+
+
+def p2_refusal_law_removal() -> None:
+    _replace_once(
+        SCOPE_CONTRACT,
+        "refusal_representation: exception_fail_closed_never_returned_disposition\n",
+        "refusal_representation: returned_object\n",
+        defect="p2_refusal_law_removal",
+    )
+
+
 APPLIERS = {
     "p2_second_alias_dict": p2_second_alias_dict,
     "p2_sql_case_normalizer": p2_sql_case_normalizer,
@@ -183,6 +239,11 @@ APPLIERS = {
     "p2_contract_universe_widening": p2_contract_universe_widening,
     "p2_scope_policy_version_drift": p2_scope_policy_version_drift,
     "p2_live_wiring_removal": p2_live_wiring_removal,
+    "p2_sink_conduction_removal": p2_sink_conduction_removal,
+    "p2_webhook_phase_violation": p2_webhook_phase_violation,
+    "p2_b23_task_conduction_removal": p2_b23_task_conduction_removal,
+    "p2_conduction_prefilter": p2_conduction_prefilter,
+    "p2_refusal_law_removal": p2_refusal_law_removal,
 }
 
 

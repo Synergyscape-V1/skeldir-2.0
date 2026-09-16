@@ -15,8 +15,11 @@ sys.path.insert(0, str(ROOT))
 VALIDATOR = ROOT / "scripts/ci/validate_b26_p2_scope_authority.py"
 MUTATOR = ROOT / "scripts/ci/_b26_p2_controlled_defect.py"
 SCOPE_MODULE = ROOT / "backend/app/finance_reconciliation/scope_authority.py"
+CONDUCTION_MODULE = ROOT / "backend/app/finance_reconciliation/candidate_conduction.py"
 SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
 SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
+WEBHOOK_MODULE = ROOT / "backend/app/api/webhooks.py"
+B23_TASK_MODULE = ROOT / "backend/app/tasks/revenue_verification.py"
 PROBE_FILES = (
     ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_alias.py",
     ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_sql.py",
@@ -37,6 +40,11 @@ CONTROLS: tuple[tuple[str, str, str], ...] = (
     ("p2_contract_universe_widening", "p2_canonical_provider_universe_drift", "same-primitive"),
     ("p2_scope_policy_version_drift", "p2_scope_policy_version_drift", "same-primitive"),
     ("p2_live_wiring_removal", "p2_live_wiring_absent_from_executor", "alternate-primitive"),
+    ("p2_sink_conduction_removal", "p2_conduction_absent_from_executor", "alternate-primitive"),
+    ("p2_webhook_phase_violation", "p2_webhook_phase_boundary_violated", "out-of-vocabulary"),
+    ("p2_b23_task_conduction_removal", "p2_conduction_absent_from_b23_task", "alternate-primitive"),
+    ("p2_conduction_prefilter", "p2_conduction_prefilter", "out-of-vocabulary"),
+    ("p2_refusal_law_removal", "p2_refusal_representation_drift", "same-primitive"),
 )
 
 
@@ -56,8 +64,11 @@ def _hash(path: Path) -> str:
 
 TRACKED_DEFECT_FILES = (
     ROOT / "backend/app/finance_reconciliation/scope_authority.py",
+    ROOT / "backend/app/finance_reconciliation/candidate_conduction.py",
     ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml",
     ROOT / "backend/app/finance_reconciliation/canonical_sink.py",
+    ROOT / "backend/app/api/webhooks.py",
+    ROOT / "backend/app/tasks/revenue_verification.py",
 )
 
 
@@ -85,8 +96,11 @@ def main() -> int:
         return 1
     pristine = {
         "scope_module": _hash(SCOPE_MODULE),
+        "conduction_module": _hash(CONDUCTION_MODULE),
         "scope_contract": _hash(SCOPE_CONTRACT),
         "sink_module": _hash(SINK_MODULE),
+        "webhook_module": _hash(WEBHOOK_MODULE),
+        "b23_task_module": _hash(B23_TASK_MODULE),
     }
     pristine_snapshot = _snapshot()
 
@@ -122,8 +136,11 @@ def main() -> int:
 
     restored = {
         "scope_module": _hash(SCOPE_MODULE),
+        "conduction_module": _hash(CONDUCTION_MODULE),
         "scope_contract": _hash(SCOPE_CONTRACT),
         "sink_module": _hash(SINK_MODULE),
+        "webhook_module": _hash(WEBHOOK_MODULE),
+        "b23_task_module": _hash(B23_TASK_MODULE),
     }
     if restored != pristine:
         print("B26_P2_NEGATIVE_CONTROLS_FAIL restoration_hash_mismatch")

@@ -45,6 +45,14 @@ report["policy_version_ok"] = identity.scope_policy_version == B26_P2_SCOPE_POLI
 report["policy_phase_ok"] = identity.phase == "B2.6-P2"
 document = load_b26_p2_scope_policy()
 report["contract_pin_ok"] = document.get("module_ast_sha256") is not None
+report["corrective_law_ok"] = (
+    document.get("refusal_representation")
+    == "exception_fail_closed_never_returned_disposition"
+    and document.get("rail_authority")
+    == "p2_design_partner_maturity_definition_delegated_by_p1_unsupported_rail_doctrine"
+    and document.get("exclusion_priority_authority")
+    == "p2_governed_deterministic_priority_versioned"
+)
 report["dispositions_ok"] = set(document.get("dispositions", [])) == {
     "SUPPORTED_AND_IN_SCOPE",
     "SUPPORTED_BUT_UNRESOLVED",
@@ -101,6 +109,24 @@ report["delegation_ok"] = _normalize_platforms(None) == normalize_provider_set(N
 
 sink_source = open("app/finance_reconciliation/canonical_sink.py", encoding="utf-8").read()
 report["wiring_ok"] = "_p2_scope.assert_aggregate_scope_supported(" in sink_source
+report["conduction_wiring_ok"] = "derive_governed_scope(" in sink_source
+report["conduction_observation_ok"] = "b26_p2_candidate_scope_derived" in sink_source
+
+from app.finance_reconciliation import candidate_conduction as conduction
+report["conduction_import_ok"] = (
+    callable(conduction.derive_governed_scope)
+    and callable(conduction.derive_single_candidate_scope)
+)
+webhook_source = open("app/api/webhooks.py", encoding="utf-8").read()
+report["webhook_phase_ok"] = (
+    "finance_reconciliation" not in webhook_source
+    and "candidate_conduction" not in webhook_source
+    and "p2_scope" not in webhook_source
+)
+task_source = open("app/tasks/revenue_verification.py", encoding="utf-8").read()
+report["task_conduction_ok"] = (
+    "_derive_p2_scope_for_window(" in task_source and "p2_scope" in task_source
+)
 
 print("P2_IN_IMAGE_BATTERY " + json.dumps(report, sort_keys=True))
 '''

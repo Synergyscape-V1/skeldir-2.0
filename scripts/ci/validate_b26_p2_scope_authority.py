@@ -27,17 +27,23 @@ sys.path.insert(0, str(REPO_ROOT))
 
 SCOPE_POLICY_PATH = REPO_ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
 SCOPE_MODULE = BACKEND / "app/finance_reconciliation/scope_authority.py"
+CONDUCTION_MODULE = BACKEND / "app/finance_reconciliation/candidate_conduction.py"
 COVERAGE_MODULE = BACKEND / "app/finance_reconciliation/coverage_authority.py"
 SINK_MODULE = BACKEND / "app/finance_reconciliation/canonical_sink.py"
+WEBHOOK_MODULE = BACKEND / "app/api/webhooks.py"
+B23_TASK_MODULE = BACKEND / "app/tasks/revenue_verification.py"
 
 CANONICAL_PROVIDERS = frozenset({"paypal", "shopify", "stripe", "woocommerce"})
 
 # Files allowed to name >=2 canonical providers AND define normalization
-# shapes: the P2 canonical module itself, the sovereign B2.3 universe owner,
-# and the P1-quarantined legacy/compat surfaces (non-authoritative by fence).
+# shapes: the P2 canonical module itself, the governed derivation boundary
+# (which calls the single authority and defines none), the sovereign B2.3
+# universe owner, and the P1-quarantined legacy/compat surfaces
+# (non-authoritative by fence).
 CENSUS_ALLOWLIST = frozenset(
     {
         "backend/app/finance_reconciliation/scope_authority.py",
+        "backend/app/finance_reconciliation/candidate_conduction.py",
         "backend/app/revenue_verification/verification_coverage.py",
         "backend/app/finance_reconciliation/coverage_authority.py",
         "backend/app/finance_reconciliation/semantic_contract.py",
@@ -407,6 +413,174 @@ def _check_container_file_coverage(
     details["dockerfile_covers_contracts"] = "contracts/reconciliation" in dockerfile
 
 
+def _check_policy_corrective_law(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Corrective I contract law: refusal, rail, and priority authority."""
+    document = yaml.safe_load(SCOPE_POLICY_PATH.read_text(encoding="utf-8"))
+    assert isinstance(document, dict)
+    if (
+        document.get("refusal_representation")
+        != "exception_fail_closed_never_returned_disposition"
+    ):
+        violations.append("p2_refusal_representation_drift")
+    if not document.get("refusal_law"):
+        violations.append("p2_refusal_law_missing")
+    if (
+        document.get("rail_authority")
+        != "p2_design_partner_maturity_definition_delegated_by_p1_unsupported_rail_doctrine"
+    ):
+        violations.append("p2_rail_authority_drift")
+    delegation = str(document.get("rail_delegation") or "")
+    if "P1_unsupported_rail_doctrine" not in delegation or "B2.6-P2" not in delegation:
+        violations.append("p2_rail_delegation_missing")
+    if (
+        document.get("exclusion_priority_authority")
+        != "p2_governed_deterministic_priority_versioned"
+    ):
+        violations.append("p2_exclusion_priority_authority_drift")
+    details["corrective_policy_law_checked"] = True
+
+
+def _check_refusal_never_returned(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """INVALID_OR_REFUSED must raise, never return as a disposition."""
+    tree = ast.parse(SCOPE_MODULE.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+            node.name == "classify_candidate"
+        ):
+            for child in ast.walk(node):
+                if isinstance(child, ast.Return) and child.value is not None:
+                    fragment = ast.dump(child.value)
+                    if "INVALID_OR_REFUSED" in fragment:
+                        violations.append(
+                            "p2_refusal_returned_as_disposition"
+                        )
+                        break
+            break
+    else:
+        violations.append("p2_classify_candidate_absent")
+    details["refusal_never_returned_checked"] = True
+
+
+def _code_lines_without_comments(source: str) -> str:
+    """Return source with full-line and trailing comments removed.
+
+    Token sensors below must fire on executable meaning, not on prose: a
+    comment mentioning a forbidden shape is harmless bytes (M-CA1-12) and
+    must stay GREEN.
+    """
+    kept: list[str] = []
+    for line in source.splitlines():
+        code = line.split("#", 1)[0]
+        kept.append(code)
+    return "\n".join(kept)
+
+
+def _check_conduction_law(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """The natural conduction boundary reads all candidates, writes none."""
+    if not CONDUCTION_MODULE.is_file():
+        violations.append("p2_conduction_module_missing")
+        return
+    source = CONDUCTION_MODULE.read_text(encoding="utf-8")
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        violations.append(f"p2_conduction_syntax:{exc}")
+        return
+    imported = _imports(tree)
+    details["conduction_imports"] = sorted(set(imported))
+    for name in imported:
+        if any(
+            name == prefix or name.startswith(prefix + ".")
+            for prefix in FORBIDDEN_IMPORT_PREFIXES
+        ):
+            violations.append(f"p2_conduction_false_authority_import:{name}")
+    if "app.ingestion.channel_normalization" in source:
+        violations.append("p2_conduction_second_alias_source_import")
+    for required in (
+        "derive_governed_scope",
+        "derive_single_candidate_scope",
+        "assert_tenant_authority",
+        "classify_candidate",
+    ):
+        if required not in source:
+            violations.append(f"p2_conduction_missing:{required}")
+    # The single-candidate seam must exist ONLY as an explicit refusal: no
+    # production edge is phase-authorized for caller-paired single rows.
+    if "p2_conduction_single_candidate_removed" not in source:
+        violations.append("p2_conduction_single_seam_not_refusing")
+    code_only = _code_lines_without_comments(source)
+    for forbidden in ("INSERT ", "UPDATE ", "DELETE ", "COALESCE", "CASE WHEN"):
+        if forbidden in code_only:
+            violations.append(f"p2_conduction_write_predicate_token:{forbidden.strip()}")
+    for token in ("datetime.now", "time.time", "random.", "uuid4", "hash("):
+        if token in code_only.lower():
+            violations.append(f"p2_conduction_nondeterministic_token:{token}")
+    # Pre-filter information-loss class: the row read must not exclude by
+    # provider, currency, or window before the classifier sees the row.
+    for forbidden in (
+        "AND provider",
+        "AND currency",
+        "AND event_timestamp",
+        "IN :supported",
+        "IN :matched",
+    ):
+        if forbidden in code_only:
+            violations.append(f"p2_conduction_prefilter:{forbidden}")
+    if source.count("assert_tenant_authority") < 2:
+        violations.append("p2_conduction_tenant_authority_not_pervasive")
+    if "p2_conduction_row_tenant_mismatch" not in source:
+        violations.append("p2_conduction_row_tenant_binding_absent")
+    if "p2_conduction_count_not_conserved" not in source:
+        violations.append("p2_conduction_conservation_absent")
+    details["conduction_checked"] = True
+
+
+def _check_live_conduction_wiring(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """Every production-natural edge must derive governed P2 scope."""
+    sink_source = SINK_MODULE.read_text(encoding="utf-8")
+    if "derive_governed_scope(" not in sink_source:
+        violations.append("p2_conduction_absent_from_executor")
+    if "b26_p2_candidate_scope_derived" not in sink_source:
+        violations.append("p2_conduction_observation_absent_from_executor")
+    task_source = B23_TASK_MODULE.read_text(encoding="utf-8")
+    if "            _derive_p2_scope_for_window(\n" not in task_source:
+        violations.append("p2_conduction_absent_from_b23_task")
+    if '"p2_scope"' not in task_source and "'p2_scope'" not in task_source:
+        violations.append("p2_conduction_effect_absent_from_b23_task")
+    details["live_conduction_wiring_checked"] = True
+
+
+def _check_webhook_phase_boundary(
+    violations: list[str], details: dict[str, Any]
+) -> None:
+    """B2.2 ingestion must not depend on downstream B2.6 scope semantics.
+
+    Mirrors the B22-P3 canonical-commerce-identity law inside the P2 plane:
+    the webhook hot path persists ingress and dispatches B2.3; P2 derivation
+    lives downstream (B23 worker task, canonical sink). Any B2.6 import or
+    scope-effect token in the webhook module is a layering violation, never
+    a shortcut.
+    """
+    webhook_source = WEBHOOK_MODULE.read_text(encoding="utf-8")
+    for token in (
+        "finance_reconciliation",
+        "candidate_conduction",
+        "scope_authority",
+        "p2_scope",
+    ):
+        if token in webhook_source:
+            violations.append(f"p2_webhook_phase_boundary_violated:{token}")
+    details["webhook_phase_boundary_checked"] = True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-dir", type=Path, default=None)
@@ -423,6 +597,11 @@ def main() -> int:
         _check_execution_vectors(violations, details)
         _check_delegation_and_wiring(violations, details)
         _check_container_file_coverage(violations, details)
+        _check_policy_corrective_law(violations, details)
+        _check_refusal_never_returned(violations, details)
+        _check_conduction_law(violations, details)
+        _check_live_conduction_wiring(violations, details)
+        _check_webhook_phase_boundary(violations, details)
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_validator_crash:{exc}")
     details["violations"] = sorted(violations)
