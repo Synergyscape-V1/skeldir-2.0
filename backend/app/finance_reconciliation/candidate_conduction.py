@@ -337,10 +337,17 @@ async def _inspect_rls_completeness(session: AsyncSession) -> None:
         .mappings()
         .one_or_none()
     )
-    if kind_row is None or str(kind_row["relkind"]) != "r":
+    raw_kind = kind_row["relkind"] if kind_row else None
+    if isinstance(raw_kind, (bytes, bytearray)):
+        try:
+            raw_kind = bytes(raw_kind).decode("utf-8", errors="strict")
+        except Exception as exc:
+            raise ScopeConductionError(
+                f"p2_source_relation_not_table:undecodable:{exc}"
+            ) from exc
+    if kind_row is None or str(raw_kind) != "r":
         raise ScopeConductionError(
-            "p2_source_relation_not_table:"
-            f"{kind_row['relkind'] if kind_row else 'missing'}"
+            f"p2_source_relation_not_table:{raw_kind if raw_kind else 'missing'}"
         )
     policy_rows = (
         (

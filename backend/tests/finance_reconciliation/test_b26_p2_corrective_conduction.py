@@ -396,6 +396,12 @@ def _seed_worker_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> No
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
+            # RLS FORCE hides rows when the tenant GUC is absent; seed setup
+            # (never authority) binds it explicitly for read and write.
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
             cur.execute(
                 "SELECT provider, provider_native_event_reference,"
                 " provider_native_commerce_reference,"
@@ -533,6 +539,10 @@ async def test_p2ca1_scope_identity_binds_exact_producer_set() -> None:
     clone_event_id = uuid.uuid4()
     try:
         with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(universe["tenant_id"]),),
+            )
             cur.execute(
                 "SELECT event_timestamp FROM public.webhook_ingress_identities"
                 " WHERE id = %s",
