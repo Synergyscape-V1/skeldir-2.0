@@ -5187,6 +5187,95 @@ CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETUR
         $_$;
 
 
+--
+-- Name: b26_p2_enforce_dispatch_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF OLD.tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_tenant_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.webhook_ingress_identity_id IS DISTINCT FROM NEW.webhook_ingress_identity_id THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_ingress_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.task_id IS DISTINCT FROM NEW.task_id THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_task_id_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.task_name IS DISTINCT FROM NEW.task_name THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_task_name_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.queue IS DISTINCT FROM NEW.queue THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_queue_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.routing_key IS DISTINCT FROM NEW.routing_key THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_routing_key_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.provider IS DISTINCT FROM NEW.provider THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_provider_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.provider_native_event_reference IS DISTINCT FROM NEW.provider_native_event_reference THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_event_ref_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.provider_native_commerce_reference IS DISTINCT FROM NEW.provider_native_commerce_reference THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_commerce_ref_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.normalized_commerce_reference_value IS DISTINCT FROM NEW.normalized_commerce_reference_value THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_norm_ref_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.correlation_id IS DISTINCT FROM NEW.correlation_id THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_correlation_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.window_start IS DISTINCT FROM NEW.window_start
+               AND OLD.window_start IS NOT NULL THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.window_end IS DISTINCT FROM NEW.window_end
+               AND OLD.window_end IS NOT NULL THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.delivery_state = 'published' AND NEW.delivery_state = 'pending_publish' THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_delivery_no_backward'
+                    USING ERRCODE = '42501';
+            END IF;
+            NEW.updated_at = now();
+            RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_resolve_dispatch_authority(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS TABLE(tenant_id uuid, webhook_ingress_identity_id uuid, window_start timestamp with time zone, window_end timestamp with time zone)
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+            SELECT dir.tenant_id,
+                   dir.webhook_ingress_identity_id,
+                   dir.window_start,
+                   dir.window_end
+            FROM public.b26_p2_task_authority_directory AS dir
+            WHERE dir.task_id = p_task_id
+        $$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -5500,11 +5589,58 @@ CREATE TABLE public.b23_match_task_dispatches (
     dispatched_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    delivery_state character varying(32) DEFAULT 'pending_publish'::character varying NOT NULL,
+    publish_attempts integer DEFAULT 0 NOT NULL,
+    last_publish_error text,
+    window_start timestamp with time zone,
+    window_end timestamp with time zone,
     CONSTRAINT ck_b23_match_task_dispatches_queue CHECK (((queue)::text = 'b23_match_engine'::text)),
-    CONSTRAINT ck_b23_match_task_dispatches_status CHECK (((status)::text = 'dispatched'::text))
+    CONSTRAINT ck_b23_match_task_dispatches_status CHECK (((status)::text = 'dispatched'::text)),
+    CONSTRAINT ck_b23_match_task_dispatches_delivery_state CHECK (((delivery_state)::text = ANY ((ARRAY['pending_publish'::character varying, 'published'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_task_dispatches_publish_attempts CHECK ((publish_attempts >= 0)),
+    CONSTRAINT ck_b23_match_task_dispatches_window_order CHECK (((window_start IS NULL) OR (window_end IS NULL) OR (window_start < window_end))),
+    CONSTRAINT ck_b23_match_task_dispatches_task_name CHECK (((task_name)::text = 'app.tasks.revenue_verification.execute_b23_batch_match_engine'::text))
 );
 
 ALTER TABLE ONLY public.b23_match_task_dispatches FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b26_p2_execution_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_execution_outbox (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    dispatch_task_id character varying(155) NOT NULL,
+    webhook_ingress_identity_id uuid NOT NULL,
+    state character varying(32) DEFAULT 'pending_publish'::character varying NOT NULL,
+    publish_attempts integer DEFAULT 0 NOT NULL,
+    last_publish_error text,
+    next_retry_at timestamp with time zone DEFAULT now() NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b26_p2_outbox_state CHECK (((state)::text = ANY ((ARRAY['pending_publish'::character varying, 'published'::character varying])::text[]))),
+    CONSTRAINT ck_b26_p2_outbox_attempts CHECK ((publish_attempts >= 0))
+);
+
+ALTER TABLE ONLY public.b26_p2_execution_outbox FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b26_p2_task_authority_directory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_task_authority_directory (
+    task_id character varying(155) NOT NULL,
+    tenant_id uuid NOT NULL,
+    webhook_ingress_identity_id uuid NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    window_end timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b26_p2_directory_window_order CHECK ((window_start < window_end))
+);
 
 
 --
@@ -12640,6 +12776,14 @@ ALTER TABLE ONLY public.webhook_ingress_identities
 
 
 --
+-- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_id; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_ingress_identities
+    ADD CONSTRAINT uq_webhook_ingress_identities_tenant_id UNIQUE (tenant_id, id);
+
+
+--
 -- Name: users users_login_identifier_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12661,6 +12805,46 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: b26_p2_execution_outbox b26_p2_execution_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_outbox
+    ADD CONSTRAINT b26_p2_execution_outbox_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: b26_p2_execution_outbox uq_b26_p2_execution_outbox_task; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_outbox
+    ADD CONSTRAINT uq_b26_p2_execution_outbox_task UNIQUE (dispatch_task_id);
+
+
+--
+-- Name: b26_p2_execution_outbox uq_b26_p2_execution_outbox_tenant_ingress; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_outbox
+    ADD CONSTRAINT uq_b26_p2_execution_outbox_tenant_ingress UNIQUE (tenant_id, webhook_ingress_identity_id);
+
+
+--
+-- Name: b26_p2_task_authority_directory b26_p2_task_authority_directory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_task_authority_directory
+    ADD CONSTRAINT b26_p2_task_authority_directory_pkey PRIMARY KEY (task_id);
+
+
+--
+-- Name: b23_match_task_dispatches fk_b23_dispatch_tenant_ingress_composite; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b23_match_task_dispatches
+    ADD CONSTRAINT fk_b23_dispatch_tenant_ingress_composite FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
 
 
 --
@@ -14216,6 +14400,20 @@ CREATE INDEX idx_b23_match_task_dispatches_ingress ON public.b23_match_task_disp
 --
 
 CREATE INDEX idx_b23_match_task_dispatches_tenant_reference ON public.b23_match_task_dispatches USING btree (tenant_id, provider, provider_native_event_reference, normalized_commerce_reference_value);
+
+
+--
+-- Name: idx_b23_dispatch_delivery_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_dispatch_delivery_state ON public.b23_match_task_dispatches USING btree (delivery_state, dispatched_at);
+
+
+--
+-- Name: idx_b26_p2_outbox_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b26_p2_outbox_pending ON public.b26_p2_execution_outbox USING btree (state, next_retry_at);
 
 
 --
@@ -17194,6 +17392,13 @@ CREATE TRIGGER trg_b23_project_allocation_verification BEFORE INSERT OR UPDATE O
 
 
 --
+-- Name: b23_match_task_dispatches trg_b26_p2_dispatch_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_dispatch_immutability BEFORE UPDATE ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_immutability();
+
+
+--
 -- Name: b23_match_verdicts trg_b23_refresh_allocation_verification_insert; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -17780,6 +17985,38 @@ ALTER TABLE ONLY public.b23_match_task_dispatches
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT b23_match_task_dispatches_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_execution_outbox b26_p2_execution_outbox_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_outbox
+    ADD CONSTRAINT b26_p2_execution_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_execution_outbox b26_p2_execution_outbox_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_outbox
+    ADD CONSTRAINT b26_p2_execution_outbox_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_task_authority_directory b26_p2_task_authority_directory_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_task_authority_directory
+    ADD CONSTRAINT b26_p2_task_authority_directory_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_task_authority_directory b26_p2_task_authority_director_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_task_authority_directory
+    ADD CONSTRAINT b26_p2_task_authority_director_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
 
 
 --
@@ -18793,6 +19030,12 @@ ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY
 ALTER TABLE public.b24_worker_process_authority ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: b26_p2_execution_outbox; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b26_p2_execution_outbox ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: b27_explanation_materializations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19630,6 +19873,13 @@ CREATE POLICY tenant_isolation_policy_b23_exception_records ON public.b23_except
 --
 
 CREATE POLICY tenant_isolation_policy_b23_match_task_dispatches ON public.b23_match_task_dispatches USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: b26_p2_execution_outbox tenant_isolation_policy_b26_p2_execution_outbox; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b26_p2_execution_outbox ON public.b26_p2_execution_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --
