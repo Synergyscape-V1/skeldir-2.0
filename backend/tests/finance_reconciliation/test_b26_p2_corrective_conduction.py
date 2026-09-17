@@ -223,9 +223,11 @@ def _seed_conduction_universe(tag: str) -> dict[str, Any]:
 
 
 async def _derive(tenant_id: UUID):
-    from app.db.session import get_b23_session  # noqa: PLC0415
+    from app.finance_reconciliation.tenant_authority import (  # noqa: PLC0415
+        open_governed_b23_snapshot_session,
+    )
 
-    async with get_b23_session(tenant_id) as session:
+    async with open_governed_b23_snapshot_session(tenant_id) as session:
         return await derive_governed_scope(
             session,
             tenant_id=tenant_id,
@@ -242,6 +244,15 @@ async def test_p2ca1_full_scope_conserves_population_with_explicit_exclusions() 
     assert scope.scope_policy_version == B26_P2_SCOPE_POLICY_VERSION
     assert len(scope.policy_source_sha256) == 64
     assert len(scope.policy_semantic_sha256) == 64
+    # Corrective II identity/money/snapshot bindings.
+    assert len(scope.scope_identity) == 64
+    assert scope.snapshot_isolation == "repeatable_read_single_snapshot_per_derivation"
+    assert scope.money_semantics == "source_verified_gross_not_canonical_net"
+    assert scope.money_authority == "b2.2_ingress_verified_amount_minor"
+    assert (
+        scope.canonical_net_authority
+        == "b2.3_match_verdicts.canonical_net_verified_amount_minor_only"
+    )
 
     # Population conservation: 2 matched + 2 fillers + 5 distractors.
     assert scope.candidate_count == 9
@@ -274,6 +285,12 @@ async def test_p2ca1_full_scope_conserves_population_with_explicit_exclusions() 
     summary = describe_scope_summary(scope)
     assert summary["candidate_count"] == 9
     assert summary["excluded_amount_minor"] == 47000
+    assert len(summary["scope_identity"]) == 64
+    assert summary["money_semantics"] == "source_verified_gross_not_canonical_net"
+    assert (
+        summary["snapshot_isolation"]
+        == "repeatable_read_single_snapshot_per_derivation"
+    )
 
 
 async def test_p2ca1_sink_conserves_95_and_derives_scope_naturally(caplog) -> None:
@@ -336,12 +353,14 @@ async def test_p2ca1_tenant_authority_is_server_derived() -> None:
     # Cross-tenant pairing is structurally impossible: the only
     # single-row seam refuses every caller-paired request by design
     # (H-CA1-07), and full derivation binds rows to the session tenant.
-    from app.db.session import get_b23_session  # noqa: PLC0415
     from app.finance_reconciliation.candidate_conduction import (  # noqa: PLC0415
         derive_single_candidate_scope,
     )
+    from app.finance_reconciliation.tenant_authority import (  # noqa: PLC0415
+        open_governed_b23_snapshot_session as _snapshot_session,
+    )
 
-    async with get_b23_session(universe_b["tenant_id"]) as session:
+    async with _snapshot_session(universe_b["tenant_id"]) as session:
         with pytest.raises(ScopeConductionError):
             await derive_single_candidate_scope(
                 session,
@@ -351,9 +370,8 @@ async def test_p2ca1_tenant_authority_is_server_derived() -> None:
 
     # Ghost tenants (verified shape, no durable row) refuse, never zero.
     ghost = uuid.uuid4()
-    from app.db.session import get_b23_session as _session_factory  # noqa: PLC0415
 
-    async with _session_factory(ghost) as session:
+    async with _snapshot_session(ghost) as session:
         with pytest.raises(ScopeConductionError):
             await derive_governed_scope(
                 session,
@@ -361,6 +379,8 @@ async def test_p2ca1_tenant_authority_is_server_derived() -> None:
                 window_start=WINDOW_START,
                 window_end=WINDOW_END,
             )
+
+
 async def test_p2ca1_replay_stable_across_processes() -> None:
     universe = _seed_conduction_universe("replay")
     first = describe_scope_summary(await _derive(universe["tenant_id"]))
@@ -368,28 +388,230 @@ async def test_p2ca1_replay_stable_across_processes() -> None:
     assert first == second
 
 
+def _seed_worker_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> None:
+    """Persist one lawful dispatch row for worker-authority tests (setup only)."""
+    import psycopg2
+
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            # RLS FORCE hides rows when the tenant GUC is absent; seed setup
+            # (never authority) binds it explicitly for read and write.
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            cur.execute(
+                "SELECT provider, provider_native_event_reference,"
+                " provider_native_commerce_reference,"
+                " normalized_commerce_reference_value"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ingress_id),),
+            )
+            row = cur.fetchone()
+            assert row is not None, "seed ingress missing for dispatch"
+            provider, event_ref, commerce_ref, norm_ref = row
+            cur.execute(
+                "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
+                " webhook_ingress_identity_id, task_id, task_name, queue,"
+                " routing_key, correlation_id, provider,"
+                " provider_native_event_reference,"
+                " provider_native_commerce_reference,"
+                " normalized_commerce_reference_value, status)"
+                " VALUES (%s, %s, %s,"
+                " 'app.tasks.revenue_verification.execute_b23_batch_match_engine',"
+                " 'b23_match_engine', 'b23_match_engine.task', %s, %s, %s, %s, %s,"
+                " 'dispatched')"
+                " ON CONFLICT (tenant_id, webhook_ingress_identity_id)"
+                " DO UPDATE SET task_id = EXCLUDED.task_id,"
+                " status = 'dispatched', dispatched_at = now(),"
+                " updated_at = now()",
+                (
+                    str(tenant_id),
+                    str(ingress_id),
+                    task_id,
+                    str(uuid.uuid4()),
+                    provider,
+                    event_ref,
+                    commerce_ref,
+                    norm_ref,
+                ),
+            )
+    finally:
+        conn.close()
+
+
 async def test_p2ca1_worker_scope_derivation_returns_governed_summary() -> None:
-    # The B23 worker task derives this same summary after natural dispatch
-    # (the task wiring itself is pinned by the P2 validator's live-wiring
-    # sensor plus its severance negative control). The derivation is
-    # read-only, so it runs under the same least-privilege principal as the
-    # canonical read path; the verdict-writing batch half stays app_worker.
+    # The B23 worker task derives this same summary after natural dispatch.
+    # Corrective II: the worker re-resolves tenant/window from the durable
+    # dispatch row keyed by broker task_id (dispatch-bound authority). The
+    # test seeds one lawful dispatch and derives with its day window.
+    from datetime import timezone as _tz
+
     from app.tasks.revenue_verification import (  # noqa: PLC0415
         _derive_p2_scope_for_window,
     )
 
     universe = _seed_conduction_universe("worker")
+    day_start = datetime(2026, 1, 15, 0, 0, tzinfo=_tz.utc)
+    day_end = datetime(2026, 1, 16, 0, 0, tzinfo=_tz.utc)
+    worker_task_id = f"p2ca1-worker-{uuid.uuid4().hex[:8]}"
+    _seed_worker_dispatch(universe["tenant_id"], universe["matched"][0], worker_task_id)
     summary = await _derive_p2_scope_for_window(
         tenant_id=universe["tenant_id"],
-        window_start=WINDOW_START,
-        window_end=WINDOW_END,
+        window_start=day_start,
+        window_end=day_end,
+        broker_task_id=worker_task_id,
     )
     assert summary["candidate_count"] == 9
     assert summary["excluded_amount_minor"] == 47000
     assert summary["scope_policy_version"] == B26_P2_SCOPE_POLICY_VERSION
-    assert summary["supported_amount_minor"] + summary[
-        "unresolved_amount_minor"
-    ] + summary["excluded_amount_minor"] == summary["total_amount_minor"]
+    assert summary["dispatch_bound"] is True
+    assert summary["broker_task_id"] == worker_task_id
+    assert len(summary["scope_identity"]) == 64
+    assert (
+        summary["supported_amount_minor"]
+        + summary["unresolved_amount_minor"]
+        + summary["excluded_amount_minor"]
+        == summary["total_amount_minor"]
+    )
+
+
+async def test_p2ca1_worker_forged_task_without_dispatch_refuses() -> None:
+    """Broker forgery without durable dispatch fails closed (Gate 1)."""
+    from app.finance_reconciliation.dispatch_authority import (  # noqa: PLC0415
+        DispatchAuthorityError,
+    )
+    from app.tasks.revenue_verification import (  # noqa: PLC0415
+        _derive_p2_scope_for_window,
+    )
+
+    universe = _seed_conduction_universe("forged")
+    day_start = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
+    day_end = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
+    with pytest.raises((DispatchAuthorityError, ScopeConductionError)):
+        await _derive_p2_scope_for_window(
+            tenant_id=universe["tenant_id"],
+            window_start=day_start,
+            window_end=day_end,
+            broker_task_id=f"forged-{uuid.uuid4().hex[:8]}",
+        )
+
+
+async def test_p2ca1_worker_wrong_window_refuses() -> None:
+    """Lawful dispatch paired with the wrong window fails closed."""
+    from datetime import timezone as _tz2
+
+    from app.finance_reconciliation.dispatch_authority import (  # noqa: PLC0415
+        DispatchAuthorityError,
+    )
+    from app.tasks.revenue_verification import (  # noqa: PLC0415
+        _derive_p2_scope_for_window,
+    )
+
+    universe = _seed_conduction_universe("wrong-window")
+    lawful_task_id = f"p2ca1-lawful-{uuid.uuid4().hex[:8]}"
+    _seed_worker_dispatch(universe["tenant_id"], universe["matched"][0], lawful_task_id)
+    wrong_start = datetime(2026, 3, 1, 0, 0, tzinfo=_tz2.utc)
+    wrong_end = datetime(2026, 4, 1, 0, 0, tzinfo=_tz2.utc)
+    with pytest.raises((DispatchAuthorityError, ScopeConductionError)):
+        await _derive_p2_scope_for_window(
+            tenant_id=universe["tenant_id"],
+            window_start=wrong_start,
+            window_end=wrong_end,
+            broker_task_id=lawful_task_id,
+        )
+
+
+async def test_p2ca1_scope_identity_binds_exact_producer_set() -> None:
+    """Equal-value substitution changes scope_identity (Gate 3/8)."""
+    import psycopg2
+
+    universe = _seed_conduction_universe("identity")
+    baseline = await _derive(universe["tenant_id"])
+    baseline_identity = baseline.scope_identity
+    assert len(baseline_identity) == 64
+    # Substitute one 6000 woo candidate with a distinct equal-value identity.
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    clone_ingress_id = uuid.uuid4()
+    clone_event_id = uuid.uuid4()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(universe["tenant_id"]),),
+            )
+            cur.execute(
+                "SELECT event_timestamp FROM public.webhook_ingress_identities"
+                " WHERE id = %s",
+                (str(universe["woo"]),),
+            )
+            occurred = cur.fetchone()[0]
+            cur.execute(
+                "DELETE FROM public.b23_match_verdicts WHERE webhook_ingress_identity_id = %s",
+                (str(universe["woo"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(universe["woo"]),),
+            )
+            cur.execute(
+                "INSERT INTO public.attribution_events (id, tenant_id,"
+                " occurred_at, correlation_id, session_id, revenue_cents,"
+                " raw_payload, idempotency_key, event_type, channel,"
+                " campaign_id, conversion_value_cents, currency,"
+                " event_timestamp, processed_at, processing_status)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s,"
+                " 'conversion', 'b26p2ca1_channel', 'b26p2ca1-campaign',"
+                " %s, %s, %s, %s, 'processed')",
+                (
+                    str(clone_event_id),
+                    str(universe["tenant_id"]),
+                    occurred,
+                    str(uuid.uuid4()),
+                    str(uuid.uuid4()),
+                    6000,
+                    json.dumps({"order_id": "woo-clone"}),
+                    f"b26p2ca1:identity:woo-clone:{uuid.uuid4().hex[:6]}",
+                    6000,
+                    "USD",
+                    occurred,
+                    occurred,
+                ),
+            )
+            cur.execute(
+                "INSERT INTO public.webhook_ingress_identities (id,"
+                " tenant_id, event_id, provider,"
+                " provider_native_event_reference,"
+                " provider_native_commerce_reference,"
+                " normalized_commerce_reference_kind,"
+                " normalized_commerce_reference_value,"
+                " verified_amount_minor, verified_amount_currency,"
+                " event_timestamp, idempotency_key,"
+                " verified_commerce_ingress_state)"
+                " VALUES (%s, %s, %s, 'woo', %s, %s,"
+                " 'order_reference', %s, 6000, 'USD', %s, %s,"
+                " 'authenticity_verified')",
+                (
+                    str(clone_ingress_id),
+                    str(universe["tenant_id"]),
+                    str(clone_event_id),
+                    f"b26p2ca1-ingress-identity-woo-clone-{uuid.uuid4().hex[:6]}",
+                    f"b26p2ca1-order-identity-woo-clone-{uuid.uuid4().hex[:6]}",
+                    f"b26p2ca1-order-identity-woo-clone-{uuid.uuid4().hex[:6]}",
+                    occurred,
+                    f"b26p2ca1-ingress:identity:woo-clone:{uuid.uuid4().hex[:6]}",
+                ),
+            )
+        substituted = await _derive(universe["tenant_id"])
+        # Count+amount unchanged (6000 woo -> 6000 woo clone) but identity differs.
+        assert substituted.candidate_count == baseline.candidate_count
+        assert substituted.total_amount_minor == baseline.total_amount_minor
+        assert substituted.scope_identity != baseline_identity
+    finally:
+        conn.close()
 
 
 def test_p2ca1_worker_task_executes_p2_under_production_principal(
@@ -407,6 +629,16 @@ def test_p2ca1_worker_task_executes_p2_under_production_principal(
     import sys
 
     universe = _seed_conduction_universe("worker-task")
+    # Corrective II: the worker task is dispatch-bound. Seed one lawful
+    # dispatch for the Jan15 day window and bind the direct-call request id
+    # to it so the production code path (including dispatch re-resolution)
+    # executes under the production principal.
+    from datetime import timezone as _wtz
+
+    day_start = datetime(2026, 1, 15, 0, 0, tzinfo=_wtz.utc)
+    day_end = datetime(2026, 1, 16, 0, 0, tzinfo=_wtz.utc)
+    bound_task_id = f"p2ca1-task-{uuid.uuid4().hex[:8]}"
+    _seed_worker_dispatch(universe["tenant_id"], universe["matched"][0], bound_task_id)
     runner = tmp_path / "run_b23_task.py"
     runner.write_text(
         "import json\n"
@@ -414,10 +646,13 @@ def test_p2ca1_worker_task_executes_p2_under_production_principal(
         "from app.tasks.revenue_verification import (\n"
         "    execute_b23_batch_match_engine_task,\n"
         ")\n"
+        "execute_b23_batch_match_engine_task.request.id = r'''"
+        + bound_task_id
+        + "'''\n"
         "result = execute_b23_batch_match_engine_task(\n"
         "    str(UUID(r'''" + str(universe["tenant_id"]) + "''')), \n"
-        "    r'''" + WINDOW_START.isoformat() + "''', \n"
-        "    r'''" + WINDOW_END.isoformat() + "''', \n"
+        "    r'''" + day_start.isoformat() + "''', \n"
+        "    r'''" + day_end.isoformat() + "''', \n"
         "    100,\n"
         "    'p2ca1-worker-task',\n"
         ")\n"
@@ -428,11 +663,15 @@ def test_p2ca1_worker_task_executes_p2_under_production_principal(
         "    'candidate_count': scope.get('candidate_count'),\n"
         "    'excluded_amount_minor': scope.get('excluded_amount_minor'),\n"
         "    'scope_policy_version': scope.get('scope_policy_version'),\n"
+        "    'dispatch_bound': scope.get('dispatch_bound'),\n"
+        "    'scope_identity': scope.get('scope_identity'),\n"
         "}))\n",
         encoding="utf-8",
     )
     admin_dsn = _admin_dsn()
-    worker_dsn = admin_dsn.replace("migration_owner:migration_owner", "app_worker:app_worker")
+    worker_dsn = admin_dsn.replace(
+        "migration_owner:migration_owner", "app_worker:app_worker"
+    )
     worker_dsn = worker_dsn.replace("postgresql://", "postgresql+asyncpg://")
     env = {
         **os.environ,
@@ -454,4 +693,5 @@ def test_p2ca1_worker_task_executes_p2_under_production_principal(
     assert observed["candidate_count"] == 9
     assert observed["excluded_amount_minor"] == 47000
     assert observed["scope_policy_version"] == B26_P2_SCOPE_POLICY_VERSION
-
+    assert observed["dispatch_bound"] is True
+    assert len(observed["scope_identity"]) == 64

@@ -16,6 +16,9 @@ VALIDATOR = ROOT / "scripts/ci/validate_b26_p2_scope_authority.py"
 MUTATOR = ROOT / "scripts/ci/_b26_p2_controlled_defect.py"
 SCOPE_MODULE = ROOT / "backend/app/finance_reconciliation/scope_authority.py"
 CONDUCTION_MODULE = ROOT / "backend/app/finance_reconciliation/candidate_conduction.py"
+DISPATCH_MODULE = ROOT / "backend/app/finance_reconciliation/dispatch_authority.py"
+TENANT_MODULE = ROOT / "backend/app/finance_reconciliation/tenant_authority.py"
+CORE_WINDOW_MODULE = ROOT / "backend/app/core/day_window.py"
 SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
 SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 WEBHOOK_MODULE = ROOT / "backend/app/api/webhooks.py"
@@ -29,22 +32,94 @@ PROBE_FILES = (
 # (defect name, expected RED substring, class)
 CONTROLS: tuple[tuple[str, str, str], ...] = (
     ("p2_second_alias_dict", "p2_second_normalization_authority", "same-primitive"),
-    ("p2_sql_case_normalizer", "p2_second_normalization_authority", "alternate-primitive"),
-    ("p2_serializer_reinterpretation", "p2_second_normalization_authority", "out-of-vocabulary"),
-    ("p2_unsupported_promotion", "p2_vector_unsupported_rail_not_excluded", "same-primitive"),
-    ("p2_currency_silent_promotion", "p2_vector_wrong_currency_not_excluded", "same-primitive"),
+    (
+        "p2_sql_case_normalizer",
+        "p2_second_normalization_authority",
+        "alternate-primitive",
+    ),
+    (
+        "p2_serializer_reinterpretation",
+        "p2_second_normalization_authority",
+        "out-of-vocabulary",
+    ),
+    (
+        "p2_unsupported_promotion",
+        "p2_vector_unsupported_rail_not_excluded",
+        "same-primitive",
+    ),
+    (
+        "p2_currency_silent_promotion",
+        "p2_vector_wrong_currency_not_excluded",
+        "same-primitive",
+    ),
     ("p2_window_closed_end", "p2_vector_window_end_not_exclusive", "out-of-vocabulary"),
     ("p2_tenant_guc_bypass", "p2_impure_authority_token", "alternate-primitive"),
-    ("p2_nondeterministic_identity", "p2_nondeterministic_token", "alternate-primitive"),
+    (
+        "p2_nondeterministic_identity",
+        "p2_nondeterministic_token",
+        "alternate-primitive",
+    ),
     ("p2_reverse_write", "p2_persisted_predicate_token", "alternate-primitive"),
-    ("p2_contract_universe_widening", "p2_canonical_provider_universe_drift", "same-primitive"),
-    ("p2_scope_policy_version_drift", "p2_scope_policy_version_drift", "same-primitive"),
-    ("p2_live_wiring_removal", "p2_live_wiring_absent_from_executor", "alternate-primitive"),
-    ("p2_sink_conduction_removal", "p2_conduction_absent_from_executor", "alternate-primitive"),
-    ("p2_webhook_phase_violation", "p2_webhook_phase_boundary_violated", "out-of-vocabulary"),
-    ("p2_b23_task_conduction_removal", "p2_conduction_absent_from_b23_task", "alternate-primitive"),
+    (
+        "p2_contract_universe_widening",
+        "p2_canonical_provider_universe_drift",
+        "same-primitive",
+    ),
+    (
+        "p2_scope_policy_version_drift",
+        "p2_scope_policy_version_drift",
+        "same-primitive",
+    ),
+    (
+        "p2_live_wiring_removal",
+        "p2_live_wiring_absent_from_executor",
+        "alternate-primitive",
+    ),
+    (
+        "p2_sink_conduction_removal",
+        "p2_conduction_absent_from_executor",
+        "alternate-primitive",
+    ),
+    (
+        "p2_webhook_phase_violation",
+        "p2_webhook_phase_boundary_violated",
+        "out-of-vocabulary",
+    ),
+    (
+        "p2_b23_task_conduction_removal",
+        "p2_conduction_unreachable_from_b23_task",
+        "alternate-primitive",
+    ),
     ("p2_conduction_prefilter", "p2_conduction_prefilter", "out-of-vocabulary"),
     ("p2_refusal_law_removal", "p2_refusal_representation_drift", "same-primitive"),
+    (
+        "p2_dispatch_binding_removal",
+        "p2_dispatch_binding_absent_from_b23_task",
+        "same-primitive",
+    ),
+    (
+        "p2_snapshot_isolation_removal",
+        "p2_snapshot_session_isolation_absent",
+        "alternate-primitive",
+    ),
+    ("p2_identity_digest_removal", "p2_corrective_ii_absent", "alternate-primitive"),
+    ("p2_rls_inspection_removal", "p2_corrective_ii_absent", "out-of-vocabulary"),
+    ("p2_money_semantics_removal", "p2_policy_corrective_ii_drift", "same-primitive"),
+    (
+        "p2_dead_edge_if_false",
+        "p2_conduction_unreachable_from_b23_task",
+        "alternate-primitive",
+    ),
+    (
+        "p2_silent_null_swallow",
+        "p2_silent_null_scope_swallow_present",
+        "out-of-vocabulary",
+    ),
+    (
+        "p2_window_delegation_removal",
+        "p2_window_delegation_absent_from_webhook",
+        "alternate-primitive",
+    ),
 )
 
 
@@ -65,6 +140,9 @@ def _hash(path: Path) -> str:
 TRACKED_DEFECT_FILES = (
     ROOT / "backend/app/finance_reconciliation/scope_authority.py",
     ROOT / "backend/app/finance_reconciliation/candidate_conduction.py",
+    ROOT / "backend/app/finance_reconciliation/dispatch_authority.py",
+    ROOT / "backend/app/finance_reconciliation/tenant_authority.py",
+    ROOT / "backend/app/core/day_window.py",
     ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml",
     ROOT / "backend/app/finance_reconciliation/canonical_sink.py",
     ROOT / "backend/app/api/webhooks.py",
@@ -97,6 +175,9 @@ def main() -> int:
     pristine = {
         "scope_module": _hash(SCOPE_MODULE),
         "conduction_module": _hash(CONDUCTION_MODULE),
+        "dispatch_module": _hash(DISPATCH_MODULE),
+        "tenant_module": _hash(TENANT_MODULE),
+        "core_window_module": _hash(CORE_WINDOW_MODULE),
         "scope_contract": _hash(SCOPE_CONTRACT),
         "sink_module": _hash(SINK_MODULE),
         "webhook_module": _hash(WEBHOOK_MODULE),
@@ -113,7 +194,9 @@ def main() -> int:
         )
         if applied.returncode != 0:
             _restore_snapshot(pristine_snapshot)
-            print(f"B26_P2_NEGATIVE_CONTROLS_FAIL {name}_apply_failed:{applied.stderr[-500:]}")
+            print(
+                f"B26_P2_NEGATIVE_CONTROLS_FAIL {name}_apply_failed:{applied.stderr[-500:]}"
+            )
             return 1
         code, out = _run_validator()
         if code == 0 or expected not in out:
@@ -130,13 +213,18 @@ def main() -> int:
                 return 1
         code, out = _run_validator()
         if code != 0:
-            print(f"B26_P2_NEGATIVE_CONTROLS_FAIL {name}_restore_not_green:{out[-2000:]}")
+            print(
+                f"B26_P2_NEGATIVE_CONTROLS_FAIL {name}_restore_not_green:{out[-2000:]}"
+            )
             return 1
         ledger.append({"control": name, "primitive": primitive, "red": expected})
 
     restored = {
         "scope_module": _hash(SCOPE_MODULE),
         "conduction_module": _hash(CONDUCTION_MODULE),
+        "dispatch_module": _hash(DISPATCH_MODULE),
+        "tenant_module": _hash(TENANT_MODULE),
+        "core_window_module": _hash(CORE_WINDOW_MODULE),
         "scope_contract": _hash(SCOPE_CONTRACT),
         "sink_module": _hash(SINK_MODULE),
         "webhook_module": _hash(WEBHOOK_MODULE),

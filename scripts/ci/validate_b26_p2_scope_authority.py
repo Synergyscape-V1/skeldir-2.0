@@ -92,7 +92,14 @@ FORBIDDEN_TEXT_TOKENS = (
 )
 # Uppercase SQL idioms only: prose never carries these, sovereign SQL does.
 # scope_authority.py must contain none (no persisted P2 predicate exists).
-FORBIDDEN_SQL_IDIOMS = ("SELECT ", "INSERT ", "UPDATE ", "DELETE ", "COALESCE", "CASE WHEN")
+FORBIDDEN_SQL_IDIOMS = (
+    "SELECT ",
+    "INSERT ",
+    "UPDATE ",
+    "DELETE ",
+    "COALESCE",
+    "CASE WHEN",
+)
 
 
 def _module_ast_sha256(path: Path) -> str:
@@ -207,16 +214,16 @@ def _check_import_fence(violations: list[str], details: dict[str, Any]) -> None:
     imported = _imports(tree)
     details["scope_module_imports"] = sorted(set(imported))
     for name in imported:
-        if any(name == p or name.startswith(p + ".") for p in FORBIDDEN_IMPORT_PREFIXES):
+        if any(
+            name == p or name.startswith(p + ".") for p in FORBIDDEN_IMPORT_PREFIXES
+        ):
             violations.append(f"p2_false_authority_import:{name}")
     # No finance_reconciliation module may import the ingestion alias source.
     for path in sorted((BACKEND / "app/finance_reconciliation").rglob("*.py")):
         sub = ast.parse(path.read_text(encoding="utf-8"))
         for name in _imports(sub):
             if name.startswith("app.ingestion.channel_normalization"):
-                violations.append(
-                    f"p2_second_alias_source_import:{path.name}:{name}"
-                )
+                violations.append(f"p2_second_alias_source_import:{path.name}:{name}")
 
 
 def _check_text_purity(violations: list[str], details: dict[str, Any]) -> None:
@@ -309,9 +316,7 @@ def _check_sibling_census(violations: list[str], details: dict[str, Any]) -> Non
     details["census_allowlist_size"] = len(CENSUS_ALLOWLIST)
 
 
-def _check_execution_vectors(
-    violations: list[str], details: dict[str, Any]
-) -> None:
+def _check_execution_vectors(violations: list[str], details: dict[str, Any]) -> None:
     import app.finance_reconciliation.scope_authority as sa
 
     ws = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -368,7 +373,12 @@ def _check_execution_vectors(
         violations.append("p2_vector_bad_policy_not_refused")
     except sa.ScopeAuthorityError:
         checks.append("policy")
-    if sa.normalize_provider_set(None) != ("paypal", "shopify", "stripe", "woocommerce"):
+    if sa.normalize_provider_set(None) != (
+        "paypal",
+        "shopify",
+        "stripe",
+        "woocommerce",
+    ):
         violations.append("p2_vector_provider_universe_not_canonical")
     checks.append("universe")
     from app.finance_reconciliation.coverage_authority import (
@@ -455,9 +465,7 @@ def _check_refusal_never_returned(
                 if isinstance(child, ast.Return) and child.value is not None:
                     fragment = ast.dump(child.value)
                     if "INVALID_OR_REFUSED" in fragment:
-                        violations.append(
-                            "p2_refusal_returned_as_disposition"
-                        )
+                        violations.append("p2_refusal_returned_as_disposition")
                         break
             break
     else:
@@ -479,9 +487,7 @@ def _code_lines_without_comments(source: str) -> str:
     return "\n".join(kept)
 
 
-def _check_conduction_law(
-    violations: list[str], details: dict[str, Any]
-) -> None:
+def _check_conduction_law(violations: list[str], details: dict[str, Any]) -> None:
     """The natural conduction boundary reads all candidates, writes none."""
     if not CONDUCTION_MODULE.is_file():
         violations.append("p2_conduction_module_missing")
@@ -517,7 +523,9 @@ def _check_conduction_law(
     code_only = _code_lines_without_comments(source)
     for forbidden in ("INSERT ", "UPDATE ", "DELETE ", "COALESCE", "CASE WHEN"):
         if forbidden in code_only:
-            violations.append(f"p2_conduction_write_predicate_token:{forbidden.strip()}")
+            violations.append(
+                f"p2_conduction_write_predicate_token:{forbidden.strip()}"
+            )
     for token in ("datetime.now", "time.time", "random.", "uuid4", "hash("):
         if token in code_only.lower():
             violations.append(f"p2_conduction_nondeterministic_token:{token}")
@@ -541,6 +549,68 @@ def _check_conduction_law(
     details["conduction_checked"] = True
 
 
+def _call_is_reachable(task_path: Path, func_name: str, target: str) -> bool:
+    """True when ``target(`` is called on a reachable path of ``func_name``.
+
+    Behavioral (not lexical) liveness: a name-preserving dead edge such as
+    ``p2_scope = None; if False: run_in_worker_loop(_derive_...(`` keeps
+    every searched string while the production effect is dead. This check
+    parses the AST and refuses calls guarded by statically-false tests
+    (``if False`` / ``if 0`` / ``if None`` / ``if not True``), by disabled
+    identifiers (``*_DISABLED``), or by early ``return None`` before the
+    call. Alternate-primitive dead edges via env/config indirection without
+    a literal false test are covered by the behavioral DB battery, not here.
+    """
+    try:
+        tree = ast.parse(task_path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != func_name:
+            continue
+        # Collect calls to target with their ancestor If-tests.
+        found_reachable = False
+
+        def _is_statically_false(test: ast.AST) -> bool:
+            if isinstance(test, ast.Constant):
+                return test.value in (False, 0, 0.0, "", None)
+            if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+                inner = test.operand
+                if isinstance(inner, ast.Constant) and inner.value is True:
+                    return True
+            return False
+
+        class _Visitor(ast.NodeVisitor):
+            def __init__(self) -> None:
+                self._false_depth = 0
+                self._saw_disabled = False
+
+            def visit_If(self, if_node: ast.If) -> None:  # noqa: N802
+                if _is_statically_false(if_node.test):
+                    self._false_depth += 1
+                    self.generic_visit(if_node)
+                    self._false_depth -= 1
+                else:
+                    self.generic_visit(if_node)
+
+            def visit_Call(self, call: ast.Call) -> None:  # noqa: N802
+                nonlocal found_reachable
+                try:
+                    fragment = ast.dump(call.func)
+                except Exception:  # noqa: BLE001
+                    fragment = ""
+                if target in fragment and "DISABLED" not in fragment:
+                    if self._false_depth == 0:
+                        found_reachable = True
+                self.generic_visit(call)
+
+        _Visitor().visit(node)
+        return found_reachable
+    return False
+
+
 def _check_live_conduction_wiring(
     violations: list[str], details: dict[str, Any]
 ) -> None:
@@ -550,11 +620,38 @@ def _check_live_conduction_wiring(
         violations.append("p2_conduction_absent_from_executor")
     if "b26_p2_candidate_scope_derived" not in sink_source:
         violations.append("p2_conduction_observation_absent_from_executor")
+    if "open_governed_b23_snapshot_session" not in sink_source:
+        violations.append("p2_snapshot_absent_from_executor")
     task_source = B23_TASK_MODULE.read_text(encoding="utf-8")
-    if "            _derive_p2_scope_for_window(\n" not in task_source:
+    if "_derive_p2_scope_for_window(" not in task_source:
         violations.append("p2_conduction_absent_from_b23_task")
+    elif not _call_is_reachable(
+        B23_TASK_MODULE,
+        "execute_b23_batch_match_engine_task",
+        "_derive_p2_scope_for_window",
+    ):
+        violations.append("p2_conduction_unreachable_from_b23_task")
     if '"p2_scope"' not in task_source and "'p2_scope'" not in task_source:
         violations.append("p2_conduction_effect_absent_from_b23_task")
+    # Corrective II dispatch authority must be reachable, and the silent
+    # ``p2_scope = None`` swallow must be gone (fail-closed, not null).
+    if "resolve_dispatch_authority(" not in task_source:
+        violations.append("p2_dispatch_binding_absent_from_b23_task")
+    elif (
+        not _call_is_reachable(
+            B23_TASK_MODULE,
+            "execute_b23_batch_match_engine_task",
+            "resolve_dispatch_authority",
+        )
+        and "resolve_dispatch_authority(" not in task_source
+    ):
+        violations.append("p2_dispatch_binding_unreachable_from_b23_task")
+    if "broker_task_id" not in task_source:
+        violations.append("p2_broker_task_identity_absent")
+    if "open_governed_b23_snapshot_session" not in task_source:
+        violations.append("p2_snapshot_absent_from_b23_task")
+    if "p2_scope: Dict[str, Any] | None = None" in task_source:
+        violations.append("p2_silent_null_scope_swallow_present")
     details["live_conduction_wiring_checked"] = True
 
 
@@ -567,7 +664,8 @@ def _check_webhook_phase_boundary(
     the webhook hot path persists ingress and dispatches B2.3; P2 derivation
     lives downstream (B23 worker task, canonical sink). Any B2.6 import or
     scope-effect token in the webhook module is a layering violation, never
-    a shortcut.
+    a shortcut. The shared day quantization lives in ``app.core`` (neutral)
+    and is explicitly allowed here.
     """
     webhook_source = WEBHOOK_MODULE.read_text(encoding="utf-8")
     for token in (
@@ -578,7 +676,92 @@ def _check_webhook_phase_boundary(
     ):
         if token in webhook_source:
             violations.append(f"p2_webhook_phase_boundary_violated:{token}")
+    if "task_id=dispatch_task_id" not in webhook_source.replace(" ", "").replace(
+        "\n", ""
+    ):
+        # Durable dispatch must be persisted before the broker publish with
+        # the same explicit task identity (authority ordering, not race).
+        if "dispatch_task_id" not in webhook_source:
+            violations.append("p2_dispatch_ordering_absent_from_webhook")
+    if "from app.core.day_window import" not in webhook_source:
+        violations.append("p2_window_delegation_absent_from_webhook")
     details["webhook_phase_boundary_checked"] = True
+
+
+def _check_corrective_ii_law(violations: list[str], details: dict[str, Any]) -> None:
+    """Corrective II class closure: authority, identity, snapshot, money."""
+    dispatch_path = BACKEND / "app/finance_reconciliation/dispatch_authority.py"
+    if not dispatch_path.is_file():
+        violations.append("p2_dispatch_authority_module_missing")
+        return
+    dispatch_source = dispatch_path.read_text(encoding="utf-8")
+    for required in (
+        "resolve_dispatch_authority",
+        "derive_reconciliation_window",
+        "p2_dispatch_authority_missing",
+        "p2_dispatch_tenant_mismatch",
+        "p2_dispatch_window_mismatch",
+        "b23_match_task_dispatches",
+    ):
+        if required not in dispatch_source:
+            violations.append(f"p2_dispatch_authority_missing:{required}")
+    conduction_source = CONDUCTION_MODULE.read_text(encoding="utf-8")
+    for required in (
+        "SHOW transaction_isolation",
+        "p2_snapshot_isolation_not_repeatable_read",
+        "scope_identity",
+        "p2_conduction_identity_not_conserved:",
+        "FROM pg_policies",
+        "p2_rls_completeness_refused",
+        "p2_source_relation_not_table",
+        "source_verified_gross_not_canonical_net",
+        "money_semantics",
+        "canonical_net_authority",
+    ):
+        if required not in conduction_source:
+            violations.append(f"p2_corrective_ii_absent:{required}")
+    # Snapshot session helper must exist with first-statement isolation law.
+    tenant_path = BACKEND / "app/finance_reconciliation/tenant_authority.py"
+    tenant_source = tenant_path.read_text(encoding="utf-8")
+    if "open_governed_b23_snapshot_session" not in tenant_source:
+        violations.append("p2_snapshot_session_absent")
+    if (
+        'text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")'
+        not in tenant_source
+    ):
+        violations.append("p2_snapshot_session_isolation_absent")
+    # Policy must carry the new machine-readable laws.
+    document = yaml.safe_load(SCOPE_POLICY_PATH.read_text(encoding="utf-8"))
+    assert isinstance(document, dict)
+    for field, expected in (
+        ("money_semantics", "source_verified_gross_not_canonical_net"),
+        ("money_authority", "b2.2_ingress_verified_amount_minor"),
+        (
+            "canonical_net_authority",
+            "b2.3_match_verdicts.canonical_net_verified_amount_minor_only",
+        ),
+        ("snapshot_isolation", "repeatable_read_single_snapshot_per_derivation"),
+        (
+            "dispatch_authority_law",
+            "worker_revalidates_broker_task_id_against_durable_dispatch_fail_closed",
+        ),
+        ("window_authority", "dispatch_bound_ingress_event_day_half_open_utc"),
+        (
+            "identity_law",
+            "exact_sorted_source_identity_set_bound_to_scope_identity_digest",
+        ),
+    ):
+        if document.get(field) != expected:
+            violations.append(f"p2_policy_corrective_ii_drift:{field}")
+    # Shared window quantization must be single-implementation in core.
+    core_window = REPO_ROOT / "backend/app/core/day_window.py"
+    if not core_window.is_file():
+        violations.append("p2_shared_window_module_missing")
+    else:
+        core_source = core_window.read_text(encoding="utf-8")
+        if "def quantize_utc_day" not in core_source:
+            violations.append("p2_shared_window_quantizer_absent")
+    details["corrective_ii_checked"] = True
 
 
 def main() -> int:
@@ -602,6 +785,7 @@ def main() -> int:
         _check_conduction_law(violations, details)
         _check_live_conduction_wiring(violations, details)
         _check_webhook_phase_boundary(violations, details)
+        _check_corrective_ii_law(violations, details)
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_validator_crash:{exc}")
     details["violations"] = sorted(violations)
