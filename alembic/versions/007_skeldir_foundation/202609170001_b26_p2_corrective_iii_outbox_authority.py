@@ -327,7 +327,10 @@ def upgrade() -> None:
         END $$;
         """
     )
-    op.execute("ALTER FUNCTION public.b26_p2_enforce_dispatch_immutability() OWNER TO migration_owner")
+    # Function ownership follows repo precedent (no OWNER TO): the function is
+    # owned by the migrating principal (migration_owner in provisioned
+    # environments). Runtime principals hold no DDL on the schema, so
+    # owner-only replacement holds regardless of which admin owns it.
 
     # 6. GUC-independent admission directory: the worker begins from the
     # least forgeable stable handle (broker task identity) and resolves the
@@ -404,7 +407,6 @@ def upgrade() -> None:
         $$;
         """
     )
-    op.execute("ALTER FUNCTION public.b26_p2_resolve_dispatch_authority(text) OWNER TO migration_owner")
     op.execute("REVOKE ALL ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) FROM PUBLIC")
     op.execute("GRANT EXECUTE ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) TO app_user")
     op.execute(
