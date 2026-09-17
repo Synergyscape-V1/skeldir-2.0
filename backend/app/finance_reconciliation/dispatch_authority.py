@@ -80,6 +80,10 @@ def derive_reconciliation_window(event_time: datetime) -> tuple[datetime, dateti
     """
     from app.core.reconciliation_window import quantize_utc_day  # noqa: PLC0415
 
+    if not isinstance(event_time, datetime):
+        raise DispatchAuthorityError("p2_dispatch_event_time_not_datetime")
+    if event_time.tzinfo is None or event_time.tzinfo.utcoffset(event_time) is None:
+        raise DispatchAuthorityError("p2_dispatch_event_time_naive_refused")
     try:
         return quantize_utc_day(event_time)
     except ValueError as exc:

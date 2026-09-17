@@ -16,12 +16,22 @@ from datetime import datetime, timedelta, timezone
 
 
 def quantize_utc_day(event_time: datetime) -> tuple[datetime, datetime]:
-    """Quantize one aware instant to its UTC day half-open window."""
+    """Quantize one instant to its UTC day half-open window.
+
+    Leniency law (webhook compat): naive datetimes assume UTC (matching the
+    historical ``_coerce_event_timestamp`` behavior relied upon by ingestion
+    callers and benchmarks). P2 scope strictness (naive-refused) is enforced
+    by the dispatch authority *before* delegating here, so financial scope
+    never silently coerces a naive clock while ingestion keeps its lenient
+    contract. Aware instants quantize identically through this single
+    implementation.
+    """
     if not isinstance(event_time, datetime):
         raise ValueError("reconciliation_window_event_time_not_datetime")
     if event_time.tzinfo is None or event_time.tzinfo.utcoffset(event_time) is None:
-        raise ValueError("reconciliation_window_naive_refused")
-    occurred = event_time.astimezone(timezone.utc)
+        occurred = event_time.replace(tzinfo=timezone.utc)
+    else:
+        occurred = event_time.astimezone(timezone.utc)
     start = occurred.replace(hour=0, minute=0, second=0, microsecond=0)
     return start, start + timedelta(days=1)
 
