@@ -26,7 +26,12 @@ worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian DATABASE_URL=
 # Fresh cross-tenant dispatch is a separate process and credential.  It cannot
 # execute fits and the ordinary Bayesian worker never receives its queue or DSN.
 worker_bayesian_publisher: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian_publisher DATABASE_URL=$PUBLISHER_DATABASE_URL B24_DISPATCH_PUBLISHER_DATABASE_URL=$PUBLISHER_DATABASE_URL celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian_publisher --concurrency=1
-worker_b23: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
+worker_b23: cd backend && SKELDIR_CELERY_WORKER_ROLE=b23_match DATABASE_URL=$WORKER_DATABASE_URL celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
+# B2.6-P2 Corrective III recovery process: sweeps pending execution intents
+# to the broker with stable task identity. Runs as the producer principal
+# (inherits the API DATABASE_URL = app_user) because only the producer may
+# issue/mark delivery state; the B2.3 worker (app_worker) holds SELECT only.
+relay_b26_p2: cd backend && SKELDIR_CELERY_WORKER_ROLE=b26_p2_relay celery -A app.celery_app.celery_app worker --loglevel=info --queues=b26_p2_relay --concurrency=1 --prefetch-multiplier=1
 beat: cd backend && celery -A app.celery_app.celery_app beat --loglevel=info
 
 # Mock Servers (Contract-First Development)

@@ -243,9 +243,117 @@ async def resolve_dispatch_authority(
     )
 
 
+@dataclass(frozen=True)
+class AdmittedExecution:
+    """Authoritative tenant/window admitted before B2.3 (no GUC trust)."""
+
+    tenant_id: UUID
+    window_start: datetime
+    window_end: datetime
+    webhook_ingress_identity_id: UUID
+    broker_task_id: str
+
+
+async def admit_execution_before_b23(
+    session: AsyncSession,
+    *,
+    broker_task_id: str | None,
+    message_tenant_id: UUID | str,
+    message_window_start: datetime | str,
+    message_window_end: datetime | str,
+) -> AdmittedExecution:
+    """Admit one worker invocation BEFORE B2.3 execution (Corrective III).
+
+    The worker begins from the least forgeable stable handle (broker task
+    identity) and resolves the authoritative tenant/window through the
+    constrained ``b26_p2_resolve_dispatch_authority`` function, which reads
+    ONLY the GUC-independent admission directory (no RLS, exact task_id
+    lookup). The message tenant/window are redundant claims: any absence
+    or mismatch refuses here, before the B2.3 engine runs, with zero B2.3
+    consequence. Callers must invoke this on a bare session (no tenant
+    GUC) before opening any governed snapshot or running B2.3. Full
+    dispatch-row validation (task_name/queue/status via DB CHECK physics)
+    is re-established under the RETURNED tenant in the P2 phase.
+    """
+    task_key = (broker_task_id or "").strip()
+    if not task_key:
+        raise DispatchAuthorityError("p2_dispatch_authority_missing:no_broker_task_id")
+    message_tenant = _coerce_tenant(message_tenant_id)
+    try:
+        claimed_start = _normalize_window(
+            message_window_start, field="p2_dispatch_window_start"
+        )
+        claimed_end = _normalize_window(
+            message_window_end, field="p2_dispatch_window_end"
+        )
+    except DispatchAuthorityError:
+        raise
+    if claimed_start >= claimed_end:
+        raise DispatchAuthorityError("p2_dispatch_window_not_half_open")
+    try:
+        row = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT tenant_id, webhook_ingress_identity_id,"
+                        " window_start, window_end"
+                        " FROM public.b26_p2_resolve_dispatch_authority(:task_id)"
+                    ),
+                    {"task_id": task_key},
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+    except Exception as exc:
+        raise DispatchAuthorityError(
+            f"p2_dispatch_authority_missing:resolver_unavailable:{exc}"
+        ) from exc
+    if row is None:
+        raise DispatchAuthorityError(
+            "p2_dispatch_authority_missing:no_lawful_dispatch_for_task"
+        )
+    dispatch_tenant = UUID(str(row["tenant_id"]))
+    if dispatch_tenant != message_tenant:
+        raise DispatchAuthorityError(
+            "p2_dispatch_tenant_mismatch:"
+            f"message={message_tenant}:dispatch={dispatch_tenant}"
+        )
+    authoritative_start = row["window_start"]
+    authoritative_end = row["window_end"]
+    if not isinstance(authoritative_start, datetime) or not isinstance(
+        authoritative_end, datetime
+    ):
+        raise DispatchAuthorityError("p2_dispatch_window_not_datetime")
+    if (
+        authoritative_start.tzinfo is None
+        or authoritative_end.tzinfo is None
+        or authoritative_start >= authoritative_end
+    ):
+        raise DispatchAuthorityError("p2_dispatch_window_not_half_open")
+    authoritative_start = authoritative_start.astimezone(timezone.utc)
+    authoritative_end = authoritative_end.astimezone(timezone.utc)
+    if claimed_start != authoritative_start or claimed_end != authoritative_end:
+        raise DispatchAuthorityError(
+            "p2_dispatch_window_mismatch:"
+            f"message={claimed_start.isoformat()}/{claimed_end.isoformat()}:"
+            f"dispatch={authoritative_start.isoformat()}/"
+            f"{authoritative_end.isoformat()}"
+        )
+    return AdmittedExecution(
+        tenant_id=dispatch_tenant,
+        window_start=authoritative_start,
+        window_end=authoritative_end,
+        webhook_ingress_identity_id=UUID(str(row["webhook_ingress_identity_id"])),
+        broker_task_id=task_key,
+    )
+
+
 __all__ = (
+    "AdmittedExecution",
     "DispatchAuthority",
     "DispatchAuthorityError",
+    "admit_execution_before_b23",
     "derive_reconciliation_window",
     "derive_reconciliation_window_iso",
     "resolve_dispatch_authority",

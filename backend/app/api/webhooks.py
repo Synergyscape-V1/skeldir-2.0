@@ -638,6 +638,110 @@ def _schedule_downstream_tasks(
         )
 
 
+async def _redrive_pending_dispatch_for_ingress(
+    *, tenant_id, event_id: str, correlation_id: str
+) -> None:
+    """Re-drive publication for a duplicate webhook when intent is pending.
+
+    Corrective III (H-III-A02): provider retry must recover a stranded
+    legitimate dispatch instead of silently returning success. The stable
+    logical task identity is reused; duplicate physical delivery remains
+    logically idempotent via B2.3 upserts and deterministic P2 recomputation.
+    """
+    try:
+        async with get_session(tenant_id=tenant_id) as session:
+            row = (
+                (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT d.task_id AS task_id,
+                                   d.delivery_state AS delivery_state,
+                                   d.window_start AS window_start,
+                                   d.window_end AS window_end,
+                                   d.correlation_id AS dispatch_correlation,
+                                   o.state AS outbox_state
+                            FROM public.b23_match_task_dispatches AS d
+                            JOIN public.webhook_ingress_identities AS i
+                              ON i.id = d.webhook_ingress_identity_id
+                             AND i.tenant_id = d.tenant_id
+                            LEFT JOIN public.b26_p2_execution_outbox AS o
+                              ON o.dispatch_task_id = d.task_id
+                            WHERE d.tenant_id = :tenant_id
+                              AND i.event_id = :event_id
+                              AND i.verified_commerce_ingress_state = 'authenticity_verified'
+                            """
+                        ),
+                        {"tenant_id": str(tenant_id), "event_id": event_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                return
+            if str(row["delivery_state"] or "") == "published" and str(
+                row["outbox_state"] or "published"
+            ) == "published":
+                return
+            task_id = str(row["task_id"])
+            ws = row["window_start"]
+            we = row["window_end"]
+            if ws is None or we is None:
+                return
+            ws_iso = ws.isoformat() if hasattr(ws, "isoformat") else str(ws)
+            we_iso = we.isoformat() if hasattr(we, "isoformat") else str(we)
+        try:
+            execute_b23_batch_match_engine_task.apply_async(
+                args=[str(tenant_id), ws_iso, we_iso, 100, str(correlation_id)],
+                task_id=task_id,
+                queue=QUEUE_B23_MATCH_ENGINE,
+                routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+            )
+        except Exception as exc:
+            logger.warning(
+                "b23_match_task_redrive_publish_failed",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "event_id": event_id,
+                    "task_id": task_id,
+                    "error": str(exc)[:500],
+                },
+            )
+            return
+        async with get_session(tenant_id=tenant_id) as mark:
+            await mark.execute(
+                text(
+                    "UPDATE public.b23_match_task_dispatches"
+                    " SET delivery_state = 'published',"
+                    " publish_attempts = publish_attempts + 1,"
+                    " updated_at = now() WHERE task_id = :task_id"
+                ),
+                {"task_id": task_id},
+            )
+            await mark.execute(
+                text(
+                    "UPDATE public.b26_p2_execution_outbox"
+                    " SET state = 'published', updated_at = now()"
+                    " WHERE dispatch_task_id = :task_id"
+                ),
+                {"task_id": task_id},
+            )
+        logger.info(
+            "b23_match_task_redriven_from_duplicate",
+            extra={
+                "tenant_id": str(tenant_id),
+                "event_id": event_id,
+                "task_id": task_id,
+            },
+        )
+    except Exception:
+        logger.exception(
+            "b23_match_task_redrive_failed",
+            extra={"tenant_id": str(tenant_id), "event_id": event_id},
+        )
+
+
 async def _dispatch_b23_match_task_from_persisted_ingress(
     *,
     tenant_id,
@@ -658,13 +762,23 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
         return
 
     window_start, window_end = _compute_recompute_window(event_timestamp)
-    # Corrective II durable-authority ordering: the dispatch row is the
-    # authority the worker re-resolves (keyed by broker task_id). It must be
-    # durable before the broker message is visible, otherwise a legitimate
-    # worker can observe a message with no dispatch and fail closed on a
-    # race. Generate the broker task identity here, persist dispatch in the
-    # webhook transaction, commit, then publish with that exact task_id.
+    # Corrective III durable execution intent: acceptance and recoverable
+    # delivery intent share one commit (dispatch + outbox atomically), the
+    # stable logical task identity never rotates (ON CONFLICT DO NOTHING),
+    # and publication may retry indefinitely via duplicate re-drive and the
+    # deployed relay sweeper. Process death between commit and publish
+    # leaves observable pending state, never silent stranding.
     import uuid as _dispatch_uuid  # noqa: PLC0415  (task identity only)
+    from datetime import datetime as _ws_datetime  # noqa: PLC0415
+
+    def _ws_parse(iso: str) -> object:
+        try:
+            return _ws_datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        except (ValueError, TypeError, AttributeError):
+            return iso
+
+    _ws_dt = _ws_parse(window_start)
+    _we_dt = _ws_parse(window_end)
 
     dispatch_task_id = str(_dispatch_uuid.uuid4())
     async with get_session(tenant_id=tenant_id) as session:
@@ -714,6 +828,10 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
                     provider_native_commerce_reference,
                     normalized_commerce_reference_value,
                     status,
+                    delivery_state,
+                    publish_attempts,
+                    window_start,
+                    window_end,
                     dispatched_at,
                     created_at,
                     updated_at
@@ -731,20 +849,15 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
                     :provider_native_commerce_reference,
                     :normalized_commerce_reference_value,
                     'dispatched',
+                    'pending_publish',
+                    0,
+                    :window_start,
+                    :window_end,
                     now(),
                     now(),
                     now()
                 )
-                ON CONFLICT (tenant_id, webhook_ingress_identity_id)
-                DO UPDATE SET
-                    task_id = EXCLUDED.task_id,
-                    task_name = EXCLUDED.task_name,
-                    queue = EXCLUDED.queue,
-                    routing_key = EXCLUDED.routing_key,
-                    correlation_id = EXCLUDED.correlation_id,
-                    status = 'dispatched',
-                    dispatched_at = EXCLUDED.dispatched_at,
-                    updated_at = now()
+                ON CONFLICT (tenant_id, webhook_ingress_identity_id) DO NOTHING
                 """
             ),
             {
@@ -765,21 +878,131 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
                 "normalized_commerce_reference_value": ingress[
                     "normalized_commerce_reference_value"
                 ],
+                "window_start": _ws_dt,
+                "window_end": _we_dt,
+            },
+        )
+        # Stable identity: on conflict the first task_id wins; reuse it so
+        # duplicate physical delivery cannot create duplicate logical truth.
+        existing = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT task_id FROM public.b23_match_task_dispatches"
+                        " WHERE tenant_id = :tenant_id"
+                        " AND webhook_ingress_identity_id = :ingress_id"
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "ingress_id": str(ingress["id"]),
+                    },
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if existing is not None:
+            dispatch_task_id = str(existing["task_id"])
+        await session.execute(
+            text(
+                """
+                INSERT INTO public.b26_p2_execution_outbox (
+                    tenant_id, dispatch_task_id, webhook_ingress_identity_id,
+                    state, publish_attempts, payload
+                )
+                VALUES (:tenant_id, :task_id, :ingress_id, 'pending_publish', 0,
+                        CAST(:payload AS jsonb))
+                ON CONFLICT (dispatch_task_id) DO NOTHING
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "task_id": dispatch_task_id,
+                "ingress_id": str(ingress["id"]),
+                "payload": (
+                    '{"window_start": "' + window_start + '",'
+                    ' "window_end": "' + window_end + '",'
+                    ' "correlation_id": "' + str(correlation_id) + '"}'
+                ),
+            },
+        )
+        # GUC-independent admission directory (no RLS): stable task identity
+        # to authoritative tenant/window binding for pre-B2.3 admission.
+        await session.execute(
+            text(
+                """
+                INSERT INTO public.b26_p2_task_authority_directory (
+                    task_id, tenant_id, webhook_ingress_identity_id,
+                    window_start, window_end
+                )
+                VALUES (:task_id, :tenant_id, :ingress_id,
+                        :window_start, :window_end)
+                ON CONFLICT (task_id) DO NOTHING
+                """
+            ),
+            {
+                "task_id": dispatch_task_id,
+                "tenant_id": str(tenant_id),
+                "ingress_id": str(ingress["id"]),
+                "window_start": _ws_dt,
+                "window_end": _we_dt,
             },
         )
         dispatch_ingress_id = str(ingress["id"])
-    async_result = execute_b23_batch_match_engine_task.apply_async(
-        args=[
-            str(tenant_id),
-            window_start,
-            window_end,
-            100,
-            str(correlation_id),
-        ],
-        task_id=dispatch_task_id,
-        queue=QUEUE_B23_MATCH_ENGINE,
-        routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
-    )
+    try:
+        async_result = execute_b23_batch_match_engine_task.apply_async(
+            args=[
+                str(tenant_id),
+                window_start,
+                window_end,
+                100,
+                str(correlation_id),
+            ],
+            task_id=dispatch_task_id,
+            queue=QUEUE_B23_MATCH_ENGINE,
+            routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+        )
+    except Exception as exc:
+        # Broker unavailable after durable commit: leave observable pending
+        # state for duplicate re-drive and the deployed relay sweeper.
+        logger.warning(
+            "b23_match_task_publish_deferred_pending",
+            extra={
+                "tenant_id": str(tenant_id),
+                "event_id": event_id,
+                "task_id": dispatch_task_id,
+                "dispatch_ingress_id": dispatch_ingress_id,
+                "error": str(exc)[:500],
+            },
+        )
+        return
+    # Best-effort immediate mark; a crash here still leaves the outbox
+    # pending for the relay, and duplicate delivery reuses the same task_id.
+    try:
+        async with get_session(tenant_id=tenant_id) as mark:
+            await mark.execute(
+                text(
+                    "UPDATE public.b23_match_task_dispatches"
+                    " SET delivery_state = 'published',"
+                    " publish_attempts = publish_attempts + 1,"
+                    " updated_at = now() WHERE task_id = :task_id"
+                ),
+                {"task_id": dispatch_task_id},
+            )
+            await mark.execute(
+                text(
+                    "UPDATE public.b26_p2_execution_outbox"
+                    " SET state = 'published', updated_at = now()"
+                    " WHERE dispatch_task_id = :task_id"
+                ),
+                {"task_id": dispatch_task_id},
+            )
+    except Exception:
+        logger.exception(
+            "b23_match_task_publish_mark_failed_pending",
+            extra={"tenant_id": str(tenant_id), "task_id": dispatch_task_id},
+        )
+        return
     logger.info(
         "b23_match_task_naturally_dispatched",
         extra={
@@ -869,6 +1092,15 @@ async def _handle_ingestion(
                 tenant_id=tenant_id,
                 event_id=str(result.event_id),
                 event_timestamp=str(event_timestamp),
+                correlation_id=str(correlation_id),
+            )
+        if event_timestamp and result.event_id and result.is_duplicate:
+            # Provider retry recovery: a duplicate webhook re-drives a
+            # stranded pending intent with the stable task identity instead
+            # of reporting success while the intent remains unconducted.
+            await _redrive_pending_dispatch_for_ingress(
+                tenant_id=tenant_id,
+                event_id=str(result.event_id),
                 correlation_id=str(correlation_id),
             )
         return {

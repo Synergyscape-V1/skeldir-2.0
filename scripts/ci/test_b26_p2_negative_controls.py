@@ -19,7 +19,9 @@ CONDUCTION_MODULE = ROOT / "backend/app/finance_reconciliation/candidate_conduct
 DISPATCH_MODULE = ROOT / "backend/app/finance_reconciliation/dispatch_authority.py"
 TENANT_MODULE = ROOT / "backend/app/finance_reconciliation/tenant_authority.py"
 CORE_WINDOW_MODULE = ROOT / "backend/app/core/day_window.py"
-SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
+SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v2.yaml"
+SCOPE_CONTRACT_V1 = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
+RELAY_MODULE = ROOT / "backend/app/tasks/b26_p2_relay.py"
 SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 WEBHOOK_MODULE = ROOT / "backend/app/api/webhooks.py"
 B23_TASK_MODULE = ROOT / "backend/app/tasks/revenue_verification.py"
@@ -120,6 +122,46 @@ CONTROLS: tuple[tuple[str, str, str], ...] = (
         "p2_window_delegation_absent_from_webhook",
         "alternate-primitive",
     ),
+    (
+        "p2_window_12h_mutation",
+        "p2_corrective_iii_window_oracle_mismatch",
+        "alternate-primitive",
+    ),
+    (
+        "p2_window_local_mutation",
+        "p2_corrective_iii_window_oracle_mismatch",
+        "alternate-primitive",
+    ),
+    (
+        "p2_window_inclusive_mutation",
+        "p2_vector_window_end_not_exclusive",
+        "alternate-primitive",
+    ),
+    (
+        "p2_identity_provider_blindness",
+        "p2_corrective_iii_conduction_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_outbox_removal",
+        "p2_corrective_iii_outbox_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_admission_after_b23",
+        "p2_corrective_iii_admission",
+        "alternate-primitive",
+    ),
+    (
+        "p2_relay_deployment_removal",
+        "p2_corrective_iii_relay_not_deployed",
+        "out-of-vocabulary",
+    ),
+    (
+        "p2_rls_singleton_violation",
+        "p2_corrective_iii_conduction_absent",
+        "alternate-primitive",
+    ),
 )
 
 
@@ -143,10 +185,13 @@ TRACKED_DEFECT_FILES = (
     ROOT / "backend/app/finance_reconciliation/dispatch_authority.py",
     ROOT / "backend/app/finance_reconciliation/tenant_authority.py",
     ROOT / "backend/app/core/day_window.py",
+    ROOT / "contracts/reconciliation/b2.6/scope-policy.v2.yaml",
     ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml",
     ROOT / "backend/app/finance_reconciliation/canonical_sink.py",
     ROOT / "backend/app/api/webhooks.py",
     ROOT / "backend/app/tasks/revenue_verification.py",
+    ROOT / "backend/app/tasks/b26_p2_relay.py",
+    ROOT / "Procfile",
 )
 
 

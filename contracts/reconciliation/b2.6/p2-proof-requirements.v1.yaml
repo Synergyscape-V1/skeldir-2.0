@@ -1,7 +1,7 @@
 phase: B2.6-P2
 manifest_version: b2.6-p2-proof-requirements-v1
 manifest_evolution_policy: additive_only
-contract_path: contracts/reconciliation/b2.6/scope-policy.v1.yaml
+contract_path: contracts/reconciliation/b2.6/scope-policy.v2.yaml
 required_cells:
   - gate_id: B26-P2-G2-NORMALIZATION-AUTHORITY
     producer: b26-p2-static-authority
@@ -15,6 +15,10 @@ required_cells:
     producer: b26-p2-container-equivalence
     scenario_id: candidate-production-image
     falsifier_id: p2-stale-artifact-substitution
+  - gate_id: B26-P2-G12-PRODUCTION-TOPOLOGY
+    producer: b26-p2-production-topology
+    scenario_id: signed-ingress-to-governed-scope
+    falsifier_id: dead-edge-wrong-queue-missing-relay
 accepted_status: PASS
 accepted_events:
   - pull_request

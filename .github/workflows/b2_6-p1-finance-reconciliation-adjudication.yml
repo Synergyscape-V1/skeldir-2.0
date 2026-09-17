@@ -113,6 +113,77 @@ jobs:
           path: artifacts/b26_p2/static/*.json
           if-no-files-found: error
 
+  b26-p2-production-topology:
+    name: B2.6-P2 Production Topology Proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.B26_CANDIDATE_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install topology dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Provision topology database
+        run: |
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database-name skeldir_b26_p2_topology
+          MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_topology \
+          DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_topology \
+            python -m alembic upgrade head
+
+      - name: Prove production-topology conduction
+        env:
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p2_topology
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_topology
+        run: |
+          python scripts/ci/prove_b26_p2_production_topology.py \
+            --evidence-out artifacts/b26_p2/topology/production-topology.json
+
+      - name: Prove dead-edge refusal is observable
+        env:
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p2_topology
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_topology
+          SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH: "1"
+        run: |
+          if python scripts/ci/prove_b26_p2_production_topology.py; then
+            echo "dead-edge did not refuse"
+            exit 1
+          fi
+
+      - name: Upload B2.6-P2 topology evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: b26-p2-topology-${{ github.run_id }}
+          path: artifacts/b26_p2/topology/*.json
+          if-no-files-found: error
+
   b26-p1-container-equivalence:
     name: B2.6-P1 Candidate Container Equivalence
     runs-on: ubuntu-latest
@@ -168,8 +239,8 @@ jobs:
       - name: NC-B26-P2 image-layer scope-policy drift turns red then restores green
         run: |
           set -euo pipefail
-          pristine_hash="$(sha256sum contracts/reconciliation/b2.6/scope-policy.v1.yaml | awk '{print $1}')"
-          cp contracts/reconciliation/b2.6/scope-policy.v1.yaml "$RUNNER_TEMP/b26-p2-scope-policy.yaml"
+          pristine_hash="$(sha256sum contracts/reconciliation/b2.6/scope-policy.v2.yaml | awk '{print $1}')"
+          cp contracts/reconciliation/b2.6/scope-policy.v2.yaml "$RUNNER_TEMP/b26-p2-scope-policy.yaml"
           python scripts/ci/_b26_p2_controlled_defect.py p2_contract_universe_widening
           docker build -f backend/Dockerfile -t skeldir-b26-p2-defect:${{ github.sha }} .
           if python scripts/ci/assert_b26_p2_container_equivalence.py \
@@ -177,12 +248,12 @@ jobs:
             echo "B26-P2 stale scope-policy did not turn red"
             exit 1
           fi
-          cp "$RUNNER_TEMP/b26-p2-scope-policy.yaml" contracts/reconciliation/b2.6/scope-policy.v1.yaml
-          test "$(sha256sum contracts/reconciliation/b2.6/scope-policy.v1.yaml | awk '{print $1}')" = "$pristine_hash"
+          cp "$RUNNER_TEMP/b26-p2-scope-policy.yaml" contracts/reconciliation/b2.6/scope-policy.v2.yaml
+          test "$(sha256sum contracts/reconciliation/b2.6/scope-policy.v2.yaml | awk '{print $1}')" = "$pristine_hash"
           python scripts/ci/assert_b26_p2_container_equivalence.py \
             --image skeldir-b26-p1:${{ github.sha }} \
             --evidence-out artifacts/b26_p2/container/container-equivalence.json
-          git diff --exit-code -- contracts/reconciliation/b2.6/scope-policy.v1.yaml
+          git diff --exit-code -- contracts/reconciliation/b2.6/scope-policy.v2.yaml
 
       - name: Upload container evidence
         uses: actions/upload-artifact@v4
@@ -241,6 +312,7 @@ jobs:
       - b26-p1-static-authority
       - b26-p1-container-equivalence
       - b26-p1-inherited-conduction
+      - b26-p2-production-topology
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -249,10 +321,12 @@ jobs:
           STATIC_RESULT: ${{ needs['b26-p1-static-authority'].result }}
           CONTAINER_RESULT: ${{ needs['b26-p1-container-equivalence'].result }}
           INHERITED_RESULT: ${{ needs['b26-p1-inherited-conduction'].result }}
+          TOPOLOGY_RESULT: ${{ needs['b26-p2-production-topology'].result }}
         run: |
           test "$STATIC_RESULT" = success
           test "$CONTAINER_RESULT" = success
           test "$INHERITED_RESULT" = success
+          test "$TOPOLOGY_RESULT" = success
 
       - name: Checkout exact candidate
         uses: actions/checkout@v4

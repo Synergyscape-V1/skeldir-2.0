@@ -61,11 +61,20 @@ report["corrective_ii_law_ok"] = (
     and document.get("snapshot_isolation")
     == "repeatable_read_single_snapshot_per_derivation"
     and document.get("dispatch_authority_law")
-    == "worker_revalidates_broker_task_id_against_durable_dispatch_fail_closed"
+    == "worker_admits_via_constrained_resolver_before_b23_fail_closed"
     and document.get("window_authority")
     == "dispatch_bound_ingress_event_day_half_open_utc"
     and document.get("identity_law")
-    == "exact_sorted_source_identity_set_bound_to_scope_identity_digest"
+    == "semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels"
+    and document.get("identity_version") == "b2.6-p2-scope-identity-v2"
+    and document.get("delivery_law")
+    == "acceptance_acquires_durable_recoverable_execution_intent_atomically"
+)
+report["corrective_iii_law_ok"] = (
+    callable(getattr(dispatch, "admit_execution_before_b23", None))
+    and "b26_p2_execution_outbox" in open("app/api/webhooks.py", encoding="utf-8").read()
+    and "relay_b26_p2_pending_dispatches" in open("app/tasks/b26_p2_relay.py", encoding="utf-8").read()
+    and conduction.SCOPE_IDENTITY_VERSION == "b2.6-p2-scope-identity-v2"
 )
 report["dispositions_ok"] = set(document.get("dispositions", [])) == {
     "SUPPORTED_AND_IN_SCOPE",
@@ -141,6 +150,7 @@ from app.finance_reconciliation import dispatch_authority as dispatch
 report["dispatch_import_ok"] = (
     callable(dispatch.resolve_dispatch_authority)
     and callable(dispatch.derive_reconciliation_window)
+    and callable(dispatch.admit_execution_before_b23)
 )
 from app.finance_reconciliation.tenant_authority import (
     open_governed_b23_snapshot_session,

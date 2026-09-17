@@ -236,30 +236,49 @@ def execute_b23_batch_match_engine_task(
     set_request_correlation_id(correlation_id)
     window_start = datetime.fromisoformat(window_start_iso)
     window_end = datetime.fromisoformat(window_end_iso)
-    result = run_in_worker_loop(
-        execute_b23_batch_match_engine(
-            tenant_id=UUID(tenant_id),
-            window_start=window_start,
-            window_end=window_end,
-            chunk_size=chunk_size,
-        )
-    )
-    # Corrective II dispatch-bound P2 conduction: B2.3 truth is already
-    # committed in its own session above, so a later P2 refusal cannot roll
-    # it back (idempotent retry preserves verdicts). P2 authority failures
-    # propagate to task FAILURE/DLQ (observable) -- never a silent
-    # ``p2_scope: None`` success. The mandatory fail-closed edge also lives
-    # in the canonical sink.
     broker_task_id: str | None = None
     try:
         broker_task_id = getattr(getattr(self, "request", None), "id", None)
     except Exception:
         broker_task_id = None
+    # Corrective III authority-before-B2.3: durable invocation authority is
+    # established BEFORE the B2.3 engine runs, from the least forgeable
+    # stable handle (broker task identity) via the constrained resolver,
+    # without trusting caller-supplied tenant semantics. Missing/mismatched
+    # authority refuses here with zero B2.3 consequence (exception -> task
+    # FAILURE/DLQ). Only the admitted authoritative tenant/window proceeds.
+    from app.db.session import B23AsyncSessionLocal as _B23BareSession  # noqa: PLC0415
+    from app.finance_reconciliation import dispatch_authority as _p2_admit  # noqa: PLC0415
+
+    async def _admit() -> Any:
+        async with _B23BareSession() as _bare:
+            return await _p2_admit.admit_execution_before_b23(
+                _bare,
+                broker_task_id=str(broker_task_id) if broker_task_id else None,
+                message_tenant_id=tenant_id,
+                message_window_start=window_start,
+                message_window_end=window_end,
+            )
+
+    authority = run_in_worker_loop(_admit())
+    result = run_in_worker_loop(
+        execute_b23_batch_match_engine(
+            tenant_id=authority.tenant_id,
+            window_start=authority.window_start,
+            window_end=authority.window_end,
+            chunk_size=chunk_size,
+        )
+    )
+    # Corrective II dispatch-bound P2 conduction (preserved): B2.3 truth is
+    # already committed in its own session above, so a later P2 refusal
+    # cannot roll it back (idempotent retry preserves verdicts). P2
+    # authority failures propagate to task FAILURE/DLQ (observable) -- never
+    # a silent ``p2_scope: None`` success.
     p2_scope = run_in_worker_loop(
         _derive_p2_scope_for_window(
-            tenant_id=UUID(tenant_id),
-            window_start=window_start,
-            window_end=window_end,
+            tenant_id=authority.tenant_id,
+            window_start=authority.window_start,
+            window_end=authority.window_end,
             broker_task_id=str(broker_task_id) if broker_task_id else None,
         )
     )

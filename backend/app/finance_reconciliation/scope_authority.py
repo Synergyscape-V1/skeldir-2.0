@@ -66,9 +66,16 @@ _REPO_ROOT = (
     else _PACKAGE_ROOT
 )
 B26_P2_SCOPE_POLICY_PATH = (
-    _REPO_ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
+    _REPO_ROOT / "contracts/reconciliation/b2.6/scope-policy.v2.yaml"
 )
-B26_P2_SCOPE_POLICY_VERSION = "b2.6-p2-scope-policy-v1"
+B26_P2_SCOPE_POLICY_VERSION = "b2.6-p2-scope-policy-v2"
+# Historical v1 identity (Corrective I/II). v1 is never rewritten; v2
+# supersedes it additively per the v2 supersession block. One canonical
+# policy identity denotes exactly one semantic contract.
+B26_P2_SCOPE_POLICY_V1_VERSION = "b2.6-p2-scope-policy-v1"
+B26_P2_SCOPE_POLICY_V1_SOURCE_SHA256 = (
+    "7adbdd0c4463526773e1b29bc05875f2361bcd2f0b9de096621f3c97574a82cd"
+)
 
 DISPOSITION_SUPPORTED_AND_IN_SCOPE = "SUPPORTED_AND_IN_SCOPE"
 DISPOSITION_SUPPORTED_BUT_UNRESOLVED = "SUPPORTED_BUT_UNRESOLVED"
@@ -277,6 +284,40 @@ def _validate_scope_policy(document: Mapping[str, Any]) -> None:
         == "alias_rail_currency_window_meaning_change_requires_version_bump",
         "b26_p2_evolution_law_drift",
     )
+    # Corrective III v2 additive laws (one identity = one contract).
+    if B26_P2_SCOPE_POLICY_VERSION == "b2.6-p2-scope-policy-v2":
+        _require(
+            document.get("dispatch_authority_law")
+            == "worker_admits_via_constrained_resolver_before_b23_fail_closed",
+            "b26_p2_dispatch_authority_law_drift",
+        )
+        _require(
+            document.get("identity_law")
+            == "semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels",
+            "b26_p2_identity_law_drift",
+        )
+        _require(
+            document.get("identity_version") == "b2.6-p2-scope-identity-v2",
+            "b26_p2_identity_version_drift",
+        )
+        _require(
+            document.get("window_oracle_law")
+            == "independent_normative_oracle_pins_utc_day_half_open_without_importing_production_quantizer",
+            "b26_p2_window_oracle_law_drift",
+        )
+        _require(
+            document.get("delivery_law")
+            == "acceptance_acquires_durable_recoverable_execution_intent_atomically",
+            "b26_p2_delivery_law_drift",
+        )
+        sup = document.get("supersession", {})
+        _require(
+            isinstance(sup, dict)
+            and sup.get("supersedes") == B26_P2_SCOPE_POLICY_V1_VERSION
+            and sup.get("v1_source_sha256")
+            == B26_P2_SCOPE_POLICY_V1_SOURCE_SHA256,
+            "b26_p2_supersession_drift",
+        )
     # Sovereign correspondence: the contract-declared universes must equal
     # the live sovereign universes. A silent widening on either side refuses.
     _require(
