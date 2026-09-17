@@ -146,14 +146,14 @@ from app.finance_reconciliation.tenant_authority import (
     open_governed_b23_snapshot_session,
 )
 report["snapshot_session_ok"] = callable(open_governed_b23_snapshot_session)
-from app.core.reconciliation_window import quantize_utc_day_iso
+from app.core.day_window import quantize_utc_day_iso
 report["shared_window_ok"] = callable(quantize_utc_day_iso)
 webhook_source = open("app/api/webhooks.py", encoding="utf-8").read()
 report["webhook_phase_ok"] = (
     "finance_reconciliation" not in webhook_source
     and "candidate_conduction" not in webhook_source
     and "p2_scope" not in webhook_source
-    and "from app.core.reconciliation_window import" in webhook_source
+    and "from app.core.day_window import" in webhook_source
     and "dispatch_task_id" in webhook_source
 )
 task_source = open("app/tasks/revenue_verification.py", encoding="utf-8").read()

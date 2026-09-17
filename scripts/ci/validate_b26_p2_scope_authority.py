@@ -683,7 +683,7 @@ def _check_webhook_phase_boundary(
         # the same explicit task identity (authority ordering, not race).
         if "dispatch_task_id" not in webhook_source:
             violations.append("p2_dispatch_ordering_absent_from_webhook")
-    if "from app.core.reconciliation_window import" not in webhook_source:
+    if "from app.core.day_window import" not in webhook_source:
         violations.append("p2_window_delegation_absent_from_webhook")
     details["webhook_phase_boundary_checked"] = True
 
@@ -754,7 +754,7 @@ def _check_corrective_ii_law(violations: list[str], details: dict[str, Any]) -> 
         if document.get(field) != expected:
             violations.append(f"p2_policy_corrective_ii_drift:{field}")
     # Shared window quantization must be single-implementation in core.
-    core_window = REPO_ROOT / "backend/app/core/reconciliation_window.py"
+    core_window = REPO_ROOT / "backend/app/core/day_window.py"
     if not core_window.is_file():
         violations.append("p2_shared_window_module_missing")
     else:

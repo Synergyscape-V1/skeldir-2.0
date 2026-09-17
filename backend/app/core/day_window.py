@@ -27,7 +27,7 @@ def quantize_utc_day(event_time: datetime) -> tuple[datetime, datetime]:
     implementation.
     """
     if not isinstance(event_time, datetime):
-        raise ValueError("reconciliation_window_event_time_not_datetime")
+        raise ValueError("day_window_event_time_not_datetime")
     if event_time.tzinfo is None or event_time.tzinfo.utcoffset(event_time) is None:
         occurred = event_time.replace(tzinfo=timezone.utc)
     else:
@@ -40,11 +40,11 @@ def quantize_utc_day_iso(event_timestamp_iso: str) -> tuple[str, str]:
     """ISO-string façade returning ``Z``-suffixed day boundaries."""
     token = (event_timestamp_iso or "").strip()
     if not token:
-        raise ValueError("reconciliation_window_event_time_missing")
+        raise ValueError("day_window_event_time_missing")
     try:
         event_time = datetime.fromisoformat(token.replace("Z", "+00:00"))
     except (ValueError, TypeError) as exc:
-        raise ValueError(f"reconciliation_window_malformed:{exc}") from exc
+        raise ValueError(f"day_window_malformed:{exc}") from exc
     start, end = quantize_utc_day(event_time)
     return (
         start.isoformat().replace("+00:00", "Z"),

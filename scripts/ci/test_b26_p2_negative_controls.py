@@ -18,7 +18,7 @@ SCOPE_MODULE = ROOT / "backend/app/finance_reconciliation/scope_authority.py"
 CONDUCTION_MODULE = ROOT / "backend/app/finance_reconciliation/candidate_conduction.py"
 DISPATCH_MODULE = ROOT / "backend/app/finance_reconciliation/dispatch_authority.py"
 TENANT_MODULE = ROOT / "backend/app/finance_reconciliation/tenant_authority.py"
-CORE_WINDOW_MODULE = ROOT / "backend/app/core/reconciliation_window.py"
+CORE_WINDOW_MODULE = ROOT / "backend/app/core/day_window.py"
 SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
 SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 WEBHOOK_MODULE = ROOT / "backend/app/api/webhooks.py"
@@ -142,7 +142,7 @@ TRACKED_DEFECT_FILES = (
     ROOT / "backend/app/finance_reconciliation/candidate_conduction.py",
     ROOT / "backend/app/finance_reconciliation/dispatch_authority.py",
     ROOT / "backend/app/finance_reconciliation/tenant_authority.py",
-    ROOT / "backend/app/core/reconciliation_window.py",
+    ROOT / "backend/app/core/day_window.py",
     ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml",
     ROOT / "backend/app/finance_reconciliation/canonical_sink.py",
     ROOT / "backend/app/api/webhooks.py",

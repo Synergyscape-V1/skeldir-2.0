@@ -297,8 +297,8 @@ def p2_silent_null_swallow() -> None:
 def p2_window_delegation_removal() -> None:
     _replace_once(
         WEBHOOK_MODULE,
-        "    from app.core.reconciliation_window import (  # noqa: PLC0415\n",
-        "    from app.core.reconciliation_window_DISABLED import (  # noqa: PLC0415\n",
+        "    from app.core.day_window import (  # noqa: PLC0415\n",
+        "    from app.core.day_window_DISABLED import (  # noqa: PLC0415\n",
         defect="p2_window_delegation_removal",
     )
 

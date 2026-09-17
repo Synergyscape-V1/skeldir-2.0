@@ -71,14 +71,14 @@ def derive_reconciliation_window(event_time: datetime) -> tuple[datetime, dateti
     """Derive the governed P2 reconciliation window for one ingress instant.
 
     Single-implementation law (Corrective II, H-II-03): UTC calendar-day
-    quantization executed once in ``app.core.reconciliation_window``. The
+    quantization executed once in ``app.core.day_window``. The
     B2.3 batch match window currently shares this quantization but is a
     distinct authority (batch args); the P2 reconciliation window is always
     derived here from the durable ingress event_timestamp, never from
     broker args. Naive datetimes refuse; timezone-equivalent instants
     quantize identically.
     """
-    from app.core.reconciliation_window import quantize_utc_day  # noqa: PLC0415
+    from app.core.day_window import quantize_utc_day  # noqa: PLC0415
 
     if not isinstance(event_time, datetime):
         raise DispatchAuthorityError("p2_dispatch_event_time_not_datetime")
@@ -96,7 +96,7 @@ def derive_reconciliation_window_iso(event_timestamp_iso: str) -> tuple[str, str
     Delegates to the single core quantization; malformed inputs refuse
     fail-closed.
     """
-    from app.core.reconciliation_window import quantize_utc_day_iso  # noqa: PLC0415
+    from app.core.day_window import quantize_utc_day_iso  # noqa: PLC0415
 
     try:
         return quantize_utc_day_iso(event_timestamp_iso)

@@ -569,14 +569,13 @@ async def _route_authenticated_malformed_payload(
 def _compute_recompute_window(event_timestamp: str) -> tuple[str, str]:
     """Normalize an event timestamp into a UTC day window.
 
-    Single-implementation law (Corrective II, H-II-03): day quantization
-    is executed once in ``app.core.reconciliation_window``; this façade
-    delegates to it so the webhook dispatch window and the worker P2
-    reconciliation window cannot silently diverge. B2.3 matching and P2
-    reconciliation remain distinct authorities sharing one quantization
-    function, not one implicit window.
+    Single-implementation law: day quantization is executed once in
+    ``app.core.day_window``; this façade delegates to it so the webhook
+    dispatch window and the worker scope window cannot silently diverge.
+    B2.3 matching and later scope use remain distinct authorities sharing
+    one quantization function, not one implicit window.
     """
-    from app.core.reconciliation_window import (  # noqa: PLC0415
+    from app.core.day_window import (  # noqa: PLC0415
         quantize_utc_day_iso,
     )
 
