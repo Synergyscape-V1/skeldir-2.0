@@ -146,6 +146,13 @@ def main() -> int:
             occurred = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
             await conn.execute(
                 text(
+                    "INSERT INTO public.channel_taxonomy (code, family, is_paid,"
+                    " display_name, state) VALUES ('b26p2ca1_channel', 'b26p2ca1',"
+                    " true, 'B26P2CA1', 'active') ON CONFLICT (code) DO NOTHING"
+                )
+            )
+            await conn.execute(
+                text(
                     "INSERT INTO public.attribution_events (id, tenant_id, occurred_at,"
                     " correlation_id, session_id, revenue_cents, raw_payload,"
                     " idempotency_key, event_type, channel, campaign_id,"
