@@ -71,10 +71,10 @@ report["corrective_ii_law_ok"] = (
     == "acceptance_acquires_durable_recoverable_execution_intent_atomically"
 )
 report["corrective_iii_law_ok"] = (
-    callable(getattr(dispatch, "admit_execution_before_b23", None))
-    and "b26_p2_execution_outbox" in open("app/api/webhooks.py", encoding="utf-8").read()
-    and "relay_b26_p2_pending_dispatches" in open("app/tasks/b26_p2_relay.py", encoding="utf-8").read()
-    and conduction.SCOPE_IDENTITY_VERSION == "b2.6-p2-scope-identity-v2"
+    document.get("window_oracle_law")
+    == "independent_normative_oracle_pins_utc_day_half_open_without_importing_production_quantizer"
+    and document.get("supersession", {}).get("supersedes")
+    == "b2.6-p2-scope-policy-v1"
 )
 report["dispositions_ok"] = set(document.get("dispositions", [])) == {
     "SUPPORTED_AND_IN_SCOPE",
@@ -175,6 +175,18 @@ report["task_dispatch_ok"] = (
     and "broker_task_id" in task_source
     and "open_governed_b23_snapshot_session" in task_source
     and "p2_scope: Dict[str, Any] | None = None" not in task_source
+)
+report["corrective_iii_wiring_ok"] = (
+    callable(getattr(dispatch, "admit_execution_before_b23", None))
+    and "authority = run_in_worker_loop(_admit())" in task_source
+    and "INSERT INTO public.b26_p2_execution_outbox (" in webhook_source
+    and "INSERT INTO public.b26_p2_task_authority_directory (" in webhook_source
+    and "relay_b26_p2_pending_dispatches"
+    in open("app/tasks/b26_p2_relay.py", encoding="utf-8").read()
+    and conduction.SCOPE_IDENTITY_VERSION == "b2.6-p2-scope-identity-v2"
+    and "item.classification.provider" in open(
+        "app/finance_reconciliation/candidate_conduction.py", encoding="utf-8"
+    ).read()
 )
 
 print("P2_IN_IMAGE_BATTERY " + json.dumps(report, sort_keys=True))
