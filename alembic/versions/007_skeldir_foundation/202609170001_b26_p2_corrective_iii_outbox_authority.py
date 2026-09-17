@@ -203,9 +203,22 @@ def upgrade() -> None:
     # 4. Least privilege: the consumer cannot mint the authority it validates.
     # app_rw loses dispatch INSERT/UPDATE (keeps SELECT for reads); the
     # producer (app_user) retains issuance; the worker gets explicit SELECT.
+    # app_user/app_rw/app_ro are migration-guaranteed roles (001 202511131121);
+    # app_worker exists only after role provisioning, so its grants are
+    # existence-guarded: bare-database jobs (schema-authority, unit lanes)
+    # migrate without provisioned roles and must not fail here.
     op.execute("REVOKE INSERT, UPDATE ON TABLE public.b23_match_task_dispatches FROM app_rw")
     op.execute("GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_rw")
-    op.execute("GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_worker")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+                GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_worker;
+            END IF;
+        END $$;
+        """
+    )
     op.execute(
         "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_task_dispatches TO app_user"
     )
@@ -215,7 +228,16 @@ def upgrade() -> None:
     )
     op.execute("GRANT SELECT ON TABLE public.b26_p2_execution_outbox TO app_rw")
     op.execute("GRANT SELECT ON TABLE public.b26_p2_execution_outbox TO app_ro")
-    op.execute("GRANT SELECT ON TABLE public.b26_p2_execution_outbox TO app_worker")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+                GRANT SELECT ON TABLE public.b26_p2_execution_outbox TO app_worker;
+            END IF;
+        END $$;
+        """
+    )
 
     # 5. Issuance immutability: runtime roles cannot rewrite identifiers,
     # tenant/source binding, or window authority after issuance. Only the
@@ -343,7 +365,14 @@ def upgrade() -> None:
         "GRANT SELECT ON TABLE public.b26_p2_task_authority_directory TO app_ro"
     )
     op.execute(
-        "GRANT SELECT ON TABLE public.b26_p2_task_authority_directory TO app_worker"
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+                GRANT SELECT ON TABLE public.b26_p2_task_authority_directory TO app_worker;
+            END IF;
+        END $$;
+        """
     )
     op.execute(
         "GRANT SELECT, INSERT ON TABLE public.b26_p2_task_authority_directory TO app_user"
@@ -378,22 +407,58 @@ def upgrade() -> None:
     op.execute("ALTER FUNCTION public.b26_p2_resolve_dispatch_authority(text) OWNER TO migration_owner")
     op.execute("REVOKE ALL ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) FROM PUBLIC")
     op.execute("GRANT EXECUTE ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) TO app_user")
-    op.execute("GRANT EXECUTE ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) TO app_worker")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+                GRANT EXECUTE ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) TO app_worker;
+            END IF;
+        END $$;
+        """
+    )
 
 
 def downgrade() -> None:
-    op.execute("REVOKE EXECUTE ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) FROM app_worker")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+                REVOKE EXECUTE ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) FROM app_worker;
+            END IF;
+        END $$;
+        """
+    )
     op.execute("REVOKE EXECUTE ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) FROM app_user")
     op.execute("DROP FUNCTION IF EXISTS public.b26_p2_resolve_dispatch_authority(text)")  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective III admission resolver.
     op.execute("REVOKE ALL ON TABLE public.b26_p2_task_authority_directory FROM app_user")
-    op.execute("REVOKE ALL ON TABLE public.b26_p2_task_authority_directory FROM app_worker")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+                REVOKE ALL ON TABLE public.b26_p2_task_authority_directory FROM app_worker;
+            END IF;
+        END $$;
+        """
+    )
     op.execute("REVOKE ALL ON TABLE public.b26_p2_task_authority_directory FROM app_rw")
     op.execute("REVOKE ALL ON TABLE public.b26_p2_task_authority_directory FROM app_ro")
     op.execute("DROP TABLE IF EXISTS public.b26_p2_task_authority_directory")  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective III admission directory.
     op.execute("DROP TRIGGER IF EXISTS trg_b26_p2_dispatch_immutability ON public.b23_match_task_dispatches")  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective III immutability.
     op.execute("DROP FUNCTION IF EXISTS public.b26_p2_enforce_dispatch_immutability()")  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective III immutability.
     op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_task_dispatches TO app_rw")
-    op.execute("REVOKE SELECT ON TABLE public.b23_match_task_dispatches FROM app_worker")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+                REVOKE SELECT ON TABLE public.b23_match_task_dispatches FROM app_worker;
+            END IF;
+        END $$;
+        """
+    )
     op.execute(
         "DROP POLICY IF EXISTS tenant_isolation_policy_b26_p2_execution_outbox ON public.b26_p2_execution_outbox"  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective III outbox.
     )
