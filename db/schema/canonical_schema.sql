@@ -2607,15 +2607,12 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
 CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS TABLE(tenant_id uuid, webhook_ingress_identity_id uuid, window_start timestamp with time zone, window_end timestamp with time zone)
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
-    SET row_security TO 'off'
     AS $$
             SELECT dir.tenant_id,
                    dir.webhook_ingress_identity_id,
                    dir.window_start,
                    dir.window_end
             FROM public.b26_p2_task_authority_directory AS dir
-            JOIN public.b23_match_task_dispatches AS d
-              ON d.task_id = dir.task_id
             WHERE dir.task_id = p_task_id
         $$;
 

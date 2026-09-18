@@ -1008,15 +1008,14 @@ def _check_corrective_iv_law(violations: list[str], details: dict[str, Any]) -> 
             violations.append(
                 f"p2_corrective_iv_orphan_quarantine_absent:{required}"
             )
-    # Admission binding (Gate 6, structural): the GUC-independent
-    # admission resolver must join the dispatch table through FORCE RLS
-    # (function-local row_security off, exact task predicate), or a
-    # directory-only artifact could authorize B2.3 and the resolver would
-    # go silently blind for lawful workers.
-    if "JOIN public.b23_match_task_dispatches AS d" not in upgrade_source:
-        violations.append("p2_corrective_iv_resolver_dispatch_binding_absent")
-    if "SET row_security TO off" not in upgrade_source:
-        violations.append("p2_corrective_iv_resolver_row_security_absent")
+    # Admission binding (Gate 6) is deliberately NOT a resolver-body pin:
+    # a dispatch JOIN inside the SECURITY DEFINER resolver was evaluated
+    # and rejected by PostgreSQL itself (row_security=off does not bypass
+    # FORCE RLS for non-superuser owners: CREATE FUNCTION fails in
+    # production-fidelity lanes while succeeding in superuser lanes).
+    # Gate 6 therefore rests on the coherence foreign keys pinned above
+    # plus the quarantine pinned below -- no principal below superuser
+    # can persist a directory-only artifact.
     # Recovery motor: beat must schedule the relay sweep on its queue.
     beat_source = (BACKEND / "app/tasks/beat_schedule.py").read_text(encoding="utf-8")
     for required in (

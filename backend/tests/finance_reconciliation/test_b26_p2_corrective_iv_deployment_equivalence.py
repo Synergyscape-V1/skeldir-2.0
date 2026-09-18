@@ -864,15 +864,15 @@ def test_iv_duplicate_seed_reuses_winner_task() -> None:
         conn.close()
 
 
-def test_iv_resolver_joins_dispatch_for_lawful_task() -> None:
-    """Admission resolver admits a lawful task via the dispatch join.
+def test_iv_resolver_admits_lawful_task_on_bare_session() -> None:
+    """Admission resolver admits a lawful task on a bare session.
 
-    The resolver runs on a bare session as app_worker (no tenant GUC,
-    FORCE RLS applies): the join to the dispatch table only yields a row
-    because the function reads with row_security off. Removing either the
-    join or the row_security setting refuses every lawful admission here
-    (live falsifier for Gate 6 and for the RLS-blindness defect class),
-    while an unknown task still resolves to zero rows.
+    The resolver runs as app_worker with no tenant GUC and reads the
+    RLS-free admission directory: a coherent triple resolves to its
+    tenant, while an unknown task resolves to zero rows. (A dispatch
+    JOIN inside the resolver was evaluated and rejected: row_security
+    off does not bypass FORCE RLS for non-superuser owners, so Gate 6
+    rests on the coherence foreign keys plus the upgrade quarantine.)
     """
     ids = _seed_ingress("resolver-join")
     task_id = f"iv-resolver-{uuid.uuid4().hex[:8]}"

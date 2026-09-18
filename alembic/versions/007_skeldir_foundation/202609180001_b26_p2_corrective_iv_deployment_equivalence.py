@@ -30,14 +30,20 @@ Database-physics changes (this migration):
   without a dispatch row, and the admission resolver below requires a
   dispatch join), while the authoritative trail (ingress, dispatch,
   verdicts, DLQ) is untouched.
-- Admission binding (Gate 6, structural): the GUC-independent admission
-  resolver now joins the dispatch table, so a directory-only artifact
-  cannot authorize B2.3 even if foreign keys were ever dropped or a
-  superuser hand-inserted a row. The join reads through FORCE ROW LEVEL
-  SECURITY via a function-local row_security-off setting (exact task_id
-  predicate only -- the same bearer model as the directory lookup);
-  without it the resolver would go silently blind for every principal
-  including lawful workers.
+- Admission binding (Gate 6) deliberately NOT restructured here: a
+  dispatch JOIN inside the GUC-independent admission resolver was
+  evaluated and REJECTED by the database itself. SET row_security TO off
+  does not bypass FORCE ROW LEVEL SECURITY for a non-superuser owner --
+  PostgreSQL raises `query would be affected by row-level security
+  policy ... use ALTER TABLE NO FORCE ROW LEVEL SECURITY` at CREATE
+  FUNCTION time in production-fidelity lanes (migration_owner as plain
+  table owner), while the same DDL succeeds in superuser lanes. An
+  environment-dependent DDL is unshippable, and weakening enforcement to
+  NO FORCE is out of the question, so Gate 6 rests on the coherence
+  foreign keys (no principal below superuser can persist a
+  directory-only artifact) plus the quarantine above (legacy debris is
+  deleted at upgrade). The resolver keeps its Corrective-III
+  directory-rooted body byte-identically.
 - Class C (published != conducted): delivery_state / outbox.state gain
   conducted. Lawful transitions only:
   pending_publish -> published -> conducted. conducted is terminal
@@ -304,42 +310,6 @@ def upgrade() -> None:
         """
     )
 
-    # 3b. Admission binding (Gate 6, structural): the GUC-independent
-    # admission resolver joins the dispatch table, so a directory-only
-    # artifact cannot authorize B2.3 even if the foreign keys above were
-    # ever dropped or a superuser hand-inserted a row. The join reads
-    # through FORCE ROW LEVEL SECURITY via a function-local row_security
-    # setting switched off with an exact task_id predicate only (the
-    # same bearer model as the directory lookup); without it the resolver
-    # would go silently blind for every principal, lawful workers
-    # included. CREATE OR REPLACE preserves the migration_owner owner and
-    # the existing REVOKE/GRANT universe (owned by Corrective-III).
-    op.execute(
-        """
-        CREATE OR REPLACE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text)
-        RETURNS TABLE (
-            tenant_id uuid,
-            webhook_ingress_identity_id uuid,
-            window_start timestamp with time zone,
-            window_end timestamp with time zone
-        )
-        LANGUAGE sql
-        SECURITY DEFINER
-        SET search_path TO 'public', 'pg_temp'
-        SET row_security TO off
-        AS $$
-            SELECT dir.tenant_id,
-                   dir.webhook_ingress_identity_id,
-                   dir.window_start,
-                   dir.window_end
-            FROM public.b26_p2_task_authority_directory AS dir
-            JOIN public.b23_match_task_dispatches AS d
-              ON d.task_id = dir.task_id
-            WHERE dir.task_id = p_task_id
-        $$;
-        """
-    )
-
     # 4. Strict dispatch transition trigger: forward-only delivery law,
     # monotonic attempts, strict window immutability (NULL hole closed).
     op.execute(
@@ -538,34 +508,13 @@ def downgrade() -> None:
         "ALTER TABLE public.b26_p2_execution_outbox DROP CONSTRAINT IF EXISTS fk_b26_p2_outbox_dispatch_task_identity"  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV coherence.
     )
     # Restore the Corrective-III dispatch trigger (NULL-window exception +
-    # two-state transition law) and the Corrective-III directory-only
-    # admission resolver BEFORE the vocabulary step-down below. Ordering
-    # law: the step-down writes conducted -> published, which the
+    # two-state transition law) BEFORE the vocabulary step-down below.
+    # Ordering law: the step-down writes conducted -> published, which the
     # Corrective-IV forward-only law forbids (conducted is terminal), so
-    # the permissive III law must govern the step-down writes. Full
-    # removal stays owned by the Corrective-III downgrade.
-    op.execute(
-        """
-        CREATE OR REPLACE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text)
-        RETURNS TABLE (
-            tenant_id uuid,
-            webhook_ingress_identity_id uuid,
-            window_start timestamp with time zone,
-            window_end timestamp with time zone
-        )
-        LANGUAGE sql
-        SECURITY DEFINER
-        SET search_path TO 'public', 'pg_temp'
-        AS $$
-            SELECT dir.tenant_id,
-                   dir.webhook_ingress_identity_id,
-                   dir.window_start,
-                   dir.window_end
-            FROM public.b26_p2_task_authority_directory AS dir
-            WHERE dir.task_id = p_task_id
-        $$;
-        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV admission binding.
-    )
+    # the permissive III law must govern the step-down writes. (The
+    # admission resolver is untouched by this migration, so there is
+    # nothing to restore for it.) Full removal stays owned by the
+    # Corrective-III downgrade.
     op.execute(
         """
         CREATE OR REPLACE FUNCTION public.b26_p2_enforce_dispatch_immutability()
@@ -701,6 +650,6 @@ def downgrade() -> None:
             CHECK (state IN ('pending_publish', 'published'))
         """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
     )
-    # (Corrective-III trigger/resolver bodies are restored above, before
-    # the vocabulary step-down, so the step-down writes run under the
+    # (The Corrective-III trigger body is restored above, before the
+    # vocabulary step-down, so the step-down writes run under the
     # permissive III law.)
