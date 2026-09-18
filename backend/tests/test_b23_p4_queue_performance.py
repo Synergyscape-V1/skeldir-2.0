@@ -57,10 +57,12 @@ async def _assert_table_exists(table_name: str) -> None:
 
 
 async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, datetime]:
+    # Worker-state seeding runs as the worker login (B2.6-P2 Corrective III
+    # least privilege: verdict writes belong to app_worker, not app_user).
     now = datetime.now(timezone.utc).replace(microsecond=0)
     window_start = now - timedelta(hours=1)
     window_end = now + timedelta(hours=1)
-    async with engine.begin() as conn:
+    async with b23_engine.begin() as conn:
         await conn.execute(
             text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
             {"tenant_id": str(tenant_id)},

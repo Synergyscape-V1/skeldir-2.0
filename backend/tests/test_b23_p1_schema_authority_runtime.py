@@ -7,7 +7,24 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from app.db.session import engine, get_session
+from app.db.session import engine, get_b23_session
+
+
+@pytest.fixture(autouse=True)
+async def _fresh_engines_per_test():
+    """Dispose pooled engines after each test (B2.6-P2 Corrective III).
+
+    Worker-state proofs run on the B23 pool, which (unlike the TESTING
+    NullPool app engine) pools connections across tests. pytest-asyncio
+    function-scoped loops would otherwise check out connections bound to
+    closed loops. Mirrors the finance_reconciliation conduction battery.
+    """
+    yield
+    from app.db.session import b23_engine
+    from app.db.session import engine as app_engine
+
+    await b23_engine.dispose()
+    await app_engine.dispose()
 
 
 def _require_authoritative_db_proofs() -> bool:
@@ -67,7 +84,7 @@ async def test_b23_p1_exception_resolved_requires_resolution_code_db_constraint(
     tenant_a, _ = test_tenant_pair
     match_id = uuid4()
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await session.execute(
             text(
                 """
@@ -186,7 +203,7 @@ async def test_b23_p1_revenue_event_idempotency_and_operand_semantics_are_db_enf
         "currency_code": "USD",
     }
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await session.execute(
             text(
                 """
@@ -263,7 +280,7 @@ async def test_b23_p1_revenue_event_idempotency_and_operand_semantics_are_db_enf
                 payload,
             )
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         with pytest.raises(IntegrityError):
             await session.execute(
                 text(
@@ -310,7 +327,7 @@ async def test_b23_p1_revenue_event_idempotency_and_operand_semantics_are_db_enf
                 },
             )
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         with pytest.raises(IntegrityError):
             await session.execute(
                 text(
@@ -364,7 +381,7 @@ async def test_b23_p1_tenant_rls_blocks_cross_tenant_visibility_and_missing_cont
     tenant_a, tenant_b = test_tenant_pair
     event_reference = f"evt-{uuid4()}"
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await session.execute(
             text(
                 """
@@ -393,7 +410,7 @@ async def test_b23_p1_tenant_rls_blocks_cross_tenant_visibility_and_missing_cont
             },
         )
 
-    async with get_session(tenant_b) as session:
+    async with get_b23_session(tenant_b) as session:
         result = await session.execute(
             text(
                 """
@@ -406,7 +423,7 @@ async def test_b23_p1_tenant_rls_blocks_cross_tenant_visibility_and_missing_cont
         )
         assert int(result.scalar() or 0) == 0
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         result = await session.execute(
             text(
                 """

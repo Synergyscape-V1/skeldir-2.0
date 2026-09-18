@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import text
 
-from app.db.session import engine, get_session
+from app.db.session import engine, get_b23_session
 from app.revenue_verification import (
     B23CaptureMatchInput,
     B23PostCaptureInput,
@@ -26,6 +26,23 @@ from app.revenue_verification.state_transitions import (
 )
 from app.schemas.revenue_verification import B23MatchVerdictDetailResponse
 from app.tasks.beat_schedule import build_beat_schedule
+
+
+@pytest.fixture(autouse=True)
+async def _fresh_engines_per_test():
+    """Dispose pooled engines after each test (B2.6-P2 Corrective III).
+
+    Worker-state proofs run on the B23 pool, which (unlike the TESTING
+    NullPool app engine) pools connections across tests. pytest-asyncio
+    function-scoped loops would otherwise check out connections bound to
+    closed loops. Mirrors the finance_reconciliation conduction battery.
+    """
+    yield
+    from app.db.session import b23_engine
+    from app.db.session import engine as app_engine
+
+    await b23_engine.dispose()
+    await app_engine.dispose()
 
 
 REQUIRED_B23_P3_TABLES = (
@@ -78,7 +95,7 @@ async def _seed_attribution_event_for_match(
     amount_minor: int,
     occurred_at: datetime,
 ) -> UUID:
-    async with get_session(tenant_id) as session:
+    async with get_b23_session(tenant_id) as session:
         await session.execute(
             text(
                 """
@@ -158,7 +175,7 @@ async def _create_match(
         amount_minor=expected_minor,
         occurred_at=now - timedelta(minutes=1),
     )
-    async with get_session(tenant_id) as session:
+    async with get_b23_session(tenant_id) as session:
         outcome = await process_b23_capture_match(
             session,
             B23CaptureMatchInput(
@@ -184,7 +201,7 @@ async def _create_match(
 
 
 async def _verdict_row(tenant_id: UUID, verdict_id: UUID):
-    async with get_session(tenant_id) as session:
+    async with get_b23_session(tenant_id) as session:
         return (
             (
                 await session.execute(
@@ -204,7 +221,7 @@ async def _verdict_row(tenant_id: UUID, verdict_id: UUID):
 
 
 async def _verdict_row_by_reference(tenant_id: UUID, event_reference: str):
-    async with get_session(tenant_id) as session:
+    async with get_b23_session(tenant_id) as session:
         return (
             (
                 await session.execute(
@@ -228,7 +245,7 @@ async def _verdict_row_by_reference(tenant_id: UUID, event_reference: str):
 
 
 async def _open_exception_rows(tenant_id: UUID, verdict_id: UUID):
-    async with get_session(tenant_id) as session:
+    async with get_b23_session(tenant_id) as session:
         return (
             (
                 await session.execute(
@@ -308,7 +325,7 @@ async def test_b23_p3_pending_to_unmatched_transition_uses_arrival_window(
     now = datetime.now(timezone.utc)
     stale_ref = f"stale-{uuid4()}"
     young_ref = f"young-{uuid4()}"
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await seed_pending_match_verdict(
             session,
             tenant_id=tenant_a,
@@ -331,7 +348,7 @@ async def test_b23_p3_pending_to_unmatched_transition_uses_arrival_window(
             session, tenant_id=tenant_a, now_utc=now
         )
     assert result.transitioned_count >= 1
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         rows = (
             (
                 await session.execute(
@@ -366,7 +383,7 @@ async def test_b23_p3_pending_transition_retries_locked_row_on_next_sweep(
     tenant_a, _ = test_tenant_pair
     now = datetime.now(timezone.utc)
     locked_ref = f"locked-{uuid4()}"
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await seed_pending_match_verdict(
             session,
             tenant_id=tenant_a,
@@ -377,7 +394,7 @@ async def test_b23_p3_pending_transition_retries_locked_row_on_next_sweep(
             pending_since=now - WEBHOOK_ARRIVAL_WINDOW - timedelta(days=1),
         )
 
-    async with get_session(tenant_a) as locking_session:
+    async with get_b23_session(tenant_a) as locking_session:
         await locking_session.execute(
             text(
                 """
@@ -390,7 +407,7 @@ async def test_b23_p3_pending_transition_retries_locked_row_on_next_sweep(
             ),
             {"tenant_id": str(tenant_a), "locked_ref": locked_ref},
         )
-        async with get_session(tenant_a) as sweeping_session:
+        async with get_b23_session(tenant_a) as sweeping_session:
             skipped = await transition_stale_pending_to_unmatched(
                 sweeping_session,
                 tenant_id=tenant_a,
@@ -399,7 +416,7 @@ async def test_b23_p3_pending_transition_retries_locked_row_on_next_sweep(
             )
         assert skipped.transitioned_count == 0
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         transitioned = await transition_stale_pending_to_unmatched(
             session,
             tenant_id=tenant_a,
@@ -419,7 +436,7 @@ async def test_b23_p3_transition_jobs_are_tenant_scoped(test_tenant_pair) -> Non
     now = datetime.now(timezone.utc)
     tenant_a_ref = f"tenant-a-{uuid4()}"
     tenant_b_ref = f"tenant-b-{uuid4()}"
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await seed_pending_match_verdict(
             session,
             tenant_id=tenant_a,
@@ -429,7 +446,7 @@ async def test_b23_p3_transition_jobs_are_tenant_scoped(test_tenant_pair) -> Non
             canonical_commerce_reference=f"pi-{uuid4()}",
             pending_since=now - WEBHOOK_ARRIVAL_WINDOW - timedelta(seconds=1),
         )
-    async with get_session(tenant_b) as session:
+    async with get_b23_session(tenant_b) as session:
         await seed_pending_match_verdict(
             session,
             tenant_id=tenant_b,
@@ -440,7 +457,7 @@ async def test_b23_p3_transition_jobs_are_tenant_scoped(test_tenant_pair) -> Non
             pending_since=now - WEBHOOK_ARRIVAL_WINDOW - timedelta(seconds=1),
         )
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         result = await transition_stale_pending_to_unmatched(
             session,
             tenant_id=tenant_a,
@@ -474,7 +491,7 @@ async def test_b23_p3_provisional_to_confirmed_transition_uses_provisional_windo
         captured_minor=6000,
         occurred_at=now,
     )
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         result = await transition_stale_provisional_to_confirmed(
             session, tenant_id=tenant_a, now_utc=now
         )
@@ -497,7 +514,7 @@ async def test_b23_p3_normal_refunds_update_net_without_exception_lifecycle(
         occurred_at=now,
     )
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await register_b23_post_capture_event(
             session,
             B23PostCaptureInput(
@@ -519,7 +536,7 @@ async def test_b23_p3_normal_refunds_update_net_without_exception_lifecycle(
     assert partial["discrepancy_amount_minor"] == 0
     assert await _open_exception_rows(tenant_a, verdict_id) == []
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await register_b23_post_capture_event(
             session,
             B23PostCaptureInput(
@@ -554,7 +571,7 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
         occurred_at=now,
     )
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await register_b23_post_capture_event(
             session,
             B23PostCaptureInput(
@@ -574,7 +591,7 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
     assert len(flagged) == 1
     assert flagged[0]["severity"] == "flagged"
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await register_b23_post_capture_event(
             session,
             B23PostCaptureInput(
@@ -594,7 +611,7 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
     assert len(alert) == 1
     assert alert[0]["severity"] == "alert"
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await register_b23_post_capture_event(
             session,
             B23PostCaptureInput(
