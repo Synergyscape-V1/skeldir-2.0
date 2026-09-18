@@ -155,22 +155,38 @@ def upgrade() -> None:
         "ALTER TABLE ONLY public.webhook_ingress_identities FORCE ROW LEVEL SECURITY"
     )
 
-    # 1b. Orphan quarantine BEFORE any foreign key is added. Foreign-key
-    # validation at ADD CONSTRAINT time inspects every existing row under
-    # the migrating principal, so parentless outbox/directory rows (legal
-    # under Corrective-III physics: duplicate seeds that lost the unique
-    # race, hand-minted fixtures) and rows bound to a missing ingress
-    # would fail both fresh upgrades on dirty databases and
+    # 1b + 3. Orphan quarantine and coherence foreign keys, converged by
+    # bounded retry. Foreign-key validation at ADD CONSTRAINT time
+    # inspects every existing row, so parentless outbox/directory rows
+    # (legal under Corrective-III physics: duplicate seeds that lost the
+    # unique race, hand-minted fixtures) and rows bound to a missing
+    # ingress would fail both fresh upgrades on dirty databases and
     # downgrade/reupgrade reversibility. Exactly the parentless rows are
     # deleted and the counts are logged; the authoritative trail
     # (ingress, dispatch, verdicts, DLQ) is untouched. (The child-table
     # locks guarding the quarantine-to-validation window are taken in
     # step 0, first in this transaction, for deadlock-safe ordering.)
     #
+    # Why retry: quarantine and validation run as separate statements
+    # (separate READ COMMITTED snapshots). The step-0 locks serialize
+    # concurrent child-table writers, but a parent-side delete landing
+    # between the quarantine snapshot and the validation snapshot would
+    # still orphan a row the quarantine already cleared -- observed live
+    # in CI as a per-run-different orphan failing reupgrade while sibling
+    # runtime steps still wrote against the shared database. Each loop
+    # iteration re-runs the quarantine and re-attempts the guarded ADDs;
+    # a failed ADD rolls back to the inner savepoint (the quarantine
+    # deletes stand) and the next iteration re-cleans. A stray actor must
+    # win eight consecutive micro-windows to fail the migration; after
+    # five attempts the migration raises with the offending task
+    # identities instead of failing opaquely. Locking the dispatch
+    # parent as well was evaluated and rejected: it deadlocks against a
+    # coherent triple writer holding an uncommitted dispatch row while
+    # waiting on these very child locks (reproduced locally).
     #
     # RLS note: same trap as the backfill above -- the tables the deletes
     # must see carry FORCE ROW LEVEL SECURITY (dispatch, ingress, outbox)
-    # and the migrating principal holds no tenant GUC, so the deletes run
+    # and the migrating principal holds no tenant GUC, so the loop runs
     # with enforcement transiently disabled. The restore below preserves
     # each table's exact pre-IV enforcement state byte-identically (proven
     # by the migrations-derived canonical drift gate): dispatch, ingress
@@ -194,31 +210,111 @@ def upgrade() -> None:
         """
         DO $$
         DECLARE
+            attempt integer := 0;
+            fk_present integer := 0;
             quarantined_outbox integer := 0;
             quarantined_directory integer := 0;
+            offender_sample text;
         BEGIN
-            DELETE FROM public.b26_p2_execution_outbox AS o
-            WHERE NOT EXISTS (
-                SELECT 1 FROM public.b23_match_task_dispatches AS d
-                WHERE d.task_id = o.dispatch_task_id
-            ) OR NOT EXISTS (
-                SELECT 1 FROM public.webhook_ingress_identities AS i
-                WHERE i.tenant_id = o.tenant_id
-                  AND i.id = o.webhook_ingress_identity_id
-            );
-            GET DIAGNOSTICS quarantined_outbox = ROW_COUNT;
-            DELETE FROM public.b26_p2_task_authority_directory AS dir
-            WHERE NOT EXISTS (
-                SELECT 1 FROM public.b23_match_task_dispatches AS d
-                WHERE d.task_id = dir.task_id
-            ) OR NOT EXISTS (
-                SELECT 1 FROM public.webhook_ingress_identities AS i
-                WHERE i.tenant_id = dir.tenant_id
-                  AND i.id = dir.webhook_ingress_identity_id
-            );
-            GET DIAGNOSTICS quarantined_directory = ROW_COUNT;
-            RAISE NOTICE 'b26_p2_corrective_iv_orphan_quarantine outbox_quarantined=% directory_quarantined=%',
-                quarantined_outbox, quarantined_directory;
+            LOOP
+                DELETE FROM public.b26_p2_execution_outbox AS o
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM public.b23_match_task_dispatches AS d
+                    WHERE d.task_id = o.dispatch_task_id
+                ) OR NOT EXISTS (
+                    SELECT 1 FROM public.webhook_ingress_identities AS i
+                    WHERE i.tenant_id = o.tenant_id
+                      AND i.id = o.webhook_ingress_identity_id
+                );
+                GET DIAGNOSTICS quarantined_outbox = ROW_COUNT;
+                DELETE FROM public.b26_p2_task_authority_directory AS dir
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM public.b23_match_task_dispatches AS d
+                    WHERE d.task_id = dir.task_id
+                ) OR NOT EXISTS (
+                    SELECT 1 FROM public.webhook_ingress_identities AS i
+                    WHERE i.tenant_id = dir.tenant_id
+                      AND i.id = dir.webhook_ingress_identity_id
+                );
+                GET DIAGNOSTICS quarantined_directory = ROW_COUNT;
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'fk_b26_p2_outbox_dispatch_task_identity'
+                    ) THEN
+                        ALTER TABLE public.b26_p2_execution_outbox
+                            ADD CONSTRAINT fk_b26_p2_outbox_dispatch_task_identity
+                            FOREIGN KEY (dispatch_task_id)
+                            REFERENCES public.b23_match_task_dispatches (task_id)
+                            ON DELETE CASCADE;
+                    END IF;
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'fk_b26_p2_outbox_tenant_ingress_composite'
+                    ) THEN
+                        ALTER TABLE public.b26_p2_execution_outbox
+                            ADD CONSTRAINT fk_b26_p2_outbox_tenant_ingress_composite
+                            FOREIGN KEY (tenant_id, webhook_ingress_identity_id)
+                            REFERENCES public.webhook_ingress_identities (tenant_id, id)
+                            ON DELETE CASCADE;
+                    END IF;
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'fk_b26_p2_directory_dispatch_task_identity'
+                    ) THEN
+                        ALTER TABLE public.b26_p2_task_authority_directory
+                            ADD CONSTRAINT fk_b26_p2_directory_dispatch_task_identity
+                            FOREIGN KEY (task_id)
+                            REFERENCES public.b23_match_task_dispatches (task_id)
+                            ON DELETE CASCADE;
+                    END IF;
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'fk_b26_p2_directory_tenant_ingress_composite'
+                    ) THEN
+                        ALTER TABLE public.b26_p2_task_authority_directory
+                            ADD CONSTRAINT fk_b26_p2_directory_tenant_ingress_composite
+                            FOREIGN KEY (tenant_id, webhook_ingress_identity_id)
+                            REFERENCES public.webhook_ingress_identities (tenant_id, id)
+                            ON DELETE CASCADE;
+                    END IF;
+                EXCEPTION WHEN OTHERS THEN
+                    -- Validation lost a race with a concurrent
+                    -- parent-side delete; fall through to re-quarantine.
+                    attempt := attempt + 1;
+                    IF attempt >= 8 THEN
+                        RAISE;
+                    END IF;
+                    RAISE NOTICE 'b26_p2_coherence_retry attempt=%', attempt;
+                    CONTINUE;
+                END;
+                SELECT count(*) INTO fk_present FROM pg_constraint
+                WHERE conname IN (
+                    'fk_b26_p2_outbox_dispatch_task_identity',
+                    'fk_b26_p2_outbox_tenant_ingress_composite',
+                    'fk_b26_p2_directory_dispatch_task_identity',
+                    'fk_b26_p2_directory_tenant_ingress_composite'
+                );
+                IF fk_present = 4 THEN
+                    EXIT;
+                END IF;
+                attempt := attempt + 1;
+                IF attempt >= 8 THEN
+                    SELECT string_agg(t.task_id, ',') INTO offender_sample
+                    FROM (
+                        SELECT dir.task_id FROM public.b26_p2_task_authority_directory AS dir
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM public.b23_match_task_dispatches AS d
+                            WHERE d.task_id = dir.task_id
+                        )
+                        LIMIT 8
+                    ) AS t;
+                    RAISE EXCEPTION 'b26_p2_coherence_not_convergent:%',
+                        COALESCE(offender_sample, 'unknown');
+                END IF;
+            END LOOP;
+            RAISE NOTICE 'b26_p2_corrective_iv_orphan_quarantine outbox_quarantined=% directory_quarantined=% attempts=%',
+                quarantined_outbox, quarantined_directory, attempt + 1;
         END $$;
         """
     )
@@ -290,54 +386,9 @@ def upgrade() -> None:
         """
     )
 
-    # 3. Single execution identity: bind outbox + directory to dispatch.
-    op.execute(
-        """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'fk_b26_p2_outbox_dispatch_task_identity'
-            ) THEN
-                ALTER TABLE public.b26_p2_execution_outbox
-                    ADD CONSTRAINT fk_b26_p2_outbox_dispatch_task_identity
-                    FOREIGN KEY (dispatch_task_id)
-                    REFERENCES public.b23_match_task_dispatches (task_id)
-                    ON DELETE CASCADE;
-            END IF;
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'fk_b26_p2_outbox_tenant_ingress_composite'
-            ) THEN
-                ALTER TABLE public.b26_p2_execution_outbox
-                    ADD CONSTRAINT fk_b26_p2_outbox_tenant_ingress_composite
-                    FOREIGN KEY (tenant_id, webhook_ingress_identity_id)
-                    REFERENCES public.webhook_ingress_identities (tenant_id, id)
-                    ON DELETE CASCADE;
-            END IF;
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'fk_b26_p2_directory_dispatch_task_identity'
-            ) THEN
-                ALTER TABLE public.b26_p2_task_authority_directory
-                    ADD CONSTRAINT fk_b26_p2_directory_dispatch_task_identity
-                    FOREIGN KEY (task_id)
-                    REFERENCES public.b23_match_task_dispatches (task_id)
-                    ON DELETE CASCADE;
-            END IF;
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'fk_b26_p2_directory_tenant_ingress_composite'
-            ) THEN
-                ALTER TABLE public.b26_p2_task_authority_directory
-                    ADD CONSTRAINT fk_b26_p2_directory_tenant_ingress_composite
-                    FOREIGN KEY (tenant_id, webhook_ingress_identity_id)
-                    REFERENCES public.webhook_ingress_identities (tenant_id, id)
-                    ON DELETE CASCADE;
-            END IF;
-        END $$;
-        """
-    )
+    # (Step 3, the coherence foreign keys, lives inside the step-1b
+    # convergence loop above: quarantine and validation must retry
+    # together against concurrent parent-side deletes.)
 
     # 4. Strict dispatch transition trigger: forward-only delivery law,
     # monotonic attempts, strict window immutability (NULL hole closed).
