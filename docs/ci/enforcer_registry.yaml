@@ -4498,3 +4498,47 @@
   deprecation_reason: 'Utility-only; the required producer scripts import it.'
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-window-oracle
+  path: scripts/ci/b26_p2_window_oracle.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: "The UTC calendar-day half-open window law is pinned by an independent normative oracle that never imports the production quantizer, so a common-mode wrong helper turns the governing proof red instead of staying universally consistent yet wrong."
+  command: "python scripts/ci/b26_p2_window_oracle.py"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: "B2.6-P1 Static Semantic Authority"
+  local_reproduction_command: "python scripts/ci/b26_p2_window_oracle.py"
+  expected_failure_meaning: "Production and oracle windows disagree (12-hour, local-time, inclusive-end, or shifted-start drift) while every source check stays green."
+  first_diagnostic_command: "python scripts/ci/b26_p2_window_oracle.py"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b26-p1-finance-reconciliation-adjudication
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: b26-p2-production-topology
+  path: scripts/ci/prove_b26_p2_production_topology.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: "A required proof boots the compiled production topology (PostgreSQL, broker transport, production API/worker/relay paths) and drives authenticated ingress through durable intent, broker publication, pre-B2.3 admission, authorized B2.3, and governed P2 scope, refusing dead edges observably."
+  command: "python scripts/ci/prove_b26_p2_production_topology.py --evidence-out artifacts/b26_p2/topology/production-topology.json"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: "B2.6-P2 Production Topology Proof"
+  local_reproduction_command: "python scripts/ci/prove_b26_p2_production_topology.py --help"
+  expected_failure_meaning: "Accepted evidence strands before broker execution, authority is established after B2.3, the worker mints its own authority, or a runtime-dead P2 edge stays green."
+  first_diagnostic_command: "python scripts/ci/prove_b26_p2_production_topology.py"
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b26-p1-finance-reconciliation-adjudication
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep

@@ -361,12 +361,9 @@ def upgrade() -> None:
             'B2.6-P2 Corrective III GUC-independent admission directory: stable task identity to authoritative tenant binding. No RLS by design (exact task_id lookup only; IDs unguessable). Producer-written, worker-read.'
         """
     )
-    op.execute(
-        "GRANT SELECT ON TABLE public.b26_p2_task_authority_directory TO app_rw"
-    )
-    op.execute(
-        "GRANT SELECT ON TABLE public.b26_p2_task_authority_directory TO app_ro"
-    )
+    # Bearer-keyed admission reads are restricted to producer and consumer
+    # logins (B0.4 phase-4 probe verifies this grant shape instead of RLS).
+    # app_rw/app_ro intentionally hold NO privilege on the directory.
     op.execute(
         """
         DO $$
@@ -445,8 +442,6 @@ def downgrade() -> None:
         END $$;
         """
     )
-    op.execute("REVOKE ALL ON TABLE public.b26_p2_task_authority_directory FROM app_rw")
-    op.execute("REVOKE ALL ON TABLE public.b26_p2_task_authority_directory FROM app_ro")
     op.execute("DROP TABLE IF EXISTS public.b26_p2_task_authority_directory")  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective III admission directory.
     op.execute("DROP TRIGGER IF EXISTS trg_b26_p2_dispatch_immutability ON public.b23_match_task_dispatches")  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective III immutability.
     op.execute("DROP FUNCTION IF EXISTS public.b26_p2_enforce_dispatch_immutability()")  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective III immutability.

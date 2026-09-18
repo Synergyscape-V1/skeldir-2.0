@@ -3299,3 +3299,33 @@
   local_reproduction_command: "python scripts/ci/b26_p2_evidence.py --help"
   risk_if_removed: "Producers could drift to incompatible or incomplete proof-cell identities."
   decision: keep_utility
+- gate_id: b26-p2-window-oracle
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: "B2.6-P1 Static Semantic Authority"
+  script: scripts/ci/b26_p2_window_oracle.py
+  owning_phase: B2.6-P2
+  protected_invariant: "The UTC day half-open window law stays pinned by an oracle independent of the production quantizer."
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: "No inherited gate pins day width, UTC normalization, or half-open membership of the shared quantizer; the P2 validator only checks delegation presence."
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_negative_controls.py
+  local_reproduction_command: "python scripts/ci/b26_p2_window_oracle.py"
+  risk_if_removed: "A common-mode wrong window helper would stay universally consistent yet wrong across producer and verifier."
+  decision: keep_required
+- gate_id: b26-p2-production-topology
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: "B2.6-P2 Production Topology Proof"
+  script: scripts/ci/prove_b26_p2_production_topology.py
+  owning_phase: B2.6-P2
+  protected_invariant: "A required proof boots the production topology and drives authenticated ingress to governed P2 scope with dead-edge refusal."
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: "No inherited gate boots API, broker, worker, and relay processes; static and container proofs cannot observe runtime-dead edges."
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_negative_controls.py
+  local_reproduction_command: "python scripts/ci/prove_b26_p2_production_topology.py --help"
+  risk_if_removed: "Accepted evidence could strand before broker execution while every required proof stays green."
+  decision: keep_required
