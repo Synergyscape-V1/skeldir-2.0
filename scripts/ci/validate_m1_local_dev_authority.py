@@ -583,6 +583,32 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/b26_p1_evidence.py",
     "scripts/ci/test_b26_p1_negative_controls.py",
     "scripts/ci/validate_b26_p1_authority.py",
+    # --- B2.6-P2 Corrective IV deployment-equivalence surface ---
+    # Authority-only slice: the single Corrective-IV migration (FK
+    # coherence, conducted law, attempts monotonicity, strict window
+    # immutability, worker delivery grants), the producer/consumer
+    # publish fault-path hardening, the beat scheduler healing seam,
+    # the worker delivery-state marking, the admission-directory relay,
+    # the construction-authority head advance, the bootstrap authority
+    # companion, and the P2 proof-plane sensors that pin them. Declared
+    # explicitly; every prohibition above is retained unchanged (this
+    # block exempts the listed PATHS from the path-pattern gate per the
+    # guard's own `and not _allowed_m1_path` clause; added-line content
+    # prohibitions still apply to non-exempt prefixes). No B2.3 engine,
+    # LLM boundary, requirements, or pyproject surface is included.
+    "alembic/versions/007_skeldir_foundation/202609180001_b26_p2_corrective_iv_deployment_equivalence.py",
+    "backend/app/api/webhooks.py",
+    "backend/app/celery_beat.py",
+    "backend/app/core/construction_authority.py",
+    "backend/app/tasks/b26_p2_relay.py",
+    "backend/app/tasks/revenue_verification.py",
+    "db/schema/canonical_authority.sql",
+    "scripts/ci/_b26_p2_controlled_defect.py",
+    "scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py",
+    "scripts/ci/assert_b26_p2_container_equivalence.py",
+    "scripts/ci/prove_b26_p2_production_topology.py",
+    "scripts/ci/test_b26_p2_negative_controls.py",
+    "scripts/ci/validate_b26_p2_scope_authority.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [

@@ -34,7 +34,6 @@ import logging
 import traceback
 
 from celery.beat import PersistentScheduler
-from celery.utils.log import debug, error, info
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +48,13 @@ class HealingBeatScheduler(PersistentScheduler):
     """
 
     def apply_entry(self, entry, producer=None) -> None:
-        info("Scheduler: Sending due task %s (%s)", entry.name, entry.task)
+        # Message text is identical to celery's scheduler (log consumers
+        # grep "Scheduler: Sending due task <entry>").
+        logger.info("Scheduler: Sending due task %s (%s)", entry.name, entry.task)
         try:
             result = self.apply_async(entry, producer=producer, advance=False)
         except Exception as exc:
-            error(
+            logger.error(
                 "Message Error: %s\n%s",
                 exc,
                 traceback.format_stack(),
@@ -72,9 +73,9 @@ class HealingBeatScheduler(PersistentScheduler):
             self._drop_broker_state()
         else:
             if result and hasattr(result, "id"):
-                debug("%s sent. id->%s", entry.task, result.id)
+                logger.debug("%s sent. id->%s", entry.task, result.id)
             else:
-                debug("%s sent.", entry.task)
+                logger.debug("%s sent.", entry.task)
 
     def _drop_broker_state(self) -> None:
         """Forget the cached producer and close its connection.
