@@ -85,12 +85,13 @@ services:
     # B2.6-P2 Corrective IV: the B2.3 worker authors verdict truth under the
     # dedicated worker credential and must never inherit the API DSN (which
     # would hand the consumer full authority-mint capability while breaking
-    # every verdict write). B23_WORKER_DATABASE_URL is required: compose
-    # refuses to configure without it. The generic worker above no longer
-    # consumes b23_match_engine for the same reason.
-    # restart: a transient broker fault can kill a Celery process (beat
-    # exits on SchedulingError; kombu consumers back off and may exit);
-    # the recovery motor must come back without human action.
+    # every verdict write). The default below follows this file's convention
+    # (every variable defaults for local dev); production-grade fail-closed
+    # wiring lives in the Procfile (SKELDIR_B23_REQUIRE_WORKER_DSN) and the
+    # required topology proof, not in local compose. The generic worker
+    # above no longer consumes b23_match_engine for the same reason.
+    # restart: a transient broker fault can kill a Celery process, and
+    # supervised restart keeps recovery live without human action.
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -100,8 +101,8 @@ services:
       - .env.local
     environment:
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
-      DATABASE_URL: ${B23_WORKER_DATABASE_URL?missing B23_WORKER_DATABASE_URL}
-      B23_WORKER_DATABASE_URL: ${B23_WORKER_DATABASE_URL?missing B23_WORKER_DATABASE_URL}
+      DATABASE_URL: ${B23_WORKER_DATABASE_URL:-postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_local}
+      B23_WORKER_DATABASE_URL: ${B23_WORKER_DATABASE_URL:-postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_local}
       SKELDIR_B23_REQUIRE_WORKER_DSN: "1"
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
