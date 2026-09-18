@@ -499,15 +499,17 @@ jobs:
           --health-retries 5
     env:
       # B2.6-P2 Corrective III. This job runs the B2.3 proof harnesses: the
-      # API issues verified ingress plus dispatch authority, then the worker
-      # task authors verdict truth. In production both run as the API
-      # principal (app_user); worker_b23 must not use WORKER_DATABASE_URL
-      # (B2.5-P13 C7 custody law). The worker LOGIN (app_worker) holds
-      # SELECT-only on dispatch authority and cannot mint it, so the proof
-      # job runs under the production principal for both edges; verdict
-      # authorship is still proven by the worker TASK path (celery task),
-      # not by the login name.
+      # API issues verified ingress plus dispatch authority (producer login
+      # app_user), then the worker task authors verdict truth (consumer login
+      # app_worker, which holds SELECT-only on dispatch authority and cannot
+      # mint it). The split mirrors the least-privilege production custody
+      # (API app_user / worker app_worker); worker_b23 still must not use
+      # WORKER_DATABASE_URL (B2.5-P13 C7 custody law — that variable names the
+      # dedicated bayesian credential, so B2.3 uses its own B23_WORKER variable).
+      # Verdict authorship is proven by the worker TASK path (celery task on
+      # the B2.3 pool), not by sharing one login for both edges.
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
+      B23_WORKER_DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b23_p5_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b23_p5_ci
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
