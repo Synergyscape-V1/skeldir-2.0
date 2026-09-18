@@ -1109,6 +1109,50 @@ def _collect_diagnostics() -> dict:
                 " ORDER BY created_at DESC LIMIT 10"
             )
         ]
+        try:
+            diag["pending_detail"] = [
+                (str(r[0])[:8], str(r[1]), str(r[2]), str(r[3]))
+                for r in _query(
+                    "SELECT d.task_id, d.delivery_state, d.publish_attempts,"
+                    " o.next_retry_at FROM public.b23_match_task_dispatches AS d"
+                    " JOIN public.b26_p2_execution_outbox AS o"
+                    " ON o.dispatch_task_id = d.task_id"
+                    " WHERE d.delivery_state = 'pending_publish'"
+                )
+            ]
+        except Exception as exc:  # noqa: BLE001
+            diag["pending_detail_error"] = str(exc)[:200]
+        try:
+            import pickle as _diag_pickle  # noqa: PLC0415
+
+            decoded_sweeps = []
+            for (raw,) in _query(
+                "SELECT result FROM public.celery_taskmeta"
+                " ORDER BY date_done DESC NULLS LAST LIMIT 60"
+            ):
+                blob = bytes(raw) if isinstance(raw, memoryview) else raw
+                if isinstance(blob, bytes):
+                    try:
+                        payload = _diag_pickle.loads(blob)
+                    except Exception:
+                        continue
+                    if isinstance(payload, dict) and "published" in payload:
+                        decoded_sweeps.append(
+                            {
+                                "published": payload.get("published"),
+                                "failed": payload.get("failed"),
+                                "divergent": payload.get("divergent"),
+                            }
+                        )
+            agg: dict[str, int] = {}
+            for s in decoded_sweeps:
+                key = (
+                    f"p={s.get('published')}/f={s.get('failed')}/d={s.get('divergent')}"
+                )
+                agg[key] = agg.get(key, 0) + 1
+            diag["sweep_results"] = agg
+        except Exception as exc:  # noqa: BLE001
+            diag["sweep_results_error"] = str(exc)[:200]
         diag["outbox_states"] = [
             (str(r[0])[:8], str(r[1]))
             for r in _query(

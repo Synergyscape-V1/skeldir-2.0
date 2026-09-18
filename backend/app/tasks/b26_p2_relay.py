@@ -258,6 +258,20 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
             )
     except Exception:
         relay_principal = "unknown"
+    # Recovery-liveness observability (H-IV-B05): every sweep emits its
+    # counts. A silent relay (no log lines) vs an empty sweep
+    # (published=0) vs a failing sweep (failed>0) are three different
+    # operator facts; conflating them hid the unscheduled-relay class.
+    logger.info(
+        "b26_p2_relay_sweep_completed",
+        extra={
+            "tenants_scanned": len(tenants),
+            "published": published,
+            "failed": failed,
+            "divergent": divergent_total,
+            "database_user": relay_principal,
+        },
+    )
     return {
         "published": published,
         "failed": failed,
