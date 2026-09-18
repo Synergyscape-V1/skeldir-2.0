@@ -237,6 +237,11 @@ CONTROLS: tuple[tuple[str, str, str], ...] = (
         "p2_corrective_iv_orphan_quarantine_absent",
         "same-primitive",
     ),
+    (
+        "p2_quarantine_lock_removal",
+        "p2_corrective_iv_orphan_quarantine_absent",
+        "same-primitive",
+    ),
 )
 
 

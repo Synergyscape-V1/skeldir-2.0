@@ -999,10 +999,15 @@ def _check_corrective_iv_law(violations: list[str], details: dict[str, Any]) -> 
     # Orphan quarantine: the upgrade must delete parentless outbox and
     # directory rows before adding the coherence foreign keys, or both a
     # fresh upgrade on a dirty database and a downgrade/reupgrade
-    # reversibility cycle fail closed on legacy debris.
+    # reversibility cycle fail closed on legacy debris. The child tables
+    # must also be locked first: quarantine and validation run as
+    # separate statements, and a writer committing a parentless row
+    # between them slips past the quarantine (observed live in CI).
     for required in (
         "DELETE FROM public.b26_p2_execution_outbox AS o",
         "DELETE FROM public.b26_p2_task_authority_directory AS dir",
+        "LOCK TABLE public.b26_p2_execution_outbox IN SHARE ROW EXCLUSIVE MODE",
+        "LOCK TABLE public.b26_p2_task_authority_directory IN SHARE ROW EXCLUSIVE MODE",
     ):
         if required not in upgrade_source:
             violations.append(

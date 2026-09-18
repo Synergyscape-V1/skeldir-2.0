@@ -85,6 +85,32 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # 0. Lock ordering first: the two child tables are locked IN SHARE
+    # ROW EXCLUSIVE MODE before this transaction holds any other table
+    # lock. The orphan quarantine (step 1b) and the foreign-key
+    # validation (step 3) run as separate statements (separate READ
+    # COMMITTED snapshots); a writer committing a parentless row between
+    # the two would slip past the quarantine and fail validation --
+    # observed live in CI (orphan task committed mid-reupgrade while
+    # sibling runtime steps still wrote). The locks close that window:
+    # concurrent SELECTs proceed, concurrent INSERT/UPDATE/DELETE wait
+    # until this (transactional) migration commits. Only the child tables
+    # are locked: locking the dispatch parent too could deadlock against
+    # a coherent triple writer holding an uncommitted dispatch row while
+    # waiting on these very child locks (validation itself needs only
+    # ACCESS SHARE on the parent, which a row-exclusive holder grants).
+    # The locks MUST precede every ACCESS EXCLUSIVE below (RLS toggles):
+    # taking them after holding ACCESS EXCLUSIVE on the parent deadlocks
+    # against an in-flight writer whose FK check needs ROW SHARE on that
+    # same parent (reproduced locally: writer aborted, migration
+    # survived -- the reverse victim selection would fail the upgrade).
+    op.execute(
+        "LOCK TABLE public.b26_p2_execution_outbox IN SHARE ROW EXCLUSIVE MODE"
+    )
+    op.execute(
+        "LOCK TABLE public.b26_p2_task_authority_directory IN SHARE ROW EXCLUSIVE MODE"
+    )
+
     # 1. Backfill legacy NULL windows BEFORE the strict trigger exists.
     # UTC day quantization in SQL (half-open [day, day+1)). Explicit AT
     # TIME ZONE 'UTC' both ways: date_trunc on timestamptz otherwise uses
@@ -137,7 +163,10 @@ def upgrade() -> None:
     # would fail both fresh upgrades on dirty databases and
     # downgrade/reupgrade reversibility. Exactly the parentless rows are
     # deleted and the counts are logged; the authoritative trail
-    # (ingress, dispatch, verdicts, DLQ) is untouched.
+    # (ingress, dispatch, verdicts, DLQ) is untouched. (The child-table
+    # locks guarding the quarantine-to-validation window are taken in
+    # step 0, first in this transaction, for deadlock-safe ordering.)
+    #
     #
     # RLS note: same trap as the backfill above -- the tables the deletes
     # must see carry FORCE ROW LEVEL SECURITY (dispatch, ingress, outbox)

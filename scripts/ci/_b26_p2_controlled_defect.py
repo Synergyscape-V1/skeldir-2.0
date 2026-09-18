@@ -522,6 +522,19 @@ def p2_orphan_quarantine_removal() -> None:
     )
 
 
+def p2_quarantine_lock_removal() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        '        "LOCK TABLE public.b26_p2_execution_outbox IN SHARE ROW EXCLUSIVE MODE"\n'
+        "    )\n"
+        "    op.execute(\n"
+        '        "LOCK TABLE public.b26_p2_task_authority_directory IN SHARE ROW EXCLUSIVE MODE"',
+        "        # NC-P2-LOCK removed: child-table locks gone, quarantine window opens\n"
+        '        "SELECT 1"',
+        defect="p2_quarantine_lock_removal",
+    )
+
+
 def p2_bootstrap_grant_removal() -> None:
     _replace_once(
         BOOTSTRAP_COMPANION,
@@ -608,6 +621,7 @@ APPLIERS = {
     "p2_null_window_exception_restore": p2_null_window_exception_restore,
     "p2_bootstrap_grant_removal": p2_bootstrap_grant_removal,
     "p2_orphan_quarantine_removal": p2_orphan_quarantine_removal,
+    "p2_quarantine_lock_removal": p2_quarantine_lock_removal,
     "p2_bootstrap_public_execute_restore": p2_bootstrap_public_execute_restore,
     "p2_beat_healer_removal": p2_beat_healer_removal,
     "p2_pool_reset_removal": p2_pool_reset_removal,
