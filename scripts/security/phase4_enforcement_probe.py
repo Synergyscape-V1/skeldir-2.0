@@ -169,12 +169,107 @@ APPEND_ONLY_TABLES = frozenset(
 )
 
 
-def assert_rls_coverage(discovered: list[dict]) -> None:
+#: Bearer-keyed admission directories (B2.6-P2 Corrective III). Rows are
+#: addressable ONLY by unguessable broker task identity (128-bit UUID drawn
+#: at issuance, exact-equality lookup); there is deliberately no tenant-keyed
+#: read path, because the reader (pre-B2.3 worker admission) must resolve the
+#: tenant FROM the handle without trusting a caller-supplied tenant GUC
+#: (H-III-B02). Tenant RLS on this table would reintroduce the circularity
+#: the directory exists to remove, while granting nothing: every row field
+#: (tenant UUID, ingress UUID, day window) is already visible to the same
+#: principals via the RLS-governed dispatch/ingress rows under their own
+#: tenant GUC, task IDs are unguessable bearer values with no list/enumerate
+#: primitive, and the table carries no PII. The enforced invariants instead:
+#: producer-only INSERT (app_user), NO runtime UPDATE/DELETE/ TRUNCATE for
+#: any application role, SELECT restricted to producer and consumer logins,
+#: and no tenant-predicate read in production code. Adding tenant RLS here
+#: purely to satisfy a coverage count would re-create the confused-deputy
+#: path with zero confidentiality gain, so the coverage rule below is
+#: replaced for these tables by the grant-shape rule, not waived.
+BEARER_KEYED_ADMISSION_TABLES = frozenset(
+    {
+        "b26_p2_task_authority_directory",
+    }
+)
+
+#: INSERT on a bearer-keyed admission table belongs only to the producer
+#: principal that issues execution authority alongside durable ingress.
+BEARER_ADMISSION_ISSUER = "app_user"
+
+#: Logins allowed to resolve admission (exact task-ID reads only).
+BEARER_ADMISSION_READERS = frozenset({"app_user", "app_worker"})
+
+
+def _bearer_admission_grants_ok(conn, table_name: str) -> list[str]:
+    """Verify the grant shape that replaces RLS for bearer-keyed tables."""
+    problems: list[str] = []
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT rolname FROM pg_roles
+            WHERE rolname LIKE 'app%' OR rolname = 'migration_owner'
+            ORDER BY 1
+            """
+        )
+        roles = [str(r[0]) for r in cur.fetchall()]
+    with conn.cursor() as cur:
+        for role in roles:
+            if role == "migration_owner":
+                # DDL custody (ownership) is verified by the C21 authority
+                # universes and the P14 manifest, not by this grant-shape
+                # rule, which governs runtime application roles only.
+                continue
+            cur.execute(
+                "SELECT has_table_privilege(%s, %s, %s)",
+                (role, f"public.{table_name}", "INSERT"),
+            )
+            can_insert = bool(cur.fetchone()[0])
+            cur.execute(
+                "SELECT has_table_privilege(%s, %s, %s)",
+                (role, f"public.{table_name}", "UPDATE"),
+            )
+            can_update = bool(cur.fetchone()[0])
+            cur.execute(
+                "SELECT has_table_privilege(%s, %s, %s)",
+                (role, f"public.{table_name}", "DELETE"),
+            )
+            can_delete = bool(cur.fetchone()[0])
+            cur.execute(
+                "SELECT has_table_privilege(%s, %s, %s)",
+                (role, f"public.{table_name}", "SELECT"),
+            )
+            can_select = bool(cur.fetchone()[0])
+            if role == BEARER_ADMISSION_ISSUER:
+                if not can_insert:
+                    problems.append(f"{table_name}: issuer {role} lacks INSERT")
+            elif can_insert:
+                problems.append(f"{table_name}: non-issuer {role} holds INSERT")
+            if can_update or can_delete:
+                problems.append(
+                    f"{table_name}: {role} holds mutating grant"
+                    f" (UPDATE={can_update}, DELETE={can_delete})"
+                )
+            if role in BEARER_ADMISSION_READERS:
+                if not can_select:
+                    problems.append(f"{table_name}: reader {role} lacks SELECT")
+            elif role != BEARER_ADMISSION_ISSUER and can_select:
+                problems.append(f"{table_name}: non-reader {role} holds SELECT")
+    return problems
+
+
+def assert_rls_coverage(discovered: list[dict], conn=None) -> None:
     if not discovered:
         raise ProbeFailure("tenant-scoped discovery returned zero tables")
 
     missing: list[str] = []
     for row in discovered:
+        if row["table_name"] in BEARER_KEYED_ADMISSION_TABLES:
+            if conn is None:
+                raise ProbeFailure(
+                    f"{row['table_name']}: bearer-keyed grant verification needs a connection"
+                )
+            missing.extend(_bearer_admission_grants_ok(conn, str(row["table_name"])))
+            continue
         cmd_set = {str(c).upper() for c in row["policy_cmds"]}
         has_full_coverage = (
             "ALL" in cmd_set
@@ -552,7 +647,7 @@ def run() -> int:
             "tenant_scoped_tables": discovered,
         }
         _write_json(EVIDENCE_DIR / "phase4_tenant_tables.json", artifact_tables)
-        assert_rls_coverage(discovered)
+        assert_rls_coverage(discovered, runtime_conn)
         behavior = behavioral_rls_checks(runtime_conn, ops_conn)
         secret_scan = secret_scan_checks(runtime_conn, sentinel)
 

@@ -1024,7 +1024,10 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
     window_start = now - timedelta(hours=1)
     window_end = now + timedelta(hours=1)
 
-    async with engine.begin() as conn:
+    # Worker-state seeding (including verdict writes, which belong to the
+    # worker login per B2.6-P2 Corrective III least privilege) runs on the
+    # B23 pool; the app pool stays on the API login.
+    async with b23_engine.begin() as conn:
         await conn.execute(
             text(
                 """

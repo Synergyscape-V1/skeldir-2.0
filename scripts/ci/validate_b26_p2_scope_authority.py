@@ -25,7 +25,11 @@ BACKEND = REPO_ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
 sys.path.insert(0, str(REPO_ROOT))
 
-SCOPE_POLICY_PATH = REPO_ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
+SCOPE_POLICY_PATH = REPO_ROOT / "contracts/reconciliation/b2.6/scope-policy.v2.yaml"
+SCOPE_POLICY_V1_PATH = REPO_ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
+SCOPE_POLICY_V1_SOURCE_SHA256 = (
+    "7adbdd0c4463526773e1b29bc05875f2361bcd2f0b9de096621f3c97574a82cd"
+)
 SCOPE_MODULE = BACKEND / "app/finance_reconciliation/scope_authority.py"
 CONDUCTION_MODULE = BACKEND / "app/finance_reconciliation/candidate_conduction.py"
 COVERAGE_MODULE = BACKEND / "app/finance_reconciliation/coverage_authority.py"
@@ -122,8 +126,45 @@ def _imports(tree: ast.AST) -> list[str]:
 def _check_contract(violations: list[str], details: dict[str, Any]) -> dict[str, Any]:
     document = yaml.safe_load(SCOPE_POLICY_PATH.read_text(encoding="utf-8"))
     assert isinstance(document, dict)
-    if document.get("scope_policy_version") != "b2.6-p2-scope-policy-v1":
+    if document.get("scope_policy_version") != "b2.6-p2-scope-policy-v2":
         violations.append("p2_scope_policy_version_drift")
+    # Historical v1 must never be rewritten (one identity = one contract).
+    try:
+        v1_bytes = SCOPE_POLICY_V1_PATH.read_bytes()
+        v1_sha = hashlib.sha256(v1_bytes).hexdigest()
+        details["scope_policy_v1_source_sha256"] = v1_sha
+        if v1_sha != SCOPE_POLICY_V1_SOURCE_SHA256:
+            violations.append("p2_policy_v1_history_rewritten")
+        v1_doc = yaml.safe_load(v1_bytes.decode("utf-8"))
+        if (
+            not isinstance(v1_doc, dict)
+            or v1_doc.get("scope_policy_version") != "b2.6-p2-scope-policy-v1"
+        ):
+            violations.append("p2_policy_v1_version_rewritten")
+    except FileNotFoundError:
+        violations.append("p2_policy_v1_history_missing")
+    # v2 additive laws (Corrective III semantic closure).
+    for key, want in (
+        (
+            "dispatch_authority_law",
+            "worker_admits_via_constrained_resolver_before_b23_fail_closed",
+        ),
+        (
+            "identity_law",
+            "semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels",
+        ),
+        ("identity_version", "b2.6-p2-scope-identity-v2"),
+        (
+            "window_oracle_law",
+            "independent_normative_oracle_pins_utc_day_half_open_without_importing_production_quantizer",
+        ),
+        (
+            "delivery_law",
+            "acceptance_acquires_durable_recoverable_execution_intent_atomically",
+        ),
+    ):
+        if document.get(key) != want:
+            violations.append(f"p2_policy_v2_law_drift:{key}")
     if set(document.get("canonical_providers", [])) != set(CANONICAL_PROVIDERS):
         violations.append("p2_canonical_provider_universe_drift")
     if set(document.get("canonical_rails", [])) != set(CANONICAL_PROVIDERS):
@@ -173,7 +214,7 @@ def _check_sovereign_correspondence(
 def _check_live_module_law(violations: list[str], details: dict[str, Any]) -> None:
     import app.finance_reconciliation.scope_authority as sa
 
-    if sa.B26_P2_SCOPE_POLICY_VERSION != "b2.6-p2-scope-policy-v1":
+    if sa.B26_P2_SCOPE_POLICY_VERSION != "b2.6-p2-scope-policy-v2":
         violations.append("p2_live_policy_version_drift")
     if sa.GOVERNED_P2_DISPOSITIONS != frozenset(
         {
@@ -730,7 +771,7 @@ def _check_corrective_ii_law(violations: list[str], details: dict[str, Any]) -> 
         not in tenant_source
     ):
         violations.append("p2_snapshot_session_isolation_absent")
-    # Policy must carry the new machine-readable laws.
+    # Policy must carry the machine-readable laws (v2 supersedes v1 additively).
     document = yaml.safe_load(SCOPE_POLICY_PATH.read_text(encoding="utf-8"))
     assert isinstance(document, dict)
     for field, expected in (
@@ -743,12 +784,21 @@ def _check_corrective_ii_law(violations: list[str], details: dict[str, Any]) -> 
         ("snapshot_isolation", "repeatable_read_single_snapshot_per_derivation"),
         (
             "dispatch_authority_law",
-            "worker_revalidates_broker_task_id_against_durable_dispatch_fail_closed",
+            "worker_admits_via_constrained_resolver_before_b23_fail_closed",
         ),
         ("window_authority", "dispatch_bound_ingress_event_day_half_open_utc"),
         (
             "identity_law",
-            "exact_sorted_source_identity_set_bound_to_scope_identity_digest",
+            "semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels",
+        ),
+        ("identity_version", "b2.6-p2-scope-identity-v2"),
+        (
+            "delivery_law",
+            "acceptance_acquires_durable_recoverable_execution_intent_atomically",
+        ),
+        (
+            "window_oracle_law",
+            "independent_normative_oracle_pins_utc_day_half_open_without_importing_production_quantizer",
         ),
     ):
         if document.get(field) != expected:
@@ -762,6 +812,100 @@ def _check_corrective_ii_law(violations: list[str], details: dict[str, Any]) -> 
         if "def quantize_utc_day" not in core_source:
             violations.append("p2_shared_window_quantizer_absent")
     details["corrective_ii_checked"] = True
+
+
+def _check_corrective_iii_law(violations: list[str], details: dict[str, Any]) -> None:
+    """Corrective III class closure: outbox, admission, RLS strict, identity v2."""
+    dispatch_path = BACKEND / "app/finance_reconciliation/dispatch_authority.py"
+    dispatch_source = dispatch_path.read_text(encoding="utf-8")
+    for required in (
+        "admit_execution_before_b23",
+        "b26_p2_resolve_dispatch_authority",
+        "p2_dispatch_authority_missing",
+        "p2_dispatch_tenant_mismatch",
+        "p2_dispatch_window_mismatch",
+    ):
+        if required not in dispatch_source:
+            violations.append(f"p2_corrective_iii_admission_absent:{required}")
+    task_source = B23_TASK_MODULE.read_text(encoding="utf-8")
+    if "admit_execution_before_b23" not in task_source:
+        violations.append("p2_corrective_iii_admission_absent_from_task")
+    if "authority = run_in_worker_loop(_admit())" not in task_source:
+        violations.append("p2_corrective_iii_admission_absent_from_task")
+    if "tenant_id=authority.tenant_id" not in task_source.replace(" ", "").replace(
+        "\n", ""
+    ):
+        violations.append("p2_corrective_iii_admission_not_used_for_b23")
+    # Order: admission call must precede the B2.3 engine call site.
+    admit_call = task_source.find("authority = run_in_worker_loop(_admit())")
+    b23_call = task_source.find("execute_b23_batch_match_engine(\n            tenant_id=authority")
+    if admit_call == -1 or b23_call == -1 or admit_call > b23_call:
+        violations.append("p2_corrective_iii_admission_after_b23")
+    webhook_source = WEBHOOK_MODULE.read_text(encoding="utf-8")
+    for required in (
+        "INSERT INTO public.b26_p2_execution_outbox (",
+        "INSERT INTO public.b26_p2_task_authority_directory (",
+        "ON CONFLICT (tenant_id, webhook_ingress_identity_id) DO NOTHING",
+        "_redrive_pending_dispatch_for_ingress",
+        "b23_match_task_publish_deferred_pending",
+        "delivery_state",
+    ):
+        if required not in webhook_source:
+            violations.append(f"p2_corrective_iii_outbox_absent:{required}")
+    if "DO UPDATE SET\n                    task_id = EXCLUDED.task_id" in webhook_source:
+        violations.append("p2_corrective_iii_task_identity_rotates")
+    relay_path = BACKEND / "app/tasks/b26_p2_relay.py"
+    if not relay_path.is_file():
+        violations.append("p2_corrective_iii_relay_missing")
+    else:
+        relay_source = relay_path.read_text(encoding="utf-8")
+        for required in (
+            "relay_b26_p2_pending_dispatches",
+            "publish_pending_outbox",
+            "b26_p2_execution_outbox",
+            "dispatch_task_id",
+        ):
+            if required not in relay_source:
+                violations.append(f"p2_corrective_iii_relay_absent:{required}")
+    procfile = (REPO_ROOT / "Procfile").read_text(encoding="utf-8")
+    if "relay_b26_p2:" not in procfile:
+        violations.append("p2_corrective_iii_relay_not_deployed")
+    if "WORKER_DATABASE_URL" not in procfile:
+        violations.append("p2_corrective_iii_worker_custody_not_separated")
+    conduction_source = CONDUCTION_MODULE.read_text(encoding="utf-8")
+    for required in (
+        "policy_singleton_violated",
+        "len(policy_rows) != 1",
+        "function_call_present",
+        "relforcerowsecurity",
+        "SCOPE_IDENTITY_VERSION",
+        "b2.6-p2-scope-identity-v2",
+        "policy_source_sha256",
+        "policy_semantic_sha256",
+        "item.classification.provider",
+        "item.classification.rail",
+        "item.classification.currency_code",
+    ):
+        if required not in conduction_source:
+            violations.append(f"p2_corrective_iii_conduction_absent:{required}")
+    # Independent window oracle: production quantizer must agree with the
+    # normative oracle on every reference vector (common-mode drift REDs).
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
+        import b26_p2_window_oracle as _oracle  # noqa: PLC0415
+
+        sys.path.insert(0, str(BACKEND))
+        from app.core.day_window import quantize_utc_day as _prod_quant  # noqa: PLC0415
+
+        oracle_errors = _oracle.check_production_quantizer(_prod_quant)
+        details["window_oracle_errors"] = oracle_errors
+        if oracle_errors:
+            violations.append(
+                "p2_corrective_iii_window_oracle_mismatch:" + ";".join(oracle_errors[:3])
+            )
+    except Exception as exc:  # noqa: BLE001
+        violations.append(f"p2_corrective_iii_window_oracle_crash:{exc}")
+    details["corrective_iii_checked"] = True
 
 
 def main() -> int:
@@ -786,6 +930,7 @@ def main() -> int:
         _check_live_conduction_wiring(violations, details)
         _check_webhook_phase_boundary(violations, details)
         _check_corrective_ii_law(violations, details)
+        _check_corrective_iii_law(violations, details)
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_validator_crash:{exc}")
     details["violations"] = sorted(violations)

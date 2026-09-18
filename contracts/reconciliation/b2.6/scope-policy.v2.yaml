@@ -1,0 +1,145 @@
+phase_id: B2.6-P2
+scope_policy_version: b2.6-p2-scope-policy-v2
+authority_kind: scope_normalization_authority_not_financial_result
+maturity_mode: DESIGN_PARTNER_MODE
+
+# P2 scope-policy constitution: ONE governed classification boundary over
+# provider/platform/rail, currency, window, tenant, and disposition semantics.
+# This file owns meaning; backend/app/finance_reconciliation/scope_authority.py
+# executes it. Any semantic change requires a version bump below (evolution_law).
+supersession:
+  supersedes: b2.6-p2-scope-policy-v1
+  reason: corrective_iii_semantic_closure_outbox_admission_rls_window_identity
+  v1_source_sha256: 7adbdd0c4463526773e1b29bc05875f2361bcd2f0b9de096621f3c97574a82cd
+  v1_semantics_preserved_additive_only: true
+
+# Canonical provider/platform identities. Rail identity equals provider
+# identity for P2 (1:1); future rail refinement requires a version bump.
+canonical_providers:
+  - paypal
+  - shopify
+  - stripe
+  - woocommerce
+canonical_rails:
+  - paypal
+  - shopify
+  - stripe
+  - woocommerce
+rail_identity_law: rail_identity_equals_provider_identity_for_P2
+
+# Alias law: governed normalization is strip plus ASCII lower plus exact
+# membership only. No legacy alias promotion: historical route-local names
+# below MUST NOT normalize to a supported canonical identity. They receive
+# explicit exclusion, never silent promotion and never silent disappearance.
+alias_law: strip_ascii_lower_exact_match_only
+legacy_names_never_promoted:
+  - facebook
+  - meta
+  - google
+  - google_ads
+  - tiktok
+  - tik_tok
+  - linkedin
+  - woo
+  - woo_commerce
+  - square
+  - unknown
+
+# Sovereign scope references: P2 composes these universes, never redefines.
+# The module reads them on use and refuses on divergence from this contract.
+provider_scope_reference: app.revenue_verification.verification_coverage.SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS
+currency_scope_reference: app.revenue_verification.verification_coverage.SUPPORTED_VERIFICATION_COVERAGE_CURRENCIES
+supported_currencies:
+  - USD
+
+window_semantics:
+  interval: half_open
+  lower_bound: inclusive
+  upper_bound: exclusive
+  clock_source: persisted_webhook_ingress_identities.event_timestamp
+  timezone: UTC
+  naive_event_time: refused
+
+# P2 disposition vocabulary: every candidate resolves to exactly one.
+dispositions:
+  - SUPPORTED_AND_IN_SCOPE
+  - SUPPORTED_BUT_UNRESOLVED
+  - EXPLICITLY_EXCLUDED
+  - INVALID_OR_REFUSED
+
+# Refusal representation law (Corrective I, H-CA1-06 closure): INVALID_OR_REFUSED
+# is never returned as a CanonicalScopeClassification disposition. Every malformed
+# tenant, policy version, window, event time, or provider/currency shape raises
+# ScopeAuthorityError fail-closed. Downstream consumers therefore cannot confuse
+# refusal with absence: absence of a classification object IS the refusal signal,
+# and any caught ScopeAuthorityError must become a governing refusal
+# (CanonicalSinkError / DLQ routing), never a silent skip. Changing this
+# representation requires a version bump below (evolution_law).
+refusal_representation: exception_fail_closed_never_returned_disposition
+refusal_law: malformed_input_raises_scope_authority_error_downstream_refuses_fail_closed
+
+# Rail authority (Corrective I, H-CA1-11 closure): provider==rail 1:1 is a P2
+# design-partner maturity definition, delegated by the P1 semantic contract's
+# unsupported_rail_doctrine (later_finance_representation:
+# deferred_to_B2.6-P2_or_later). It is versioned here and incapable of silently
+# evolving: any rail-meaning change requires a version bump (evolution_law) and
+# turns the P2 validator RED via the module AST pin below.
+rail_authority: p2_design_partner_maturity_definition_delegated_by_p1_unsupported_rail_doctrine
+rail_delegation: P1_unsupported_rail_doctrine_later_finance_representation_deferred_to_B2.6-P2_or_later
+
+# Governed reason codes. Exclusion reasons reuse the P1 scope-disposition
+# vocabulary so later phases cannot reconstruct scope meaning independently.
+reasons:
+  supported_in_scope: supported_in_scope
+  supported_unresolved_source_identity: source_identity_unresolved
+  unsupported_provider_excluded: unsupported_provider_excluded
+  unsupported_currency_excluded: unsupported_currency_excluded
+  outside_governed_window_excluded: outside_governed_window_excluded
+  invalid_tenant: invalid_tenant_authority
+  invalid_window: invalid_window_authority
+  invalid_event_time: invalid_event_time_authority
+  invalid_provider_shape: invalid_provider_shape
+  invalid_currency_shape: invalid_currency_shape
+  invalid_policy_version: invalid_scope_policy_version
+  aggregate_scope_incoherent: aggregate_scope_incoherent
+
+# Multiple simultaneous exclusions resolve deterministically by priority.
+# Priority authority (Corrective I, H-CA1-12 closure): this order is governed P2
+# semantics, not implementation convenience. Any priority change requires a
+# version bump (evolution_law); the triple-exclusion execution vector pins it.
+exclusion_priority:
+  - unsupported_provider_excluded
+  - unsupported_currency_excluded
+  - outside_governed_window_excluded
+exclusion_priority_authority: p2_governed_deterministic_priority_versioned
+
+tenant_law: server_derived_uuid_only_missing_or_malformed_refused
+money_law: normalization_never_changes_money_no_amount_path
+money_semantics_law: p2_amounts_are_source_verified_gross_not_canonical_net_labeled
+money_semantics: source_verified_gross_not_canonical_net
+money_authority: b2.2_ingress_verified_amount_minor
+canonical_net_authority: b2.3_match_verdicts.canonical_net_verified_amount_minor_only
+snapshot_law: one_derivation_one_repeatable_read_snapshot
+snapshot_isolation: repeatable_read_single_snapshot_per_derivation
+dispatch_authority_law: worker_admits_via_constrained_resolver_before_b23_fail_closed
+admission_law: broker_task_identity_resolves_durable_authority_without_trusting_message_tenant
+delivery_law: acceptance_acquires_durable_recoverable_execution_intent_atomically
+conduction_law: pending_publish_recovers_via_deployed_relay_stable_task_identity_idempotent
+window_authority: dispatch_bound_ingress_event_day_half_open_utc
+window_oracle_law: independent_normative_oracle_pins_utc_day_half_open_without_importing_production_quantizer
+replay_law: same_evidence_same_policy_version_same_identity_and_disposition
+identity_law: semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels
+identity_version: b2.6-p2-scope-identity-v2
+identity_material: tenant_window_policy_version_policy_source_sha_policy_semantic_sha_money_labels_sorted_provider_rail_currency_disposition_reason_amount
+completeness_law: exactly_one_tenant_policy_no_function_no_extra_predicate_no_rule_view_bypass
+rls_strictness: governed_policy_singleton_restrictive_refused_function_call_refused_dependency_closure_pinned
+evolution_law: alias_rail_currency_window_meaning_change_requires_version_bump
+corrective_iii_law: false_canonicality_closed_by_physics_not_convention
+
+# Executable-module pin (P2 proof plane): the canonical module above is
+# frozen into this contract by AST identity. Any semantic change to the
+# module without a reviewed repin turns the P2 validator RED.
+# Corrective III repin: v2 adds admission/delivery/identity/oracle laws and
+# supersession (v1 history preserved, never rewritten).
+module: app.finance_reconciliation.scope_authority
+module_ast_sha256: 7165ec0a89b70d1ef8566fe4d47d35954445a0f0b797ee8f4b56ee6a2d45062a

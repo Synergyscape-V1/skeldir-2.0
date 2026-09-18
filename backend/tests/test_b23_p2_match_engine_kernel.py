@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import text
 
-from app.db.session import engine, get_session
+from app.db.session import engine, get_b23_session
 from app.ingestion.event_service import ingest_with_transaction
 from app.revenue_verification.extraction_registry import (
     B23_REVENUE_EXTRACTOR_REGISTRY,
@@ -35,6 +35,23 @@ from app.revenue_verification.match_engine_kernel import (
     seed_pending_match_verdict,
 )
 from app.revenue_verification.timing_constants import WEBHOOK_ARRIVAL_WINDOW
+
+
+@pytest.fixture(autouse=True)
+async def _fresh_engines_per_test():
+    """Dispose pooled engines after each test (B2.6-P2 Corrective III).
+
+    Worker-state proofs run on the B23 pool, which (unlike the TESTING
+    NullPool app engine) pools connections across tests. pytest-asyncio
+    function-scoped loops would otherwise check out connections bound to
+    closed loops. Mirrors the finance_reconciliation conduction battery.
+    """
+    yield
+    from app.db.session import b23_engine
+    from app.db.session import engine as app_engine
+
+    await b23_engine.dispose()
+    await app_engine.dispose()
 
 
 REQUIRED_B23_P2_TABLES: tuple[str, ...] = (
@@ -97,7 +114,7 @@ async def _seed_attribution_event_for_match(
     amount_minor: int,
     occurred_at: datetime,
 ) -> UUID:
-    async with get_session(tenant_id) as session:
+    async with get_b23_session(tenant_id) as session:
         await session.execute(
             text(
                 """
@@ -413,7 +430,7 @@ async def test_b23_p2_authenticated_malformed_canonical_payload_is_durable(
     )
 
     assert result.error_type == "validation_error"
-    async with get_session(test_tenant) as session:
+    async with get_b23_session(test_tenant) as session:
         dead_count = await session.execute(
             text(
                 """
@@ -470,7 +487,7 @@ async def test_b23_p2_duplicate_same_event_concurrency_writes_one_effect(
     )
 
     async def _run_once() -> None:
-        async with get_session(tenant_a) as session:
+        async with get_b23_session(tenant_a) as session:
             await process_b23_capture_match(
                 session,
                 B23CaptureMatchInput(
@@ -495,7 +512,7 @@ async def test_b23_p2_duplicate_same_event_concurrency_writes_one_effect(
 
     await asyncio.gather(_run_once(), _run_once())
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         verdict_count = await session.execute(
             text(
                 """
@@ -546,7 +563,7 @@ async def test_b23_p2_distinct_concurrent_events_same_order_persist_once_each(
     ]
 
     async def _run_once(event_ref: str, attribution_event_id: UUID) -> None:
-        async with get_session(tenant_a) as session:
+        async with get_b23_session(tenant_a) as session:
             await process_b23_capture_match(
                 session,
                 B23CaptureMatchInput(
@@ -574,7 +591,7 @@ async def test_b23_p2_distinct_concurrent_events_same_order_persist_once_each(
         _run_once(event_refs[1], attribution_event_ids[1]),
     )
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         verdict_count = await session.execute(
             text(
                 """
@@ -608,7 +625,7 @@ async def test_b23_p2_unmatched_executor_respects_arrival_window(
     young_ref = f"evt-young-{uuid4()}"
     stale_ref = f"evt-stale-{uuid4()}"
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         await seed_pending_match_verdict(
             session,
             tenant_id=tenant_a,
@@ -634,7 +651,7 @@ async def test_b23_p2_unmatched_executor_respects_arrival_window(
         )
         assert updated >= 1
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         young_status = await session.execute(
             text(
                 """
@@ -670,7 +687,7 @@ async def test_b23_p2_unresolved_post_capture_routes_to_p1_substrates(
     event_ref = f"refund-{uuid4()}"
     now = datetime.now(timezone.utc)
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         inserted = await register_b23_post_capture_event(
             session,
             B23PostCaptureInput(
@@ -687,7 +704,7 @@ async def test_b23_p2_unresolved_post_capture_routes_to_p1_substrates(
         )
         assert inserted is False
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         exception_count = await session.execute(
             text(
                 """
@@ -752,11 +769,11 @@ async def test_b23_p2_unsupported_authenticated_post_capture_event_type_is_durab
         failure_reason=None,
     )
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         with pytest.raises(ValueError, match="post_capture_event_type_not_registered"):
             await register_b23_post_capture_event(session, unsupported_payload)  # type: ignore[arg-type]
 
-    async with get_session(tenant_a) as session:
+    async with get_b23_session(tenant_a) as session:
         log_count = await session.execute(
             text(
                 """

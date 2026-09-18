@@ -53,8 +53,8 @@ def assert_tenant_context_present(tenant_id: UUID | str | None) -> None:
 
 
 # Normalize DSN to ensure asyncpg driver is used and map unsupported parameters to connect_args.
-def _build_async_database_url_and_args() -> tuple[str, dict]:
-    raw_url = get_database_url()
+def _build_async_database_url_and_args(raw_url: str | None = None) -> tuple[str, dict]:
+    raw_url = raw_url or get_database_url()
     parsed = urlsplit(raw_url)
     query_params = dict(parse_qsl(parsed.query))
 
@@ -109,9 +109,22 @@ engine = create_async_engine(
     **engine_kwargs,
 )
 
+# B2.6-P2 Corrective III: the B2.3 pool may run under a dedicated worker
+# credential (least privilege: API issues dispatch authority as app_user,
+# the worker authors verdicts as app_worker). Unset preserves the exact
+# historical behavior (worker pool shares the application DSN), so
+# production topology without the variable is byte-for-byte unaffected.
+_B23_WORKER_DATABASE_URL = os.getenv("B23_WORKER_DATABASE_URL", "").strip()
+if _B23_WORKER_DATABASE_URL:
+    _B23_ASYNC_DATABASE_URL, _B23_CONNECT_ARGS = _build_async_database_url_and_args(
+        _B23_WORKER_DATABASE_URL
+    )
+else:
+    _B23_ASYNC_DATABASE_URL, _B23_CONNECT_ARGS = _ASYNC_DATABASE_URL, _CONNECT_ARGS
+
 b23_engine = create_async_engine(
-    _ASYNC_DATABASE_URL,
-    connect_args=_CONNECT_ARGS,
+    _B23_ASYNC_DATABASE_URL,
+    connect_args=_B23_CONNECT_ARGS,
     pool_pre_ping=True,
     echo=False,
     pool_size=settings.B23_DATABASE_POOL_SIZE,

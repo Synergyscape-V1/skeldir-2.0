@@ -40,6 +40,7 @@ signature_sensitive: false
 | `bayesian` | B2.4 readiness queue, not M4 feature work. | `backend/app/tasks/bayesian.py`. | Dedicated/opt-in worker when enabled. | `app.tasks.bayesian.*`. | Idle in M4. | B2.4 is not active, missing statistical dependencies, feature gate disabled. |
 | `bayesian_publisher` | B2.5-P13 C11 fresh fit-dispatch publication. Separated from `bayesian` because its worker authenticates as the dedicated `app_dispatch_publisher` principal, which holds cross-tenant SELECT/UPDATE on the dispatch outbox and nothing else; an ordinary execution worker must not be able to acquire that authority by consuming from the same queue. | `backend/app/tasks/bayesian_publisher.py`. | Dedicated publisher worker, `--concurrency=1`. | `app.tasks.bayesian.publish_due_fit_dispatches`. | Idle in M4. | B2.4 is not active, feature gate disabled, or the publisher DSN is unset. |
 | `b23_match_engine` | B2.3 revenue verification and match engine. | `backend/app/api/webhooks.py`, `backend/app/tasks/revenue_verification.py`. | Local worker bound by `make worker`. | `app.tasks.revenue_verification.execute_b23_batch_match_engine`, transition tasks. | Idle unless verified webhook ingress or transition sweep dispatches work. | Missing ingress identity, task dispatch not persisted, DB pool timeout, verdict constraint failure. |
+| `b26_p2_relay` | B2.6-P2 Corrective III recoverable-delivery relay. Sweeps `pending_publish` execution intents from `b26_p2_execution_outbox` and publishes them to `b23_match_engine` with the stable issuance task identity, so broker outage or producer crash cannot permanently strand accepted evidence. Separated from `b23_match_engine` because recovery publication is producer authority (runs as the API principal), while match execution is consumer authority. | `backend/app/api/webhooks.py` (immediate attempt + duplicate re-drive), `backend/app/tasks/b26_p2_relay.py`. | Dedicated relay worker (`relay_b26_p2` in `Procfile`, `--concurrency=1`). | `app.tasks.b26_p2_relay.relay_b26_p2_pending_dispatches`. | Idle unless pending intents exist. | Broker DB unavailable (backs off and retries), missing relay worker process, dispatch/outbox authority divergence. |
 
 ## Local Start And Health
 
@@ -54,7 +55,7 @@ idempotency_sensitive: false
 signature_sensitive: false
 ```
 
-Expected healthy output from `make ops-queues`: JSON containing all six queue
+Expected healthy output from `make ops-queues`: JSON containing all seven queue
 names from `backend/app/core/queues.py`. The M4 validator compares this runbook
 against that canonical source.
 

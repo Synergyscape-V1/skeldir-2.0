@@ -312,21 +312,35 @@ async def _require_snapshot_isolation(session: AsyncSession) -> str:
 async def _inspect_rls_completeness(session: AsyncSession) -> None:
     """Refuse silent candidate-universe narrowing through the visibility root.
 
-    Both production reads traverse the same RLS/view/helper root, so their
-    agreement cannot prove completeness (H-II-07). This oracle does not read
-    candidate rows at all: it observes the physical policy catalog
-    (``pg_policies``) and relation kind (``pg_class``), a separately
-    implemented root from the row reads. Tenant RLS may enforce tenant
-    authority only; any additional provider/currency/time/status predicate
-    refuses with ``p2_rls_completeness_refused`` even when cross-tenant
-    isolation still holds. A non-table relation (view/matview/foreign)
-    refuses with ``p2_source_relation_not_table``.
+    Corrective-III strict law (H-III-D01..D05): candidate completeness is
+    proven by effect-closure over the catalog, not by absence of forbidden
+    words in tenant-named policy text. Both production reads traverse the
+    same RLS/view/helper root, so their agreement cannot prove completeness.
+    This oracle observes a different root (catalog + relation flags) and
+    requires:
+
+    - exactly one policy on the ingress relation with the governed name;
+    - RLS enabled and forced (physical flags, not convention);
+    - no RULEs on the relation (alternate narrowing primitive);
+    - the single qual/with_check binds tenant authority only and invokes
+      no function besides ``current_setting`` (any helper, operator-class,
+      or opaque predicate refuses, however named);
+    - no provider/currency/time/status/amount token in any predicate.
+
+    A non-table relation refuses with ``p2_source_relation_not_table``.
+    A second RESTRICTIVE policy, a neutral helper, or a helper-body drift
+    all change the catalog fingerprint and refuse, even when tenant
+    isolation still holds.
     """
-    kind_row = (
+    import re as _rls_re
+
+    phys_row = (
         (
             await session.execute(
                 text(
-                    "SELECT c.relkind AS relkind"
+                    "SELECT c.relkind AS relkind,"
+                    " c.relrowsecurity AS rls_enabled,"
+                    " c.relforcerowsecurity AS rls_forced"
                     " FROM pg_class c"
                     " JOIN pg_namespace n ON n.oid = c.relnamespace"
                     " WHERE n.nspname = 'public'"
@@ -337,7 +351,9 @@ async def _inspect_rls_completeness(session: AsyncSession) -> None:
         .mappings()
         .one_or_none()
     )
-    raw_kind = kind_row["relkind"] if kind_row else None
+    if phys_row is None:
+        raise ScopeConductionError("p2_source_relation_not_table:missing")
+    raw_kind = phys_row["relkind"]
     if isinstance(raw_kind, (bytes, bytearray)):
         try:
             raw_kind = bytes(raw_kind).decode("utf-8", errors="strict")
@@ -345,57 +361,95 @@ async def _inspect_rls_completeness(session: AsyncSession) -> None:
             raise ScopeConductionError(
                 f"p2_source_relation_not_table:undecodable:{exc}"
             ) from exc
-    if kind_row is None or str(raw_kind) != "r":
-        raise ScopeConductionError(
-            f"p2_source_relation_not_table:{raw_kind if raw_kind else 'missing'}"
-        )
-    policy_rows = (
+    if str(raw_kind) != "r":
+        raise ScopeConductionError(f"p2_source_relation_not_table:{raw_kind}")
+    if not bool(phys_row["rls_enabled"]):
+        raise ScopeConductionError("p2_rls_completeness_refused:rls_not_enabled")
+    if not bool(phys_row["rls_forced"]):
+        raise ScopeConductionError("p2_rls_completeness_refused:rls_not_forced")
+    rule_row = (
         (
             await session.execute(
                 text(
-                    "SELECT policyname AS policyname,"
-                    " cmd AS cmd,"
-                    " qual AS qual,"
-                    " with_check AS with_check"
-                    " FROM pg_policies"
+                    "SELECT count(*) AS rule_count FROM pg_rules"
                     " WHERE schemaname = 'public'"
                     " AND tablename = 'webhook_ingress_identities'"
                 )
             )
         )
         .mappings()
+        .one_or_none()
+    )
+    if rule_row is not None and int(rule_row["rule_count"] or 0) != 0:
+        raise ScopeConductionError("p2_rls_completeness_refused:relation_rule_present")
+    policy_rows = (
+        (
+            await session.execute(
+                text(
+                    "SELECT policyname AS policyname,"
+                    " permissive AS permissive,"
+                    " roles AS roles,"
+                    " cmd AS cmd,"
+                    " qual AS qual,"
+                    " with_check AS with_check"
+                    " FROM pg_policies"
+                    " WHERE schemaname = 'public'"
+                    " AND tablename = 'webhook_ingress_identities'"
+                    " ORDER BY policyname"
+                )
+            )
+        )
+        .mappings()
         .all()
     )
-    if not policy_rows:
-        raise ScopeConductionError("p2_rls_completeness_refused:no_policy_visible")
-    for policy in policy_rows:
-        name = str(policy["policyname"] or "")
-        if "tenant_isolation" not in name and "tenant" not in name:
-            continue
-        for column in ("qual", "with_check"):
-            definition = str(policy[column] or "")
-            lowered = definition.lower()
-            if not lowered.strip():
-                continue
-            if (
-                "current_setting" not in lowered
-                or "app.current_tenant_id" not in lowered
-            ):
+    if len(policy_rows) != 1:
+        raise ScopeConductionError(
+            f"p2_rls_completeness_refused:policy_singleton_violated:{len(policy_rows)}"
+        )
+    policy = policy_rows[0]
+    name = str(policy["policyname"] or "")
+    if name != "tenant_isolation_policy_webhook_ingress_identities":
+        raise ScopeConductionError(
+            f"p2_rls_completeness_refused:unexpected_policy:{name}"
+        )
+    for column in ("qual", "with_check"):
+        definition = str(policy[column] or "")
+        lowered = definition.lower()
+        if not lowered.strip():
+            raise ScopeConductionError(
+                f"p2_rls_completeness_refused:{name}:{column}:empty_predicate"
+            )
+        if (
+            "current_setting" not in lowered
+            or "app.current_tenant_id" not in lowered
+        ):
+            raise ScopeConductionError(
+                f"p2_rls_completeness_refused:{name}:{column}:no_tenant_root"
+            )
+        # Any function call besides current_setting refuses: strip the one
+        # governed call, then any remaining IDENT( pattern is a helper.
+        scrubbed = _rls_re.sub(
+            r"current_setting\s*\(", "governed_root(", lowered
+        )
+        scrubbed = scrubbed.replace("governed_root(", "")
+        if _rls_re.search(r"[a-z_][a-z0-9_\.]*\s*\(", scrubbed):
+            raise ScopeConductionError(
+                f"p2_rls_completeness_refused:{name}:{column}:function_call_present"
+            )
+        for forbidden in (
+            "provider",
+            "currency",
+            "event_timestamp",
+            "verified_commerce_ingress_state",
+            "verified_amount",
+            "status",
+            "created_at",
+            "updated_at",
+        ):
+            if forbidden in lowered:
                 raise ScopeConductionError(
-                    f"p2_rls_completeness_refused:{name}:{column}:no_tenant_root"
+                    f"p2_rls_completeness_refused:{name}:{column}:{forbidden}"
                 )
-            for forbidden in (
-                "provider",
-                "currency",
-                "event_timestamp",
-                "verified_commerce_ingress_state",
-                "status",
-                "verified_amount",
-            ):
-                if forbidden in lowered:
-                    raise ScopeConductionError(
-                        f"p2_rls_completeness_refused:{name}:{column}:{forbidden}"
-                    )
 
 
 async def _independent_population_totals(
@@ -464,6 +518,17 @@ async def _independent_population_identities(
     return tuple(sorted(str(record["id"]) for record in reread))
 
 
+SCOPE_IDENTITY_VERSION = "b2.6-p2-scope-identity-v2"
+
+# Default-include law (Corrective III, H-III-F01..F07): any field capable of
+# changing canonical P2 meaning is identity-bearing unless the contract
+# explicitly declares and proves it non-identity metadata. Within-window
+# event instants are the sole declared non-identity field: the governed
+# window is day-granular, so two instants in the same UTC day carry the
+# same scope meaning (proven by the window oracle half-open law). Every
+# other semantic field below is identity-bearing.
+
+
 def _compute_scope_identity(
     *,
     tenant: UUID,
@@ -471,27 +536,46 @@ def _compute_scope_identity(
     window_end: datetime,
     scope_policy_version: str,
     scoped: tuple[ScopedCandidate, ...],
+    policy_source_sha256: str = "",
+    policy_semantic_sha256: str = "",
+    money_semantics: str = "",
+    money_authority: str = "",
+    canonical_net_authority: str = "",
 ) -> str:
-    """Bind the exact governed producer identity set to one digest.
+    """Bind the complete canonical P2 semantic record to one digest.
 
-    Material per candidate is ``ingress_id:disposition:reason:amount``;
-    the multiset is sorted so replay is stable across process/container
-    restarts and ordering changes, while any substitution/duplication/
-    omission changes the digest even when all aggregates remain equal.
-    Same authoritative source set + tenant + window + policy yields the
-    identical identity; different identity sets yield different identities.
+    Material per candidate is
+    ``ingress_id:provider:rail:currency:disposition:reason:amount`` using
+    canonical normalized provider/rail/currency (representational variants
+    such as case/whitespace normalize identically and preserve identity,
+    while a supported provider A -> supported provider B, a rail change, or
+    a currency semantic change changes the digest even when disposition,
+    reason, amount, and source UUID are unchanged). The top-level material
+    binds the governing semantic policy identity (source + semantic SHA,
+    not the human version string alone) and the money-semantic labels, so
+    a policy semantic change or a money-label change changes the identity
+    even when every numeric aggregate is unchanged. The multiset is sorted
+    so replay is stable and ordering-only changes preserve identity.
     """
     lines = sorted(
-        f"{item.ingress_id}:{item.classification.disposition}:"
+        f"{item.ingress_id}:{item.classification.provider}:"
+        f"{item.classification.rail}:{item.classification.currency_code}:"
+        f"{item.classification.disposition}:"
         f"{item.classification.reason}:{int(item.verified_amount_minor)}"
         for item in scoped
     )
     payload = "|".join(
         [
+            SCOPE_IDENTITY_VERSION,
             str(tenant),
             window_start.isoformat(),
             window_end.isoformat(),
             str(scope_policy_version),
+            str(policy_source_sha256 or ""),
+            str(policy_semantic_sha256 or ""),
+            str(money_semantics or P2_MONEY_SEMANTICS),
+            str(money_authority or P2_MONEY_AUTHORITY),
+            str(canonical_net_authority or P2_CANONICAL_NET_AUTHORITY),
             *lines,
         ]
     )
@@ -620,6 +704,11 @@ async def derive_governed_scope(
         window_end=end,
         scope_policy_version=B26_P2_SCOPE_POLICY_VERSION,
         scoped=scoped,
+        policy_source_sha256=identity.source_sha256,
+        policy_semantic_sha256=identity.semantic_sha256,
+        money_semantics=P2_MONEY_SEMANTICS,
+        money_authority=P2_MONEY_AUTHORITY,
+        canonical_net_authority=P2_CANONICAL_NET_AUTHORITY,
     )
     if len(scope_identity) != 64:
         raise ScopeConductionError("p2_scope_identity_malformed")

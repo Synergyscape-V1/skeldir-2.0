@@ -13,6 +13,7 @@ QUEUE_ATTRIBUTION = "attribution"
 QUEUE_BAYESIAN = "bayesian"
 QUEUE_BAYESIAN_PUBLISHER = "bayesian_publisher"
 QUEUE_B23_MATCH_ENGINE = "b23_match_engine"
+QUEUE_B26_P2_RELAY = "b26_p2_relay"
 
 # Frozen set of all allowed queues for metrics policy enforcement
 ALLOWED_QUEUES: frozenset[str] = frozenset(
@@ -24,5 +25,6 @@ ALLOWED_QUEUES: frozenset[str] = frozenset(
         QUEUE_BAYESIAN,
         QUEUE_BAYESIAN_PUBLISHER,
         QUEUE_B23_MATCH_ENGINE,
+        QUEUE_B26_P2_RELAY,
     }
 )

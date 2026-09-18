@@ -12,7 +12,10 @@ SCOPE_MODULE = ROOT / "backend/app/finance_reconciliation/scope_authority.py"
 CONDUCTION_MODULE = ROOT / "backend/app/finance_reconciliation/candidate_conduction.py"
 DISPATCH_MODULE = ROOT / "backend/app/finance_reconciliation/dispatch_authority.py"
 TENANT_MODULE = ROOT / "backend/app/finance_reconciliation/tenant_authority.py"
-SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
+SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v2.yaml"
+SCOPE_CONTRACT_V1 = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
+DAY_WINDOW_MODULE = ROOT / "backend/app/core/day_window.py"
+RELAY_MODULE = ROOT / "backend/app/tasks/b26_p2_relay.py"
 SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 WEBHOOK_MODULE = ROOT / "backend/app/api/webhooks.py"
 B23_TASK_MODULE = ROOT / "backend/app/tasks/revenue_verification.py"
@@ -161,8 +164,8 @@ def p2_contract_universe_widening() -> None:
 def p2_scope_policy_version_drift() -> None:
     _replace_once(
         SCOPE_CONTRACT,
-        "scope_policy_version: b2.6-p2-scope-policy-v1\n",
         "scope_policy_version: b2.6-p2-scope-policy-v2\n",
+        "scope_policy_version: b2.6-p2-scope-policy-v3\n",
         defect="p2_scope_policy_version_drift",
     )
 
@@ -303,6 +306,98 @@ def p2_window_delegation_removal() -> None:
     )
 
 
+def p2_window_12h_mutation() -> None:
+    _replace_once(
+        DAY_WINDOW_MODULE,
+        "    start = occurred.replace(hour=0, minute=0, second=0, microsecond=0)\n"
+        "    return start, start + timedelta(days=1)",
+        "    start = occurred.replace(hour=0, minute=0, second=0, microsecond=0)\n"
+        "    if occurred.hour >= 12:\n"
+        "        start = start.replace(hour=12)  # NC-P2-12H\n"
+        "    return start, start + timedelta(hours=12)",
+        defect="p2_window_12h_mutation",
+    )
+
+
+def p2_window_local_mutation() -> None:
+    _replace_once(
+        DAY_WINDOW_MODULE,
+        "    if event_time.tzinfo is None or event_time.tzinfo.utcoffset(event_time) is None:\n"
+        "        occurred = event_time.replace(tzinfo=timezone.utc)\n"
+        "    else:\n"
+        "        occurred = event_time.astimezone(timezone.utc)",
+        "    if event_time.tzinfo is None or event_time.tzinfo.utcoffset(event_time) is None:\n"
+        "        occurred = event_time.replace(tzinfo=timezone.utc)\n"
+        "    else:\n"
+        "        occurred = event_time  # NC-P2-LOCAL no UTC normalize\n",
+        defect="p2_window_local_mutation",
+    )
+
+
+def p2_window_inclusive_mutation() -> None:
+    _replace_once(
+        SCOPE_MODULE,
+        "    if not (start <= occurred < end):\n",
+        "    if not (start <= occurred <= end):  # NC-P2-INCLUSIVE\n",
+        defect="p2_window_inclusive_mutation",
+    )
+
+
+def p2_identity_provider_blindness() -> None:
+    _replace_once(
+        CONDUCTION_MODULE,
+        '        f"{item.ingress_id}:{item.classification.provider}:"',
+        '        f"{item.ingress_id}:constant_provider:"  # NC-P2-PROVIDER-BLIND\n',
+        defect="p2_identity_provider_blindness",
+    )
+
+
+def p2_outbox_removal() -> None:
+    _replace_once(
+        WEBHOOK_MODULE,
+        "                INSERT INTO public.b26_p2_execution_outbox (",
+        "                INSERT INTO public.b26_p2_execution_outbox_DISABLED (  # NC-P2-OUTBOX\n",
+        defect="p2_outbox_removal",
+    )
+
+
+def p2_admission_after_b23() -> None:
+    _replace_once(
+        B23_TASK_MODULE,
+        "    authority = run_in_worker_loop(_admit())\n"
+        "    result = run_in_worker_loop(\n"
+        "        execute_b23_batch_match_engine(",
+        "    result = run_in_worker_loop(\n"
+        "        execute_b23_batch_match_engine(  # NC-P2-ADMISSION-AFTER\n",
+        defect="p2_admission_after_b23",
+    )
+
+
+def p2_relay_deployment_removal() -> None:
+    text = (ROOT / "Procfile").read_text(encoding="utf-8")
+    marker = "relay_b26_p2:"
+    if text.count(marker) != 1:
+        raise SystemExit("p2_relay_deployment_removal:anchor_count!=1")
+    (ROOT / "Procfile").write_text(
+        text.replace(marker, "relay_b26_p2_DISABLED:", 1), encoding="utf-8"
+    )
+
+
+def p2_rls_singleton_violation() -> None:
+    _replace_once(
+        CONDUCTION_MODULE,
+        '    if len(policy_rows) != 1:\n'
+        '        raise ScopeConductionError(\n'
+        '            f"p2_rls_completeness_refused:policy_singleton_violated:{len(policy_rows)}"\n'
+        "        )",
+        '    if len(policy_rows) < 1:  # NC-P2-RLS-SINGLETON allows second policy\n'
+        '        raise ScopeConductionError(\n'
+        '            f"p2_rls_completeness_refused:policy_singleton_violated:{len(policy_rows)}"\n'
+        "        )",
+        defect="p2_rls_singleton_violation",
+    )
+
+
 APPLIERS = {
     "p2_second_alias_dict": p2_second_alias_dict,
     "p2_sql_case_normalizer": p2_sql_case_normalizer,
@@ -329,6 +424,14 @@ APPLIERS = {
     "p2_dead_edge_if_false": p2_dead_edge_if_false,
     "p2_silent_null_swallow": p2_silent_null_swallow,
     "p2_window_delegation_removal": p2_window_delegation_removal,
+    "p2_window_12h_mutation": p2_window_12h_mutation,
+    "p2_window_local_mutation": p2_window_local_mutation,
+    "p2_window_inclusive_mutation": p2_window_inclusive_mutation,
+    "p2_identity_provider_blindness": p2_identity_provider_blindness,
+    "p2_outbox_removal": p2_outbox_removal,
+    "p2_admission_after_b23": p2_admission_after_b23,
+    "p2_relay_deployment_removal": p2_relay_deployment_removal,
+    "p2_rls_singleton_violation": p2_rls_singleton_violation,
 }
 
 

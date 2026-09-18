@@ -418,15 +418,15 @@ def _seed_worker_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> No
                 " routing_key, correlation_id, provider,"
                 " provider_native_event_reference,"
                 " provider_native_commerce_reference,"
-                " normalized_commerce_reference_value, status)"
+                " normalized_commerce_reference_value, status,"
+                " delivery_state, publish_attempts,"
+                " window_start, window_end)"
                 " VALUES (%s, %s, %s,"
                 " 'app.tasks.revenue_verification.execute_b23_batch_match_engine',"
                 " 'b23_match_engine', 'b23_match_engine.task', %s, %s, %s, %s, %s,"
-                " 'dispatched')"
-                " ON CONFLICT (tenant_id, webhook_ingress_identity_id)"
-                " DO UPDATE SET task_id = EXCLUDED.task_id,"
-                " status = 'dispatched', dispatched_at = now(),"
-                " updated_at = now()",
+                " 'dispatched', 'pending_publish', 0,"
+                " '2026-01-15T00:00:00+00:00', '2026-01-16T00:00:00+00:00')"
+                " ON CONFLICT (tenant_id, webhook_ingress_identity_id) DO NOTHING",
                 (
                     str(tenant_id),
                     str(ingress_id),
@@ -437,6 +437,22 @@ def _seed_worker_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> No
                     commerce_ref,
                     norm_ref,
                 ),
+            )
+            cur.execute(
+                "INSERT INTO public.b26_p2_execution_outbox (tenant_id,"
+                " dispatch_task_id, webhook_ingress_identity_id, state,"
+                " publish_attempts, payload)"
+                " VALUES (%s, %s, %s, 'pending_publish', 0, '{}'::jsonb)"
+                " ON CONFLICT (dispatch_task_id) DO NOTHING",
+                (str(tenant_id), task_id, str(ingress_id)),
+            )
+            cur.execute(
+                "INSERT INTO public.b26_p2_task_authority_directory (task_id,"
+                " tenant_id, webhook_ingress_identity_id, window_start, window_end)"
+                " VALUES (%s, %s, %s,"
+                " '2026-01-15T00:00:00+00:00', '2026-01-16T00:00:00+00:00')"
+                " ON CONFLICT (task_id) DO NOTHING",
+                (task_id, str(tenant_id), str(ingress_id)),
             )
     finally:
         conn.close()
@@ -695,3 +711,167 @@ def test_p2ca1_worker_task_executes_p2_under_production_principal(
     assert observed["scope_policy_version"] == B26_P2_SCOPE_POLICY_VERSION
     assert observed["dispatch_bound"] is True
     assert len(observed["scope_identity"]) == 64
+
+
+async def test_p2ciii_worker_cannot_mint_dispatch_authority() -> None:
+    """The consumer cannot manufacture the authority it validates (Gate 4)."""
+    import psycopg2
+
+    universe = _seed_conduction_universe("no-mint")
+    admin_dsn = _admin_dsn()
+    worker_dsn = admin_dsn.replace(
+        "migration_owner:migration_owner", "app_worker:app_worker"
+    )
+    conn = psycopg2.connect(worker_dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(universe["tenant_id"]),),
+            )
+            with pytest.raises(Exception, match="(?i)(permission denied|denied|immutable|42501)"):
+                cur.execute(
+                    "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
+                    " webhook_ingress_identity_id, task_id, task_name, queue,"
+                    " routing_key, correlation_id, provider,"
+                    " provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_value, status)"
+                    " VALUES (%s, %s, %s,"
+                    " 'app.tasks.revenue_verification.execute_b23_batch_match_engine',"
+                    " 'b23_match_engine', 'b23_match_engine.task', %s,"
+                    " 'stripe', 'x', 'y', 'y', 'dispatched')",
+                    (
+                        str(universe["tenant_id"]),
+                        str(universe["matched"][0]),
+                        f"forged-{uuid.uuid4().hex[:8]}",
+                        str(uuid.uuid4()),
+                    ),
+                )
+    finally:
+        conn.close()
+
+
+async def test_p2ciii_forged_task_causes_zero_b23_consequence() -> None:
+    """Missing authority refuses BEFORE B2.3 with zero verdict writes."""
+    import psycopg2
+
+    from app.finance_reconciliation.dispatch_authority import DispatchAuthorityError
+
+    universe = _seed_conduction_universe("zero-b23")
+    admin_dsn = _admin_dsn()
+    conn = psycopg2.connect(admin_dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM public.b23_match_verdicts WHERE tenant_id = %s",
+                (str(universe["tenant_id"]),),
+            )
+            before = int(cur.fetchone()[0])
+    finally:
+        conn.close()
+    from app.db.session import B23AsyncSessionLocal
+    from app.finance_reconciliation import dispatch_authority as _admit
+
+    async with B23AsyncSessionLocal() as bare:
+        with pytest.raises(DispatchAuthorityError):
+            await _admit.admit_execution_before_b23(
+                bare,
+                broker_task_id=f"forged-{uuid.uuid4().hex[:8]}",
+                message_tenant_id=universe["tenant_id"],
+                message_window_start=datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc),
+                message_window_end=datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc),
+            )
+    conn = psycopg2.connect(admin_dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM public.b23_match_verdicts WHERE tenant_id = %s",
+                (str(universe["tenant_id"]),),
+            )
+            after = int(cur.fetchone()[0])
+    finally:
+        conn.close()
+    assert after == before
+
+
+async def test_p2ciii_provider_swap_changes_scope_identity() -> None:
+    """Supported provider A->B changes identity with equal aggregates."""
+    import psycopg2
+
+    universe = _seed_conduction_universe("provider-swap")
+    baseline = await _derive(universe["tenant_id"])
+    baseline_identity = baseline.scope_identity
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(universe["tenant_id"]),),
+            )
+            # Swap one SUPPORTED leg stripe->paypal (both supported): the
+            # disposition/reason/amount/count are unchanged, but canonical
+            # provider/rail meaning changed, so identity must change.
+            cur.execute(
+                "SELECT id FROM public.webhook_ingress_identities"
+                " WHERE tenant_id = %s AND provider = 'stripe' LIMIT 1",
+                (str(universe["tenant_id"]),),
+            )
+            target = cur.fetchone()[0]
+            cur.execute(
+                "UPDATE public.webhook_ingress_identities SET provider = 'paypal'"
+                " WHERE id = %s",
+                (str(target),),
+            )
+        swapped = await _derive(universe["tenant_id"])
+        assert swapped.candidate_count == baseline.candidate_count
+        assert swapped.total_amount_minor == baseline.total_amount_minor
+        assert swapped.scope_identity != baseline_identity
+    finally:
+        conn.close()
+
+
+async def test_p2ciii_second_restrictive_policy_refuses() -> None:
+    """A second RESTRICTIVE policy narrows the universe -> fail-closed."""
+    import psycopg2
+
+    universe = _seed_conduction_universe("second-policy")
+    baseline = await _derive(universe["tenant_id"])
+    assert baseline.candidate_count == 9
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "CREATE POLICY p2ciii_second_restrictive"
+                " ON public.webhook_ingress_identities AS RESTRICTIVE"
+                " FOR SELECT USING (verified_amount_minor < 5000)"
+            )
+        with pytest.raises(ScopeConductionError):
+            await _derive(universe["tenant_id"])
+    finally:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DROP POLICY IF EXISTS p2ciii_second_restrictive"
+                " ON public.webhook_ingress_identities"
+            )
+        conn.close()
+    restored = await _derive(universe["tenant_id"])
+    assert restored.scope_identity == baseline.scope_identity
+
+
+async def test_p2ciii_window_oracle_pins_production_quantizer() -> None:
+    """Independent oracle agrees with production on reference vectors."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path("scripts/ci")))
+    import b26_p2_window_oracle as oracle  # noqa: PLC0415
+
+    from app.core.day_window import quantize_utc_day  # noqa: PLC0415
+
+    assert oracle.check_production_quantizer(quantize_utc_day) == []
