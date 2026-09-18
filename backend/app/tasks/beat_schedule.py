@@ -11,7 +11,7 @@ from typing import Dict, Any
 
 from celery.schedules import crontab
 
-from app.core.queues import QUEUE_BAYESIAN, QUEUE_BAYESIAN_PUBLISHER
+from app.core.queues import QUEUE_B26_P2_RELAY, QUEUE_BAYESIAN, QUEUE_BAYESIAN_PUBLISHER
 
 
 def _refresh_interval_seconds() -> float:
@@ -62,6 +62,22 @@ def _b23_transition_interval_seconds() -> float:
     return float(_positive_int_env("B23_TRANSITION_SWEEP_INTERVAL_SECONDS", 300))
 
 
+def _b26_p2_relay_sweep_interval_seconds() -> float:
+    """Return the production P2 relay sweep cadence.
+
+    B2.6-P2 Corrective IV: the relay sweeper without a scheduler is inert
+    (no beat entry, no producer, no workflow ever enqueued it, so every
+    broker outage without provider retry stranded accepted evidence
+    forever). This entry is the recovery motor: beat publishes the sweep
+    to the b26_p2_relay queue, the relay worker consumes it, and pending
+    execution intents conduct with their stable issuance identity. The
+    default is sixty seconds; tests shorten it via env, never by calling
+    the sweep task directly for topology credit.
+    """
+
+    return float(_positive_int_env("B26_P2_RELAY_SWEEP_INTERVAL_SECONDS", 60))
+
+
 def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
     interval = _refresh_interval_seconds()
     recovery_interval = _bayesian_recovery_interval_seconds()
@@ -103,6 +119,22 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "options": {"expires": max(int(transition_interval), 1) * 2},
         },
     }
+    # The relay sweep is the P2 recovery motor: it must be present in every
+    # production beat deployment. The disable flag exists ONLY so the
+    # deployment-level falsifier (scheduler removed -> pending never
+    # recovers) can be exercised without editing shipped code; no
+    # production topology sets it.
+    if os.getenv("SKELDIR_B26_P2_DISABLE_RELAY_SWEEP_JOB") != "1":
+        relay_interval = _b26_p2_relay_sweep_interval_seconds()
+        schedule["b26-p2-relay-sweep"] = {
+            "task": "app.tasks.b26_p2_relay.relay_b26_p2_pending_dispatches",
+            "schedule": relay_interval,
+            "options": {
+                "expires": max(int(relay_interval), 1) * 2,
+                "queue": QUEUE_B26_P2_RELAY,
+                "routing_key": f"{QUEUE_B26_P2_RELAY}.task",
+            },
+        }
     if os.getenv("SKELDIR_B25_DISABLE_TRUST_ISSUANCE_RECONCILER_JOB") != "1":
         trust_interval = _positive_int_env(
             "B25_TRUST_ISSUANCE_RECONCILE_INTERVAL_SECONDS", 60

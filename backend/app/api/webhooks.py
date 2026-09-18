@@ -636,6 +636,12 @@ def _schedule_downstream_tasks(
                 "session_id": session_id,
             },
         )
+        # Corrective IV: a faulted publish poisons its pooled producer
+        # (kombu never closes it); drop pooled broker state so the next
+        # publish rebuilds instead of reusing the poisoned session.
+        from app.celery_app import reset_broker_pools_after_fault  # noqa: PLC0415
+
+        reset_broker_pools_after_fault(reason="ingestion_followup_publish")
 
 
 async def _redrive_pending_dispatch_for_ingress(
@@ -708,6 +714,9 @@ async def _redrive_pending_dispatch_for_ingress(
                     "error": str(exc)[:500],
                 },
             )
+            from app.celery_app import reset_broker_pools_after_fault  # noqa: PLC0415
+
+            reset_broker_pools_after_fault(reason="redrive_publish")
             return
         async with get_session(tenant_id=tenant_id) as mark:
             await mark.execute(
@@ -975,6 +984,9 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
                 "error": str(exc)[:500],
             },
         )
+        from app.celery_app import reset_broker_pools_after_fault  # noqa: PLC0415
+
+        reset_broker_pools_after_fault(reason="immediate_publish")
         return
     # Best-effort immediate mark; a crash here still leaves the outbox
     # pending for the relay, and duplicate delivery reuses the same task_id.

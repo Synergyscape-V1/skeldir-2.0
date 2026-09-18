@@ -162,6 +162,76 @@ CONTROLS: tuple[tuple[str, str, str], ...] = (
         "p2_corrective_iii_conduction_absent",
         "alternate-primitive",
     ),
+    (
+        "p2_worker_custody_remerge",
+        "p2_corrective_iv_worker_custody_not_split",
+        "same-primitive",
+    ),
+    (
+        "p2_worker_reads_bayesian_dsn",
+        "p2_corrective_iv_worker_reads_bayesian_dsn",
+        "alternate-primitive",
+    ),
+    (
+        "p2_relay_role_removal",
+        "p2_corrective_iv_relay_role_unknown",
+        "same-primitive",
+    ),
+    (
+        "p2_beat_relay_entry_removal",
+        "p2_corrective_iv_recovery_motor_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_conducted_mark_removal",
+        "p2_corrective_iv_conducted_law_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_outbox_fk_removal",
+        "p2_corrective_iv_migration_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_source_sha_rebinding",
+        "p2_corrective_iv_source_sha_bound_in_identity",
+        "alternate-primitive",
+    ),
+    (
+        "p2_identity_version_rollback",
+        "p2_corrective_iv_identity_not_v3",
+        "same-primitive",
+    ),
+    (
+        "p2_sweeper_lock_removal",
+        "p2_corrective_iv_sweeper_law_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_attempts_guard_removal",
+        "p2_corrective_iv_migration_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_null_window_exception_restore",
+        "p2_corrective_iv_null_window_hole_survives",
+        "same-primitive",
+    ),
+    (
+        "p2_bootstrap_grant_removal",
+        "p2_corrective_iv_bootstrap_companion_absent",
+        "same-primitive",
+    ),
+    (
+        "p2_beat_healer_removal",
+        "p2_corrective_iv_beat_healer_not_wired",
+        "alternate-primitive",
+    ),
+    (
+        "p2_pool_reset_removal",
+        "p2_corrective_iv_pool_reset_absent",
+        "alternate-primitive",
+    ),
 )
 
 
@@ -191,7 +261,16 @@ TRACKED_DEFECT_FILES = (
     ROOT / "backend/app/api/webhooks.py",
     ROOT / "backend/app/tasks/revenue_verification.py",
     ROOT / "backend/app/tasks/b26_p2_relay.py",
+    ROOT / "backend/app/tasks/bayesian.py",
+    ROOT / "backend/app/tasks/beat_schedule.py",
+    ROOT / "backend/app/celery_app.py",
+    ROOT / "backend/app/celery_beat.py",
     ROOT / "Procfile",
+    ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202609180001_b26_p2_corrective_iv_deployment_equivalence.py"
+    ),
+    ROOT / "db/schema/canonical_authority.sql",
 )
 
 

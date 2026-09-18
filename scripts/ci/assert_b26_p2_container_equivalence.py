@@ -65,8 +65,10 @@ report["corrective_ii_law_ok"] = (
     and document.get("window_authority")
     == "dispatch_bound_ingress_event_day_half_open_utc"
     and document.get("identity_law")
-    == "semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels"
-    and document.get("identity_version") == "b2.6-p2-scope-identity-v2"
+    == "semantically_complete_scope_identity_v3_binds_provider_rail_currency_policy_semantic_sha_money_labels_source_bytes_excluded"
+    and document.get("identity_version") == "b2.6-p2-scope-identity-v3"
+    and document.get("provenance_law")
+    == "policy_source_bytes_are_provenance_evidence_never_scope_semantics"
     and document.get("delivery_law")
     == "acceptance_acquires_durable_recoverable_execution_intent_atomically"
 )
@@ -183,8 +185,37 @@ report["corrective_iii_wiring_ok"] = (
     and "INSERT INTO public.b26_p2_task_authority_directory (" in webhook_source
     and "relay_b26_p2_pending_dispatches"
     in open("app/tasks/b26_p2_relay.py", encoding="utf-8").read()
-    and conduction.SCOPE_IDENTITY_VERSION == "b2.6-p2-scope-identity-v2"
+    and conduction.SCOPE_IDENTITY_VERSION == "b2.6-p2-scope-identity-v3"
     and "item.classification.provider" in open(
+        "app/finance_reconciliation/candidate_conduction.py", encoding="utf-8"
+    ).read()
+)
+from app.tasks.beat_schedule import build_beat_schedule
+_beat = build_beat_schedule()
+report["corrective_iv_recovery_motor_ok"] = (
+    "b26-p2-relay-sweep" in _beat
+    and _beat["b26-p2-relay-sweep"]["task"]
+    == "app.tasks.b26_p2_relay.relay_b26_p2_pending_dispatches"
+    and _beat["b26-p2-relay-sweep"]["options"]["queue"] == "b26_p2_relay"
+)
+report["corrective_iv_relay_role_ok"] = (
+    "if role == _BAYESIAN_WORKER_ROLE_P2_RELAY:"
+    in open("app/tasks/bayesian.py", encoding="utf-8").read()
+)
+report["corrective_iv_conducted_ok"] = (
+    "_mark_dispatch_conducted(" in task_source
+    and "delivery_state = 'conducted'" in task_source
+)
+report["corrective_iv_beat_healer_ok"] = (
+    "class HealingBeatScheduler" in open("app/celery_beat.py", encoding="utf-8").read()
+    and 'beat_scheduler = "app.celery_beat:HealingBeatScheduler"'
+    in open("app/celery_app.py", encoding="utf-8").read()
+    and "def reset_broker_pools_after_fault" in open("app/celery_app.py", encoding="utf-8").read()
+    and 'reset_broker_pools_after_fault(reason="relay_publish")'
+    in open("app/tasks/b26_p2_relay.py", encoding="utf-8").read()
+)
+report["corrective_iv_semantic_identity_ok"] = (
+    'str(policy_source_sha256 or "")' not in open(
         "app/finance_reconciliation/candidate_conduction.py", encoding="utf-8"
     ).read()
 )

@@ -700,8 +700,18 @@ def validate_worker_topology(
     for prefix in ("worker:", "worker_b23:", "web:"):
         line = next((ln for ln in proc_body.splitlines() if ln.startswith(prefix)), "")
         _require(bool(line), f"procfile_missing_process:{prefix}")
+        # B2.6-P2 Corrective IV formal advancement of the C7 custody rule.
+        # C7 exists so the bayesian fit-execution credential is never shared
+        # with any other workload. The original substring match also matched
+        # B23_WORKER_DATABASE_URL, the deliberately DISTINCT B2.3 worker
+        # credential (the B2.3 consumer must not inherit the API DSN, and it
+        # must not read the bayesian credential either). The rule is now a
+        # whole-token match on the bayesian variables only: a non-bayesian
+        # process reading $WORKER_DATABASE_URL / $E2E_WORKER_DATABASE_URL
+        # still fails closed; reading $B23_WORKER_DATABASE_URL is the
+        # governed B2.3 split, verified by the P2 custody validator.
         _require(
-            "WORKER_DATABASE_URL" not in line,
+            re.search(r"\$[{]?(?:E2E_)?WORKER_DATABASE_URL", line) is None,
             f"procfile_non_bayesian_process_reads_worker_dsn:{prefix}",
         )
 
@@ -1305,6 +1315,23 @@ def run_negative_controls(positive_controls: list[str] | None = None) -> list[st
             lambda: validate_proof_taxonomy(
                 workflow=_read(WORKFLOW).replace(
                     "      - 'scripts/ci/validate_b25_p13_c7_closure.py'\n", "", 1
+                )
+            ),
+        )
+    )
+    # NC-C7-S22 -- B2.6-P2 Corrective IV advancement guard: the B2.3 worker
+    # reading the BAYESIAN credential ($WORKER_DATABASE_URL) must still fail
+    # closed even though the distinct $B23_WORKER_DATABASE_URL is now lawful
+    # on its Procfile line. This proves the token-match advancement did not
+    # reopen the credential-sharing class C7 exists to eliminate.
+    controls.append(
+        _must_fail(
+            "NC-C7-S22",
+            lambda: validate_worker_topology(
+                procfile=procfile.replace(
+                    "DATABASE_URL=$B23_WORKER_DATABASE_URL",
+                    "DATABASE_URL=$WORKER_DATABASE_URL",
+                    1,
                 )
             ),
         )

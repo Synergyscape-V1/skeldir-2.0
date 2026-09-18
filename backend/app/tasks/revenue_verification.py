@@ -261,6 +261,15 @@ def execute_b23_batch_match_engine_task(
             )
 
     authority = run_in_worker_loop(_admit())
+
+    async def _capture_worker_principal() -> str:
+        from app.db.session import B23AsyncSessionLocal as _B23ProbeSession  # noqa: PLC0415
+
+        async with _B23ProbeSession() as _probe:
+            row = await _probe.execute(text("SELECT current_user AS u"))
+            return str(row.mappings().one()["u"])
+
+    worker_principal = run_in_worker_loop(_capture_worker_principal())
     result = run_in_worker_loop(
         execute_b23_batch_match_engine(
             tenant_id=authority.tenant_id,
@@ -294,11 +303,27 @@ def execute_b23_batch_match_engine_task(
             "dispatch_id": p2_scope.get("dispatch_id"),
         },
     )
+    # Corrective IV conducted marking: broker publication success must never
+    # be mistaken for deterministic B2.3 -> P2 conduction. Only the worker
+    # that actually conducted the work (admitted authority + B2.3 verdicts
+    # + governed P2 scope, all above) advances the delivery state to
+    # conducted, under its least-privilege column-scoped UPDATE. The mark
+    # is operational state, never financial truth. A crash before this mark
+    # leaves published state for at-least-once redelivery (idempotent by
+    # stable task identity); terminal task failure stays observable as
+    # published + worker_failed_jobs DLQ FAILURE + result-backend FAILURE.
+    run_in_worker_loop(
+        _mark_dispatch_conducted(
+            tenant_id=authority.tenant_id,
+            broker_task_id=str(broker_task_id) if broker_task_id else None,
+        )
+    )
     return {
         "tenant_id": tenant_id,
         "task_name": self.name,
         "queue": QUEUE_B23_MATCH_ENGINE,
         "db_session_pool": "b23",
+        "db_worker_principal": worker_principal,
         "processed_count": result.processed_count,
         "chunk_count": result.chunk_count,
         "chunk_size": result.chunk_size,
@@ -306,3 +331,37 @@ def execute_b23_batch_match_engine_task(
         "correlation_id": correlation_id,
         "p2_scope": p2_scope,
     }
+
+
+async def _mark_dispatch_conducted(
+    *, tenant_id: UUID, broker_task_id: str | None
+) -> None:
+    """Advance one execution identity to conducted after real conduction.
+
+    Runs on the worker pool under the ADMITTED tenant (governed session
+    binds the tenant GUC, so RLS observes the row; worker principal,
+    column-scoped UPDATE). The trigger refuses any illegal transition, so
+    this advances exactly published rows for this task identity and is a
+    no-op otherwise.
+    """
+    if not broker_task_id:
+        return
+    from app.db.session import get_b23_session  # noqa: PLC0415
+
+    async with get_b23_session(tenant_id) as session:
+        await session.execute(
+            text(
+                "UPDATE public.b23_match_task_dispatches"
+                " SET delivery_state = 'conducted', updated_at = now()"
+                " WHERE task_id = :task_id AND delivery_state = 'published'"
+            ),
+            {"task_id": broker_task_id},
+        )
+        await session.execute(
+            text(
+                "UPDATE public.b26_p2_execution_outbox"
+                " SET state = 'conducted', updated_at = now()"
+                " WHERE dispatch_task_id = :task_id AND state = 'published'"
+            ),
+            {"task_id": broker_task_id},
+        )

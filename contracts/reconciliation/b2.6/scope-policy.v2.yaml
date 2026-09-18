@@ -128,9 +128,19 @@ conduction_law: pending_publish_recovers_via_deployed_relay_stable_task_identity
 window_authority: dispatch_bound_ingress_event_day_half_open_utc
 window_oracle_law: independent_normative_oracle_pins_utc_day_half_open_without_importing_production_quantizer
 replay_law: same_evidence_same_policy_version_same_identity_and_disposition
-identity_law: semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels
-identity_version: b2.6-p2-scope-identity-v2
-identity_material: tenant_window_policy_version_policy_source_sha_policy_semantic_sha_money_labels_sorted_provider_rail_currency_disposition_reason_amount
+# Corrective IV semantic-vs-provenance law (H-IV-H01/H02): the policy file's
+# raw bytes (comments, whitespace, key order) are artifact provenance, never
+# scope semantics. scope_identity binds the semantic SHA only; the source SHA
+# is still computed and emitted on every scope result as audit provenance,
+# but it cannot move an identity. A comment-only policy edit therefore
+# preserves every scope identity; a semantic edit changes it (and still
+# requires a version bump per evolution_law).
+identity_law: semantically_complete_scope_identity_v3_binds_provider_rail_currency_policy_semantic_sha_money_labels_source_bytes_excluded
+identity_version: b2.6-p2-scope-identity-v3
+identity_material: tenant_window_policy_version_policy_semantic_sha_money_labels_sorted_provider_rail_currency_disposition_reason_amount
+provenance_law: policy_source_bytes_are_provenance_evidence_never_scope_semantics
+identity_provenance_separation: scope_identity_binds_semantic_sha_only_source_sha_emitted_as_provenance
+corrective_iv_law: deployment_plane_equivalence_by_physics_not_convention
 completeness_law: exactly_one_tenant_policy_no_function_no_extra_predicate_no_rule_view_bypass
 rls_strictness: governed_policy_singleton_restrictive_refused_function_call_refused_dependency_closure_pinned
 evolution_law: alias_rail_currency_window_meaning_change_requires_version_bump
@@ -142,4 +152,4 @@ corrective_iii_law: false_canonicality_closed_by_physics_not_convention
 # Corrective III repin: v2 adds admission/delivery/identity/oracle laws and
 # supersession (v1 history preserved, never rewritten).
 module: app.finance_reconciliation.scope_authority
-module_ast_sha256: 7165ec0a89b70d1ef8566fe4d47d35954445a0f0b797ee8f4b56ee6a2d45062a
+module_ast_sha256: 864d0d4b3816c5dc170a9c2f7fa4e4f710353c21d292f7b71e6de22a50468cca

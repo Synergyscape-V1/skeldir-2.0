@@ -293,12 +293,28 @@ def _validate_scope_policy(document: Mapping[str, Any]) -> None:
         )
         _require(
             document.get("identity_law")
-            == "semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels",
+            == "semantically_complete_scope_identity_v3_binds_provider_rail_currency_policy_semantic_sha_money_labels_source_bytes_excluded",
             "b26_p2_identity_law_drift",
         )
         _require(
-            document.get("identity_version") == "b2.6-p2-scope-identity-v2",
+            document.get("identity_version") == "b2.6-p2-scope-identity-v3",
             "b26_p2_identity_version_drift",
+        )
+        _require(
+            document.get("identity_material")
+            == "tenant_window_policy_version_policy_semantic_sha_money_labels_"
+            "sorted_provider_rail_currency_disposition_reason_amount",
+            "b26_p2_identity_material_drift",
+        )
+        _require(
+            document.get("provenance_law")
+            == "policy_source_bytes_are_provenance_evidence_never_scope_semantics",
+            "b26_p2_provenance_law_drift",
+        )
+        _require(
+            document.get("identity_provenance_separation")
+            == "scope_identity_binds_semantic_sha_only_source_sha_emitted_as_provenance",
+            "b26_p2_identity_provenance_separation_drift",
         )
         _require(
             document.get("window_oracle_law")

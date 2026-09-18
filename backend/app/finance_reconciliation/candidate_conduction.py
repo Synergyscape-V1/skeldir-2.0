@@ -518,7 +518,7 @@ async def _independent_population_identities(
     return tuple(sorted(str(record["id"]) for record in reread))
 
 
-SCOPE_IDENTITY_VERSION = "b2.6-p2-scope-identity-v2"
+SCOPE_IDENTITY_VERSION = "b2.6-p2-scope-identity-v3"
 
 # Default-include law (Corrective III, H-III-F01..F07): any field capable of
 # changing canonical P2 meaning is identity-bearing unless the contract
@@ -536,7 +536,6 @@ def _compute_scope_identity(
     window_end: datetime,
     scope_policy_version: str,
     scoped: tuple[ScopedCandidate, ...],
-    policy_source_sha256: str = "",
     policy_semantic_sha256: str = "",
     money_semantics: str = "",
     money_authority: str = "",
@@ -551,11 +550,15 @@ def _compute_scope_identity(
     while a supported provider A -> supported provider B, a rail change, or
     a currency semantic change changes the digest even when disposition,
     reason, amount, and source UUID are unchanged). The top-level material
-    binds the governing semantic policy identity (source + semantic SHA,
-    not the human version string alone) and the money-semantic labels, so
-    a policy semantic change or a money-label change changes the identity
-    even when every numeric aggregate is unchanged. The multiset is sorted
-    so replay is stable and ordering-only changes preserve identity.
+    binds the governing SEMANTIC policy identity (semantic SHA, not the
+    human version string alone and never the policy file's raw source
+    bytes) and the money-semantic labels, so a policy semantic change or
+    a money-label change changes the identity even when every numeric
+    aggregate is unchanged, while a comment/whitespace-only policy edit
+    preserves it (Corrective IV semantic-vs-provenance law). The source
+    SHA remains emitted on every scope result as audit provenance; it is
+    deliberately not identity-bearing. The multiset is sorted so replay is
+    stable and ordering-only changes preserve identity.
     """
     lines = sorted(
         f"{item.ingress_id}:{item.classification.provider}:"
@@ -571,7 +574,6 @@ def _compute_scope_identity(
             window_start.isoformat(),
             window_end.isoformat(),
             str(scope_policy_version),
-            str(policy_source_sha256 or ""),
             str(policy_semantic_sha256 or ""),
             str(money_semantics or P2_MONEY_SEMANTICS),
             str(money_authority or P2_MONEY_AUTHORITY),
@@ -704,7 +706,9 @@ async def derive_governed_scope(
         window_end=end,
         scope_policy_version=B26_P2_SCOPE_POLICY_VERSION,
         scoped=scoped,
-        policy_source_sha256=identity.source_sha256,
+        # Corrective IV: the source SHA is provenance (still stored on the
+        # result below), never identity material. Only the semantic SHA
+        # binds the digest, so nonsemantic policy bytes cannot drift scope.
         policy_semantic_sha256=identity.semantic_sha256,
         money_semantics=P2_MONEY_SEMANTICS,
         money_authority=P2_MONEY_AUTHORITY,

@@ -246,7 +246,7 @@ def _migration_modules(migrations_root: Path | None = None):
 #: The single Alembic revision this build's code requires. Asserted equal to the
 #: migration graph's head by a merge-blocking test; never hand-maintained
 #: independently of the chain.
-REQUIRED_SCHEMA_REVISION = "202609170001"
+REQUIRED_SCHEMA_REVISION = "202609180001"
 
 #: Every revision a process running this build may serve traffic against.
 #: Exactly one today. Widening this set is a deliberate, reviewable act that

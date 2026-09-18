@@ -92,6 +92,12 @@ _BAYESIAN_WORKER_ROLE_ENV = "SKELDIR_CELERY_WORKER_ROLE"
 _BAYESIAN_WORKER_ROLE_BAYESIAN = "bayesian"
 _BAYESIAN_WORKER_ROLE_PUBLISHER = "bayesian_publisher"
 _BAYESIAN_WORKER_ROLE_NON_BAYESIAN = "non_bayesian"
+# B2.6-P2 Corrective IV: the P2 relay worker is a production process with
+# its own Procfile line and role value. It must boot as a non-bayesian
+# process (it never executes fits); without this admission the exact
+# shipped relay command crashes at import with
+# bayesian_worker_role_unknown and recovery has no motor.
+_BAYESIAN_WORKER_ROLE_P2_RELAY = "b26_p2_relay"
 REQUIRED_BAYESIAN_TASK_NAMES = frozenset(
     {
         "app.tasks.bayesian.run_mcmc_inference",
@@ -142,6 +148,10 @@ def _bayesian_tasks_registered_for_process() -> bool:
     if role == _BAYESIAN_WORKER_ROLE_PUBLISHER:
         if explicit is True:
             raise RuntimeError("publisher_worker_bayesian_registration_contradiction")
+        return False
+    if role == _BAYESIAN_WORKER_ROLE_P2_RELAY:
+        if explicit is True:
+            raise RuntimeError("p2_relay_worker_bayesian_registration_contradiction")
         return False
     if role:
         raise RuntimeError("bayesian_worker_role_unknown")

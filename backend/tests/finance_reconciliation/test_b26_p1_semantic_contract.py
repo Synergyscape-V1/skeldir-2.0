@@ -546,10 +546,13 @@ def test_b26_p1_migration_graph_is_alembic_native() -> None:
 
     # P1 observes exactly Alembic's configured universe: triple-quoted
     # legal syntax is present, excluded-directory files are absent.
-    # Corrective III advances the single head 202609072001 -> 202609170001
-    # (durable outbox + authority physics); ancestry remains linear.
+    # Corrective IV advances the single head 202609170001 -> 202609180001
+    # (deployment-plane equivalence: FK coherence, conducted law, attempts
+    # monotonicity, strict window immutability, worker delivery grants);
+    # ancestry remains linear.
     assert set(graph) == native_revisions
     assert "202512151410" in graph
     assert "202511171000" not in graph
-    assert heads == set(script.get_heads()) == {"202609170001"}
+    assert heads == set(script.get_heads()) == {"202609180001"}
     assert "202609072001" in graph
+    assert "202609170001" in graph

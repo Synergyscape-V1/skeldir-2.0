@@ -149,33 +149,68 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      - name: Provision topology database
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
-            --database-name skeldir_b26_p2_topology
-          MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_topology \
-          DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_topology \
-            python -m alembic upgrade head
-
-      - name: Prove production-topology conduction
-        env:
-          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p2_topology
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_topology
+      - name: Prove deployed production topology (compiled images, exact commands)
+        # B2.6-P2 Corrective IV: the proof boots the EXACT compiled API +
+        # B2.3 worker + relay + scheduler topology with production commands
+        # and production database principals, sends a REAL signed webhook
+        # from outside the API process, proves natural broker-outage
+        # recovery (no manual enqueue), and runs deployment-level
+        # falsifiers (worker miswire, missing scheduler, wrong queue,
+        # split-brain/orphan writes). Host imports alone receive no credit.
         run: |
           python scripts/ci/prove_b26_p2_production_topology.py \
             --evidence-out artifacts/b26_p2/topology/production-topology.json
 
-      - name: Prove dead-edge refusal is observable
-        env:
-          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p2_topology
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_topology
-          SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH: "1"
+      - name: Prove migration/bootstrap authority equivalence
         run: |
-          if python scripts/ci/prove_b26_p2_production_topology.py; then
-            echo "dead-edge did not refuse"
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database-name skeldir_b26_p2_boot_a
+          MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_boot_a \
+          DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p2_boot_a \
+            python -m alembic upgrade head
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database-name skeldir_b26_p2_boot_b
+          psql --version || sudo apt-get install -y postgresql-client
+          PGPASSWORD=migration_owner psql -U migration_owner -h 127.0.0.1 \
+            -d skeldir_b26_p2_boot_b -v ON_ERROR_STOP=1 \
+            -f db/schema/canonical_schema.sql
+          PGPASSWORD=migration_owner psql -U migration_owner -h 127.0.0.1 \
+            -d skeldir_b26_p2_boot_b -v ON_ERROR_STOP=1 \
+            -f db/schema/canonical_authority.sql
+          python scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py \
+            --migration-built-dsn postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b26_p2_boot_a \
+            --bootstrap-dsn postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b26_p2_boot_b \
+            --evidence-out artifacts/b26_p2/topology/bootstrap-equivalence.json
+
+      - name: Prove bootstrap equivalence is non-vacuous (grant removal REDs)
+        run: |
+          set -euo pipefail
+          pristine_hash="$(sha256sum db/schema/canonical_authority.sql | awk '{print $1}')"
+          cp db/schema/canonical_authority.sql "$RUNNER_TEMP/b26-p2-authority.sql"
+          python scripts/ci/_b26_p2_controlled_defect.py p2_bootstrap_public_execute_restore
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database-name skeldir_b26_p2_boot_mut
+          PGPASSWORD=migration_owner psql -U migration_owner -h 127.0.0.1 \
+            -d skeldir_b26_p2_boot_mut -v ON_ERROR_STOP=1 \
+            -f db/schema/canonical_schema.sql
+          PGPASSWORD=migration_owner psql -U migration_owner -h 127.0.0.1 \
+            -d skeldir_b26_p2_boot_mut -v ON_ERROR_STOP=1 \
+            -f db/schema/canonical_authority.sql
+          if python scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py \
+            --migration-built-dsn postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b26_p2_boot_a \
+            --bootstrap-dsn postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b26_p2_boot_mut; then
+            echo "bootstrap grant removal did not turn red"
             exit 1
           fi
+          cp "$RUNNER_TEMP/b26-p2-authority.sql" db/schema/canonical_authority.sql
+          test "$(sha256sum db/schema/canonical_authority.sql | awk '{print $1}')" = "$pristine_hash"
+          python scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py \
+            --migration-built-dsn postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b26_p2_boot_a \
+            --bootstrap-dsn postgresql://postgres:postgres@127.0.0.1:5432/skeldir_b26_p2_boot_b
+          git diff --exit-code -- db/schema/canonical_authority.sql
 
       - name: Upload B2.6-P2 topology evidence
         uses: actions/upload-artifact@v4
