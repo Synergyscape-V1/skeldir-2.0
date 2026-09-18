@@ -1025,14 +1025,29 @@ def reset_broker_pools_after_fault(*, reason: str) -> None:
 
     Resetting all pools drops the poisoned producers/connections; garbage
     collection then returns their engine-pool connections with rollback.
-    Runs only on fault paths (rare), never on the hot path. Failures here
-    must never raise: worst case is one more failed publish, never a new
-    crash mode.
+    Crucially, the app-held producer pool reference must ALSO be dropped:
+    kombu marks reset pools closed and `acquire` on the stale object
+    raises 'Acquire on closed pool' forever (proven live: without the
+    drop, the first reset converts a transient fault into a permanent
+    publish outage for the process). Dropping forces lazy recreation of a
+    fresh pool on next publish. Runs only on fault paths (rare), never on
+    the hot path. Failures here must never raise: worst case is one more
+    failed publish, never a new crash mode.
     """
     try:
         from kombu import pools as _pools  # noqa: PLC0415
 
         _pools.reset()
+        try:
+            _amqp = celery_app.__dict__.get("amqp")
+            if _amqp is not None:
+                _amqp.__dict__.pop("_producer_pool", None)
+        except Exception:
+            logger.warning(
+                "celery_broker_pool_ref_drop_failed",
+                extra={"event_type": "celery.broker.heal", "reason": reason},
+                exc_info=True,
+            )
         logger.warning(
             "celery_broker_pools_reset_after_fault",
             extra={"event_type": "celery.broker.heal", "reason": reason},

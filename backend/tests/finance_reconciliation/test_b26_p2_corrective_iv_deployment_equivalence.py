@@ -673,6 +673,29 @@ def test_iv_pool_reset_never_raises(monkeypatch) -> None:
     reset_broker_pools_after_fault(reason="unit-test")
 
 
+def test_iv_pool_reset_heals_send_path(monkeypatch) -> None:
+    """pools.reset() alone suicides the app-held pool (proven live: every
+    later publish raises 'Acquire on closed pool'). The helper must ALSO
+    drop the app-held reference so the next publish recreates fresh."""
+    import os
+
+    os.environ["CELERY_BROKER_URL"] = "memory://"
+    os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
+    from app.celery_app import celery_app, reset_broker_pools_after_fault
+
+    first = celery_app.send_task(
+        "app.tasks.b26_p2_relay.relay_b26_p2_pending_dispatches",
+        queue="b26_p2_relay",
+    ).id
+    assert first
+    reset_broker_pools_after_fault(reason="unit-test")
+    second = celery_app.send_task(
+        "app.tasks.b26_p2_relay.relay_b26_p2_pending_dispatches",
+        queue="b26_p2_relay",
+    ).id
+    assert second and second != first
+
+
 def test_iv_require_dsn_guard_fails_closed() -> None:
     import subprocess
     import sys
