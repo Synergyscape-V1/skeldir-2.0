@@ -438,6 +438,21 @@ def _seed_worker_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> No
                     norm_ref,
                 ),
             )
+            # Stable identity (Corrective IV H-IV-D05): on conflict the
+            # first task_id wins; the winner is re-read and reused for the
+            # outbox/directory rows. Inserting the loser's task_id into the
+            # child tables would mint parentless rows (an orphan directory
+            # row admits B2.3 without a dispatch row) that the Corrective-IV
+            # foreign keys refuse -- and that older databases require the
+            # upgrade quarantine to absorb.
+            cur.execute(
+                "SELECT task_id FROM public.b23_match_task_dispatches"
+                " WHERE tenant_id = %s AND webhook_ingress_identity_id = %s",
+                (str(tenant_id), str(ingress_id)),
+            )
+            winner = cur.fetchone()
+            assert winner is not None, "seed dispatch missing after upsert"
+            task_id = str(winner[0])
             cur.execute(
                 "INSERT INTO public.b26_p2_execution_outbox (tenant_id,"
                 " dispatch_task_id, webhook_ingress_identity_id, state,"

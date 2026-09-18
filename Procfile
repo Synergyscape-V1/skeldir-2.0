@@ -42,9 +42,10 @@ worker_b23: cd backend && DATABASE_URL=$B23_WORKER_DATABASE_URL B23_WORKER_DATAB
 # (inherits the API DATABASE_URL = app_user) because only the producer may
 # issue/mark delivery state; the B2.3 worker (app_worker) holds SELECT only.
 # Supervision (Corrective IV H-IV-B07): foreman-style managers (overmind,
-# honcho, foreman) restart crashed processes automatically; container
-# deployments use `restart: unless-stopped` (see docker-compose.local.yml).
-# This matters because a transient broker fault can kill a Celery process
+# honcho, foreman) restart crashed processes automatically; local
+# container deployments use `restart: unless-stopped` (see the local
+# compose manifest). This matters because a transient broker fault can
+# kill a Celery process
 # and the recovery motor must come back without human action. (A faulted
 # broker session no longer wedges the scheduler even without a restart:
 # the HealingBeatScheduler drops poisoned broker state on apply failure;

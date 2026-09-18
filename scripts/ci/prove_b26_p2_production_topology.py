@@ -1111,10 +1111,11 @@ def _collect_diagnostics() -> dict:
         ]
         try:
             diag["pending_detail"] = [
-                (str(r[0])[:8], str(r[1]), str(r[2]), str(r[3]))
+                (str(r[0])[:8], str(r[1]), str(r[2]), str(r[3]), str(r[4])[:160])
                 for r in _query(
                     "SELECT d.task_id, d.delivery_state, d.publish_attempts,"
-                    " o.next_retry_at FROM public.b23_match_task_dispatches AS d"
+                    " o.next_retry_at, o.last_publish_error"
+                    " FROM public.b23_match_task_dispatches AS d"
                     " JOIN public.b26_p2_execution_outbox AS o"
                     " ON o.dispatch_task_id = d.task_id"
                     " WHERE d.delivery_state = 'pending_publish'"

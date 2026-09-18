@@ -996,6 +996,27 @@ def _check_corrective_iv_law(violations: list[str], details: dict[str, Any]) -> 
     # downgrade path legitimately restores the old trigger body.
     if "AND OLD.window_start IS NOT NULL" in upgrade_source:
         violations.append("p2_corrective_iv_null_window_hole_survives")
+    # Orphan quarantine: the upgrade must delete parentless outbox and
+    # directory rows before adding the coherence foreign keys, or both a
+    # fresh upgrade on a dirty database and a downgrade/reupgrade
+    # reversibility cycle fail closed on legacy debris.
+    for required in (
+        "DELETE FROM public.b26_p2_execution_outbox AS o",
+        "DELETE FROM public.b26_p2_task_authority_directory AS dir",
+    ):
+        if required not in upgrade_source:
+            violations.append(
+                f"p2_corrective_iv_orphan_quarantine_absent:{required}"
+            )
+    # Admission binding (Gate 6, structural): the GUC-independent
+    # admission resolver must join the dispatch table through FORCE RLS
+    # (function-local row_security off, exact task predicate), or a
+    # directory-only artifact could authorize B2.3 and the resolver would
+    # go silently blind for lawful workers.
+    if "JOIN public.b23_match_task_dispatches AS d" not in upgrade_source:
+        violations.append("p2_corrective_iv_resolver_dispatch_binding_absent")
+    if "SET row_security TO off" not in upgrade_source:
+        violations.append("p2_corrective_iv_resolver_row_security_absent")
     # Recovery motor: beat must schedule the relay sweep on its queue.
     beat_source = (BACKEND / "app/tasks/beat_schedule.py").read_text(encoding="utf-8")
     for required in (

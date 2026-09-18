@@ -232,6 +232,21 @@ CONTROLS: tuple[tuple[str, str, str], ...] = (
         "p2_corrective_iv_pool_reset_absent",
         "alternate-primitive",
     ),
+    (
+        "p2_orphan_quarantine_removal",
+        "p2_corrective_iv_orphan_quarantine_absent",
+        "same-primitive",
+    ),
+    (
+        "p2_resolver_dispatch_join_removal",
+        "p2_corrective_iv_resolver_dispatch_binding_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_resolver_row_security_removal",
+        "p2_corrective_iv_resolver_row_security_absent",
+        "alternate-primitive",
+    ),
 )
 
 

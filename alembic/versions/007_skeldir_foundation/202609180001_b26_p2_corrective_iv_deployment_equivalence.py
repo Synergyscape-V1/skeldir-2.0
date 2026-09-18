@@ -18,6 +18,26 @@ Database-physics changes (this migration):
   outbox rows, and cross-tenant outbox/directory bindings become
   physically unencodable. The sweeper JOIN can no longer silently drop a
   persisted orphan because no orphan can persist.
+- Orphan quarantine at upgrade: Corrective-III physics permitted
+  parentless outbox/directory rows (duplicate seeds that lost the unique
+  race under ON CONFLICT DO NOTHING without winner reuse, hand-minted
+  fixtures) and rows bound to a missing ingress. Foreign-key validation
+  at ADD time inspects every existing row, so without quarantine both a
+  fresh upgrade on a dirty database and a downgrade/reupgrade
+  reversibility cycle fail closed on legacy debris. The upgrade deletes
+  exactly the parentless rows (logged via NOTICE) before adding the
+  foreign keys: they can never lawfully conduct (the P2 tail refuses
+  without a dispatch row, and the admission resolver below requires a
+  dispatch join), while the authoritative trail (ingress, dispatch,
+  verdicts, DLQ) is untouched.
+- Admission binding (Gate 6, structural): the GUC-independent admission
+  resolver now joins the dispatch table, so a directory-only artifact
+  cannot authorize B2.3 even if foreign keys were ever dropped or a
+  superuser hand-inserted a row. The join reads through FORCE ROW LEVEL
+  SECURITY via a function-local row_security-off setting (exact task_id
+  predicate only -- the same bearer model as the directory lookup);
+  without it the resolver would go silently blind for every principal
+  including lawful workers.
 - Class C (published != conducted): delivery_state / outbox.state gain
   conducted. Lawful transitions only:
   pending_publish -> published -> conducted. conducted is terminal
@@ -90,6 +110,90 @@ def upgrade() -> None:
           AND (d.window_start IS NULL OR d.window_end IS NULL)
         """
     )
+    op.execute(
+        "ALTER TABLE public.b23_match_task_dispatches ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE ONLY public.b23_match_task_dispatches FORCE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.webhook_ingress_identities ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE ONLY public.webhook_ingress_identities FORCE ROW LEVEL SECURITY"
+    )
+
+    # 1b. Orphan quarantine BEFORE any foreign key is added. Foreign-key
+    # validation at ADD CONSTRAINT time inspects every existing row under
+    # the migrating principal, so parentless outbox/directory rows (legal
+    # under Corrective-III physics: duplicate seeds that lost the unique
+    # race, hand-minted fixtures) and rows bound to a missing ingress
+    # would fail both fresh upgrades on dirty databases and
+    # downgrade/reupgrade reversibility. Exactly the parentless rows are
+    # deleted and the counts are logged; the authoritative trail
+    # (ingress, dispatch, verdicts, DLQ) is untouched.
+    #
+    # RLS note: same trap as the backfill above -- the tables the deletes
+    # must see carry FORCE ROW LEVEL SECURITY (dispatch, ingress, outbox)
+    # and the migrating principal holds no tenant GUC, so the deletes run
+    # with enforcement transiently disabled. The restore below preserves
+    # each table's exact pre-IV enforcement state byte-identically (proven
+    # by the migrations-derived canonical drift gate): dispatch, ingress
+    # and outbox return to ENABLE + FORCE; the admission directory returns
+    # to RLS-DISABLED -- its GUC-independent readability is load-bearing
+    # for bare-session admission (Corrective-III design), so enabling RLS
+    # on it here would silently blind every lawful worker.
+    op.execute(
+        "ALTER TABLE public.b26_p2_execution_outbox DISABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.b26_p2_task_authority_directory DISABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.b23_match_task_dispatches DISABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.webhook_ingress_identities DISABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        """
+        DO $$
+        DECLARE
+            quarantined_outbox integer := 0;
+            quarantined_directory integer := 0;
+        BEGIN
+            DELETE FROM public.b26_p2_execution_outbox AS o
+            WHERE NOT EXISTS (
+                SELECT 1 FROM public.b23_match_task_dispatches AS d
+                WHERE d.task_id = o.dispatch_task_id
+            ) OR NOT EXISTS (
+                SELECT 1 FROM public.webhook_ingress_identities AS i
+                WHERE i.tenant_id = o.tenant_id
+                  AND i.id = o.webhook_ingress_identity_id
+            );
+            GET DIAGNOSTICS quarantined_outbox = ROW_COUNT;
+            DELETE FROM public.b26_p2_task_authority_directory AS dir
+            WHERE NOT EXISTS (
+                SELECT 1 FROM public.b23_match_task_dispatches AS d
+                WHERE d.task_id = dir.task_id
+            ) OR NOT EXISTS (
+                SELECT 1 FROM public.webhook_ingress_identities AS i
+                WHERE i.tenant_id = dir.tenant_id
+                  AND i.id = dir.webhook_ingress_identity_id
+            );
+            GET DIAGNOSTICS quarantined_directory = ROW_COUNT;
+            RAISE NOTICE 'b26_p2_corrective_iv_orphan_quarantine outbox_quarantined=% directory_quarantined=%',
+                quarantined_outbox, quarantined_directory;
+        END $$;
+        """
+    )
+    op.execute(
+        "ALTER TABLE public.b26_p2_execution_outbox ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE ONLY public.b26_p2_execution_outbox FORCE ROW LEVEL SECURITY"
+    )
+    # The admission directory stays RLS-disabled (pre-IV state preserved).
     op.execute(
         "ALTER TABLE public.b23_match_task_dispatches ENABLE ROW LEVEL SECURITY"
     )
@@ -197,6 +301,42 @@ def upgrade() -> None:
                     ON DELETE CASCADE;
             END IF;
         END $$;
+        """
+    )
+
+    # 3b. Admission binding (Gate 6, structural): the GUC-independent
+    # admission resolver joins the dispatch table, so a directory-only
+    # artifact cannot authorize B2.3 even if the foreign keys above were
+    # ever dropped or a superuser hand-inserted a row. The join reads
+    # through FORCE ROW LEVEL SECURITY via a function-local row_security
+    # setting switched off with an exact task_id predicate only (the
+    # same bearer model as the directory lookup); without it the resolver
+    # would go silently blind for every principal, lawful workers
+    # included. CREATE OR REPLACE preserves the migration_owner owner and
+    # the existing REVOKE/GRANT universe (owned by Corrective-III).
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text)
+        RETURNS TABLE (
+            tenant_id uuid,
+            webhook_ingress_identity_id uuid,
+            window_start timestamp with time zone,
+            window_end timestamp with time zone
+        )
+        LANGUAGE sql
+        SECURITY DEFINER
+        SET search_path TO 'public', 'pg_temp'
+        SET row_security TO off
+        AS $$
+            SELECT dir.tenant_id,
+                   dir.webhook_ingress_identity_id,
+                   dir.window_start,
+                   dir.window_end
+            FROM public.b26_p2_task_authority_directory AS dir
+            JOIN public.b23_match_task_dispatches AS d
+              ON d.task_id = dir.task_id
+            WHERE dir.task_id = p_task_id
+        $$;
         """
     )
 
@@ -397,51 +537,35 @@ def downgrade() -> None:
     op.execute(
         "ALTER TABLE public.b26_p2_execution_outbox DROP CONSTRAINT IF EXISTS fk_b26_p2_outbox_dispatch_task_identity"  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV coherence.
     )
-    # Restore the two-state vocabulary: conducted rows step back to
-    # published first so the narrowed CHECK admits every existing row.
-    op.execute(
-        """
-        UPDATE public.b23_match_task_dispatches
-        SET delivery_state = 'published'
-        WHERE delivery_state = 'conducted'
-        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
-    )
-    op.execute(
-        """
-        UPDATE public.b26_p2_execution_outbox
-        SET state = 'published'
-        WHERE state = 'conducted'
-        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
-    )
-    op.execute(
-        """
-        ALTER TABLE public.b23_match_task_dispatches
-            DROP CONSTRAINT IF EXISTS ck_b23_match_task_dispatches_delivery_state
-        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
-    )
-    op.execute(
-        """
-        ALTER TABLE public.b23_match_task_dispatches
-            ADD CONSTRAINT ck_b23_match_task_dispatches_delivery_state
-            CHECK (delivery_state IN ('pending_publish', 'published'))
-        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
-    )
-    op.execute(
-        """
-        ALTER TABLE public.b26_p2_execution_outbox
-            DROP CONSTRAINT IF EXISTS ck_b26_p2_outbox_state
-        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
-    )
-    op.execute(
-        """
-        ALTER TABLE public.b26_p2_execution_outbox
-            ADD CONSTRAINT ck_b26_p2_outbox_state
-            CHECK (state IN ('pending_publish', 'published'))
-        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
-    )
     # Restore the Corrective-III dispatch trigger (NULL-window exception +
-    # two-state transition law). Full removal stays owned by the
-    # Corrective-III downgrade.
+    # two-state transition law) and the Corrective-III directory-only
+    # admission resolver BEFORE the vocabulary step-down below. Ordering
+    # law: the step-down writes conducted -> published, which the
+    # Corrective-IV forward-only law forbids (conducted is terminal), so
+    # the permissive III law must govern the step-down writes. Full
+    # removal stays owned by the Corrective-III downgrade.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text)
+        RETURNS TABLE (
+            tenant_id uuid,
+            webhook_ingress_identity_id uuid,
+            window_start timestamp with time zone,
+            window_end timestamp with time zone
+        )
+        LANGUAGE sql
+        SECURITY DEFINER
+        SET search_path TO 'public', 'pg_temp'
+        AS $$
+            SELECT dir.tenant_id,
+                   dir.webhook_ingress_identity_id,
+                   dir.window_start,
+                   dir.window_end
+            FROM public.b26_p2_task_authority_directory AS dir
+            WHERE dir.task_id = p_task_id
+        $$;
+        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV admission binding.
+    )
     op.execute(
         """
         CREATE OR REPLACE FUNCTION public.b26_p2_enforce_dispatch_immutability()
@@ -502,6 +626,7 @@ def downgrade() -> None:
                 RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'
                     USING ERRCODE = '42501';
             END IF;
+            -- Lawful delivery transitions only: pending_publish -> published.
             IF OLD.delivery_state = 'published' AND NEW.delivery_state = 'pending_publish' THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_delivery_no_backward'
                     USING ERRCODE = '42501';
@@ -511,3 +636,71 @@ def downgrade() -> None:
         END $$;
         """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV trigger law.
     )
+    # Restore the two-state vocabulary: conducted rows step back to
+    # published first so the narrowed CHECK admits every existing row.
+    # RLS note: same trap as the upgrade backfill -- dispatch and outbox
+    # carry FORCE ROW LEVEL SECURITY and the migrating principal holds no
+    # tenant GUC, so a bare UPDATE would match zero rows silently and the
+    # narrowed CHECK below would then fail on the surviving conducted
+    # rows. Enforcement is transiently disabled and restored immediately.
+    op.execute(
+        "ALTER TABLE public.b23_match_task_dispatches DISABLE ROW LEVEL SECURITY"  # CI:DESTRUCTIVE_OK - reversible rollback RLS window for Corrective IV vocabulary step-down.
+    )
+    op.execute(
+        "ALTER TABLE public.b26_p2_execution_outbox DISABLE ROW LEVEL SECURITY"  # CI:DESTRUCTIVE_OK - reversible rollback RLS window for Corrective IV vocabulary step-down.
+    )
+    op.execute(
+        """
+        UPDATE public.b23_match_task_dispatches
+        SET delivery_state = 'published'
+        WHERE delivery_state = 'conducted'
+        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
+    )
+    op.execute(
+        """
+        UPDATE public.b26_p2_execution_outbox
+        SET state = 'published'
+        WHERE state = 'conducted'
+        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
+    )
+    op.execute(
+        "ALTER TABLE public.b23_match_task_dispatches ENABLE ROW LEVEL SECURITY"  # CI:DESTRUCTIVE_OK - reversible rollback RLS window for Corrective IV vocabulary step-down.
+    )
+    op.execute(
+        "ALTER TABLE ONLY public.b23_match_task_dispatches FORCE ROW LEVEL SECURITY"  # CI:DESTRUCTIVE_OK - reversible rollback RLS window for Corrective IV vocabulary step-down.
+    )
+    op.execute(
+        "ALTER TABLE public.b26_p2_execution_outbox ENABLE ROW LEVEL SECURITY"  # CI:DESTRUCTIVE_OK - reversible rollback RLS window for Corrective IV vocabulary step-down.
+    )
+    op.execute(
+        "ALTER TABLE ONLY public.b26_p2_execution_outbox FORCE ROW LEVEL SECURITY"  # CI:DESTRUCTIVE_OK - reversible rollback RLS window for Corrective IV vocabulary step-down.
+    )
+    op.execute(
+        """
+        ALTER TABLE public.b23_match_task_dispatches
+            DROP CONSTRAINT IF EXISTS ck_b23_match_task_dispatches_delivery_state
+        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
+    )
+    op.execute(
+        """
+        ALTER TABLE public.b23_match_task_dispatches
+            ADD CONSTRAINT ck_b23_match_task_dispatches_delivery_state
+            CHECK (delivery_state IN ('pending_publish', 'published'))
+        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
+    )
+    op.execute(
+        """
+        ALTER TABLE public.b26_p2_execution_outbox
+            DROP CONSTRAINT IF EXISTS ck_b26_p2_outbox_state
+        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
+    )
+    op.execute(
+        """
+        ALTER TABLE public.b26_p2_execution_outbox
+            ADD CONSTRAINT ck_b26_p2_outbox_state
+            CHECK (state IN ('pending_publish', 'published'))
+        """  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective IV delivery vocabulary.
+    )
+    # (Corrective-III trigger/resolver bodies are restored above, before
+    # the vocabulary step-down, so the step-down writes run under the
+    # permissive III law.)

@@ -772,3 +772,132 @@ async def test_iv_conducted_mark_advances_published() -> None:
             assert cur.fetchone()[0] == "conducted"
     finally:
         conn.close()
+
+
+def test_iv_duplicate_seed_reuses_winner_task() -> None:
+    """Duplicate issuance for one ingress keeps a single coherent triple.
+
+    Corrective IV H-IV-D05: on conflict the first task_id wins and the
+    winner is re-read for the outbox/directory rows. The pre-IV pattern
+    (ON CONFLICT DO NOTHING without winner reuse) minted parentless
+    outbox/directory rows for the loser -- the exact debris the upgrade
+    quarantine absorbs and the coherence foreign keys refuse.
+    """
+    ids = _seed_ingress("winner-reuse")
+    first_task = f"iv-winner-a-{uuid.uuid4().hex[:8]}"
+    loser_task = f"iv-winner-b-{uuid.uuid4().hex[:8]}"
+    _seed_dispatch(ids["tenant_id"], ids["ingress_id"], first_task)
+    import psycopg2
+
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            cur.execute(
+                "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
+                " webhook_ingress_identity_id, task_id, task_name, queue,"
+                " routing_key, correlation_id, provider,"
+                " provider_native_event_reference,"
+                " provider_native_commerce_reference,"
+                " normalized_commerce_reference_value, status,"
+                " delivery_state, publish_attempts, window_start, window_end)"
+                " VALUES (%s, %s, %s,"
+                " 'app.tasks.revenue_verification.execute_b23_batch_match_engine',"
+                " 'b23_match_engine', 'b23_match_engine.task', %s, 'stripe',"
+                " 'evt', 'ord', 'ord', 'dispatched', 'pending_publish', 0,"
+                " %s, %s)"
+                " ON CONFLICT (tenant_id, webhook_ingress_identity_id)"
+                " DO NOTHING",
+                (
+                    str(ids["tenant_id"]),
+                    str(ids["ingress_id"]),
+                    loser_task,
+                    str(uuid.uuid4()),
+                    DAY_START,
+                    DAY_END,
+                ),
+            )
+            cur.execute(
+                "SELECT task_id FROM public.b23_match_task_dispatches"
+                " WHERE tenant_id = %s AND webhook_ingress_identity_id = %s",
+                (str(ids["tenant_id"]), str(ids["ingress_id"])),
+            )
+            winner = str(cur.fetchone()[0])
+            assert winner == first_task
+            cur.execute(
+                "INSERT INTO public.b26_p2_execution_outbox (tenant_id,"
+                " dispatch_task_id, webhook_ingress_identity_id)"
+                " VALUES (%s, %s, %s)"
+                " ON CONFLICT (dispatch_task_id) DO NOTHING",
+                (str(ids["tenant_id"]), winner, str(ids["ingress_id"])),
+            )
+            cur.execute(
+                "INSERT INTO public.b26_p2_task_authority_directory (task_id,"
+                " tenant_id, webhook_ingress_identity_id, window_start,"
+                " window_end) VALUES (%s, %s, %s, %s, %s)"
+                " ON CONFLICT (task_id) DO NOTHING",
+                (
+                    winner,
+                    str(ids["tenant_id"]),
+                    str(ids["ingress_id"]),
+                    DAY_START,
+                    DAY_END,
+                ),
+            )
+            for table, column in (
+                ("b23_match_task_dispatches", "task_id"),
+                ("b26_p2_execution_outbox", "dispatch_task_id"),
+                ("b26_p2_task_authority_directory", "task_id"),
+            ):
+                cur.execute(
+                    f"SELECT {column} FROM public.{table}"
+                    " WHERE webhook_ingress_identity_id = %s",
+                    (str(ids["ingress_id"]),),
+                )
+                rows = cur.fetchall()
+                assert [str(row[0]) for row in rows] == [first_task]
+    finally:
+        conn.close()
+
+
+def test_iv_resolver_joins_dispatch_for_lawful_task() -> None:
+    """Admission resolver admits a lawful task via the dispatch join.
+
+    The resolver runs on a bare session as app_worker (no tenant GUC,
+    FORCE RLS applies): the join to the dispatch table only yields a row
+    because the function reads with row_security off. Removing either the
+    join or the row_security setting refuses every lawful admission here
+    (live falsifier for Gate 6 and for the RLS-blindness defect class),
+    while an unknown task still resolves to zero rows.
+    """
+    ids = _seed_ingress("resolver-join")
+    task_id = f"iv-resolver-{uuid.uuid4().hex[:8]}"
+    _seed_dispatch(ids["tenant_id"], ids["ingress_id"], task_id)
+    import psycopg2
+
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SET ROLE app_worker")
+            cur.execute("RESET app.current_tenant_id")
+            cur.execute(
+                "SELECT tenant_id FROM"
+                " public.b26_p2_resolve_dispatch_authority(%s)",
+                (task_id,),
+            )
+            row = cur.fetchone()
+            assert row is not None, "lawful task refused by admission resolver"
+            assert str(row[0]) == str(ids["tenant_id"])
+            cur.execute(
+                "SELECT count(*) FROM"
+                " public.b26_p2_resolve_dispatch_authority(%s)",
+                ("task-that-was-never-issued",),
+            )
+            assert cur.fetchone()[0] == 0
+    finally:
+        conn.close()

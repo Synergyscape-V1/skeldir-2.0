@@ -513,6 +513,35 @@ def p2_null_window_exception_restore() -> None:
     )
 
 
+def p2_orphan_quarantine_removal() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        "            DELETE FROM public.b26_p2_execution_outbox AS o\n",
+        "            -- NC-P2-QUARANTINE removed: parentless outbox rows survive upgrade\n",
+        defect="p2_orphan_quarantine_removal",
+    )
+
+
+def p2_resolver_dispatch_join_removal() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        "            FROM public.b26_p2_task_authority_directory AS dir\n"
+        "            JOIN public.b23_match_task_dispatches AS d\n"
+        "              ON d.task_id = dir.task_id\n",
+        "            FROM public.b26_p2_task_authority_directory AS dir  -- NC-P2-RESOLVER directory-only admission\n",
+        defect="p2_resolver_dispatch_join_removal",
+    )
+
+
+def p2_resolver_row_security_removal() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        "        SET row_security TO off\n",
+        "        -- NC-P2-ROWSEC removed: resolver goes blind under FORCE RLS\n",
+        defect="p2_resolver_row_security_removal",
+    )
+
+
 def p2_bootstrap_grant_removal() -> None:
     _replace_once(
         BOOTSTRAP_COMPANION,
@@ -598,6 +627,9 @@ APPLIERS = {
     "p2_attempts_guard_removal": p2_attempts_guard_removal,
     "p2_null_window_exception_restore": p2_null_window_exception_restore,
     "p2_bootstrap_grant_removal": p2_bootstrap_grant_removal,
+    "p2_orphan_quarantine_removal": p2_orphan_quarantine_removal,
+    "p2_resolver_dispatch_join_removal": p2_resolver_dispatch_join_removal,
+    "p2_resolver_row_security_removal": p2_resolver_row_security_removal,
     "p2_bootstrap_public_execute_restore": p2_bootstrap_public_execute_restore,
     "p2_beat_healer_removal": p2_beat_healer_removal,
     "p2_pool_reset_removal": p2_pool_reset_removal,

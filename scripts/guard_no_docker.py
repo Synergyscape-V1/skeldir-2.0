@@ -124,6 +124,12 @@ ALLOWED_DOCKER_PATHS = {
     # tree (now including the scope-policy file). Same reason as the P1 entry:
     # it checks the authorized substrate, it does not add one.
     Path("scripts/ci/validate_b26_p2_scope_authority.py"),
+    # B2.6-P2 Corrective IV's deployed-topology proof builds and boots the
+    # same already-authorized `backend/Dockerfile` image (API, B2.3 worker,
+    # relay, scheduler) so the required proof executes the deployed plane
+    # instead of host imports. Same reason as P13 C16/C19: it executes the
+    # authorized substrate, it does not add one.
+    Path("scripts/ci/prove_b26_p2_production_topology.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),
