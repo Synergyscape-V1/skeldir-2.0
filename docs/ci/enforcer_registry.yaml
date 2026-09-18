@@ -4432,6 +4432,34 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: b26-p2-bootstrap-authority-equivalence
+  path: scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: "Every supported database construction path (empty/predecessor migrations and canonical
+    bootstrap plus authority companion) yields the same P2 authority universe: table/column grants, routine
+    EXECUTE, RLS enforcement, policies, constraints, triggers, functions, and default privileges, with CHECK
+    predicates compared by TRUE/FALSE/UNKNOWN behavior rather than deparse text."
+  command: "python scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py --migration-built-dsn
+    $MIGRATION_BUILT_DSN --bootstrap-dsn $BOOTSTRAP_DSN"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: "B2.6-P2 Production Topology Proof"
+  local_reproduction_command: "python scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py --help"
+  expected_failure_meaning: "The bootstrap universe diverged in authority physics from the migration universe
+    (missing grant, PUBLIC EXECUTE, RLS/policies, constraints, triggers, or default privileges), so a database
+    built from the canonical bootstrap would enforce different authority than production."
+  first_diagnostic_command: "python scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py --help"
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b26-p1-finance-reconciliation-adjudication
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: b26-p2-proof-plane-adjudicator
   path: scripts/ci/adjudicate_b26_p2_proof_plane.py
   status: required

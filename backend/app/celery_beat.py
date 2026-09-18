@@ -31,19 +31,34 @@ What this module does NOT do
 from __future__ import annotations
 
 import logging
+import traceback
 
 from celery.beat import PersistentScheduler
+from celery.utils.log import debug, error, info
 
 logger = logging.getLogger(__name__)
 
 
 class HealingBeatScheduler(PersistentScheduler):
-    """PersistentScheduler that drops poisoned broker state on apply failure."""
+    """PersistentScheduler that drops poisoned broker state on apply failure.
+
+    Observability is byte-identical to celery's scheduler (same
+    'Scheduler: Sending due task' info line and sent-debug lines), so log
+    consumers and live-beat proofs observe no difference; the only delta
+    is the broker-state drop plus the heal log on failure.
+    """
 
     def apply_entry(self, entry, producer=None) -> None:
+        info("Scheduler: Sending due task %s (%s)", entry.name, entry.task)
         try:
             result = self.apply_async(entry, producer=producer, advance=False)
         except Exception as exc:
+            error(
+                "Message Error: %s\n%s",
+                exc,
+                traceback.format_stack(),
+                exc_info=True,
+            )
             logger.error(
                 "beat_scheduled_apply_failed_dropping_broker_state",
                 extra={
@@ -53,12 +68,13 @@ class HealingBeatScheduler(PersistentScheduler):
                     "error": str(exc)[:500],
                     "error_class": type(exc).__name__,
                 },
-                exc_info=True,
             )
             self._drop_broker_state()
         else:
-            if result is not None and hasattr(result, "id"):
-                logger.debug("beat_scheduled_apply_ok:entry=%s", entry.name)
+            if result and hasattr(result, "id"):
+                debug("%s sent. id->%s", entry.task, result.id)
+            else:
+                debug("%s sent.", entry.task)
 
     def _drop_broker_state(self) -> None:
         """Forget the cached producer and close its connection.
