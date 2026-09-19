@@ -183,6 +183,64 @@ def _container_state(name: str) -> str:
     return proc.stdout.strip()
 
 
+def _assert_stopped(name: str) -> None:
+    """Fail loud if a falsifier's container did not actually stop.
+
+    `_docker("stop")` never checks its exit status; a silently
+    unstopped consumer/scheduler keeps sweeping and conducting, which
+    the falsifiers below would misread as a wrong GREEN. Stopped state
+    is asserted explicitly so a stop failure cannot masquerade as a
+    routing or recovery defect.
+    """
+    proc = _docker("stop", name)
+    if proc.returncode != 0:
+        raise RuntimeError(f"falsifier_stop_failed:{name}:{proc.stderr[-200:]}")
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        if _container_state(name) != "running":
+            return
+        time.sleep(2)
+    raise RuntimeError(f"falsifier_stop_failed:{name}:still_running")
+
+
+def _drain_broker_quiescent(timeout_s: int = 90) -> None:
+    """Wait until no deliverable P2 broker messages remain, then settle.
+
+    Stopping a scheduler/consumer does not retract messages it already
+    published: a relay-task row queued just before the stop is consumed
+    after the falsifier's fresh webhook exists and sweeps it. Prior
+    stages all ended terminal, so a drained P2 queue set plus a short
+    settle means no queued sweep can publish for the fresh dispatch;
+    without this, stop-phase alignment decides the verdict.
+
+    Only deliverable (visible) rows in the P2 queues count: rows a dead
+    consumer prefetched stay invisible until the transport visibility
+    timeout (far outside any window) and nobody can consume them, while
+    counting them would deadlock the drain. Foreign queues (b24/b25 and
+    friends, whose consumers do not exist in this topology) are excluded
+    the same way: they pile forever. DB errors fail loud.
+    """
+    deadline = time.time() + timeout_s
+    quiet_polls = 0
+    while time.time() < deadline:
+        rows = _query(
+            "SELECT count(*) FROM public.kombu_message AS m"
+            " JOIN public.kombu_queue AS q ON q.id = m.queue_id"
+            " WHERE m.visible IS TRUE"
+            " AND q.name IN ('b26_p2_relay', 'b23_match_engine')"
+        )
+        pending = int(rows[0][0]) if rows else 0
+        if pending == 0:
+            quiet_polls += 1
+            if quiet_polls >= 2:
+                time.sleep(15)
+                return
+        else:
+            quiet_polls = 0
+        time.sleep(2)
+    raise RuntimeError("falsifier_broker_not_quiescent")
+
+
 def _restart_count(name: str) -> str:
     proc = _docker("inspect", "-f", "{{.RestartCount}}", name)
     return proc.stdout.strip()
@@ -886,7 +944,11 @@ def main() -> int:
         _wait_log(WORKER_CONTAINER, "ready", 180)
 
         # F-b: scheduler removed -> pending never recovers.
-        _docker("stop", BEAT_CONTAINER)
+        # The beat stop is asserted and the broker drained first: a
+        # relay-task row queued just before the stop would otherwise be
+        # consumed after the fresh webhook exists and sweep it.
+        _assert_stopped(BEAT_CONTAINER)
+        _drain_broker_quiescent()
         _query("REVOKE INSERT ON TABLE public.kombu_message FROM app_user")
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent4 = f"pi_{uuid.uuid4().hex[:18]}"
@@ -911,14 +973,22 @@ def main() -> int:
         falsifiers["scheduler_restored_green"] = "GREEN"
 
         # F-c: relay absent + sweep to an unconsumed queue stays pending.
-        # Both the relay consumer AND the beat scheduler are stopped:
-        # beat would otherwise keep sweeping the pending dispatch onto
-        # the correct queue (or fire during the relay stop grace while
-        # the live B2.3 worker still consumes), conducting the task
-        # through no fault of the routing -- a phase-alignment race, not
-        # a wrong-queue conduction. With both stopped, the only publish
-        # path is the manual housekeeping sweep, which no consumer ever
-        # executes, so the RED is deterministic.
+        # Both the relay consumer AND the beat scheduler are stopped
+        # BEFORE the webhook is accepted: beat would otherwise sweep the
+        # fresh pending dispatch onto the correct queue in the gap
+        # between acceptance and the stops (or fire during a stop grace
+        # while a consumer still drains), and the live B2.3 worker would
+        # conduct it -- a phase-alignment race, not a wrong-queue
+        # conduction. All prior stages ended terminal, so with both
+        # stopped before acceptance there is no in-flight task and no
+        # in-flight task and no
+        # future sweep; the only publish path is the manual housekeeping
+        # sweep, which no consumer ever executes, so the RED below is
+        # deterministic rather than phase-luck. Queued-sweep drain (as in
+        # F-b) applies: the stops are asserted and the broker drained
+        # before acceptance.
+        _assert_stopped(BEAT_CONTAINER)
+        _drain_broker_quiescent()
         _query("REVOKE INSERT ON TABLE public.kombu_message FROM app_user")
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent5 = f"pi_{uuid.uuid4().hex[:18]}"
@@ -929,8 +999,7 @@ def main() -> int:
             return _fail(f"falsifier_webhook_not_accepted:{status5}")
         disp5 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body5)["event_id"]))
         _query("GRANT INSERT ON TABLE public.kombu_message TO app_user")
-        _docker("stop", RELAY_CONTAINER)
-        _docker("stop", BEAT_CONTAINER)
+        _assert_stopped(RELAY_CONTAINER)
         _send_relay_sweep(queue="housekeeping")
         try:
             _wait_state(
