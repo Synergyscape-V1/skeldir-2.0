@@ -38,9 +38,14 @@ worker_bayesian_publisher: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian_pub
 # variable fails closed at import (SKELDIR_B23_REQUIRE_WORKER_DSN).
 worker_b23: cd backend && DATABASE_URL=$B23_WORKER_DATABASE_URL B23_WORKER_DATABASE_URL=$B23_WORKER_DATABASE_URL SKELDIR_B23_REQUIRE_WORKER_DSN=1 celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
 # B2.6-P2 Corrective III recovery process: sweeps pending execution intents
-# to the broker with stable task identity. Runs as the producer principal
-# (inherits the API DATABASE_URL = app_user) because only the producer may
-# issue/mark delivery state; the B2.3 worker (app_worker) holds SELECT only.
+# to the broker with stable task identity. Corrective V: runs under the
+# dedicated relay credential (B26_P2_RELAY_DATABASE_URL, login app_relay),
+# never the API DSN. The relay recovers/publishes EXISTING execution
+# authority (SELECT + delivery-column UPDATE + broker DML); it cannot mint
+# execution authority (no INSERT anywhere, no conduction-gate EXECUTE).
+# An unset variable fails closed at import (require_secret) instead of
+# silently inheriting the producer DSN (which would hand the recovery
+# process full authority-mint capability).
 # Supervision (Corrective IV H-IV-B07): foreman-style managers (overmind,
 # honcho, foreman) restart crashed processes automatically; local
 # container deployments use `restart: unless-stopped` (see the local
@@ -50,8 +55,11 @@ worker_b23: cd backend && DATABASE_URL=$B23_WORKER_DATABASE_URL B23_WORKER_DATAB
 # broker session no longer wedges the scheduler even without a restart:
 # the HealingBeatScheduler drops poisoned broker state on apply failure;
 # see backend/app/celery_beat.py.)
-relay_b26_p2: cd backend && SKELDIR_CELERY_WORKER_ROLE=b26_p2_relay celery -A app.celery_app.celery_app worker --loglevel=info --queues=b26_p2_relay --concurrency=1 --prefetch-multiplier=1
-beat: cd backend && celery -A app.celery_app.celery_app beat --loglevel=info
+relay_b26_p2: cd backend && DATABASE_URL=$B26_P2_RELAY_DATABASE_URL SKELDIR_CELERY_WORKER_ROLE=b26_p2_relay celery -A app.celery_app.celery_app worker --loglevel=info --queues=b26_p2_relay --concurrency=1 --prefetch-multiplier=1
+# B2.6-P2 Corrective V: the scheduler holds broker-scheduling authority
+# only (login app_beat: broker DML, no application-table authority). It
+# must never inherit the API DSN; an unset variable fails closed.
+beat: cd backend && DATABASE_URL=$B26_P2_BEAT_DATABASE_URL celery -A app.celery_app.celery_app beat --loglevel=info
 
 # Mock Servers (Contract-First Development)
 mock_auth: prism mock api-contracts/dist/openapi/v1/auth.bundled.yaml -p 4010 -h 0.0.0.0

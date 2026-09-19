@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""B2.6-P2 Corrective IV deployed-topology proof (Gates 1-4, 12-14).
+"""B2.6-P2 Corrective V deployed-topology proof (Gates 1-20).
 
 Boots the EXACT compiled production topology and drives a REAL
 HMAC-signed webhook from OUTSIDE the API process through the full causal
 chain using the EXACT shipped commands, process identities, database
 principals, queues, schedulers, and failure-recovery mechanisms:
 
-  API (Dockerfile CMD, app_user)
+  API (Dockerfile CMD, app_user: issuance only)
     -> real signed Stripe webhook over HTTP (host -> container)
-    -> atomic dispatch + outbox + admission-directory commit
+    -> atomic dispatch + outbox + admission-directory commit (one tuple)
     -> real broker publish (kombu sqla transport, stable task_id)
   worker_b23 (exact Procfile command, B23 worker credential)
     -> admission BEFORE B2.3 (constrained resolver, no GUC trust)
     -> authorized B2.3 verdict writes
     -> governed P2 scope (REPEATABLE READ, RLS strict, identity v3)
-    -> conducted marking (operational state, never financial truth)
-  relay (exact Procfile command, producer principal)
-    + beat (exact beat command, scheduled sweep = the recovery motor)
+    -> conduction receipt + server-side conducted gate (no direct mark)
+  relay (exact Procfile command, relay credential: recover/publish only)
+    + beat (exact beat command, scheduler credential: schedule only)
 
 Then proves FAILURE RECOVERY is natural (no manual enqueue): broker
 outage -> pending_publish -> broker restored -> scheduler + relay +
@@ -27,14 +27,17 @@ property, then restore GREEN):
   F-a worker on producer DSN: verdict writes die, nothing conducts
   F-b scheduler removed: pending never recovers
   F-c sweep to unconsumed queue: pending never recovers
-  F-d split-brain / orphan writes: database refuses
+  F-d split-brain / orphan writes: database refuses (tuple law)
   F-e bootstrap grant removed: equivalence proof REDs
   F-f stale image: container identity diverges from host
   F-g comment-only policy edit: identity EQUAL (v3 semantic law)
   F-h semantic policy edit: identity CHANGED + validator REDs
+  F-v1 false conducted: direct mark refused; gate path conducts
+  F-v2 published-unconsumed: staleness signal fires, then drains
+  F-v3 recovery mint: relay/beat cannot issue execution authority
 
 Negative controls that only need source text live in
-test_b26_p2_negative_controls.py (45/45). The controls here need the
+test_b26_p2_negative_controls.py (54/54). The controls here need the
 DEPLOYED plane: they mutate deployment state, never host source.
 
 No mocks, no eager mode, no manual derive bypass, no direct relay task
@@ -112,6 +115,21 @@ API_CMD = ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 def _fail(msg: str) -> int:
     print(f"B26_P2_TOPOLOGY_FAIL {msg}")
     return 1
+
+
+def _write_failure_evidence(args: argparse.Namespace, details: dict) -> None:
+    """Persist failure details to a sibling file (stdout may be truncated)."""
+    evidence_out = getattr(args, "evidence_out", None)
+    if evidence_out is None:
+        return
+    try:
+        failed_path = Path(str(evidence_out) + ".failed.json")
+        failed_path.write_text(
+            json.dumps(details, sort_keys=True, default=str),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001 - evidence is best-effort on failure
+        pass
 
 
 def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
@@ -400,6 +418,8 @@ class _Topology:
             "-p",
             f"{self.api_port}:8000",
             *self._base_env(dsn),
+            "-e",
+            f"B26_P2_STALENESS_SECONDS={self.args.staleness_seconds}",
             self.image,
             *API_CMD,
         )
@@ -432,7 +452,7 @@ class _Topology:
 
     def start_relay(self) -> None:
         self._cleanup_container(RELAY_CONTAINER)
-        dsn = f"postgresql+asyncpg://app_user:app_user@pg:5432/{DB_NAME}"
+        dsn = f"postgresql+asyncpg://app_relay:app_relay@pg:5432/{DB_NAME}"
         proc = _docker(
             "run",
             "-d",
@@ -444,6 +464,8 @@ class _Topology:
             *self._base_env(dsn),
             "-e",
             "SKELDIR_CELERY_WORKER_ROLE=b26_p2_relay",
+            "-e",
+            f"B26_P2_STALENESS_SECONDS={self.args.staleness_seconds}",
             self.image,
             *RELAY_CMD,
         )
@@ -452,7 +474,7 @@ class _Topology:
 
     def start_beat(self) -> None:
         self._cleanup_container(BEAT_CONTAINER)
-        dsn = f"postgresql+asyncpg://app_user:app_user@pg:5432/{DB_NAME}"
+        dsn = f"postgresql+asyncpg://app_beat:app_beat@pg:5432/{DB_NAME}"
         proc = _docker(
             "run",
             "-d",
@@ -586,6 +608,22 @@ def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: in
         return exc.code, exc.read().decode()
     except Exception as exc:  # noqa: BLE001 - connection/timeout: fail with context
         raise RuntimeError(f"webhook_post_failed:{type(exc).__name__}:{exc}"[:300])
+
+
+def _broker_outage(block: bool) -> None:
+    """Simulate a true broker outage across every publisher principal.
+
+    Corrective V: the API (app_user), the relay (app_relay), the
+    scheduler (app_beat), and the worker (app_worker) all hold broker
+    transport authority. Revoking from the API alone no longer stops
+    publication (the relay lawfully recovers through its own
+    credential) -- a faithful outage must fence every publisher.
+    """
+    for role in ("app_user", "app_relay", "app_beat", "app_worker"):
+        if block:
+            _query(f"REVOKE INSERT ON TABLE public.kombu_message FROM {role}")
+        else:
+            _query(f"GRANT INSERT ON TABLE public.kombu_message TO {role}")
 
 
 def _wait_state(table: str, idcol: str, task_id: str, want: str, timeout_s: int) -> dict:
@@ -722,6 +760,7 @@ def main() -> int:
     parser.add_argument("--pg-password", default="postgres")
     parser.add_argument("--image-tag", default="ci")
     parser.add_argument("--sweep-interval", default="5")
+    parser.add_argument("--staleness-seconds", default="25")
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
@@ -765,9 +804,22 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609180001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_iv")
-        details["migration_head"] = "202609180001"
+        if "202609190001" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_v")
+        details["migration_head"] = "202609190001"
+        relay_line = next(
+            (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
+            "",
+        )
+        if "DATABASE_URL=$B26_P2_RELAY_DATABASE_URL" not in relay_line:
+            return _fail("relay_custody_not_split")
+        beat_line = next(
+            (ln for ln in procfile.splitlines() if ln.startswith("beat:")),
+            "",
+        )
+        if "DATABASE_URL=$B26_P2_BEAT_DATABASE_URL" not in beat_line:
+            return _fail("beat_custody_not_split")
+        details["procfile_recovery_custody_ok"] = True
 
         # 1. Build + boot the exact production topology.
         print("B26_P2_TOPOLOGY_STAGE build", flush=True)
@@ -826,8 +878,10 @@ def main() -> int:
             return _fail("worker_database_url_not_worker_credential")
         if principals["api"] != "app_user|app_user":
             return _fail(f"api_principal_not_producer:{principals['api']}")
-        if principals["relay"] != "app_user|app_user":
-            return _fail(f"relay_principal_not_producer:{principals['relay']}")
+        if principals["relay"] != "app_relay|app_relay":
+            return _fail(f"relay_principal_not_relay:{principals['relay']}")
+        if principals["beat"] != "app_beat|app_beat":
+            return _fail(f"beat_principal_not_beat:{principals['beat']}")
 
         # 4. Normal journey: REAL signed webhook from OUTSIDE the API process.
         print("B26_P2_TOPOLOGY_STAGE normal_journey", flush=True)
@@ -846,6 +900,20 @@ def main() -> int:
         _wait_state("b23_match_task_dispatches", "task", disp["task_id"], "conducted", 180)
         _wait_state("b26_p2_execution_outbox", "task", disp["task_id"], "conducted", 60)
         details["conducted"] = {"task_id": disp["task_id"]}
+        # Corrective V: the conducted twin must carry a task-specific
+        # conduction receipt (the gate's persisted consequence) written
+        # by the real worker through the production path.
+        receipt = _query(
+            "SELECT task_id, b23_processed_count, p2_scope_identity"
+            " FROM public.b26_p2_conduction_receipts WHERE task_id = %s",
+            (disp["task_id"],),
+        )
+        if not receipt or len(str(receipt[0][2] or "")) != 64:
+            return _fail(f"conduction_receipt_missing:{disp['task_id']}")
+        details["conduction_receipt"] = {
+            "task_id": str(receipt[0][0]),
+            "b23_processed_count": int(receipt[0][1]),
+        }
         verdicts = _query(
             "SELECT count(*) FROM public.b23_match_verdicts WHERE tenant_id = %s",
             (tenant["tenant_id"],),
@@ -867,7 +935,7 @@ def main() -> int:
 
         # 5. Recovery journey: broker outage, NO provider retry, natural recovery.
         print("B26_P2_TOPOLOGY_STAGE recovery_journey", flush=True)
-        _query("REVOKE INSERT ON TABLE public.kombu_message FROM app_user")
+        _broker_outage(True)
         intent2 = f"pi_{uuid.uuid4().hex[:18]}"
         status2, body2 = _post_stripe(
             tenant["tenant_key"], tenant["stripe_secret"], intent2, 12000
@@ -884,7 +952,7 @@ def main() -> int:
         still = _dispatch_for_ingress(tenant["tenant_id"], event_id2)
         if still["delivery_state"] != "pending_publish":
             return _fail(f"recovery_without_broker:{still}")
-        _query("GRANT INSERT ON TABLE public.kombu_message TO app_user")
+        _broker_outage(False)
         # Supervision check: a transient broker fault can kill the scheduler
         # (beat exits on an unapplied scheduled task). The supervisor must
         # have it running again without human action; record restarts.
@@ -949,7 +1017,7 @@ def main() -> int:
         # consumed after the fresh webhook exists and sweep it.
         _assert_stopped(BEAT_CONTAINER)
         _drain_broker_quiescent()
-        _query("REVOKE INSERT ON TABLE public.kombu_message FROM app_user")
+        _broker_outage(True)
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent4 = f"pi_{uuid.uuid4().hex[:18]}"
         status4, body4 = _post_stripe(
@@ -958,7 +1026,7 @@ def main() -> int:
         if status4 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status4}")
         disp4 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body4)["event_id"]))
-        _query("GRANT INSERT ON TABLE public.kombu_message TO app_user")
+        _broker_outage(False)
         try:
             _wait_state(
                 "b23_match_task_dispatches", "task", disp4["task_id"], "conducted",
@@ -989,7 +1057,7 @@ def main() -> int:
         # before acceptance.
         _assert_stopped(BEAT_CONTAINER)
         _drain_broker_quiescent()
-        _query("REVOKE INSERT ON TABLE public.kombu_message FROM app_user")
+        _broker_outage(True)
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent5 = f"pi_{uuid.uuid4().hex[:18]}"
         status5, body5 = _post_stripe(
@@ -998,7 +1066,7 @@ def main() -> int:
         if status5 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status5}")
         disp5 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body5)["event_id"]))
-        _query("GRANT INSERT ON TABLE public.kombu_message TO app_user")
+        _broker_outage(False)
         _assert_stopped(RELAY_CONTAINER)
         _send_relay_sweep(queue="housekeeping")
         try:
@@ -1059,8 +1127,289 @@ def main() -> int:
                 return _fail("falsifier_directory_rewrite_allowed")
             except Exception:
                 falsifiers["directory_rewrite"] = "RED_as_required"
+            # Corrective V: cross-product projections of two real
+            # executions refuse at the tuple law (outbox) and the
+            # write-time coherence law (directory). The free-slot
+            # construction isolates the tuple theorem itself: an
+            # occupied slot would refuse earlier at the child UNIQUE,
+            # which is defense-in-depth rather than the tuple law.
+            disp2row = _dispatch_for_ingress(tenant["tenant_id"], event_id2)
+            free_task = f"v-proof-lone-{uuid.uuid4().hex[:8]}"
+            free_ingress = str(uuid.uuid4())
+            free_event = str(uuid.uuid4())
+            # A second free ingress with no execution behind it: the
+            # cross-product attempt below (lone task + foreign
+            # tenant/ingress) names no canonical execution, so only
+            # the tuple law can refuse it. (An occupied slot would
+            # refuse earlier at the child UNIQUE -- defense-in-depth
+            # proven in the DB battery, not the tuple theorem.)
+            stray_ingress = str(uuid.uuid4())
+            stray_event = str(uuid.uuid4())
+            # One setup session with the tenant GUC: the attribution
+            # INSERT fires the B24 invalidation trigger, which writes
+            # dirty rows under FORCE RLS and therefore needs the same
+            # tenant visibility every other writer holds (a superuser
+            # session without GUC fails closed here by predecessor
+            # design, not by P2 law).
+            import psycopg2 as _pgs
+
+            setup_conn = _pgs.connect(_TOPO.db_admin)
+            try:
+                setup_conn.autocommit = True
+                setup_cur = setup_conn.cursor()
+                setup_cur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (tenant["tenant_id"],),
+                )
+                setup_cur.execute(
+                    "INSERT INTO public.attribution_events (id, tenant_id,"
+                    " occurred_at, correlation_id, session_id, revenue_cents,"
+                    " raw_payload, idempotency_key, event_type, channel,"
+                    " campaign_id, conversion_value_cents, currency,"
+                    " event_timestamp, processed_at, processing_status)"
+                    " VALUES (%s, %s, now(), %s, %s, 9000,"
+                    " '{}'::jsonb, %s, 'conversion', 'b26p2ca1_channel',"
+                    " 'proof', 9000, 'USD', now(), now(), 'processed')",
+                    (
+                        free_event,
+                        tenant["tenant_id"],
+                        str(uuid.uuid4()),
+                        str(uuid.uuid4()),
+                        f"proof-free:{free_ingress[:8]}",
+                    ),
+                )
+                setup_cur.execute(
+                    "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
+                    " event_id, provider, provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_kind,"
+                    " normalized_commerce_reference_value, verified_amount_minor,"
+                    " verified_amount_currency, event_timestamp, idempotency_key,"
+                    " verified_commerce_ingress_state)"
+                    " VALUES (%s, %s, %s, 'stripe', %s, %s, 'order_reference',"
+                    " %s, 9000, 'USD', now(), %s, 'authenticity_verified')",
+                    (
+                        free_ingress,
+                        tenant["tenant_id"],
+                        free_event,
+                        f"e-proof-{free_ingress[:8]}",
+                        f"o-proof-{free_ingress[:8]}",
+                        f"o-proof-{free_ingress[:8]}",
+                        f"proof-free:{free_ingress[:8]}",
+                    ),
+                )
+                setup_cur.execute(
+                    "INSERT INTO public.attribution_events (id, tenant_id,"
+                    " occurred_at, correlation_id, session_id, revenue_cents,"
+                    " raw_payload, idempotency_key, event_type, channel,"
+                    " campaign_id, conversion_value_cents, currency,"
+                    " event_timestamp, processed_at, processing_status)"
+                    " VALUES (%s, %s, now(), %s, %s, 9000,"
+                    " '{}'::jsonb, %s, 'conversion', 'b26p2ca1_channel',"
+                    " 'proof', 9000, 'USD', now(), now(), 'processed')",
+                    (
+                        stray_event,
+                        tenant["tenant_id"],
+                        str(uuid.uuid4()),
+                        str(uuid.uuid4()),
+                        f"proof-stray:{stray_ingress[:8]}",
+                    ),
+                )
+                setup_cur.execute(
+                    "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
+                    " event_id, provider, provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_kind,"
+                    " normalized_commerce_reference_value, verified_amount_minor,"
+                    " verified_amount_currency, event_timestamp, idempotency_key,"
+                    " verified_commerce_ingress_state)"
+                    " VALUES (%s, %s, %s, 'stripe', %s, %s, 'order_reference',"
+                    " %s, 9000, 'USD', now(), %s, 'authenticity_verified')",
+                    (
+                        stray_ingress,
+                        tenant["tenant_id"],
+                        stray_event,
+                        f"e-proof-{stray_ingress[:8]}",
+                        f"o-proof-{stray_ingress[:8]}",
+                        f"o-proof-{stray_ingress[:8]}",
+                        f"proof-stray:{stray_ingress[:8]}",
+                    ),
+                )
+                # Dispatch-only execution for the lone task: the task leg
+                # passes, so only the forged combination can refuse.
+                setup_cur.execute(
+                    "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
+                    " webhook_ingress_identity_id, task_id, task_name, queue,"
+                    " routing_key, correlation_id, provider,"
+                    " provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_value, status,"
+                    " delivery_state, publish_attempts, window_start, window_end)"
+                    " VALUES (%s, %s, %s,"
+                    " 'app.tasks.revenue_verification.execute_b23_batch_match_engine',"
+                    " 'b23_match_engine', 'b23_match_engine.task', %s, 'stripe',"
+                    " 'evt', 'ord', 'ord', 'dispatched', 'pending_publish', 0,"
+                    " now(), now() + interval '1 day')",
+                    (
+                        tenant["tenant_id"],
+                        free_ingress,
+                        free_task,
+                        str(uuid.uuid4()),
+                    ),
+                )
+            finally:
+                setup_conn.close()
+            try:
+                cur.execute(
+                    "INSERT INTO public.b26_p2_execution_outbox "
+                    "(tenant_id, dispatch_task_id, webhook_ingress_identity_id) "
+                    "VALUES (%s, %s, %s)",
+                    (tenant["tenant_id"], free_task, stray_ingress),
+                )
+                return _fail("falsifier_cross_product_outbox_allowed")
+            except Exception as exc:
+                if "fk_b26_p2_outbox_execution_tuple" not in str(exc).split("\n")[0]:
+                    return _fail(f"falsifier_cross_product_wrong_layer:{str(exc)[:150]}")
+                falsifiers["cross_product_outbox"] = "RED_as_required"
+            try:
+                cur.execute(
+                    "INSERT INTO public.b26_p2_task_authority_directory "
+                    "(task_id, tenant_id, webhook_ingress_identity_id, window_start, window_end) "
+                    "SELECT %s, tenant_id, webhook_ingress_identity_id, "
+                    "window_start + interval '30 days', window_end + interval '30 days' "
+                    "FROM public.b23_match_task_dispatches WHERE task_id = %s",
+                    (f"forged-{uuid.uuid4().hex[:8]}", disp2row["task_id"]),
+                )
+                return _fail("falsifier_forged_window_allowed")
+            except Exception as exc:
+                if "b26_p2_directory_no_canonical_execution" not in str(exc).split("\n")[0]:
+                    return _fail(f"falsifier_forged_window_wrong_layer:{str(exc)[:150]}")
+                falsifiers["forged_window"] = "RED_as_required"
         finally:
             conn.close()
+
+        # F-v1 + F-v2 (one stopped-worker window): false conducted is
+        # refused at the database plane even for the worker credential,
+        # and published-but-unconsumed work becomes explicitly stale
+        # instead of silently healthy. The gate path already conducted
+        # both journeys above through the real worker.
+        _assert_stopped(WORKER_CONTAINER)
+        _drain_broker_quiescent()
+        _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
+        intent6 = f"pi_{uuid.uuid4().hex[:18]}"
+        status6, body6 = _post_stripe(
+            tenant["tenant_key"], tenant["stripe_secret"], intent6, 9000
+        )
+        if status6 != 200:
+            return _fail(f"falsifier_webhook_not_accepted:{status6}")
+        disp6 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body6)["event_id"]))
+        _wait_state("b23_match_task_dispatches", "task", disp6["task_id"], "published", 60)
+        try:
+            _wait_state(
+                "b23_match_task_dispatches", "task", disp6["task_id"], "conducted", 20
+            )
+            return _fail("falsifier_stopped_worker_conducted")
+        except RuntimeError:
+            falsifiers["stopped_worker_no_conduction"] = "RED_as_required"
+        import psycopg2 as _pgw
+
+        worker_dsn = (
+            f"postgresql://app_worker:app_worker@127.0.0.1:{args.pg_port}/{DB_NAME}"
+        )
+        wconn = _pgw.connect(worker_dsn)
+        try:
+            wconn.autocommit = True
+            wcur = wconn.cursor()
+            wcur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant["tenant_id"],),
+            )
+            try:
+                wcur.execute(
+                    "UPDATE public.b23_match_task_dispatches "
+                    "SET delivery_state = 'conducted' WHERE task_id = %s",
+                    (disp6["task_id"],),
+                )
+                return _fail("falsifier_false_conducted_allowed")
+            except Exception as exc:
+                if "b26_p2_conducted_requires_gate" not in str(exc).split("\n")[0]:
+                    return _fail(f"falsifier_false_conducted_wrong_layer:{str(exc)[:150]}")
+                falsifiers["false_conducted"] = "RED_as_required"
+            try:
+                wcur.execute(
+                    "SELECT public.b26_p2_mark_conducted(%s)", (disp6["task_id"],)
+                )
+                return _fail("falsifier_gate_without_consequence_allowed")
+            except Exception as exc:
+                if "b26_p2_conducted_no_receipt" not in str(exc).split("\n")[0]:
+                    return _fail(f"falsifier_gate_wrong_layer:{str(exc)[:150]}")
+                falsifiers["gate_without_consequence"] = "RED_as_required"
+        finally:
+            wconn.close()
+        # F-v2: the published twin ages past the governed threshold
+        # with no consumer. Production health must expose it.
+        time.sleep(int(args.staleness_seconds) + 10)
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{args.api_port}/health/b26-p2-conduction",
+                timeout=30,
+            ) as resp:
+                health = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            return _fail(f"conduction_health_unavailable:{exc}")
+        if health.get("status") != "stale_unconducted":
+            return _fail(f"staleness_not_surfaced:{health}")
+        if int(health.get("stale_unconducted_count") or 0) < 1:
+            return _fail(f"stale_count_empty:{health}")
+        details["staleness_signal"] = health
+        falsifiers["published_unconsumed_honest"] = "RED_as_required"
+        _TOPO.start_worker()
+        _wait_log(WORKER_CONTAINER, "ready", 180)
+        _wait_state("b23_match_task_dispatches", "task", disp6["task_id"], "conducted", 240)
+        falsifiers["stopped_worker_drain_green"] = "GREEN"
+
+        # F-v3: recovery principals cannot mint execution authority.
+        import psycopg2 as _pgr
+
+        relay_dsn = (
+            f"postgresql://app_relay:app_relay@127.0.0.1:{args.pg_port}/{DB_NAME}"
+        )
+        rconn = _pgr.connect(relay_dsn)
+        try:
+            rconn.autocommit = True
+            rcur = rconn.cursor()
+            rcur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant["tenant_id"],),
+            )
+            try:
+                rcur.execute(
+                    "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
+                    " webhook_ingress_identity_id, task_id, task_name, queue,"
+                    " routing_key, correlation_id, provider,"
+                    " provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_value)"
+                    " SELECT tenant_id, webhook_ingress_identity_id,"
+                    " %s, 'app.tasks.revenue_verification.execute_b23_batch_match_engine',"
+                    " 'b23_match_engine', 'b23_match_engine.task', %s, provider,"
+                    " provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_value"
+                    " FROM public.b23_match_task_dispatches WHERE task_id = %s",
+                    (
+                        f"relay-mint-{uuid.uuid4().hex[:8]}",
+                        str(uuid.uuid4()),
+                        disp["task_id"],
+                    ),
+                )
+                return _fail("falsifier_relay_mint_allowed")
+            except Exception as exc:
+                if "denied" not in str(exc).lower() and "permission" not in str(exc).lower():
+                    return _fail(f"falsifier_relay_mint_wrong_layer:{str(exc)[:150]}")
+                falsifiers["relay_mint"] = "RED_as_required"
+        finally:
+            rconn.close()
 
         # Relay in-process principal: scan sweep task results. The result
         # column is pickle-framed bytes (rendered hex by ::text, so LIKE
@@ -1091,6 +1440,7 @@ def main() -> int:
             details["diagnostics"] = _collect_diagnostics()
         except Exception as diag_exc:  # noqa: BLE001
             details["diagnostics_error"] = str(diag_exc)[:300]
+        _write_failure_evidence(args, details)
         print(json.dumps(details, sort_keys=True, default=str))
         return _fail(str(exc)[:500])
     except Exception as exc:  # noqa: BLE001 - crash safety: never exit without evidence
@@ -1102,6 +1452,7 @@ def main() -> int:
             details["diagnostics"] = _collect_diagnostics()
         except Exception as diag_exc:  # noqa: BLE001
             details["diagnostics_error"] = str(diag_exc)[:300]
+        _write_failure_evidence(args, details)
         print(json.dumps(details, sort_keys=True, default=str))
         return _fail(details["failure"])
     finally:

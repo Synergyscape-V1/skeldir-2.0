@@ -303,19 +303,30 @@ def execute_b23_batch_match_engine_task(
             "dispatch_id": p2_scope.get("dispatch_id"),
         },
     )
-    # Corrective IV conducted marking: broker publication success must never
-    # be mistaken for deterministic B2.3 -> P2 conduction. Only the worker
-    # that actually conducted the work (admitted authority + B2.3 verdicts
-    # + governed P2 scope, all above) advances the delivery state to
-    # conducted, under its least-privilege column-scoped UPDATE. The mark
-    # is operational state, never financial truth. A crash before this mark
-    # leaves published state for at-least-once redelivery (idempotent by
-    # stable task identity); terminal task failure stays observable as
-    # published + worker_failed_jobs DLQ FAILURE + result-backend FAILURE.
+    # Corrective V consequence-bound conduction: broker publication
+    # success must never be mistaken for deterministic B2.3 -> P2
+    # conduction, and even the worker credential must not assert
+    # conducted without the governed consequence. The worker first
+    # persists a task-specific conduction receipt (B2.3 count + P2
+    # scope identity, operational provenance only) and then advances
+    # the twin projections through the server-side gate, which
+    # requires: both projections published, receipt present, B2.3
+    # verdicts present for the bound (tenant, ingress), caller is the
+    # worker login. Direct UPDATEs into conducted refuse at the
+    # database plane. A crash before the gate leaves published state
+    # for at-least-once redelivery (idempotent by stable task
+    # identity; the gate itself is an idempotent no-op on replay);
+    # terminal task failure stays observable as published +
+    # worker_failed_jobs DLQ FAILURE + result-backend FAILURE.
     run_in_worker_loop(
-        _mark_dispatch_conducted(
+        _record_receipt_and_mark_conducted(
             tenant_id=authority.tenant_id,
             broker_task_id=str(broker_task_id) if broker_task_id else None,
+            webhook_ingress_identity_id=authority.webhook_ingress_identity_id,
+            window_start=authority.window_start,
+            window_end=authority.window_end,
+            b23_processed_count=int(result.processed_count or 0),
+            p2_scope_identity=str(p2_scope.get("scope_identity") or ""),
         )
     )
     return {
@@ -333,35 +344,39 @@ def execute_b23_batch_match_engine_task(
     }
 
 
-async def _mark_dispatch_conducted(
-    *, tenant_id: UUID, broker_task_id: str | None
+async def _record_receipt_and_mark_conducted(
+    *,
+    tenant_id: UUID,
+    broker_task_id: str | None,
+    webhook_ingress_identity_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    b23_processed_count: int,
+    p2_scope_identity: str,
 ) -> None:
-    """Advance one execution identity to conducted after real conduction.
+    """Persist the conduction receipt, then mark conducted via the gate.
 
     Runs on the worker pool under the ADMITTED tenant (governed session
-    binds the tenant GUC, so RLS observes the row; worker principal,
-    column-scoped UPDATE). The trigger refuses any illegal transition, so
-    this advances exactly published rows for this task identity and is a
-    no-op otherwise.
+    binds the tenant GUC, so RLS observes the rows; the receipt INSERT
+    and the gate EXECUTE are worker-held). The gate is the only
+    server-side path into conducted; direct UPDATEs refuse.
     """
     if not broker_task_id:
         return
     from app.db.session import get_b23_session  # noqa: PLC0415
+    from app.finance_reconciliation import conduction_state as _conduction  # noqa: PLC0415
 
     async with get_b23_session(tenant_id) as session:
-        await session.execute(
-            text(
-                "UPDATE public.b23_match_task_dispatches"
-                " SET delivery_state = 'conducted', updated_at = now()"
-                " WHERE task_id = :task_id AND delivery_state = 'published'"
-            ),
-            {"task_id": broker_task_id},
+        await _conduction.record_conduction_receipt(
+            session,
+            tenant_id=tenant_id,
+            broker_task_id=broker_task_id,
+            webhook_ingress_identity_id=webhook_ingress_identity_id,
+            window_start=window_start,
+            window_end=window_end,
+            b23_processed_count=b23_processed_count,
+            p2_scope_identity=p2_scope_identity,
         )
-        await session.execute(
-            text(
-                "UPDATE public.b26_p2_execution_outbox"
-                " SET state = 'conducted', updated_at = now()"
-                " WHERE dispatch_task_id = :task_id AND state = 'published'"
-            ),
-            {"task_id": broker_task_id},
+        await _conduction.mark_conducted_via_gate(
+            session, broker_task_id=broker_task_id
         )

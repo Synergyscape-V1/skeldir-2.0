@@ -112,8 +112,15 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
         )
     tenants = [str(r["id"]) for r in tenant_rows]
     divergent_total = 0
+    stale_total = 0
+    oldest_stale_age = 0.0
     for tenant in tenants:
         async with get_session(tenant_id=tenant) as session:
+            # Corrective V: the sweep joins on the full execution tuple
+            # (task + tenant + ingress), not on task identity alone. The
+            # database tuple FKs make a forked child unencodable; the
+            # tuple join keeps the relay's own reads on the same single
+            # execution authority even before the database refuses.
             # Corrective IV: the sweep claims rows with FOR UPDATE SKIP
             # LOCKED so two relay processes (or beat redelivery overlapping
             # a slow sweep) never publish the same intent twice. Both the
@@ -136,6 +143,8 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                             " FROM public.b26_p2_execution_outbox AS o"
                             " JOIN public.b23_match_task_dispatches AS d"
                             "   ON d.task_id = o.dispatch_task_id"
+                            "  AND d.tenant_id = o.tenant_id"
+                            "  AND d.webhook_ingress_identity_id = o.webhook_ingress_identity_id"
                             " WHERE o.tenant_id = :tenant"
                             " AND o.state = 'pending_publish'"
                             " AND o.next_retry_at <= now()"
@@ -249,8 +258,10 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                     )
                     failed += 1
     # In-process principal evidence: the deployed proof captures which
-    # database login actually performed the sweep (must be the producer
-    # principal -- only the producer may issue/mark delivery state).
+    # database login actually performed the sweep (must be the relay
+    # principal -- only the producer may issue delivery state, and the
+    # relay may only recover/publish existing execution authority, never
+    # mint it).
     try:
         async with _engine.connect() as _principal_conn:
             relay_principal = str(
@@ -258,6 +269,31 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
             )
     except Exception:
         relay_principal = "unknown"
+    # Published-unconsumed honesty (Corrective V): every sweep observes
+    # the governed staleness signal per tenant. A permanently
+    # unconsumed published execution therefore becomes an explicit
+    # operator fact (counts + oldest age in the sweep log) instead of
+    # silently healthy in-flight work. Staleness is operational
+    # metadata only; it never alters deterministic numbers.
+    try:
+        from app.finance_reconciliation import conduction_state as _conduction  # noqa: PLC0415
+
+        from app.db.session import get_session as _tenant_session  # noqa: PLC0415
+
+        for tenant in tenants:
+            async with _tenant_session(tenant_id=tenant) as _stale_session:
+                _stale_rows = await _conduction.staleness_snapshot(_stale_session)
+            if _stale_rows:
+                stale_total += len(_stale_rows)
+                oldest_stale_age = max(
+                    oldest_stale_age,
+                    max(r.age_seconds for r in _stale_rows),
+                )
+    except Exception:
+        logger.exception(
+            "b26_p2_relay_staleness_observation_failed",
+            extra={"tenants_scanned": len(tenants)},
+        )
     # Recovery-liveness observability (H-IV-B05): every sweep emits its
     # counts. A silent relay (no log lines) vs an empty sweep
     # (published=0) vs a failing sweep (failed>0) are three different
@@ -269,6 +305,8 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
             "published": published,
             "failed": failed,
             "divergent": divergent_total,
+            "stale_unconducted": stale_total,
+            "oldest_stale_age_seconds": oldest_stale_age,
             "database_user": relay_principal,
         },
     )
@@ -276,6 +314,8 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
         "published": published,
         "failed": failed,
         "divergent": divergent_total,
+        "stale_unconducted": stale_total,
+        "oldest_stale_age_seconds": oldest_stale_age,
         "database_user": relay_principal,
     }
 

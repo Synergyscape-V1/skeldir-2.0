@@ -1037,18 +1037,31 @@ def _check_corrective_iv_law(violations: list[str], details: dict[str, Any]) -> 
     bayesian_source = (BACKEND / "app/tasks/bayesian.py").read_text(encoding="utf-8")
     if "if role == _BAYESIAN_WORKER_ROLE_P2_RELAY:" not in bayesian_source:
         violations.append("p2_corrective_iv_relay_role_unknown")
-    # Conducted marking: only the worker that conducted the work advances
-    # delivery state, after B2.3 + P2 success.
+    # Conducted marking (Corrective V supersedes the IV direct-mark
+    # law): only the server-side gate may assert conducted, after the
+    # worker persists the task-specific conduction receipt. Direct
+    # application UPDATEs into conducted are the prohibited effect, so
+    # their presence in the worker task module is itself a violation.
     task_source = B23_TASK_MODULE.read_text(encoding="utf-8")
     for required in (
-        "_mark_dispatch_conducted",
-        "delivery_state = 'conducted'",
-        "SET state = 'conducted'",
+        "mark_conducted_via_gate",
+        "record_conduction_receipt",
         "db_worker_principal",
         "SELECT current_user",
     ):
         if required not in task_source:
-            violations.append(f"p2_corrective_iv_conducted_law_absent:{required}")
+            violations.append(
+                f"p2_corrective_iv_conducted_law_absent:{required}"
+            )
+    for forbidden in (
+        "SET state = 'conducted'",
+        'delivery_state = "conducted"',
+        "delivery_state = 'conducted'",
+    ):
+        if forbidden in task_source:
+            violations.append(
+                f"p2_corrective_v_direct_conducted_present:{forbidden}"
+            )
     # Coherence consumers: the sweeper must claim rows (SKIP LOCKED) and
     # refuse divergent outbox/dispatch pairs fail-closed.
     relay_source = (BACKEND / "app/tasks/b26_p2_relay.py").read_text(encoding="utf-8")
@@ -1130,6 +1143,135 @@ def _check_corrective_iv_law(violations: list[str], details: dict[str, Any]) -> 
     details["corrective_iv_checked"] = True
 
 
+def _check_corrective_v_law(violations: list[str], details: dict[str, Any]) -> None:
+    """Corrective V class closure: one execution tuple, bound conduction."""
+    migration = REPO_ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202609190001_b26_p2_corrective_v_execution_coherence.py"
+    )
+    if not migration.is_file():
+        violations.append("p2_corrective_v_migration_absent")
+        return
+    migration_source = migration.read_text(encoding="utf-8")
+    # Upgrade-path tokens only: the downgrade path legitimately names the
+    # same constraints/triggers while dropping them.
+    upgrade_source = migration_source.split("def downgrade", 1)[0]
+    for required in (
+        # One physical execution tuple: the UNIQUE that makes the
+        # single-parent composite FKs structurally possible.
+        "uq_b23_dispatch_execution_tuple",
+        "ADD CONSTRAINT fk_b26_p2_outbox_execution_tuple",
+        "ADD CONSTRAINT fk_b26_p2_directory_execution_tuple",
+        "ADD CONSTRAINT fk_b26_p2_receipt_execution_tuple",
+        # The superseded two-leg IV FKs must be dropped: sibling legs
+        # that validate membership without identity.
+        "DROP CONSTRAINT IF EXISTS fk_b26_p2_outbox_dispatch_task_identity",
+        "DROP CONSTRAINT IF EXISTS fk_b26_p2_outbox_tenant_ingress_composite",
+        "DROP CONSTRAINT IF EXISTS fk_b26_p2_directory_dispatch_task_identity",
+        "DROP CONSTRAINT IF EXISTS fk_b26_p2_directory_tenant_ingress_composite",
+        # Issuance-time window presence (NULL windows are not authority).
+        "ck_b23_dispatch_window_present",
+        "b26_p2_dispatch_null_window_survives",
+        # Window coherence + gate + staleness machinery.
+        "b26_p2_enforce_directory_coherence",
+        "b26_p2_directory_forked_authority_refused",
+        "b26_p2_mark_conducted",
+        "b26_p2_conducted_requires_gate",
+        "b26_p2_conducted_no_b23_consequence",
+        "b26_p2_conduction_receipts",
+        "b26_p2_execution_quarantine",
+        "b26_p2_stale_unconducted",
+        # Recovery least privilege: dedicated logins, no mint authority.
+        "app_relay",
+        "app_beat",
+    ):
+        if required not in upgrade_source:
+            violations.append(f"p2_corrective_v_migration_absent:{required}")
+    # Census / repair / durable quarantine must converge before the law.
+    for required in (
+        "b26_p2_execution_quarantine",
+        "cross_product_blocker_occupies_foreign_repair_target",
+        "b26_p2_coherence_v_not_convergent",
+    ):
+        if required not in upgrade_source:
+            violations.append(f"p2_corrective_v_quarantine_absent:{required}")
+    # Single implementation law for the conduction surface.
+    conduction_state = BACKEND / "app/finance_reconciliation/conduction_state.py"
+    if not conduction_state.is_file():
+        violations.append("p2_corrective_v_conduction_state_absent")
+    else:
+        state_source = conduction_state.read_text(encoding="utf-8")
+        for required in (
+            "def record_conduction_receipt",
+            "def mark_conducted_via_gate",
+            "def staleness_snapshot",
+            "def staleness_threshold_seconds",
+        ):
+            if required not in state_source:
+                violations.append(
+                    f"p2_corrective_v_conduction_state_absent:{required}"
+                )
+    # Recovery custody: relay and beat run under dedicated credentials
+    # that cannot mint execution authority (never the API DSN, never
+    # the bayesian credential).
+    procfile = (REPO_ROOT / "Procfile").read_text(encoding="utf-8")
+    relay_line = next(
+        (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
+        "",
+    )
+    if "DATABASE_URL=$B26_P2_RELAY_DATABASE_URL" not in relay_line:
+        violations.append("p2_corrective_v_relay_custody_absent")
+    if re.search(r"\$[{]?(?:E2E_)?WORKER_DATABASE_URL", relay_line) is not None:
+        violations.append("p2_corrective_v_relay_reads_bayesian_dsn")
+    beat_line = next(
+        (ln for ln in procfile.splitlines() if ln.startswith("beat:")),
+        "",
+    )
+    if "DATABASE_URL=$B26_P2_BEAT_DATABASE_URL" not in beat_line:
+        violations.append("p2_corrective_v_beat_custody_absent")
+    if re.search(r"\$[{]?(?:E2E_)?WORKER_DATABASE_URL", beat_line) is not None:
+        violations.append("p2_corrective_v_beat_reads_bayesian_dsn")
+    # Tuple-bound sweep + staleness observability in the relay.
+    relay_source = RELAY_MODULE.read_text(encoding="utf-8")
+    for required in (
+        "d.tenant_id = o.tenant_id",
+        "d.webhook_ingress_identity_id = o.webhook_ingress_identity_id",
+        "stale_unconducted",
+        "staleness_snapshot",
+    ):
+        if required not in relay_source:
+            violations.append(f"p2_corrective_v_sweeper_law_absent:{required}")
+    # Production-visible non-conduction signal.
+    health_source = (BACKEND / "app/api/health.py").read_text(encoding="utf-8")
+    for required in (
+        "b26-p2-conduction",
+        "stale_unconducted_count",
+        "staleness_snapshot",
+    ):
+        if required not in health_source:
+            violations.append(f"p2_corrective_v_staleness_signal_absent:{required}")
+    # Bootstrap companion must carry the V privilege physics (text-level
+    # pin; the runtime catalog diff lives in the equivalence proof).
+    companion = REPO_ROOT / "db/schema/canonical_authority.sql"
+    if not companion.is_file():
+        violations.append("p2_corrective_v_bootstrap_companion_absent")
+    else:
+        companion_source = companion.read_text(encoding="utf-8")
+        for required in (
+            "GRANT USAGE ON SCHEMA public TO app_relay",
+            "GRANT USAGE ON SCHEMA public TO app_beat",
+            "GRANT SELECT, INSERT ON TABLE public.b26_p2_conduction_receipts TO app_worker",
+            "REVOKE ALL ON FUNCTION public.b26_p2_mark_conducted(text) FROM PUBLIC",
+            "GRANT EXECUTE ON FUNCTION public.b26_p2_mark_conducted(text) TO app_worker",
+            "GRANT EXECUTE ON FUNCTION public.b26_p2_stale_unconducted(integer) TO app_user",
+        ):
+            if required not in companion_source:
+                violations.append(
+                    f"p2_corrective_v_bootstrap_companion_absent:{required[:48]}"
+                )
+    details["corrective_v_checked"] = True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-dir", type=Path, default=None)
@@ -1154,6 +1296,7 @@ def main() -> int:
         _check_corrective_ii_law(violations, details)
         _check_corrective_iii_law(violations, details)
         _check_corrective_iv_law(violations, details)
+        _check_corrective_v_law(violations, details)
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_validator_crash:{exc}")
     details["violations"] = sorted(violations)

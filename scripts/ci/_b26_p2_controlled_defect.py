@@ -27,6 +27,10 @@ MIGRATION_IV = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202609180001_b26_p2_corrective_iv_deployment_equivalence.py"
 )
+MIGRATION_V = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202609190001_b26_p2_corrective_v_execution_coherence.py"
+)
 BOOTSTRAP_COMPANION = ROOT / "db/schema/canonical_authority.sql"
 PROBE_ALIAS = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_alias.py"
 PROBE_SQL = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_sql.py"
@@ -444,11 +448,8 @@ def p2_beat_relay_entry_removal() -> None:
 def p2_conducted_mark_removal() -> None:
     _replace_once(
         B23_TASK_MODULE,
-        '                "UPDATE public.b26_p2_execution_outbox"\n'
-                '                " SET state = \'conducted\', updated_at = now()"',
-        '                "UPDATE public.b26_p2_execution_outbox"\n'
-                '                " SET state = \'published\', updated_at = now()"'
-                "  # NC-P2-CONDUCTED published masquerades as conducted\n",
+        "        await _conduction.mark_conducted_via_gate(\n",
+        "        await _conduction.direct_conducted_bypass(  # NC-P2-CONDUCTED gate bypassed\n",
         defect="p2_conducted_mark_removal",
     )
 
@@ -562,6 +563,51 @@ def p2_beat_healer_removal() -> None:
     )
 
 
+def p2_tuple_fk_removal() -> None:
+    _replace_once(
+        MIGRATION_V,
+        "ADD CONSTRAINT fk_b26_p2_outbox_execution_tuple",
+        "ADD CONSTRAINT fk_b26_p2_outbox_coherence_RETIRED  # NC-P2-TUPLE split-brain encodable",
+        defect="p2_tuple_fk_removal",
+    )
+
+
+def p2_directory_coherence_removal() -> None:
+    _replace_once(
+        MIGRATION_V,
+        "RAISE EXCEPTION 'b26_p2_directory_forked_authority_refused'",
+        "RAISE EXCEPTION 'b26_p2_directory_coherence_disabled'  -- NC-P2-DIRECTORY forged window encodable",
+        defect="p2_directory_coherence_removal",
+    )
+
+
+def p2_conducted_gate_removal() -> None:
+    _replace_once(
+        MIGRATION_V,
+        "RAISE EXCEPTION 'b26_p2_conducted_no_b23_consequence'",
+        "RAISE EXCEPTION 'b26_p2_consequence_check_disabled'  -- NC-P2-GATE conducted without consequence",
+        defect="p2_conducted_gate_removal",
+    )
+
+
+def p2_relay_dsn_remerge() -> None:
+    _replace_once(
+        PROCFILE,
+        "DATABASE_URL=$B26_P2_RELAY_DATABASE_URL ",
+        "",
+        defect="p2_relay_dsn_remerge",
+    )
+
+
+def p2_beat_dsn_remerge() -> None:
+    _replace_once(
+        PROCFILE,
+        "DATABASE_URL=$B26_P2_BEAT_DATABASE_URL ",
+        "",
+        defect="p2_beat_dsn_remerge",
+    )
+
+
 def p2_bootstrap_public_execute_restore() -> None:
     # Runtime falsifier (used by the topology job, not the text battery):
     # restoring PUBLIC EXECUTE on the admission resolver is NOT covered by
@@ -625,6 +671,11 @@ APPLIERS = {
     "p2_bootstrap_public_execute_restore": p2_bootstrap_public_execute_restore,
     "p2_beat_healer_removal": p2_beat_healer_removal,
     "p2_pool_reset_removal": p2_pool_reset_removal,
+    "p2_tuple_fk_removal": p2_tuple_fk_removal,
+    "p2_directory_coherence_removal": p2_directory_coherence_removal,
+    "p2_conducted_gate_removal": p2_conducted_gate_removal,
+    "p2_relay_dsn_remerge": p2_relay_dsn_remerge,
+    "p2_beat_dsn_remerge": p2_beat_dsn_remerge,
 }
 
 

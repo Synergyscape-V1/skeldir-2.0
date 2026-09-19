@@ -1,5 +1,5 @@
 {
-  "revision": "202609180001",
+  "revision": "202609190001",
   "objects": [
     [
       "column",
@@ -3768,6 +3768,18 @@
     ],
     [
       "role",
+      "app_beat",
+      {
+        "super": false,
+        "inherit": true,
+        "createdb": false,
+        "bypassrls": false,
+        "createrole": false,
+        "memberships": null
+      }
+    ],
+    [
+      "role",
       "app_celery_transport",
       {
         "super": false,
@@ -3781,6 +3793,18 @@
     [
       "role",
       "app_dispatch_publisher",
+      {
+        "super": false,
+        "inherit": true,
+        "createdb": false,
+        "bypassrls": false,
+        "createrole": false,
+        "memberships": null
+      }
+    ],
+    [
+      "role",
+      "app_relay",
       {
         "super": false,
         "inherit": true,

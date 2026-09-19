@@ -120,9 +120,10 @@ services:
       - /tmp/prometheus_multiproc
 
   relay_b26_p2:
-    # B2.6-P2 Corrective IV recovery worker: consumes the relay sweep that
-    # beat schedules. Runs as the producer principal (inherits the API
-    # DATABASE_URL) because only the producer may issue/mark delivery state.
+    # B2.6-P2 Corrective V recovery worker: consumes the relay sweep that
+    # beat schedules. Runs under the dedicated relay credential
+    # (app_relay: SELECT + delivery-column UPDATE + broker DML); it
+    # recovers/publishes EXISTING execution authority and cannot mint it.
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -132,6 +133,7 @@ services:
       - .env.local
     environment:
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+      DATABASE_URL: ${B26_P2_RELAY_DATABASE_URL:-postgresql+asyncpg://app_relay:app_relay@postgres:5432/skeldir_local}
       SKELDIR_CELERY_WORKER_ROLE: b26_p2_relay
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
@@ -149,9 +151,11 @@ services:
       - /tmp/prometheus_multiproc
 
   beat:
-    # B2.6-P2 Corrective IV recovery motor: schedules the relay sweep (plus
-    # the existing governed sweeps). Without this process pending execution
-    # intents never conduct after a broker outage without provider retry.
+    # B2.6-P2 Corrective V recovery motor: schedules the relay sweep (plus
+    # the existing governed sweeps) under the dedicated scheduler
+    # credential (app_beat: broker DML only, no application-table
+    # authority). Without this process pending execution intents never
+    # conduct after a broker outage without provider retry.
     # restart: a transient broker fault can kill a Celery process, and the
     # HealingBeatScheduler (which drops poisoned broker state on apply
     # failure) plus supervision together keep the motor live without human
@@ -164,6 +168,7 @@ services:
     env_file:
       - .env.local
     environment:
+      DATABASE_URL: ${B26_P2_BEAT_DATABASE_URL:-postgresql+asyncpg://app_beat:app_beat@postgres:5432/skeldir_local}
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: >
