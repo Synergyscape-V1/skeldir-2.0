@@ -283,6 +283,10 @@ PUBLIC_ALLOWLIST: set[tuple[str, str]] = {
     ("GET", "/health/live"),
     ("GET", "/health/ready"),
     ("GET", "/health/worker"),
+    # B2.6-P2 Corrective V published-unconsumed honesty signal: counts
+    # only (no PII, no financial truth), monitor-scrapable like the
+    # other liveness/capability probes.
+    ("GET", "/health/b26-p2-conduction"),
     ("GET", "/metrics"),
     ("GET", "/api/trust/v1/keys/jwks"),
     ("POST", "/api/auth/login"),
