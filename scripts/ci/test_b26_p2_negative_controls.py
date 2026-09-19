@@ -242,6 +242,31 @@ CONTROLS: tuple[tuple[str, str, str], ...] = (
         "p2_corrective_iv_orphan_quarantine_absent",
         "same-primitive",
     ),
+    (
+        "p2_tuple_fk_removal",
+        "p2_corrective_v_migration_absent",
+        "same-primitive",
+    ),
+    (
+        "p2_directory_coherence_removal",
+        "p2_corrective_v_migration_absent",
+        "same-primitive",
+    ),
+    (
+        "p2_conducted_gate_removal",
+        "p2_corrective_v_migration_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_relay_dsn_remerge",
+        "p2_corrective_v_relay_custody_absent",
+        "same-primitive",
+    ),
+    (
+        "p2_beat_dsn_remerge",
+        "p2_corrective_v_beat_custody_absent",
+        "same-primitive",
+    ),
 )
 
 
@@ -279,6 +304,10 @@ TRACKED_DEFECT_FILES = (
     ROOT / (
         "alembic/versions/007_skeldir_foundation/"
         "202609180001_b26_p2_corrective_iv_deployment_equivalence.py"
+    ),
+    ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202609190001_b26_p2_corrective_v_execution_coherence.py"
     ),
     ROOT / "db/schema/canonical_authority.sql",
 )

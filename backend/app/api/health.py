@@ -444,6 +444,103 @@ def _evaluate_security_readiness() -> dict[str, object]:
     return result
 
 
+@router.get("/health/b26-p2-conduction")
+async def b26_p2_conduction(response: Response) -> dict:
+    """B2.6-P2 Corrective V published-unconsumed honesty signal.
+
+    Published twin projections older than the governed staleness
+    threshold are explicitly operator-visible here (counts + oldest
+    age) instead of indistinguishable from healthy in-flight work. A
+    permanently unconsumed execution therefore cannot remain silent:
+    this endpoint, the relay sweep log, and the stale function carry
+    the same operational signal from one implementation law.
+
+    Counts only (no PII, no financial truth). Returns 200 always when
+    the signal itself is observable; the `status` field distinguishes
+    `ok` (no stale work) from `stale_unconducted` (operator action
+    required). Dependency failure yields 503.
+    """
+    from app.db.session import engine as _engine  # noqa: PLC0415
+    from app.db.session import get_session as _tenant_session  # noqa: PLC0415
+    from app.finance_reconciliation import conduction_state as _conduction  # noqa: PLC0415
+
+    try:
+        threshold = _conduction.staleness_threshold_seconds()
+        async with _engine.connect() as conn:
+            tenant_rows = (
+                (await conn.execute(text("SELECT id FROM public.tenants ORDER BY id")))
+                .mappings()
+                .all()
+            )
+        tenants = [str(r["id"]) for r in tenant_rows]
+        published_total = 0
+        stale_total = 0
+        oldest_published_age: float | None = None
+        oldest_stale_age: float | None = None
+        for tenant in tenants:
+            async with _tenant_session(tenant_id=tenant) as session:
+                published_row = (
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT count(*) AS n,"
+                                " max(EXTRACT(EPOCH FROM (now() - GREATEST(d.updated_at, o.updated_at)))) AS oldest"
+                                " FROM public.b23_match_task_dispatches AS d"
+                                " JOIN public.b26_p2_execution_outbox AS o"
+                                "   ON o.dispatch_task_id = d.task_id"
+                                "  AND o.tenant_id = d.tenant_id"
+                                "  AND o.webhook_ingress_identity_id = d.webhook_ingress_identity_id"
+                                " WHERE d.delivery_state = 'published'"
+                                " AND o.state = 'published'"
+                            )
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+                published_total += int(published_row["n"] or 0)
+                if published_row["oldest"] is not None:
+                    age = float(published_row["oldest"])
+                    oldest_published_age = (
+                        age
+                        if oldest_published_age is None
+                        else max(oldest_published_age, age)
+                    )
+                stale_rows = await _conduction.staleness_snapshot(
+                    session, threshold_seconds=threshold
+                )
+                stale_total += len(stale_rows)
+                for stale in stale_rows:
+                    oldest_stale_age = (
+                        stale.age_seconds
+                        if oldest_stale_age is None
+                        else max(oldest_stale_age, stale.age_seconds)
+                    )
+        result = {
+            "status": "stale_unconducted" if stale_total > 0 else "ok",
+            "threshold_seconds": threshold,
+            "tenants_scanned": len(tenants),
+            "published_total": published_total,
+            "stale_unconducted_count": stale_total,
+            "oldest_published_age_seconds": oldest_published_age,
+            "oldest_stale_age_seconds": oldest_stale_age,
+        }
+        if stale_total > 0:
+            logger.warning(
+                "b26_p2_conduction_stale_unconducted",
+                extra={
+                    "stale_unconducted_count": stale_total,
+                    "oldest_stale_age_seconds": oldest_stale_age,
+                    "threshold_seconds": threshold,
+                },
+            )
+        return result
+    except Exception:
+        logger.error("b26_p2_conduction_signal_failed", exc_info=True)
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "unavailable"}
+
+
 @router.get("/health/worker")
 async def worker_capability(response: Response) -> dict:
     """

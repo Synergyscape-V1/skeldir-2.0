@@ -47,15 +47,20 @@ P2_TABLES = (
     "b23_match_task_dispatches",
     "b26_p2_execution_outbox",
     "b26_p2_task_authority_directory",
+    "b26_p2_conduction_receipts",
+    "b26_p2_execution_quarantine",
 )
 
 P2_ROUTINES = (
     "b26_p2_resolve_dispatch_authority",
     "b26_p2_enforce_dispatch_immutability",
     "b26_p2_enforce_outbox_transitions",
+    "b26_p2_enforce_directory_coherence",
+    "b26_p2_mark_conducted",
+    "b26_p2_stale_unconducted",
 )
 
-P2_ROLES = ("app_user", "app_worker", "app_rw", "app_ro", "PUBLIC")
+P2_ROLES = ("app_user", "app_worker", "app_rw", "app_ro", "app_relay", "app_beat", "PUBLIC")
 
 _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
     (
@@ -66,8 +71,10 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
         WHERE table_schema = 'public'
           AND table_name IN ('b23_match_task_dispatches',
                              'b26_p2_execution_outbox',
-                             'b26_p2_task_authority_directory')
-          AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'PUBLIC')
+                             'b26_p2_task_authority_directory',
+                             'b26_p2_conduction_receipts',
+                             'b26_p2_execution_quarantine')
+          AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'PUBLIC')
         """,
     ),
     (
@@ -78,8 +85,10 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
         WHERE table_schema = 'public'
           AND table_name IN ('b23_match_task_dispatches',
                              'b26_p2_execution_outbox',
-                             'b26_p2_task_authority_directory')
-          AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'PUBLIC')
+                             'b26_p2_task_authority_directory',
+                             'b26_p2_conduction_receipts',
+                             'b26_p2_execution_quarantine')
+          AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'PUBLIC')
         """,
     ),
     (
@@ -90,7 +99,10 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
         WHERE routine_schema = 'public'
           AND routine_name IN ('b26_p2_resolve_dispatch_authority',
                                'b26_p2_enforce_dispatch_immutability',
-                               'b26_p2_enforce_outbox_transitions')
+                               'b26_p2_enforce_outbox_transitions',
+                               'b26_p2_enforce_directory_coherence',
+                               'b26_p2_mark_conducted',
+                               'b26_p2_stale_unconducted')
         """,
     ),
     (
@@ -102,7 +114,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
         WHERE relnamespace = 'public'::regnamespace
           AND relname IN ('b23_match_task_dispatches',
                           'b26_p2_execution_outbox',
-                          'b26_p2_task_authority_directory')
+                          'b26_p2_task_authority_directory',
+                             'b26_p2_conduction_receipts',
+                             'b26_p2_execution_quarantine')
         """,
     ),
     (
@@ -114,7 +128,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
         WHERE schemaname = 'public'
           AND tablename IN ('b23_match_task_dispatches',
                             'b26_p2_execution_outbox',
-                            'b26_p2_task_authority_directory')
+                            'b26_p2_task_authority_directory',
+                             'b26_p2_conduction_receipts',
+                             'b26_p2_execution_quarantine')
         """,
     ),
     (
@@ -127,7 +143,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
         WHERE t.relnamespace = 'public'::regnamespace
           AND t.relname IN ('b23_match_task_dispatches',
                             'b26_p2_execution_outbox',
-                            'b26_p2_task_authority_directory')
+                            'b26_p2_task_authority_directory',
+                             'b26_p2_conduction_receipts',
+                             'b26_p2_execution_quarantine')
           AND c.contype IN ('f', 'u', 'p')
         """,
     ),
@@ -143,7 +161,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
         WHERE c.relnamespace = 'public'::regnamespace
           AND c.relname IN ('b23_match_task_dispatches',
                             'b26_p2_execution_outbox',
-                            'b26_p2_task_authority_directory')
+                            'b26_p2_task_authority_directory',
+                             'b26_p2_conduction_receipts',
+                             'b26_p2_execution_quarantine')
           AND NOT t.tgisinternal
         """,
     ),
@@ -160,7 +180,10 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
         WHERE n.nspname = 'public'
           AND p.proname IN ('b26_p2_resolve_dispatch_authority',
                             'b26_p2_enforce_dispatch_immutability',
-                            'b26_p2_enforce_outbox_transitions')
+                            'b26_p2_enforce_outbox_transitions',
+                               'b26_p2_enforce_directory_coherence',
+                               'b26_p2_mark_conducted',
+                               'b26_p2_stale_unconducted')
         """,
     ),
     (
@@ -218,7 +241,9 @@ def _check_behavior_matrix(conn) -> list[str]:
         WHERE t.relnamespace = 'public'::regnamespace
           AND t.relname IN ('b23_match_task_dispatches',
                             'b26_p2_execution_outbox',
-                            'b26_p2_task_authority_directory')
+                            'b26_p2_task_authority_directory',
+                             'b26_p2_conduction_receipts',
+                             'b26_p2_execution_quarantine')
           AND c.contype = 'c'
         GROUP BY c.conname, t.relname, pg_get_constraintdef(c.oid)
         ORDER BY c.conname
