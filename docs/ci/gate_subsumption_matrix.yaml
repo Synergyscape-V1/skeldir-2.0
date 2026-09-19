@@ -3254,6 +3254,21 @@
   local_reproduction_command: "python scripts/ci/assert_b26_p2_container_equivalence.py --help"
   risk_if_removed: "Host-green scope proof could ship an image that classifies rails differently."
   decision: keep_required
+- gate_id: b26-p2-bootstrap-authority-equivalence
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: "B2.6-P2 Production Topology Proof"
+  script: scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Migration-built and bootstrap-built databases enforce identical P2 authority physics."
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: "Object-shape comparison cannot observe grant, EXECUTE, RLS, or default-privilege divergence between construction paths."
+  negative_control_preserved_by: python scripts/ci/_b26_p2_controlled_defect.py p2_bootstrap_public_execute_restore
+  local_reproduction_command: "python scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py --help"
+  risk_if_removed: "A bootstrap-built database could enforce weaker authority than the migration-built production database."
+  decision: keep_required
 - gate_id: b26-p2-proof-plane-adjudicator
   workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
   job: "B2.6 Finance Reconciliation Adjudication"

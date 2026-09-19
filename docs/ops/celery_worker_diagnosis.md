@@ -60,9 +60,15 @@ signature_sensitive: false
 
 ## Queue Binding
 
-The local worker command in `docker-compose.local.yml` binds:
+The generic local worker command in `docker-compose.local.yml` binds:
 
-`housekeeping,maintenance,llm,attribution,b23_match_engine`
+`housekeeping,maintenance,llm,attribution`
+
+`b23_match_engine` is consumed ONLY by the dedicated `worker_b23` service
+(under `B23_WORKER_DATABASE_URL`), and `b26_p2_relay` ONLY by the
+`relay_b26_p2` service (Corrective IV custody separation). A B2.3 task
+received by any other worker principal fails closed (verdict permission
+denied) instead of conducting.
 
 If a task is queued but not consumed, first verify that its queue appears in
 [queue topology](queue_topology.md), then run `make ops-worker-inspect`.

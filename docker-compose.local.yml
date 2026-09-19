@@ -74,12 +74,104 @@ services:
       --loglevel=INFO
       --pool=solo
       --concurrency=1
-      --queues=housekeeping,maintenance,llm,attribution,b23_match_engine
+      --queues=housekeeping,maintenance,llm,attribution
     depends_on:
       postgres:
         condition: service_healthy
     tmpfs:
       - /tmp/prometheus_multiproc
+
+  worker_b23:
+    # B2.6-P2 Corrective IV: the B2.3 worker authors verdict truth under the
+    # dedicated worker credential and must never inherit the API DSN (which
+    # would hand the consumer full authority-mint capability while breaking
+    # every verdict write). The default below follows this file's convention
+    # (every variable defaults for local dev); production-grade fail-closed
+    # wiring lives in the Procfile (SKELDIR_B23_REQUIRE_WORKER_DSN) and the
+    # required topology proof, not in local compose. The generic worker
+    # above no longer consumes b23_match_engine for the same reason.
+    # restart: a transient broker fault can kill a Celery process, and
+    # supervised restart keeps recovery live without human action.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    container_name: skeldir-worker-b23-local
+    env_file:
+      - .env.local
+    environment:
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+      DATABASE_URL: ${B23_WORKER_DATABASE_URL:-postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_local}
+      B23_WORKER_DATABASE_URL: ${B23_WORKER_DATABASE_URL:-postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_local}
+      SKELDIR_B23_REQUIRE_WORKER_DSN: "1"
+      TRUST_SIGNER_DATABASE_URL: ""
+      SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
+    command: >
+      celery -A app.celery_app.celery_app worker
+      --loglevel=INFO
+      --pool=solo
+      --concurrency=1
+      --queues=b23_match_engine
+      --prefetch-multiplier=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    tmpfs:
+      - /tmp/prometheus_multiproc
+
+  relay_b26_p2:
+    # B2.6-P2 Corrective IV recovery worker: consumes the relay sweep that
+    # beat schedules. Runs as the producer principal (inherits the API
+    # DATABASE_URL) because only the producer may issue/mark delivery state.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    container_name: skeldir-relay-b26-p2-local
+    env_file:
+      - .env.local
+    environment:
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+      SKELDIR_CELERY_WORKER_ROLE: b26_p2_relay
+      TRUST_SIGNER_DATABASE_URL: ""
+      SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
+    command: >
+      celery -A app.celery_app.celery_app worker
+      --loglevel=INFO
+      --pool=solo
+      --concurrency=1
+      --queues=b26_p2_relay
+      --prefetch-multiplier=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    tmpfs:
+      - /tmp/prometheus_multiproc
+
+  beat:
+    # B2.6-P2 Corrective IV recovery motor: schedules the relay sweep (plus
+    # the existing governed sweeps). Without this process pending execution
+    # intents never conduct after a broker outage without provider retry.
+    # restart: a transient broker fault can kill a Celery process, and the
+    # HealingBeatScheduler (which drops poisoned broker state on apply
+    # failure) plus supervision together keep the motor live without human
+    # action.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    container_name: skeldir-beat-local
+    env_file:
+      - .env.local
+    environment:
+      TRUST_SIGNER_DATABASE_URL: ""
+      SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
+    command: >
+      celery -A app.celery_app.celery_app beat
+      --loglevel=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   trust-signer:
     # B2.5-P13 Corrective XVII deployment unit. Started only when an operator

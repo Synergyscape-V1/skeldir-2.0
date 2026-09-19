@@ -69,6 +69,11 @@ async def _publish_one(
                 "error": str(exc)[:500],
             },
         )
+        # Corrective IV: drop pooled broker state so the next sweep
+        # rebuilds instead of reusing the poisoned producer session.
+        from app.celery_app import reset_broker_pools_after_fault  # noqa: PLC0415
+
+        reset_broker_pools_after_fault(reason="relay_publish")
         return False
 
 
@@ -106,8 +111,17 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
             .all()
         )
     tenants = [str(r["id"]) for r in tenant_rows]
+    divergent_total = 0
     for tenant in tenants:
         async with get_session(tenant_id=tenant) as session:
+            # Corrective IV: the sweep claims rows with FOR UPDATE SKIP
+            # LOCKED so two relay processes (or beat redelivery overlapping
+            # a slow sweep) never publish the same intent twice. Both the
+            # outbox AND the dispatch must be pending_publish: a divergence
+            # between the two is fail-closed observable (counted, never
+            # swept, never silently dropped) because the FK coherence law
+            # says they must agree -- disagreement means a writer bypassed
+            # the governed path and an operator must look.
             rows = (
                 (
                     await session.execute(
@@ -117,7 +131,8 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                             " o.publish_attempts AS attempts,"
                             " d.window_start AS window_start,"
                             " d.window_end AS window_end,"
-                            " d.correlation_id AS correlation_id"
+                            " d.correlation_id AS correlation_id,"
+                            " d.delivery_state AS dispatch_state"
                             " FROM public.b26_p2_execution_outbox AS o"
                             " JOIN public.b23_match_task_dispatches AS d"
                             "   ON d.task_id = o.dispatch_task_id"
@@ -126,6 +141,7 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                             " AND o.next_retry_at <= now()"
                             " ORDER BY o.created_at ASC"
                             " LIMIT :limit"
+                            " FOR UPDATE OF o SKIP LOCKED"
                         ),
                         {"tenant": str(tenant), "limit": int(limit)},
                     )
@@ -133,6 +149,18 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                 .mappings()
                 .all()
             )
+            divergent = [r for r in rows if str(r["dispatch_state"]) != "pending_publish"]
+            if divergent:
+                divergent_total += len(divergent)
+                logger.warning(
+                    "b26_p2_relay_outbox_dispatch_divergent",
+                    extra={
+                        "tenant_id": str(tenant),
+                        "divergent_task_ids": [str(r["task_id"]) for r in divergent][:10],
+                        "divergent_count": len(divergent),
+                    },
+                )
+            rows = [r for r in rows if str(r["dispatch_state"]) == "pending_publish"]
             for row in rows:
                 task_id = str(row["task_id"])
                 ws = row["window_start"]
@@ -220,7 +248,36 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                         {"task_id": task_id},
                     )
                     failed += 1
-    return {"published": published, "failed": failed}
+    # In-process principal evidence: the deployed proof captures which
+    # database login actually performed the sweep (must be the producer
+    # principal -- only the producer may issue/mark delivery state).
+    try:
+        async with _engine.connect() as _principal_conn:
+            relay_principal = str(
+                (await _principal_conn.execute(text("SELECT current_user"))).scalar_one()
+            )
+    except Exception:
+        relay_principal = "unknown"
+    # Recovery-liveness observability (H-IV-B05): every sweep emits its
+    # counts. A silent relay (no log lines) vs an empty sweep
+    # (published=0) vs a failing sweep (failed>0) are three different
+    # operator facts; conflating them hid the unscheduled-relay class.
+    logger.info(
+        "b26_p2_relay_sweep_completed",
+        extra={
+            "tenants_scanned": len(tenants),
+            "published": published,
+            "failed": failed,
+            "divergent": divergent_total,
+            "database_user": relay_principal,
+        },
+    )
+    return {
+        "published": published,
+        "failed": failed,
+        "divergent": divergent_total,
+        "database_user": relay_principal,
+    }
 
 
 @celery_app.task(

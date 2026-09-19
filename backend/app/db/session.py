@@ -114,7 +114,26 @@ engine = create_async_engine(
 # the worker authors verdicts as app_worker). Unset preserves the exact
 # historical behavior (worker pool shares the application DSN), so
 # production topology without the variable is byte-for-byte unaffected.
+#
+# B2.6-P2 Corrective IV: the deployed worker_b23 process sets
+# SKELDIR_B23_REQUIRE_WORKER_DSN=1 (Procfile). Under that flag an unset
+# B23_WORKER_DATABASE_URL fails closed at import with a legible error
+# instead of silently inheriting the producer DSN (which would hand the
+# consumer full authority-mint capability while breaking every verdict
+# write). No other process sets the flag, so historical defaults elsewhere
+# are unaffected.
 _B23_WORKER_DATABASE_URL = os.getenv("B23_WORKER_DATABASE_URL", "").strip()
+if os.getenv("SKELDIR_B23_REQUIRE_WORKER_DSN", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+} and not _B23_WORKER_DATABASE_URL:
+    raise RuntimeError(
+        "b23_worker_dsn_required:"
+        " SKELDIR_B23_REQUIRE_WORKER_DSN is set but B23_WORKER_DATABASE_URL is empty;"
+        " the B2.3 worker must not inherit the producer DSN"
+    )
 if _B23_WORKER_DATABASE_URL:
     _B23_ASYNC_DATABASE_URL, _B23_CONNECT_ARGS = _build_async_database_url_and_args(
         _B23_WORKER_DATABASE_URL

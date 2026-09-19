@@ -2520,20 +2520,80 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                 RAISE EXCEPTION 'b26_p2_dispatch_correlation_immutable'
                     USING ERRCODE = '42501';
             END IF;
-            IF OLD.window_start IS DISTINCT FROM NEW.window_start
-               AND OLD.window_start IS NOT NULL THEN
+            -- Corrective IV: strict window immutability. The Corrective-III
+            -- NULL-OLD exception is closed (legacy rows backfilled above);
+            -- any window rewrite, including NULL -> value, refuses.
+            IF OLD.window_start IS DISTINCT FROM NEW.window_start THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'
                     USING ERRCODE = '42501';
             END IF;
-            IF OLD.window_end IS DISTINCT FROM NEW.window_end
-               AND OLD.window_end IS NOT NULL THEN
+            IF OLD.window_end IS DISTINCT FROM NEW.window_end THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'
                     USING ERRCODE = '42501';
             END IF;
-            -- Lawful delivery transitions only: pending_publish -> published.
-            IF OLD.delivery_state = 'published' AND NEW.delivery_state = 'pending_publish' THEN
-                RAISE EXCEPTION 'b26_p2_dispatch_delivery_no_backward'
+            -- Corrective IV: attempts monotonicity (regression refuses).
+            IF NEW.publish_attempts < OLD.publish_attempts THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_attempts_regression'
                     USING ERRCODE = '42501';
+            END IF;
+            -- Corrective IV: forward-only delivery law.
+            -- pending_publish -> published -> conducted; conducted is
+            -- terminal (immutable). Terminal task failure is observed via
+            -- worker_failed_jobs DLQ + result backend, never by moving the
+            -- delivery state backwards or sideways.
+            IF OLD.delivery_state IS DISTINCT FROM NEW.delivery_state THEN
+                IF OLD.delivery_state = 'pending_publish'
+                   AND NEW.delivery_state = 'published' THEN
+                    NULL;
+                ELSIF OLD.delivery_state = 'published'
+                   AND NEW.delivery_state = 'conducted' THEN
+                    NULL;
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_dispatch_delivery_illegal_transition'
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+            NEW.updated_at = now();
+            RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_enforce_outbox_transitions(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF OLD.dispatch_task_id IS DISTINCT FROM NEW.dispatch_task_id THEN
+                RAISE EXCEPTION 'b26_p2_outbox_task_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+                RAISE EXCEPTION 'b26_p2_outbox_tenant_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.webhook_ingress_identity_id IS DISTINCT FROM NEW.webhook_ingress_identity_id THEN
+                RAISE EXCEPTION 'b26_p2_outbox_ingress_immutable'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.publish_attempts < OLD.publish_attempts THEN
+                RAISE EXCEPTION 'b26_p2_outbox_attempts_regression'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF OLD.state IS DISTINCT FROM NEW.state THEN
+                IF OLD.state = 'pending_publish'
+                   AND NEW.state = 'published' THEN
+                    NULL;
+                ELSIF OLD.state = 'published'
+                   AND NEW.state = 'conducted' THEN
+                    NULL;
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_outbox_illegal_transition'
+                        USING ERRCODE = '42501';
+                END IF;
             END IF;
             NEW.updated_at = now();
             RETURN NEW;
@@ -5595,7 +5655,7 @@ CREATE TABLE public.b23_match_task_dispatches (
     last_publish_error text,
     window_start timestamp with time zone,
     window_end timestamp with time zone,
-    CONSTRAINT ck_b23_match_task_dispatches_delivery_state CHECK (((delivery_state)::text = ANY ((ARRAY['pending_publish'::character varying, 'published'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_task_dispatches_delivery_state CHECK (((delivery_state)::text = ANY ((ARRAY['pending_publish'::character varying, 'published'::character varying, 'conducted'::character varying])::text[]))),
     CONSTRAINT ck_b23_match_task_dispatches_publish_attempts CHECK ((publish_attempts >= 0)),
     CONSTRAINT ck_b23_match_task_dispatches_queue CHECK (((queue)::text = 'b23_match_engine'::text)),
     CONSTRAINT ck_b23_match_task_dispatches_status CHECK (((status)::text = 'dispatched'::text)),
@@ -6143,7 +6203,7 @@ CREATE TABLE public.b26_p2_execution_outbox (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_b26_p2_outbox_attempts CHECK ((publish_attempts >= 0)),
-    CONSTRAINT ck_b26_p2_outbox_state CHECK (((state)::text = ANY ((ARRAY['pending_publish'::character varying, 'published'::character varying])::text[])))
+    CONSTRAINT ck_b26_p2_outbox_state CHECK (((state)::text = ANY ((ARRAY['pending_publish'::character varying, 'published'::character varying, 'conducted'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox FORCE ROW LEVEL SECURITY;
@@ -17544,6 +17604,8 @@ CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model
 
 CREATE TRIGGER trg_b26_p2_dispatch_immutability BEFORE UPDATE ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_immutability();
 
+CREATE TRIGGER trg_b26_p2_outbox_transitions BEFORE UPDATE ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_outbox_transitions();
+
 
 --
 -- Name: b27_explanation_materializations trg_b27_explanation_consequence; Type: TRIGGER; Schema: public; Owner: -
@@ -18419,6 +18481,39 @@ ALTER TABLE ONLY public.b24_fit_recovery_outbox
 ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
     ADD CONSTRAINT fk_b24_replan_lineage_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
 
+
+
+
+--
+-- Name: b26_p2_task_authority_directory fk_b26_p2_directory_dispatch_task_identity; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_task_authority_directory
+    ADD CONSTRAINT fk_b26_p2_directory_dispatch_task_identity FOREIGN KEY (task_id) REFERENCES public.b23_match_task_dispatches(task_id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_task_authority_directory fk_b26_p2_directory_tenant_ingress_composite; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_task_authority_directory
+    ADD CONSTRAINT fk_b26_p2_directory_tenant_ingress_composite FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_execution_outbox fk_b26_p2_outbox_dispatch_task_identity; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_outbox
+    ADD CONSTRAINT fk_b26_p2_outbox_dispatch_task_identity FOREIGN KEY (dispatch_task_id) REFERENCES public.b23_match_task_dispatches(task_id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_execution_outbox fk_b26_p2_outbox_tenant_ingress_composite; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_outbox
+    ADD CONSTRAINT fk_b26_p2_outbox_tenant_ingress_composite FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
 
 --
 -- Name: b27_explanation_materializations fk_b27_explanation_materializations_source_issuance; Type: FK CONSTRAINT; Schema: public; Owner: -

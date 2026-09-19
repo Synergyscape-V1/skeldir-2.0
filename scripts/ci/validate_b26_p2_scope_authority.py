@@ -10,6 +10,7 @@ import importlib
 import importlib.util
 import inspect
 import json
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -36,6 +37,7 @@ COVERAGE_MODULE = BACKEND / "app/finance_reconciliation/coverage_authority.py"
 SINK_MODULE = BACKEND / "app/finance_reconciliation/canonical_sink.py"
 WEBHOOK_MODULE = BACKEND / "app/api/webhooks.py"
 B23_TASK_MODULE = BACKEND / "app/tasks/revenue_verification.py"
+RELAY_MODULE = BACKEND / "app/tasks/b26_p2_relay.py"
 
 CANONICAL_PROVIDERS = frozenset({"paypal", "shopify", "stripe", "woocommerce"})
 
@@ -151,9 +153,21 @@ def _check_contract(violations: list[str], details: dict[str, Any]) -> dict[str,
         ),
         (
             "identity_law",
-            "semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels",
+            "semantically_complete_scope_identity_v3_binds_provider_rail_currency_policy_semantic_sha_money_labels_source_bytes_excluded",
         ),
-        ("identity_version", "b2.6-p2-scope-identity-v2"),
+        ("identity_version", "b2.6-p2-scope-identity-v3"),
+        (
+            "identity_material",
+            "tenant_window_policy_version_policy_semantic_sha_money_labels_sorted_provider_rail_currency_disposition_reason_amount",
+        ),
+        (
+            "provenance_law",
+            "policy_source_bytes_are_provenance_evidence_never_scope_semantics",
+        ),
+        (
+            "identity_provenance_separation",
+            "scope_identity_binds_semantic_sha_only_source_sha_emitted_as_provenance",
+        ),
         (
             "window_oracle_law",
             "independent_normative_oracle_pins_utc_day_half_open_without_importing_production_quantizer",
@@ -789,9 +803,21 @@ def _check_corrective_ii_law(violations: list[str], details: dict[str, Any]) -> 
         ("window_authority", "dispatch_bound_ingress_event_day_half_open_utc"),
         (
             "identity_law",
-            "semantically_complete_scope_identity_v2_binds_provider_rail_currency_policy_sha_money_labels",
+            "semantically_complete_scope_identity_v3_binds_provider_rail_currency_policy_semantic_sha_money_labels_source_bytes_excluded",
         ),
-        ("identity_version", "b2.6-p2-scope-identity-v2"),
+        ("identity_version", "b2.6-p2-scope-identity-v3"),
+        (
+            "identity_material",
+            "tenant_window_policy_version_policy_semantic_sha_money_labels_sorted_provider_rail_currency_disposition_reason_amount",
+        ),
+        (
+            "provenance_law",
+            "policy_source_bytes_are_provenance_evidence_never_scope_semantics",
+        ),
+        (
+            "identity_provenance_separation",
+            "scope_identity_binds_semantic_sha_only_source_sha_emitted_as_provenance",
+        ),
         (
             "delivery_law",
             "acceptance_acquires_durable_recoverable_execution_intent_atomically",
@@ -870,8 +896,27 @@ def _check_corrective_iii_law(violations: list[str], details: dict[str, Any]) ->
     procfile = (REPO_ROOT / "Procfile").read_text(encoding="utf-8")
     if "relay_b26_p2:" not in procfile:
         violations.append("p2_corrective_iii_relay_not_deployed")
-    if "WORKER_DATABASE_URL" not in procfile:
-        violations.append("p2_corrective_iii_worker_custody_not_separated")
+    # Corrective IV: the custody check is worker_b23-line-specific (the old
+    # whole-file "WORKER_DATABASE_URL" substring was satisfied vacuously by
+    # the bayesian line while the deployed B2.3 worker inherited the
+    # producer DSN). The line must bind the DISTINCT B23 worker credential
+    # and must never read the bayesian credential (C7 token rule).
+    worker_b23_line = next(
+        (ln for ln in procfile.splitlines() if ln.startswith("worker_b23:")),
+        "",
+    )
+    if "B23_WORKER_DATABASE_URL" not in worker_b23_line:
+        violations.append("p2_corrective_iv_worker_custody_not_split")
+    if re.search(r"\$[{]?(?:E2E_)?WORKER_DATABASE_URL", worker_b23_line) is not None:
+        violations.append("p2_corrective_iv_worker_reads_bayesian_dsn")
+    if "SKELDIR_B23_REQUIRE_WORKER_DSN=1" not in worker_b23_line:
+        violations.append("p2_corrective_iv_worker_boot_guard_absent")
+    relay_line = next(
+        (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
+        "",
+    )
+    if "SKELDIR_CELERY_WORKER_ROLE=b26_p2_relay" not in relay_line:
+        violations.append("p2_corrective_iv_relay_role_undeclared")
     conduction_source = CONDUCTION_MODULE.read_text(encoding="utf-8")
     for required in (
         "policy_singleton_violated",
@@ -879,7 +924,10 @@ def _check_corrective_iii_law(violations: list[str], details: dict[str, Any]) ->
         "function_call_present",
         "relforcerowsecurity",
         "SCOPE_IDENTITY_VERSION",
-        "b2.6-p2-scope-identity-v2",
+        "b2.6-p2-scope-identity-v3",
+        # policy_source_sha256 must remain as emitted provenance (stored on
+        # the scope result) while no longer binding the digest; the semantic
+        # SHA is the identity-bearing one.
         "policy_source_sha256",
         "policy_semantic_sha256",
         "item.classification.provider",
@@ -888,6 +936,9 @@ def _check_corrective_iii_law(violations: list[str], details: dict[str, Any]) ->
     ):
         if required not in conduction_source:
             violations.append(f"p2_corrective_iii_conduction_absent:{required}")
+    if 'str(policy_source_sha256 or "")' in conduction_source:
+        # The digest payload must not bind the source SHA (v3 law).
+        violations.append("p2_corrective_iv_source_sha_bound_in_identity")
     # Independent window oracle: production quantizer must agree with the
     # normative oracle on every reference vector (common-mode drift REDs).
     try:
@@ -906,6 +957,177 @@ def _check_corrective_iii_law(violations: list[str], details: dict[str, Any]) ->
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_corrective_iii_window_oracle_crash:{exc}")
     details["corrective_iii_checked"] = True
+
+
+def _check_corrective_iv_law(violations: list[str], details: dict[str, Any]) -> None:
+    """Corrective IV class closure: deployment-plane equivalence by physics."""
+    migration = REPO_ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202609180001_b26_p2_corrective_iv_deployment_equivalence.py"
+    )
+    if not migration.is_file():
+        violations.append("p2_corrective_iv_migration_absent")
+        return
+    migration_source = migration.read_text(encoding="utf-8")
+    # Upgrade-path tokens only: the downgrade path legitimately names the
+    # same constraints/triggers while dropping them.
+    upgrade_source = migration_source.split("def downgrade", 1)[0]
+    for required in (
+        # Load-bearing token is the ADD CONSTRAINT form: conname guards
+        # and downgrade DROPs legitimately name the same constraints.
+        "ADD CONSTRAINT fk_b26_p2_outbox_dispatch_task_identity",
+        "ADD CONSTRAINT fk_b26_p2_directory_dispatch_task_identity",
+        "ADD CONSTRAINT fk_b26_p2_outbox_tenant_ingress_composite",
+        "ADD CONSTRAINT fk_b26_p2_directory_tenant_ingress_composite",
+        "b26_p2_enforce_outbox_transitions",
+        "trg_b26_p2_outbox_transitions",
+        "b26_p2_dispatch_attempts_regression",
+        "b26_p2_outbox_attempts_regression",
+        "b26_p2_dispatch_delivery_illegal_transition",
+        "b26_p2_outbox_illegal_transition",
+        "'conducted'",
+        "GRANT UPDATE (delivery_state",
+        "GRANT SELECT ON TABLE public.tenants TO app_worker",
+    ):
+        if required not in upgrade_source:
+            violations.append(f"p2_corrective_iv_migration_absent:{required}")
+    # The Corrective-III NULL-window exception must be gone from the
+    # upgrade path (strict immutability after legacy backfill). The
+    # downgrade path legitimately restores the old trigger body.
+    if "AND OLD.window_start IS NOT NULL" in upgrade_source:
+        violations.append("p2_corrective_iv_null_window_hole_survives")
+    # Orphan quarantine: the upgrade must delete parentless outbox and
+    # directory rows before adding the coherence foreign keys, or both a
+    # fresh upgrade on a dirty database and a downgrade/reupgrade
+    # reversibility cycle fail closed on legacy debris. The child tables
+    # must also be locked first: quarantine and validation run as
+    # separate statements, and a writer committing a parentless row
+    # between them slips past the quarantine (observed live in CI).
+    for required in (
+        "DELETE FROM public.b26_p2_execution_outbox AS o",
+        "DELETE FROM public.b26_p2_task_authority_directory AS dir",
+        "LOCK TABLE public.b26_p2_execution_outbox IN SHARE ROW EXCLUSIVE MODE",
+        "LOCK TABLE public.b26_p2_task_authority_directory IN SHARE ROW EXCLUSIVE MODE",
+    ):
+        if required not in upgrade_source:
+            violations.append(
+                f"p2_corrective_iv_orphan_quarantine_absent:{required}"
+            )
+    # Admission binding (Gate 6) is deliberately NOT a resolver-body pin:
+    # a dispatch JOIN inside the SECURITY DEFINER resolver was evaluated
+    # and rejected by PostgreSQL itself (row_security=off does not bypass
+    # FORCE RLS for non-superuser owners: CREATE FUNCTION fails in
+    # production-fidelity lanes while succeeding in superuser lanes).
+    # Gate 6 therefore rests on the coherence foreign keys pinned above
+    # plus the quarantine pinned below -- no principal below superuser
+    # can persist a directory-only artifact.
+    # Recovery motor: beat must schedule the relay sweep on its queue.
+    beat_source = (BACKEND / "app/tasks/beat_schedule.py").read_text(encoding="utf-8")
+    for required in (
+        "b26-p2-relay-sweep",
+        "app.tasks.b26_p2_relay.relay_b26_p2_pending_dispatches",
+        "QUEUE_B26_P2_RELAY",
+        "B26_P2_RELAY_SWEEP_INTERVAL_SECONDS",
+    ):
+        if required not in beat_source:
+            violations.append(f"p2_corrective_iv_recovery_motor_absent:{required}")
+    # Relay role must boot as a non-bayesian process (exact shipped
+    # command crashed at import before Corrective IV). The admission
+    # branch (not a comment) is the load-bearing token.
+    bayesian_source = (BACKEND / "app/tasks/bayesian.py").read_text(encoding="utf-8")
+    if "if role == _BAYESIAN_WORKER_ROLE_P2_RELAY:" not in bayesian_source:
+        violations.append("p2_corrective_iv_relay_role_unknown")
+    # Conducted marking: only the worker that conducted the work advances
+    # delivery state, after B2.3 + P2 success.
+    task_source = B23_TASK_MODULE.read_text(encoding="utf-8")
+    for required in (
+        "_mark_dispatch_conducted",
+        "delivery_state = 'conducted'",
+        "SET state = 'conducted'",
+        "db_worker_principal",
+        "SELECT current_user",
+    ):
+        if required not in task_source:
+            violations.append(f"p2_corrective_iv_conducted_law_absent:{required}")
+    # Coherence consumers: the sweeper must claim rows (SKIP LOCKED) and
+    # refuse divergent outbox/dispatch pairs fail-closed.
+    relay_source = (BACKEND / "app/tasks/b26_p2_relay.py").read_text(encoding="utf-8")
+    for required in (
+        "FOR UPDATE OF o SKIP LOCKED",
+        "b26_p2_relay_outbox_dispatch_divergent",
+        "database_user",
+    ):
+        if required not in relay_source:
+            violations.append(f"p2_corrective_iv_sweeper_law_absent:{required}")
+    # Scheduler healing: beat must drop poisoned broker state on apply
+    # failure (kombu's SQLAlchemy transport never heals a faulted session,
+    # so without this the recovery motor wedges alive-but-silent).
+    beat_healer = BACKEND / "app/celery_beat.py"
+    if not beat_healer.is_file():
+        violations.append("p2_corrective_iv_beat_healer_absent")
+    else:
+        healer_source = beat_healer.read_text(encoding="utf-8")
+        for required in (
+            "class HealingBeatScheduler",
+            "def apply_entry",
+            "_drop_broker_state",
+            'self.__dict__.pop("producer", None)',
+        ):
+            if required not in healer_source:
+                violations.append(f"p2_corrective_iv_beat_healer_absent:{required}")
+    celery_source = (BACKEND / "app/celery_app.py").read_text(encoding="utf-8")
+    if 'celery_app.conf.beat_scheduler = "app.celery_beat:HealingBeatScheduler"' not in celery_source:
+        violations.append("p2_corrective_iv_beat_healer_not_wired")
+    if "def reset_broker_pools_after_fault" not in celery_source:
+        violations.append("p2_corrective_iv_pool_reset_absent")
+    # Every production broker-publish fault path must drop pooled broker
+    # state (kombu recycles poisoned producers forever otherwise).
+    for path, token in (
+        (WEBHOOK_MODULE, 'reset_broker_pools_after_fault(reason="immediate_publish")'),
+        (WEBHOOK_MODULE, 'reset_broker_pools_after_fault(reason="redrive_publish")'),
+        (WEBHOOK_MODULE, 'reset_broker_pools_after_fault(reason="ingestion_followup_publish")'),
+        (RELAY_MODULE, 'reset_broker_pools_after_fault(reason="relay_publish")'),
+    ):
+        if token not in path.read_text(encoding="utf-8"):
+            violations.append(f"p2_corrective_iv_pool_reset_absent:{token[-24:]}")
+    # Identity v3: the live code version must equal the contract version.
+    conduction_source = CONDUCTION_MODULE.read_text(encoding="utf-8")
+    version_match = re.search(
+        r'^SCOPE_IDENTITY_VERSION\s*=\s*"([^"]+)"', conduction_source, re.M
+    )
+    document = yaml.safe_load(SCOPE_POLICY_PATH.read_text(encoding="utf-8"))
+    assert isinstance(document, dict)
+    if version_match is None or version_match.group(1) != "b2.6-p2-scope-identity-v3":
+        violations.append("p2_corrective_iv_identity_not_v3")
+    if document.get("identity_version") != "b2.6-p2-scope-identity-v3":
+        violations.append("p2_corrective_iv_contract_identity_not_v3")
+    if (
+        version_match is not None
+        and version_match.group(1) != document.get("identity_version")
+    ):
+        violations.append("p2_corrective_iv_identity_code_contract_divergent")
+    # Bootstrap companion: canonical_authority.sql must carry the same P2
+    # grant universe the migrations establish (text-level pin; the runtime
+    # catalog diff lives in assert_b26_p2_bootstrap_authority_equivalence).
+    companion = REPO_ROOT / "db/schema/canonical_authority.sql"
+    if not companion.is_file():
+        violations.append("p2_corrective_iv_bootstrap_companion_absent")
+    else:
+        companion_source = companion.read_text(encoding="utf-8")
+        for required in (
+            "GRANT SELECT, INSERT, UPDATE ON TABLE public.b23_match_task_dispatches TO app_user",
+            "GRANT SELECT, INSERT, UPDATE ON TABLE public.b26_p2_execution_outbox TO app_user",
+            "GRANT SELECT, INSERT ON TABLE public.b26_p2_task_authority_directory TO app_user",
+            "REVOKE ALL ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) FROM PUBLIC",
+            "GRANT EXECUTE ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) TO app_user",
+            "GRANT UPDATE (delivery_state",
+            "GRANT SELECT ON TABLE public.tenants TO app_worker",
+        ):
+            if required not in companion_source:
+                violations.append(
+                    f"p2_corrective_iv_bootstrap_companion_absent:{required[:48]}"
+                )
+    details["corrective_iv_checked"] = True
 
 
 def main() -> int:
@@ -931,6 +1153,7 @@ def main() -> int:
         _check_webhook_phase_boundary(violations, details)
         _check_corrective_ii_law(violations, details)
         _check_corrective_iii_law(violations, details)
+        _check_corrective_iv_law(violations, details)
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_validator_crash:{exc}")
     details["violations"] = sorted(violations)

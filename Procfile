@@ -26,11 +26,30 @@ worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian DATABASE_URL=
 # Fresh cross-tenant dispatch is a separate process and credential.  It cannot
 # execute fits and the ordinary Bayesian worker never receives its queue or DSN.
 worker_bayesian_publisher: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian_publisher DATABASE_URL=$PUBLISHER_DATABASE_URL B24_DISPATCH_PUBLISHER_DATABASE_URL=$PUBLISHER_DATABASE_URL celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian_publisher --concurrency=1
-worker_b23: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
+# The B2.3 worker authors verdict truth and must never mint dispatch
+# authority: it runs under the dedicated B2.3 worker credential
+# (B2.6-P2 Corrective IV), never the API DSN. B23_WORKER_DATABASE_URL is
+# deliberately distinct from WORKER_DATABASE_URL, which names the
+# B2.5-P13 C7 bayesian credential -- C7 separation is preserved because
+# no non-bayesian process reads the bayesian variable (see
+# validate_b25_p13_c7_closure.py token-match rule). Both DATABASE_URL and
+# B23_WORKER_DATABASE_URL resolve to the worker credential inside this
+# process so no in-process pool retains producer authority; an unset
+# variable fails closed at import (SKELDIR_B23_REQUIRE_WORKER_DSN).
+worker_b23: cd backend && DATABASE_URL=$B23_WORKER_DATABASE_URL B23_WORKER_DATABASE_URL=$B23_WORKER_DATABASE_URL SKELDIR_B23_REQUIRE_WORKER_DSN=1 celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
 # B2.6-P2 Corrective III recovery process: sweeps pending execution intents
 # to the broker with stable task identity. Runs as the producer principal
 # (inherits the API DATABASE_URL = app_user) because only the producer may
 # issue/mark delivery state; the B2.3 worker (app_worker) holds SELECT only.
+# Supervision (Corrective IV H-IV-B07): foreman-style managers (overmind,
+# honcho, foreman) restart crashed processes automatically; local
+# container deployments use `restart: unless-stopped` (see the local
+# compose manifest). This matters because a transient broker fault can
+# kill a Celery process
+# and the recovery motor must come back without human action. (A faulted
+# broker session no longer wedges the scheduler even without a restart:
+# the HealingBeatScheduler drops poisoned broker state on apply failure;
+# see backend/app/celery_beat.py.)
 relay_b26_p2: cd backend && SKELDIR_CELERY_WORKER_ROLE=b26_p2_relay celery -A app.celery_app.celery_app worker --loglevel=info --queues=b26_p2_relay --concurrency=1 --prefetch-multiplier=1
 beat: cd backend && celery -A app.celery_app.celery_app beat --loglevel=info
 

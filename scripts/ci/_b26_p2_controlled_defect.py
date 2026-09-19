@@ -15,10 +15,19 @@ TENANT_MODULE = ROOT / "backend/app/finance_reconciliation/tenant_authority.py"
 SCOPE_CONTRACT = ROOT / "contracts/reconciliation/b2.6/scope-policy.v2.yaml"
 SCOPE_CONTRACT_V1 = ROOT / "contracts/reconciliation/b2.6/scope-policy.v1.yaml"
 DAY_WINDOW_MODULE = ROOT / "backend/app/core/day_window.py"
+CELERY_APP_MODULE = ROOT / "backend/app/celery_app.py"
 RELAY_MODULE = ROOT / "backend/app/tasks/b26_p2_relay.py"
 SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sink.py"
 WEBHOOK_MODULE = ROOT / "backend/app/api/webhooks.py"
 B23_TASK_MODULE = ROOT / "backend/app/tasks/revenue_verification.py"
+BAYESIAN_MODULE = ROOT / "backend/app/tasks/bayesian.py"
+BEAT_MODULE = ROOT / "backend/app/tasks/beat_schedule.py"
+PROCFILE = ROOT / "Procfile"
+MIGRATION_IV = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202609180001_b26_p2_corrective_iv_deployment_equivalence.py"
+)
+BOOTSTRAP_COMPANION = ROOT / "db/schema/canonical_authority.sql"
 PROBE_ALIAS = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_alias.py"
 PROBE_SQL = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_sql.py"
 PROBE_SERIALIZER = (
@@ -364,11 +373,8 @@ def p2_outbox_removal() -> None:
 def p2_admission_after_b23() -> None:
     _replace_once(
         B23_TASK_MODULE,
-        "    authority = run_in_worker_loop(_admit())\n"
-        "    result = run_in_worker_loop(\n"
-        "        execute_b23_batch_match_engine(",
-        "    result = run_in_worker_loop(\n"
-        "        execute_b23_batch_match_engine(  # NC-P2-ADMISSION-AFTER\n",
+        "    authority = run_in_worker_loop(_admit())\n",
+        "    authority = None  # NC-P2-ADMISSION-AFTER admitted after B2.3\n",
         defect="p2_admission_after_b23",
     )
 
@@ -395,6 +401,176 @@ def p2_rls_singleton_violation() -> None:
         '            f"p2_rls_completeness_refused:policy_singleton_violated:{len(policy_rows)}"\n'
         "        )",
         defect="p2_rls_singleton_violation",
+    )
+
+
+def p2_worker_custody_remerge() -> None:
+    _replace_once(
+        PROCFILE,
+        "DATABASE_URL=$B23_WORKER_DATABASE_URL "
+        "B23_WORKER_DATABASE_URL=$B23_WORKER_DATABASE_URL ",
+        "",
+        defect="p2_worker_custody_remerge",
+    )
+
+
+def p2_worker_reads_bayesian_dsn() -> None:
+    _replace_once(
+        PROCFILE,
+        "worker_b23: cd backend && DATABASE_URL=$B23_WORKER_DATABASE_URL",
+        "worker_b23: cd backend && DATABASE_URL=$WORKER_DATABASE_URL",
+        defect="p2_worker_reads_bayesian_dsn",
+    )
+
+
+def p2_relay_role_removal() -> None:
+    _replace_once(
+        BAYESIAN_MODULE,
+        "    if role == _BAYESIAN_WORKER_ROLE_P2_RELAY:",
+        '    if role == "b26_p2_relay_retired":  # NC-P2-RELAY-ROLE unknown role crashes boot\n',
+        defect="p2_relay_role_removal",
+    )
+
+
+def p2_beat_relay_entry_removal() -> None:
+    _replace_once(
+        BEAT_MODULE,
+        '"task": "app.tasks.b26_p2_relay.relay_b26_p2_pending_dispatches",',
+        '"task": "app.tasks.b26_p2_relay.RETIRED",  # NC-P2-BEAT-RELAY sweep unscheduled\n',
+        defect="p2_beat_relay_entry_removal",
+    )
+
+
+def p2_conducted_mark_removal() -> None:
+    _replace_once(
+        B23_TASK_MODULE,
+        '                "UPDATE public.b26_p2_execution_outbox"\n'
+                '                " SET state = \'conducted\', updated_at = now()"',
+        '                "UPDATE public.b26_p2_execution_outbox"\n'
+                '                " SET state = \'published\', updated_at = now()"'
+                "  # NC-P2-CONDUCTED published masquerades as conducted\n",
+        defect="p2_conducted_mark_removal",
+    )
+
+
+def p2_outbox_fk_removal() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        "ADD CONSTRAINT fk_b26_p2_outbox_dispatch_task_identity",
+        "ADD CONSTRAINT fk_b26_p2_outbox_coherence_RETIRED  # NC-P2-FK split-brain encodable",
+        defect="p2_outbox_fk_removal",
+    )
+
+
+def p2_source_sha_rebinding() -> None:
+    _replace_once(
+        CONDUCTION_MODULE,
+        "            str(scope_policy_version),\n"
+        "            str(policy_semantic_sha256 or \"\"),",
+        "            str(scope_policy_version),\n"
+        '            str(policy_source_sha256 or ""),  # NC-P2-SOURCE-SHA nonsemantic bytes bind identity\n'
+        "            str(policy_semantic_sha256 or \"\"),",
+        defect="p2_source_sha_rebinding",
+    )
+
+
+def p2_identity_version_rollback() -> None:
+    _replace_once(
+        CONDUCTION_MODULE,
+        'SCOPE_IDENTITY_VERSION = "b2.6-p2-scope-identity-v3"',
+        'SCOPE_IDENTITY_VERSION = "b2.6-p2-scope-identity-v2"  # NC-P2-IDENTITY stale material version\n',
+        defect="p2_identity_version_rollback",
+    )
+
+
+def p2_sweeper_lock_removal() -> None:
+    _replace_once(
+        RELAY_MODULE,
+        '                            " FOR UPDATE OF o SKIP LOCKED"',
+        '                            ""  # NC-P2-SWEEP-LOCK concurrent sweeps double-publish\n',
+        defect="p2_sweeper_lock_removal",
+    )
+
+
+def p2_attempts_guard_removal() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        "RAISE EXCEPTION 'b26_p2_dispatch_attempts_regression'",
+        "RAISE EXCEPTION 'b26_p2_dispatch_attempts_unchecked'  -- NC-P2-ATTEMPTS regression allowed",
+        defect="p2_attempts_guard_removal",
+    )
+
+
+def p2_null_window_exception_restore() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        "            IF OLD.window_start IS DISTINCT FROM NEW.window_start THEN\n"
+        "                RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'",
+        "            IF OLD.window_start IS DISTINCT FROM NEW.window_start  # NC-P2-NULL-WINDOW legacy rewrite\n"
+        "               AND OLD.window_start IS NOT NULL THEN\n"
+        "                RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'",
+        defect="p2_null_window_exception_restore",
+    )
+
+
+def p2_orphan_quarantine_removal() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        "            DELETE FROM public.b26_p2_execution_outbox AS o\n",
+        "            -- NC-P2-QUARANTINE removed: parentless outbox rows survive upgrade\n",
+        defect="p2_orphan_quarantine_removal",
+    )
+
+
+def p2_quarantine_lock_removal() -> None:
+    _replace_once(
+        MIGRATION_IV,
+        '        "LOCK TABLE public.b26_p2_execution_outbox IN SHARE ROW EXCLUSIVE MODE"\n'
+        "    )\n"
+        "    op.execute(\n"
+        '        "LOCK TABLE public.b26_p2_task_authority_directory IN SHARE ROW EXCLUSIVE MODE"',
+        "        # NC-P2-LOCK removed: child-table locks gone, quarantine window opens\n"
+        '        "SELECT 1"',
+        defect="p2_quarantine_lock_removal",
+    )
+
+
+def p2_bootstrap_grant_removal() -> None:
+    _replace_once(
+        BOOTSTRAP_COMPANION,
+        "GRANT SELECT, INSERT ON TABLE public.b26_p2_task_authority_directory TO app_user;",
+        "-- NC-P2-BOOTSTRAP-GRANT removed: bootstrap universe loses admission issuance\n",
+        defect="p2_bootstrap_grant_removal",
+    )
+
+
+def p2_pool_reset_removal() -> None:
+    _replace_once(
+        RELAY_MODULE,
+        '        reset_broker_pools_after_fault(reason="relay_publish")',
+        '        # NC-P2-POOL-RESET removed: relay reuses poisoned producers\n',
+        defect="p2_pool_reset_removal",
+    )
+
+
+def p2_beat_healer_removal() -> None:
+    _replace_once(
+        CELERY_APP_MODULE,
+        '    celery_app.conf.beat_scheduler = "app.celery_beat:HealingBeatScheduler"',
+        '    # NC-P2-BEAT-HEALER removed: scheduler wedges alive-but-silent\n',
+        defect="p2_beat_healer_removal",
+    )
+
+
+def p2_bootstrap_public_execute_restore() -> None:
+    # Runtime falsifier (used by the topology job, not the text battery):
+    # restoring PUBLIC EXECUTE on the admission resolver is NOT covered by
+    # provisioner default privileges, so the catalog equivalence proof REDs.
+    _replace_once(
+        BOOTSTRAP_COMPANION,
+        "REVOKE ALL ON FUNCTION public.b26_p2_resolve_dispatch_authority(text) FROM PUBLIC;",
+        "-- NC-P2-BOOTSTRAP-PUBLIC-EXECUTE restored: resolver PUBLIC-executable\n",
+        defect="p2_bootstrap_public_execute_restore",
     )
 
 
@@ -432,6 +608,23 @@ APPLIERS = {
     "p2_admission_after_b23": p2_admission_after_b23,
     "p2_relay_deployment_removal": p2_relay_deployment_removal,
     "p2_rls_singleton_violation": p2_rls_singleton_violation,
+    "p2_worker_custody_remerge": p2_worker_custody_remerge,
+    "p2_worker_reads_bayesian_dsn": p2_worker_reads_bayesian_dsn,
+    "p2_relay_role_removal": p2_relay_role_removal,
+    "p2_beat_relay_entry_removal": p2_beat_relay_entry_removal,
+    "p2_conducted_mark_removal": p2_conducted_mark_removal,
+    "p2_outbox_fk_removal": p2_outbox_fk_removal,
+    "p2_source_sha_rebinding": p2_source_sha_rebinding,
+    "p2_identity_version_rollback": p2_identity_version_rollback,
+    "p2_sweeper_lock_removal": p2_sweeper_lock_removal,
+    "p2_attempts_guard_removal": p2_attempts_guard_removal,
+    "p2_null_window_exception_restore": p2_null_window_exception_restore,
+    "p2_bootstrap_grant_removal": p2_bootstrap_grant_removal,
+    "p2_orphan_quarantine_removal": p2_orphan_quarantine_removal,
+    "p2_quarantine_lock_removal": p2_quarantine_lock_removal,
+    "p2_bootstrap_public_execute_restore": p2_bootstrap_public_execute_restore,
+    "p2_beat_healer_removal": p2_beat_healer_removal,
+    "p2_pool_reset_removal": p2_pool_reset_removal,
 }
 
 

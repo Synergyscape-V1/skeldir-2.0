@@ -315,6 +315,13 @@ def _ensure_celery_configured():
     # B0.5.4.0: Load Beat schedule (closes G11 drift - beat not deployed)
     from app.tasks.beat_schedule import BEAT_SCHEDULE
     celery_app.conf.beat_schedule = BEAT_SCHEDULE
+    # B2.6-P2 Corrective IV: the scheduler drops poisoned broker state when
+    # a scheduled apply fails (kombu's SQLAlchemy transport caches one
+    # session per channel and never heals it, so a transient broker fault
+    # would otherwise wedge the recovery motor forever with the process
+    # alive and supervision green). See backend/app/celery_beat.py.
+    celery_app.conf.beat_scheduler = "app.celery_beat:HealingBeatScheduler"
+
 
     logger.info(
         "celery_app_configured",
@@ -1006,7 +1013,60 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
         )
 
 
-__all__ = ["celery_app", "_build_broker_url", "_build_result_backend", "_ensure_celery_configured"]
+def reset_broker_pools_after_fault(*, reason: str) -> None:
+    """Discard pooled broker producers/connections after a publish fault.
+
+    kombu's ProducerPool.close_resource is a deliberate no-op, so a
+    producer whose channel session faulted (e.g. broker permission denied
+    mid-outage) is returned to the pool and reused forever: every later
+    publish from the process fails on the same poisoned session while the
+    process stays alive and supervision stays green. After ~pool-size such
+    faults the engine pool is dry and the process is wedged until restart.
+
+    Resetting all pools drops the poisoned producers/connections; garbage
+    collection then returns their engine-pool connections with rollback.
+    Crucially, the app-held producer pool reference must ALSO be dropped:
+    kombu marks reset pools closed and `acquire` on the stale object
+    raises 'Acquire on closed pool' forever (proven live: without the
+    drop, the first reset converts a transient fault into a permanent
+    publish outage for the process). Dropping forces lazy recreation of a
+    fresh pool on next publish. Runs only on fault paths (rare), never on
+    the hot path. Failures here must never raise: worst case is one more
+    failed publish, never a new crash mode.
+    """
+    try:
+        from kombu import pools as _pools  # noqa: PLC0415
+
+        _pools.reset()
+        try:
+            _amqp = celery_app.__dict__.get("amqp")
+            if _amqp is not None:
+                _amqp.__dict__.pop("_producer_pool", None)
+        except Exception:
+            logger.warning(
+                "celery_broker_pool_ref_drop_failed",
+                extra={"event_type": "celery.broker.heal", "reason": reason},
+                exc_info=True,
+            )
+        logger.warning(
+            "celery_broker_pools_reset_after_fault",
+            extra={"event_type": "celery.broker.heal", "reason": reason},
+        )
+    except Exception:
+        logger.warning(
+            "celery_broker_pools_reset_failed",
+            extra={"event_type": "celery.broker.heal", "reason": reason},
+            exc_info=True,
+        )
+
+
+__all__ = [
+    "celery_app",
+    "_build_broker_url",
+    "_build_result_backend",
+    "_ensure_celery_configured",
+    "reset_broker_pools_after_fault",
+]
 
 # B0.5.3.3 Gate B FIX: Remove module-level task imports to prevent premature psycopg2 import
 # Tasks are discovered via `include` config in _ensure_celery_configured() - no need for eager imports
