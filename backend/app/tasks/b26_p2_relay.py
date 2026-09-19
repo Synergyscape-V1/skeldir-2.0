@@ -113,7 +113,7 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
     tenants = [str(r["id"]) for r in tenant_rows]
     divergent_total = 0
     stale_total = 0
-    oldest_stale_age = 0.0
+    oldest_stale_age = 0
     for tenant in tenants:
         async with get_session(tenant_id=tenant) as session:
             # Corrective V: the sweep joins on the full execution tuple

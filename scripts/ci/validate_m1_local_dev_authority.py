@@ -603,6 +603,9 @@ ALLOWED_M1_PATH_PREFIXES = [
     # signal, least-privilege recovery). Same exemption shape as the
     # Corrective-IV entry above; every prohibition retained unchanged.
     "alembic/versions/007_skeldir_foundation/202609190001_b26_p2_corrective_v_execution_coherence.py",
+    # Corrective-V production-visible non-conduction signal (counts
+    # only, no PII, no financial truth).
+    "backend/app/api/health.py",
     "backend/app/api/webhooks.py",
     "backend/app/celery_beat.py",
     "backend/app/core/construction_authority.py",

@@ -166,7 +166,7 @@ async def staleness_snapshot(
             task_id=str(r["task_id"]),
             tenant_id=UUID(str(r["tenant_id"])),
             state=str(r["state"]),
-            age_seconds=float(r["age_seconds"] or 0.0),
+            age_seconds=float(r["age_seconds"] or 0),
             updated_at=r["updated_at"],
         )
         for r in rows
@@ -175,7 +175,7 @@ async def staleness_snapshot(
 
 def describe_staleness(rows: list[StaleExecution]) -> dict[str, Any]:
     """Operator summary over staleness rows (counts only, no PII)."""
-    oldest = max((r.age_seconds for r in rows), default=0.0)
+    oldest = max((r.age_seconds for r in rows), default=0)
     return {
         "stale_unconducted_count": len(rows),
         "oldest_stale_age_seconds": oldest,

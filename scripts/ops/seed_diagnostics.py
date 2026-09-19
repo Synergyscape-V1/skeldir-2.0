@@ -10,7 +10,7 @@ import hashlib
 import os
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import psycopg2.extras
@@ -261,6 +261,16 @@ def main() -> None:
                     "provider_native_commerce_reference": commerce_ref,
                     "normalized_commerce_reference_value": commerce_ref,
                     "status": "dispatched",
+                    # Corrective V: issuance carries the persisted
+                    # UTC-day window (same quantization production
+                    # issuance uses); NULL windows are not authority.
+                    "window_start": now.replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    ),
+                    "window_end": now.replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                    + timedelta(days=1),
                     "dispatched_at": now,
                     "created_at": now,
                     "updated_at": now,
