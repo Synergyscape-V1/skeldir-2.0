@@ -911,6 +911,14 @@ def main() -> int:
         falsifiers["scheduler_restored_green"] = "GREEN"
 
         # F-c: relay absent + sweep to an unconsumed queue stays pending.
+        # Both the relay consumer AND the beat scheduler are stopped:
+        # beat would otherwise keep sweeping the pending dispatch onto
+        # the correct queue (or fire during the relay stop grace while
+        # the live B2.3 worker still consumes), conducting the task
+        # through no fault of the routing -- a phase-alignment race, not
+        # a wrong-queue conduction. With both stopped, the only publish
+        # path is the manual housekeeping sweep, which no consumer ever
+        # executes, so the RED is deterministic.
         _query("REVOKE INSERT ON TABLE public.kombu_message FROM app_user")
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent5 = f"pi_{uuid.uuid4().hex[:18]}"
@@ -922,6 +930,7 @@ def main() -> int:
         disp5 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body5)["event_id"]))
         _query("GRANT INSERT ON TABLE public.kombu_message TO app_user")
         _docker("stop", RELAY_CONTAINER)
+        _docker("stop", BEAT_CONTAINER)
         _send_relay_sweep(queue="housekeeping")
         try:
             _wait_state(
@@ -932,6 +941,7 @@ def main() -> int:
         except RuntimeError:
             falsifiers["wrong_relay_queue"] = "RED_as_required"
         _TOPO.start_relay()
+        _TOPO.start_beat()
         _wait_log(RELAY_CONTAINER, "ready", 180)
         _wait_state("b23_match_task_dispatches", "task", disp5["task_id"], "conducted", 240)
         falsifiers["relay_restored_green"] = "GREEN"
