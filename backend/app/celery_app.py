@@ -231,6 +231,7 @@ def _ensure_celery_configured():
         "app.tasks.bayesian_publisher",
         "app.tasks.revenue_verification",
         "app.tasks.b26_p2_relay",
+        "app.tasks.b26_p2_health",
         "app.tasks.r4_failure_semantics",
         "app.tasks.r6_resource_governance",
         "app.tasks.privacy",

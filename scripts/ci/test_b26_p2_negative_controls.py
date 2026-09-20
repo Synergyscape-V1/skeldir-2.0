@@ -267,6 +267,36 @@ CONTROLS: tuple[tuple[str, str, str], ...] = (
         "p2_corrective_v_beat_custody_absent",
         "same-primitive",
     ),
+    (
+        "p2_vi_sovereign_custody_removal",
+        "p2_vi_sovereign_root_absent",
+        "same-primitive",
+    ),
+    (
+        "p2_vi_gate_binding_removal",
+        "p2_vi_narrow_consequence_absent",
+        "same-primitive",
+    ),
+    (
+        "p2_vi_receipt_revoke_removal",
+        "p2_vi_synthesis_closure_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_vi_evaluator_removal",
+        "p2_vi_operational_consumer_absent",
+        "alternate-primitive",
+    ),
+    (
+        "p2_vi_threshold_unbounded",
+        "p2_vi_threshold_authority_absent",
+        "same-primitive",
+    ),
+    (
+        "p2_vi_disposition_zombie_removal",
+        "p2_vi_disposition_law_absent",
+        "alternate-primitive",
+    ),
 )
 
 
@@ -309,7 +339,12 @@ TRACKED_DEFECT_FILES = (
         "alembic/versions/007_skeldir_foundation/"
         "202609190001_b26_p2_corrective_v_execution_coherence.py"
     ),
+    ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202609200001_b26_p2_corrective_vi_sovereign_root.py"
+    ),
     ROOT / "db/schema/canonical_authority.sql",
+    ROOT / "backend/app/finance_reconciliation/conduction_state.py",
 )
 
 

@@ -155,3 +155,92 @@ BEGIN
         GRANT EXECUTE ON FUNCTION public.b26_p2_stale_unconducted(integer) TO app_relay;
     END IF;
 END $$;
+
+-- === 202609200001 Corrective VI: sovereign root, closed synthesis ===
+-- Source of truth is the 202609200001 migration. Direct receipt
+-- synthesis ends on every lane (worker/user INSERT revoked); the only
+-- receipt writer is the SECURITY DEFINER record function (worker-only
+-- EXECUTE). The ambient INSERT default that created the V lane
+-- divergence is revoked going forward (SELECT default preserved for
+-- runtime readability; future writes require explicit governed GRANTs).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        REVOKE INSERT ON TABLE public.b26_p2_conduction_receipts FROM app_worker;
+    END IF;
+END $$;
+REVOKE INSERT ON TABLE public.b26_p2_conduction_receipts FROM app_user;
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.b26_p2_execution_quarantine FROM app_user;
+ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public
+    REVOKE INSERT ON TABLES FROM app_user;
+
+-- === 202609200001 Corrective VI: transport/result telemetry is not truth ===
+-- The issuer keeps SELECT observability on the result backend but loses
+-- all writes: only the worker/relay/beat transport principals own the
+-- broker/result lifecycle. A producer-credential holder can no longer
+-- forge FAILURE rows to terminalize another execution's stale signal.
+-- Kombu DML stays (broker SEND is transport, verified at admission).
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta FROM app_user;
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.celery_tasksetmeta FROM app_user;
+GRANT SELECT ON TABLE public.celery_taskmeta TO app_user;
+GRANT SELECT ON TABLE public.celery_tasksetmeta TO app_user;
+
+-- === 202609200001 Corrective VI: receipt record function (worker-only) ===
+REVOKE ALL ON FUNCTION public.b26_p2_record_conduction_receipt(text, text, integer) FROM PUBLIC;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT EXECUTE ON FUNCTION
+            public.b26_p2_record_conduction_receipt(text, text, integer)
+            TO app_worker;
+    END IF;
+END $$;
+
+-- === 202609200001 Corrective VI: relay operational reads ===
+-- The relay is the shipping consumer of stale/quarantine/disposition
+-- state (sweep log + beat-scheduled evaluator execution). Reads only;
+-- no execution authority, no gate/resolver EXECUTE, no receipt writes.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        GRANT SELECT ON TABLE public.b26_p2_execution_quarantine TO app_relay;
+        GRANT SELECT ON TABLE public.worker_failed_jobs TO app_relay;
+    END IF;
+END $$;
+
+-- === 202609200001 Corrective VI: total disposition law ===
+REVOKE ALL ON FUNCTION public.b26_p2_operational_disposition(text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_operational_disposition(text, integer) TO app_user;
+GRANT EXECUTE ON FUNCTION public.b26_p2_operational_disposition(text, integer) TO app_ro;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        GRANT EXECUTE ON FUNCTION
+            public.b26_p2_operational_disposition(text, integer)
+            TO app_relay;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT EXECUTE ON FUNCTION
+            public.b26_p2_operational_disposition(text, integer)
+            TO app_worker;
+    END IF;
+END $$;
+
+-- === 202609200001 Corrective VI: canonical window helpers ===
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT EXECUTE ON FUNCTION
+            public.b26_p2_canonical_day_start(timestamptz) TO app_worker;
+        GRANT EXECUTE ON FUNCTION
+            public.b26_p2_canonical_day_end(timestamptz) TO app_worker;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        GRANT EXECUTE ON FUNCTION
+            public.b26_p2_canonical_day_start(timestamptz) TO app_relay;
+        GRANT EXECUTE ON FUNCTION
+            public.b26_p2_canonical_day_end(timestamptz) TO app_relay;
+    END IF;
+END $$;

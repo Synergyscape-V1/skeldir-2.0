@@ -40,13 +40,37 @@ def staleness_threshold_seconds() -> int:
 
     Distinguishes normal transient flight (relay sweep cadence is 60s
     in production) from non-conduction requiring operator action.
+
+    Corrective VI threshold authority: the production law is 300s. CI
+    timeboxes may compress via B26_P2_STALENESS_SECONDS, but absurd
+    suppression (>86400s) refuses loudly instead of silently hiding
+    stuck work -- the SQL signal function enforces the same bounds, so
+    a misconfigured threshold fails closed (503 + RED) rather than
+    reporting zero stale rows.
     """
     raw = (os.getenv("B26_P2_STALENESS_SECONDS", "") or "").strip()
+    if not raw:
+        return 300
     try:
         value = int(raw)
     except ValueError:
         return 300
-    return value if value > 0 else 300
+    if value <= 0:
+        return 300
+    if value > 86400:
+        raise ValueError("b26_p2_staleness_threshold_out_of_bounds")
+    return value
+
+
+#: Production non-conduction threshold law (seconds). Compressed CI
+#: timeboxes use the same law with a smaller parameter, never a
+#: different law: staleness is always `anchor_age > threshold`.
+B26_P2_PRODUCTION_STALENESS_SECONDS = 300
+
+#: Maximum governed threshold (seconds). Anything above refuses at both
+#: the Python boundary (here) and the SQL boundary
+#: (b26_p2_stale_unconducted / b26_p2_operational_disposition).
+B26_P2_MAX_STALENESS_SECONDS = 86400
 
 
 @dataclass(frozen=True)
@@ -73,15 +97,20 @@ async def record_conduction_receipt(
 ) -> None:
     """Persist the task-specific conduction receipt (worker only).
 
-    Runs on the worker pool under the ADMITTED tenant (the session
-    carries the admitted GUC, so RLS observes the row; the INSERT
-    grant is worker-held). Idempotent on task identity: a redelivered
-    worker re-asserts the same receipt rather than duplicating it.
-    DO NOTHING (not DO UPDATE) keeps the worker's receipt authority
-    to INSERT-only: ON CONFLICT DO UPDATE would require an UPDATE
-    grant the worker must not hold, and first-conduction-wins is the
-    correct crash-recovery semantic (redelivery replays the same
-    consequence, then the idempotent gate converges).
+    Corrective VI non-self-authenticating proof: the worker holds no
+    direct INSERT on the receipt table (revoked on every lane). The
+    only writer is the SECURITY DEFINER
+    ``b26_p2_record_conduction_receipt()`` invoked here, which derives
+    tenant/ingress/window server-side from the sovereign execution
+    tuple, refuses forged roots before any row exists, and enforces
+    64-hex scope shape. The worker supplies only the scope witness
+    string and the batch processed count (operational provenance, never
+    authority).
+
+    Runs on the worker pool under the ADMITTED tenant. Idempotent on
+    task identity: a redelivered worker re-asserts the same receipt
+    rather than duplicating it (ON CONFLICT DO NOTHING inside the
+    server function keeps receipt authority INSERT-only).
     """
     task_key = (broker_task_id or "").strip()
     if not task_key:
@@ -91,23 +120,13 @@ async def record_conduction_receipt(
         raise ValueError("b26_p2_receipt_scope_missing")
     await session.execute(
         text(
-            "INSERT INTO public.b26_p2_conduction_receipts ("
-            " task_id, tenant_id, webhook_ingress_identity_id,"
-            " window_start, window_end,"
-            " b23_processed_count, p2_scope_identity)"
-            " VALUES (:task_id, :tenant_id, :ingress_id,"
-            " :window_start, :window_end,"
-            " :processed_count, :scope_identity)"
-            " ON CONFLICT (task_id) DO NOTHING"
+            "SELECT public.b26_p2_record_conduction_receipt("
+            " :task_id, :scope_identity, :processed_count)"
         ),
         {
             "task_id": task_key,
-            "tenant_id": str(tenant_id),
-            "ingress_id": str(webhook_ingress_identity_id),
-            "window_start": window_start,
-            "window_end": window_end,
-            "processed_count": int(b23_processed_count or 0),
             "scope_identity": scope_token,
+            "processed_count": int(b23_processed_count or 0),
         },
     )
 
@@ -173,6 +192,59 @@ async def staleness_snapshot(
     ]
 
 
+async def operational_disposition(
+    session: AsyncSession, *, broker_task_id: str, threshold_seconds: int | None = None
+) -> str:
+    """Total operational disposition for one execution (caller GUC-free).
+
+    The server function bootstraps tenant visibility from the canonical
+    tuple itself, so callers need no tenant GUC. Every accepted D maps
+    to one explicit state; unknown tasks return NOT_ACCEPTED (explicit,
+    never an empty row set for a known accepted D).
+    """
+    task_key = (broker_task_id or "").strip()
+    if not task_key:
+        raise ValueError("b26_p2_disposition_task_missing")
+    threshold = int(threshold_seconds or staleness_threshold_seconds())
+    row = (
+        (
+            await session.execute(
+                text(
+                    "SELECT public.b26_p2_operational_disposition("
+                    " :task_id, :threshold) AS disposition"
+                ),
+                {"task_id": task_key, "threshold": threshold},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return str(row["disposition"])
+
+
+async def quarantine_snapshot(session: AsyncSession) -> list[dict[str, Any]]:
+    """Operator-visible quarantine rows for the caller tenant (counts only).
+
+    The session must carry a tenant GUC (per-tenant loop in health and
+    relay); RLS confines each call to its tenant. Pure SELECT.
+    """
+    rows = (
+        (
+            await session.execute(
+                text(
+                    "SELECT task_id, source_relation, reason,"
+                    " EXTRACT(EPOCH FROM (now() - quarantined_at)) AS age_seconds"
+                    " FROM public.b26_p2_execution_quarantine"
+                    " ORDER BY quarantined_at ASC"
+                ),
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(r) for r in rows]
+
+
 def describe_staleness(rows: list[StaleExecution]) -> dict[str, Any]:
     """Operator summary over staleness rows (counts only, no PII)."""
     oldest = max((r.age_seconds for r in rows), default=0)
@@ -183,9 +255,13 @@ def describe_staleness(rows: list[StaleExecution]) -> dict[str, Any]:
 
 
 __all__ = (
+    "B26_P2_MAX_STALENESS_SECONDS",
+    "B26_P2_PRODUCTION_STALENESS_SECONDS",
     "StaleExecution",
     "describe_staleness",
     "mark_conducted_via_gate",
+    "operational_disposition",
+    "quarantine_snapshot",
     "record_conduction_receipt",
     "staleness_snapshot",
     "staleness_threshold_seconds",

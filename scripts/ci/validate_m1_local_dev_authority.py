@@ -603,6 +603,15 @@ ALLOWED_M1_PATH_PREFIXES = [
     # signal, least-privilege recovery). Same exemption shape as the
     # Corrective-IV entry above; every prohibition retained unchanged.
     "alembic/versions/007_skeldir_foundation/202609190001_b26_p2_corrective_v_execution_coherence.py",
+    # --- B2.6-P2 Corrective VI sovereign-root surface ---
+    # Authority-only slice: the single Corrective-VI migration (sovereign
+    # canonical root, non-self-authenticating consequence proof, total
+    # actionable operational disposition). Same exemption shape as the
+    # Corrective-V entry above; every prohibition retained unchanged.
+    "alembic/versions/007_skeldir_foundation/202609200001_b26_p2_corrective_vi_sovereign_root.py",
+    # Corrective-VI shipping operational consumer (beat-scheduled health
+    # evaluation; operational counts only, no financial truth).
+    "backend/app/tasks/b26_p2_health.py",
     # Corrective-V production-visible non-conduction signal (counts
     # only, no PII, no financial truth).
     "backend/app/api/health.py",

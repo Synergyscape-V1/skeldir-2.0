@@ -114,6 +114,9 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
     divergent_total = 0
     stale_total = 0
     oldest_stale_age = 0
+    quarantine_total = 0
+    oldest_quarantine_age = 0
+    pending_total = 0
     for tenant in tenants:
         async with get_session(tenant_id=tenant) as session:
             # Corrective V: the sweep joins on the full execution tuple
@@ -289,6 +292,23 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                     oldest_stale_age,
                     max(r.age_seconds for r in _stale_rows),
                 )
+            async with _tenant_session(tenant_id=tenant) as _quar_session:
+                _quar_rows = await _conduction.quarantine_snapshot(_quar_session)
+            if _quar_rows:
+                quarantine_total += len(_quar_rows)
+                oldest_quarantine_age = max(
+                    oldest_quarantine_age,
+                    max(float(r.get("age_seconds") or 0) for r in _quar_rows),
+                )
+            async with _tenant_session(tenant_id=tenant) as _pend_session:
+                _pend = await _pend_session.execute(
+                    text(
+                        "SELECT count(*) AS n"
+                        " FROM public.b23_match_task_dispatches AS d"
+                        " WHERE d.delivery_state = 'pending_publish'"
+                    )
+                )
+                pending_total += int(_pend.mappings().one()["n"] or 0)
     except Exception:
         logger.exception(
             "b26_p2_relay_staleness_observation_failed",
@@ -298,6 +318,12 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
     # counts. A silent relay (no log lines) vs an empty sweep
     # (published=0) vs a failing sweep (failed>0) are three different
     # operator facts; conflating them hid the unscheduled-relay class.
+    # Corrective VI actionability: nonzero stale/divergent/quarantine is
+    # ALSO emitted at WARNING (b26_p2_operational_action_required) so the
+    # deployed relay process output itself carries the actionable signal
+    # -- a shipping consumer, not a callable-only endpoint. WARNING (not
+    # INFO) because INFO sweep lines are filtered from the deployed
+    # relay output while warnings surface.
     logger.info(
         "b26_p2_relay_sweep_completed",
         extra={
@@ -307,15 +333,35 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
             "divergent": divergent_total,
             "stale_unconducted": stale_total,
             "oldest_stale_age_seconds": oldest_stale_age,
+            "quarantine_total": quarantine_total,
+            "oldest_quarantine_age_seconds": oldest_quarantine_age,
+            "pending_total": pending_total,
             "database_user": relay_principal,
         },
     )
+    if stale_total > 0 or divergent_total > 0 or quarantine_total > 0:
+        logger.warning(
+            "b26_p2_operational_action_required",
+            extra={
+                "tenants_scanned": len(tenants),
+                "stale_unconducted": stale_total,
+                "oldest_stale_age_seconds": oldest_stale_age,
+                "divergent": divergent_total,
+                "quarantine_total": quarantine_total,
+                "oldest_quarantine_age_seconds": oldest_quarantine_age,
+                "pending_total": pending_total,
+                "database_user": relay_principal,
+            },
+        )
     return {
         "published": published,
         "failed": failed,
         "divergent": divergent_total,
         "stale_unconducted": stale_total,
         "oldest_stale_age_seconds": oldest_stale_age,
+        "quarantine_total": quarantine_total,
+        "oldest_quarantine_age_seconds": oldest_quarantine_age,
+        "pending_total": pending_total,
         "database_user": relay_principal,
     }
 
