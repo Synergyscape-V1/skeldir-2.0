@@ -4680,3 +4680,69 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: b26-p2-vii-coverage-registry
+  path: scripts/ci/b26_p2_vii_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: 'VII sovereign-fact, heartbeat, and finiteness surfaces extend the VI registry; untested reachable VII surfaces fail coverage.'
+  command: 'python scripts/ci/prove_b26_p2_production_topology.py --evidence-out artifacts/b26_p2/topology/production-topology.json'
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: 'python -c \"from scripts.ci.b26_p2_vii_coverage import VII_COVERED_SURFACES; print(len(VII_COVERED_SURFACES))\"'
+  expected_failure_meaning: 'VII coverage mapping drifts, so new sovereign/heartbeat surfaces could stay untested.'
+  first_diagnostic_command: 'python scripts/ci/b26_p2_capability_surface.py --help'
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; the required topology proof imports it for the VII coverage gate.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-vii-equivalence
+  path: scripts/ci/b26_p2_vii_equivalence.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: 'GateWouldConduct implies CanonicalP2 success over the production-reachable state space; future P2 refusal drift REDs.'
+  command: 'python scripts/ci/b26_p2_vii_equivalence.py'
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: 'python scripts/ci/b26_p2_vii_equivalence.py --help'
+  expected_failure_meaning: 'Completion approximates P2 success on a stale subset.'
+  first_diagnostic_command: 'python scripts/ci/b26_p2_vii_equivalence.py'
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; differential P2/completion proof instrument.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-vii-negatives
+  path: scripts/ci/b26_p2_vii_negatives.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every VII load-bearing check goes RED on a member of its class (pristine GREEN, defect RED, restore GREEN).'
+  command: 'python scripts/ci/b26_p2_vii_negatives.py --admin-dsn '
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: 'python scripts/ci/b26_p2_vii_negatives.py --help'
+  expected_failure_meaning: 'A VII check that can never fail is treated as a check.'
+  first_diagnostic_command: 'python scripts/ci/b26_p2_vii_negatives.py --help'
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; active negative controls for the VII database plane.'
+  subsumed_by: ''
+  registry_action: utility

@@ -1411,6 +1411,78 @@ def _check_corrective_vi_law(violations: list[str], details: dict[str, Any]) -> 
     details["corrective_vi_checked"] = True
 
 
+def _check_corrective_vii_law(violations: list[str], details: dict[str, Any]) -> None:
+    """Corrective VII: committed root, P2-equivalence, temporal, finiteness."""
+    migration = REPO_ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202609210001_b26_p2_corrective_vii_committed_root.py"
+    )
+    if not migration.is_file():
+        violations.append("p2_vii_committed_root_absent:migration_missing")
+        return
+    src = migration.read_text(encoding="utf-8")
+    upgrade = src.split("def downgrade", 1)[0]
+    for required in (
+        "FOR UPDATE",
+        "b26_p2_enforce_ingress_verified_authorship",
+        "b26_p2_verified_authorship_refused",
+        "verified_amount_currency",
+        "verified_amount_minor",
+        "b26_p2_ingress_verified_state_immutable",
+        "b26_p2_scope_policy_authority",
+        "b26_p2_dispatch_provider_shape_refused",
+        "b26_p2_dispatch_currency_shape_refused",
+        "b26_p2_receipt_provider_shape_refused",
+        "b26_p2_conducted_provider_shape_refused",
+        "b26_p2_enforce_verdict_temporal_conservation",
+        "b26_p2_conducted_verdict_regression_refused",
+        "b26_p2_conducted_verdict_immutable",
+        "PENDING_PUBLICATION_ACTIONABLE",
+        "b26_p2_evaluator_heartbeat",
+    ):
+        if required not in upgrade:
+            violations.append(f"p2_vii_law_absent:{required}")
+    # Python plane must carry finiteness + independence.
+    health_module = BACKEND / "app/tasks/b26_p2_health.py"
+    if health_module.is_file():
+        hs = health_module.read_text(encoding="utf-8")
+        for required in ("pending_actionable_total", "b26_p2_evaluator_heartbeat"):
+            if required not in hs:
+                violations.append(f"p2_vii_health_absent:{required}")
+    relay_module = BACKEND / "app/tasks/b26_p2_relay.py"
+    if relay_module.is_file():
+        rs = relay_module.read_text(encoding="utf-8")
+        if "pending_actionable_total" not in rs:
+            violations.append("p2_vii_relay_finiteness_absent")
+    api_health = BACKEND / "app/api/health.py"
+    if api_health.is_file():
+        ahs = api_health.read_text(encoding="utf-8")
+        for required in ("pending_actionable_total", "evaluator_absent_total"):
+            if required not in ahs:
+                violations.append(f"p2_vii_api_health_absent:{required}")
+    # Open-world discovery must exist (definition parsing + allowlist).
+    cap = REPO_ROOT / "scripts/ci/b26_p2_capability_surface.py"
+    if cap.is_file():
+        cs = cap.read_text(encoding="utf-8")
+        for required in (
+            "_all_runtime_definers",
+            "UNCLASSIFIED_RUNTIME_AUTHORITY",
+            "KNOWN_NON_P2_DEFINERS",
+            "authority_universe_hash",
+            "open_world_authority",
+        ):
+            if required not in cs:
+                violations.append(f"p2_vii_open_world_absent:{required}")
+    # VII battery + equivalence must exist.
+    battery = BACKEND / "tests/finance_reconciliation/test_b26_p2_corrective_vii_committed_root.py"
+    if not battery.is_file():
+        violations.append("p2_vii_battery_absent")
+    equiv = REPO_ROOT / "scripts/ci/b26_p2_vii_equivalence.py"
+    if not equiv.is_file():
+        violations.append("p2_vii_equivalence_absent")
+    details["corrective_vii_checked"] = True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-dir", type=Path, default=None)
@@ -1437,6 +1509,7 @@ def main() -> int:
         _check_corrective_iv_law(violations, details)
         _check_corrective_v_law(violations, details)
         _check_corrective_vi_law(violations, details)
+        _check_corrective_vii_law(violations, details)
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_validator_crash:{exc}")
     details["violations"] = sorted(violations)

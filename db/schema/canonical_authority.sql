@@ -244,3 +244,52 @@ BEGIN
             public.b26_p2_canonical_day_end(timestamptz) TO app_relay;
     END IF;
 END $$;
+
+-- === 202609210001 Corrective VII: policy authority (global read) ===
+-- Source of truth is the 202609210001 migration. Single-row governed P2
+-- identity (v2 + semantic/source SHAs); both lanes carry identical rows.
+-- Explicit REVOKE converges the ambient INSERT default (same V divergence
+-- pattern): runtime holds SELECT only; writes are owner-only.
+REVOKE ALL ON TABLE public.b26_p2_scope_policy_authority FROM app_user;
+REVOKE ALL ON TABLE public.b26_p2_scope_policy_authority FROM app_ro;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        REVOKE ALL ON TABLE public.b26_p2_scope_policy_authority FROM app_worker;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        REVOKE ALL ON TABLE public.b26_p2_scope_policy_authority FROM app_relay;
+    END IF;
+END $$;
+GRANT SELECT ON TABLE public.b26_p2_scope_policy_authority TO app_user;
+GRANT SELECT ON TABLE public.b26_p2_scope_policy_authority TO app_ro;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT SELECT ON TABLE public.b26_p2_scope_policy_authority TO app_worker;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        GRANT SELECT ON TABLE public.b26_p2_scope_policy_authority TO app_relay;
+    END IF;
+END $$;
+
+-- === 202609210001 Corrective VII: evaluator heartbeat (relay writes, all read) ===
+-- Source of truth is the 202609210001 migration. Monitor-of-monitor:
+-- evaluator (relay queue/principal) ticks per tenant; API health
+-- (independent failure domain) observes ticks to detect evaluator absence.
+REVOKE ALL ON TABLE public.b26_p2_evaluator_heartbeat FROM app_user;
+REVOKE ALL ON TABLE public.b26_p2_evaluator_heartbeat FROM app_ro;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        REVOKE ALL ON TABLE public.b26_p2_evaluator_heartbeat FROM app_relay;
+        GRANT SELECT, INSERT, UPDATE ON TABLE public.b26_p2_evaluator_heartbeat TO app_relay;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        REVOKE ALL ON TABLE public.b26_p2_evaluator_heartbeat FROM app_worker;
+        GRANT SELECT ON TABLE public.b26_p2_evaluator_heartbeat TO app_worker;
+    END IF;
+END $$;
+GRANT SELECT ON TABLE public.b26_p2_evaluator_heartbeat TO app_user;
+GRANT SELECT ON TABLE public.b26_p2_evaluator_heartbeat TO app_ro;

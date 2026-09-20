@@ -117,6 +117,7 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
     quarantine_total = 0
     oldest_quarantine_age = 0
     pending_total = 0
+    pending_actionable_total = 0
     for tenant in tenants:
         async with get_session(tenant_id=tenant) as session:
             # Corrective V: the sweep joins on the full execution tuple
@@ -309,6 +310,24 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                     )
                 )
                 pending_total += int(_pend.mappings().one()["n"] or 0)
+                # VII finiteness: expired pending is actionable (immutable
+                # dispatched_at anchor; same governed threshold law).
+                try:
+                    from app.finance_reconciliation import conduction_state as _vii_conduction  # noqa: PLC0415
+
+                    _vii_thr = _vii_conduction.staleness_threshold_seconds()
+                except ValueError:
+                    _vii_thr = 300
+                _pend_act = await _pend_session.execute(
+                    text(
+                        "SELECT count(*) AS n"
+                        " FROM public.b23_match_task_dispatches AS d"
+                        " WHERE d.delivery_state = 'pending_publish'"
+                        " AND d.dispatched_at < now() - (:thr || ' seconds')::interval"
+                    ),
+                    {"thr": str(int(_vii_thr))},
+                )
+                pending_actionable_total += int(_pend_act.mappings().one()["n"] or 0)
     except Exception:
         logger.exception(
             "b26_p2_relay_staleness_observation_failed",
@@ -336,10 +355,16 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
             "quarantine_total": quarantine_total,
             "oldest_quarantine_age_seconds": oldest_quarantine_age,
             "pending_total": pending_total,
+            "pending_actionable_total": pending_actionable_total,
             "database_user": relay_principal,
         },
     )
-    if stale_total > 0 or divergent_total > 0 or quarantine_total > 0:
+    if (
+        stale_total > 0
+        or divergent_total > 0
+        or quarantine_total > 0
+        or pending_actionable_total > 0
+    ):
         logger.warning(
             "b26_p2_operational_action_required",
             extra={
@@ -350,6 +375,7 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
                 "quarantine_total": quarantine_total,
                 "oldest_quarantine_age_seconds": oldest_quarantine_age,
                 "pending_total": pending_total,
+                "pending_actionable_total": pending_actionable_total,
                 "database_user": relay_principal,
             },
         )
@@ -362,6 +388,7 @@ async def publish_pending_outbox(*, limit: int = MAX_SWEEP_BATCH) -> dict:
         "quarantine_total": quarantine_total,
         "oldest_quarantine_age_seconds": oldest_quarantine_age,
         "pending_total": pending_total,
+        "pending_actionable_total": pending_actionable_total,
         "database_user": relay_principal,
     }
 
