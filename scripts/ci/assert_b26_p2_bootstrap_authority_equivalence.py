@@ -49,6 +49,8 @@ P2_TABLES = (
     "b26_p2_task_authority_directory",
     "b26_p2_conduction_receipts",
     "b26_p2_execution_quarantine",
+    "b26_p2_scope_policy_authority",
+    "b26_p2_evaluator_heartbeat",
 )
 
 P2_ROUTINES = (
@@ -59,6 +61,8 @@ P2_ROUTINES = (
     "b26_p2_enforce_directory_coherence",
     "b26_p2_enforce_dispatch_sovereign_window",
     "b26_p2_enforce_ingress_sovereign_custody",
+    "b26_p2_enforce_ingress_verified_authorship",
+    "b26_p2_enforce_verdict_temporal_conservation",
     "b26_p2_canonical_day_start",
     "b26_p2_canonical_day_end",
     "b26_p2_record_conduction_receipt",
@@ -81,7 +85,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                              'b26_p2_execution_outbox',
                              'b26_p2_task_authority_directory',
                              'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine')
+                             'b26_p2_execution_quarantine',
+                             'b26_p2_scope_policy_authority',
+                             'b26_p2_evaluator_heartbeat')
           AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'PUBLIC')
         """,
     ),
@@ -95,7 +101,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                              'b26_p2_execution_outbox',
                              'b26_p2_task_authority_directory',
                              'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine')
+                             'b26_p2_execution_quarantine',
+                             'b26_p2_scope_policy_authority',
+                             'b26_p2_evaluator_heartbeat')
           AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'PUBLIC')
         """,
     ),
@@ -112,6 +120,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                                'b26_p2_enforce_directory_coherence',
                                'b26_p2_enforce_dispatch_sovereign_window',
                                'b26_p2_enforce_ingress_sovereign_custody',
+                                'b26_p2_enforce_ingress_verified_authorship',
+                                'b26_p2_enforce_verdict_temporal_conservation',
                                'b26_p2_canonical_day_start',
                                'b26_p2_canonical_day_end',
                                'b26_p2_record_conduction_receipt',
@@ -132,7 +142,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                           'b26_p2_execution_outbox',
                           'b26_p2_task_authority_directory',
                              'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine')
+                             'b26_p2_execution_quarantine',
+                             'b26_p2_scope_policy_authority',
+                             'b26_p2_evaluator_heartbeat')
         """,
     ),
     (
@@ -146,7 +158,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                             'b26_p2_execution_outbox',
                             'b26_p2_task_authority_directory',
                              'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine')
+                             'b26_p2_execution_quarantine',
+                             'b26_p2_scope_policy_authority',
+                             'b26_p2_evaluator_heartbeat')
         """,
     ),
     (
@@ -161,7 +175,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                             'b26_p2_execution_outbox',
                             'b26_p2_task_authority_directory',
                              'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine')
+                             'b26_p2_execution_quarantine',
+                             'b26_p2_scope_policy_authority',
+                             'b26_p2_evaluator_heartbeat')
           AND c.contype IN ('f', 'u', 'p')
         """,
     ),
@@ -203,6 +219,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                                'b26_p2_enforce_directory_coherence',
                                'b26_p2_enforce_dispatch_sovereign_window',
                                'b26_p2_enforce_ingress_sovereign_custody',
+                                'b26_p2_enforce_ingress_verified_authorship',
+                                'b26_p2_enforce_verdict_temporal_conservation',
                                'b26_p2_canonical_day_start',
                                'b26_p2_canonical_day_end',
                                'b26_p2_record_conduction_receipt',
@@ -269,7 +287,9 @@ def _check_behavior_matrix(conn) -> list[str]:
                             'b26_p2_execution_outbox',
                             'b26_p2_task_authority_directory',
                              'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine')
+                             'b26_p2_execution_quarantine',
+                             'b26_p2_scope_policy_authority',
+                             'b26_p2_evaluator_heartbeat')
           AND c.contype = 'c'
         GROUP BY c.conname, t.relname, pg_get_constraintdef(c.oid)
         ORDER BY c.conname

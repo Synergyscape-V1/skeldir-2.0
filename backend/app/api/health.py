@@ -493,6 +493,8 @@ async def b26_p2_conduction(response: Response) -> dict:
         quarantine_total = 0
         oldest_quarantine_age: float | None = None
         pending_total = 0
+        pending_actionable_total = 0
+        evaluator_absent_total = 0
         terminal_total = 0
         for tenant in tenants:
             async with _tenant_session(tenant_id=tenant) as session:
@@ -510,6 +512,45 @@ async def b26_p2_conduction(response: Response) -> dict:
                     .one()
                 )
                 pending_total += int(pending_row["n"] or 0)
+                pending_actionable_row = (
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT count(*) AS n"
+                                " FROM public.b23_match_task_dispatches AS d"
+                                " WHERE d.delivery_state = 'pending_publish'"
+                                " AND d.dispatched_at < now() - (:thr || ' seconds')::interval"
+                            ),
+                            {"thr": str(int(threshold))},
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+                pending_actionable_total += int(pending_actionable_row["n"] or 0)
+                # Monitor-of-monitor (VII): evaluator heartbeat observed from
+                # the API failure domain (independent of relay/beat).
+                try:
+                    hb_row = (
+                        (
+                            await session.execute(
+                                text(
+                                    "SELECT EXTRACT(EPOCH FROM (now() - last_tick)) AS age"
+                                    " FROM public.b26_p2_evaluator_heartbeat"
+                                    " WHERE tenant_id = :tenant"
+                                ),
+                                {"tenant": str(tenant)},
+                            )
+                        )
+                        .mappings()
+                        .one_or_none()
+                    )
+                    if hb_row is None or hb_row["age"] is None:
+                        evaluator_absent_total += 1
+                    elif float(hb_row["age"]) > float(int(threshold) * 4):
+                        evaluator_absent_total += 1
+                except Exception:
+                    evaluator_absent_total += 1
                 terminal_row = (
                     (
                         await session.execute(
@@ -580,13 +621,20 @@ async def b26_p2_conduction(response: Response) -> dict:
                         if oldest_quarantine_age is None
                         else max(oldest_quarantine_age, qage)
                     )
-        action_required = stale_total > 0 or quarantine_total > 0
+        action_required = (
+            stale_total > 0
+            or quarantine_total > 0
+            or pending_actionable_total > 0
+            or evaluator_absent_total > 0
+        )
         result = {
             "status": "stale_unconducted" if stale_total > 0 else "ok",
             "threshold_seconds": threshold,
             "tenants_scanned": len(tenants),
             "published_total": published_total,
             "pending_total": pending_total,
+            "pending_actionable_total": pending_actionable_total,
+            "evaluator_absent_total": evaluator_absent_total,
             "terminal_total": terminal_total,
             "stale_unconducted_count": stale_total,
             "oldest_published_age_seconds": oldest_published_age,
@@ -595,7 +643,7 @@ async def b26_p2_conduction(response: Response) -> dict:
             "oldest_quarantine_age_seconds": oldest_quarantine_age,
             "action_required": action_required,
         }
-        if stale_total > 0 or quarantine_total > 0:
+        if action_required:
             logger.warning(
                 "b26_p2_conduction_stale_unconducted",
                 extra={
@@ -604,6 +652,8 @@ async def b26_p2_conduction(response: Response) -> dict:
                     "quarantine_count": quarantine_total,
                     "oldest_quarantine_age_seconds": oldest_quarantine_age,
                     "pending_total": pending_total,
+                    "pending_actionable_total": pending_actionable_total,
+                    "evaluator_absent_total": evaluator_absent_total,
                     "terminal_total": terminal_total,
                     "threshold_seconds": threshold,
                 },

@@ -69,6 +69,7 @@ async def evaluate_operational_health() -> dict:
     quarantine_total = 0
     oldest_quarantine_age: float | None = None
     pending_total = 0
+    pending_actionable_total = 0
     terminal_total = 0
     try:
         for tenant in tenants:
@@ -108,6 +109,46 @@ async def evaluate_operational_health() -> dict:
                     .one()
                 )
                 pending_total += int(pending_row["n"] or 0)
+                # Corrective VII finiteness (P2-CA7-05): expired pending is
+                # actionable operator truth (dispatched_at is immutable, so
+                # non-progress metadata cannot extend the horizon).
+                pending_actionable_row = (
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT count(*) AS n"
+                                " FROM public.b23_match_task_dispatches AS d"
+                                " WHERE d.delivery_state = 'pending_publish'"
+                                " AND d.dispatched_at < now() - (:thr || ' seconds')::interval"
+                            ),
+                            {"thr": str(int(threshold))},
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+                pending_actionable_total += int(pending_actionable_row["n"] or 0)
+                # Heartbeat for monitor-of-monitor (P2-CA7-06): the API
+                # health endpoint (independent failure domain) observes this
+                # tick to detect evaluator absence.
+                try:
+                    await session.execute(
+                        text(
+                            "INSERT INTO public.b26_p2_evaluator_heartbeat"
+                            " (tenant_id, last_tick, tick_count, updated_at)"
+                            " VALUES (:tenant, now(), 1, now())"
+                            " ON CONFLICT (tenant_id) DO UPDATE SET"
+                            " last_tick = now(),"
+                            " tick_count = public.b26_p2_evaluator_heartbeat.tick_count + 1,"
+                            " updated_at = now()"
+                        ),
+                        {"tenant": str(tenant)},
+                    )
+                except Exception:
+                    logger.exception(
+                        "b26_p2_evaluator_heartbeat_write_failed",
+                        extra={"tenant_id": str(tenant)},
+                    )
                 terminal_row = (
                     (
                         await session.execute(
@@ -141,7 +182,9 @@ async def evaluate_operational_health() -> dict:
             "stale_unconducted": stale_total,
             "quarantine_total": quarantine_total,
         }
-    action_required = stale_total > 0 or quarantine_total > 0
+    action_required = (
+        stale_total > 0 or quarantine_total > 0 or pending_actionable_total > 0
+    )
     logger.info(
         "b26_p2_operational_health_evaluated",
         extra={
@@ -152,6 +195,7 @@ async def evaluate_operational_health() -> dict:
             "quarantine_total": quarantine_total,
             "oldest_quarantine_age_seconds": oldest_quarantine_age,
             "pending_total": pending_total,
+            "pending_actionable_total": pending_actionable_total,
             "terminal_total": terminal_total,
             "action_required": action_required,
         },
@@ -166,6 +210,7 @@ async def evaluate_operational_health() -> dict:
                 "quarantine_total": quarantine_total,
                 "oldest_quarantine_age_seconds": oldest_quarantine_age,
                 "pending_total": pending_total,
+                "pending_actionable_total": pending_actionable_total,
                 "terminal_total": terminal_total,
                 "evaluator": EVALUATOR_TASK_NAME,
             },
@@ -179,6 +224,7 @@ async def evaluate_operational_health() -> dict:
         "quarantine_total": quarantine_total,
         "oldest_quarantine_age_seconds": oldest_quarantine_age,
         "pending_total": pending_total,
+        "pending_actionable_total": pending_actionable_total,
         "terminal_total": terminal_total,
     }
 

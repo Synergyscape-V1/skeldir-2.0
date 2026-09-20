@@ -59,10 +59,15 @@ ROOT_TABLES = {
         "queue",
         "delivery_state",
     ),
+    # VII complete sovereign-fact set (P2-CA7-02): clock/tenant/provider/
+    # verified/currency/amount share one custody law.
     "webhook_ingress_identities": (
         "event_timestamp",
         "tenant_id",
         "provider",
+        "verified_commerce_ingress_state",
+        "verified_amount_currency",
+        "verified_amount_minor",
     ),
     "b26_p2_task_authority_directory": (
         "window_start",
@@ -111,6 +116,8 @@ DISPOSITION_TABLES = {
     "b26_p2_execution_quarantine": ("tenant_id", "reason"),
     "celery_taskmeta": ("status",),
     "worker_failed_jobs": ("status", "task_id"),
+    # VII heartbeat (P2-CA7-06): evaluator writes, API reads.
+    "b26_p2_evaluator_heartbeat": ("tenant_id", "last_tick"),
 }
 
 DISPOSITION_ROUTINES = (
@@ -306,6 +313,143 @@ def _routine_surfaces(
     return sorted(surfaces)
 
 
+def _all_runtime_definers(cur) -> list[tuple[str, str]]:
+    """Open-world SECURITY DEFINER inventory (VII, §13.1/13.3/13.5).
+
+    Enumerates EVERY SECURITY DEFINER routine in public + its EXECUTE
+    grantees (direct + inherited + PUBLIC), without filtering by known
+    P2 names and without relying on pg_depend body tracking (blind for
+    plpgsql bodies). A new definer executable by a runtime principal
+    appears here automatically; classification happens AFTER discovery.
+    """
+    cur.execute(
+        """
+        SELECT p.proname
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.prosecdef
+        ORDER BY 1
+        """
+    )
+    definers = [str(r[0]) for r in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT grantee, routine_name
+        FROM information_schema.role_routine_grants
+        WHERE routine_schema = 'public' AND privilege_type = 'EXECUTE'
+        """
+    )
+    grants = [(str(a), str(b)) for a, b in cur.fetchall()]
+    out: list[tuple[str, str]] = []
+    closure = _role_closure(cur)
+    for role in RUNTIME_ROLES:
+        effective = {role} | closure.get(role, set()) | {"PUBLIC"}
+        for grantee, routine in grants:
+            if grantee in effective and routine in definers:
+                out.append((routine, role))
+    return sorted(set(out))
+
+
+def _discover_all_reachable(
+    table_privs: list[tuple[str, str, str]],
+    column_privs: list[tuple[str, str, str, str]],
+    routine_privs: list[tuple[str, str, str]],
+    closure: dict[str, set[str]],
+) -> list[str]:
+    """Whole runtime-reachable authority universe BEFORE P2 filtering.
+
+    Every role:priv:object reachable by a runtime principal (direct +
+    inherited + PUBLIC) across ALL public tables/columns/routines. Unknown
+    is not ignored; classification happens after this census.
+    """
+    surfaces: set[str] = set()
+    for role in RUNTIME_ROLES:
+        effective = {role} | closure.get(role, set()) | {"PUBLIC"}
+        for grantee, table, priv in table_privs:
+            if grantee not in effective:
+                continue
+            if priv not in ("INSERT", "UPDATE", "SELECT", "DELETE"):
+                continue
+            surfaces.add(f"{role}:{priv}:{table}")
+        for grantee, table, col, priv in column_privs:
+            if grantee not in effective:
+                continue
+            if priv not in ("INSERT", "UPDATE", "SELECT"):
+                continue
+            surfaces.add(f"{role}:{priv}:{table}.{col}")
+        for grantee, routine, priv in routine_privs:
+            if grantee not in effective or priv != "EXECUTE":
+                continue
+            if routine in PURE_ORACLES:
+                continue
+            surfaces.add(f"{role}:EXECUTE:{routine}")
+    return sorted(surfaces)
+
+
+# VII open-world allowlist (classification AFTER discovery, §13.2).
+# Every runtime-executable SECURITY DEFINER known on the VII baseline is
+# listed here with its authority family. A newly created definer executable
+# by a runtime principal is absent from BOTH the P2 covered set AND this
+# allowlist, so it appears as UNCLASSIFIED_RUNTIME_AUTHORITY and REDs.
+# Do NOT extend this list to silence a new P2-reachable writer without a
+# falsifier; that relabels a load-bearing defect as debt.
+KNOWN_NON_P2_DEFINERS = frozenset(
+    {
+        "b24_claim_fit_dispatch",
+        "b24_complete_fit_dispatch",
+        "b24_complete_fit_planner_wakeup",
+        "b24_create_fit_recovery_wakeups",
+        "b24_current_dispatch_fence_valid",
+        "b24_due_fit_planner_tenants",
+        "b24_enforce_c11_policy_provenance",
+        "b24_enforce_dispatch_fence",
+        "b24_fail_fit_dispatch_recoverable",
+        "b24_fail_fit_dispatch_terminal",
+        "b24_fit_planner_residual_obligation",
+        "b24_invalidate_attribution_allocations_delete",
+        "b24_invalidate_attribution_allocations_insert",
+        "b24_invalidate_attribution_allocations_update",
+        "b24_invalidate_attribution_events_delete",
+        "b24_invalidate_attribution_events_insert",
+        "b24_invalidate_attribution_events_update",
+        "b24_invalidate_b23_match_verdicts_delete",
+        "b24_invalidate_b23_match_verdicts_insert",
+        "b24_invalidate_b23_match_verdicts_update",
+        "b24_invalidate_b23_revenue_events_delete",
+        "b24_invalidate_b23_revenue_events_insert",
+        "b24_invalidate_b23_revenue_events_update",
+        "b24_lease_fit_recovery_rows",
+        "b24_mark_allocation_financial_window_dirty",
+        "b24_mark_fit_dispatch_running",
+        "b24_mark_fit_recovery_failed",
+        "b24_mark_fit_recovery_published",
+        "b24_mark_verdict_financial_window_dirty",
+        "b24_next_active_worker_generation",
+        "b24_register_worker_process_authority",
+        "b24_signal_fit_planner_wakeup",
+        "b24_signal_fit_planner_wakeup_coalesced",
+        "b27_supersede_stale_explanations",
+        "b28_authenticate_request_possession",
+        "fn_b23_p0_prune_attribution_commerce_identities",
+        "fn_b23_p0_prune_attribution_commerce_identities_trigger",
+        "fn_b23_p1_apply_lifecycle",
+        "fn_log_channel_assignment_correction",
+        "fn_log_channel_state_change",
+        "fn_log_revenue_state_change",
+        "skeldir_database_construction_revisions",
+    }
+)
+
+KNOWN_P2_DEFINERS = frozenset(
+    {
+        "b26_p2_mark_conducted",
+        "b26_p2_operational_disposition",
+        "b26_p2_record_conduction_receipt",
+        "b26_p2_resolve_dispatch_authority",
+        "b26_p2_stale_unconducted",
+    }
+)
+
+
 def build_manifest(dsn: str, covered: tuple[str, ...]) -> dict:
     conn = _connect(dsn)
     try:
@@ -316,6 +460,10 @@ def build_manifest(dsn: str, covered: tuple[str, ...]) -> dict:
         routine_privs = _effective_routine_privs(cur)
         definers = _definer_writers(cur)
         defaults = _default_acls(cur)
+        all_definers = _all_runtime_definers(cur)
+        discovered_all = _discover_all_reachable(
+            table_privs, column_privs, routine_privs, closure
+        )
     finally:
         conn.close()
     covered_set = set(covered)
@@ -361,10 +509,54 @@ def build_manifest(dsn: str, covered: tuple[str, ...]) -> dict:
             s for s in set(quar_write + quar_read) if s not in covered_set
         ),
     }
+    # Open-world authority census (VII §13): every runtime-executable
+    # DEFINER must be either P2-covered or allowlisted non-P2. Unknown is
+    # RED until classified (fail-closed, never omitted).
+    open_world_unknown: list[str] = []
+    for routine, role in all_definers:
+        if routine in KNOWN_P2_DEFINERS:
+            surface = f"{role}:EXECUTE:{routine}"
+            if surface not in covered_set:
+                open_world_unknown.append(f"UNCLASSIFIED_P2_DEFINER:{surface}")
+        elif routine in KNOWN_NON_P2_DEFINERS:
+            continue
+        else:
+            open_world_unknown.append(
+                f"UNCLASSIFIED_RUNTIME_AUTHORITY:{role}:EXECUTE:{routine}"
+            )
+    open_world_unknown = sorted(set(open_world_unknown))
+    effects["open_world_authority"] = {
+        "reachable_surfaces": sorted(f"{r}:EXECUTE:{d}" for d, r in all_definers),
+        "tested_surfaces": sorted(
+            s
+            for s in (f"{r}:EXECUTE:{d}" for d, r in all_definers)
+            if s in covered_set or s.split(":")[-1] in KNOWN_NON_P2_DEFINERS
+        ),
+        "untested_reachable_surfaces": open_world_unknown,
+    }
+    # Authority manifest identity (VII §13.6): normalized hash of the live
+    # runtime authority universe for CI comparison.
+    import hashlib as _hashlib
+    import json as _json
+
+    universe_hash = _hashlib.sha256(
+        _json.dumps(
+            {
+                "discovered": discovered_all,
+                "definers": sorted(f"{d}:{r}" for d, r in all_definers),
+                "defaults": defaults,
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
     manifest = {
         "producer": "b26_p2_capability_surface",
         "effects": effects,
         "definer_writers": [f"{a}->{b}" for a, b in definers],
+        "all_runtime_definers": [f"{a}:{b}" for a, b in all_definers],
+        "discovered_runtime_authority_count": len(discovered_all),
+        "authority_universe_hash": universe_hash,
+        "open_world_unknown": open_world_unknown,
         "default_acls": defaults,
         "class_closed": all(
             len(e["untested_reachable_surfaces"]) == 0 for e in effects.values()

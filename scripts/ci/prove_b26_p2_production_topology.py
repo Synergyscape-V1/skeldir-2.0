@@ -1777,11 +1777,19 @@ def main() -> int:
         from scripts.ci.b26_p2_capability_surface import (  # noqa: PLC0415
             build_manifest as _build_manifest,
         )
-        from scripts.ci.b26_p2_vi_coverage import (  # noqa: PLC0415
-            VI_COVERED_SURFACES as _VI_COVERED,
-        )
+        try:
+            from scripts.ci.b26_p2_vii_coverage import (  # noqa: PLC0415
+                VII_COVERED_SURFACES as _VII_COVERED,
+            )
 
-        _manifest = _build_manifest(_TOPO.db_admin, tuple(sorted(_VI_COVERED)))
+            _covered = tuple(sorted(_VII_COVERED))
+        except ImportError:
+            from scripts.ci.b26_p2_vi_coverage import (  # noqa: PLC0415
+                VI_COVERED_SURFACES as _VI_COVERED,
+            )
+
+            _covered = tuple(sorted(_VI_COVERED))
+        _manifest = _build_manifest(_TOPO.db_admin, _covered)
         details["capability_coverage"] = {
             name: {
                 "reachable": len(effect["reachable_surfaces"]),
