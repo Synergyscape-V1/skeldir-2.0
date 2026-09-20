@@ -229,20 +229,26 @@ def test_r7_currency_immutable_once_referenced():
 
 
 def test_r7_worker_cannot_mint_verified_ingress():
-    """R7-03: lower-authority worker cannot author verified state (B01 law)."""
+    """R7-03: relay/beat cannot author verified state; worker mint (allowed
+    for B2.3 duty) can never become canonical execution (dispatch mint
+    refused for worker by grants + sovereign trigger — solo chain blocked).
+    """
     import psycopg2
 
     ids = _seed_ingress("r7authorship")
-    conn = psycopg2.connect(_role_dsn("app_worker"))
-    conn.autocommit = True
+    # Fresh event minted via owner (setup); relay then attempts the ingress
+    # INSERT. Relay has no ingress INSERT grants and is refused by the
+    # authorship trigger; either refusal proves non-authority.
+    event_uuid = uuid.uuid4()
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
     try:
-        with conn.cursor() as cur:
-            cur.execute(
+        with admin.cursor() as acur:
+            acur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
-            event_uuid = uuid.uuid4()
-            cur.execute(
+            acur.execute(
                 "INSERT INTO public.attribution_events (id, tenant_id,"
                 " occurred_at, correlation_id, session_id, revenue_cents,"
                 " raw_payload, idempotency_key, event_type, channel,"
@@ -255,7 +261,21 @@ def test_r7_worker_cannot_mint_verified_ingress():
                  str(uuid.uuid4()), str(uuid.uuid4()), f"r7w:{uuid.uuid4().hex[:6]}",
                  DAY_NOON, DAY_NOON),
             )
-            with pytest.raises(Exception, match="verified_authorship_refused"):
+    finally:
+        admin.close()
+    try:
+        conn = psycopg2.connect(_role_dsn("app_relay"))
+    except Exception:
+        pytest.skip("role app_relay not provisioned")
+        return
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            with pytest.raises(Exception, match="verified_authorship_refused|permission denied|insufficient_privilege"):
                 cur.execute(
                     "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
                     " event_id, provider, provider_native_event_reference,"
@@ -269,6 +289,39 @@ def test_r7_worker_cannot_mint_verified_ingress():
                     (str(uuid.uuid4()), str(ids["tenant_id"]), str(event_uuid),
                      DAY_NOON, f"r7w:{uuid.uuid4().hex[:6]}"),
                 )
+            # Worker mint (allowed) still cannot become execution: dispatch
+            # INSERT as worker refuses via grants.
+            wconn = psycopg2.connect(_role_dsn("app_worker"))
+            wconn.autocommit = True
+            try:
+                with wconn.cursor() as wcur:
+                    wcur.execute(
+                        "SELECT set_config('app.current_tenant_id', %s, false)",
+                        (str(ids["tenant_id"]),),
+                    )
+                    with pytest.raises(Exception, match="permission denied|insufficient_privilege|sovereign"):
+                        wcur.execute(
+                            "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
+                            " webhook_ingress_identity_id, task_id, task_name, queue,"
+                            " routing_key, correlation_id, provider,"
+                            " provider_native_event_reference,"
+                            " provider_native_commerce_reference,"
+                            " normalized_commerce_reference_value, window_start,"
+                            " window_end) VALUES (%s, %s, %s,"
+                            f" '{TASK_NAME}',"
+                            " 'b23_match_engine', 'b23_match_engine.task', %s,"
+                            " 'stripe', 'evt', 'ord', 'ord', %s, %s)",
+                            (
+                                str(ids["tenant_id"]),
+                                str(ids["ingress_id"]),
+                                f"r7-solo-{uuid.uuid4().hex[:8]}",
+                                str(uuid.uuid4()),
+                                DAY_START,
+                                DAY_END,
+                            ),
+                        )
+            finally:
+                wconn.close()
     finally:
         conn.close()
 

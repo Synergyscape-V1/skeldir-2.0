@@ -572,7 +572,13 @@ def upgrade() -> None:
     )
 
     # 4. Verified authorship boundary (predecessor contract resolution:
-    # app_user IS the intentional authentication authority).
+    # app_user IS the intentional authentication authority; app_worker retains
+    # verified-authorship for B2.3 test-seeding and engine duty, but a
+    # worker-manufactured verified row can never become canonical execution:
+    # dispatch mint is refused for worker/relay/beat by grants + sovereign
+    # trigger (Nicholas GATE 2 adjudication; solo chain blocked). Relay/beat
+    # (no ingress INSERT grants) are additionally refused here. P2 claims no
+    # DB-level cryptographic provenance beyond the predecessor boundary.
     op.execute(
         """
         CREATE OR REPLACE FUNCTION public.b26_p2_enforce_ingress_verified_authorship()
@@ -583,7 +589,7 @@ def upgrade() -> None:
                 IF NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM
                    'authenticity_verified'
                    AND session_user NOT IN
-                       ('app_user', 'migration_owner', 'postgres') THEN
+                       ('app_user', 'app_worker', 'migration_owner', 'postgres') THEN
                     RAISE EXCEPTION 'b26_p2_verified_authorship_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -594,7 +600,7 @@ def upgrade() -> None:
                 IF NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM
                    'authenticity_verified'
                    AND session_user NOT IN
-                       ('app_user', 'migration_owner', 'postgres') THEN
+                       ('app_user', 'app_worker', 'migration_owner', 'postgres') THEN
                     RAISE EXCEPTION 'b26_p2_verified_authorship_refused'
                         USING ERRCODE = '42501';
                 END IF;
