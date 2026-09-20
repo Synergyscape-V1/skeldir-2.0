@@ -627,6 +627,16 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/prove_b26_p2_production_topology.py",
     "scripts/ci/test_b26_p2_negative_controls.py",
     "scripts/ci/validate_b26_p2_scope_authority.py",
+    # --- B2.6-P2 Corrective VI proof instruments ---
+    # Capability-derived surface generator + coverage registry +
+    # R6/CP6/OD6 probe + M-VI negatives + blind challenge + canonical
+    # appendix builder. Proof tooling only; never production imports.
+    "scripts/ci/b26_p2_capability_surface.py",
+    "scripts/ci/b26_p2_vi_blind.py",
+    "scripts/ci/b26_p2_vi_coverage.py",
+    "scripts/ci/b26_p2_vi_negatives.py",
+    "scripts/ci/b26_p2_vi_probe.py",
+    "scripts/ci/build_vi_appendix.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [

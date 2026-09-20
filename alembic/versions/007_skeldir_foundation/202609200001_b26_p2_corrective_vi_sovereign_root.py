@@ -1086,9 +1086,19 @@ def upgrade() -> None:
     # created the V divergence is removed. SELECT default stays: runtime
     # readability of future tables is preserved; future writes require
     # explicit governed GRANTs (the equivalence proof REDs otherwise).
+    # Existence-guarded: least-privilege lanes (R6-style) provision no
+    # migration_owner login, and an unguarded FOR ROLE clause fails the
+    # whole upgrade there.
     op.execute(
-        "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public"
-        " REVOKE INSERT ON TABLES FROM app_user"
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_owner') THEN
+                EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner'
+                    ' IN SCHEMA public REVOKE INSERT ON TABLES FROM app_user';
+            END IF;
+        END $$;
+        """
     )
     op.execute(
         """
