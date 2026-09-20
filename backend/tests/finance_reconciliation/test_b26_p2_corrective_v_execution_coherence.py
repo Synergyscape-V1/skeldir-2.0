@@ -365,7 +365,13 @@ def _seed_verdict(tenant_id: UUID, ingress_id: UUID, event_id: UUID) -> None:
 def _seed_receipt(
     tenant_id: UUID, ingress_id: UUID, task_id: str, *, dsn: str | None = None
 ) -> None:
-    """Seed one conduction receipt matching the execution tuple."""
+    """Seed one conduction receipt matching the execution tuple.
+
+    Corrective VI: direct receipt INSERT is revoked on every lane; the
+    only writer is the SECURITY DEFINER record function (EXECUTE
+    app_worker), which derives the sovereign binding server-side. The
+    scope witness is well-formed 64-hex, as the honest worker persists.
+    """
     import psycopg2
 
     conn = psycopg2.connect(dsn or _admin_dsn())
@@ -373,22 +379,8 @@ def _seed_receipt(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT set_config('app.current_tenant_id', %s, false)",
-                (str(tenant_id),),
-            )
-            cur.execute(
-                "INSERT INTO public.b26_p2_conduction_receipts (task_id,"
-                " tenant_id, webhook_ingress_identity_id, window_start,"
-                " window_end, b23_processed_count, p2_scope_identity)"
-                " VALUES (%s, %s, %s, %s, %s, 1, 'v-scope-identity')"
-                " ON CONFLICT (task_id) DO NOTHING",
-                (
-                    task_id,
-                    str(tenant_id),
-                    str(ingress_id),
-                    DAY_START,
-                    DAY_END,
-                ),
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
+                (task_id, "ab" * 32, 1),
             )
     finally:
         conn.close()
@@ -724,7 +716,14 @@ def test_v_null_dispatch_window_refused_at_issuance() -> None:
                 )
 
             reason = _refused(attempt)
-            assert "ck_b23_dispatch_window_present" in reason
+            # Corrective VI: the sovereign-window trigger fires before the
+            # V presence CHECK (BEFORE triggers precede CHECKs) with the
+            # stronger law (NULL != canonical sovereign window). Either
+            # refusal proves the NULL window is not executable authority.
+            assert (
+                "ck_b23_dispatch_window_present" in reason
+                or "b26_p2_dispatch_window_not_sovereign" in reason
+            )
     finally:
         conn.close()
 

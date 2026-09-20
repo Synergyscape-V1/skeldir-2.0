@@ -55,9 +55,17 @@ P2_ROUTINES = (
     "b26_p2_resolve_dispatch_authority",
     "b26_p2_enforce_dispatch_immutability",
     "b26_p2_enforce_outbox_transitions",
+    "b26_p2_enforce_outbox_issuance",
     "b26_p2_enforce_directory_coherence",
+    "b26_p2_enforce_dispatch_sovereign_window",
+    "b26_p2_enforce_ingress_sovereign_custody",
+    "b26_p2_canonical_day_start",
+    "b26_p2_canonical_day_end",
+    "b26_p2_record_conduction_receipt",
     "b26_p2_mark_conducted",
     "b26_p2_stale_unconducted",
+    "b26_p2_operational_disposition",
+    "b26_p2_enforce_result_integrity",
 )
 
 P2_ROLES = ("app_user", "app_worker", "app_rw", "app_ro", "app_relay", "app_beat", "PUBLIC")
@@ -100,9 +108,17 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
           AND routine_name IN ('b26_p2_resolve_dispatch_authority',
                                'b26_p2_enforce_dispatch_immutability',
                                'b26_p2_enforce_outbox_transitions',
+                               'b26_p2_enforce_outbox_issuance',
                                'b26_p2_enforce_directory_coherence',
+                               'b26_p2_enforce_dispatch_sovereign_window',
+                               'b26_p2_enforce_ingress_sovereign_custody',
+                               'b26_p2_canonical_day_start',
+                               'b26_p2_canonical_day_end',
+                               'b26_p2_record_conduction_receipt',
                                'b26_p2_mark_conducted',
-                               'b26_p2_stale_unconducted')
+                               'b26_p2_stale_unconducted',
+                               'b26_p2_operational_disposition',
+                               'b26_p2_enforce_result_integrity')
         """,
     ),
     (
@@ -163,7 +179,9 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                             'b26_p2_execution_outbox',
                             'b26_p2_task_authority_directory',
                              'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine')
+                             'b26_p2_execution_quarantine',
+                             'webhook_ingress_identities',
+                             'celery_taskmeta')
           AND NOT t.tgisinternal
         """,
     ),
@@ -181,9 +199,17 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
           AND p.proname IN ('b26_p2_resolve_dispatch_authority',
                             'b26_p2_enforce_dispatch_immutability',
                             'b26_p2_enforce_outbox_transitions',
+                            'b26_p2_enforce_outbox_issuance',
                                'b26_p2_enforce_directory_coherence',
+                               'b26_p2_enforce_dispatch_sovereign_window',
+                               'b26_p2_enforce_ingress_sovereign_custody',
+                               'b26_p2_canonical_day_start',
+                               'b26_p2_canonical_day_end',
+                               'b26_p2_record_conduction_receipt',
                                'b26_p2_mark_conducted',
-                               'b26_p2_stale_unconducted')
+                               'b26_p2_stale_unconducted',
+                               'b26_p2_operational_disposition',
+                               'b26_p2_enforce_result_integrity')
         """,
     ),
     (
@@ -251,10 +277,26 @@ def _check_behavior_matrix(conn) -> list[str]:
     )
     checks = cur.fetchall()
     lines: list[str] = []
+    # Corrective VI: quarantine source-relation literals. The generic
+    # text probes above cannot distinguish the V 2-value source CHECK
+    # from the VI 4-value source CHECK (both FALSE on every generic
+    # probe), so source_relation columns additionally probe every
+    # governed source value: any lane missing a source law diverges
+    # here instead of passing vacuously.
+    _QUARANTINE_SOURCES = (
+        "'b26_p2_execution_outbox'",
+        "'b26_p2_task_authority_directory'",
+        "'b23_match_task_dispatches'",
+        "'b26_p2_conduction_receipts'",
+        "'bogus_source'",
+        "NULL",
+    )
     for conname, relname, condef, cols, types in checks:
         probes: list[list[str]] = []
-        for coltype in types:
-            if "char" in coltype or "text" in coltype:
+        for col, coltype in zip(cols, types):
+            if col == "source_relation":
+                probes.append(list(_QUARANTINE_SOURCES))
+            elif "char" in coltype or "text" in coltype:
                 probes.append(
                     ["'pending_publish'", "'published'", "'conducted'",
                      "'bogus'", "NULL", "''"]

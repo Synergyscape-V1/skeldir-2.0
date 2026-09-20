@@ -31,7 +31,14 @@ MIGRATION_V = ROOT / (
     "alembic/versions/007_skeldir_foundation/"
     "202609190001_b26_p2_corrective_v_execution_coherence.py"
 )
+MIGRATION_VI = ROOT / (
+    "alembic/versions/007_skeldir_foundation/"
+    "202609200001_b26_p2_corrective_vi_sovereign_root.py"
+)
 BOOTSTRAP_COMPANION = ROOT / "db/schema/canonical_authority.sql"
+CONDUCTION_STATE_MODULE = ROOT / (
+    "backend/app/finance_reconciliation/conduction_state.py"
+)
 PROBE_ALIAS = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_alias.py"
 PROBE_SQL = ROOT / "backend/app/finance_reconciliation/_p2_nc_probe_sql.py"
 PROBE_SERIALIZER = (
@@ -620,6 +627,62 @@ def p2_bootstrap_public_execute_restore() -> None:
     )
 
 
+def p2_vi_sovereign_custody_removal() -> None:
+    _replace_once(
+        MIGRATION_VI,
+        "RAISE EXCEPTION 'b26_p2_ingress_sovereign_delete_refused'",
+        "RAISE EXCEPTION 'b26_p2_ingress_sovereign_custody_disabled'  -- NC-P2-VI-CUSTODY ingress deletable",
+        defect="p2_vi_sovereign_custody_removal",
+    )
+
+
+def p2_vi_gate_binding_removal() -> None:
+    _replace_once(
+        MIGRATION_VI,
+        "RAISE EXCEPTION 'b26_p2_conducted_receipt_not_bound'",
+        "RAISE EXCEPTION 'b26_p2_conducted_receipt_binding_disabled'  -- NC-P2-VI-BINDING decorative window conducts",
+        defect="p2_vi_gate_binding_removal",
+    )
+
+
+def p2_vi_receipt_revoke_removal() -> None:
+    _replace_once(
+        BOOTSTRAP_COMPANION,
+        "REVOKE INSERT ON TABLE public.b26_p2_conduction_receipts FROM app_worker;",
+        "-- NC-P2-VI-SYNTHESIS removed: worker receipt synthesis restored\n",
+        defect="p2_vi_receipt_revoke_removal",
+    )
+
+
+def p2_vi_evaluator_removal() -> None:
+    _replace_once(
+        BEAT_MODULE,
+        '"task": "app.tasks.b26_p2_health.evaluate_b26_p2_operational_health",',
+        '"task": "app.tasks.b26_p2_health.RETIRED",  # NC-P2-VI-EVALUATOR health unevaluated\n',
+        defect="p2_vi_evaluator_removal",
+    )
+
+
+def p2_vi_threshold_unbounded() -> None:
+    _replace_once(
+        CONDUCTION_STATE_MODULE,
+        "    if value > 86400:\n",
+        "    if value > 999999999:  # NC-P2-VI-THRESHOLD absurd suppression allowed\n",
+        defect="p2_vi_threshold_unbounded",
+    )
+
+
+def p2_vi_disposition_zombie_removal() -> None:
+    _replace_once(
+        MIGRATION_VI,
+        "                    ELSIF NOT _has_outbox THEN\n"
+        "                        _result := 'MISSING_CHILD_ACTIONABLE';",
+        "                    ELSIF NOT _has_outbox THEN\n"
+        "                        _result := 'PUBLISHED_IN_FLIGHT';  -- NC-P2-VI-ZOMBIE twinless invisible\n",
+        defect="p2_vi_disposition_zombie_removal",
+    )
+
+
 APPLIERS = {
     "p2_second_alias_dict": p2_second_alias_dict,
     "p2_sql_case_normalizer": p2_sql_case_normalizer,
@@ -676,6 +739,12 @@ APPLIERS = {
     "p2_conducted_gate_removal": p2_conducted_gate_removal,
     "p2_relay_dsn_remerge": p2_relay_dsn_remerge,
     "p2_beat_dsn_remerge": p2_beat_dsn_remerge,
+    "p2_vi_sovereign_custody_removal": p2_vi_sovereign_custody_removal,
+    "p2_vi_gate_binding_removal": p2_vi_gate_binding_removal,
+    "p2_vi_receipt_revoke_removal": p2_vi_receipt_revoke_removal,
+    "p2_vi_evaluator_removal": p2_vi_evaluator_removal,
+    "p2_vi_threshold_unbounded": p2_vi_threshold_unbounded,
+    "p2_vi_disposition_zombie_removal": p2_vi_disposition_zombie_removal,
 }
 
 

@@ -1272,6 +1272,145 @@ def _check_corrective_v_law(violations: list[str], details: dict[str, Any]) -> N
     details["corrective_v_checked"] = True
 
 
+def _check_corrective_vi_law(violations: list[str], details: dict[str, Any]) -> None:
+    """Corrective VI class closure: sovereign root, closed synthesis,
+    total actionable disposition."""
+    migration = REPO_ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202609200001_b26_p2_corrective_vi_sovereign_root.py"
+    )
+    if not migration.is_file():
+        violations.append("p2_vi_sovereign_root_absent:migration_missing")
+        return
+    migration_source = migration.read_text(encoding="utf-8")
+    # Upgrade-path tokens only: the downgrade path legitimately names the
+    # same routines while restoring predecessor law.
+    upgrade_source = migration_source.split("def downgrade", 1)[0]
+    # Sovereign canonical root: dispatch window bound to the ingress clock
+    # at the database plane; ingress custody once authoritative; the
+    # admission resolver re-establishes D from E and returns canonical.
+    for required in (
+        "b26_p2_canonical_day_start",
+        "b26_p2_canonical_day_end",
+        "b26_p2_enforce_dispatch_sovereign_window",
+        "b26_p2_dispatch_window_not_sovereign",
+        "b26_p2_enforce_ingress_sovereign_custody",
+        "b26_p2_ingress_event_clock_immutable",
+        "b26_p2_ingress_sovereign_delete_refused",
+        "b26_p2_dispatch_sovereign_ingress_missing",
+    ):
+        if required not in upgrade_source:
+            violations.append(f"p2_vi_sovereign_root_absent:{required}")
+    # Non-self-authenticating consequence: synthesis revoked, owner writer,
+    # narrow B2.3 prerequisite, bound receipt, shaped scope.
+    for required in (
+        "b26_p2_record_conduction_receipt",
+        "REVOKE INSERT ON TABLE public.b26_p2_conduction_receipts",
+        "FROM app_worker",
+        "FROM app_user",
+        "matched_provisional",
+        "matched_confirmed",
+        "adjusted",
+        "b26_p2_conducted_no_b23_consequence",
+        "b26_p2_conducted_receipt_not_bound",
+        "b26_p2_conducted_scope_not_bound",
+        "b26_p2_conducted_window_not_sovereign",
+    ):
+        if required not in upgrade_source:
+            violations.append(f"p2_vi_narrow_consequence_absent:{required}")
+    # Receipt synthesis closure must also hold on the bootstrap lane
+    # (the V default-privilege divergence): explicit revokes + narrowed
+    # forward defaults in the companion.
+    companion = REPO_ROOT / "db/schema/canonical_authority.sql"
+    if not companion.is_file():
+        violations.append("p2_vi_synthesis_closure_absent:companion_missing")
+    else:
+        companion_source = companion.read_text(encoding="utf-8")
+        for required in (
+            "REVOKE INSERT ON TABLE public.b26_p2_conduction_receipts FROM app_worker",
+            "REVOKE INSERT ON TABLE public.b26_p2_conduction_receipts FROM app_user",
+            "REVOKE INSERT ON TABLES FROM app_user",
+            "b26_p2_record_conduction_receipt(text, text, integer)",
+            "b26_p2_operational_disposition(text, integer)",
+        ):
+            if required not in companion_source:
+                violations.append(f"p2_vi_synthesis_closure_absent:{required[:48]}")
+    # Total disposition + immutable clock + bounded threshold.
+    for required in (
+        "b26_p2_operational_disposition",
+        "first_published_at",
+        "b26_p2_dispatch_first_published_immutable",
+        "b26_p2_dispatch_dispatched_immutable",
+        "b26_p2_staleness_threshold_out_of_bounds",
+        "QUARANTINED_ACTIONABLE",
+        "_result := 'MISSING_CHILD_ACTIONABLE';",
+        "TERMINAL_FAILURE_ACTIONABLE",
+        "b26_p2_enforce_outbox_issuance",
+        "b26_p2_outbox_issuance_state_refused",
+        "b26_p2_outbox_retry_unbounded",
+        "b26_p2_enforce_result_integrity",
+        "b26_p2_result_failure_forge_refused",
+        "b26_p2_dispatch_result_preexists",
+    ):
+        if required not in upgrade_source:
+            violations.append(f"p2_vi_disposition_law_absent:{required}")
+    # Shipping operational consumer: beat-scheduled evaluator + relay
+    # action-required warning + health quarantine signal.
+    beat_schedule = BACKEND / "app/tasks/beat_schedule.py"
+    health_module = BACKEND / "app/tasks/b26_p2_health.py"
+    relay_module = BACKEND / "app/tasks/b26_p2_relay.py"
+    health_api = BACKEND / "app/api/health.py"
+    if not health_module.is_file():
+        violations.append("p2_vi_operational_consumer_absent:evaluator_missing")
+    else:
+        evaluator_source = health_module.read_text(encoding="utf-8")
+        if "evaluate_b26_p2_operational_health" not in evaluator_source:
+            violations.append(
+                "p2_vi_operational_consumer_absent:evaluator_task_missing"
+            )
+    if beat_schedule.is_file():
+        beat_source = beat_schedule.read_text(encoding="utf-8")
+        if "b26-p2-operational-health-evaluator" not in beat_source or (
+            '"task": "app.tasks.b26_p2_health.evaluate_b26_p2_operational_health"'
+            not in beat_source
+        ):
+            violations.append(
+                "p2_vi_operational_consumer_absent:beat_entry_missing"
+            )
+    else:
+        violations.append("p2_vi_operational_consumer_absent:beat_missing")
+    if relay_module.is_file():
+        relay_source = relay_module.read_text(encoding="utf-8")
+        if "b26_p2_operational_action_required" not in relay_source:
+            violations.append(
+                "p2_vi_operational_consumer_absent:relay_warning_missing"
+            )
+    if health_api.is_file():
+        api_source = health_api.read_text(encoding="utf-8")
+        if "quarantine_count" not in api_source:
+            violations.append(
+                "p2_vi_operational_consumer_absent:health_quarantine_missing"
+            )
+    # Threshold authority bounds in the single-implementation module.
+    conduction_state = BACKEND / "app/finance_reconciliation/conduction_state.py"
+    if conduction_state.is_file():
+        state_source = conduction_state.read_text(encoding="utf-8")
+        for required in (
+            "B26_P2_MAX_STALENESS_SECONDS",
+            "if value > 86400:",
+            "def operational_disposition",
+            "def quarantine_snapshot",
+            "b26_p2_record_conduction_receipt",
+        ):
+            if required not in state_source:
+                violations.append(
+                    f"p2_vi_threshold_authority_absent:{required}"
+                )
+    else:
+        violations.append("p2_vi_threshold_authority_absent:module_missing")
+    details["corrective_vi_checked"] = True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-dir", type=Path, default=None)
@@ -1297,6 +1436,7 @@ def main() -> int:
         _check_corrective_iii_law(violations, details)
         _check_corrective_iv_law(violations, details)
         _check_corrective_v_law(violations, details)
+        _check_corrective_vi_law(violations, details)
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_validator_crash:{exc}")
     details["violations"] = sorted(violations)

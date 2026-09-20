@@ -135,6 +135,24 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
                 "routing_key": f"{QUEUE_B26_P2_RELAY}.task",
             },
         }
+    # Corrective VI operational-health evaluator: the shipping consumer
+    # of the stale/quarantine signal. Beat-scheduled on the same cadence
+    # as the relay sweep; executes on the relay queue under the relay
+    # principal (operational reads only, no execution authority). The
+    # disable flag exists ONLY for the M-VI-13/18 falsifier (consumer
+    # removed while the endpoint remains -> required proof REDs); no
+    # production topology sets it.
+    if os.getenv("SKELDIR_B26_P2_DISABLE_HEALTH_EVALUATOR_JOB") != "1":
+        relay_interval = _b26_p2_relay_sweep_interval_seconds()
+        schedule["b26-p2-operational-health-evaluator"] = {
+            "task": "app.tasks.b26_p2_health.evaluate_b26_p2_operational_health",
+            "schedule": relay_interval,
+            "options": {
+                "expires": max(int(relay_interval), 1) * 2,
+                "queue": QUEUE_B26_P2_RELAY,
+                "routing_key": f"{QUEUE_B26_P2_RELAY}.task",
+            },
+        }
     if os.getenv("SKELDIR_B25_DISABLE_TRUST_ISSUANCE_RECONCILER_JOB") != "1":
         trust_interval = _positive_int_env(
             "B25_TRUST_ISSUANCE_RECONCILE_INTERVAL_SECONDS", 60

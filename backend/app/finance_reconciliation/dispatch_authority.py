@@ -262,15 +262,22 @@ async def admit_execution_before_b23(
     message_window_start: datetime | str,
     message_window_end: datetime | str,
 ) -> AdmittedExecution:
-    """Admit one worker invocation BEFORE B2.3 execution (Corrective III).
+    """Admit one worker invocation BEFORE B2.3 execution (Corrective III,
+    sovereign root closed in Corrective VI).
 
     The worker begins from the least forgeable stable handle (broker task
     identity) and resolves the authoritative tenant/window through the
-    constrained ``b26_p2_resolve_dispatch_authority`` function, which reads
-    ONLY the GUC-independent admission directory (no RLS, exact task_id
-    lookup). The message tenant/window are redundant claims: any absence
-    or mismatch refuses here, before the B2.3 engine runs, with zero B2.3
-    consequence. Callers must invoke this on a bare session (no tenant
+    constrained ``b26_p2_resolve_dispatch_authority`` function. Since
+    Corrective VI the resolver is sovereign: it re-establishes D from E
+    (dispatch joined to the authenticated ingress under the
+    directory-bootstrapped tenant, canonical UTC-day window recomputed in
+    SQL from the ingress event clock) and returns the CANONICAL window
+    derived from E, never the stored copy. The message tenant/window are
+    redundant claims: any absence or mismatch refuses here, before the
+    B2.3 engine runs, with zero B2.3 consequence. A forged D or
+    projection refuses inside the resolver (B2.3 delta = 0); the P2 tail
+    below is redundant defense-in-depth, never the first sovereign
+    detector. Callers must invoke this on a bare session (no tenant
     GUC) before opening any governed snapshot or running B2.3. Full
     dispatch-row validation (task_name/queue/status via DB CHECK physics)
     is re-established under the RETURNED tenant in the P2 phase.

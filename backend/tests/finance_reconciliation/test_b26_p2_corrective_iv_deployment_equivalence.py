@@ -793,18 +793,8 @@ async def test_iv_conducted_mark_advances_published() -> None:
                 ),
             )
             cur.execute(
-                "INSERT INTO public.b26_p2_conduction_receipts (task_id,"
-                " tenant_id, webhook_ingress_identity_id, window_start,"
-                " window_end, b23_processed_count, p2_scope_identity)"
-                " VALUES (%s, %s, %s, %s, %s, 1,"
-                " 'iv-scope-identity')",
-                (
-                    task_id,
-                    str(ids["tenant_id"]),
-                    str(ids["ingress_id"]),
-                    DAY_START,
-                    DAY_END,
-                ),
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
+                (task_id, "cd" * 32, 1),
             )
             cur.execute(
                 "SELECT public.b26_p2_mark_conducted(%s)",

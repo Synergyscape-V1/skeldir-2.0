@@ -446,14 +446,22 @@ def _evaluate_security_readiness() -> dict[str, object]:
 
 @router.get("/health/b26-p2-conduction")
 async def b26_p2_conduction(response: Response) -> dict:
-    """B2.6-P2 Corrective V published-unconsumed honesty signal.
+    """B2.6-P2 Corrective VI published-unconsumed + quarantine honesty signal.
 
     Published twin projections older than the governed staleness
     threshold are explicitly operator-visible here (counts + oldest
     age) instead of indistinguishable from healthy in-flight work. A
     permanently unconsumed execution therefore cannot remain silent:
-    this endpoint, the relay sweep log, and the stale function carry
-    the same operational signal from one implementation law.
+    this endpoint, the relay sweep log, and the beat-scheduled
+    operational-health evaluator carry the same operational signal from
+    one implementation law.
+
+    Corrective VI additions: durable quarantine rows are counted with
+    oldest age (a nonzero quarantine is actionable operator work, never
+    a silent graveyard); the threshold itself is validated against the
+    governed bounds (absurd suppression fails closed as 503 instead of
+    reporting zero stale rows); `action_required` is true whenever
+    stale, divergent-risk, or quarantined work exists.
 
     Counts only (no PII, no financial truth). Returns 200 always when
     the signal itself is observable; the `status` field distinguishes
@@ -465,7 +473,12 @@ async def b26_p2_conduction(response: Response) -> dict:
     from app.finance_reconciliation import conduction_state as _conduction  # noqa: PLC0415
 
     try:
-        threshold = _conduction.staleness_threshold_seconds()
+        try:
+            threshold = _conduction.staleness_threshold_seconds()
+        except ValueError:
+            logger.error("b26_p2_conduction_threshold_out_of_bounds")
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            return {"status": "unavailable", "reason": "threshold_out_of_bounds"}
         async with _engine.connect() as conn:
             tenant_rows = (
                 (await conn.execute(text("SELECT id FROM public.tenants ORDER BY id")))
@@ -477,14 +490,56 @@ async def b26_p2_conduction(response: Response) -> dict:
         stale_total = 0
         oldest_published_age: float | None = None
         oldest_stale_age: float | None = None
+        quarantine_total = 0
+        oldest_quarantine_age: float | None = None
+        pending_total = 0
+        terminal_total = 0
         for tenant in tenants:
             async with _tenant_session(tenant_id=tenant) as session:
+                pending_row = (
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT count(*) AS n"
+                                " FROM public.b23_match_task_dispatches AS d"
+                                " WHERE d.delivery_state = 'pending_publish'"
+                            )
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+                pending_total += int(pending_row["n"] or 0)
+                terminal_row = (
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT count(*) AS n"
+                                " FROM public.b23_match_task_dispatches AS d"
+                                " JOIN public.b26_p2_execution_outbox AS o"
+                                "   ON o.dispatch_task_id = d.task_id"
+                                "  AND o.tenant_id = d.tenant_id"
+                                "  AND o.webhook_ingress_identity_id = d.webhook_ingress_identity_id"
+                                " WHERE d.delivery_state = 'published'"
+                                " AND o.state = 'published'"
+                                " AND EXISTS (SELECT 1 FROM public.worker_failed_jobs AS w"
+                                " WHERE w.task_id = d.task_id)"
+                                " AND EXISTS (SELECT 1 FROM public.celery_taskmeta AS m"
+                                " WHERE m.task_id = d.task_id AND m.status = 'FAILURE')"
+                            )
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+                terminal_total += int(terminal_row["n"] or 0)
                 published_row = (
                     (
                         await session.execute(
                             text(
                                 "SELECT count(*) AS n,"
-                                " max(EXTRACT(EPOCH FROM (now() - GREATEST(d.updated_at, o.updated_at)))) AS oldest"
+                                " max(EXTRACT(EPOCH FROM (now() - COALESCE("
+                                " d.first_published_at, d.dispatched_at)))) AS oldest"
                                 " FROM public.b23_match_task_dispatches AS d"
                                 " JOIN public.b26_p2_execution_outbox AS o"
                                 "   ON o.dispatch_task_id = d.task_id"
@@ -516,21 +571,40 @@ async def b26_p2_conduction(response: Response) -> dict:
                         if oldest_stale_age is None
                         else max(oldest_stale_age, stale.age_seconds)
                     )
+                quarantine_rows = await _conduction.quarantine_snapshot(session)
+                quarantine_total += len(quarantine_rows)
+                for quar in quarantine_rows:
+                    qage = float(quar.get("age_seconds") or 0)
+                    oldest_quarantine_age = (
+                        qage
+                        if oldest_quarantine_age is None
+                        else max(oldest_quarantine_age, qage)
+                    )
+        action_required = stale_total > 0 or quarantine_total > 0
         result = {
             "status": "stale_unconducted" if stale_total > 0 else "ok",
             "threshold_seconds": threshold,
             "tenants_scanned": len(tenants),
             "published_total": published_total,
+            "pending_total": pending_total,
+            "terminal_total": terminal_total,
             "stale_unconducted_count": stale_total,
             "oldest_published_age_seconds": oldest_published_age,
             "oldest_stale_age_seconds": oldest_stale_age,
+            "quarantine_count": quarantine_total,
+            "oldest_quarantine_age_seconds": oldest_quarantine_age,
+            "action_required": action_required,
         }
-        if stale_total > 0:
+        if stale_total > 0 or quarantine_total > 0:
             logger.warning(
                 "b26_p2_conduction_stale_unconducted",
                 extra={
                     "stale_unconducted_count": stale_total,
                     "oldest_stale_age_seconds": oldest_stale_age,
+                    "quarantine_count": quarantine_total,
+                    "oldest_quarantine_age_seconds": oldest_quarantine_age,
+                    "pending_total": pending_total,
+                    "terminal_total": terminal_total,
                     "threshold_seconds": threshold,
                 },
             )
