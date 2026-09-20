@@ -142,6 +142,13 @@ report["conduction_import_ok"] = (
     callable(conduction.derive_governed_scope)
     and callable(conduction.derive_single_candidate_scope)
 )
+from app.finance_reconciliation import conduction_state as conduction_v
+report["corrective_v_conduction_state_ok"] = (
+    callable(conduction_v.record_conduction_receipt)
+    and callable(conduction_v.mark_conducted_via_gate)
+    and callable(conduction_v.staleness_snapshot)
+    and callable(conduction_v.staleness_threshold_seconds)
+)
 report["conduction_ii_ok"] = (
     conduction.P2_MONEY_SEMANTICS == "source_verified_gross_not_canonical_net"
     and conduction.P2_MONEY_AUTHORITY == "b2.2_ingress_verified_amount_minor"
@@ -203,8 +210,10 @@ report["corrective_iv_relay_role_ok"] = (
     in open("app/tasks/bayesian.py", encoding="utf-8").read()
 )
 report["corrective_iv_conducted_ok"] = (
-    "_mark_dispatch_conducted(" in task_source
-    and "delivery_state = 'conducted'" in task_source
+    "mark_conducted_via_gate" in task_source
+    and "record_conduction_receipt" in task_source
+    and "SET state = 'conducted'" not in task_source
+    and "delivery_state = 'conducted'" not in task_source
 )
 report["corrective_iv_beat_healer_ok"] = (
     "class HealingBeatScheduler" in open("app/celery_beat.py", encoding="utf-8").read()

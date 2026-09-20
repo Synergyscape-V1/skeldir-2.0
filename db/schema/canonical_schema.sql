@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict t2SecHJqcVNR2QlhHX1dDDBSnnXDhD7XB9NkiThhvfQkwlOsvPqMxBj7q1DCtyN
+\restrict qyhhAzVaqLNfEntbERzZSxbaXnTCUAhCONbpVzwIgS3kpwwgMh7AMJ32zCCi5aN
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -2468,6 +2468,65 @@ CREATE FUNCTION public.b24_source_windows_overlap(p_change_start timestamp with 
 
 
 --
+-- Name: b26_p2_enforce_directory_coherence(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_directory_coherence() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _d_tenant uuid;
+            _d_ingress uuid;
+            _d_ws timestamptz;
+            _d_we timestamptz;
+        BEGIN
+            IF NEW.task_id IS NULL OR NEW.tenant_id IS NULL
+               OR NEW.webhook_ingress_identity_id IS NULL
+               OR NEW.window_start IS NULL OR NEW.window_end IS NULL THEN
+                RAISE EXCEPTION 'b26_p2_directory_authority_null_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF TG_OP = 'UPDATE' THEN
+                IF OLD.task_id IS DISTINCT FROM NEW.task_id THEN
+                    RAISE EXCEPTION 'b26_p2_directory_task_immutable'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF OLD.tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+                    RAISE EXCEPTION 'b26_p2_directory_tenant_immutable'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF OLD.webhook_ingress_identity_id IS DISTINCT FROM NEW.webhook_ingress_identity_id THEN
+                    RAISE EXCEPTION 'b26_p2_directory_ingress_immutable'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF OLD.window_start IS DISTINCT FROM NEW.window_start
+                   OR OLD.window_end IS DISTINCT FROM NEW.window_end THEN
+                    RAISE EXCEPTION 'b26_p2_directory_window_immutable'
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+            SELECT d.tenant_id, d.webhook_ingress_identity_id,
+                   d.window_start, d.window_end
+              INTO _d_tenant, _d_ingress, _d_ws, _d_we
+              FROM public.b23_match_task_dispatches AS d
+             WHERE d.task_id = NEW.task_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_directory_no_canonical_execution'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.tenant_id IS DISTINCT FROM _d_tenant
+               OR NEW.webhook_ingress_identity_id IS DISTINCT FROM _d_ingress
+               OR NEW.window_start IS DISTINCT FROM _d_ws
+               OR NEW.window_end IS DISTINCT FROM _d_we THEN
+                RAISE EXCEPTION 'b26_p2_directory_forked_authority_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_dispatch_immutability(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2520,9 +2579,6 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                 RAISE EXCEPTION 'b26_p2_dispatch_correlation_immutable'
                     USING ERRCODE = '42501';
             END IF;
-            -- Corrective IV: strict window immutability. The Corrective-III
-            -- NULL-OLD exception is closed (legacy rows backfilled above);
-            -- any window rewrite, including NULL -> value, refuses.
             IF OLD.window_start IS DISTINCT FROM NEW.window_start THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'
                     USING ERRCODE = '42501';
@@ -2531,23 +2587,25 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                 RAISE EXCEPTION 'b26_p2_dispatch_window_immutable'
                     USING ERRCODE = '42501';
             END IF;
-            -- Corrective IV: attempts monotonicity (regression refuses).
             IF NEW.publish_attempts < OLD.publish_attempts THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_attempts_regression'
                     USING ERRCODE = '42501';
             END IF;
-            -- Corrective IV: forward-only delivery law.
-            -- pending_publish -> published -> conducted; conducted is
-            -- terminal (immutable). Terminal task failure is observed via
-            -- worker_failed_jobs DLQ + result backend, never by moving the
-            -- delivery state backwards or sideways.
             IF OLD.delivery_state IS DISTINCT FROM NEW.delivery_state THEN
                 IF OLD.delivery_state = 'pending_publish'
                    AND NEW.delivery_state = 'published' THEN
                     NULL;
                 ELSIF OLD.delivery_state = 'published'
                    AND NEW.delivery_state = 'conducted' THEN
-                    NULL;
+                    -- Corrective V: only the conduction gate (owner
+                    -- execution context) may assert conducted. A
+                    -- superuser-equivalent owner session (migrations,
+                    -- governed repair) is likewise admitted; every
+                    -- other principal must pass through the gate.
+                    IF current_user NOT IN ('migration_owner', 'postgres') THEN
+                        RAISE EXCEPTION 'b26_p2_conducted_requires_gate'
+                            USING ERRCODE = '42501';
+                    END IF;
                 ELSE
                     RAISE EXCEPTION 'b26_p2_dispatch_delivery_illegal_transition'
                         USING ERRCODE = '42501';
@@ -2589,7 +2647,11 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
                     NULL;
                 ELSIF OLD.state = 'published'
                    AND NEW.state = 'conducted' THEN
-                    NULL;
+                    -- Corrective V: same gate law as dispatch above.
+                    IF current_user NOT IN ('migration_owner', 'postgres') THEN
+                        RAISE EXCEPTION 'b26_p2_conducted_requires_gate'
+                            USING ERRCODE = '42501';
+                    END IF;
                 ELSE
                     RAISE EXCEPTION 'b26_p2_outbox_illegal_transition'
                         USING ERRCODE = '42501';
@@ -2597,6 +2659,123 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
             END IF;
             NEW.updated_at = now();
             RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_mark_conducted(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _task text;
+            _tenant uuid;
+            _ingress uuid;
+            _dispatch_state text;
+            _outbox_state text;
+            _receipt_count integer;
+            _verdict_count integer;
+            _prev_guc text;
+        BEGIN
+            _task := btrim(COALESCE(p_task_id, ''));
+            IF _task = '' THEN
+                RAISE EXCEPTION 'b26_p2_conducted_task_missing'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Caller capability: only the worker login (or governed
+            -- owner sessions: migrations, repair) may invoke the gate.
+            IF session_user NOT IN ('app_worker', 'migration_owner', 'postgres') THEN
+                RAISE EXCEPTION 'b26_p2_conducted_caller_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Bearer-keyed root: the directory carries no RLS by
+            -- design, so it resolves without a caller GUC.
+            SELECT dir.tenant_id, dir.webhook_ingress_identity_id
+              INTO _tenant, _ingress
+              FROM public.b26_p2_task_authority_directory AS dir
+             WHERE dir.task_id = _task;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_conducted_no_authority'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Bootstrap the tenant visibility root from the canonical
+            -- tuple (directory is tuple-bound; it cannot name a
+            -- foreign tenant for this task). Transaction-local so no
+            -- caller session state leaks.
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            PERFORM set_config('app.current_tenant_id', _tenant::text, true);
+            BEGIN
+                SELECT d.delivery_state INTO _dispatch_state
+                  FROM public.b23_match_task_dispatches AS d
+                 WHERE d.task_id = _task;
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'b26_p2_conducted_no_dispatch'
+                        USING ERRCODE = '42501';
+                END IF;
+                SELECT o.state INTO _outbox_state
+                  FROM public.b26_p2_execution_outbox AS o
+                 WHERE o.dispatch_task_id = _task;
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'b26_p2_conducted_no_outbox'
+                        USING ERRCODE = '42501';
+                END IF;
+                -- Crash-boundary idempotence: a gate that already fired
+                -- for this task converges without a second transition.
+                IF _dispatch_state = 'conducted' AND _outbox_state = 'conducted' THEN
+                    PERFORM set_config('app.current_tenant_id',
+                                       COALESCE(_prev_guc, ''), true);
+                    RETURN 'already_conducted';
+                END IF;
+                IF _dispatch_state IS DISTINCT FROM 'published'
+                   OR _outbox_state IS DISTINCT FROM 'published' THEN
+                    RAISE EXCEPTION 'b26_p2_conducted_not_published'
+                        USING ERRCODE = '42501';
+                END IF;
+                -- Task-specific consequence: the conduction receipt
+                -- matching this exact tuple must exist (worker
+                -- persisted it after B2.3 + P2 success).
+                SELECT count(*) INTO _receipt_count
+                  FROM public.b26_p2_conduction_receipts AS r
+                 WHERE r.task_id = _task
+                   AND r.tenant_id = _tenant
+                   AND r.webhook_ingress_identity_id = _ingress;
+                IF _receipt_count <> 1 THEN
+                    RAISE EXCEPTION 'b26_p2_conducted_no_receipt'
+                        USING ERRCODE = '42501';
+                END IF;
+                -- Task-specific consequence: B2.3 verdicts for the
+                -- bound (tenant, ingress) must exist. Verdicts are
+                -- written only by the engine under admitted authority,
+                -- so their presence proves the governed consequence.
+                SELECT count(*) INTO _verdict_count
+                  FROM public.b23_match_verdicts AS v
+                 WHERE v.tenant_id = _tenant
+                   AND v.webhook_ingress_identity_id = _ingress;
+                IF _verdict_count < 1 THEN
+                    RAISE EXCEPTION 'b26_p2_conducted_no_b23_consequence'
+                        USING ERRCODE = '42501';
+                END IF;
+                UPDATE public.b23_match_task_dispatches AS d
+                   SET delivery_state = 'conducted', updated_at = now()
+                 WHERE d.task_id = _task AND d.delivery_state = 'published';
+                UPDATE public.b26_p2_execution_outbox AS o
+                   SET state = 'conducted', updated_at = now()
+                 WHERE o.dispatch_task_id = _task AND o.state = 'published';
+                PERFORM set_config('app.current_tenant_id',
+                                   COALESCE(_prev_guc, ''), true);
+                RETURN 'conducted';
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config('app.current_tenant_id',
+                                   COALESCE(_prev_guc, ''), true);
+                RAISE;
+            END;
         END $$;
 
 
@@ -2614,6 +2793,39 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
                    dir.window_end
             FROM public.b26_p2_task_authority_directory AS dir
             WHERE dir.task_id = p_task_id
+        $$;
+
+
+--
+-- Name: b26_p2_stale_unconducted(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DEFAULT 300) RETURNS TABLE(task_id character varying, tenant_id uuid, state character varying, age_seconds double precision, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+            SELECT d.task_id, d.tenant_id, d.delivery_state,
+                   EXTRACT(EPOCH FROM (now() - GREATEST(d.updated_at, o.updated_at))),
+                   GREATEST(d.updated_at, o.updated_at)
+            FROM public.b23_match_task_dispatches AS d
+            JOIN public.b26_p2_execution_outbox AS o
+              ON o.dispatch_task_id = d.task_id
+             AND o.tenant_id = d.tenant_id
+             AND o.webhook_ingress_identity_id = d.webhook_ingress_identity_id
+            WHERE d.delivery_state = 'published'
+              AND o.state = 'published'
+              AND GREATEST(d.updated_at, o.updated_at)
+                  < now() - (GREATEST(COALESCE(p_stale_after_seconds, 300), 1) || ' seconds')::interval
+              -- Terminal task failure is owned by the DLQ + result
+              -- backend (failed, actionable there), not by the
+              -- never-consumed signal: a FAILED task is not silent
+              -- in-flight work.
+              AND NOT EXISTS (
+                    SELECT 1 FROM public.celery_taskmeta AS m
+                     WHERE m.task_id = d.task_id
+                       AND m.status = 'FAILURE'
+              )
+            ORDER BY GREATEST(d.updated_at, o.updated_at) ASC
         $$;
 
 
@@ -5655,6 +5867,7 @@ CREATE TABLE public.b23_match_task_dispatches (
     last_publish_error text,
     window_start timestamp with time zone,
     window_end timestamp with time zone,
+    CONSTRAINT ck_b23_dispatch_window_present CHECK (((window_start IS NOT NULL) AND (window_end IS NOT NULL))),
     CONSTRAINT ck_b23_match_task_dispatches_delivery_state CHECK (((delivery_state)::text = ANY ((ARRAY['pending_publish'::character varying, 'published'::character varying, 'conducted'::character varying])::text[]))),
     CONSTRAINT ck_b23_match_task_dispatches_publish_attempts CHECK ((publish_attempts >= 0)),
     CONSTRAINT ck_b23_match_task_dispatches_queue CHECK (((queue)::text = 'b23_match_engine'::text)),
@@ -6187,6 +6400,27 @@ ALTER TABLE ONLY public.b24_worker_process_authority FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: b26_p2_conduction_receipts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_conduction_receipts (
+    task_id character varying(155) NOT NULL,
+    tenant_id uuid NOT NULL,
+    webhook_ingress_identity_id uuid NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    window_end timestamp with time zone NOT NULL,
+    b23_processed_count integer DEFAULT 0 NOT NULL,
+    p2_scope_identity text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b26_p2_receipt_processed_non_negative CHECK ((b23_processed_count >= 0)),
+    CONSTRAINT ck_b26_p2_receipt_scope_not_blank CHECK ((char_length(p2_scope_identity) > 0)),
+    CONSTRAINT ck_b26_p2_receipt_window_order CHECK ((window_start < window_end))
+);
+
+ALTER TABLE ONLY public.b26_p2_conduction_receipts FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: b26_p2_execution_outbox; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6207,6 +6441,29 @@ CREATE TABLE public.b26_p2_execution_outbox (
 );
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b26_p2_execution_quarantine; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_execution_quarantine (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    source_relation text NOT NULL,
+    task_id character varying(155) NOT NULL,
+    tenant_id uuid,
+    webhook_ingress_identity_id uuid,
+    window_start timestamp with time zone,
+    window_end timestamp with time zone,
+    reason text NOT NULL,
+    original_payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    migration_identity text NOT NULL,
+    quarantined_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b26_p2_quarantine_reason_not_blank CHECK ((char_length(reason) > 0)),
+    CONSTRAINT ck_b26_p2_quarantine_source CHECK ((source_relation = ANY (ARRAY['b26_p2_execution_outbox'::text, 'b26_p2_task_authority_directory'::text])))
+);
+
+ALTER TABLE ONLY public.b26_p2_execution_quarantine FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -11221,11 +11478,27 @@ ALTER TABLE ONLY public.b24_worker_process_authority
 
 
 --
+-- Name: b26_p2_conduction_receipts b26_p2_conduction_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_conduction_receipts
+    ADD CONSTRAINT b26_p2_conduction_receipts_pkey PRIMARY KEY (task_id);
+
+
+--
 -- Name: b26_p2_execution_outbox b26_p2_execution_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT b26_p2_execution_outbox_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: b26_p2_execution_quarantine b26_p2_execution_quarantine_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_quarantine
+    ADD CONSTRAINT b26_p2_execution_quarantine_pkey PRIMARY KEY (id);
 
 
 --
@@ -12498,6 +12771,14 @@ ALTER TABLE ONLY public.attribution_commerce_identities
 
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT uq_attribution_events_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
+
+
+--
+-- Name: b23_match_task_dispatches uq_b23_dispatch_execution_tuple; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b23_match_task_dispatches
+    ADD CONSTRAINT uq_b23_dispatch_execution_tuple UNIQUE (task_id, tenant_id, webhook_ingress_identity_id);
 
 
 --
@@ -17599,10 +17880,22 @@ CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model
 
 
 --
+-- Name: b26_p2_task_authority_directory trg_b26_p2_directory_coherence; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_directory_coherence BEFORE INSERT OR UPDATE ON public.b26_p2_task_authority_directory FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_directory_coherence();
+
+
+--
 -- Name: b23_match_task_dispatches trg_b26_p2_dispatch_immutability; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_b26_p2_dispatch_immutability BEFORE UPDATE ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_immutability();
+
+
+--
+-- Name: b26_p2_execution_outbox trg_b26_p2_outbox_transitions; Type: TRIGGER; Schema: public; Owner: -
+--
 
 CREATE TRIGGER trg_b26_p2_outbox_transitions BEFORE UPDATE ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_outbox_transitions();
 
@@ -18155,6 +18448,22 @@ ALTER TABLE ONLY public.b24_source_window_feature_authority
 
 
 --
+-- Name: b26_p2_conduction_receipts b26_p2_conduction_receipts_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_conduction_receipts
+    ADD CONSTRAINT b26_p2_conduction_receipts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_conduction_receipts b26_p2_conduction_receipts_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_conduction_receipts
+    ADD CONSTRAINT b26_p2_conduction_receipts_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
+--
 -- Name: b26_p2_execution_outbox b26_p2_execution_outbox_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -18168,6 +18477,14 @@ ALTER TABLE ONLY public.b26_p2_execution_outbox
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT b26_p2_execution_outbox_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_execution_quarantine b26_p2_execution_quarantine_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_execution_quarantine
+    ADD CONSTRAINT b26_p2_execution_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
 
 
 --
@@ -18482,38 +18799,29 @@ ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
     ADD CONSTRAINT fk_b24_replan_lineage_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
 
 
-
-
 --
--- Name: b26_p2_task_authority_directory fk_b26_p2_directory_dispatch_task_identity; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: b26_p2_task_authority_directory fk_b26_p2_directory_execution_tuple; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
-    ADD CONSTRAINT fk_b26_p2_directory_dispatch_task_identity FOREIGN KEY (task_id) REFERENCES public.b23_match_task_dispatches(task_id) ON DELETE CASCADE;
+    ADD CONSTRAINT fk_b26_p2_directory_execution_tuple FOREIGN KEY (task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
 
 
 --
--- Name: b26_p2_task_authority_directory fk_b26_p2_directory_tenant_ingress_composite; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.b26_p2_task_authority_directory
-    ADD CONSTRAINT fk_b26_p2_directory_tenant_ingress_composite FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_execution_outbox fk_b26_p2_outbox_dispatch_task_identity; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: b26_p2_execution_outbox fk_b26_p2_outbox_execution_tuple; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
-    ADD CONSTRAINT fk_b26_p2_outbox_dispatch_task_identity FOREIGN KEY (dispatch_task_id) REFERENCES public.b23_match_task_dispatches(task_id) ON DELETE CASCADE;
+    ADD CONSTRAINT fk_b26_p2_outbox_execution_tuple FOREIGN KEY (dispatch_task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
 
 
 --
--- Name: b26_p2_execution_outbox fk_b26_p2_outbox_tenant_ingress_composite; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: b26_p2_conduction_receipts fk_b26_p2_receipt_execution_tuple; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.b26_p2_execution_outbox
-    ADD CONSTRAINT fk_b26_p2_outbox_tenant_ingress_composite FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.b26_p2_conduction_receipts
+    ADD CONSTRAINT fk_b26_p2_receipt_execution_tuple FOREIGN KEY (task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
+
 
 --
 -- Name: b27_explanation_materializations fk_b27_explanation_materializations_source_issuance; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -19126,10 +19434,22 @@ ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY
 ALTER TABLE public.b24_worker_process_authority ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: b26_p2_conduction_receipts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b26_p2_conduction_receipts ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: b26_p2_execution_outbox; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.b26_p2_execution_outbox ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: b26_p2_execution_quarantine; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b26_p2_execution_quarantine ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: b27_explanation_materializations; Type: ROW SECURITY; Schema: public; Owner: -
@@ -20042,10 +20362,24 @@ CREATE POLICY tenant_isolation_policy_b24_source_window_feature_authority ON pub
 
 
 --
+-- Name: b26_p2_conduction_receipts tenant_isolation_policy_b26_p2_conduction_receipts; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b26_p2_conduction_receipts ON public.b26_p2_conduction_receipts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
 -- Name: b26_p2_execution_outbox tenant_isolation_policy_b26_p2_execution_outbox; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tenant_isolation_policy_b26_p2_execution_outbox ON public.b26_p2_execution_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: b26_p2_execution_quarantine tenant_isolation_policy_b26_p2_execution_quarantine; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b26_p2_execution_quarantine ON public.b26_p2_execution_quarantine USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --
@@ -20555,5 +20889,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict t2SecHJqcVNR2QlhHX1dDDBSnnXDhD7XB9NkiThhvfQkwlOsvPqMxBj7q1DCtyN
+\unrestrict qyhhAzVaqLNfEntbERzZSxbaXnTCUAhCONbpVzwIgS3kpwwgMh7AMJ32zCCi5aN
 

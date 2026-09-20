@@ -71,6 +71,10 @@ class AuthorityConfig:
     publisher_password: str
     transport_user: str = "app_celery_transport"
     transport_password: str = "app_celery_transport"
+    relay_user: str = "app_relay"
+    relay_password: str = "app_relay"
+    beat_user: str = "app_beat"
+    beat_password: str = "app_beat"
     trust_issuer_user: str = "app_trust_issuer"
     trust_issuer_password: str = "app_trust_issuer"
     trust_signer_user: str = "app_trust_signer"
@@ -104,6 +108,10 @@ def _parse_args() -> AuthorityConfig:
     parser.add_argument("--publisher-password", default="app_dispatch_publisher")
     parser.add_argument("--transport-user", default="app_celery_transport")
     parser.add_argument("--transport-password", default="app_celery_transport")
+    parser.add_argument("--relay-user", default="app_relay")
+    parser.add_argument("--relay-password", default="app_relay")
+    parser.add_argument("--beat-user", default="app_beat")
+    parser.add_argument("--beat-password", default="app_beat")
     parser.add_argument("--trust-issuer-user", default="app_trust_issuer")
     parser.add_argument("--trust-issuer-password", default="app_trust_issuer")
     parser.add_argument("--trust-signer-user", default="app_trust_signer")
@@ -138,6 +146,10 @@ def _parse_args() -> AuthorityConfig:
         publisher_password=args.publisher_password,
         transport_user=args.transport_user,
         transport_password=args.transport_password,
+        relay_user=args.relay_user,
+        relay_password=args.relay_password,
+        beat_user=args.beat_user,
+        beat_password=args.beat_password,
         trust_issuer_user=args.trust_issuer_user,
         trust_issuer_password=args.trust_issuer_password,
         trust_signer_user=args.trust_signer_user,
@@ -258,6 +270,25 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                 cursor,
                 config.transport_user,
                 config.transport_password,
+                rotate_existing=rotate,
+            )
+            # B2.6-P2 Corrective V. The relay recovers/publishes EXISTING
+            # execution authority and the beat schedules relay work; neither
+            # mints execution authority. Their logins are deliberately not
+            # members of app_rw, app_ro, app_user, or app_worker, and neither
+            # reaches the other: table privileges come only from the
+            # 202609190001 migration, on delivery columns and broker
+            # transport alone.
+            _create_or_alter_login_role(
+                cursor,
+                config.relay_user,
+                config.relay_password,
+                rotate_existing=rotate,
+            )
+            _create_or_alter_login_role(
+                cursor,
+                config.beat_user,
+                config.beat_password,
                 rotate_existing=rotate,
             )
             # B2.5-P13 Corrective XVI. Recording a completed issuance is the
@@ -534,6 +565,8 @@ def main() -> int:
     print(f"worker_user={config.worker_user}")
     print(f"publisher_user={config.publisher_user}")
     print(f"transport_user={config.transport_user}")
+    print(f"relay_user={config.relay_user}")
+    print(f"beat_user={config.beat_user}")
     print(f"trust_issuer_user={config.trust_issuer_user}")
     print(f"trust_signer_user={config.trust_signer_user}")
     print(f"b28_requester_user={config.b28_requester_user}")

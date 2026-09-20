@@ -202,7 +202,7 @@ def test_iv_outbox_fk_refuses_unknown_task() -> None:
                 )
 
             reason = _refused(attempt)
-            assert "fk_b26_p2_outbox_dispatch_task_identity" in reason
+            assert "fk_b26_p2_outbox_execution_tuple" in reason
     finally:
         conn.close()
 
@@ -230,7 +230,10 @@ def test_iv_directory_fk_refuses_orphan() -> None:
                 )
 
             reason = _refused(attempt)
-            assert "fk_b26_p2_directory_dispatch_task_identity" in reason
+            # Layering: the write-time coherence trigger precedes FK
+            # evaluation for directory orphans (no canonical execution
+            # at all); the tuple FK stands as the second backstop.
+            assert "b26_p2_directory_no_canonical_execution" in reason
     finally:
         conn.close()
 
@@ -250,24 +253,29 @@ def test_iv_outbox_fk_refuses_cross_tenant_ingress() -> None:
                 (str(second["tenant_id"]),),
             )
             # A dispatch row for the second tenant WITHOUT outbox/directory
-            # yet, so the task-identity FK below passes and only the
-            # composite tenant/ingress binding is under test.
+            # yet, so the task-identity dimension passes and only the
+            # cross-tenant combination is under test. (Corrective V:
+            # issuance carries a persisted window; the tuple law, not a
+            # NULL window, is what this cell exercises.)
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
                 " routing_key, correlation_id, provider,"
                 " provider_native_event_reference,"
                 " provider_native_commerce_reference,"
-                " normalized_commerce_reference_value)"
+                " normalized_commerce_reference_value,"
+                " window_start, window_end)"
                 " VALUES (%s, %s, %s,"
                 " 'app.tasks.revenue_verification.execute_b23_batch_match_engine',"
                 " 'b23_match_engine', 'b23_match_engine.task', %s,"
-                " 'stripe', 'evt', 'ord', 'ord')",
+                " 'stripe', 'evt', 'ord', 'ord', %s, %s)",
                 (
                     str(second["tenant_id"]),
                     str(second["ingress_id"]),
                     task_id,
                     str(uuid.uuid4()),
+                    DAY_START,
+                    DAY_END,
                 ),
             )
 
@@ -287,7 +295,7 @@ def test_iv_outbox_fk_refuses_cross_tenant_ingress() -> None:
                 )
 
             reason = _refused(attempt)
-            assert "fk_b26_p2_outbox_tenant_ingress_composite" in reason
+            assert "fk_b26_p2_outbox_execution_tuple" in reason
     finally:
         conn.close()
 
@@ -313,16 +321,19 @@ def test_iv_split_brain_second_task_for_same_ingress_refused() -> None:
                     " routing_key, correlation_id, provider,"
                     " provider_native_event_reference,"
                     " provider_native_commerce_reference,"
-                    " normalized_commerce_reference_value)"
+                    " normalized_commerce_reference_value,"
+                    " window_start, window_end)"
                     " VALUES (%s, %s, %s,"
                     " 'app.tasks.revenue_verification.execute_b23_batch_match_engine',"
                     " 'b23_match_engine', 'b23_match_engine.task', %s,"
-                    " 'stripe', 'evt', 'ord', 'ord')",
+                    " 'stripe', 'evt', 'ord', 'ord', %s, %s)",
                     (
                         str(ids["tenant_id"]),
                         str(ids["ingress_id"]),
                         f"iv-split-b-{uuid.uuid4().hex[:8]}",
                         str(uuid.uuid4()),
+                        DAY_START,
+                        DAY_END,
                     ),
                 )
 
@@ -720,8 +731,15 @@ def test_iv_require_dsn_guard_fails_closed() -> None:
 
 
 async def test_iv_conducted_mark_advances_published() -> None:
-    from app.tasks.revenue_verification import _mark_dispatch_conducted
+    """Conducted advances published twins through the server-side gate.
 
+    Corrective V supersedes the IV direct-mark helper: the worker
+    persists a task-specific receipt and the gate requires twin
+    published state, the receipt, B2.3 verdict consequence, and the
+    worker/owner caller. The gate is invoked here as the migration
+    owner (governed owner session, like migrations); the worker
+    credential path is proven in the Corrective-V battery.
+    """
     ids = _seed_ingress("conducted")
     task_id = f"iv-conducted-{uuid.uuid4().hex[:8]}"
     _seed_dispatch(ids["tenant_id"], ids["ingress_id"], task_id)
@@ -745,9 +763,63 @@ async def test_iv_conducted_mark_advances_published() -> None:
                 " SET state = 'published' WHERE dispatch_task_id = %s",
                 (task_id,),
             )
+            cur.execute(
+                "SELECT id FROM public.attribution_events"
+                " WHERE tenant_id = %s LIMIT 1",
+                (str(ids["tenant_id"]),),
+            )
+            event_row = cur.fetchone()
+            assert event_row is not None
+            cur.execute(
+                "INSERT INTO public.b23_match_verdicts (tenant_id,"
+                " attribution_event_id, webhook_ingress_identity_id,"
+                " provider, canonical_commerce_reference,"
+                " provider_native_event_reference,"
+                " provider_native_commerce_reference, status,"
+                " match_quality, attributed_amount_minor,"
+                " verified_amount_minor, currency_code,"
+                " canonical_expected_gross_amount_minor,"
+                " canonical_captured_gross_amount_minor,"
+                " canonical_net_verified_amount_minor,"
+                " discrepancy_amount_minor, discrepancy_ratio_bps,"
+                " discrepancy_band)"
+                " VALUES (%s, %s, %s, 'stripe', 'ord', 'evt', 'ord',"
+                " 'matched_confirmed', 'high', 38000, 38000, 'USD',"
+                " 38000, 38000, 38000, 0, 0, 'exact')",
+                (
+                    str(ids["tenant_id"]),
+                    str(event_row[0]),
+                    str(ids["ingress_id"]),
+                ),
+            )
+            cur.execute(
+                "INSERT INTO public.b26_p2_conduction_receipts (task_id,"
+                " tenant_id, webhook_ingress_identity_id, window_start,"
+                " window_end, b23_processed_count, p2_scope_identity)"
+                " VALUES (%s, %s, %s, %s, %s, 1,"
+                " 'iv-scope-identity')",
+                (
+                    task_id,
+                    str(ids["tenant_id"]),
+                    str(ids["ingress_id"]),
+                    DAY_START,
+                    DAY_END,
+                ),
+            )
+            cur.execute(
+                "SELECT public.b26_p2_mark_conducted(%s)",
+                (task_id,),
+            )
+            assert cur.fetchone()[0] == "conducted"
+            # Crash-boundary idempotence: replay converges, no second
+            # transition.
+            cur.execute(
+                "SELECT public.b26_p2_mark_conducted(%s)",
+                (task_id,),
+            )
+            assert cur.fetchone()[0] == "already_conducted"
     finally:
         conn.close()
-    await _mark_dispatch_conducted(tenant_id=ids["tenant_id"], broker_task_id=task_id)
     conn = psycopg2.connect(_admin_dsn())
     conn.autocommit = True
     try:

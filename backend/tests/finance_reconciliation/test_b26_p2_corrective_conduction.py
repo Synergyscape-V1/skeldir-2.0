@@ -473,6 +473,39 @@ def _seed_worker_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> No
         conn.close()
 
 
+def _mark_worker_twins_published(
+    tenant_id: UUID, ingress_id: UUID, task_id: str
+) -> None:
+    """Mark seeded dispatch/outbox twins published (setup only).
+
+    Simulates the broker-publish edge that precedes worker execution
+    in production: the Corrective-V gate requires both projections
+    published before it admits the conducted transition.
+    """
+    import psycopg2
+
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            cur.execute(
+                "UPDATE public.b23_match_task_dispatches"
+                " SET delivery_state = 'published' WHERE task_id = %s",
+                (task_id,),
+            )
+            cur.execute(
+                "UPDATE public.b26_p2_execution_outbox"
+                " SET state = 'published' WHERE dispatch_task_id = %s",
+                (task_id,),
+            )
+    finally:
+        conn.close()
+
+
 async def test_p2ca1_worker_scope_derivation_returns_governed_summary() -> None:
     # The B23 worker task derives this same summary after natural dispatch.
     # Corrective II: the worker re-resolves tenant/window from the durable
@@ -670,6 +703,13 @@ def test_p2ca1_worker_task_executes_p2_under_production_principal(
     day_end = datetime(2026, 1, 16, 0, 0, tzinfo=_wtz.utc)
     bound_task_id = f"p2ca1-task-{uuid.uuid4().hex[:8]}"
     _seed_worker_dispatch(universe["tenant_id"], universe["matched"][0], bound_task_id)
+    # Corrective V: the gate requires both projections published (the
+    # broker-publish edge precedes worker execution in production; the
+    # direct-call test simulates post-publish execution by marking the
+    # seeded twins published before invoking the task).
+    _mark_worker_twins_published(
+        universe["tenant_id"], universe["matched"][0], bound_task_id
+    )
     runner = tmp_path / "run_b23_task.py"
     runner.write_text(
         "import json\n"

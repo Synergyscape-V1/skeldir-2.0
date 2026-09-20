@@ -77,3 +77,81 @@ BEGIN
         EXECUTE 'GRANT SELECT ON TABLE public.tenants TO app_worker';
     END IF;
 END $$;
+
+-- === 202609190001 Corrective V: one execution tuple, conducted gate ===
+-- The tuple UNIQUE + composite FKs carry no GRANT vocabulary (constraints,
+-- not privileges) and therefore need no companion statements; they arrive
+-- via canonical_schema.sql (pg_dump shape). What this companion carries is
+-- the V privilege physics: recovery principals, conduction receipts and
+-- quarantine readability, and the gate/staleness routine EXECUTE shape.
+-- Source of truth for each statement is the 202609190001 migration.
+-- If the migration changes V grants, this file must change with it (the
+-- equivalence proof REDs otherwise).
+
+-- Recovery principals exist in provisioned lanes (prepare script); the
+-- migration grants them existence-guarded, so bare-role lanes keep
+-- working. This companion runs after roles are provisioned; the guards
+-- below keep direct application of this file equally safe.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        GRANT USAGE ON SCHEMA public TO app_relay;
+        GRANT SELECT ON TABLE public.tenants TO app_relay;
+        GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_relay;
+        GRANT SELECT ON TABLE public.b26_p2_execution_outbox TO app_relay;
+        GRANT SELECT ON TABLE public.webhook_ingress_identities TO app_relay;
+        GRANT UPDATE (delivery_state, publish_attempts, last_publish_error, updated_at)
+            ON TABLE public.b23_match_task_dispatches TO app_relay;
+        GRANT UPDATE (state, publish_attempts, last_publish_error, next_retry_at, updated_at)
+            ON TABLE public.b26_p2_execution_outbox TO app_relay;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.kombu_message TO app_relay;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.kombu_queue TO app_relay;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta TO app_relay;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_tasksetmeta TO app_relay;
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_relay;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_beat') THEN
+        GRANT USAGE ON SCHEMA public TO app_beat;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.kombu_message TO app_beat;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.kombu_queue TO app_beat;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta TO app_beat;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_tasksetmeta TO app_beat;
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_beat;
+    END IF;
+END $$;
+
+-- === 202609190001 Corrective V: conduction receipts (worker-written) ===
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT SELECT, INSERT ON TABLE public.b26_p2_conduction_receipts TO app_worker;
+        GRANT SELECT ON TABLE public.b26_p2_execution_quarantine TO app_worker;
+    END IF;
+END $$;
+GRANT SELECT ON TABLE public.b26_p2_conduction_receipts TO app_ro;
+GRANT SELECT ON TABLE public.b26_p2_execution_quarantine TO app_ro;
+GRANT SELECT ON TABLE public.b26_p2_execution_quarantine TO app_user;
+
+-- === 202609190001 Corrective V: conduction gate (worker-only) ===
+REVOKE ALL ON FUNCTION public.b26_p2_mark_conducted(text) FROM PUBLIC;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_mark_conducted(text) TO app_worker;
+    END IF;
+END $$;
+
+-- === 202609190001 Corrective V: staleness signal ===
+REVOKE ALL ON FUNCTION public.b26_p2_stale_unconducted(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_stale_unconducted(integer) TO app_user;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_stale_unconducted(integer) TO app_worker;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_stale_unconducted(integer) TO app_relay;
+    END IF;
+END $$;

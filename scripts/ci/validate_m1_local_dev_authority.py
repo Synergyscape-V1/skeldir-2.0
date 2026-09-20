@@ -597,6 +597,15 @@ ALLOWED_M1_PATH_PREFIXES = [
     # prohibitions still apply to non-exempt prefixes). No B2.3 engine,
     # LLM boundary, requirements, or pyproject surface is included.
     "alembic/versions/007_skeldir_foundation/202609180001_b26_p2_corrective_iv_deployment_equivalence.py",
+    # --- B2.6-P2 Corrective V execution-coherence surface ---
+    # Authority-only slice: the single Corrective-V migration (one
+    # execution tuple, consequence-bound conducted gate, staleness
+    # signal, least-privilege recovery). Same exemption shape as the
+    # Corrective-IV entry above; every prohibition retained unchanged.
+    "alembic/versions/007_skeldir_foundation/202609190001_b26_p2_corrective_v_execution_coherence.py",
+    # Corrective-V production-visible non-conduction signal (counts
+    # only, no PII, no financial truth).
+    "backend/app/api/health.py",
     "backend/app/api/webhooks.py",
     "backend/app/celery_beat.py",
     "backend/app/core/construction_authority.py",

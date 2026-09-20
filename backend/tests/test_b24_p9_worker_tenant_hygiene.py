@@ -944,7 +944,10 @@ def test_b24_p9_directive_xi_recovery_scheduler_is_production_wired() -> None:
     assert '"lease_capability":' not in outbox
     assert "worker_process_token" not in outbox
 
-    assert "beat: cd backend && celery -A app.celery_app.celery_app beat" in procfile
+    assert (
+        "beat: cd backend && DATABASE_URL=$B26_P2_BEAT_DATABASE_URL celery -A "
+        "app.celery_app.celery_app beat" in procfile
+    )
     assert (
         "worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian" in procfile
     )
