@@ -3419,3 +3419,48 @@
   local_reproduction_command: "python scripts/ci/prove_b26_p2_production_topology.py --help"
   risk_if_removed: "Accepted evidence could strand before broker execution while every required proof stays green."
   decision: keep_required
+- gate_id: b26-p2-vii-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_vii_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'VII registry extends VI coverage for new sovereign/heartbeat surfaces.'
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: 'The required topology proof imports this registry for the VII coverage gate.'
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_production_topology.py
+  local_reproduction_command: 'python -c \"from scripts.ci.b26_p2_vii_coverage import VII_COVERED_SURFACES\"'
+  risk_if_removed: 'New VII surfaces could stay untested silently.'
+  decision: keep_utility
+- gate_id: b26-p2-vii-equivalence
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_vii_equivalence.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'Completion extensionally equivalent to canonical P2 success.'
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: 'Differential state-space proof; run lane-locally and in evidence.'
+  negative_control_preserved_by: python scripts/ci/b26_p2_vii_equivalence.py
+  local_reproduction_command: 'python scripts/ci/b26_p2_vii_equivalence.py'
+  risk_if_removed: 'Gate subset could drift from P2 semantics.'
+  decision: keep_utility
+- gate_id: b26-p2-vii-negatives
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_vii_negatives.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every VII check goes RED on a member of its class.'
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: 'Active negative controls for the VII database plane.'
+  negative_control_preserved_by: python scripts/ci/b26_p2_vii_negatives.py
+  local_reproduction_command: 'python scripts/ci/b26_p2_vii_negatives.py --help'
+  risk_if_removed: 'A check that can never fail could be treated as a check.'
+  decision: keep_utility
