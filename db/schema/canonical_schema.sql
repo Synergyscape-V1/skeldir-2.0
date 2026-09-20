@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict dxrnIbB3zXkJ4q1LEfd4ajfYNVgj5UoNuf9lyl3dbfmvlbMpfWSlTcMTs33rwm2
+\restrict SfKD79uGsWaHbrti9cvFFChPu4UTtvsDEHGjglDZfKtT4x1mlYFvhobzVbyuOGh
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -2832,7 +2832,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trig
                 IF NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM
                    'authenticity_verified'
                    AND session_user NOT IN
-                       ('app_user', 'migration_owner', 'postgres') THEN
+                       ('app_user', 'app_worker', 'migration_owner', 'postgres') THEN
                     RAISE EXCEPTION 'b26_p2_verified_authorship_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -2843,7 +2843,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trig
                 IF NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM
                    'authenticity_verified'
                    AND session_user NOT IN
-                       ('app_user', 'migration_owner', 'postgres') THEN
+                       ('app_user', 'app_worker', 'migration_owner', 'postgres') THEN
                     RAISE EXCEPTION 'b26_p2_verified_authorship_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -21771,5 +21771,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict dxrnIbB3zXkJ4q1LEfd4ajfYNVgj5UoNuf9lyl3dbfmvlbMpfWSlTcMTs33rwm2
+\unrestrict SfKD79uGsWaHbrti9cvFFChPu4UTtvsDEHGjglDZfKtT4x1mlYFvhobzVbyuOGh
 
