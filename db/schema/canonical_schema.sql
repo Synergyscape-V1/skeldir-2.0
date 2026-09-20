@@ -2728,6 +2728,20 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
                 RAISE EXCEPTION 'b26_p2_dispatch_provider_not_sovereign'
                     USING ERRCODE = '42501';
             END IF;
+            -- Pre-registration closure: a task id carrying a FAILURE row
+            -- before its execution exists is forgery setup (forge first,
+            -- mint later). Genuine executions never mint over a recorded
+            -- failure (relay republishes the same identity; duplicates
+            -- reuse the winner). celery_taskmeta carries no RLS, so this
+            -- check is tenant-independent like the trigger twin above.
+            IF EXISTS (
+                SELECT 1 FROM public.celery_taskmeta AS m
+                 WHERE m.task_id = NEW.task_id
+                   AND m.status = 'FAILURE'
+            ) THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_result_preexists'
+                    USING ERRCODE = '42501';
+            END IF;
             RETURN NEW;
         END $$;
 
@@ -2851,6 +2865,8 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _is_p2_task boolean;
         BEGIN
             IF NEW.status IS DISTINCT FROM 'FAILURE' THEN
                 RETURN NEW;
@@ -2859,6 +2875,13 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
                 'migration_owner', 'postgres',
                 'app_worker', 'app_relay', 'app_beat'
             ) THEN
+                RETURN NEW;
+            END IF;
+            SELECT EXISTS (
+                SELECT 1 FROM public.b26_p2_task_authority_directory AS dir
+                 WHERE dir.task_id = NEW.task_id
+            ) INTO _is_p2_task;
+            IF NOT _is_p2_task THEN
                 RETURN NEW;
             END IF;
             RAISE EXCEPTION 'b26_p2_result_failure_forge_refused'

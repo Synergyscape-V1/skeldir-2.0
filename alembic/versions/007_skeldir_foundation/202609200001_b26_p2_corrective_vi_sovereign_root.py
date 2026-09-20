@@ -492,6 +492,20 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'b26_p2_dispatch_provider_not_sovereign'
                     USING ERRCODE = '42501';
             END IF;
+            -- Pre-registration closure: a task id carrying a FAILURE row
+            -- before its execution exists is forgery setup (forge first,
+            -- mint later). Genuine executions never mint over a recorded
+            -- failure (relay republishes the same identity; duplicates
+            -- reuse the winner). celery_taskmeta carries no RLS, so this
+            -- check is tenant-independent like the trigger twin above.
+            IF EXISTS (
+                SELECT 1 FROM public.celery_taskmeta AS m
+                 WHERE m.task_id = NEW.task_id
+                   AND m.status = 'FAILURE'
+            ) THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_result_preexists'
+                    USING ERRCODE = '42501';
+            END IF;
             RETURN NEW;
         END $$;
         """
@@ -1118,13 +1132,17 @@ def upgrade() -> None:
     # Transport/result telemetry is corroboration, never deterministic
     # truth (H-VI-B02/C03/C04): FAILURE telemetry is the only
     # result-backend state that can terminalize (hide) a stale execution,
-    # so exactly that status is closed to non-transport principals --
-    # while PENDING/SUCCESS/STARTED keep flowing for least-privilege
-    # topologies (R6-style workers run as app_user and their readiness
-    # round-trip legitimately records SUCCESS). Only the worker/relay/
-    # beat transport principals (which own the broker/result lifecycle)
-    # may record FAILURE; a producer-credential holder forging a FAILURE
-    # row to terminalize another execution refuses here. Kombu DML stays:
+    # so exactly that status -- for exactly the P2 execution namespace --
+    # is closed to non-transport principals. The namespace check reads
+    # the RLS-free admission directory (every accepted D has a directory
+    # row; the check is tenant-independent, closing cross-tenant
+    # forgery, and leaks nothing beyond task-id existence). All other
+    # phases' telemetry (b0545 convergence, R6 round-trips, sweep and
+    # evaluator tasks) is untouched: their task ids never name a P2
+    # execution, and PENDING/SUCCESS/STARTED flow for every principal
+    # (least-privilege readiness preserved). Dispatch issuance refuses
+    # task ids carrying a pre-existing FAILURE row, closing
+    # pre-registration (forge first, mint later). Kombu DML stays:
     # broker SEND is transport, verified at admission. tasksetmeta is
     # never consulted by any P2 law and stays untouched.
     op.execute(
@@ -1132,6 +1150,8 @@ def upgrade() -> None:
         CREATE OR REPLACE FUNCTION public.b26_p2_enforce_result_integrity()
         RETURNS trigger
         LANGUAGE plpgsql SET search_path TO 'pg_catalog', 'public' AS $$
+        DECLARE
+            _is_p2_task boolean;
         BEGIN
             IF NEW.status IS DISTINCT FROM 'FAILURE' THEN
                 RETURN NEW;
@@ -1140,6 +1160,13 @@ def upgrade() -> None:
                 'migration_owner', 'postgres',
                 'app_worker', 'app_relay', 'app_beat'
             ) THEN
+                RETURN NEW;
+            END IF;
+            SELECT EXISTS (
+                SELECT 1 FROM public.b26_p2_task_authority_directory AS dir
+                 WHERE dir.task_id = NEW.task_id
+            ) INTO _is_p2_task;
+            IF NOT _is_p2_task THEN
                 RETURN NEW;
             END IF;
             RAISE EXCEPTION 'b26_p2_result_failure_forge_refused'

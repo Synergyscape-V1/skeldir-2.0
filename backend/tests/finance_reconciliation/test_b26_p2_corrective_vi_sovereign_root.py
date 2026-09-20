@@ -1172,11 +1172,15 @@ def test_vi_outbox_issuance_and_retry_bound() -> None:
 
 
 def test_vi_taskmeta_failure_forge_refused_for_issuer() -> None:
-    """H-VI-C03/C04 hardening: FAILURE is the only result-backend state
-    that can terminalize a stale execution, so exactly that status is
-    closed to non-transport principals -- while PENDING/SUCCESS keep
-    flowing so least-privilege topologies (R6-style app_user workers)
-    retain their readiness round-trip."""
+    """H-VI-C03/C04 hardening, P2-namespaced: FAILURE is the only
+    result-backend state that can terminalize a stale execution, so
+    exactly that status -- for exactly P2 execution task ids -- is
+    closed to non-transport principals. Non-P2 telemetry (other phases'
+    convergence, least-privilege round-trips) and non-terminal statuses
+    keep flowing."""
+    ids = _seed_ingress("taskmeta-ns")
+    task_id = f"vi-ns-{uuid.uuid4().hex[:8]}"
+    _seed_dispatch(ids["tenant_id"], ids["ingress_id"], task_id)
     import psycopg2
 
     conn = psycopg2.connect(_role_dsn("app_user"))
@@ -1184,16 +1188,25 @@ def test_vi_taskmeta_failure_forge_refused_for_issuer() -> None:
     try:
         with conn.cursor() as cur:
 
-            def attempt_failure() -> None:
+            def attempt_p2_failure() -> None:
                 cur.execute(
                     "INSERT INTO public.celery_taskmeta (task_id, status,"
                     " date_done, traceback, name, worker)"
-                    " VALUES ('vi-forged-result', 'FAILURE', now(), '', 'x', 'w')"
+                    " VALUES (%s, 'FAILURE', now(), '', 'x', 'w')",
+                    (task_id,),
                 )
 
-            reason = _refused(attempt_failure)
+            reason = _refused(attempt_p2_failure)
             assert "b26_p2_result_failure_forge_refused" in reason
-            # Non-terminal statuses still flow (round-trip preserved).
+            # Non-P2 task ids (other phases' telemetry): FAILURE flows.
+            _other = f"vi-other-{uuid.uuid4().hex[:8]}"
+            cur.execute(
+                "INSERT INTO public.celery_taskmeta (task_id, status,"
+                " date_done, traceback, name, worker)"
+                " VALUES (%s, 'FAILURE', now(), '', 'x', 'w')",
+                (_other,),
+            )
+            # Non-terminal statuses flow for every task class.
             _rt_task = f"vi-roundtrip-{uuid.uuid4().hex[:8]}"
             cur.execute(
                 "INSERT INTO public.celery_taskmeta (task_id, status,"
@@ -1202,11 +1215,78 @@ def test_vi_taskmeta_failure_forge_refused_for_issuer() -> None:
                 (_rt_task,),
             )
             cur.execute(
-                "DELETE FROM public.celery_taskmeta WHERE task_id = %s",
-                (_rt_task,),
+                "DELETE FROM public.celery_taskmeta WHERE task_id IN (%s, %s)",
+                (_other, _rt_task),
             )
     finally:
         conn.close()
+
+
+def test_vi_dispatch_preexisting_failure_refuses() -> None:
+    """Pre-registration closure: minting an execution over a recorded
+    FAILURE row refuses -- genuine issuance never reuses a failed task
+    identity (relay republishes; duplicates reuse the winner)."""
+    ids = _seed_ingress("preexist")
+    import psycopg2
+
+    ghost = f"vi-ghost-{uuid.uuid4().hex[:8]}"
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "INSERT INTO public.celery_taskmeta (task_id, status,"
+                " date_done, traceback, name, worker)"
+                " VALUES (%s, 'FAILURE', now(), '', 'x', 'w')",
+                (ghost,),
+            )
+    finally:
+        admin.close()
+    conn = psycopg2.connect(_role_dsn("app_user"))
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+
+            def attempt() -> None:
+                cur.execute(
+                    "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
+                    " webhook_ingress_identity_id, task_id, task_name, queue,"
+                    " routing_key, correlation_id, provider,"
+                    " provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_value, window_start,"
+                    " window_end) VALUES (%s, %s, %s,"
+                    f" '{TASK_NAME}',"
+                    " 'b23_match_engine', 'b23_match_engine.task', %s,"
+                    " 'stripe', 'evt', 'ord', 'ord', %s, %s)",
+                    (
+                        str(ids["tenant_id"]),
+                        str(ids["ingress_id"]),
+                        ghost,
+                        str(uuid.uuid4()),
+                        DAY_START,
+                        DAY_END,
+                    ),
+                )
+
+            reason = _refused(attempt)
+            assert "b26_p2_dispatch_result_preexists" in reason
+    finally:
+        conn.close()
+        admin = psycopg2.connect(_admin_dsn())
+        admin.autocommit = True
+        try:
+            with admin.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM public.celery_taskmeta WHERE task_id = %s",
+                    (ghost,),
+                )
+        finally:
+            admin.close()
 
 
 def test_vi_dispatched_at_frozen() -> None:

@@ -1350,6 +1350,7 @@ def _check_corrective_vi_law(violations: list[str], details: dict[str, Any]) -> 
         "b26_p2_outbox_retry_unbounded",
         "b26_p2_enforce_result_integrity",
         "b26_p2_result_failure_forge_refused",
+        "b26_p2_dispatch_result_preexists",
     ):
         if required not in upgrade_source:
             violations.append(f"p2_vi_disposition_law_absent:{required}")
