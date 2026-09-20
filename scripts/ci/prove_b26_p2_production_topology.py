@@ -1046,6 +1046,7 @@ def main() -> int:
         _received = disp3["task_id"] in _mis_output
         _causal = (
             "permission denied for table celery_taskmeta" in _mis_output
+            or "b26_p2_result_failure_forge_refused" in _mis_output
             or "b26_p2_receipt_caller_refused" in _mis_output
             or "b26_p2_conducted_caller_refused" in _mis_output
         )

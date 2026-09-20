@@ -847,28 +847,6 @@
   deprecation_reason: 'Utility-only; blind class-closure round instrument.'
   subsumed_by: ''
   registry_action: utility
-- id: b26-p2-vi-canonical-builder
-  path: scripts/ci/build_vi_appendix.py
-  status: utility
-  owning_phase: B2.6-P2
-  protected_invariant: "The bootstrap lane's canonical routine bodies are character-identical copies of the migration's final state (mechanical sync, never hand-copy)."
-  command: "python scripts/ci/build_vi_appendix.py"
-  workflow_references:
-  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
-  workflow_job_name: ""
-  local_reproduction_command: "python scripts/ci/build_vi_appendix.py --help"
-  expected_failure_meaning: "Bootstrap routine bodies drift from migration bodies, breaking lane equivalence silently."
-  first_diagnostic_command: "python scripts/ci/build_vi_appendix.py --help"
-  depends_on_db: false
-  depends_on_celery: false
-  depends_on_pooler: false
-  default_execution: false
-  execution_cohort: utility-only
-  ci_visibility: imported_utility
-  replacement: ''
-  deprecation_reason: 'Utility-only; canonical-sync build instrument.'
-  subsumed_by: ''
-  registry_action: utility
 - id: validate-b25-p6-reason-truth-matrix
   path: scripts/ci/validate_b25_p6_reason_truth_matrix.py
   status: required

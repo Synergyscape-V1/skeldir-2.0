@@ -1348,7 +1348,8 @@ def _check_corrective_vi_law(violations: list[str], details: dict[str, Any]) -> 
         "b26_p2_enforce_outbox_issuance",
         "b26_p2_outbox_issuance_state_refused",
         "b26_p2_outbox_retry_unbounded",
-        "REVOKE INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta FROM app_user",
+        "b26_p2_enforce_result_integrity",
+        "b26_p2_result_failure_forge_refused",
     ):
         if required not in upgrade_source:
             violations.append(f"p2_vi_disposition_law_absent:{required}")

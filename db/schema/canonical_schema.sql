@@ -2844,6 +2844,29 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
 
 
 --
+-- Name: b26_p2_enforce_result_integrity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF NEW.status IS DISTINCT FROM 'FAILURE' THEN
+                RETURN NEW;
+            END IF;
+            IF current_user IN (
+                'migration_owner', 'postgres',
+                'app_worker', 'app_relay', 'app_beat'
+            ) THEN
+                RETURN NEW;
+            END IF;
+            RAISE EXCEPTION 'b26_p2_result_failure_forge_refused'
+                USING ERRCODE = '42501';
+        END $$;
+
+
+--
 -- Name: b26_p2_mark_conducted(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -18448,6 +18471,13 @@ CREATE TRIGGER trg_b26_p2_outbox_issuance BEFORE INSERT ON public.b26_p2_executi
 --
 
 CREATE TRIGGER trg_b26_p2_outbox_transitions BEFORE UPDATE ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_outbox_transitions();
+
+
+--
+-- Name: celery_taskmeta trg_b26_p2_result_integrity; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_result_integrity BEFORE INSERT OR UPDATE OF status ON public.celery_taskmeta FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_result_integrity();
 
 
 --

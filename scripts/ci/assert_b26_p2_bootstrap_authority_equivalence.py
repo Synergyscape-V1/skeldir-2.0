@@ -65,6 +65,7 @@ P2_ROUTINES = (
     "b26_p2_mark_conducted",
     "b26_p2_stale_unconducted",
     "b26_p2_operational_disposition",
+    "b26_p2_enforce_result_integrity",
 )
 
 P2_ROLES = ("app_user", "app_worker", "app_rw", "app_ro", "app_relay", "app_beat", "PUBLIC")
@@ -116,7 +117,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                                'b26_p2_record_conduction_receipt',
                                'b26_p2_mark_conducted',
                                'b26_p2_stale_unconducted',
-                               'b26_p2_operational_disposition')
+                               'b26_p2_operational_disposition',
+                               'b26_p2_enforce_result_integrity')
         """,
     ),
     (
@@ -178,7 +180,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                             'b26_p2_task_authority_directory',
                              'b26_p2_conduction_receipts',
                              'b26_p2_execution_quarantine',
-                             'webhook_ingress_identities')
+                             'webhook_ingress_identities',
+                             'celery_taskmeta')
           AND NOT t.tgisinternal
         """,
     ),
@@ -205,7 +208,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                                'b26_p2_record_conduction_receipt',
                                'b26_p2_mark_conducted',
                                'b26_p2_stale_unconducted',
-                               'b26_p2_operational_disposition')
+                               'b26_p2_operational_disposition',
+                               'b26_p2_enforce_result_integrity')
         """,
     ),
     (

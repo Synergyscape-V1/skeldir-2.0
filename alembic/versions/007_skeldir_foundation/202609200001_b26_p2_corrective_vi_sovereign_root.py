@@ -1116,18 +1116,52 @@ def upgrade() -> None:
         """
     )
     # Transport/result telemetry is corroboration, never deterministic
-    # truth (H-VI-B02/C03/C04): the issuer credential keeps SELECT
-    # observability but loses all result-backend writes. Only the
-    # worker/relay/beat transport principals (which own the broker/result
-    # lifecycle) may write taskmeta; with producer writes revoked, a
-    # producer-credential holder can no longer forge a FAILURE row to
-    # terminalize (hide) another execution's stale signal. Kombu DML
-    # stays: broker SEND is transport, verified at admission.
+    # truth (H-VI-B02/C03/C04): FAILURE telemetry is the only
+    # result-backend state that can terminalize (hide) a stale execution,
+    # so exactly that status is closed to non-transport principals --
+    # while PENDING/SUCCESS/STARTED keep flowing for least-privilege
+    # topologies (R6-style workers run as app_user and their readiness
+    # round-trip legitimately records SUCCESS). Only the worker/relay/
+    # beat transport principals (which own the broker/result lifecycle)
+    # may record FAILURE; a producer-credential holder forging a FAILURE
+    # row to terminalize another execution refuses here. Kombu DML stays:
+    # broker SEND is transport, verified at admission. tasksetmeta is
+    # never consulted by any P2 law and stays untouched.
     op.execute(
-        "REVOKE INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta FROM app_user"
+        """
+        CREATE OR REPLACE FUNCTION public.b26_p2_enforce_result_integrity()
+        RETURNS trigger
+        LANGUAGE plpgsql SET search_path TO 'pg_catalog', 'public' AS $$
+        BEGIN
+            IF NEW.status IS DISTINCT FROM 'FAILURE' THEN
+                RETURN NEW;
+            END IF;
+            IF current_user IN (
+                'migration_owner', 'postgres',
+                'app_worker', 'app_relay', 'app_beat'
+            ) THEN
+                RETURN NEW;
+            END IF;
+            RAISE EXCEPTION 'b26_p2_result_failure_forge_refused'
+                USING ERRCODE = '42501';
+        END $$;
+        """
     )
     op.execute(
-        "REVOKE INSERT, UPDATE, DELETE ON TABLE public.celery_tasksetmeta FROM app_user"
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = 'trg_b26_p2_result_integrity'
+            ) THEN
+                CREATE TRIGGER trg_b26_p2_result_integrity
+                BEFORE INSERT OR UPDATE OF status ON public.celery_taskmeta
+                FOR EACH ROW EXECUTE FUNCTION
+                    public.b26_p2_enforce_result_integrity();
+            END IF;
+        END $$;
+        """
     )
 
     # 11. Consequence-bound gate, VI revision: V law preserved (caller,
@@ -1782,12 +1816,6 @@ def downgrade() -> None:
         "GRANT INSERT ON TABLE public.b26_p2_execution_quarantine TO app_user"  # CI:DESTRUCTIVE_OK - reversible rollback restoring V default-derived quarantine writes.
     )
     op.execute(
-        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta TO app_user"  # CI:DESTRUCTIVE_OK - reversible rollback restoring pre-VI transport writes.
-    )
-    op.execute(
-        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_tasksetmeta TO app_user"  # CI:DESTRUCTIVE_OK - reversible rollback restoring pre-VI transport writes.
-    )
-    op.execute(
         "GRANT INSERT ON TABLE public.b26_p2_conduction_receipts TO app_user"  # CI:DESTRUCTIVE_OK - reversible rollback restoring V default-derived receipt writes.
     )
     op.execute(
@@ -1829,6 +1857,12 @@ def downgrade() -> None:
     )
     op.execute(
         "DROP FUNCTION IF EXISTS public.b26_p2_enforce_outbox_issuance()"  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective VI outbox issuance law.
+    )
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_b26_p2_result_integrity ON public.celery_taskmeta"  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective VI result integrity law.
+    )
+    op.execute(
+        "DROP FUNCTION IF EXISTS public.b26_p2_enforce_result_integrity()"  # CI:DESTRUCTIVE_OK - reversible rollback for Corrective VI result integrity law.
     )
     op.execute(
         """

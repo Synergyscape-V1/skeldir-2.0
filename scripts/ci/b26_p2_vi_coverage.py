@@ -167,6 +167,12 @@ _STALE = frozenset(
         # Issuer/worker DLQ writes: DLQ-alone never suppresses; joint
         # agreement is terminal-counted; status edits are monotonic
         # (OD6 telemetry cells).
+        # Issuer result writes: FAILURE refused by the integrity trigger
+        # while SUCCESS flows (taskmeta_forge cell) -- least-privilege
+        # round-trips preserved, terminal forgery closed.
+        "app_user:INSERT:celery_taskmeta",
+        "app_user:INSERT:celery_taskmeta.status",
+        "app_user:UPDATE:celery_taskmeta.status",
         "app_user:INSERT:worker_failed_jobs",
         "app_user:INSERT:worker_failed_jobs.status",
         "app_user:INSERT:worker_failed_jobs.task_id",

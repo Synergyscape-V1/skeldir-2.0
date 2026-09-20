@@ -1171,10 +1171,12 @@ def test_vi_outbox_issuance_and_retry_bound() -> None:
         conn.close()
 
 
-def test_vi_taskmeta_forge_revoked_for_issuer() -> None:
-    """H-VI-C03/C04 hardening: the issuer credential holds result-backend
-    SELECT observability but no writes, so a producer-credential holder
-    cannot forge FAILURE telemetry to terminalize another execution."""
+def test_vi_taskmeta_failure_forge_refused_for_issuer() -> None:
+    """H-VI-C03/C04 hardening: FAILURE is the only result-backend state
+    that can terminalize a stale execution, so exactly that status is
+    closed to non-transport principals -- while PENDING/SUCCESS keep
+    flowing so least-privilege topologies (R6-style app_user workers)
+    retain their readiness round-trip."""
     import psycopg2
 
     conn = psycopg2.connect(_role_dsn("app_user"))
@@ -1182,15 +1184,27 @@ def test_vi_taskmeta_forge_revoked_for_issuer() -> None:
     try:
         with conn.cursor() as cur:
 
-            def attempt() -> None:
+            def attempt_failure() -> None:
                 cur.execute(
                     "INSERT INTO public.celery_taskmeta (task_id, status,"
                     " date_done, traceback, name, worker)"
                     " VALUES ('vi-forged-result', 'FAILURE', now(), '', 'x', 'w')"
                 )
 
-            reason = _refused(attempt)
-            assert "denied" in reason.lower() or "permission" in reason.lower()
+            reason = _refused(attempt_failure)
+            assert "b26_p2_result_failure_forge_refused" in reason
+            # Non-terminal statuses still flow (round-trip preserved).
+            _rt_task = f"vi-roundtrip-{uuid.uuid4().hex[:8]}"
+            cur.execute(
+                "INSERT INTO public.celery_taskmeta (task_id, status,"
+                " date_done, traceback, name, worker)"
+                " VALUES (%s, 'SUCCESS', now(), '', 'x', 'w')",
+                (_rt_task,),
+            )
+            cur.execute(
+                "DELETE FROM public.celery_taskmeta WHERE task_id = %s",
+                (_rt_task,),
+            )
     finally:
         conn.close()
 

@@ -175,15 +175,15 @@ ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public
     REVOKE INSERT ON TABLES FROM app_user;
 
 -- === 202609200001 Corrective VI: transport/result telemetry is not truth ===
--- The issuer keeps SELECT observability on the result backend but loses
--- all writes: only the worker/relay/beat transport principals own the
--- broker/result lifecycle. A producer-credential holder can no longer
--- forge FAILURE rows to terminalize another execution's stale signal.
--- Kombu DML stays (broker SEND is transport, verified at admission).
-REVOKE INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta FROM app_user;
-REVOKE INSERT, UPDATE, DELETE ON TABLE public.celery_tasksetmeta FROM app_user;
-GRANT SELECT ON TABLE public.celery_taskmeta TO app_user;
-GRANT SELECT ON TABLE public.celery_tasksetmeta TO app_user;
+-- FAILURE is the only result-backend state that can terminalize (hide) a
+-- stale execution, so exactly that status is closed to non-transport
+-- principals at the database plane (b26_p2_enforce_result_integrity
+-- trigger below, mirrored from the migration). PENDING/SUCCESS/STARTED
+-- keep flowing for least-privilege topologies. The transport grants
+-- mirror the 006 celery foundation on both lanes; the trigger constrains
+-- FAILURE identically wherever the tables exist.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta TO app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_tasksetmeta TO app_user;
 
 -- === 202609200001 Corrective VI: receipt record function (worker-only) ===
 REVOKE ALL ON FUNCTION public.b26_p2_record_conduction_receipt(text, text, integer) FROM PUBLIC;
