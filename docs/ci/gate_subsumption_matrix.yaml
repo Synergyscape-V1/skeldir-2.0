@@ -3314,6 +3314,96 @@
   local_reproduction_command: "python scripts/ci/b26_p2_evidence.py --help"
   risk_if_removed: "Producers could drift to incompatible or incomplete proof-cell identities."
   decision: keep_utility
+- gate_id: b26-p2-vi-capability-surface
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ""
+  script: scripts/ci/b26_p2_capability_surface.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Every prohibited P2 effect's reachable mutation surface is enumerated mechanically from live catalog facts."
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: "The required topology proof imports this enumeration for the Gate 29 coverage gate; it is not an independently executable assertion."
+  negative_control_preserved_by: python scripts/ci/b26_p2_vi_negatives.py
+  local_reproduction_command: "python scripts/ci/b26_p2_capability_surface.py --help"
+  risk_if_removed: "Class-closure claims could rest on named examples while reachable siblings stay untested."
+  decision: keep_utility
+- gate_id: b26-p2-vi-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ""
+  script: scripts/ci/b26_p2_vi_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Every mechanically reachable load-bearing P2 surface maps to the required-CI cell that exercises it."
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: "The required topology proof imports this registry for the Gate 29 coverage gate."
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_production_topology.py
+  local_reproduction_command: "python -c \"from scripts.ci.b26_p2_vi_coverage import VI_COVERED_SURFACES\""
+  risk_if_removed: "Coverage mapping could drift from the generator output silently."
+  decision: keep_utility
+- gate_id: b26-p2-vi-probe
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ""
+  script: scripts/ci/b26_p2_vi_probe.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Corrective VI laws are exercisable lane-locally through the exact runtime principals."
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: "Development instrument; the committed R6/CP6/OD6 pytest battery carries the same cells as required CI."
+  negative_control_preserved_by: python -m pytest backend/tests/finance_reconciliation/test_b26_p2_corrective_vi_sovereign_root.py -q
+  local_reproduction_command: "python scripts/ci/b26_p2_vi_probe.py --help"
+  risk_if_removed: "Lane-local VI verification would require the full compiled topology every iteration."
+  decision: keep_utility
+- gate_id: b26-p2-vi-negatives
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ""
+  script: scripts/ci/b26_p2_vi_negatives.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Every VI load-bearing check goes RED on a member of its class at the database plane."
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: "Active negative controls; the M-VI battery is assertion-bearing, not a CI job."
+  negative_control_preserved_by: python scripts/ci/b26_p2_vi_negatives.py
+  local_reproduction_command: "python scripts/ci/b26_p2_vi_negatives.py --help"
+  risk_if_removed: "A check that can never fail could be treated as a check."
+  decision: keep_utility
+- gate_id: b26-p2-vi-blind-challenge
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ""
+  script: scripts/ci/b26_p2_vi_blind.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Post-implementation falsifiers from prohibited effects only produce no survivor."
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: "Blind round instrument; run post-freeze with fresh lanes."
+  negative_control_preserved_by: python scripts/ci/b26_p2_vi_blind.py
+  local_reproduction_command: "python scripts/ci/b26_p2_vi_blind.py --help"
+  risk_if_removed: "Alternate primitives outside engineering vocabulary could survive undetected."
+  decision: keep_utility
+- gate_id: b26-p2-vi-canonical-builder
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ""
+  script: scripts/ci/build_vi_appendix.py
+  owning_phase: B2.6-P2
+  protected_invariant: "Bootstrap routine bodies are mechanical copies of migration final state."
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: "Build instrument; the bootstrap-equivalence proof verifies its output on every run."
+  negative_control_preserved_by: python scripts/ci/assert_b26_p2_bootstrap_authority_equivalence.py
+  local_reproduction_command: "python scripts/ci/build_vi_appendix.py --help"
+  risk_if_removed: "Hand-copied bodies could drift from migration bodies silently."
+  decision: keep_utility
 - gate_id: b26-p2-window-oracle
   workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
   job: "B2.6-P1 Static Semantic Authority"

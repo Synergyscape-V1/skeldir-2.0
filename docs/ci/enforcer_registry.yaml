@@ -731,12 +731,144 @@
   depends_on_celery: false
   depends_on_pooler: false
   default_execution: true
-  execution_cohort: b2-5-provenance-audit
-  ci_visibility: workflow_job
+  execution_cohort: b26-p1-finance-reconciliation-adjudication
+  ci_visibility: named_step
   replacement: ''
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: b26-p2-vi-capability-surface
+  path: scripts/ci/b26_p2_capability_surface.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: "Every prohibited P2 effect's reachable mutation surface is enumerated mechanically from live catalog facts (roles, grants, memberships, default ACLs, DEFINER writers) instead of a fixed named-defect list."
+  command: "python scripts/ci/b26_p2_capability_surface.py --dsn $DSN --manifest-out artifacts/b26_p2/topology/capability-surface.json"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ""
+  local_reproduction_command: "python scripts/ci/b26_p2_capability_surface.py --help"
+  expected_failure_meaning: "A reachable authority surface capable of a prohibited effect is not enumerated, so class-closure claims rest on named examples."
+  first_diagnostic_command: "python scripts/ci/b26_p2_capability_surface.py --help"
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; the required topology proof imports it for the Gate 29 coverage gate.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-vi-coverage-registry
+  path: scripts/ci/b26_p2_vi_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: "Every mechanically reachable load-bearing P2 surface maps to the required-CI cell that exercises it; untested reachable surfaces fail coverage."
+  command: "python scripts/ci/prove_b26_p2_production_topology.py --evidence-out artifacts/b26_p2/topology/production-topology.json"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ""
+  local_reproduction_command: "python -c \"from scripts.ci.b26_p2_vi_coverage import VI_COVERED_SURFACES; print(len(VI_COVERED_SURFACES))\""
+  expected_failure_meaning: "Coverage mapping drifts from the generator output, so the class gate could pass over untested siblings."
+  first_diagnostic_command: "python scripts/ci/b26_p2_capability_surface.py --help"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; the required topology proof imports it for the Gate 29 coverage gate.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-vi-probe
+  path: scripts/ci/b26_p2_vi_probe.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: "Corrective VI root/consequence/disposition laws are exercisable against a live lane through the exact runtime principals outside the compiled topology."
+  command: "python scripts/ci/b26_p2_vi_probe.py --admin-dsn $MIGRATION_DSN"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ""
+  local_reproduction_command: "python scripts/ci/b26_p2_vi_probe.py --help"
+  expected_failure_meaning: "VI laws cannot be demonstrated lane-locally, forcing all falsification through the full topology."
+  first_diagnostic_command: "python scripts/ci/b26_p2_vi_probe.py --help"
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; development instrument for lane-local VI verification.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-vi-negatives
+  path: scripts/ci/b26_p2_vi_negatives.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: "Every Corrective VI load-bearing check is shown RED on a member of its class (pristine GREEN, defect RED, restore GREEN) at the database plane."
+  command: "python scripts/ci/b26_p2_vi_negatives.py --admin-dsn $MIGRATION_DSN"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ""
+  local_reproduction_command: "python scripts/ci/b26_p2_vi_negatives.py --help"
+  expected_failure_meaning: "A VI check that can never fail is treated as a check."
+  first_diagnostic_command: "python scripts/ci/b26_p2_vi_negatives.py --help"
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; active negative controls for the VI database plane.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-vi-blind-challenge
+  path: scripts/ci/b26_p2_vi_blind.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: "Post-implementation auditor-style falsifiers from prohibited effects only (novel primitives) produce no surviving class member."
+  command: "python scripts/ci/b26_p2_vi_blind.py --admin-dsn $MIGRATION_DSN"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ""
+  local_reproduction_command: "python scripts/ci/b26_p2_vi_blind.py --help"
+  expected_failure_meaning: "An alternate primitive outside engineering vocabulary produces a prohibited effect."
+  first_diagnostic_command: "python scripts/ci/b26_p2_vi_blind.py --help"
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; blind class-closure round instrument.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-vi-canonical-builder
+  path: scripts/ci/build_vi_appendix.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: "The bootstrap lane's canonical routine bodies are character-identical copies of the migration's final state (mechanical sync, never hand-copy)."
+  command: "python scripts/ci/build_vi_appendix.py"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ""
+  local_reproduction_command: "python scripts/ci/build_vi_appendix.py --help"
+  expected_failure_meaning: "Bootstrap routine bodies drift from migration bodies, breaking lane equivalence silently."
+  first_diagnostic_command: "python scripts/ci/build_vi_appendix.py --help"
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; canonical-sync build instrument.'
+  subsumed_by: ''
+  registry_action: utility
 - id: validate-b25-p6-reason-truth-matrix
   path: scripts/ci/validate_b25_p6_reason_truth_matrix.py
   status: required
