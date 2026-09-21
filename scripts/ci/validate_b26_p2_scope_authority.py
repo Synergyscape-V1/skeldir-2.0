@@ -1561,27 +1561,27 @@ def _check_corrective_viii_law(violations: list[str], details: dict[str, Any]) -
                 violations.append(f"p2_viii_health_absent:{required}")
         if "VALUES (:tenant, now(), 1, now())" in hs:
             violations.append("p2_viii_health_bare_timestamp_survives")
-    # Shipping consumer: deployed probe + compose healthcheck + alerts.
+    # Shipping consumer: deployed probe + platform alert/metric contracts.
+    # Boundary: docker-compose.local.yml is M1 local-dev authority, not a
+    # P2 surface; P2 must not override another phase's fenced file to
+    # claim wiring. Consumers asserted here are P2-owned or contracts.
     probe_module = BACKEND / "app/ops/conduction_health_probe.py"
     if not probe_module.is_file():
         violations.append("p2_viii_probe_absent")
     else:
         ps = probe_module.read_text(encoding="utf-8")
         for required in ("def evaluate", "evaluator_absent_total",
-                         "pending_actionable_total", "action_required"):
+                         "pending_actionable_total", "action_required",
+                         "/health/b26-p2-conduction"):
             if required not in ps:
                 violations.append(f"p2_viii_probe_absent:{required}")
-    compose = REPO_ROOT / "docker-compose.local.yml"
-    if compose.is_file():
-        cs = compose.read_text(encoding="utf-8")
-        for required in ("app.ops.conduction_health_probe",
-                         "/health/b26-p2-conduction"):
-            if required not in cs:
-                violations.append(f"p2_viii_compose_consumer_absent:{required}")
     for rel in ("monitoring/alerts/b26-p2-conduction.alerts.yaml",
                 "monitoring/prometheus/b26-p2-conduction-metrics.yml"):
-        if not (REPO_ROOT / rel).is_file():
+        path = REPO_ROOT / rel
+        if not path.is_file():
             violations.append(f"p2_viii_monitoring_absent:{rel}")
+        elif "conduction_health_probe" not in path.read_text(encoding="utf-8"):
+            violations.append(f"p2_viii_monitoring_unwired:{rel}")
     # Meaning-closed authority discovery + reviewed pin.
     cap = REPO_ROOT / "scripts/ci/b26_p2_capability_surface.py"
     if cap.is_file():

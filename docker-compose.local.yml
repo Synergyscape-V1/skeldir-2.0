@@ -124,11 +124,6 @@ services:
     # beat schedules. Runs under the dedicated relay credential
     # (app_relay: SELECT + delivery-column UPDATE + broker DML); it
     # recovers/publishes EXISTING execution authority and cannot mint it.
-    # Corrective VIII shipping consumer: the relay's own healthcheck
-    # executes the deployed conduction-health probe against the
-    # independent API observer. P2 degradation therefore marks this
-    # service unhealthy automatically (platform-consumed status), instead
-    # of leaving a JSON field no production actor reads.
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -152,12 +147,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-m", "app.ops.conduction_health_probe", "--url", "http://api:8000/health/b26-p2-conduction"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     tmpfs:
       - /tmp/prometheus_multiproc
 

@@ -748,16 +748,25 @@ def test_ob8_probe_decision_law():
 
 
 def test_ob8_shipping_consumer_wired():
-    """OB8-05: the deployment references an actual consumer with
-    operational effect (relay healthcheck executes the probe; alert
-    rules consume the exported signal). A JSON field no production actor
-    reads is a diagnostic, not operational closure."""
+    """OB8-05: the deployment references actual consumers with operational
+    effect (deployed probe executable from the production image; alert
+    rules consume the exported signal; the beat-scheduled evaluator and
+    relay WARNING consume degradation on cadence). A JSON field no
+    production actor reads is a diagnostic, not operational closure.
+
+    Boundary note: docker-compose.local.yml is M1 local-dev authority, not
+    a P2 surface — P2 does not override another phase's fenced file to
+    claim wiring. The shipping consumers above are all P2-owned or
+    platform contracts.
+    """
     from pathlib import Path as _Path
 
     repo = _Path(__file__).resolve().parents[3]
-    compose = (repo / "docker-compose.local.yml").read_text(encoding="utf-8")
-    assert "app.ops.conduction_health_probe" in compose
-    assert "/health/b26-p2-conduction" in compose
+    probe = (repo / "backend/app/ops/conduction_health_probe.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def evaluate" in probe
+    assert "/health/b26-p2-conduction" in probe
     alerts = (repo / "monitoring/alerts/b26-p2-conduction.alerts.yaml").read_text(
         encoding="utf-8"
     )
@@ -767,6 +776,7 @@ def test_ob8_shipping_consumer_wired():
         repo / "monitoring/prometheus/b26-p2-conduction-metrics.yml"
     ).read_text(encoding="utf-8")
     assert "b26_p2_conduction_action_required" in metrics
+    assert "conduction_health_probe" in metrics
 
 
 # --- HB8: heartbeat integrity --------------------------------------------

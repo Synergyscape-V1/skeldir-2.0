@@ -262,9 +262,30 @@ def upgrade() -> None:
         END $$;
         """
     )
+    # Least-privilege grants are existence-guarded: lanes that run a
+    # subset of the role graph (other phases' jobs) must migrate without
+    # undefined-role errors, exactly as the VII migration guards its own
+    # conditional grants.
     op.execute(
-        "REVOKE UPDATE, DELETE ON TABLE public.b26_p2_scope_policy_authority"
-        " FROM app_user, app_worker, app_relay, app_beat, app_ro, app_rw"
+        """
+        DO $$
+        DECLARE
+            _role text;
+        BEGIN
+            FOREACH _role IN ARRAY ARRAY[
+                'app_user', 'app_worker', 'app_relay',
+                'app_beat', 'app_ro', 'app_rw'
+            ] LOOP
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = _role) THEN
+                    EXECUTE format(
+                        'REVOKE UPDATE, DELETE ON TABLE'
+                        ' public.b26_p2_scope_policy_authority FROM %I',
+                        _role
+                    );
+                END IF;
+            END LOOP;
+        END $$;
+        """
     )
 
     # ------------------------------------------------------------------
@@ -891,16 +912,32 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "REVOKE INSERT, UPDATE, DELETE ON TABLE public.b26_p2_evaluator_heartbeat"
-        " FROM app_relay"
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+                REVOKE INSERT, UPDATE, DELETE
+                    ON TABLE public.b26_p2_evaluator_heartbeat
+                    FROM app_relay;
+            END IF;
+        END $$;
+        """
     )
     op.execute(
         "REVOKE ALL ON FUNCTION public.b26_p2_record_evaluator_heartbeat(integer)"
         " FROM PUBLIC"
     )
     op.execute(
-        "GRANT EXECUTE ON FUNCTION public.b26_p2_record_evaluator_heartbeat(integer)"
-        " TO app_relay"
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+                GRANT EXECUTE ON FUNCTION
+                    public.b26_p2_record_evaluator_heartbeat(integer)
+                    TO app_relay;
+            END IF;
+        END $$;
+        """
     )
     op.execute(
         """
@@ -1546,12 +1583,27 @@ def downgrade() -> None:
         """  # CI:DESTRUCTIVE_OK - reversible rollback restores VII temporal law.
     )
     op.execute(
-        "REVOKE EXECUTE ON FUNCTION public.b26_p2_record_evaluator_heartbeat(integer)"
-        " FROM app_relay"  # CI:DESTRUCTIVE_OK - reversible rollback for VIII heartbeat law.
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+                REVOKE EXECUTE ON FUNCTION
+                    public.b26_p2_record_evaluator_heartbeat(integer)
+                    FROM app_relay;
+            END IF;
+        END $$;
+        """  # CI:DESTRUCTIVE_OK - reversible rollback for VIII heartbeat law.
     )
     op.execute(
-        "GRANT SELECT, INSERT, UPDATE ON TABLE public.b26_p2_evaluator_heartbeat"
-        " TO app_relay"  # CI:DESTRUCTIVE_OK - reversible rollback restores VII heartbeat writes.
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+                GRANT SELECT, INSERT, UPDATE ON TABLE
+                    public.b26_p2_evaluator_heartbeat TO app_relay;
+            END IF;
+        END $$;
+        """  # CI:DESTRUCTIVE_OK - reversible rollback restores VII heartbeat writes.
     )
     op.execute(
         "DROP FUNCTION IF EXISTS public.b26_p2_record_evaluator_heartbeat(integer)"  # CI:DESTRUCTIVE_OK - reversible rollback for VIII heartbeat law.
