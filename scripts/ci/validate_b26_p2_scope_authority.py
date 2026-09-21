@@ -1561,11 +1561,11 @@ def _check_corrective_viii_law(violations: list[str], details: dict[str, Any]) -
                 violations.append(f"p2_viii_health_absent:{required}")
         if "VALUES (:tenant, now(), 1, now())" in hs:
             violations.append("p2_viii_health_bare_timestamp_survives")
-    # Shipping consumer: deployed probe + platform alert/metric contracts.
-    # Boundary: docker-compose.local.yml is M1 local-dev authority, not a
-    # P2 surface; P2 must not override another phase's fenced file to
-    # claim wiring. Consumers asserted here are P2-owned or contracts.
-    probe_module = BACKEND / "app/ops/conduction_health_probe.py"
+    # Shipping consumer: deployed ops probe + platform alert/metric
+    # contracts. The probe lives in scripts/ops (ops tooling, outside the
+    # backend/app hermetic boundary and the B26 surface namespace, both of
+    # which forbid network-client imports).
+    probe_module = REPO_ROOT / "scripts/ops/conduction_health_probe.py"
     if not probe_module.is_file():
         violations.append("p2_viii_probe_absent")
     else:

@@ -527,6 +527,30 @@ def _is_b26_p2_adoption_error(error: Exception) -> str | None:
     return None
 
 
+_INGRESS_COLLISION_CONSTRAINTS = frozenset(
+    {
+        "uq_webhook_ingress_identities_tenant_idempotency",
+        "uq_webhook_ingress_identities_tenant_event",
+        "uq_webhook_ingress_identities_event_id",
+    }
+)
+
+
+def _is_ingress_collision_integrity_error(error: Exception) -> bool:
+    """True when a flush failed on a webhook-ingress identity unique."""
+    constraint = _integrity_error_constraint_name(error) if isinstance(
+        error, IntegrityError
+    ) else None
+    if constraint and constraint in _INGRESS_COLLISION_CONSTRAINTS:
+        return True
+    if isinstance(error, IntegrityError):
+        sqlstate = _integrity_error_sqlstate(error)
+        msg = str(error).lower()
+        if sqlstate == "23505" and "webhook_ingress_identities" in msg:
+            return True
+    return False
+
+
 def _integrity_error_sqlstate(error: IntegrityError) -> str | None:
     orig = getattr(error, "orig", None)
     if orig is None:
@@ -850,29 +874,28 @@ class EventIngestionService:
                 event_timestamp=validated["event_timestamp"],
             )
 
-            # 5. Persist to database. Authenticated-root adoption (Corrective
-            # VIII): a colliding precursor is promoted to the authenticated
-            # values (or the conflict is disposed explicitly); the
-            # authenticated payload's sovereign values always win and a
-            # verified-vs-verified mismatch never succeeds silently.
+            # 5. Persist to database. Fast path: a single flush with no
+            # extra reads on the hot path. Authenticated-root adoption
+            # (Corrective VIII) is adjudicated ONLY on collision: a
+            # colliding precursor is promoted to the authenticated values
+            # (or the conflict is disposed explicitly); the authenticated
+            # payload's sovereign values always win and a verified-vs-
+            # verified mismatch never succeeds silently.
             session.add(event)
             session.add(raw_event_payload)
             if webhook_identity_payload is not None:
-                adopted = await _adopt_or_promote_ingress(
-                    session,
-                    tenant_id=tenant_id,
-                    incoming=webhook_identity_payload,
-                    event_id=event.id,
+                session.add(
+                    WebhookIngressIdentity(**webhook_identity_payload)
                 )
-                if adopted is None:
-                    session.add(
-                        WebhookIngressIdentity(**webhook_identity_payload)
-                    )
             try:
                 await session.flush()  # Trigger constraint validation before commit
             except Exception as flush_error:
+                if webhook_identity_payload is None:
+                    raise
                 adoption = _is_b26_p2_adoption_error(flush_error)
-                if adoption is None or webhook_identity_payload is None:
+                if adoption is None and not _is_ingress_collision_integrity_error(
+                    flush_error
+                ):
                     raise
                 await session.rollback()
                 # Re-attach the pending entities after the rollback.
@@ -891,6 +914,19 @@ class EventIngestionService:
                     event_id=event.id,
                 )
                 if adopted is None:
+                    # Genuine concurrent-issue race with no precursor: if
+                    # the winner already completed ingestion, this arrival
+                    # is its duplicate (stable redrive path downstream).
+                    existing_event = await _fetch_existing_event_for_key(
+                        session, tenant_id=tenant_id,
+                        idempotency_key=idempotency_key,
+                    )
+                    if existing_event is not None:
+                        events_duplicate_total.inc()
+                        return IngestionDecision(
+                            event=existing_event,
+                            state=IngestionResultState.DUPLICATE,
+                        )
                     session.add(
                         WebhookIngressIdentity(**webhook_identity_payload)
                     )

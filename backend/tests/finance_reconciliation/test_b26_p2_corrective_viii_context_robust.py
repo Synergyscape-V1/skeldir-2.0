@@ -711,7 +711,20 @@ def test_ob8_probe_decision_law():
     """OB8-01..10: the deployed probe consumes the shipping observer path.
     Forged-healthy timestamps without genuine evaluation content still
     read degraded; only a fully healthy payload reads healthy."""
-    from app.ops.conduction_health_probe import evaluate
+    import importlib.util as _ilu
+    from pathlib import Path as _probe_path
+
+    _probe_file = (
+        _probe_path(__file__).resolve().parents[3]
+        / "scripts"
+        / "ops"
+        / "conduction_health_probe.py"
+    )
+    _spec = _ilu.spec_from_file_location("conduction_health_probe", str(_probe_file))
+    assert _spec is not None and _spec.loader is not None
+    _probe_module = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_probe_module)
+    evaluate = _probe_module.evaluate
 
     healthy, _ = evaluate(
         {
@@ -762,7 +775,7 @@ def test_ob8_shipping_consumer_wired():
     from pathlib import Path as _Path
 
     repo = _Path(__file__).resolve().parents[3]
-    probe = (repo / "backend/app/ops/conduction_health_probe.py").read_text(
+    probe = (repo / "scripts/ops/conduction_health_probe.py").read_text(
         encoding="utf-8"
     )
     assert "def evaluate" in probe
