@@ -318,8 +318,8 @@ def main() -> int:
         # read-only for the same reason.
         tests_mounts = [
             f"{REPO_ROOT / 'backend' / 'tests'}:/app/backend/tests:ro",
-            f"{REPO_ROOT / 'docker-compose.local.yml'}:/app/docker-compose.local.yml:ro",
             f"{REPO_ROOT / 'monitoring'}:/app/monitoring:ro",
+            f"{REPO_ROOT / 'scripts' / 'ops'}:/app/scripts/ops:ro",
         ]
         proc = run_img(
             args.image_tag,
