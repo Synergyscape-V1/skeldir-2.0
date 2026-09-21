@@ -1026,7 +1026,9 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
 
     # Worker-state seeding (including verdict writes, which belong to the
     # worker login per B2.6-P2 Corrective III least privilege) runs on the
-    # B23 pool; the app pool stays on the API login.
+    # B23 pool; the app pool stays on the API login. Corrective VIII
+    # authenticated-root law: the webhook ingress envelope is API-issuer
+    # authority, so ingress INSERTs below run on the issuer pool.
     async with b23_engine.begin() as conn:
         await conn.execute(
             text(
@@ -1112,62 +1114,89 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             webhook_id = UUID(
                 str(
                     (
-                        await conn.execute(
-                            text(
-                                """
-                                INSERT INTO public.webhook_ingress_identities (
-                                    tenant_id,
-                                    event_id,
-                                    provider,
-                                    provider_native_event_reference,
-                                    provider_native_commerce_reference,
-                                    normalized_commerce_reference_kind,
-                                    normalized_commerce_reference_value,
-                                    verified_amount_minor,
-                                    verified_amount_currency,
-                                    verified_amount_scale,
-                                    event_timestamp,
-                                    idempotency_key,
-                                    verified_commerce_ingress_state,
-                                    verified_at
-                                )
-                                VALUES (
-                                    :tenant_id,
-                                    :event_id,
-                                    :provider,
-                                    :event_reference,
-                                    :commerce_reference,
-                                    'order_id',
-                                    :commerce_reference,
-                                    :amount_minor,
-                                    :currency,
-                                    2,
-                                    :occurred_at,
-                                    :idempotency_key,
-                                    'authenticity_verified',
-                                    :occurred_at
-                                )
-                                RETURNING id
-                                """
-                            ),
-                            {
-                                "tenant_id": str(tenant_id),
-                                "event_id": str(attribution_event_id),
-                                "provider": provider,
-                                "event_reference": f"coverage-event-{reference}",
-                                "commerce_reference": reference,
-                                "amount_minor": amount_minor,
-                                "currency": currency,
-                                "occurred_at": occurred_at,
-                                "idempotency_key": (
-                                    f"b23-p6-coverage-{tenant_id}-{reference}"
-                                ),
-                            },
+                        await _issuer_ingress_insert(
+                            tenant_id=tenant_id,
+                            attribution_event_id=attribution_event_id,
+                            provider=provider,
+                            reference=reference,
+                            amount_minor=amount_minor,
+                            currency=currency,
+                            occurred_at=occurred_at,
                         )
                     ).scalar_one()
                 )
             )
             return webhook_id, attribution_event_id
+
+        async def _issuer_ingress_insert(
+            *,
+            tenant_id: UUID,
+            attribution_event_id: UUID,
+            provider: str,
+            reference: str,
+            amount_minor: int,
+            currency: str,
+            occurred_at: datetime,
+        ):
+            # Issuer authority for the ingress envelope (VIII): short-lived
+            # issuer transaction per row; seeding only, never production.
+            async with engine.begin() as issuer:
+                await issuer.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                    {"tenant_id": str(tenant_id)},
+                )
+                return await issuer.execute(
+                    text(
+                        """
+                        INSERT INTO public.webhook_ingress_identities (
+                            tenant_id,
+                            event_id,
+                            provider,
+                            provider_native_event_reference,
+                            provider_native_commerce_reference,
+                            normalized_commerce_reference_kind,
+                            normalized_commerce_reference_value,
+                            verified_amount_minor,
+                            verified_amount_currency,
+                            verified_amount_scale,
+                            event_timestamp,
+                            idempotency_key,
+                            verified_commerce_ingress_state,
+                            verified_at
+                        )
+                        VALUES (
+                            :tenant_id,
+                            :event_id,
+                            :provider,
+                            :event_reference,
+                            :commerce_reference,
+                            'order_id',
+                            :commerce_reference,
+                            :amount_minor,
+                            :currency,
+                            2,
+                            :occurred_at,
+                            :idempotency_key,
+                            'authenticity_verified',
+                            :occurred_at
+                        )
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "event_id": str(attribution_event_id),
+                        "provider": provider,
+                        "event_reference": f"coverage-event-{reference}",
+                        "commerce_reference": reference,
+                        "amount_minor": amount_minor,
+                        "currency": currency,
+                        "occurred_at": occurred_at,
+                        "idempotency_key": (
+                            f"b23-p6-coverage-{tenant_id}-{reference}"
+                        ),
+                    },
+                )
 
         matched_webhook_id, matched_attribution_id = await insert_verified_webhook(
             tenant_id=tenant_a,
