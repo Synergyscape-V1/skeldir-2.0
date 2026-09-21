@@ -471,6 +471,10 @@ def main() -> int:
     status = "PASS" if (not violations and not blind and void_control["ok"]) else "FAIL"
     result = {
         "producer": "b26_p2_viii_equivalence",
+        # Declared gate identity for the proof-plane capsule census (same
+        # convention as the in-image proof cell): additive, skipped by
+        # required-cell adjudication.
+        "gate_id": "B26-P2-VIII-EQUIVALENCE",
         "cells": len(rows),
         "violations": violations,
         "drift_mutations": drift,

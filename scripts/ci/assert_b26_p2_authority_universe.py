@@ -75,6 +75,10 @@ def main() -> int:
     multi = manifest.get("multi_signature_routine_names", [])
 
     details = {
+        # Declared gate identity for the proof-plane capsule census (same
+        # convention as the in-image proof cell): additive, skipped by
+        # required-cell adjudication.
+        "gate_id": "B26-P2-AUTHORITY-UNIVERSE",
         "migration_head_live": live_head,
         "migration_head_pin": pin.get("migration_head"),
         "authority_universe_hash_live": live_hash,
