@@ -1617,6 +1617,6 @@ def downgrade() -> None:
     op.execute(
         "ALTER TABLE public.b26_p2_evaluator_heartbeat"
         " DROP COLUMN IF EXISTS pending_actionable_count,"  # CI:DESTRUCTIVE_OK - reversible rollback for VIII heartbeat evidence.
-        " DROP COLUMN IF EXISTS stale_unconducted_count,"
-        " DROP COLUMN IF EXISTS quarantine_count"
+        " DROP COLUMN IF EXISTS stale_unconducted_count,"  # CI:DESTRUCTIVE_OK - reversible rollback for VIII heartbeat evidence.
+        " DROP COLUMN IF EXISTS quarantine_count"  # CI:DESTRUCTIVE_OK - reversible rollback for VIII heartbeat evidence.
     )
