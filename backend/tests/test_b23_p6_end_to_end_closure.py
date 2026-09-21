@@ -1056,14 +1056,19 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             currency: str,
             occurred_at: datetime,
         ) -> tuple[UUID, UUID]:
-            await conn.execute(
-                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-                {"tenant_id": str(tenant_id)},
-            )
-            attribution_event_id = UUID(
-                str(
-                    (
-                        await conn.execute(
+            # Attribution on a dedicated worker transaction (commits on
+            # exit) so the issuer ingress INSERT below observes the
+            # referenced event row across pool boundaries. Verdict writes
+            # stay worker-duty; the envelope stays issuer-duty.
+            async with b23_engine.begin() as wconn:
+                await wconn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                    {"tenant_id": str(tenant_id)},
+                )
+                attribution_event_id = UUID(
+                    str(
+                        (
+                            await wconn.execute(
                             text(
                                 """
                                 INSERT INTO public.attribution_events (
@@ -1140,6 +1145,8 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
         ):
             # Issuer authority for the ingress envelope (VIII): short-lived
             # issuer transaction per row; seeding only, never production.
+            # The worker attribution row above committed on block exit, so
+            # the ingress FK observes it across pool boundaries.
             async with engine.begin() as issuer:
                 await issuer.execute(
                     text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
