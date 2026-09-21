@@ -830,9 +830,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609210001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_vii")
-        details["migration_head"] = "202609210001"
+        if "202609220001" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_viii")
+        details["migration_head"] = "202609220001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -1512,8 +1512,8 @@ def main() -> int:
                     falsifiers["worker_receipt_synthesis"] = "RED_as_required"
                 try:
                     _vi_wcur.execute(
-                        "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-                        (disp["task_id"], "SYNTHETIC-FORGED-SCOPE", 1),
+                        "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                        (disp["task_id"], "SYNTHETIC-FORGED-SCOPE", 1, "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"),
                     )
                     return _fail("falsifier_junk_scope_receipt_allowed")
                 except Exception as exc:

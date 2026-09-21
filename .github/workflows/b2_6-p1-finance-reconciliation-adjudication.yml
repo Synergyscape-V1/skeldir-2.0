@@ -99,6 +99,18 @@ jobs:
         run: |
           python -m pytest backend/tests/finance_reconciliation/ -q
 
+      - name: Prove B2.6-P2 VIII differential equivalence (live gate, drift)
+        # Corrective VIII anti-narrowing proof: REAL canonical P2 against
+        # the REAL database gate over per-state persisted fixtures, plus
+        # six real P2 semantic mutations that must each move completion
+        # artifacts. Host mirror scripts receive no class-closure credit.
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/b26_p2_viii_equivalence.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/viii/viii-equivalence.json
+
       - name: Upload static authority evidence
         uses: actions/upload-artifact@v4
         with:
@@ -304,6 +316,47 @@ jobs:
           path: artifacts/b26_p2/container/*.json
           if-no-files-found: error
 
+  b26-p2-in-image-proof:
+    name: B2.6-P2 In-Image Proof (Artifact Closure)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.B26_CANDIDATE_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install proof dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Prove load-bearing VIII physics inside the candidate image
+        # Corrective VIII artifact closure: the image migrates, the image
+        # executes the battery/equivalence/universe proof, image identity
+        # is bound to the candidate checkout, and a base-tree image is
+        # proven to carry the old physics (stale falsifier non-vacuous).
+        run: |
+          python scripts/ci/prove_b26_p2_in_image.py \
+            --image-tag skeldir-b26-p2-viii:${{ github.sha }} \
+            --candidate-sha "$B26_CANDIDATE_SHA" \
+            --base-sha "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}" \
+            --evidence-out artifacts/b26_p2/in-image/in-image-proof.json
+
+      - name: Upload in-image proof evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: b26-p2-in-image-${{ github.run_id }}
+          path: artifacts/b26_p2/in-image/*.json
+          if-no-files-found: error
+
   b26-p1-inherited-conduction:
     name: B2.6-P1 Inherited Production Conduction Attestation
     runs-on: ubuntu-latest
@@ -348,6 +401,7 @@ jobs:
       - b26-p1-container-equivalence
       - b26-p1-inherited-conduction
       - b26-p2-production-topology
+      - b26-p2-in-image-proof
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -357,11 +411,13 @@ jobs:
           CONTAINER_RESULT: ${{ needs['b26-p1-container-equivalence'].result }}
           INHERITED_RESULT: ${{ needs['b26-p1-inherited-conduction'].result }}
           TOPOLOGY_RESULT: ${{ needs['b26-p2-production-topology'].result }}
+          IN_IMAGE_RESULT: ${{ needs['b26-p2-in-image-proof'].result }}
         run: |
           test "$STATIC_RESULT" = success
           test "$CONTAINER_RESULT" = success
           test "$INHERITED_RESULT" = success
           test "$TOPOLOGY_RESULT" = success
+          test "$IN_IMAGE_RESULT" = success
 
       - name: Checkout exact candidate
         uses: actions/checkout@v4

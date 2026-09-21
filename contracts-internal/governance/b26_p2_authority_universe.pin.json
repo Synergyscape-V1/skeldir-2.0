@@ -1,0 +1,14 @@
+{
+  "producer": "b26_p2_capability_surface",
+  "migration_head": "202609220001",
+  "authority_universe_hash": "327db173b6744a9744f627086434003318aa4df5cd3df39b397fa94eecd199a9",
+  "reviewed_at_git_sha": "08452e63c0f4660e7f0b0ad9c9aeabaae1c5da88",
+  "meaning_surface_counts": {
+    "routine_meaning": 114,
+    "trigger_meaning": 15,
+    "schema_meaning": 4,
+    "rls_meaning": 17,
+    "ownership": 75
+  },
+  "review_note": "Reviewed for Corrective VIII head: meaning-closed denominator (routine signature/owner/secdef/config/body, trigger identity, schema privs, RLS definitions, ownership). Any change REDs the universe assertion until re-reviewed with AM8 falsifier evidence."
+}

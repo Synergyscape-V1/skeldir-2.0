@@ -40,6 +40,9 @@ OTHER_DAY_END = datetime(2026, 1, 21, 0, 0, tzinfo=timezone.utc)
 
 TASK_NAME = "app.tasks.revenue_verification.execute_b23_batch_match_engine"
 SCOPE_HEX = "ab" * 32
+# Corrective VIII policy-meaning binding: every conduction receipt
+# carries the caller-observed policy semantic SHA.
+_P2_POLICY_SEMANTIC_SHA_V2 = "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"
 
 
 @pytest.fixture(autouse=True)
@@ -692,8 +695,8 @@ def test_vi_cp6_05_bogus_scope_refused_by_record_and_gate() -> None:
 
             def attempt_record() -> None:
                 cur.execute(
-                    "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-                    (task_id, "SYNTHETIC-FORGED-SCOPE", 1),
+                    "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                    (task_id, "SYNTHETIC-FORGED-SCOPE", 1, _P2_POLICY_SEMANTIC_SHA_V2),
                 )
 
             reason = _refused(attempt_record)
@@ -720,8 +723,8 @@ def test_vi_cp6_12_pending_verdict_never_conducts() -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-                (task_id, SCOPE_HEX, 1),
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                (task_id, SCOPE_HEX, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
 
             def attempt() -> None:
@@ -754,8 +757,8 @@ def test_vi_cp6_01_lawful_conduction_still_converges() -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-                (task_id, SCOPE_HEX, 1),
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                (task_id, SCOPE_HEX, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute(
                 "SELECT public.b26_p2_mark_conducted(%s)", (task_id,)
@@ -1489,8 +1492,8 @@ def test_vi_worker_verdict_maturity_duty() -> None:
                 (str(ids["tenant_id"]), str(ids["ingress_id"])),
             )
             cur.execute(
-                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-                (task_id, SCOPE_HEX, 1),
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                (task_id, SCOPE_HEX, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute(
                 "SELECT public.b26_p2_mark_conducted(%s)", (task_id,)

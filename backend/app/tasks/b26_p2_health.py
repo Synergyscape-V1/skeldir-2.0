@@ -48,6 +48,11 @@ async def evaluate_operational_health() -> dict:
     try:
         threshold = _conduction.staleness_threshold_seconds()
     except ValueError:
+        # Corrective VIII threshold reconciliation: the evaluator must not
+        # silently continue on a divergent default while the API fails
+        # closed (503). Log loudly and write NO heartbeat, so the
+        # independent API observer reports evaluator absence instead of
+        # consuming a forged-healthy default.
         logger.error(
             "b26_p2_operational_health_threshold_invalid",
             extra={"evaluator": EVALUATOR_TASK_NAME},
@@ -128,21 +133,20 @@ async def evaluate_operational_health() -> dict:
                     .one()
                 )
                 pending_actionable_total += int(pending_actionable_row["n"] or 0)
-                # Heartbeat for monitor-of-monitor (P2-CA7-06): the API
-                # health endpoint (independent failure domain) observes this
-                # tick to detect evaluator absence.
+                # Heartbeat for monitor-of-monitor (P2-CA7-06, VIII-hardened):
+                # the ONLY writer is the SECURITY DEFINER
+                # b26_p2_record_evaluator_heartbeat(), which recomputes the
+                # operational counts itself. Invoking it IS the governed
+                # evaluation: no credential can manufacture healthy evidence
+                # without observing (direct heartbeat writes are revoked
+                # from the relay credential at the database plane).
                 try:
                     await session.execute(
                         text(
-                            "INSERT INTO public.b26_p2_evaluator_heartbeat"
-                            " (tenant_id, last_tick, tick_count, updated_at)"
-                            " VALUES (:tenant, now(), 1, now())"
-                            " ON CONFLICT (tenant_id) DO UPDATE SET"
-                            " last_tick = now(),"
-                            " tick_count = public.b26_p2_evaluator_heartbeat.tick_count + 1,"
-                            " updated_at = now()"
+                            "SELECT public.b26_p2_record_evaluator_heartbeat"
+                            "(:thr) AS outcome"
                         ),
-                        {"tenant": str(tenant)},
+                        {"thr": int(threshold)},
                     )
                 except Exception:
                     logger.exception(

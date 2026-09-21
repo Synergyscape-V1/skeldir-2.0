@@ -397,6 +397,136 @@ def _extract_webhook_ingress_identity(
     }
 
 
+# B2.6-P2 Corrective VIII authenticated-root adoption law (H-VIII-A02/A03).
+# Sovereign comparison set for duplicate adoption: every commerce-meaning
+# column plus tenant/state. Row-identity columns (id, event_id,
+# verified_at) are adoption bindings, compared never: a legitimate arrival
+# adopts the canonical row and binds its own event. Mirrors
+# b26_p2_enforce_ingress_duplicate_adoption(); divergence between the two
+# is itself a defect (the trigger is the unavoidable backstop for
+# direct-SQL paths, this helper is the availability-preserving promotion
+# for the API path).
+_B26_P2_INGRESS_SOVEREIGN_FIELDS = (
+    "provider",
+    "provider_native_event_reference",
+    "provider_native_commerce_reference",
+    "normalized_commerce_reference_kind",
+    "normalized_commerce_reference_value",
+    "verified_amount_minor",
+    "verified_amount_currency",
+    "event_timestamp",
+)
+
+_B26_P2_AUTHENTICATED_STATE = "authenticity_verified"
+
+
+def _ingress_sovereign_mismatch(existing: Any, incoming: Mapping[str, Any]) -> bool:
+    for field in _B26_P2_INGRESS_SOVEREIGN_FIELDS:
+        old = getattr(existing, field, None)
+        new = incoming.get(field)
+        if isinstance(old, datetime) and isinstance(new, datetime):
+            old_utc = (
+                old.astimezone(timezone.utc)
+                if old.tzinfo is not None
+                else old.replace(tzinfo=timezone.utc)
+            )
+            new_utc = (
+                new.astimezone(timezone.utc)
+                if new.tzinfo is not None
+                else new.replace(tzinfo=timezone.utc)
+            )
+            if old_utc != new_utc:
+                return True
+            continue
+        if str(old) != str(new):
+            return True
+    if str(getattr(existing, "tenant_id", "")) != str(incoming.get("tenant_id", "")):
+        return True
+    return False
+
+
+async def _adopt_or_promote_ingress(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    incoming: dict[str, Any],
+    event_id: UUID,
+) -> Any | None:
+    """Govern duplicate ingress adoption for one authenticated arrival.
+
+    Returns None when no row collides (caller INSERTs normally), otherwise
+    returns the adopted/promoted ORM row (caller must NOT insert a new
+    row). Raises ValidationError (routed to DLQ, never silent success)
+    when an authenticated root already carries different sovereign values
+    or when two lower-authority precursors collide.
+    """
+    existing = (
+        (
+            await session.execute(
+                select(WebhookIngressIdentity).where(
+                    WebhookIngressIdentity.tenant_id == tenant_id,
+                    WebhookIngressIdentity.idempotency_key
+                    == incoming["idempotency_key"],
+                )
+            )
+        )
+        .scalars()
+        .one_or_none()
+    )
+    if existing is None:
+        return None
+    mismatch = _ingress_sovereign_mismatch(existing, incoming)
+    existing_verified = (
+        str(existing.verified_commerce_ingress_state) == _B26_P2_AUTHENTICATED_STATE
+    )
+    incoming_verified = (
+        str(incoming.get("verified_commerce_ingress_state"))
+        == _B26_P2_AUTHENTICATED_STATE
+    )
+    if existing_verified:
+        if mismatch or not incoming_verified:
+            raise ValidationError(
+                "b26_p2_ingress_authenticated_conflict: a canonical"
+                " authenticated root already carries different sovereign"
+                " values for this identity"
+            )
+        existing.event_id = event_id
+        existing.updated_at = datetime.now(timezone.utc)
+        return existing
+    if incoming_verified:
+        for field in (
+            *_B26_P2_INGRESS_SOVEREIGN_FIELDS,
+            "verified_amount_scale",
+            "verified_commerce_ingress_state",
+            "verified_at",
+        ):
+            setattr(existing, field, incoming[field])
+        existing.event_id = event_id
+        existing.updated_at = datetime.now(timezone.utc)
+        logger.warning(
+            "b26_p2_ingress_precursor_promoted",
+            extra={
+                "tenant_id": str(tenant_id),
+                "idempotency_key": str(incoming.get("idempotency_key")),
+                "ingress_id": str(getattr(existing, "id", "")),
+            },
+        )
+        return existing
+    raise ValidationError(
+        "b26_p2_ingress_precursor_collision: lower-authority precursor"
+        " already occupies this identity"
+    )
+
+
+def _is_b26_p2_adoption_error(error: Exception) -> str | None:
+    lowered = str(error).lower()
+    if "b26_p2_ingress_precursor_present_promote_required" in lowered:
+        return "promote_required"
+    if "b26_p2_ingress_authenticated_conflict" in lowered:
+        return "authenticated_conflict"
+    return None
+
+
 def _integrity_error_sqlstate(error: IntegrityError) -> str | None:
     orig = getattr(error, "orig", None)
     if orig is None:
@@ -711,7 +841,6 @@ class EventIngestionService:
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
-            webhook_ingress_identity = None
             webhook_identity_payload = _extract_webhook_ingress_identity(
                 source=source,
                 event_data=ingestion_event_data,
@@ -720,17 +849,52 @@ class EventIngestionService:
                 event_id=event.id,
                 event_timestamp=validated["event_timestamp"],
             )
-            if webhook_identity_payload is not None:
-                webhook_ingress_identity = WebhookIngressIdentity(
-                    **webhook_identity_payload
-                )
 
-            # 5. Persist to database
+            # 5. Persist to database. Authenticated-root adoption (Corrective
+            # VIII): a colliding precursor is promoted to the authenticated
+            # values (or the conflict is disposed explicitly); the
+            # authenticated payload's sovereign values always win and a
+            # verified-vs-verified mismatch never succeeds silently.
             session.add(event)
             session.add(raw_event_payload)
-            if webhook_ingress_identity is not None:
-                session.add(webhook_ingress_identity)
-            await session.flush()  # Trigger constraint validation before commit
+            if webhook_identity_payload is not None:
+                adopted = await _adopt_or_promote_ingress(
+                    session,
+                    tenant_id=tenant_id,
+                    incoming=webhook_identity_payload,
+                    event_id=event.id,
+                )
+                if adopted is None:
+                    session.add(
+                        WebhookIngressIdentity(**webhook_identity_payload)
+                    )
+            try:
+                await session.flush()  # Trigger constraint validation before commit
+            except Exception as flush_error:
+                adoption = _is_b26_p2_adoption_error(flush_error)
+                if adoption is None or webhook_identity_payload is None:
+                    raise
+                await session.rollback()
+                # Re-attach the pending entities after the rollback.
+                session.add(event)
+                session.add(raw_event_payload)
+                if adoption == "authenticated_conflict":
+                    raise ValidationError(
+                        "b26_p2_ingress_authenticated_conflict: a canonical"
+                        " authenticated root already carries different"
+                        " sovereign values for this identity"
+                    ) from flush_error
+                adopted = await _adopt_or_promote_ingress(
+                    session,
+                    tenant_id=tenant_id,
+                    incoming=webhook_identity_payload,
+                    event_id=event.id,
+                )
+                if adopted is None:
+                    session.add(
+                        WebhookIngressIdentity(**webhook_identity_payload)
+                    )
+                await session.flush()
             if order_resolution_key is not None:
                 await upsert_durable_commerce_identity_link(
                     session=session,

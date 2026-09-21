@@ -323,8 +323,8 @@ def main() -> int:
     try:
         wcur = worker.cursor()
         wcur.execute(
-            "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-            (task, "SYNTHETIC-FORGED-SCOPE", 1),
+            "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+            (task, "SYNTHETIC-FORGED-SCOPE", 1, "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"),
         )
         check("record refuses junk scope", False, "ACCEPTED")
     except (psycopg2.errors.RaiseException, psycopg2.errors.InsufficientPrivilege) as exc:
@@ -332,8 +332,8 @@ def main() -> int:
     worker.rollback()
     wcur = worker.cursor()
     wcur.execute(
-        "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-        (task, "a" * 64, 1),
+        "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+        (task, "a" * 64, 1, "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"),
     )
     check("record accepts well-formed scope", True)
     worker.commit()

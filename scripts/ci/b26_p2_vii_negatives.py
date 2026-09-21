@@ -103,7 +103,7 @@ def main() -> int:
             CREATE OR REPLACE FUNCTION public.aud_vii_alt_receipt_writer(t text, s text, n int)
             RETURNS text LANGUAGE plpgsql SECURITY DEFINER
             SET search_path TO 'pg_catalog','public' AS $$
-            BEGIN RETURN public.b26_p2_record_conduction_receipt(t, s, n); END $$;
+            BEGIN RETURN public.b26_p2_record_conduction_receipt(t, s, n, 'fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99'); END $$;
             """
         )
         cur.execute("GRANT EXECUTE ON FUNCTION public.aud_vii_alt_receipt_writer(text,text,int) TO app_worker")

@@ -312,8 +312,8 @@ def main() -> int:
         try:
             with role_conn("app_worker") as c, c.cursor() as cur:
                 cur.execute(
-                    "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-                    (task7, "cd" * 32, 1),
+                    "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                    (task7, "cd" * 32, 1, "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"),
                 )
                 cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (task7,))
                 res = cur.fetchone()[0]
@@ -431,8 +431,8 @@ def main() -> int:
         )
     with role_conn("app_worker") as c, c.cursor() as cur:
         cur.execute(
-            "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-            (task11, "ab" * 32, 1),
+            "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+            (task11, "ab" * 32, 1, "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"),
         )
     with admin() as c, c.cursor() as cur:
         cur.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t11,))

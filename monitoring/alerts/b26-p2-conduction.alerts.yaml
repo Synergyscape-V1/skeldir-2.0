@@ -1,0 +1,32 @@
+groups:
+  - name: b26_p2_conduction
+    interval: 1m
+    rules:
+      # CRITICAL: P2 degradation is no longer a JSON field nobody reads.
+      # The probe (backend/app/ops/b26_p2_heartbeat_probe.py) consumes the
+      # independent API observer; the relay service healthcheck executes
+      # the probe on the deployment cadence; these alerts fire on the
+      # exported signal with page-level urgency.
+      - alert: B26_P2_Conduction_ActionRequired
+        expr: b26_p2_conduction_action_required > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: b26_p2_conduction
+          team: backend
+        annotations:
+          summary: "B2.6-P2 conduction requires operator action"
+          description: "Stale, quarantined, actionable-pending, or evaluator-absent P2 work persists. The evaluator heartbeat is evaluation-bound (a fresh tick without genuine evaluation is impossible), so this alert always denotes real outstanding work."
+          action: "Inspect GET /health/b26-p2-conduction (pending_actionable_total, stale_unconducted_count, quarantine_count, evaluator_absent_total); drain via relay sweep; re-run the evaluator."
+
+      - alert: B26_P2_Evaluator_Absent
+        expr: b26_p2_evaluator_absent_total > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: b26_p2_evaluator
+          team: backend
+        annotations:
+          summary: "B2.6-P2 evaluator heartbeat absent"
+          description: "The independent API observer sees no genuine evaluation tick within 4x the governed threshold. Recovery and observation share no credential with the evidence writer."
+          action: "Verify the beat scheduler and relay queue consumer; do not trust relay logs alone."
