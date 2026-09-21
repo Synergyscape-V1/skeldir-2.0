@@ -155,7 +155,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-m", "app.ops.b26_p2_heartbeat_probe", "--url", "http://api:8000/health/b26-p2-conduction"]
+      test: ["CMD", "python", "-m", "app.ops.conduction_health_probe", "--url", "http://api:8000/health/b26-p2-conduction"]
       interval: 30s
       timeout: 10s
       retries: 3

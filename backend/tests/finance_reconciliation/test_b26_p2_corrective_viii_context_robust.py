@@ -711,7 +711,7 @@ def test_ob8_probe_decision_law():
     """OB8-01..10: the deployed probe consumes the shipping observer path.
     Forged-healthy timestamps without genuine evaluation content still
     read degraded; only a fully healthy payload reads healthy."""
-    from app.ops.b26_p2_heartbeat_probe import evaluate
+    from app.ops.conduction_health_probe import evaluate
 
     healthy, _ = evaluate(
         {
@@ -756,7 +756,7 @@ def test_ob8_shipping_consumer_wired():
 
     repo = _Path(__file__).resolve().parents[3]
     compose = (repo / "docker-compose.local.yml").read_text(encoding="utf-8")
-    assert "app.ops.b26_p2_heartbeat_probe" in compose
+    assert "app.ops.conduction_health_probe" in compose
     assert "/health/b26-p2-conduction" in compose
     alerts = (repo / "monitoring/alerts/b26-p2-conduction.alerts.yaml").read_text(
         encoding="utf-8"

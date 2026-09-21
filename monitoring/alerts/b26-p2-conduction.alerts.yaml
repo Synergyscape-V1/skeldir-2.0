@@ -3,7 +3,7 @@ groups:
     interval: 1m
     rules:
       # CRITICAL: P2 degradation is no longer a JSON field nobody reads.
-      # The probe (backend/app/ops/b26_p2_heartbeat_probe.py) consumes the
+      # The probe (backend/app/ops/conduction_health_probe.py) consumes the
       # independent API observer; the relay service healthcheck executes
       # the probe on the deployment cadence; these alerts fire on the
       # exported signal with page-level urgency.

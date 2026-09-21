@@ -3464,3 +3464,63 @@
   local_reproduction_command: 'python scripts/ci/b26_p2_vii_negatives.py --help'
   risk_if_removed: 'A check that can never fail could be treated as a check.'
   decision: keep_utility
+- gate_id: b26-p2-viii-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_viii_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'VIII registry extends VII coverage for the evaluation-bound heartbeat function.'
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: 'The required in-image proof imports this registry for the VIII coverage gate.'
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: 'python -c "from scripts.ci.b26_p2_viii_coverage import VIII_COVERED_SURFACES"'
+  risk_if_removed: 'New VIII surfaces could stay untested silently.'
+  decision: keep_utility
+- gate_id: b26-p2-viii-equivalence
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: 'B2.6-P1 Static Semantic Authority'
+  script: scripts/ci/b26_p2_viii_equivalence.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'REAL canonical P2 against the REAL database gate; six real semantic mutations observably move completion.'
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: 'No inherited gate executes canonical P2 and the database gate against the same persisted state; hand mirrors receive no class-closure credit.'
+  negative_control_preserved_by: python scripts/ci/b26_p2_viii_equivalence.py
+  local_reproduction_command: 'python scripts/ci/b26_p2_viii_equivalence.py'
+  risk_if_removed: 'P2/completion could diverge outside the hand-mirrored shape subset while required proof stays green.'
+  decision: keep_required
+- gate_id: b26-p2-authority-universe
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: 'B2.6-P2 In-Image Proof (Artifact Closure)'
+  script: scripts/ci/assert_b26_p2_authority_universe.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'Reviewed meaning-closed authority identity matches the live denominator.'
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: 'Name-based open-world census cannot see body/overload/trigger/schema meaning drift; the reviewed pin turns it into RED.'
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: 'python scripts/ci/assert_b26_p2_authority_universe.py'
+  risk_if_removed: 'An approved object could change authority meaning while governance stays green.'
+  decision: keep_required
+- gate_id: b26-p2-in-image-proof
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: 'B2.6-P2 In-Image Proof (Artifact Closure)'
+  script: scripts/ci/prove_b26_p2_in_image.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'Load-bearing VIII proof executes the exact promotable image; stale images RED.'
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: 'No inherited gate migrates, proves, or falsifies inside the candidate image; host-runner proofs cannot observe runner/container drift.'
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: 'python scripts/ci/prove_b26_p2_in_image.py --help'
+  risk_if_removed: 'A stale deployable image could pass every required proof.'
+  decision: keep_required

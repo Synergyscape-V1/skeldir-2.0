@@ -410,6 +410,15 @@ def main() -> int:
             worktree = REPO_ROOT / ".viii-base-tree"
             subprocess.run(["git", "worktree", "remove", "--force", str(worktree)],
                            cwd=str(REPO_ROOT), capture_output=True)
+            # The CI checkout pins the candidate commit only; the base
+            # object must be fetched before the worktree can materialize
+            # it. Fail closed when the base is unreachable: a skipped
+            # stale falsifier would silently weaken artifact closure.
+            fetch = subprocess.run(
+                ["git", "fetch", "origin", args.base_sha, "--depth", "1"],
+                cwd=str(REPO_ROOT), capture_output=True, text=True)
+            if fetch.returncode != 0:
+                return _fail(details, f"base_fetch_failed:{fetch.stderr[-500:]}")
             proc = subprocess.run(
                 ["git", "worktree", "add", "--detach", str(worktree), args.base_sha],
                 cwd=str(REPO_ROOT), capture_output=True, text=True)

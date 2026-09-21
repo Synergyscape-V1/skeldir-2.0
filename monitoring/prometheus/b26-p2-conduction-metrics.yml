@@ -2,7 +2,7 @@
 # Purpose: Define the independently-observed P2 operational signal for
 # monitoring and alerting. Source of truth is the shipping observer
 # (GET /health/b26-p2-conduction, served by the API process from live
-# tables) as consumed by backend/app/ops/b26_p2_heartbeat_probe.py
+# tables) as consumed by backend/app/ops/conduction_health_probe.py
 # (exit 0 only when healthy) and the relay service healthcheck.
 
 # Operator signal: P2 degradation requires action (stale, quarantine,
@@ -14,7 +14,7 @@ b26_p2_conduction_action_required:
     - tenant_scope  # aggregated across tenants; per-tenant detail lives in the endpoint payload
   query: |
     # Consume the shipping observer, not the heartbeat table directly:
-    # python -m app.ops.b26_p2_heartbeat_probe --url http://api:8000/health/b26-p2-conduction
+    # python -m app.ops.conduction_health_probe --url http://api:8000/health/b26-p2-conduction
     # exit 0 maps to 0, exit 1 maps to 1.
   example: |
     b26_p2_conduction_action_required 0

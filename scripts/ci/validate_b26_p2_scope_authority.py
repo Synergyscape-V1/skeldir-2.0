@@ -1562,7 +1562,7 @@ def _check_corrective_viii_law(violations: list[str], details: dict[str, Any]) -
         if "VALUES (:tenant, now(), 1, now())" in hs:
             violations.append("p2_viii_health_bare_timestamp_survives")
     # Shipping consumer: deployed probe + compose healthcheck + alerts.
-    probe_module = BACKEND / "app/ops/b26_p2_heartbeat_probe.py"
+    probe_module = BACKEND / "app/ops/conduction_health_probe.py"
     if not probe_module.is_file():
         violations.append("p2_viii_probe_absent")
     else:
@@ -1574,7 +1574,7 @@ def _check_corrective_viii_law(violations: list[str], details: dict[str, Any]) -
     compose = REPO_ROOT / "docker-compose.local.yml"
     if compose.is_file():
         cs = compose.read_text(encoding="utf-8")
-        for required in ("app.ops.b26_p2_heartbeat_probe",
+        for required in ("app.ops.conduction_health_probe",
                          "/health/b26-p2-conduction"):
             if required not in cs:
                 violations.append(f"p2_viii_compose_consumer_absent:{required}")

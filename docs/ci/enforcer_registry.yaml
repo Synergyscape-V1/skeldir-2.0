@@ -4746,3 +4746,91 @@
   deprecation_reason: 'Utility-only; active negative controls for the VII database plane.'
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-viii-coverage-registry
+  path: scripts/ci/b26_p2_viii_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: 'VIII registry extends VII coverage for the evaluation-bound heartbeat function and drops revoked relay writes.'
+  command: 'python -c "from scripts.ci.b26_p2_viii_coverage import VIII_COVERED_SURFACES; print(len(VIII_COVERED_SURFACES))"'
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: 'python -c "from scripts.ci.b26_p2_viii_coverage import VIII_COVERED_SURFACES"'
+  expected_failure_meaning: 'VIII coverage mapping drifts, so the heartbeat EXECUTE or revoked relay-write surfaces could stay untested.'
+  first_diagnostic_command: 'python scripts/ci/b26_p2_capability_surface.py --help'
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: 'Utility-only; the in-image proof imports it for the VIII coverage gate.'
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-viii-equivalence
+  path: scripts/ci/b26_p2_viii_equivalence.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'REAL canonical P2 against the REAL database gate over per-state persisted fixtures, plus six real P2 semantic mutations each observably moving completion.'
+  command: 'python scripts/ci/b26_p2_viii_equivalence.py --dsn postgresql://migration_owner:migration_owner@127.0.0.1:5432/db --evidence-out artifacts/b26_p2/viii/viii-equivalence.json'
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: 'B2.6-P1 Static Semantic Authority'
+  local_reproduction_command: 'python scripts/ci/b26_p2_viii_equivalence.py --help'
+  expected_failure_meaning: 'Completion conducts a P2 refusal (false terminal), strands a valid P2 outcome, or misses a P2 semantic change.'
+  first_diagnostic_command: 'python scripts/ci/b26_p2_viii_equivalence.py'
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-authority-universe
+  path: scripts/ci/assert_b26_p2_authority_universe.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'The reviewed meaning-closed authority-universe identity (routine signature/owner/secdef/config/body, triggers, schemas, RLS, ownership) matches the live denominator; any semantic drift REDs until re-reviewed.'
+  command: 'python scripts/ci/assert_b26_p2_authority_universe.py --dsn postgresql://postgres:postgres@127.0.0.1:5432/db --pin contracts-internal/governance/b26_p2_authority_universe.pin.json'
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: 'B2.6-P2 In-Image Proof (Artifact Closure)'
+  local_reproduction_command: 'python scripts/ci/assert_b26_p2_authority_universe.py --help'
+  expected_failure_meaning: 'An allowlisted routine changed body/owner/signature, an overload/trigger/schema path appeared, and governance stayed green.'
+  first_diagnostic_command: 'python scripts/ci/assert_b26_p2_authority_universe.py'
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-in-image-proof
+  path: scripts/ci/prove_b26_p2_in_image.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'The exact candidate image migrates and executes the load-bearing VIII proof (battery, equivalence, universe, AM8 cycle); image identity binds the candidate tree; a base-tree image carries the old physics (stale falsifier).'
+  command: 'python scripts/ci/prove_b26_p2_in_image.py --image-tag skeldir-b26-p2-viii:SHA --candidate-sha SHA --base-sha BASE_SHA --evidence-out artifacts/b26_p2/in-image/in-image-proof.json'
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: 'B2.6-P2 In-Image Proof (Artifact Closure)'
+  local_reproduction_command: 'python scripts/ci/prove_b26_p2_in_image.py --help'
+  expected_failure_meaning: 'Host-green proof over a stale deployable image, or runner/container proof drift.'
+  first_diagnostic_command: 'python scripts/ci/prove_b26_p2_in_image.py'
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
