@@ -110,9 +110,12 @@ def main() -> int:
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from b26_p2_capability_surface import build_manifest  # noqa: PLC0415
-        from b26_p2_vii_coverage import VII_COVERED_SURFACES  # noqa: PLC0415
+        try:
+            from b26_p2_viii_coverage import VIII_COVERED_SURFACES as _COVERED  # noqa: PLC0415
+        except ImportError:
+            from b26_p2_vii_coverage import VII_COVERED_SURFACES as _COVERED  # noqa: PLC0415
 
-        m = build_manifest(admin_dsn, tuple(VII_COVERED_SURFACES))
+        m = build_manifest(admin_dsn, tuple(_COVERED))
         unknown = m.get("open_world_unknown", [])
         note("M-VII-15-live", any("aud_vii_alt_receipt_writer" in u for u in unknown),
              f"unseen definer REDs: {unknown[:2]}")
@@ -122,9 +125,12 @@ def main() -> int:
             cur.execute("DROP FUNCTION IF EXISTS public.aud_vii_alt_receipt_writer(text,text,int)")
     # Restore check: census GREEN again.
     from b26_p2_capability_surface import build_manifest  # noqa: PLC0415
-    from b26_p2_vii_coverage import VII_COVERED_SURFACES  # noqa: PLC0415
+    try:
+        from b26_p2_viii_coverage import VIII_COVERED_SURFACES as _COVERED  # noqa: PLC0415
+    except ImportError:
+        from b26_p2_vii_coverage import VII_COVERED_SURFACES as _COVERED  # noqa: PLC0415
 
-    m2 = build_manifest(admin_dsn, tuple(VII_COVERED_SURFACES))
+    m2 = build_manifest(admin_dsn, tuple(_COVERED))
     note("M-VII-restore", m2.get("open_world_unknown", []) == [], "exact restore GREEN")
 
     print(f"B26_P2_VII_NEGATIVES_PASS cells={len(RESULTS)}")
