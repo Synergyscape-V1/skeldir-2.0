@@ -64,12 +64,16 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
     # issuer pool derived from the runtime DSN by credential convention
     # (role:role passwords; same derivation the finance batteries use).
     # The ambient `engine` pool cannot serve as issuer: jobs like the
-    # Contract Semantic Drift Gate bind it to the worker login.
+    # Contract Semantic Drift Gate bind it to the worker login, and may
+    # bind it with a sync driver while this seed needs async.
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    issuer_url = os.environ.get("DATABASE_URL", "").replace(
-        "app_worker:app_worker", "app_user:app_user"
+    issuer_url = os.environ.get("B23_WORKER_DATABASE_URL", "") or os.environ.get(
+        "DATABASE_URL", ""
     )
+    issuer_url = issuer_url.replace("app_worker:app_worker", "app_user:app_user")
+    if issuer_url.startswith("postgresql://"):
+        issuer_url = "postgresql+asyncpg://" + issuer_url[len("postgresql://"):]
     issuer_engine = create_async_engine(issuer_url or str(engine.url))
     now = datetime.now(timezone.utc).replace(microsecond=0)
     window_start = now - timedelta(hours=1)

@@ -1148,12 +1148,18 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             # The worker attribution row above committed on block exit, so
             # the ingress FK observes it across pool boundaries. The issuer
             # pool derives from the runtime DSN by credential convention
-            # (the ambient `engine` pool is worker-bound in B2.3 jobs).
+            # (the ambient `engine` pool is worker-bound in B2.3 jobs, and
+            # may carry a sync driver while this helper needs async).
             from sqlalchemy.ext.asyncio import create_async_engine
 
-            issuer_url = os.environ.get("DATABASE_URL", "").replace(
+            issuer_url = os.environ.get("B23_WORKER_DATABASE_URL", "") or os.environ.get(
+                "DATABASE_URL", ""
+            )
+            issuer_url = issuer_url.replace(
                 "app_worker:app_worker", "app_user:app_user"
             )
+            if issuer_url.startswith("postgresql://"):
+                issuer_url = "postgresql+asyncpg://" + issuer_url[len("postgresql://"):]
             issuer_engine = create_async_engine(
                 issuer_url or str(engine.url)
             )
