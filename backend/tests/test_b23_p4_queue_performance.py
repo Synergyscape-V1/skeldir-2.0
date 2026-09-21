@@ -60,8 +60,17 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
     # Worker-state seeding runs as the worker login (B2.6-P2 Corrective III
     # least privilege: verdict writes belong to app_worker, not app_user).
     # Corrective VIII authenticated-root law: the webhook ingress envelope
-    # is API-issuer authority, so the ingress INSERT below runs on the
-    # issuer pool while everything else stays on the worker pool.
+    # is API-issuer authority, so the ingress INSERT below runs on an
+    # issuer pool derived from the runtime DSN by credential convention
+    # (role:role passwords; same derivation the finance batteries use).
+    # The ambient `engine` pool cannot serve as issuer: jobs like the
+    # Contract Semantic Drift Gate bind it to the worker login.
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    issuer_url = os.environ.get("DATABASE_URL", "").replace(
+        "app_worker:app_worker", "app_user:app_user"
+    )
+    issuer_engine = create_async_engine(issuer_url or str(engine.url))
     now = datetime.now(timezone.utc).replace(microsecond=0)
     window_start = now - timedelta(hours=1)
     window_end = now + timedelta(hours=1)
@@ -163,7 +172,7 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
             ),
             {"tenant_id": str(tenant_id), "now_utc": now},
         )
-    async with engine.begin() as issuer:
+    async with issuer_engine.begin() as issuer:
         await issuer.execute(
             text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
             {"tenant_id": str(tenant_id)},
@@ -390,6 +399,7 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
             "worker_failed_jobs",
         ):
             await conn.execute(text(f"ANALYZE public.{table_name}"))
+    await issuer_engine.dispose()
     return window_start, window_end
 
 
