@@ -113,7 +113,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
     finally:
         admin.close()
 
-    def universe() -> tuple[int, str]:
+    def universe() -> tuple[int, str, str]:
         cmd = ["run", "--rm", "--network", NETWORK, "-v", harness, "-v", out_mount,
                "-e", "PYTHONPATH=/proof:/app/backend",
                image, "python", "/proof/assert_b26_p2_authority_universe.py",
@@ -122,7 +122,11 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                "--migration-head", "202609220001",
                "--covered"] + covered
         proc = _docker(*cmd)
-        return proc.returncode, (proc.stdout + proc.stderr)[-600:]
+        full = proc.stdout + proc.stderr
+        # The drift marker lives at the head of the output, ahead of the
+        # JSON details; match against the FULL output (a tail window would
+        # be at the mercy of JSON length).
+        return proc.returncode, full, full[-600:]
 
     def sql(statement: str) -> None:
         conn = psycopg2.connect(host_admin_dsn)
@@ -158,8 +162,8 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
     try:
         for name, _desc, statement, expect in mutations:
             sql(statement)
-            code, tail = universe()
-            ok = code != 0 and expect in tail
+            code, full, tail = universe()
+            ok = code != 0 and expect in full
             result["mutations"].append({"name": name, "red": ok})
             if not ok:
                 result["status"] = "FAIL"
@@ -178,7 +182,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 cur.execute(original_body)
         finally:
             admin2.close()
-        code, tail = universe()
+        code, full, tail = universe()
         # Restore check compares the pinned hash AND requires the known
         # overload/trigger/probe objects to be gone (hash equality proves it).
         if code != 0:
