@@ -49,6 +49,7 @@ IDENTITY_FILES = [
     "backend/app/ingestion/event_service.py",
     "backend/app/finance_reconciliation/conduction_state.py",
     "backend/app/tasks/b26_p2_health.py",
+    "backend/app/core/construction_authority.py",
     "contracts/reconciliation/b2.6/scope-policy.v2.yaml",
     "alembic/versions/007_skeldir_foundation/202609220001_b26_p2_corrective_viii_context_robust.py",
 ]
