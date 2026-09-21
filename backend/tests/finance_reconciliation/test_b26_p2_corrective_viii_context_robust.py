@@ -767,7 +767,7 @@ def test_ob8_shipping_consumer_wired():
     relay WARNING consume degradation on cadence). A JSON field no
     production actor reads is a diagnostic, not operational closure.
 
-    Boundary note: docker-compose.local.yml is M1 local-dev authority, not
+    Boundary note: compose.local.yml is M1 local-dev authority, not
     a P2 surface — P2 does not override another phase's fenced file to
     claim wiring. The shipping consumers above are all P2-owned or
     platform contracts.
