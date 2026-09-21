@@ -214,6 +214,13 @@ def main() -> int:
     args = parser.parse_args()
     details: dict = {
         "producer": "b26-p2-in-image-proof",
+        # Declared gate identity for the proof-plane capsule census. The
+        # B2.6-P2 adjudicator loads every JSON under the evidence root and
+        # rejects gateless documents; this cell is additive (no required
+        # census entry collides with it) and is skipped by required-cell
+        # adjudication — merge gating for this job flows through the
+        # aggregate `needs` dependency, not the capsule.
+        "gate_id": "B26-P2-IN-IMAGE-PROOF",
         "candidate_sha": args.candidate_sha,
         "image_tag": args.image_tag,
     }
