@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
-  "migration_head": "202609220001",
-  "authority_universe_hash": "327db173b6744a9744f627086434003318aa4df5cd3df39b397fa94eecd199a9",
-  "reviewed_at_git_sha": "08452e63c0f4660e7f0b0ad9c9aeabaae1c5da88",
+  "migration_head": "202609230001",
+  "authority_universe_hash": "1ce9a61b1797bfc6ef15c70f010c3f2f692f8544064a2aaac194be5b1e8afd6c",
+  "reviewed_at_git_sha": "8e965befcf2018bc1a1c5129d5a7227afa8d729e",
   "meaning_surface_counts": {
-    "routine_meaning": 114,
-    "trigger_meaning": 15,
+    "routine_meaning": 118,
+    "trigger_meaning": 17,
     "schema_meaning": 4,
     "rls_meaning": 17,
-    "ownership": 75
+    "ownership": 79
   },
-  "review_note": "Reviewed for Corrective VIII head: meaning-closed denominator (routine signature/owner/secdef/config/body, trigger identity, schema privs, RLS definitions, ownership). Any change REDs the universe assertion until re-reviewed with AM8 falsifier evidence."
+  "review_note": "Reviewed for Corrective IX head: canonical consequence authority (sovereign scope mirror consumed by recorder/gate), reference-presence temporal footprint, provenance honesty (unknown_legacy vs authenticated_known), scheduler-liveness separation. Pin regeneration alone adjudicates nothing: the IX effect policy (validate_b26_p2_ix_authority) must remain RED while any prohibited effect survives."
 }

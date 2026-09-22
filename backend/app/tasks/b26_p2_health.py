@@ -30,6 +30,7 @@ from app.tasks.context import run_in_worker_loop
 logger = logging.getLogger(__name__)
 
 EVALUATOR_TASK_NAME = "app.tasks.b26_p2_health.evaluate_b26_p2_operational_health"
+SCHEDULER_TASK_NAME = "app.tasks.b26_p2_health.tick_b26_p2_scheduler_heartbeat"
 
 
 async def evaluate_operational_health() -> dict:
@@ -40,6 +41,13 @@ async def evaluate_operational_health() -> dict:
     evaluated-ok sweep is distinguishable from a silent evaluator) and
     b26_p2_operational_action_required at WARNING whenever nonzero
     actionable work exists (surfaces in deployed process output).
+
+    Corrective IX separation: this evaluator runs on the relay queue
+    under app_relay and ticks ONLY the evaluator heartbeat. It never
+    ticks the scheduler heartbeat (public.b26_p2_record_scheduler_heartbeat
+    refuses app_relay at the database plane); scheduler liveness is
+    ticked separately by tick_scheduler_heartbeat() under the beat
+    principal.
     """
     from app.db.session import engine as _engine  # noqa: PLC0415
     from app.db.session import get_session as _tenant_session  # noqa: PLC0415
@@ -243,8 +251,91 @@ def evaluate_b26_p2_operational_health_task(self) -> dict:
     return run_in_worker_loop(evaluate_operational_health())
 
 
+async def tick_scheduler_heartbeat() -> dict:
+    """Tick scheduler liveness heartbeat across tenants (beat principal only).
+
+    Corrective IX separation: scheduler liveness
+    (public.b26_p2_scheduler_heartbeat via
+    public.b26_p2_record_scheduler_heartbeat()) is ticked by the beat
+    process, never by the relay-queue evaluator. The database function
+    is SECURITY DEFINER and refuses every session_user except
+    app_beat/migration_owner/postgres, so invoking it here under any
+    other credential (notably app_relay) fails closed and is counted
+    as failed, never as healthy evidence.
+
+    Execution requirement: run this under the beat DSN
+    (DATABASE_URL=$B26_P2_BEAT_DATABASE_URL, session_user app_beat).
+    The beat schedule wires SCHEDULER_TASK_NAME on the relay-sweep
+    cadence; production must consume it with an app_beat-principal
+    worker (the relay worker's app_relay credential is refused by
+    design). Uses the process engine (beat session) so the tenant GUC
+    is set per tenant via get_session exactly like the evaluator path.
+
+    Returns counts only (no PII, no financial truth).
+    """
+    from app.db.session import engine as _engine  # noqa: PLC0415
+    from app.db.session import get_session as _tenant_session  # noqa: PLC0415
+
+    async with _engine.connect() as conn:
+        tenant_rows = (
+            (await conn.execute(text("SELECT id FROM public.tenants ORDER BY id")))
+            .mappings()
+            .all()
+        )
+    tenants = [str(r["id"]) for r in tenant_rows]
+    ticked = 0
+    failed = 0
+    for tenant in tenants:
+        try:
+            async with _tenant_session(tenant_id=tenant) as session:
+                await session.execute(
+                    text(
+                        "SELECT public.b26_p2_record_scheduler_heartbeat()"
+                        " AS outcome"
+                    )
+                )
+            ticked += 1
+        except Exception:
+            logger.exception(
+                "b26_p2_scheduler_heartbeat_write_failed",
+                extra={"tenant_id": str(tenant)},
+            )
+            failed += 1
+    logger.info(
+        "b26_p2_scheduler_heartbeat_ticked",
+        extra={
+            "tenants_scanned": len(tenants),
+            "ticked": ticked,
+            "failed": failed,
+        },
+    )
+    return {
+        "status": "ok" if failed == 0 else "tick_failed",
+        "tenants_scanned": len(tenants),
+        "ticked": ticked,
+        "failed": failed,
+    }
+
+
+@celery_app.task(
+    bind=True,
+    name=SCHEDULER_TASK_NAME,
+)
+def tick_b26_p2_scheduler_heartbeat_task(self) -> dict:
+    """Deployed scheduler-liveness ticker: beat-scheduled, beat-principal only.
+
+    Beat schedules; an app_beat-principal consumer executes. Must NOT be
+    routed to the relay queue (app_relay is refused at the DB plane by
+    design, proving evaluator/scheduler separation).
+    """
+    return run_in_worker_loop(tick_scheduler_heartbeat())
+
+
 __all__ = (
     "EVALUATOR_TASK_NAME",
+    "SCHEDULER_TASK_NAME",
     "evaluate_b26_p2_operational_health_task",
     "evaluate_operational_health",
+    "tick_b26_p2_scheduler_heartbeat_task",
+    "tick_scheduler_heartbeat",
 )

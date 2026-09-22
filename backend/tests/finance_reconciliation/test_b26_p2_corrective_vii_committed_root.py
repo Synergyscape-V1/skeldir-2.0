@@ -539,6 +539,32 @@ def _publish_and_verdict(
         conn.close()
 
 
+def _canonical_scope_for_task(task: str) -> str:
+    """IX canonical scope: sovereign DB recomputation for the task window."""
+    import psycopg2
+
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT tenant_id, window_start, window_end"
+                " FROM public.b26_p2_task_authority_directory WHERE task_id=%s",
+                (task,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise AssertionError("missing directory for %s" % task)
+            tenant, ws, we = row[0], row[1], row[2]
+            cur.execute(
+                "SELECT public.b26_p2_canonical_scope_identity_for_window(%s,%s,%s)",
+                (str(tenant), ws, we),
+            )
+            return str(cur.fetchone()[0])
+    finally:
+        admin.close()
+
+
 def test_c7_blank_provider_gate_refuses():
     """C7-01: blank-provider root cannot be issued nor conducted."""
     import psycopg2
@@ -636,9 +662,10 @@ def test_t7_conducted_verdict_regression_refused():
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
+            scope = _canonical_scope_for_task(task)
             cur.execute(
                 "SELECT public.b26_p2_record_conduction_receipt(%s, %s, 1, %s)",
-                (task, SCOPE_HEX, _P2_POLICY_SEMANTIC_SHA_V2),
+                (task, scope, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
             assert cur.fetchone()[0] == "conducted"

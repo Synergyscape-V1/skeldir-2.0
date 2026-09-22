@@ -365,6 +365,38 @@ def _seed_verdict(tenant_id: UUID, ingress_id: UUID, event_id: UUID) -> None:
         conn.close()
 
 
+def _canonical_scope_for_task(task: str) -> str:
+    """Corrective IX canonical scope: sovereign DB recomputation.
+
+    Reads (tenant, window) from the directory via the admin DSN and
+    recomputes the sovereign scope. Must be called after the verdict
+    exists so the recomputation observes the same consequence state
+    the recorder/gate will see.
+    """
+    import psycopg2
+
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT tenant_id, window_start, window_end"
+                " FROM public.b26_p2_task_authority_directory WHERE task_id=%s",
+                (task,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise AssertionError("missing directory for %s" % task)
+            tenant, ws, we = row[0], row[1], row[2]
+            cur.execute(
+                "SELECT public.b26_p2_canonical_scope_identity_for_window(%s,%s,%s)",
+                (str(tenant), ws, we),
+            )
+            return str(cur.fetchone()[0])
+    finally:
+        admin.close()
+
+
 def _seed_receipt(
     tenant_id: UUID, ingress_id: UUID, task_id: str, *, dsn: str | None = None
 ) -> None:
@@ -372,18 +404,24 @@ def _seed_receipt(
 
     Corrective VI: direct receipt INSERT is revoked on every lane; the
     only writer is the SECURITY DEFINER record function (EXECUTE
-    app_worker), which derives the sovereign binding server-side. The
-    scope witness is well-formed 64-hex, as the honest worker persists.
+    app_worker), which derives the sovereign binding server-side.
+    Corrective IX: the caller scope must equal the sovereign
+    recomputation for (tenant, window); computed here via the admin
+    DSN from the directory after the verdict exists (lawful callers
+    seed the verdict before the receipt, so the recomputation
+    observes verdict consequence; the no-verdict gate cell records
+    the no-verdict canonical, preserving its intended gate refusal).
     """
     import psycopg2
 
+    scope = _canonical_scope_for_task(task_id)
     conn = psycopg2.connect(dsn or _admin_dsn())
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
-                (task_id, "ab" * 32, 1, _P2_POLICY_SEMANTIC_SHA_V2),
+                (task_id, scope, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
     finally:
         conn.close()

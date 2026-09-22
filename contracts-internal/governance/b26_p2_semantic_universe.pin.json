@@ -1,0 +1,12 @@
+{
+  "producer": "validate_b26_p2_ix_semantic",
+  "scope_authority_ast_sha256": "864d0d4b3816c5dc170a9c2f7fa4e4f710353c21d292f7b71e6de22a50468cca",
+  "candidate_conduction_ast_sha256": "2eae907e9f16f52a4527da32bb9eb9c5dad8bafa380da59093ab0d0a1e442582",
+  "b23_footprint": [
+    "status",
+    "webhook_ingress_identity_id",
+    "tenant_id",
+    "canonical_commerce_reference"
+  ],
+  "review_note": "Reviewed for Corrective IX head: P2 semantic universe is derived (AST-pinned executables), not vocabulary. scope_authority.py executes the v2 scope policy; candidate_conduction.py derives governed scope from durable ingress+verdict reads. The B2.3 footprint lists every b23_match_verdicts column the P2 derivation reads; the IX migration trigger UPDATE OF must cover all of them. Any executable drift REDs until re-reviewed with falsifier evidence."
+}

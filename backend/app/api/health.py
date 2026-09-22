@@ -467,6 +467,14 @@ async def b26_p2_conduction(response: Response) -> dict:
     the signal itself is observable; the `status` field distinguishes
     `ok` (no stale work) from `stale_unconducted` (operator action
     required). Dependency failure yields 503.
+
+    Corrective IX separation: scheduler liveness (`scheduler_alive`,
+    derived from `scheduler_absent_total` over
+    public.b26_p2_scheduler_heartbeat) is independent of evaluation
+    freshness (`evaluation_fresh`, derived from `evaluator_absent_total`
+    over public.b26_p2_evaluator_heartbeat). evaluation_fresh !=
+    scheduler_alive: a live scheduler with no genuine evaluation, or a
+    fresh evaluation with a dead scheduler, are distinct operator facts.
     """
     from app.db.session import engine as _engine  # noqa: PLC0415
     from app.db.session import get_session as _tenant_session  # noqa: PLC0415
@@ -495,6 +503,7 @@ async def b26_p2_conduction(response: Response) -> dict:
         pending_total = 0
         pending_actionable_total = 0
         evaluator_absent_total = 0
+        scheduler_absent_total = 0
         terminal_total = 0
         for tenant in tenants:
             async with _tenant_session(tenant_id=tenant) as session:
@@ -551,6 +560,33 @@ async def b26_p2_conduction(response: Response) -> dict:
                         evaluator_absent_total += 1
                 except Exception:
                     evaluator_absent_total += 1
+                # Corrective IX separation: scheduler liveness is observed
+                # from the same API failure domain but over its own table
+                # (public.b26_p2_scheduler_heartbeat) under the same
+                # threshold*4 law. Only the beat principal can tick it, so
+                # a relay-side evaluation cannot manufacture scheduler
+                # health.
+                try:
+                    sched_row = (
+                        (
+                            await session.execute(
+                                text(
+                                    "SELECT EXTRACT(EPOCH FROM (now() - last_tick)) AS age"
+                                    " FROM public.b26_p2_scheduler_heartbeat"
+                                    " WHERE tenant_id = :tenant"
+                                ),
+                                {"tenant": str(tenant)},
+                            )
+                        )
+                        .mappings()
+                        .one_or_none()
+                    )
+                    if sched_row is None or sched_row["age"] is None:
+                        scheduler_absent_total += 1
+                    elif float(sched_row["age"]) > float(int(threshold) * 4):
+                        scheduler_absent_total += 1
+                except Exception:
+                    scheduler_absent_total += 1
                 terminal_row = (
                     (
                         await session.execute(
@@ -626,6 +662,7 @@ async def b26_p2_conduction(response: Response) -> dict:
             or quarantine_total > 0
             or pending_actionable_total > 0
             or evaluator_absent_total > 0
+            or scheduler_absent_total > 0
         )
         result = {
             "status": "stale_unconducted" if stale_total > 0 else "ok",
@@ -635,6 +672,9 @@ async def b26_p2_conduction(response: Response) -> dict:
             "pending_total": pending_total,
             "pending_actionable_total": pending_actionable_total,
             "evaluator_absent_total": evaluator_absent_total,
+            "scheduler_absent_total": scheduler_absent_total,
+            "scheduler_alive": scheduler_absent_total == 0,
+            "evaluation_fresh": evaluator_absent_total == 0,
             "terminal_total": terminal_total,
             "stale_unconducted_count": stale_total,
             "oldest_published_age_seconds": oldest_published_age,
@@ -654,6 +694,7 @@ async def b26_p2_conduction(response: Response) -> dict:
                     "pending_total": pending_total,
                     "pending_actionable_total": pending_actionable_total,
                     "evaluator_absent_total": evaluator_absent_total,
+                    "scheduler_absent_total": scheduler_absent_total,
                     "terminal_total": terminal_total,
                     "threshold_seconds": threshold,
                 },
