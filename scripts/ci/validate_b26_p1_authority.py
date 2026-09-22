@@ -47,6 +47,7 @@ PRODUCER_JOBS = {
     "b26-p1-container-equivalence",
     "b26-p1-inherited-conduction",
     "b26-p2-production-topology",
+    "b26-p2-in-image-proof",
 }
 EXPECTED_AGGREGATE_NAME = (
     "${{ github.event_name == 'push' && 'B2.6 P1 Exact-Main Diagnostics' "

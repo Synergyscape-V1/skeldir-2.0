@@ -59,6 +59,22 @@ async def _assert_table_exists(table_name: str) -> None:
 async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, datetime]:
     # Worker-state seeding runs as the worker login (B2.6-P2 Corrective III
     # least privilege: verdict writes belong to app_worker, not app_user).
+    # Corrective VIII authenticated-root law: the webhook ingress envelope
+    # is API-issuer authority, so the ingress INSERT below runs on an
+    # issuer pool derived from the runtime DSN by credential convention
+    # (role:role passwords; same derivation the finance batteries use).
+    # The ambient `engine` pool cannot serve as issuer: jobs like the
+    # Contract Semantic Drift Gate bind it to the worker login, and may
+    # bind it with a sync driver while this seed needs async.
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    issuer_url = os.environ.get("B23_WORKER_DATABASE_URL", "") or os.environ.get(
+        "DATABASE_URL", ""
+    )
+    issuer_url = issuer_url.replace("app_worker:app_worker", "app_user:app_user")
+    if issuer_url.startswith("postgresql://"):
+        issuer_url = "postgresql+asyncpg://" + issuer_url[len("postgresql://"):]
+    issuer_engine = create_async_engine(issuer_url or str(engine.url))
     now = datetime.now(timezone.utc).replace(microsecond=0)
     window_start = now - timedelta(hours=1)
     window_end = now + timedelta(hours=1)
@@ -155,6 +171,19 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
                         updated_at = now()
                     RETURNING tenant_id, attribution_event_id
                 )
+                SELECT count(*) FROM inserted_identity
+                """
+            ),
+            {"tenant_id": str(tenant_id), "now_utc": now},
+        )
+    async with issuer_engine.begin() as issuer:
+        await issuer.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await issuer.execute(
+            text(
+                """
                 INSERT INTO public.webhook_ingress_identities (
                     tenant_id,
                     event_id,
@@ -175,21 +204,30 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
                     tenant_id,
                     id,
                     'stripe',
-                    'b23-p4-webhook-' || order_ref,
-                    'pi-' || order_ref,
+                    'b23-p4-webhook-' || (raw_payload ->> 'order_id'),
+                    'pi-' || (raw_payload ->> 'order_id'),
                     'order_id',
-                    order_ref,
+                    raw_payload ->> 'order_id',
                     conversion_value_cents,
                     'USD',
                     2,
                     event_timestamp + interval '30 seconds',
-                    'b23-p4-webhook-' || CAST(:tenant_id AS text) || '-' || order_ref,
+                    'b23-p4-webhook-' || CAST(:tenant_id AS text) || '-'
+                        || (raw_payload ->> 'order_id'),
                     'authenticity_verified',
                     CAST(:now_utc AS timestamptz)
-                FROM inserted_attribution
+                FROM public.attribution_events
+                WHERE tenant_id = CAST(:tenant_id AS uuid)
+                  AND idempotency_key LIKE
+                      'b23-p4-attribution-' || CAST(:tenant_id AS text) || '-%'
                 """
             ),
             {"tenant_id": str(tenant_id), "now_utc": now},
+        )
+    async with b23_engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
         )
         await conn.execute(
             text(
@@ -365,6 +403,7 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
             "worker_failed_jobs",
         ):
             await conn.execute(text(f"ANALYZE public.{table_name}"))
+    await issuer_engine.dispose()
     return window_start, window_end
 
 

@@ -1330,7 +1330,9 @@ def _check_corrective_vi_law(violations: list[str], details: dict[str, Any]) -> 
             "REVOKE INSERT ON TABLE public.b26_p2_conduction_receipts FROM app_worker",
             "REVOKE INSERT ON TABLE public.b26_p2_conduction_receipts FROM app_user",
             "REVOKE INSERT ON TABLES FROM app_user",
-            "b26_p2_record_conduction_receipt(text, text, integer)",
+            # Corrective VIII binds policy meaning: the recorder carries the
+            # 4-argument bound form (the VII 3-argument overload is dropped).
+            "b26_p2_record_conduction_receipt(text, text, integer, text)",
             "b26_p2_operational_disposition(text, integer)",
         ):
             if required not in companion_source:
@@ -1483,6 +1485,157 @@ def _check_corrective_vii_law(violations: list[str], details: dict[str, Any]) ->
     details["corrective_vii_checked"] = True
 
 
+def _check_corrective_viii_law(violations: list[str], details: dict[str, Any]) -> None:
+    """Corrective VIII: authenticated-root, meaning binding, identity,
+    census, authority meaning, evaluation-bound heartbeat."""
+    migration = REPO_ROOT / (
+        "alembic/versions/007_skeldir_foundation/"
+        "202609220001_b26_p2_corrective_viii_context_robust.py"
+    )
+    if not migration.is_file():
+        violations.append("p2_viii_context_robust_absent:migration_missing")
+        return
+    src = migration.read_text(encoding="utf-8")
+    upgrade = src.split("def downgrade", 1)[0]
+    for required in (
+        # Group A: worker removed from verified authorship, adoption law.
+        "b26_p2_enforce_ingress_duplicate_adoption",
+        "b26_p2_ingress_precursor_present_promote_required",
+        "b26_p2_ingress_authenticated_conflict",
+        # Group B: policy meaning binding.
+        "b26_p2_enforce_policy_immutability",
+        "b26_p2_policy_semantic_mutation_refused",
+        "p_policy_semantic_sha256",
+        "b26_p2_receipt_policy_semantic_binding_required",
+        "b26_p2_receipt_policy_semantic_not_bound",
+        "b26_p2_conducted_policy_semantic_not_bound",
+        "policy_semantic_sha256",
+        # Group C: temporal identity + phantom guard.
+        "b26_p2_conducted_verdict_identity_refused",
+        "b26_p2_conducted_set_insert_refused",
+        "BEFORE INSERT OR UPDATE OF status, webhook_ingress_identity_id, tenant_id",
+        # Group D: generic census + quarantine provenance.
+        "corrective_viii:",
+        "false_conducted_no_consequence",
+        "conducted_receipt_missing",
+        "orphan_child_without_dispatch",
+        "b26_p2_sovereign_viii_residual_contradiction",
+        # Group F: evaluation-bound heartbeat.
+        "b26_p2_record_evaluator_heartbeat",
+        "b26_p2_heartbeat_caller_refused",
+        "pending_actionable_count",
+    ):
+        if required not in upgrade:
+            violations.append(f"p2_viii_law_absent:{required}")
+    # The VII worker-authorship relaxation must be gone: the allowlist in
+    # the VIII authorship function must not name app_worker.
+    auth_block = upgrade.split(
+        "CREATE OR REPLACE FUNCTION"
+        " public.b26_p2_enforce_ingress_verified_authorship()"
+    )
+    if len(auth_block) < 2 or "app_worker" in auth_block[1].split("END $$;", 1)[0]:
+        violations.append("p2_viii_authorship_worker_survives")
+    # Python plane: adoption promotion + bound receipt + evaluating heartbeat.
+    ingestion = BACKEND / "app/ingestion/event_service.py"
+    if ingestion.is_file():
+        src_ing = ingestion.read_text(encoding="utf-8")
+        for required in (
+            "_adopt_or_promote_ingress",
+            "b26_p2_ingress_precursor_present_promote_required",
+            "b26_p2_ingress_authenticated_conflict",
+        ):
+            if required not in src_ing:
+                violations.append(f"p2_viii_ingestion_absent:{required}")
+    conduction_state = BACKEND / "app/finance_reconciliation/conduction_state.py"
+    if conduction_state.is_file():
+        if "policy_semantic_sha" not in conduction_state.read_text(encoding="utf-8"):
+            violations.append("p2_viii_conduction_binding_absent")
+    health_module = BACKEND / "app/tasks/b26_p2_health.py"
+    if health_module.is_file():
+        hs = health_module.read_text(encoding="utf-8")
+        for required in (
+            "b26_p2_record_evaluator_heartbeat",
+            "threshold_invalid",
+        ):
+            if required not in hs:
+                violations.append(f"p2_viii_health_absent:{required}")
+        if "VALUES (:tenant, now(), 1, now())" in hs:
+            violations.append("p2_viii_health_bare_timestamp_survives")
+    # Shipping consumer: deployed ops probe + platform alert/metric
+    # contracts. The probe lives in scripts/ops (ops tooling, outside the
+    # backend/app hermetic boundary and the B26 surface namespace, both of
+    # which forbid network-client imports).
+    probe_module = REPO_ROOT / "scripts/ops/conduction_health_probe.py"
+    if not probe_module.is_file():
+        violations.append("p2_viii_probe_absent")
+    else:
+        ps = probe_module.read_text(encoding="utf-8")
+        for required in ("def evaluate", "evaluator_absent_total",
+                         "pending_actionable_total", "action_required",
+                         "/health/b26-p2-conduction"):
+            if required not in ps:
+                violations.append(f"p2_viii_probe_absent:{required}")
+    for rel in ("monitoring/alerts/b26-p2-conduction.alerts.yaml",
+                "monitoring/prometheus/b26-p2-conduction-metrics.yml"):
+        path = REPO_ROOT / rel
+        if not path.is_file():
+            violations.append(f"p2_viii_monitoring_absent:{rel}")
+        elif "conduction_health_probe" not in path.read_text(encoding="utf-8"):
+            violations.append(f"p2_viii_monitoring_unwired:{rel}")
+    # Meaning-closed authority discovery + reviewed pin.
+    cap = REPO_ROOT / "scripts/ci/b26_p2_capability_surface.py"
+    if cap.is_file():
+        cs = cap.read_text(encoding="utf-8")
+        for required in (
+            "_routine_meaning_identities",
+            "_trigger_meaning_census",
+            "_schema_meaning_privs",
+            "_rls_meaning_census",
+            "_ownership_census",
+            "routine_meaning",
+            "b26_p2_record_evaluator_heartbeat",
+        ):
+            if required not in cs:
+                violations.append(f"p2_viii_authority_meaning_absent:{required}")
+    pin = REPO_ROOT / "contracts-internal/governance/b26_p2_authority_universe.pin.json"
+    if not pin.is_file():
+        violations.append("p2_viii_authority_pin_absent")
+    checker = REPO_ROOT / "scripts/ci/assert_b26_p2_authority_universe.py"
+    if not checker.is_file():
+        violations.append("p2_viii_authority_checker_absent")
+    # VIII battery + real differential must exist.
+    battery = BACKEND / "tests/finance_reconciliation/test_b26_p2_corrective_viii_context_robust.py"
+    if not battery.is_file():
+        violations.append("p2_viii_battery_absent")
+    else:
+        bs = battery.read_text(encoding="utf-8")
+        for required in (
+            "precursor_present_promote_required",
+            "authenticated_conflict",
+            "policy_semantic_binding_required",
+            "conducted_verdict_identity_refused",
+            "set_insert_refused",
+            "heartbeat_caller_refused",
+        ):
+            if required not in bs:
+                violations.append(f"p2_viii_battery_absent:{required}")
+    equiv = REPO_ROOT / "scripts/ci/b26_p2_viii_equivalence.py"
+    if not equiv.is_file():
+        violations.append("p2_viii_equivalence_absent")
+    # Companion convergence: bound recorder signature + heartbeat grants.
+    companion = REPO_ROOT / "db/schema/canonical_authority.sql"
+    if companion.is_file():
+        comp = companion.read_text(encoding="utf-8")
+        for required in (
+            "b26_p2_record_conduction_receipt(text, text, integer, text)",
+            "REVOKE INSERT, UPDATE, DELETE ON TABLE public.b26_p2_evaluator_heartbeat",
+            "GRANT EXECUTE ON FUNCTION public.b26_p2_record_evaluator_heartbeat(integer)",
+        ):
+            if required not in comp:
+                violations.append(f"p2_viii_companion_absent:{required[:48]}")
+    details["corrective_viii_checked"] = True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-dir", type=Path, default=None)
@@ -1510,6 +1663,7 @@ def main() -> int:
         _check_corrective_v_law(violations, details)
         _check_corrective_vi_law(violations, details)
         _check_corrective_vii_law(violations, details)
+        _check_corrective_viii_law(violations, details)
     except Exception as exc:  # noqa: BLE001
         violations.append(f"p2_validator_crash:{exc}")
     details["violations"] = sorted(violations)

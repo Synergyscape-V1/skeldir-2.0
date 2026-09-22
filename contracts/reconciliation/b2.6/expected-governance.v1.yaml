@@ -26,3 +26,4 @@ required_producer_jobs:
   - b26-p1-container-equivalence
   - b26-p1-inherited-conduction
   - b26-p2-production-topology
+  - b26-p2-in-image-proof

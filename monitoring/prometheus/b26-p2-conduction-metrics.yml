@@ -1,0 +1,45 @@
+# B2.6-P2 Conduction Health Metrics (Corrective VIII, Group F)
+# Purpose: Define the independently-observed P2 operational signal for
+# monitoring and alerting. Source of truth is the shipping observer
+# (GET /health/b26-p2-conduction, served by the API process from live
+# tables) as consumed by scripts/ops/conduction_health_probe.py
+# (exit 0 only when healthy) and the relay service healthcheck.
+
+# Operator signal: P2 degradation requires action (stale, quarantine,
+# actionable pending, or evaluator absence).
+b26_p2_conduction_action_required:
+  type: gauge
+  description: "1 when the independent conduction signal requires operator action, else 0"
+  labels:
+    - tenant_scope  # aggregated across tenants; per-tenant detail lives in the endpoint payload
+  query: |
+    # Consume the shipping observer, not the heartbeat table directly:
+    # python -m scripts.ops.conduction_health_probe --url http://api:8000/health/b26-p2-conduction
+    # exit 0 maps to 0, exit 1 maps to 1.
+  example: |
+    b26_p2_conduction_action_required 0
+
+# Evaluator independence: ticks must come from genuine evaluations.
+b26_p2_evaluator_absent_total:
+  type: gauge
+  description: "Tenants whose evaluator heartbeat is missing or older than 4x the governed threshold"
+  labels: []
+  query: |
+    # Field evaluator_absent_total of the conduction-health payload.
+    # The heartbeat row is writable only through
+    # b26_p2_record_evaluator_heartbeat(), which recomputes the counts
+    # itself: a fresh tick without a genuine evaluation is impossible.
+  example: |
+    b26_p2_evaluator_absent_total 0
+
+# Finite actionable pending: accepted work left past the horizon.
+b26_p2_pending_actionable_total:
+  type: gauge
+  description: "pending_publish executions older than the governed staleness horizon"
+  labels: []
+  query: |
+    # Field pending_actionable_total of the conduction-health payload.
+    # The anchor is the immutable dispatched_at; non-progress metadata
+    # bumps cannot extend the horizon.
+  example: |
+    b26_p2_pending_actionable_total 0

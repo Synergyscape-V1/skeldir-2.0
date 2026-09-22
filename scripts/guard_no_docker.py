@@ -130,6 +130,13 @@ ALLOWED_DOCKER_PATHS = {
     # instead of host imports. Same reason as P13 C16/C19: it executes the
     # authorized substrate, it does not add one.
     Path("scripts/ci/prove_b26_p2_production_topology.py"),
+    # B2.6-P2 Corrective VIII's in-image proof builds and runs the same
+    # already-authorized `backend/Dockerfile` image (migrate + battery +
+    # differential + universe + AM8 + stale falsifier) so the load-bearing
+    # proof executes the promotable artifact instead of host checkout bytes.
+    # Same reason as Corrective IV: it executes the authorized substrate,
+    # it does not add one.
+    Path("scripts/ci/prove_b26_p2_in_image.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),

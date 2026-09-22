@@ -111,6 +111,12 @@ async def record_conduction_receipt(
     task identity: a redelivered worker re-asserts the same receipt
     rather than duplicating it (ON CONFLICT DO NOTHING inside the
     server function keeps receipt authority INSERT-only).
+
+    Corrective VIII meaning binding: the worker presents the policy
+    semantic SHA it classified under (observed from the live policy
+    file, never copied from the database row). The server function
+    verifies caller, row, and governed constants agree, so a policy
+    semantic change under the same version cannot conduct stale.
     """
     task_key = (broker_task_id or "").strip()
     if not task_key:
@@ -118,15 +124,22 @@ async def record_conduction_receipt(
     scope_token = (p2_scope_identity or "").strip()
     if not scope_token:
         raise ValueError("b26_p2_receipt_scope_missing")
+    from app.finance_reconciliation.scope_authority import (  # noqa: PLC0415
+        scope_policy_identity,
+    )
+
+    semantic_sha = scope_policy_identity().semantic_sha256
     await session.execute(
         text(
             "SELECT public.b26_p2_record_conduction_receipt("
-            " :task_id, :scope_identity, :processed_count)"
+            " :task_id, :scope_identity, :processed_count,"
+            " :policy_semantic_sha)"
         ),
         {
             "task_id": task_key,
             "scope_identity": scope_token,
             "processed_count": int(b23_processed_count or 0),
+            "policy_semantic_sha": semantic_sha,
         },
     )
 

@@ -186,13 +186,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_taskmeta TO app_user
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.celery_tasksetmeta TO app_user;
 
 -- === 202609200001 Corrective VI: receipt record function (worker-only) ===
-REVOKE ALL ON FUNCTION public.b26_p2_record_conduction_receipt(text, text, integer) FROM PUBLIC;
+-- Corrective VIII: the VII 3-argument overload is dropped (unbound path);
+-- the bound 4-argument form carries the same least-privilege grants.
+REVOKE ALL ON FUNCTION public.b26_p2_record_conduction_receipt(text, text, integer, text) FROM PUBLIC;
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
         GRANT EXECUTE ON FUNCTION
-            public.b26_p2_record_conduction_receipt(text, text, integer)
+            public.b26_p2_record_conduction_receipt(text, text, integer, text)
             TO app_worker;
     END IF;
 END $$;
@@ -293,3 +295,30 @@ BEGIN
 END $$;
 GRANT SELECT ON TABLE public.b26_p2_evaluator_heartbeat TO app_user;
 GRANT SELECT ON TABLE public.b26_p2_evaluator_heartbeat TO app_ro;
+
+-- === 202609220001 Corrective VIII: meaning binding + heartbeat integrity ===
+-- Source of truth is the 202609220001 migration. Same-version policy
+-- meaning is immutable (trigger in canonical_schema); runtime roles hold
+-- no UPDATE/DELETE on the policy row. Heartbeat direct writes are revoked
+-- from the monitored relay credential; the single SECURITY DEFINER
+-- evaluation function recomputes the counts, so invoking it IS the
+-- governed evaluation. The bound 4-argument recorder keeps worker-only
+-- EXECUTE (see the amended VI block above).
+REVOKE UPDATE, DELETE ON TABLE public.b26_p2_scope_policy_authority
+    FROM app_user, app_worker, app_relay, app_beat, app_ro, app_rw;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        REVOKE INSERT, UPDATE, DELETE ON TABLE public.b26_p2_evaluator_heartbeat FROM app_relay;
+    END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.b26_p2_record_evaluator_heartbeat(integer) FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_record_evaluator_heartbeat(integer) TO app_relay;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_beat') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_record_evaluator_heartbeat(integer) TO app_beat;
+    END IF;
+END $$;

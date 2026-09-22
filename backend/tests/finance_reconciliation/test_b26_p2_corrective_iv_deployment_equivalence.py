@@ -23,6 +23,9 @@ from uuid import UUID
 import pytest
 
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
+# Corrective VIII policy-meaning binding: every conduction receipt
+# carries the caller-observed policy semantic SHA.
+_P2_POLICY_SEMANTIC_SHA_V2 = "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
 
 
@@ -793,8 +796,8 @@ async def test_iv_conducted_mark_advances_published() -> None:
                 ),
             )
             cur.execute(
-                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-                (task_id, "cd" * 32, 1),
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                (task_id, "cd" * 32, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute(
                 "SELECT public.b26_p2_mark_conducted(%s)",

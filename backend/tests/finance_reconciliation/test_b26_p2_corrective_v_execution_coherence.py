@@ -39,6 +39,9 @@ OTHER_DAY_START = datetime(2026, 1, 20, 0, 0, tzinfo=timezone.utc)
 OTHER_DAY_END = datetime(2026, 1, 21, 0, 0, tzinfo=timezone.utc)
 
 TASK_NAME = "app.tasks.revenue_verification.execute_b23_batch_match_engine"
+# Corrective VIII policy-meaning binding: every conduction receipt
+# carries the caller-observed policy semantic SHA.
+_P2_POLICY_SEMANTIC_SHA_V2 = "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"
 
 
 @pytest.fixture(autouse=True)
@@ -379,8 +382,8 @@ def _seed_receipt(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-                (task_id, "ab" * 32, 1),
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                (task_id, "ab" * 32, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
     finally:
         conn.close()
@@ -664,14 +667,16 @@ def test_v_receipt_forked_tuple_refused() -> None:
                 cur.execute(
                     "INSERT INTO public.b26_p2_conduction_receipts (task_id,"
                     " tenant_id, webhook_ingress_identity_id, window_start,"
-                    " window_end, b23_processed_count, p2_scope_identity)"
-                    " VALUES (%s, %s, %s, %s, %s, 1, 'fork')",
+                    " window_end, b23_processed_count, p2_scope_identity,"
+                    " policy_semantic_sha256)"
+                    " VALUES (%s, %s, %s, %s, %s, 1, 'fork', %s)",
                     (
                         str(env["task1"]),
                         str(second["tenant_id"]),
                         str(second["ingress_id"]),
                         DAY_START,
                         DAY_END,
+                        _P2_POLICY_SEMANTIC_SHA_V2,
                     ),
                 )
 

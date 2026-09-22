@@ -103,16 +103,19 @@ def main() -> int:
             CREATE OR REPLACE FUNCTION public.aud_vii_alt_receipt_writer(t text, s text, n int)
             RETURNS text LANGUAGE plpgsql SECURITY DEFINER
             SET search_path TO 'pg_catalog','public' AS $$
-            BEGIN RETURN public.b26_p2_record_conduction_receipt(t, s, n); END $$;
+            BEGIN RETURN public.b26_p2_record_conduction_receipt(t, s, n, 'fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99'); END $$;
             """
         )
         cur.execute("GRANT EXECUTE ON FUNCTION public.aud_vii_alt_receipt_writer(text,text,int) TO app_worker")
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from b26_p2_capability_surface import build_manifest  # noqa: PLC0415
-        from b26_p2_vii_coverage import VII_COVERED_SURFACES  # noqa: PLC0415
+        try:
+            from b26_p2_viii_coverage import VIII_COVERED_SURFACES as _COVERED  # noqa: PLC0415
+        except ImportError:
+            from b26_p2_vii_coverage import VII_COVERED_SURFACES as _COVERED  # noqa: PLC0415
 
-        m = build_manifest(admin_dsn, tuple(VII_COVERED_SURFACES))
+        m = build_manifest(admin_dsn, tuple(_COVERED))
         unknown = m.get("open_world_unknown", [])
         note("M-VII-15-live", any("aud_vii_alt_receipt_writer" in u for u in unknown),
              f"unseen definer REDs: {unknown[:2]}")
@@ -122,9 +125,12 @@ def main() -> int:
             cur.execute("DROP FUNCTION IF EXISTS public.aud_vii_alt_receipt_writer(text,text,int)")
     # Restore check: census GREEN again.
     from b26_p2_capability_surface import build_manifest  # noqa: PLC0415
-    from b26_p2_vii_coverage import VII_COVERED_SURFACES  # noqa: PLC0415
+    try:
+        from b26_p2_viii_coverage import VIII_COVERED_SURFACES as _COVERED  # noqa: PLC0415
+    except ImportError:
+        from b26_p2_vii_coverage import VII_COVERED_SURFACES as _COVERED  # noqa: PLC0415
 
-    m2 = build_manifest(admin_dsn, tuple(VII_COVERED_SURFACES))
+    m2 = build_manifest(admin_dsn, tuple(_COVERED))
     note("M-VII-restore", m2.get("open_world_unknown", []) == [], "exact restore GREEN")
 
     print(f"B26_P2_VII_NEGATIVES_PASS cells={len(RESULTS)}")

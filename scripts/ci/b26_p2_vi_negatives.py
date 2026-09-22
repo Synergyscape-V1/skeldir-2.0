@@ -422,8 +422,8 @@ def main() -> int:
         )
     with role_conn("app_worker") as c, c.cursor() as cur:
         cur.execute(
-            "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-            (lawful, "cd" * 32, 1),
+            "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+            (lawful, "cd" * 32, 1, "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"),
         )
     with admin() as c, c.cursor() as cur:
         cur.execute(weak_gate)
@@ -456,8 +456,8 @@ def main() -> int:
         )
     with role_conn("app_worker") as c, c.cursor() as cur:
         cur.execute(
-            "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s)",
-            (task_b, "cd" * 32, 1),
+            "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+            (task_b, "cd" * 32, 1, "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"),
         )
     try:
         with role_conn("app_worker") as c, c.cursor() as cur:

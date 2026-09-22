@@ -32,6 +32,9 @@ DAY_NOON = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
 NEXT_DAY_NOON = datetime(2026, 1, 16, 8, 0, tzinfo=timezone.utc)
 TASK_NAME = "app.tasks.revenue_verification.execute_b23_batch_match_engine"
 SCOPE_HEX = "cd" * 32
+# Corrective VIII policy-meaning binding: every conduction receipt
+# carries the caller-observed policy semantic SHA.
+_P2_POLICY_SEMANTIC_SHA_V2 = "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"
 
 
 @pytest.fixture(autouse=True)
@@ -229,9 +232,13 @@ def test_r7_currency_immutable_once_referenced():
 
 
 def test_r7_worker_cannot_mint_verified_ingress():
-    """R7-03: relay/beat cannot author verified state; worker mint (allowed
-    for B2.3 duty) can never become canonical execution (dispatch mint
-    refused for worker by grants + sovereign trigger — solo chain blocked).
+    """R7-03 (Corrective VIII hardening): no lower-authority principal can
+    author verified state. The VII text allowed worker verified mint with a
+    dead-end Solo chain; VIII removes the worker from the authorship
+    allowlist entirely (B2.3 production code never INSERTs ingress rows),
+    so worker verified INSERT refuses at the database plane. Relay/beat
+    remain refused by grants + trigger. Pending precursors stay mintable;
+    their adoption is governed by the duplicate-adoption law.
     """
     import psycopg2
 
@@ -289,8 +296,8 @@ def test_r7_worker_cannot_mint_verified_ingress():
                     (str(uuid.uuid4()), str(ids["tenant_id"]), str(event_uuid),
                      DAY_NOON, f"r7w:{uuid.uuid4().hex[:6]}"),
                 )
-            # Worker mint (allowed) still cannot become execution: dispatch
-            # INSERT as worker refuses via grants.
+            # Worker verified mint is refused at the database plane
+            # (Corrective VIII authorship closure).
             wconn = psycopg2.connect(_role_dsn("app_worker"))
             wconn.autocommit = True
             try:
@@ -299,6 +306,22 @@ def test_r7_worker_cannot_mint_verified_ingress():
                         "SELECT set_config('app.current_tenant_id', %s, false)",
                         (str(ids["tenant_id"]),),
                     )
+                    with pytest.raises(Exception, match="verified_authorship_refused"):
+                        wcur.execute(
+                            "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
+                            " event_id, provider, provider_native_event_reference,"
+                            " provider_native_commerce_reference,"
+                            " normalized_commerce_reference_kind,"
+                            " normalized_commerce_reference_value,"
+                            " verified_amount_minor, verified_amount_currency,"
+                            " event_timestamp, idempotency_key,"
+                            " verified_commerce_ingress_state)"
+                            " VALUES (%s, %s, %s, 'stripe', 'e', 'o',"
+                            " 'order_reference', 'o', 1, 'USD', %s, %s,"
+                            " 'authenticity_verified')",
+                            (str(uuid.uuid4()), str(ids["tenant_id"]), str(event_uuid),
+                             DAY_NOON, f"r7w:{uuid.uuid4().hex[:6]}"),
+                        )
                     with pytest.raises(Exception, match="permission denied|insufficient_privilege|sovereign"):
                         wcur.execute(
                             "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
@@ -614,8 +637,8 @@ def test_t7_conducted_verdict_regression_refused():
                 (str(ids["tenant_id"]),),
             )
             cur.execute(
-                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, 1)",
-                (task, SCOPE_HEX),
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, 1, %s)",
+                (task, SCOPE_HEX, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
             assert cur.fetchone()[0] == "conducted"
