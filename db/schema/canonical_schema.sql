@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict FpBwKyQGv1PS6lji2dqLERnLMgO97y7puPbxmRmHKaRhCr5TET0UYQONZfgiXsb
+\restrict ZnQOCBCl63q26o4bVqjaIAactAzc5B0Ev7B3KyelAgmOJgbKpkFjkazfZb674Ar
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -2494,6 +2494,107 @@ CREATE FUNCTION public.b26_p2_canonical_day_start(p_event_timestamp timestamp wi
 
 
 --
+-- Name: b26_p2_canonical_scope_identity_for_window(uuid, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid, p_ws timestamp with time zone, p_we timestamp with time zone) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _policy_version text;
+            _policy_semantic text;
+            _ws_iso text;
+            _we_iso text;
+            _base text;
+            _lines text;
+            _payload text;
+            _prev_guc text;
+        BEGIN
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            PERFORM set_config('app.current_tenant_id', p_tenant::text, true);
+            BEGIN
+                SELECT scope_policy_version, semantic_sha256
+                  INTO _policy_version, _policy_semantic
+                  FROM public.b26_p2_scope_policy_authority
+                 ORDER BY scope_policy_version DESC LIMIT 1;
+                IF NOT FOUND
+                   OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
+                   OR _policy_semantic IS DISTINCT FROM 'fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99' THEN
+                    PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc,''), true);
+                    RAISE EXCEPTION 'b26_p2_canonical_scope_policy_not_bound' USING ERRCODE='42501';
+                END IF;
+                _ws_iso := to_char(p_ws AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"+00:00"');
+                _we_iso := to_char(p_we AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"+00:00"');
+                _base := 'b2.6-p2-scope-identity-v3' || '|' || p_tenant::text || '|' || _ws_iso || '|' || _we_iso
+                         || '|' || 'b2.6-p2-scope-policy-v2' || '|' || _policy_semantic
+                         || '|' || 'source_verified_gross_not_canonical_net'
+                         || '|' || 'b2.2_ingress_verified_amount_minor'
+                         || '|' || 'b2.3_match_verdicts.canonical_net_verified_amount_minor_only';
+                IF EXISTS (
+                    SELECT 1 FROM public.webhook_ingress_identities AS i
+                     WHERE i.tenant_id = p_tenant
+                       AND i.verified_commerce_ingress_state = 'authenticity_verified'
+                       AND (btrim(COALESCE(i.provider,'')) = '' OR btrim(COALESCE(i.verified_amount_currency,'')) = '' OR length(btrim(COALESCE(i.verified_amount_currency,''))) <> 3)
+                ) THEN
+                    PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc,''), true);
+                    RAISE EXCEPTION 'b26_p2_canonical_scope_blank_shape' USING ERRCODE='42501';
+                END IF;
+                SELECT string_agg(line, '|' ORDER BY line) INTO _lines FROM (
+                    SELECT
+                        i.id::text || ':' || _all._prov || ':' || _all._prov || ':' || _all._cur || ':' || _all._disp || ':' || _all._reason || ':' || i.verified_amount_minor::text AS line
+                    FROM public.webhook_ingress_identities AS i,
+                    LATERAL (SELECT lower(btrim(i.provider)) AS _prov, upper(btrim(i.verified_amount_currency)) AS _cur) AS _norm,
+                    LATERAL (SELECT EXISTS (
+                            SELECT 1 FROM public.b23_match_verdicts AS v
+                             WHERE v.tenant_id = p_tenant
+                               AND v.webhook_ingress_identity_id = i.id
+                               AND v.status IN ('matched_provisional','matched_confirmed','adjusted')
+                               AND btrim(COALESCE(v.canonical_commerce_reference,'')) <> ''
+                        ) AS _has_ref) AS _r,
+                    LATERAL (SELECT CASE
+                                WHEN _norm._prov NOT IN ('paypal','shopify','stripe','woocommerce') THEN 'EXCLUDED_PROVIDER'
+                                WHEN _norm._cur <> 'USD' THEN 'EXCLUDED_CURRENCY'
+                                WHEN NOT (i.event_timestamp >= p_ws AND i.event_timestamp < p_we) THEN 'EXCLUDED_WINDOW'
+                                WHEN NOT _r._has_ref THEN 'UNRESOLVED'
+                                ELSE 'IN_SCOPE' END AS _cls) AS _c,
+                    LATERAL (SELECT CASE _c._cls
+                                WHEN 'EXCLUDED_PROVIDER' THEN 'EXPLICITLY_EXCLUDED'
+                                WHEN 'EXCLUDED_CURRENCY' THEN 'EXPLICITLY_EXCLUDED'
+                                WHEN 'EXCLUDED_WINDOW' THEN 'EXPLICITLY_EXCLUDED'
+                                WHEN 'UNRESOLVED' THEN 'SUPPORTED_BUT_UNRESOLVED'
+                                ELSE 'SUPPORTED_AND_IN_SCOPE' END AS _disp,
+                               CASE _c._cls
+                                WHEN 'EXCLUDED_PROVIDER' THEN 'unsupported_provider_excluded'
+                                WHEN 'EXCLUDED_CURRENCY' THEN 'unsupported_currency_excluded'
+                                WHEN 'EXCLUDED_WINDOW' THEN 'outside_governed_window_excluded'
+                                WHEN 'UNRESOLVED' THEN 'source_identity_unresolved'
+                                ELSE 'supported_in_scope' END AS _reason) AS _fr,
+                    LATERAL (SELECT _fr._disp AS _disp, _fr._reason AS _reason) AS _final,
+                    LATERAL (SELECT _norm._prov AS _prov, _norm._cur AS _cur, _final._disp AS _disp, _final._reason AS _reason) AS _all
+                    WHERE i.tenant_id = p_tenant
+                      AND i.verified_commerce_ingress_state = 'authenticity_verified'
+                ) AS sub;
+                IF _lines IS NULL THEN
+                    _payload := _base;
+                ELSE
+                    _payload := _base || '|' || _lines;
+                END IF;
+                _payload := encode(digest(_payload, 'sha256'), 'hex');
+                PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc,''), true);
+                RETURN _payload;
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc,''), true);
+                RAISE;
+            END;
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_directory_coherence(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2684,6 +2785,28 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
 
 
 --
+-- Name: b26_p2_enforce_dispatch_provenance(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _prov text;
+        BEGIN
+            SELECT i.b26_p2_provenance_status INTO _prov
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.id = NEW.webhook_ingress_identity_id
+               AND i.tenant_id = NEW.tenant_id;
+            IF FOUND AND _prov = 'unknown_legacy' THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_provenance_unknown' USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_dispatch_sovereign_window(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2815,6 +2938,55 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigg
                OR (NEW.verified_commerce_ingress_state IS DISTINCT FROM 'authenticity_verified') THEN
                 RAISE EXCEPTION 'b26_p2_ingress_authenticated_conflict'
                     USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_enforce_ingress_provenance(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF TG_OP = 'INSERT' THEN
+                IF NEW.verified_commerce_ingress_state IS DISTINCT FROM 'authenticity_verified' THEN
+                    NEW.b26_p2_provenance_status := 'pending_not_applicable';
+                    RETURN NEW;
+                END IF;
+                IF session_user IN ('app_user', 'migration_owner', 'postgres') THEN
+                    NEW.b26_p2_provenance_status := 'authenticated_known';
+                ELSE
+                    NEW.b26_p2_provenance_status := 'unknown_legacy';
+                END IF;
+                RETURN NEW;
+            END IF;
+            IF TG_OP = 'UPDATE' THEN
+                IF OLD.verified_commerce_ingress_state IS DISTINCT FROM 'authenticity_verified'
+                   AND NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified' THEN
+                    IF session_user IN ('app_user', 'migration_owner', 'postgres') THEN
+                        NEW.b26_p2_provenance_status := 'authenticated_known';
+                    ELSE
+                        NEW.b26_p2_provenance_status := 'unknown_legacy';
+                    END IF;
+                END IF;
+                -- Provenance may only move unknown->known under app_user authority
+                -- (explicit re-verification); known->unknown is forbidden.
+                IF OLD.b26_p2_provenance_status IS DISTINCT FROM NEW.b26_p2_provenance_status THEN
+                    IF OLD.b26_p2_provenance_status = 'authenticated_known'
+                       AND NEW.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known' THEN
+                        RAISE EXCEPTION 'b26_p2_provenance_downgrade_refused' USING ERRCODE = '42501';
+                    END IF;
+                    IF OLD.b26_p2_provenance_status = 'unknown_legacy'
+                       AND NEW.b26_p2_provenance_status = 'authenticated_known'
+                       AND session_user NOT IN ('app_user', 'migration_owner', 'postgres') THEN
+                        RAISE EXCEPTION 'b26_p2_provenance_promotion_refused' USING ERRCODE = '42501';
+                    END IF;
+                END IF;
+                RETURN NEW;
             END IF;
             RETURN NEW;
         END $$;
@@ -3046,6 +3218,9 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
             _old_qual boolean;
             _new_qual boolean;
             _link_moved boolean;
+            _old_ref_present boolean;
+            _new_ref_present boolean;
+            _ref_presence_flipped boolean;
         BEGIN
             IF TG_OP = 'INSERT' THEN
                 _tenant := NEW.tenant_id;
@@ -3091,8 +3266,9 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                                             'matched_confirmed', 'adjusted');
                 _new_qual := NEW.status IN ('matched_provisional',
                                             'matched_confirmed', 'adjusted');
-                -- Old-link conducted parent: regression or removal of the
-                -- consequence it stands on is refused.
+                _old_ref_present := btrim(COALESCE(OLD.canonical_commerce_reference, '')) <> '';
+                _new_ref_present := btrim(COALESCE(NEW.canonical_commerce_reference, '')) <> '';
+                _ref_presence_flipped := _old_ref_present IS DISTINCT FROM _new_ref_present;
                 IF (_old_qual AND NOT _new_qual) OR (_old_qual AND _link_moved) THEN
                     IF OLD.webhook_ingress_identity_id IS NOT NULL THEN
                         IF EXISTS (
@@ -3106,8 +3282,6 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                         END IF;
                     END IF;
                 END IF;
-                -- New-link conducted parent: moving a qualifying consequence
-                -- under a terminal, or qualifying it there, is refused.
                 IF _new_qual AND NEW.webhook_ingress_identity_id IS NOT NULL
                    AND (OLD.webhook_ingress_identity_id IS DISTINCT FROM NEW.webhook_ingress_identity_id
                         OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
@@ -3120,6 +3294,36 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                     ) THEN
                         RAISE EXCEPTION 'b26_p2_conducted_verdict_identity_refused'
                             USING ERRCODE = '42501';
+                    END IF;
+                END IF;
+                -- IX: P2-read reference presence is temporal footprint.
+                -- A presence flip (blank<->non-blank) under a conducted
+                -- parent changes P2 disposition (IN_SCOPE vs UNRESOLVED) and
+                -- must refuse; value-preserving rewrites stay free.
+                IF _ref_presence_flipped THEN
+                    IF OLD.webhook_ingress_identity_id IS NOT NULL AND (_old_qual OR _new_qual) THEN
+                        IF EXISTS (
+                            SELECT 1 FROM public.b23_match_task_dispatches AS d
+                             WHERE d.tenant_id = OLD.tenant_id
+                               AND d.webhook_ingress_identity_id = OLD.webhook_ingress_identity_id
+                               AND d.delivery_state = 'conducted'
+                        ) THEN
+                            RAISE EXCEPTION 'b26_p2_conducted_reference_presence_refused'
+                                USING ERRCODE = '42501';
+                        END IF;
+                    END IF;
+                    IF NEW.webhook_ingress_identity_id IS NOT NULL AND (_old_qual OR _new_qual)
+                       AND (OLD.webhook_ingress_identity_id IS DISTINCT FROM NEW.webhook_ingress_identity_id
+                            OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id) THEN
+                        IF EXISTS (
+                            SELECT 1 FROM public.b23_match_task_dispatches AS d
+                             WHERE d.tenant_id = NEW.tenant_id
+                               AND d.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
+                               AND d.delivery_state = 'conducted'
+                        ) THEN
+                            RAISE EXCEPTION 'b26_p2_conducted_reference_presence_refused'
+                                USING ERRCODE = '42501';
+                        END IF;
                     END IF;
                 END IF;
                 RETURN NEW;
@@ -3160,6 +3364,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             _policy_version text;
             _policy_source text;
             _policy_semantic text;
+            _canonical text;
             _prev_guc text;
             _already boolean := false;
         BEGIN
@@ -3215,7 +3420,6 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                     RAISE EXCEPTION 'b26_p2_conducted_no_outbox'
                         USING ERRCODE = '42501';
                 END IF;
-                -- Sovereign re-verification FIRST (no already_conducted bypass).
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.provider, i.verified_amount_currency
                   INTO _clock, _ingress_state, _ingress_provider, _ingress_currency
@@ -3278,13 +3482,17 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                     RAISE EXCEPTION 'b26_p2_conducted_scope_not_bound'
                         USING ERRCODE = '42501';
                 END IF;
-                -- Meaning binding on every conduction, including idempotent
-                -- replays: a stale-meaning receipt can never re-conduct.
                 IF _receipt_sha IS DISTINCT FROM _policy_semantic THEN
                     RAISE EXCEPTION 'b26_p2_conducted_policy_semantic_not_bound'
                         USING ERRCODE = '42501';
                 END IF;
-                -- Lock verdict rows before counting (gate/verdict race).
+                -- IX canonical binding: receipt scope must equal sovereign
+                -- recomputation for this tenant window at gate time.
+                _canonical := public.b26_p2_canonical_scope_identity_for_window(_tenant, _exp_ws, _exp_we);
+                IF _receipt_scope IS DISTINCT FROM _canonical THEN
+                    RAISE EXCEPTION 'b26_p2_conducted_scope_not_canonical'
+                        USING ERRCODE = '42501';
+                END IF;
                 PERFORM 1 FROM public.b23_match_verdicts AS v
                  WHERE v.tenant_id = _tenant
                    AND v.webhook_ingress_identity_id = _ingress
@@ -3469,6 +3677,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
             _policy_version text;
             _policy_source text;
             _policy_semantic text;
+            _canonical text;
             _prev_guc text;
         BEGIN
             _task := btrim(COALESCE(p_task_id, ''));
@@ -3564,17 +3773,34 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                     RAISE EXCEPTION 'b26_p2_dispatch_window_not_sovereign'
                         USING ERRCODE = '42501';
                 END IF;
+                -- IX canonical consequence binding: caller scope must equal
+                -- sovereign recomputation for this tenant window.
+                _canonical := public.b26_p2_canonical_scope_identity_for_window(_tenant, _exp_ws, _exp_we);
+                IF _scope IS DISTINCT FROM _canonical THEN
+                    RAISE EXCEPTION 'b26_p2_receipt_scope_not_canonical'
+                        USING ERRCODE = '42501';
+                END IF;
                 INSERT INTO public.b26_p2_conduction_receipts (
                     task_id, tenant_id, webhook_ingress_identity_id,
                     window_start, window_end,
                     b23_processed_count, p2_scope_identity,
-                    policy_semantic_sha256
+                    policy_semantic_sha256, ix_meaning_status
                 )
                 VALUES (_task, _tenant, _ingress,
                         _exp_ws, _exp_we,
                         _count, _scope,
-                        _caller_sha)
-                ON CONFLICT (task_id) DO NOTHING;
+                        _caller_sha, 'canonically_bound')
+                ON CONFLICT (task_id) DO UPDATE SET
+                    b23_processed_count = EXCLUDED.b23_processed_count,
+                    p2_scope_identity = EXCLUDED.p2_scope_identity,
+                    policy_semantic_sha256 = EXCLUDED.policy_semantic_sha256,
+                    ix_meaning_status = 'canonically_bound'
+                 WHERE public.b26_p2_conduction_receipts.task_id = EXCLUDED.task_id
+                   AND NOT EXISTS (
+                       SELECT 1 FROM public.b23_match_task_dispatches AS d
+                        WHERE d.task_id = EXCLUDED.task_id
+                          AND d.delivery_state = 'conducted'
+                   );
                 PERFORM set_config('app.current_tenant_id',
                                    COALESCE(_prev_guc, ''), true);
                 RETURN _task;
@@ -3663,6 +3889,49 @@ CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds i
                 stale_unconducted_count = EXCLUDED.stale_unconducted_count,
                 quarantine_count = EXCLUDED.quarantine_count;
             RETURN 'evaluated';
+        END $$;
+
+
+--
+-- Name: b26_p2_record_scheduler_heartbeat(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_record_scheduler_heartbeat() RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _tenant uuid;
+            _prev_guc text;
+        BEGIN
+            IF session_user NOT IN ('app_beat', 'migration_owner', 'postgres') THEN
+                RAISE EXCEPTION 'b26_p2_scheduler_caller_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            IF _prev_guc IS NULL OR btrim(COALESCE(_prev_guc, '')) = '' THEN
+                RAISE EXCEPTION 'b26_p2_scheduler_tenant_missing'
+                    USING ERRCODE = '42501';
+            END IF;
+            BEGIN
+                _tenant := _prev_guc::uuid;
+            EXCEPTION WHEN OTHERS THEN
+                RAISE EXCEPTION 'b26_p2_scheduler_tenant_malformed'
+                    USING ERRCODE = '42501';
+            END;
+            INSERT INTO public.b26_p2_scheduler_heartbeat AS h (
+                tenant_id, last_tick, tick_count, updated_at
+            )
+            VALUES (_tenant, now(), 1, now())
+            ON CONFLICT (tenant_id) DO UPDATE SET
+                last_tick = now(),
+                tick_count = h.tick_count + 1,
+                updated_at = now();
+            RETURN 'scheduled';
         END $$;
 
 
@@ -7396,6 +7665,7 @@ CREATE TABLE public.b26_p2_conduction_receipts (
     p2_scope_identity text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     policy_semantic_sha256 text NOT NULL,
+    ix_meaning_status text DEFAULT 'unknown_legacy_backfill'::text NOT NULL,
     CONSTRAINT ck_b26_p2_receipt_processed_non_negative CHECK ((b23_processed_count >= 0)),
     CONSTRAINT ck_b26_p2_receipt_scope_not_blank CHECK ((char_length(p2_scope_identity) > 0)),
     CONSTRAINT ck_b26_p2_receipt_window_order CHECK ((window_start < window_end))
@@ -7465,6 +7735,20 @@ CREATE TABLE public.b26_p2_execution_quarantine (
 );
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b26_p2_scheduler_heartbeat; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_scheduler_heartbeat (
+    tenant_id uuid NOT NULL,
+    last_tick timestamp with time zone DEFAULT now() NOT NULL,
+    tick_count bigint DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -11971,6 +12255,7 @@ CREATE TABLE public.webhook_ingress_identities (
     verified_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    b26_p2_provenance_status text DEFAULT 'unknown_legacy'::text NOT NULL,
     CONSTRAINT ck_webhook_ingress_amount_minor_non_negative CHECK ((verified_amount_minor >= 0)),
     CONSTRAINT ck_webhook_ingress_amount_scale_non_negative CHECK ((verified_amount_scale >= 0))
 );
@@ -12522,6 +12807,14 @@ ALTER TABLE ONLY public.b26_p2_execution_outbox
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine
     ADD CONSTRAINT b26_p2_execution_quarantine_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: b26_p2_scheduler_heartbeat b26_p2_scheduler_heartbeat_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat
+    ADD CONSTRAINT b26_p2_scheduler_heartbeat_pkey PRIMARY KEY (tenant_id);
 
 
 --
@@ -18925,6 +19218,13 @@ CREATE TRIGGER trg_b26_p2_dispatch_immutability BEFORE INSERT OR UPDATE ON publi
 
 
 --
+-- Name: b23_match_task_dispatches trg_b26_p2_dispatch_provenance; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_dispatch_provenance BEFORE INSERT ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_provenance();
+
+
+--
 -- Name: b23_match_task_dispatches trg_b26_p2_dispatch_sovereign_window; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -18936,6 +19236,13 @@ CREATE TRIGGER trg_b26_p2_dispatch_sovereign_window BEFORE INSERT OR UPDATE OF w
 --
 
 CREATE TRIGGER trg_b26_p2_ingress_duplicate_adoption BEFORE INSERT ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption();
+
+
+--
+-- Name: webhook_ingress_identities trg_b26_p2_ingress_provenance; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_ingress_provenance BEFORE INSERT OR UPDATE OF verified_commerce_ingress_state, b26_p2_provenance_status ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_provenance();
 
 
 --
@@ -18984,7 +19291,7 @@ CREATE TRIGGER trg_b26_p2_result_integrity BEFORE INSERT OR UPDATE OF status ON 
 -- Name: b23_match_verdicts trg_b26_p2_verdict_temporal_conservation; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_b26_p2_verdict_temporal_conservation BEFORE INSERT OR DELETE OR UPDATE OF status, webhook_ingress_identity_id, tenant_id ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation();
+CREATE TRIGGER trg_b26_p2_verdict_temporal_conservation BEFORE INSERT OR DELETE OR UPDATE OF status, webhook_ingress_identity_id, tenant_id, canonical_commerce_reference ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation();
 
 
 --
@@ -19580,6 +19887,14 @@ ALTER TABLE ONLY public.b26_p2_execution_outbox
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine
     ADD CONSTRAINT b26_p2_execution_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
+
+
+--
+-- Name: b26_p2_scheduler_heartbeat b26_p2_scheduler_heartbeat_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat
+    ADD CONSTRAINT b26_p2_scheduler_heartbeat_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 
 --
@@ -20560,6 +20875,12 @@ CREATE POLICY b26_p2_policy_global_read ON public.b26_p2_scope_policy_authority 
 
 
 --
+-- Name: b26_p2_scheduler_heartbeat; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b26_p2_scheduler_heartbeat ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: b26_p2_scope_policy_authority; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -21046,7 +21367,7 @@ ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 -- Name: dead_events_quarantine quarantine_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
 
 --
@@ -21178,7 +21499,7 @@ CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant
 -- Name: investigation_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --
@@ -21501,6 +21822,13 @@ CREATE POLICY tenant_isolation_policy_b26_p2_execution_outbox ON public.b26_p2_e
 --
 
 CREATE POLICY tenant_isolation_policy_b26_p2_execution_quarantine ON public.b26_p2_execution_quarantine USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: b26_p2_scheduler_heartbeat tenant_isolation_policy_b26_p2_scheduler_heartbeat; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b26_p2_scheduler_heartbeat ON public.b26_p2_scheduler_heartbeat USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
 
 --
@@ -21885,14 +22213,14 @@ CREATE POLICY tenant_isolation_policy_webhook_ingress_identities ON public.webho
 -- Name: dead_events_quarantine tenant_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 
 --
 -- Name: dead_events_quarantine tenant_lane_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 
 --
@@ -22010,5 +22338,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict FpBwKyQGv1PS6lji2dqLERnLMgO97y7puPbxmRmHKaRhCr5TET0UYQONZfgiXsb
+\unrestrict ZnQOCBCl63q26o4bVqjaIAactAzc5B0Ev7B3KyelAgmOJgbKpkFjkazfZb674Ar
 

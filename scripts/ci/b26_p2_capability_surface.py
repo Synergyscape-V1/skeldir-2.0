@@ -707,10 +707,12 @@ KNOWN_NON_P2_DEFINERS = frozenset(
 
 KNOWN_P2_DEFINERS = frozenset(
     {
+        "b26_p2_canonical_scope_identity_for_window",
         "b26_p2_mark_conducted",
         "b26_p2_operational_disposition",
         "b26_p2_record_conduction_receipt",
         "b26_p2_record_evaluator_heartbeat",
+        "b26_p2_record_scheduler_heartbeat",
         "b26_p2_resolve_dispatch_authority",
         "b26_p2_stale_unconducted",
     }

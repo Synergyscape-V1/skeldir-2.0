@@ -30,6 +30,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # One-shot: the image HEALTHCHECK probes the API conduction
+    # endpoint, which never serves here. Preserve prior no-check behavior.
+    healthcheck:
+      disable: true
 
   api:
     build:
@@ -80,6 +84,11 @@ services:
         condition: service_healthy
     tmpfs:
       - /tmp/prometheus_multiproc
+    # Generic Celery worker serves no HTTP API: the image HEALTHCHECK
+    # (API conduction probe) never serves here. Preserve prior no-check
+    # behavior instead of inheriting a permanently-failing check.
+    healthcheck:
+      disable: true
 
   worker_b23:
     # B2.6-P2 Corrective IV: the B2.3 worker authors verdict truth under the
@@ -118,6 +127,10 @@ services:
         condition: service_healthy
     tmpfs:
       - /tmp/prometheus_multiproc
+    # B2.3 worker serves no HTTP API: preserve prior no-check behavior
+    # instead of inheriting the API-scoped image HEALTHCHECK.
+    healthcheck:
+      disable: true
 
   relay_b26_p2:
     # B2.6-P2 Corrective V recovery worker: consumes the relay sweep that
@@ -149,6 +162,16 @@ services:
         condition: service_healthy
     tmpfs:
       - /tmp/prometheus_multiproc
+    # B2.6-P2 Corrective IX: the relay process consumes the shipping
+    # conduction observer (scripts/ops/conduction_health_probe.py, shipped
+    # in the image via backend/Dockerfile) against the API service. Fails
+    # closed on scheduler or evaluator absence.
+    healthcheck:
+      test: ["CMD-SHELL", "python /app/scripts/ops/conduction_health_probe.py --url http://api:8000/health/b26-p2-conduction || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   beat:
     # B2.6-P2 Corrective V recovery motor: schedules the relay sweep (plus
@@ -177,6 +200,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # B2.6-P2 Corrective IX: the beat motor is scheduler-liveness truth
+    # (it ticks public.b26_p2_scheduler_heartbeat). Its healthcheck
+    # consumes the same shipping observer as the relay so a dead motor
+    # surfaces even while evaluation looks fresh.
+    healthcheck:
+      test: ["CMD-SHELL", "python /app/scripts/ops/conduction_health_probe.py --url http://api:8000/health/b26-p2-conduction || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   trust-signer:
     # B2.5-P13 Corrective XVII deployment unit. Started only when an operator
@@ -200,6 +233,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Signer serves :8001 and never the conduction endpoint: preserve
+    # prior no-check behavior instead of inheriting the API probe.
+    healthcheck:
+      disable: true
 
   smoke:
     build:
@@ -217,6 +254,9 @@ services:
         condition: service_healthy
       worker:
         condition: service_started
+    # One-shot smoke: preserve prior no-check behavior.
+    healthcheck:
+      disable: true
 
   validator:
     image: python:3.12-slim

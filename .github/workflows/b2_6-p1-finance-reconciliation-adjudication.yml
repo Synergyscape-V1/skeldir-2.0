@@ -83,6 +83,27 @@ jobs:
             --evidence-out artifacts/b26_p2/static/negative-controls.json
           git diff --exit-code
 
+      - name: Prove B2.6-P2 Corrective-IX consequence authority
+        run: |
+          python scripts/ci/validate_b26_p2_ix_consequence.py \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-IX semantic universe
+        run: |
+          python scripts/ci/validate_b26_p2_ix_semantic.py \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-IX policy evolution law
+        run: |
+          python scripts/ci/validate_b26_p2_ix_policy.py \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-IX authority-effect policy
+        run: |
+          python scripts/ci/validate_b26_p2_ix_authority.py \
+            --evidence-dir artifacts/b26_p2/static
+          git diff --exit-code -- scripts/ci/validate_b26_p2_ix_consequence.py scripts/ci/validate_b26_p2_ix_semantic.py scripts/ci/validate_b26_p2_ix_policy.py scripts/ci/validate_b26_p2_ix_authority.py contracts-internal/governance/b26_p2_semantic_universe.pin.json
+
       - name: Provision consequence-battery database
         run: |
           python scripts/database/prepare_migration_authority_boundary.py \

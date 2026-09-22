@@ -322,3 +322,45 @@ BEGIN
         GRANT EXECUTE ON FUNCTION public.b26_p2_record_evaluator_heartbeat(integer) TO app_beat;
     END IF;
 END $$;
+
+-- === 202609230001 Corrective IX: canonical consequence authority ===
+-- Source of truth is the 202609230001 migration. The sovereign DB mirror
+-- of the canonical P2 scope (consumed by the recorder and the gate alike)
+-- is readable by the worker and the API issuer; it writes nothing and
+-- holds no table authority.
+REVOKE ALL ON FUNCTION public.b26_p2_canonical_scope_identity_for_window(uuid, timestamptz, timestamptz) FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_canonical_scope_identity_for_window(uuid, timestamptz, timestamptz) TO app_worker;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_canonical_scope_identity_for_window(uuid, timestamptz, timestamptz) TO app_user;
+    END IF;
+END $$;
+
+-- === 202609230001 Corrective IX: scheduler liveness separated ===
+-- Source of truth is the 202609230001 migration. Scheduler liveness is
+-- writable only by the beat principal; manual evaluation (relay) cannot
+-- manufacture scheduler health. Reads mirror the evaluator-heartbeat
+-- shape (beat writes, issuer/relay read).
+REVOKE ALL ON TABLE public.b26_p2_scheduler_heartbeat FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_beat') THEN
+        GRANT SELECT, INSERT, UPDATE ON TABLE public.b26_p2_scheduler_heartbeat TO app_beat;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        GRANT SELECT ON TABLE public.b26_p2_scheduler_heartbeat TO app_user;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_relay') THEN
+        GRANT SELECT ON TABLE public.b26_p2_scheduler_heartbeat TO app_relay;
+    END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.b26_p2_record_scheduler_heartbeat() FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_beat') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_record_scheduler_heartbeat() TO app_beat;
+    END IF;
+END $$;

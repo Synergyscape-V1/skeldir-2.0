@@ -347,6 +347,32 @@ def _seed_verdict(
         conn.close()
 
 
+def _canonical_scope_for_task(task: str) -> str:
+    """Corrective IX canonical scope: sovereign DB recomputation for the task window."""
+    import psycopg2
+
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT tenant_id, window_start, window_end"
+                " FROM public.b26_p2_task_authority_directory WHERE task_id=%s",
+                (task,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise AssertionError("missing directory for %s" % task)
+            tenant, ws, we = row[0], row[1], row[2]
+            cur.execute(
+                "SELECT public.b26_p2_canonical_scope_identity_for_window(%s,%s,%s)",
+                (str(tenant), ws, we),
+            )
+            return str(cur.fetchone()[0])
+    finally:
+        admin.close()
+
+
 # ======================================================================
 # R6: root-authority experiment family (H-VI-A01..A06).
 # ======================================================================
@@ -717,6 +743,7 @@ def test_vi_cp6_12_pending_verdict_never_conducts() -> None:
     )
     import psycopg2
 
+    scope = _canonical_scope_for_task(task_id)
     worker_dsn = _role_dsn("app_worker")
     conn = psycopg2.connect(worker_dsn)
     conn.autocommit = True
@@ -724,7 +751,7 @@ def test_vi_cp6_12_pending_verdict_never_conducts() -> None:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
-                (task_id, SCOPE_HEX, 1, _P2_POLICY_SEMANTIC_SHA_V2),
+                (task_id, scope, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
 
             def attempt() -> None:
@@ -751,6 +778,7 @@ def test_vi_cp6_01_lawful_conduction_still_converges() -> None:
     )
     import psycopg2
 
+    scope = _canonical_scope_for_task(task_id)
     worker_dsn = _role_dsn("app_worker")
     conn = psycopg2.connect(worker_dsn)
     conn.autocommit = True
@@ -758,7 +786,7 @@ def test_vi_cp6_01_lawful_conduction_still_converges() -> None:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
-                (task_id, SCOPE_HEX, 1, _P2_POLICY_SEMANTIC_SHA_V2),
+                (task_id, scope, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute(
                 "SELECT public.b26_p2_mark_conducted(%s)", (task_id,)
@@ -1491,9 +1519,12 @@ def test_vi_worker_verdict_maturity_duty() -> None:
                 " WHERE tenant_id = %s AND webhook_ingress_identity_id = %s",
                 (str(ids["tenant_id"]), str(ids["ingress_id"])),
             )
+            # IX: canonical scope must be derived after B2.3 maturation,
+            # otherwise UNRESOLVED (pending) vs IN_SCOPE (confirmed) mismatch.
+            scope = _canonical_scope_for_task(task_id)
             cur.execute(
                 "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
-                (task_id, SCOPE_HEX, 1, _P2_POLICY_SEMANTIC_SHA_V2),
+                (task_id, scope, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute(
                 "SELECT public.b26_p2_mark_conducted(%s)", (task_id,)

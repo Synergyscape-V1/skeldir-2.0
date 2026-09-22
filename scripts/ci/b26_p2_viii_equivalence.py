@@ -240,6 +240,40 @@ def _completion_outcome(admin_dsn: str, state: dict) -> tuple:
         admin2.close()
     from app.finance_reconciliation.scope_authority import scope_policy_identity
 
+    # IX (migration 202609230001): the recorder requires caller scope ==
+    # sovereign DB recomputation
+    #   public.b26_p2_canonical_scope_identity_for_window(tenant, ws, we).
+    # Compute the canonical scope via an admin connection after seeding
+    # dispatch/outbox/directory + publishing + verdict, and use it for the
+    # lawful record call (SCOPE_HEX is retained for documentation only).
+    # Blank provider/currency states raise blank_shape here; map to a
+    # gate refusal so the P2 REFUSAL vs gate-refuse differential is
+    # preserved. No-verdict states still flow to the gate and refuse with
+    # no_b23_consequence there.
+    try:
+        canon_conn = psycopg2.connect(admin_dsn)
+        canon_conn.autocommit = True
+        try:
+            with canon_conn.cursor() as cur:
+                cur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (str(tenant),),
+                )
+                cur.execute(
+                    "SELECT public.b26_p2_canonical_scope_identity_for_window"
+                    "(%s, %s, %s)",
+                    (str(tenant), ws, we),
+                )
+                row = cur.fetchone()
+                canonical_scope = str(row[0]) if row and row[0] else ""
+        finally:
+            canon_conn.close()
+    except Exception as exc:
+        msg = str(exc).splitlines()[0][:100] if str(exc) else "unknown"
+        if "blank" in msg.lower():
+            return (False, "gate_refuse:canonical_blank_shape")
+        return (False, "gate_refuse:canonical:%s" % msg)
+
     worker = psycopg2.connect(_role_dsn(admin_dsn, "app_worker"))
     worker.autocommit = True
     try:
@@ -247,7 +281,7 @@ def _completion_outcome(admin_dsn: str, state: dict) -> tuple:
             try:
                 cur.execute(
                     "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
-                    (task, SCOPE_HEX, 1, scope_policy_identity().semantic_sha256),
+                    (task, canonical_scope, 1, scope_policy_identity().semantic_sha256),
                 )
                 cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
                 return (True, "conducted:%s" % cur.fetchone()[0])

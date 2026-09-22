@@ -78,6 +78,20 @@ def _b26_p2_relay_sweep_interval_seconds() -> float:
     return float(_positive_int_env("B26_P2_RELAY_SWEEP_INTERVAL_SECONDS", 60))
 
 
+def _b26_p2_scheduler_heartbeat_interval_seconds() -> float:
+    """Return the production P2 scheduler-heartbeat tick cadence.
+
+    Corrective IX separation: scheduler liveness
+    (public.b26_p2_scheduler_heartbeat) is ticked by the beat principal
+    only, on the same cadence as the relay sweep / operational-health
+    evaluator so the API's threshold*4 absence law observes all three
+    from one cadence. The evaluator (app_relay) cannot tick it: the DB
+    function refuses non-beat callers, so misrouting fails closed.
+    """
+
+    return float(_positive_int_env("B26_P2_SCHEDULER_HEARTBEAT_INTERVAL_SECONDS", 60))
+
+
 def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
     interval = _refresh_interval_seconds()
     recovery_interval = _bayesian_recovery_interval_seconds()
@@ -151,6 +165,25 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
                 "expires": max(int(relay_interval), 1) * 2,
                 "queue": QUEUE_B26_P2_RELAY,
                 "routing_key": f"{QUEUE_B26_P2_RELAY}.task",
+            },
+        }
+    # Corrective IX scheduler-liveness ticker: beat-scheduled on the same
+    # cadence as the relay sweep / evaluator so the API threshold*4
+    # absence law observes scheduler and evaluation from one cadence.
+    # The task MUST be consumed under the beat principal (app_beat): the
+    # DB function refuses app_relay, so routing this to the relay queue
+    # fails closed by design. No queue override is set here; production
+    # provides an app_beat-principal consumer (local compose documents
+    # the gap: no beat-principal worker exists there). The disable flag
+    # exists ONLY for the falsifier (ticker removed -> scheduler_absent
+    # fires while evaluation stays fresh); no production topology sets it.
+    if os.getenv("SKELDIR_B26_P2_DISABLE_SCHEDULER_HEARTBEAT_JOB") != "1":
+        scheduler_interval = _b26_p2_scheduler_heartbeat_interval_seconds()
+        schedule["b26-p2-scheduler-heartbeat"] = {
+            "task": "app.tasks.b26_p2_health.tick_b26_p2_scheduler_heartbeat",
+            "schedule": scheduler_interval,
+            "options": {
+                "expires": max(int(scheduler_interval), 1) * 2,
             },
         }
     if os.getenv("SKELDIR_B25_DISABLE_TRUST_ISSUANCE_RECONCILER_JOB") != "1":

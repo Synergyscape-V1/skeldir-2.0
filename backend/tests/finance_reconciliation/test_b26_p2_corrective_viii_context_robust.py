@@ -250,16 +250,43 @@ def _publish_and_verdict(
         conn.close()
 
 
+def _canonical_scope_for_task(task: str) -> str:
+    """IX canonical scope: sovereign DB recomputation for the task window."""
+    import psycopg2
+
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT tenant_id, window_start, window_end"
+                " FROM public.b26_p2_task_authority_directory WHERE task_id=%s",
+                (task,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise AssertionError("missing directory for %s" % task)
+            tenant, ws, we = row[0], row[1], row[2]
+            cur.execute(
+                "SELECT public.b26_p2_canonical_scope_identity_for_window(%s,%s,%s)",
+                (str(tenant), ws, we),
+            )
+            return str(cur.fetchone()[0])
+    finally:
+        admin.close()
+
+
 def _conduct(task: str) -> str:
     import psycopg2
 
+    scope = _canonical_scope_for_task(task)
     worker = psycopg2.connect(_role_dsn("app_worker"))
     worker.autocommit = True
     try:
         with worker.cursor() as cur:
             cur.execute(
                 "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
-                (task, SCOPE_HEX, 1, _P2_POLICY_SEMANTIC_SHA_V2),
+                (task, scope, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
             return str(cur.fetchone()[0])
@@ -411,9 +438,10 @@ def test_pm8_recorder_requires_semantic_binding():
                     "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
                     (task, SCOPE_HEX, 1, "00" * 32),
                 )
+            scope = _canonical_scope_for_task(task)
             cur.execute(
                 "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
-                (task, SCOPE_HEX, 1, _P2_POLICY_SEMANTIC_SHA_V2),
+                (task, scope, 1, _P2_POLICY_SEMANTIC_SHA_V2),
             )
             cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
             assert cur.fetchone()[0] == "conducted"
