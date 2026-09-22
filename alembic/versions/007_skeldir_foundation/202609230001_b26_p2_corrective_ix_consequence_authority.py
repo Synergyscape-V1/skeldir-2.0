@@ -1407,7 +1407,7 @@ def downgrade() -> None:
         "DROP FUNCTION IF EXISTS public.b26_p2_record_scheduler_heartbeat()"
     )
     op.execute(
-        "DROP TABLE IF EXISTS public.b26_p2_scheduler_heartbeat"
+        "DROP TABLE IF EXISTS public.b26_p2_scheduler_heartbeat"  # CI:DESTRUCTIVE_OK - reversible rollback removes the IX-only scheduler-liveness table (operational state, never financial truth).
     )
     op.execute(
         "ALTER TABLE public.webhook_ingress_identities DROP COLUMN IF EXISTS b26_p2_provenance_status"  # CI:DESTRUCTIVE_OK - reversible rollback for IX provenance law.

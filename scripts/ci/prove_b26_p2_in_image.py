@@ -55,27 +55,49 @@ IDENTITY_FILES = [
     "alembic/versions/007_skeldir_foundation/202609230001_b26_p2_corrective_ix_consequence_authority.py",
 ]
 
-PROBE_WORKER_VERIFIED = '''
+PROBE_JUNK_SCOPE = '''
 import os, psycopg2, uuid
+from datetime import datetime, timezone
+DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
+DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
+DAY_NOON = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+POLICY_SHA = "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"
 admin = psycopg2.connect(os.environ["PROBE_ADMIN_DSN"])
 admin.autocommit = True
 ac = admin.cursor()
 t = str(uuid.uuid4())
-ac.execute("INSERT INTO public.tenants (id, name, api_key_hash, notification_email) VALUES (%s, %s, %s, %s)", (t, "probe", t, "p@x.invalid"))
+tag = uuid.uuid4().hex[:8]
+ac.execute("INSERT INTO public.tenants (id, name, api_key_hash, notification_email) VALUES (%s, %s, %s, %s)", (t, "probe-" + tag, uuid.uuid4().hex, tag + "@x.invalid"))
 ac.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
 ac.execute("INSERT INTO public.channel_taxonomy (code, family, is_paid, display_name, state) VALUES ('probe_ch', 'p', true, 'P', 'active') ON CONFLICT (code) DO NOTHING")
 e = str(uuid.uuid4())
-ac.execute("INSERT INTO public.attribution_events (id, tenant_id, occurred_at, correlation_id, session_id, revenue_cents, raw_payload, idempotency_key, event_type, channel, campaign_id, conversion_value_cents, currency, event_timestamp, processed_at, processing_status) VALUES (%s, %s, now(), %s, %s, 1, '{}', %s, 'conversion', 'probe_ch', 'c', 1, 'USD', now(), now(), 'processed')", (e, t, t, t, t))
+ing = str(uuid.uuid4())
+ac.execute("INSERT INTO public.attribution_events (id, tenant_id, occurred_at, correlation_id, session_id, revenue_cents, raw_payload, idempotency_key, event_type, channel, campaign_id, conversion_value_cents, currency, event_timestamp, processed_at, processing_status) VALUES (%s, %s, %s, %s, %s, 38000, '{}'::jsonb, %s, 'conversion', 'probe_ch', 'c', 38000, 'USD', %s, %s, 'processed')", (e, t, DAY_NOON, str(uuid.uuid4()), str(uuid.uuid4()), "probe:" + tag, DAY_NOON, DAY_NOON))
+ac.execute("INSERT INTO public.webhook_ingress_identities (id, tenant_id, event_id, provider, provider_native_event_reference, provider_native_commerce_reference, normalized_commerce_reference_kind, normalized_commerce_reference_value, verified_amount_minor, verified_amount_currency, event_timestamp, idempotency_key, verified_commerce_ingress_state) VALUES (%s, %s, %s, 'stripe', %s, %s, 'order_reference', %s, 38000, 'USD', %s, %s, 'authenticity_verified')", (ing, t, e, "evt-" + tag, "ord-" + tag, "ord-" + tag, DAY_NOON, "probe:" + tag))
+task = "probe-junk-" + tag
+user_dsn = os.environ["PROBE_WORKER_DSN"].replace("app_worker:app_worker", "app_user:app_user")
+u = psycopg2.connect(user_dsn)
+u.autocommit = True
+uc = u.cursor()
+uc.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
+uc.execute("INSERT INTO public.b23_match_task_dispatches (tenant_id, webhook_ingress_identity_id, task_id, task_name, queue, routing_key, correlation_id, provider, provider_native_event_reference, provider_native_commerce_reference, normalized_commerce_reference_value, window_start, window_end) VALUES (%s, %s, %s, 'app.tasks.revenue_verification.execute_b23_batch_match_engine', 'b23_match_engine', 'b23_match_engine.task', %s, 'stripe', 'evt', 'ord', 'ord', %s, %s)", (t, ing, task, str(uuid.uuid4()), DAY_START, DAY_END))
+uc.execute("INSERT INTO public.b26_p2_execution_outbox (tenant_id, dispatch_task_id, webhook_ingress_identity_id) VALUES (%s, %s, %s)", (t, task, ing))
+uc.execute("INSERT INTO public.b26_p2_task_authority_directory (task_id, tenant_id, webhook_ingress_identity_id, window_start, window_end) VALUES (%s, %s, %s, %s, %s)", (task, t, ing, DAY_START, DAY_END))
+u.close()
+ac.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
+ac.execute("UPDATE public.b23_match_task_dispatches SET delivery_state='published', first_published_at=now() WHERE task_id=%s", (task,))
+ac.execute("UPDATE public.b26_p2_execution_outbox SET state='published' WHERE dispatch_task_id=%s", (task,))
+ac.execute("INSERT INTO public.b23_match_verdicts (tenant_id, attribution_event_id, webhook_ingress_identity_id, provider, canonical_commerce_reference, provider_native_event_reference, provider_native_commerce_reference, status, match_quality, attributed_amount_minor, verified_amount_minor, currency_code, canonical_expected_gross_amount_minor, canonical_captured_gross_amount_minor, canonical_net_verified_amount_minor, discrepancy_amount_minor, discrepancy_ratio_bps, discrepancy_band) VALUES (%s, %s, %s, 'stripe', 'ord', 'evt', 'ord', 'matched_confirmed', 'high', 38000, 38000, 'USD', 38000, 38000, 38000, 0, 0, 'exact')", (t, e, ing))
 admin.close()
 w = psycopg2.connect(os.environ["PROBE_WORKER_DSN"])
 w.autocommit = True
 wc = w.cursor()
-wc.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
 try:
-    wc.execute("INSERT INTO public.webhook_ingress_identities (id, tenant_id, event_id, provider, provider_native_event_reference, provider_native_commerce_reference, normalized_commerce_reference_kind, normalized_commerce_reference_value, verified_amount_minor, verified_amount_currency, event_timestamp, idempotency_key, verified_commerce_ingress_state) VALUES (%s, %s, %s, 'stripe', 'e', 'o', 'order_reference', 'o', 1, 'USD', now(), %s, 'authenticity_verified')", (str(uuid.uuid4()), t, e, t))
-    print("WORKER_VERIFIED_ACCEPTED")
+    wc.execute("SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)", (task, "ab" * 32, 1, POLICY_SHA))
+    wc.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
+    print("STALE_JUNK_SCOPE_" + str(wc.fetchone()[0]).upper())
 except Exception as exc:
-    print("WORKER_VERIFIED_REFUSED:" + str(exc).splitlines()[0][:100])
+    print("STALE_JUNK_SCOPE_REFUSED:" + str(exc).splitlines()[0][:100])
 '''
 
 
@@ -309,14 +331,16 @@ def main() -> int:
             return _fail(details, f"in_image_migrate_failed:{proc.stderr[-1500:]}")
         details["in_image_migrate"] = "PASS"
 
-        # 2. VIII battery with the image's interpreter. The production
-        # image deliberately excludes backend/tests (TCB hygiene); the
-        # battery file is mounted read-only at its canonical path. The
-        # mount adds only test harness bytes (no image path is shadowed);
-        # every app byte under test resolves inside the image. The OB8
-        # wiring cells read deployment artifacts (compose/monitoring)
-        # that likewise ship outside the image; they are mounted
-        # read-only for the same reason.
+        # 2. VIII + IX batteries with the image's interpreter. The
+        # production image deliberately excludes backend/tests (TCB
+        # hygiene); the battery files are mounted read-only at their
+        # canonical paths. The mount adds only test harness bytes (no
+        # image path is shadowed); every app byte under test resolves
+        # inside the image. The OB8 wiring cells read deployment
+        # artifacts (compose/monitoring) that likewise ship outside the
+        # image; they are mounted read-only for the same reason. The IX
+        # battery proves the candidate refuses invented scope digests on
+        # these exact bytes (the counterpart of the stale falsifier).
         tests_mounts = [
             f"{REPO_ROOT / 'backend' / 'tests'}:/app/backend/tests:ro",
             f"{REPO_ROOT / 'monitoring'}:/app/monitoring:ro",
@@ -326,6 +350,7 @@ def main() -> int:
             args.image_tag,
             ["python", "-m", "pytest",
              "tests/finance_reconciliation/test_b26_p2_corrective_viii_context_robust.py",
+             "tests/finance_reconciliation/test_b26_p2_corrective_ix_consequence.py",
              "-q", "-o", "asyncio_mode=auto", "-p", "no:cacheprovider"],
             env={"DATABASE_URL":
                  f"postgresql+asyncpg://app_user:app_user@pg:5432/{DB_NAME}",
@@ -425,8 +450,9 @@ def main() -> int:
         if am8.get("status") != "PASS":
             return _fail(details, f"am8_cycle_fail:{am8.get('failure')}")
 
-        # 6. Stale falsifier: base-tree image must ACCEPT the worker mint
-        # the candidate refuses (the proof distinguishes the artifacts).
+        # 6. Stale falsifier: base-tree image must ACCEPT the invented
+        # scope digest the candidate refuses (the proof distinguishes the
+        # artifacts on the IX consequence-authority delta).
         if args.base_sha:
             base_tag = f"{args.image_tag}-base"
             worktree = REPO_ROOT / ".viii-base-tree"
@@ -479,7 +505,7 @@ def main() -> int:
                 if proc.returncode != 0:
                     return _fail(details, "stale_migrate_failed:"
                                  + (proc.stdout + proc.stderr)[-800:])
-                probe = PROBE_WORKER_VERIFIED
+                probe = PROBE_JUNK_SCOPE
                 cmd = ["run", "--rm", "--network", NETWORK]
                 for k, v in stale_env.items():
                     cmd += ["-e", f"{k}={v}"]
@@ -493,9 +519,13 @@ def main() -> int:
                     base_tag, "python", "-c", probe,
                 ]
                 proc = _docker(*cmd)
-                # Base (VII) physics ACCEPTS the worker mint: the probe
-                # printing ACCEPTED proves the falsifier is non-vacuous.
-                if proc.returncode != 0 or "WORKER_VERIFIED_ACCEPTED" not in proc.stdout:
+                # Base (VIII) physics ACCEPTS a valid-shape worker-invented
+                # scope digest the candidate refuses: the probe printing
+                # STALE_JUNK_SCOPE_CONDUCTED proves the falsifier is
+                # non-vacuous (it distinguishes the artifacts on the
+                # IX-defining behavioral delta, not on VII-era minting
+                # that VIII already closed).
+                if proc.returncode != 0 or "STALE_JUNK_SCOPE_CONDUCTED" not in proc.stdout:
                     return _fail(
                         details,
                         "stale_falsifier_vacuous:base_did_not_accept:"
