@@ -385,22 +385,52 @@ jobs:
       - name: Prove B2.6-P2 Corrective-X artifact identity
         # Corrective X build-once law: the exact digest receiving
         # load-bearing proof is recorded; a substituted image is RED.
+        # Container tooling runs here (authorized workflow surface);
+        # the validator adjudicates presented facts only.
         run: |
+          set -euo pipefail
+          _X_TAG="skeldir-b26-p1:${{ github.sha }}"
+          _X_ID="$(docker image inspect "$_X_TAG" --format '{{.Id}}')"
+          _X_DIGESTS="$(docker image inspect "$_X_TAG" --format '{{json .RepoDigests}}')"
+          _X_TREE="$(git rev-parse 'HEAD^{tree}')"
+          _X_FROM="$(grep -m1 '^FROM ' backend/Dockerfile)"
+          if docker run --rm "$_X_TAG" test -f /app/scripts/ops/conduction_health_probe.py; then
+            _X_PROBE="--probe-in-image"
+          else
+            _X_PROBE=""
+          fi
+          # shellcheck disable=SC2086
           python scripts/ci/validate_b26_p2_x_artifact.py \
-            --image-tag skeldir-b26-p1:${{ github.sha }} \
+            --image-tag "$_X_TAG" \
+            --image-id "$_X_ID" \
+            --repo-digests "$_X_DIGESTS" \
+            --tree-sha "$_X_TREE" \
+            --commit-sha "$B26_CANDIDATE_SHA" \
+            --base-image-ref "$_X_FROM" \
+            $_X_PROBE \
             --evidence-out artifacts/b26_p2/container/x-artifact.json
-          _X_DIGEST="$(docker image inspect skeldir-b26-p1:${{ github.sha }} --format '{{.Id}}')"
+          # shellcheck disable=SC2086
           python scripts/ci/validate_b26_p2_x_artifact.py \
-            --image-tag skeldir-b26-p1:${{ github.sha }} \
-            --expect-digest "$_X_DIGEST" \
+            --image-tag "$_X_TAG" \
+            --image-id "$_X_ID" \
+            --repo-digests "$_X_DIGESTS" \
+            --tree-sha "$_X_TREE" \
+            --commit-sha "$B26_CANDIDATE_SHA" \
+            --base-image-ref "$_X_FROM" \
+            $_X_PROBE \
+            --expect-digest "$_X_ID" \
             --evidence-out artifacts/b26_p2/container/x-artifact-pinned.json
           if python scripts/ci/validate_b26_p2_x_artifact.py \
-            --image-tag skeldir-b26-p1:${{ github.sha }} \
+            --image-tag "$_X_TAG" \
+            --image-id "$_X_ID" \
+            --tree-sha "$_X_TREE" \
+            --commit-sha "$B26_CANDIDATE_SHA" \
+            --base-image-ref "$_X_FROM" \
             --expect-digest sha256:0000000000000000000000000000000000000000000000000000000000000000; then
             echo "B26-P2-X substitution witness blind"
             exit 1
           fi
-          echo "$_X_DIGEST" > artifacts/b26_p2/container/x-tested-digest.txt
+          echo "$_X_ID" > artifacts/b26_p2/container/x-tested-digest.txt
 
       - name: Publish tested image bytes (build-once transport)
         run: |
@@ -470,10 +500,28 @@ jobs:
 
       - name: Load and identify transported image
         run: |
+          set -euo pipefail
           docker load -i "${RUNNER_TEMP}/b26-p2-image/b26-p2-tested-image.tar"
           docker tag skeldir-b26-p1:${{ github.sha }} skeldir-b26-p1-transported:${{ github.sha }}
+          _X_TAG="skeldir-b26-p1-transported:${{ github.sha }}"
+          _X_ID="$(docker image inspect "$_X_TAG" --format '{{.Id}}')"
+          _X_DIGESTS="$(docker image inspect "$_X_TAG" --format '{{json .RepoDigests}}')"
+          _X_TREE="$(git rev-parse 'HEAD^{tree}')"
+          _X_FROM="$(grep -m1 '^FROM ' backend/Dockerfile)"
+          if docker run --rm "$_X_TAG" test -f /app/scripts/ops/conduction_health_probe.py; then
+            _X_PROBE="--probe-in-image"
+          else
+            _X_PROBE=""
+          fi
+          # shellcheck disable=SC2086
           python scripts/ci/validate_b26_p2_x_artifact.py \
-            --image-tag skeldir-b26-p1-transported:${{ github.sha }} \
+            --image-tag "$_X_TAG" \
+            --image-id "$_X_ID" \
+            --repo-digests "$_X_DIGESTS" \
+            --tree-sha "$_X_TREE" \
+            --commit-sha "$B26_CANDIDATE_SHA" \
+            --base-image-ref "$_X_FROM" \
+            $_X_PROBE \
             --evidence-out artifacts/b26_p2/in-image/x-artifact-transported.json
 
       - name: Upload in-image proof evidence

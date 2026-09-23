@@ -1,18 +1,26 @@
 #!/usr/bin/env python3
-"""B2.6-P2 Corrective X tested-artifact identity validator.
+"""B2.6-P2 Corrective X tested-artifact identity adjudicator.
 
 Build-once law: the candidate tree produces ONE immutable image; every
-load-bearing proof runs against that exact digest; deployment selects
-that digest, never a rebuild. This validator:
+  load-bearing proof runs against that exact digest; deployment selects
+  that digest, never a rebuild. This script adjudicates PRESENTED facts
+  only -- it invokes no container tooling itself (all image inspection
+  happens in the already-authorized workflow surface, which passes facts
+  here as arguments):
 
-1. Resolves the image digest (docker image inspect Id + RepoDigests).
-2. Records the Dockerfile base (digest-pinning is M1 local-dev
-   authority and cannot be landed from this seat: an unpinned base or
-   an unshipped probe is RECORDED here, never waived, and tracked as
-   an explicit residual in the remediation report).
-3. Binds tree SHA + migration head + digest into one manifest.
-4. With --expect-digest, refuses a substituted image (post-proof
-   rebuild without re-proof is RED, never assumed equivalent).
+  --image-id        resolved image digest (sha256:64hex), REQUIRED
+  --repo-digests    registry digest list as reported (optional)
+  --tree-sha        candidate tree SHA (optional but expected)
+  --commit-sha      candidate commit SHA (optional but expected)
+  --base-image-ref  base image reference line (Dockerfile FROM)
+  --probe-in-image  flag: the health probe ships inside the image
+  --expect-digest   required digest: mismatch is post-proof
+                    substitution and is RED, never assumed equivalent
+
+Base-image pinning and probe shipping live in M1-owned files and
+cannot be landed from this seat without waiving M1 scope: an unpinned
+base or an unshipped probe is RECORDED here, never waived, and tracked
+as an explicit residual in the remediation report.
 
 Exit code is the gate: 0 on PASS, 1 plus a violation list on FAIL.
 """
@@ -21,34 +29,25 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DOCKERFILE = REPO_ROOT / "backend" / "Dockerfile"
-PROBE_IN_IMAGE = "/app/scripts/ops/conduction_health_probe.py"
-
-
-def _run(args: list[str]) -> tuple[int, str]:
-    try:
-        proc = subprocess.run(
-            args, capture_output=True, text=True, timeout=120,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return 127, ""
-    return proc.returncode, (proc.stdout or "").strip()
-
-
-def _git(args: list[str]) -> tuple[bool, str]:
-    rc, out = _run(["git", *args])
-    return rc == 0, out
+_IMAGE_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate B2.6-P2 Corrective X artifact identity."
+        description="Adjudicate B2.6-P2 Corrective X artifact identity."
     )
-    parser.add_argument("--image-tag", default=None)
+    parser.add_argument("--image-tag", default="")
+    parser.add_argument("--image-id", default=None)
+    parser.add_argument("--repo-digests", default="")
+    parser.add_argument("--tree-sha", default="")
+    parser.add_argument("--commit-sha", default="")
+    parser.add_argument("--base-image-ref", default="")
+    parser.add_argument(
+        "--probe-in-image", action="store_true", default=False
+    )
     parser.add_argument("--expect-digest", default=None)
     parser.add_argument("--evidence-dir", type=Path, default=None)
     parser.add_argument("--evidence-out", type=Path, default=None)
@@ -56,70 +55,39 @@ def main() -> int:
     violations: list[str] = []
     checks: dict[str, object] = {}
     try:
-        if not args.image_tag:
-            violations.append("x_artifact_image_tag_required")
-            checks["image"] = "missing_tag"
+        if not args.image_id or not _IMAGE_ID_RE.match(args.image_id):
+            violations.append("x_artifact_image_id_missing_or_malformed")
+            checks["image_id"] = args.image_id or ""
         else:
-            rc, image_id = _run(
-                ["docker", "image", "inspect", args.image_tag,
-                 "--format", "{{.Id}}"]
-            )
-            if rc != 0 or not image_id:
+            checks["image_tag"] = args.image_tag
+            checks["image_id"] = args.image_id
+            checks["repo_digests"] = args.repo_digests
+            if args.expect_digest and args.image_id != args.expect_digest:
                 violations.append(
-                    f"x_artifact_image_unresolvable:{args.image_tag}"
+                    "x_artifact_post_proof_substitution:"
+                    f"expected={args.expect_digest[:19]}"
+                    f" observed={args.image_id[:19]}"
                 )
-                checks["image"] = "unresolvable"
+                checks["substitution"] = "RED_post_proof_image_replaced"
             else:
-                checks["image_tag"] = args.image_tag
-                checks["image_id"] = image_id
-                _rc, digests = _run(
-                    ["docker", "image", "inspect", args.image_tag,
-                     "--format", "{{json .RepoDigests}}"]
-                )
-                checks["repo_digests"] = digests
-                if args.expect_digest and image_id != args.expect_digest:
-                    violations.append(
-                        "x_artifact_post_proof_substitution:"
-                        f"expected={args.expect_digest[:19]}"
-                        f" observed={image_id[:19]}"
-                    )
-                    checks["substitution"] = "RED_post_proof_image_replaced"
-                else:
-                    checks["substitution"] = "none_or_matches"
-                rc, _ = _run(
-                    ["docker", "run", "--rm", args.image_tag,
-                     "test", "-f", PROBE_IN_IMAGE]
-                )
-                checks["probe_in_image"] = rc == 0
-                if rc != 0:
-                    checks["probe_ship_residual"] = (
-                        "probe_not_in_image_requires_m1_coordination"
-                    )
-        try:
-            from_text = DOCKERFILE.read_text(encoding="utf-8")
-        except OSError:
-            from_text = ""
-        first_from = ""
-        for line in from_text.splitlines():
-            if line.strip().upper().startswith("FROM "):
-                first_from = line.strip()
-                break
-        checks["dockerfile_from"] = first_from
-        # M1 coordination residual: base pinning and probe shipping
-        # live in M1-owned files (backend/Dockerfile) and cannot be
-        # landed from this seat without waiving M1 scope (see the
-        # remediation report). Recorded as fact; never a PASS here.
-        checks["base_digest_pinned"] = "@sha256:" in first_from
-        if "@sha256:" not in first_from:
+                checks["substitution"] = "none_or_matches"
+        checks["tree_sha"] = args.tree_sha
+        if not args.tree_sha:
+            violations.append("x_artifact_tree_unresolvable")
+        checks["commit_sha"] = args.commit_sha
+        if not args.commit_sha:
+            violations.append("x_artifact_commit_unresolvable")
+        checks["base_image_ref"] = args.base_image_ref
+        checks["base_digest_pinned"] = "@sha256:" in args.base_image_ref
+        if "@sha256:" not in args.base_image_ref:
             checks["base_pin_residual"] = (
                 "unpinned_base_requires_m1_coordination"
             )
-        ok, tree = _git(["rev-parse", "HEAD^{tree}"])
-        checks["tree_sha"] = tree if ok else ""
-        if not ok or not tree:
-            violations.append("x_artifact_tree_unresolvable")
-        ok, head = _git(["log", "-1", "--format=%H"])
-        checks["commit_sha"] = head if ok else ""
+        checks["probe_in_image"] = bool(args.probe_in_image)
+        if not args.probe_in_image:
+            checks["probe_ship_residual"] = (
+                "probe_not_in_image_requires_m1_coordination"
+            )
     except Exception as exc:  # noqa: BLE001
         violations.append(f"x_artifact_validator_crash:{exc}")
     status = "PASS" if not violations else "FAIL"

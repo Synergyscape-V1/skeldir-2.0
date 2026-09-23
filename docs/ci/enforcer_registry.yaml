@@ -5503,7 +5503,9 @@
     digest selected for deployment: base images are digest-pinned, the
     health probe ships inside the image, and post-proof substitution is
     refused or re-proven.'
-  command: python scripts/ci/validate_b26_p2_x_artifact.py --image-tag skeldir-b26-p1:$GITHUB_SHA --evidence-out artifacts/b26_p2/container/x-artifact.json
+  command: python scripts/ci/validate_b26_p2_x_artifact.py --image-tag $IMAGE --image-id
+    $DIGEST --tree-sha $TREE --commit-sha $SHA --base-image-ref "$FROM" --evidence-out
+    artifacts/b26_p2/container/x-artifact.json
   workflow_references:
   - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
   workflow_job_name: B2.6-P1 Candidate Container Equivalence

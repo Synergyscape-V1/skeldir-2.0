@@ -685,15 +685,37 @@ def _pf11_pg_proc_only(admin_dsn: str) -> tuple[bool, str]:
 
 
 def _pf12_image_substitution(image_tag: str | None) -> tuple[bool, str]:
-    if not image_tag:
-        return True, "no_image_tag_no_substitution_claimed"
+    """Substituted digest is refused at the manifest witness.
+
+    Manifest-level by design (no container tooling in this battery:
+    it invokes no image runtime): the witness adjudicates presented
+    digests, and the container job binds presented digests to real
+    images. A mismatched expect-digest must RED; a matching one must
+    PASS.
+    """
+    presented = "sha256:" + "1" * 64
     rc, first = _run_validator(
         "validate_b26_p2_x_artifact.py",
-        ["--image-tag", image_tag,
+        ["--image-tag", image_tag or "pf12-manifest",
+         "--image-id", presented,
+         "--tree-sha", "0" * 64,
+         "--commit-sha", "0" * 64,
+         "--base-image-ref", "FROM pf12",
          "--expect-digest", "sha256:" + "0" * 64],
     )
-    return (rc != 0 and "post_proof_substitution" in first,
-            f"first={first[:160]}")
+    mismatch_red = rc != 0 and "post_proof_substitution" in first
+    rc2, second = _run_validator(
+        "validate_b26_p2_x_artifact.py",
+        ["--image-tag", image_tag or "pf12-manifest",
+         "--image-id", presented,
+         "--tree-sha", "0" * 64,
+         "--commit-sha", "0" * 64,
+         "--base-image-ref", "FROM pf12",
+         "--expect-digest", presented],
+    )
+    match_green = rc2 == 0 and "PASS" in second
+    return (mismatch_red and match_green,
+            f"mismatch_red={mismatch_red} match_green={match_green}")
 
 
 def main() -> int:
