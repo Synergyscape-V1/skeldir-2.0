@@ -49,12 +49,22 @@ B26_P2_SCHEDULER_HEARTBEAT_ENTRY = "b26-p2-scheduler-heartbeat"
 
 
 def _beat_dsn_for_inline_tick() -> str | None:
-    """Return a psycopg2-connectable DSN for the beat credential."""
-    raw = (
-        os.environ.get("B26_P2_BEAT_DATABASE_URL")
-        or os.environ.get("DATABASE_URL")
-        or ""
-    ).strip()
+    """Return a psycopg2-connectable DSN for the beat credential.
+
+    The beat-specific DSN is read from the environment directly (it is
+    a deployment binding, not a classified secret); the shared
+    DATABASE_URL fallback goes through the governed secret boundary.
+    """
+    raw = (os.environ.get("B26_P2_BEAT_DATABASE_URL") or "").strip()
+    if not raw:
+        try:
+            from app.core.secrets import (  # noqa: PLC0415
+                get_database_url,
+            )
+
+            raw = (get_database_url() or "").strip()
+        except Exception:
+            return None
     if not raw:
         return None
     # Celery/broker URLs name the async driver (postgresql+asyncpg://);
