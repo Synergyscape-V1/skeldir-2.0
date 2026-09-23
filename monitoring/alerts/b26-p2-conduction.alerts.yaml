@@ -3,15 +3,15 @@ groups:
     interval: 1m
     rules:
       # CRITICAL: P2 degradation is no longer a JSON field nobody reads.
-      # The probe (scripts/ops/conduction_health_probe.py) ships INSIDE
-      # the backend image (backend/Dockerfile) and consumes the
-      # independent API observer as compose healthchecks on the relay
-      # and beat deployment units (docker-compose.local.yml, against
-      # http://api:8000/health/b26-p2-conduction); a degraded signal
-      # marks those units unhealthy for the orchestrator. No image-level
-      # HEALTHCHECK is set (the image also runs workers/beat, where an
-      # API probe would misreport). These alerts fire on the exported
-      # signal with page-level urgency.
+      # The shipped automatic consumers are the relay-queue evaluator
+      # (observes staleness/quarantine/pending/scheduler-plane absence
+      # every 60s and emits WARNING) and these alerts on the exported
+      # signal. The probe (scripts/ops/conduction_health_probe.py)
+      # consumes the independent API observer for platform use; wiring
+      # it into container healthchecks and pinning the image base are
+      # M1 local-dev authority and tracked as coordination residuals
+      # (see the Corrective-X remediation report), not landed here.
+      # These alerts fire on the exported signal with page-level urgency.
       - alert: B26_P2_Conduction_ActionRequired
         expr: b26_p2_conduction_action_required > 0
         for: 2m

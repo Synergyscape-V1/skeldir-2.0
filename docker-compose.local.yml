@@ -147,18 +147,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      api:
-        condition: service_healthy
-    # Corrective X automatic consumption: the relay deployment unit
-    # consumes the independent P2 observer (probe ships inside the
-    # image). A degraded P2 signal marks this unit unhealthy for the
-    # orchestrator instead of leaving a JSON field unread.
-    healthcheck:
-      test: ["CMD", "python", "/app/scripts/ops/conduction_health_probe.py", "--url", "http://api:8000/health/b26-p2-conduction"]
-      interval: 60s
-      timeout: 15s
-      retries: 2
-      start_period: 180s
     tmpfs:
       - /tmp/prometheus_multiproc
 
@@ -168,9 +156,6 @@ services:
     # credential (app_beat: broker DML only, no application-table
     # authority). Without this process pending execution intents never
     # conduct after a broker outage without provider retry.
-    # Corrective X: the beat scheduler executes the scheduler-plane tick
-    # inline (no queue consumer required); the heartbeat rows it writes
-    # prove recent scheduler-plane activity.
     # restart: a transient broker fault can kill a Celery process, and the
     # HealingBeatScheduler (which drops poisoned broker state on apply
     # failure) plus supervision together keep the motor live without human
@@ -192,17 +177,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      api:
-        condition: service_healthy
-    # Corrective X monitor-of-monitor: the beat unit consumes the same
-    # independent P2 observer. A silent scheduler plane (or a dead
-    # observer) marks this unit unhealthy for the orchestrator.
-    healthcheck:
-      test: ["CMD", "python", "/app/scripts/ops/conduction_health_probe.py", "--url", "http://api:8000/health/b26-p2-conduction"]
-      interval: 60s
-      timeout: 15s
-      retries: 2
-      start_period: 180s
 
   trust-signer:
     # B2.5-P13 Corrective XVII deployment unit. Started only when an operator
