@@ -452,6 +452,10 @@ jobs:
 
   b26-p2-in-image-proof:
     name: B2.6-P2 In-Image Proof (Artifact Closure)
+    # Corrective X build-once receipt: this job consumes the tested-image
+    # bytes the container job publishes, so it must run after it. (Without
+    # the edge the receipt download races the upload and fails.)
+    needs: [b26-p1-container-equivalence]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
