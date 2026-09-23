@@ -419,6 +419,7 @@ jobs:
             --base-image-ref "$_X_FROM" \
             $_X_PROBE \
             --expect-digest "$_X_ID" \
+            --gate-id B26-P2-X-ARTIFACT-PINNED \
             --evidence-out artifacts/b26_p2/container/x-artifact-pinned.json
           if python scripts/ci/validate_b26_p2_x_artifact.py \
             --image-tag "$_X_TAG" \
@@ -526,6 +527,7 @@ jobs:
             --commit-sha "$B26_CANDIDATE_SHA" \
             --base-image-ref "$_X_FROM" \
             $_X_PROBE \
+            --gate-id B26-P2-X-ARTIFACT-TRANSPORTED \
             --evidence-out artifacts/b26_p2/in-image/x-artifact-transported.json
 
       - name: Upload in-image proof evidence

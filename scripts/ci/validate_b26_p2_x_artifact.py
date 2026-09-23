@@ -49,6 +49,11 @@ def main() -> int:
         "--probe-in-image", action="store_true", default=False
     )
     parser.add_argument("--expect-digest", default=None)
+    parser.add_argument(
+        "--gate-id", default="B26-P2-X-ARTIFACT",
+        help="Gate identity for the proof-plane capsule census. Runs that"
+        " emit multiple artifact evidences must use distinct ids.",
+    )
     parser.add_argument("--evidence-dir", type=Path, default=None)
     parser.add_argument("--evidence-out", type=Path, default=None)
     args = parser.parse_args()
@@ -92,7 +97,7 @@ def main() -> int:
         violations.append(f"x_artifact_validator_crash:{exc}")
     status = "PASS" if not violations else "FAIL"
     evidence = {
-        "gate_id": "B26-P2-X-ARTIFACT",
+        "gate_id": args.gate_id,
         "validator": "validate_b26_p2_x_artifact",
         "status": status,
         "violations": sorted(violations),
