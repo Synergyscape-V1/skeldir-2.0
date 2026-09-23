@@ -31,11 +31,108 @@ What this module does NOT do
 from __future__ import annotations
 
 import logging
+import os
 import traceback
+import uuid
 
 from celery.beat import PersistentScheduler
 
 logger = logging.getLogger(__name__)
+
+# Corrective X scheduled-execution law: the scheduler-plane heartbeat
+# entry is executed inline by the beat scheduler process itself (which
+# already holds the app_beat credential), never published to a queue.
+# The entry keeps its schedule/cadence/visibility; only the execution
+# site changes, from "a queue nobody consumes" to "the process that
+# owns the schedule".
+B26_P2_SCHEDULER_HEARTBEAT_ENTRY = "b26-p2-scheduler-heartbeat"
+
+
+def _beat_dsn_for_inline_tick() -> str | None:
+    """Return a psycopg2-connectable DSN for the beat credential."""
+    raw = (
+        os.environ.get("B26_P2_BEAT_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+        or ""
+    ).strip()
+    if not raw:
+        return None
+    # Celery/broker URLs name the async driver (postgresql+asyncpg://);
+    # the inline sync tick needs the plain DBAPI scheme.
+    for marker in ("postgresql+asyncpg://", "postgres+asyncpg://"):
+        if raw.startswith(marker):
+            return "postgresql://" + raw[len(marker):]
+    for marker in ("postgresql+psycopg2://", "postgres+psycopg2://"):
+        if raw.startswith(marker):
+            return "postgresql://" + raw[len(marker):]
+    return raw
+
+
+def execute_scheduler_plane_tick_inline(
+    *, beat_instance_id: str, dsn: str | None = None
+) -> dict:
+    """Execute one scheduler-plane tick across tenants, synchronously.
+
+    Lists tenants (app_beat holds column-scoped SELECT(id)) and ticks
+    ``public.b26_p2_record_scheduler_heartbeat()`` per tenant with the
+    beating instance identity bound via ``app.beat_instance_id``.
+    Returns counts only. Raises on total failure so the scheduler can
+    log loudly; partial failures are counted, never silent.
+    """
+    import psycopg2  # noqa: PLC0415  # type: ignore[import-untyped]
+
+    target = dsn or _beat_dsn_for_inline_tick()
+    if not target:
+        raise RuntimeError("b26_p2_inline_tick_no_beat_dsn")
+    tenants: list[str] = []
+    ticked = 0
+    failed = 0
+    conn = psycopg2.connect(target)
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM public.tenants ORDER BY id")
+            tenants = [str(row[0]) for row in cur.fetchall()]
+        for tenant in tenants:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT set_config('app.current_tenant_id', %s, false)",
+                        (tenant,),
+                    )
+                    cur.execute(
+                        "SELECT set_config('app.beat_instance_id', %s, false)",
+                        (beat_instance_id,),
+                    )
+                    cur.execute(
+                        "SELECT public.b26_p2_record_scheduler_heartbeat()"
+                        " AS outcome"
+                    )
+                    outcome = cur.fetchone()
+                    if outcome is None or str(outcome[0]) != "scheduled":
+                        raise RuntimeError(
+                            f"b26_p2_inline_tick_unexpected_outcome:{outcome}"
+                        )
+                ticked += 1
+            except Exception:
+                logger.exception(
+                    "b26_p2_scheduler_plane_inline_tick_failed",
+                    extra={
+                        "event_type": "celery.beat.tick",
+                        "tenant_id": str(tenant),
+                    },
+                )
+                failed += 1
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return {
+        "tenants_scanned": len(tenants),
+        "ticked": ticked,
+        "failed": failed,
+    }
 
 
 class HealingBeatScheduler(PersistentScheduler):
@@ -45,7 +142,22 @@ class HealingBeatScheduler(PersistentScheduler):
     'Scheduler: Sending due task' info line and sent-debug lines), so log
     consumers and live-beat proofs observe no difference; the only delta
     is the broker-state drop plus the heal log on failure.
+
+    Corrective X: the scheduler-plane heartbeat entry is executed inline
+    (see module docstring law above). Every other entry publishes
+    exactly as before.
     """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Per-boot scheduler-plane identity, recorded on every inline
+        # tick for operator correlation (never a process proof).
+        self._b26_p2_beat_instance_id = str(uuid.uuid4())
+
+    def apply_entry(self, entry, producer=None) -> None:
+        if entry.name == B26_P2_SCHEDULER_HEARTBEAT_ENTRY:
+            self._apply_scheduler_plane_tick_inline(entry)
+            return
 
     def apply_entry(self, entry, producer=None) -> None:
         # Message text is identical to celery's scheduler (log consumers
@@ -76,6 +188,45 @@ class HealingBeatScheduler(PersistentScheduler):
                 logger.debug("%s sent. id->%s", entry.task, result.id)
             else:
                 logger.debug("%s sent.", entry.task)
+
+    def _apply_scheduler_plane_tick_inline(self, entry) -> None:
+        """Execute the scheduler-plane tick in-process, fail-loudly.
+
+        Never raises: a tick failure is logged with entry identity (the
+        absence law surfaces it as scheduler_plane_absent_total), and
+        the scheduler loop continues. A missing beat DSN is a
+        deployment misconfiguration: loud every tick, never silent.
+        """
+        logger.info(
+            "Scheduler: Sending due task %s (%s)", entry.name, entry.task
+        )
+        try:
+            result = execute_scheduler_plane_tick_inline(
+                beat_instance_id=self._b26_p2_beat_instance_id
+            )
+        except Exception as exc:
+            logger.error(
+                "b26_p2_scheduler_plane_inline_tick_error",
+                extra={
+                    "event_type": "celery.beat.tick",
+                    "schedule_entry": entry.name,
+                    "error": str(exc)[:500],
+                    "error_class": type(exc).__name__,
+                },
+                exc_info=True,
+            )
+            return
+        logger.info(
+            "b26_p2_scheduler_plane_ticked_inline",
+            extra={
+                "event_type": "celery.beat.tick",
+                "schedule_entry": entry.name,
+                "beat_instance_id": self._b26_p2_beat_instance_id,
+                "tenants_scanned": result["tenants_scanned"],
+                "ticked": result["ticked"],
+                "failed": result["failed"],
+            },
+        )
 
     def _drop_broker_state(self) -> None:
         """Forget the cached producer and close its connection.
@@ -111,4 +262,8 @@ class HealingBeatScheduler(PersistentScheduler):
             )
 
 
-__all__ = ["HealingBeatScheduler"]
+__all__ = [
+    "B26_P2_SCHEDULER_HEARTBEAT_ENTRY",
+    "HealingBeatScheduler",
+    "execute_scheduler_plane_tick_inline",
+]

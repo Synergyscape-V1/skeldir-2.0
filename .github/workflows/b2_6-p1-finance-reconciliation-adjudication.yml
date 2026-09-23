@@ -48,6 +48,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.B26_CANDIDATE_SHA }}
+          # Corrective X history law: protected-history resolution
+          # (merge-base with origin/main) requires full history. A
+          # shallow checkout leaves no origin/main and every
+          # history-bound gate must fail closed.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -132,6 +137,43 @@ jobs:
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-out artifacts/b26_p2/viii/viii-equivalence.json
 
+      - name: Prove B2.6-P2 Corrective-X semantic universe (derived)
+        run: |
+          python scripts/ci/validate_b26_p2_x_semantic.py \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-X two-phase change law
+        run: |
+          python scripts/ci/check_b26_p2_x_two_phase.py \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-X contract oracle (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_x_contract_oracle.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-X effect authority (live canaries)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_x_authority.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-X proof-plane self-falsification
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_x_proof_plane.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-dir artifacts/b26_p2/static
+          # The battery mutates tracked files and must restore them
+          # byte-exact; any residue fails the job.
+          git diff --exit-code -- scripts/ci/validate_b26_p2_x_authority.py contracts-internal/governance/b26_p2_x_semantic_universe.pin.json contracts/reconciliation/b2.6/scope-policy.v2.yaml
+
       - name: Upload static authority evidence
         uses: actions/upload-artifact@v4
         with:
@@ -169,6 +211,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.B26_CANDIDATE_SHA }}
+          # Corrective X history law: protected-history resolution
+          # (merge-base with origin/main) requires full history. A
+          # shallow checkout leaves no origin/main and every
+          # history-bound gate must fail closed.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -261,6 +308,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.B26_CANDIDATE_SHA }}
+          # Corrective X history law: protected-history resolution
+          # (merge-base with origin/main) requires full history. A
+          # shallow checkout leaves no origin/main and every
+          # history-bound gate must fail closed.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -330,6 +382,37 @@ jobs:
           path: artifacts/b26_p1/container/*.json
           if-no-files-found: error
 
+      - name: Prove B2.6-P2 Corrective-X artifact identity
+        # Corrective X build-once law: the exact digest receiving
+        # load-bearing proof is recorded; a substituted image is RED.
+        run: |
+          python scripts/ci/validate_b26_p2_x_artifact.py \
+            --image-tag skeldir-b26-p1:${{ github.sha }} \
+            --evidence-out artifacts/b26_p2/container/x-artifact.json
+          _X_DIGEST="$(docker image inspect skeldir-b26-p1:${{ github.sha }} --format '{{.Id}}')"
+          python scripts/ci/validate_b26_p2_x_artifact.py \
+            --image-tag skeldir-b26-p1:${{ github.sha }} \
+            --expect-digest "$_X_DIGEST" \
+            --evidence-out artifacts/b26_p2/container/x-artifact-pinned.json
+          if python scripts/ci/validate_b26_p2_x_artifact.py \
+            --image-tag skeldir-b26-p1:${{ github.sha }} \
+            --expect-digest sha256:0000000000000000000000000000000000000000000000000000000000000000; then
+            echo "B26-P2-X substitution witness blind"
+            exit 1
+          fi
+          echo "$_X_DIGEST" > artifacts/b26_p2/container/x-tested-digest.txt
+
+      - name: Publish tested image bytes (build-once transport)
+        run: |
+          docker save skeldir-b26-p1:${{ github.sha }} -o "${RUNNER_TEMP}/b26-p2-tested-image.tar"
+
+      - name: Upload tested image bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: b26-p2-image-${{ github.run_id }}
+          path: ${{ runner.temp }}/b26-p2-tested-image.tar
+          if-no-files-found: error
+
       - name: Upload B2.6-P2 container scope evidence
         uses: actions/upload-artifact@v4
         with:
@@ -346,6 +429,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.B26_CANDIDATE_SHA }}
+          # Corrective X history law: protected-history resolution
+          # (merge-base with origin/main) requires full history. A
+          # shallow checkout leaves no origin/main and every
+          # history-bound gate must fail closed.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -371,6 +459,23 @@ jobs:
             --base-sha "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}" \
             --evidence-out artifacts/b26_p2/in-image/in-image-proof.json
 
+      - name: Verify transported tested-image bytes (build-once receipt)
+        # Corrective X: the exact bytes the container job proved are
+        # received here and re-identified; the receipt manifest binds
+        # the transported digest.
+        uses: actions/download-artifact@v4
+        with:
+          name: b26-p2-image-${{ github.run_id }}
+          path: ${{ runner.temp }}/b26-p2-image
+
+      - name: Load and identify transported image
+        run: |
+          docker load -i "${RUNNER_TEMP}/b26-p2-image/b26-p2-tested-image.tar"
+          docker tag skeldir-b26-p1:${{ github.sha }} skeldir-b26-p1-transported:${{ github.sha }}
+          python scripts/ci/validate_b26_p2_x_artifact.py \
+            --image-tag skeldir-b26-p1-transported:${{ github.sha }} \
+            --evidence-out artifacts/b26_p2/in-image/x-artifact-transported.json
+
       - name: Upload in-image proof evidence
         uses: actions/upload-artifact@v4
         with:
@@ -387,6 +492,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.B26_CANDIDATE_SHA }}
+          # Corrective X history law: protected-history resolution
+          # (merge-base with origin/main) requires full history. A
+          # shallow checkout leaves no origin/main and every
+          # history-bound gate must fail closed.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -444,6 +554,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.B26_CANDIDATE_SHA }}
+          # Corrective X history law: protected-history resolution
+          # (merge-base with origin/main) requires full history. A
+          # shallow checkout leaves no origin/main and every
+          # history-bound gate must fail closed.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5

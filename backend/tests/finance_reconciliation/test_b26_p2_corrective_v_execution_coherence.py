@@ -719,7 +719,13 @@ def test_v_receipt_forked_tuple_refused() -> None:
                 )
 
             reason = _refused(attempt)
-            assert "fk_b26_p2_receipt_execution_tuple" in reason
+            # Corrective X: the receipt effect guard adjudicates first
+            # (forged meaning never persists); the tuple FK remains as
+            # defense in depth. Either refusal proves the fork is dead.
+            assert (
+                "fk_b26_p2_receipt_execution_tuple" in reason
+                or "b26_p2_receipt_effect_refused" in reason
+            )
     finally:
         conn.close()
 
@@ -901,7 +907,14 @@ def test_v_direct_conducted_refused_as_worker() -> None:
                 )
 
             reason = _refused(attempt)
-            assert "b26_p2_conducted_requires_gate" in reason
+            # Corrective X: the conducted effect guard adjudicates every
+            # conducted transition at the effect boundary (no receipt, no
+            # consequence), ahead of the legacy gate-presence guard. Either
+            # refusal proves caller-authored conducted is dead.
+            assert (
+                "b26_p2_conducted_requires_gate" in reason
+                or "b26_p2_conducted_effect_refused" in reason
+            )
     finally:
         conn.close()
 
@@ -932,7 +945,14 @@ def test_v_direct_conducted_refused_as_api() -> None:
                 )
 
             reason = _refused(attempt)
-            assert "b26_p2_conducted_requires_gate" in reason
+            # Corrective X: the conducted effect guard adjudicates every
+            # conducted transition at the effect boundary (no receipt, no
+            # consequence), ahead of the legacy gate-presence guard. Either
+            # refusal proves caller-authored conducted is dead.
+            assert (
+                "b26_p2_conducted_requires_gate" in reason
+                or "b26_p2_conducted_effect_refused" in reason
+            )
     finally:
         conn.close()
 
@@ -1170,28 +1190,33 @@ def test_v_staleness_excludes_fresh_and_conducted() -> None:
     _publish(fresh_task, ids["tenant_id"])
     _seed_dispatch(done_ids["tenant_id"], done_ids["ingress_id"], done_task)
     _publish(done_task, done_ids["tenant_id"])
+    # Corrective X: even the governed owner session cannot assert
+    # conducted by direct write (effect guard refuses consequence-free
+    # transitions for every role). Complete the done twin lawfully:
+    # qualifying verdict, bound receipt, server-side gate.
+    _seed_verdict(
+        done_ids["tenant_id"], done_ids["ingress_id"], done_ids["event_id"]
+    )
+    _seed_receipt(done_ids["tenant_id"], done_ids["ingress_id"], done_task)
     import psycopg2
+
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT public.b26_p2_mark_conducted(%s)", (done_task,)
+            )
+            assert str(cur.fetchone()[0]) == "conducted"
+    finally:
+        admin.close()
 
     conn = psycopg2.connect(_admin_dsn())
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
-            # Governed owner session may complete the done twin (the
-            # runtime gate path is proven in the C-V cells above).
-            cur.execute(
-                "SELECT set_config('app.current_tenant_id', %s, false)",
-                (str(done_ids["tenant_id"]),),
-            )
-            cur.execute(
-                "UPDATE public.b23_match_task_dispatches"
-                " SET delivery_state = 'conducted' WHERE task_id = %s",
-                (done_task,),
-            )
-            cur.execute(
-                "UPDATE public.b26_p2_execution_outbox"
-                " SET state = 'conducted' WHERE dispatch_task_id = %s",
-                (done_task,),
-            )
+            # The done twin was completed lawfully above; only the
+            # staleness projection is asserted here.
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),

@@ -2,11 +2,16 @@
 """B2.6-P2 Corrective IX policy-evolution-law validator.
 
 Compares the canonical semantic SHA of scope-policy.v2.yaml at HEAD against
-the merge-base with origin/main (or origin/main, or the working file as a
-local fallback). A semantic change without a scope_policy_version bump fails
-with same_version_semantic_rewrite. A bumped version passes with a note (the
-differential review lives elsewhere). The v1 history file must be byte
-identical to its pinned SHA.
+the merge-base with origin/main (or origin/main). A semantic change without
+a scope_policy_version bump fails with same_version_semantic_rewrite. A
+bumped version passes with a note (the differential review lives
+elsewhere). The v1 history file must be byte identical to its pinned SHA.
+
+Corrective X fail-closed law: when no independent prior-governed base is
+resolvable (no merge-base, no origin/main, or base file unreadable), the
+validator FAILS with ix_policy_history_unavailable instead of comparing
+the candidate against itself. A self-compare can never prove evolution
+honesty.
 
 Exit code is the gate: 0 on PASS, 1 plus a violation list on FAIL.
 """
@@ -73,19 +78,19 @@ def _resolve_base_ref(checks: dict[str, object]) -> str | None:
 
 def _base_document(
     base_ref: str | None, checks: dict[str, object]
-) -> tuple[dict[str, Any], str]:
-    """Return (document, origin_label) for the base side of the diff."""
+) -> tuple[dict[str, Any] | None, str]:
+    """Return (document, origin_label) for the base side of the diff.
+
+    Corrective X: a missing or unreadable base is a REQUIRED GATE RED
+    (ix_policy_history_unavailable), never a working-file self-compare.
+    """
     if base_ref is None:
-        current = yaml.safe_load(V2_PATH.read_text(encoding="utf-8"))
-        checks["base_origin"] = "working_file_as_is"
-        assert isinstance(current, dict)
-        return current, "working_file_as_is"
+        checks["base_origin"] = "unavailable_no_base_ref"
+        return None, "unavailable_no_base_ref"
     ok, text = _git(["show", f"{base_ref}:{V2_RELATIVE}"])
     if not ok or not text:
-        current = yaml.safe_load(V2_PATH.read_text(encoding="utf-8"))
-        checks["base_origin"] = "working_file_as_is(show_failed)"
-        assert isinstance(current, dict)
-        return current, "working_file_as_is(show_failed)"
+        checks["base_origin"] = "unavailable_base_unreadable"
+        return None, "unavailable_base_unreadable"
     document = yaml.safe_load(text)
     checks["base_origin"] = f"git:{base_ref[:12]}:{V2_RELATIVE}"
     assert isinstance(document, dict)
@@ -212,8 +217,14 @@ def main() -> int:
             ).hexdigest()
         base_ref = _resolve_base_ref(checks)
         base_doc, _ = _base_document(base_ref, checks)
-        if current_doc:
+        if base_doc is None:
+            # Corrective X fail-closed law: no independent history means
+            # no evolution proof. Never self-compare.
+            violations.append("ix_policy_history_unavailable")
+            checks["evolution_note"] = "history_unavailable_fail_closed"
+        elif current_doc:
             _compare_versions(current_doc, base_doc, violations, checks)
+        if current_doc:
             violations.extend(_negative_controls(current_doc, checks))
         _check_v1_history(violations, checks)
     except Exception as exc:  # noqa: BLE001

@@ -3,13 +3,15 @@ groups:
     interval: 1m
     rules:
       # CRITICAL: P2 degradation is no longer a JSON field nobody reads.
-      # The probe (scripts/ops/conduction_health_probe.py) consumes the
-      # independent API observer; it is wired as the backend image
-      # HEALTHCHECK (backend/Dockerfile, against local
-      # /health/b26-p2-conduction) and as compose healthchecks for the
-      # relay/beat services (docker-compose.local.yml, against
-      # http://api:8000/health/b26-p2-conduction); these alerts fire on
-      # the exported signal with page-level urgency.
+      # The probe (scripts/ops/conduction_health_probe.py) ships INSIDE
+      # the backend image (backend/Dockerfile) and consumes the
+      # independent API observer as compose healthchecks on the relay
+      # and beat deployment units (docker-compose.local.yml, against
+      # http://api:8000/health/b26-p2-conduction); a degraded signal
+      # marks those units unhealthy for the orchestrator. No image-level
+      # HEALTHCHECK is set (the image also runs workers/beat, where an
+      # API probe would misreport). These alerts fire on the exported
+      # signal with page-level urgency.
       - alert: B26_P2_Conduction_ActionRequired
         expr: b26_p2_conduction_action_required > 0
         for: 2m
@@ -19,8 +21,8 @@ groups:
           team: backend
         annotations:
           summary: "B2.6-P2 conduction requires operator action"
-          description: "Stale, quarantined, actionable-pending, evaluator-absent, or scheduler-absent P2 work persists. The evaluator heartbeat is evaluation-bound (a fresh tick without genuine evaluation is impossible) and the scheduler heartbeat is beat-bound (a relay-side evaluation cannot manufacture scheduler health), so this alert always denotes real outstanding work. evaluation_fresh != scheduler_alive: each absence is an independent operator fact."
-          action: "Inspect GET /health/b26-p2-conduction (pending_actionable_total, stale_unconducted_count, quarantine_count, evaluator_absent_total, scheduler_absent_total, evaluation_fresh, scheduler_alive); drain via relay sweep; re-run the evaluator; verify the beat motor ticks the scheduler heartbeat."
+          description: "Stale, quarantined, actionable-pending, evaluator-absent, or scheduler-plane-absent P2 work persists. The evaluator heartbeat is evaluation-bound (a fresh tick without genuine evaluation is impossible) and the scheduler-plane heartbeat is beat-credential-bound (a relay-side evaluation cannot manufacture scheduler-plane activity), so this alert always denotes real outstanding work. evaluation_fresh != scheduler_plane_active: each absence is an independent operator fact. Scheduler-plane activity proves recent authorized activity, never orchestrator-attested process liveness."
+          action: "Inspect GET /health/b26-p2-conduction (pending_actionable_total, stale_unconducted_count, quarantine_count, evaluator_absent_total, scheduler_absent_total, evaluation_fresh, scheduler_plane_active); drain via relay sweep; re-run the evaluator; verify the beat scheduler ticks the scheduler-plane heartbeat inline."
 
       - alert: B26_P2_Evaluator_Absent
         expr: b26_p2_evaluator_absent_total > 0

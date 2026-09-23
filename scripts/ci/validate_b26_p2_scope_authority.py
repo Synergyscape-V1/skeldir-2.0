@@ -460,7 +460,13 @@ def _check_delegation_and_wiring(
     except ca.CanonicalCoverageAuthorityError:
         pass
     sink_source = SINK_MODULE.read_text(encoding="utf-8")
-    if "_p2_scope.assert_aggregate_scope_supported(" not in sink_source:
+    # Corrective X single authority: the sink observes aggregate
+    # coherence through the thin SQL-backed adapter, never through the
+    # frozen pure-Python law library.
+    if (
+        "_p2_conduction.assert_aggregate_scope_supported_via_authority("
+        not in sink_source
+    ):
         violations.append("p2_live_wiring_absent_from_executor")
     if "governed_sink_p2_scope_incoherent" not in sink_source:
         violations.append("p2_live_wiring_fail_closed_absent")
@@ -930,9 +936,12 @@ def _check_corrective_iii_law(violations: list[str], details: dict[str, Any]) ->
         # SHA is the identity-bearing one.
         "policy_source_sha256",
         "policy_semantic_sha256",
-        "item.classification.provider",
-        "item.classification.rail",
-        "item.classification.currency_code",
+        # Corrective X single authority: per-item provider/rail/currency
+        # are bound from the authority-observed classification (thin
+        # adapter over the SQL classifier), never formatted locally.
+        "classification.provider",
+        "classification.rail",
+        "classification.currency_code",
     ):
         if required not in conduction_source:
             violations.append(f"p2_corrective_iii_conduction_absent:{required}")

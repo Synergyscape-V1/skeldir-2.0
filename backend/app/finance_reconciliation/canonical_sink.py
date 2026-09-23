@@ -1118,13 +1118,14 @@ async def execute_governed_sink(
         # refuses before any authoritative field materializes.
         try:
             from app.finance_reconciliation import (  # noqa: PLC0415
-                scope_authority as _p2_scope,
-            )
-            from app.finance_reconciliation import (  # noqa: PLC0415
                 candidate_conduction as _p2_conduction,
             )
 
-            _p2_scope.assert_aggregate_scope_supported(
+            # Corrective X single authority: aggregate coherence is
+            # observed from the SQL classifier through the thin adapter,
+            # never through the frozen pure-Python law library.
+            await _p2_conduction.assert_aggregate_scope_supported_via_authority(
+                session,
                 tenant_id=tenant_id,
                 supported_platforms=tuple(coverage.supported_platforms),
                 currency_code=aggregate.currency_code,

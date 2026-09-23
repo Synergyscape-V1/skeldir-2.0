@@ -53,6 +53,7 @@ IDENTITY_FILES = [
     "contracts/reconciliation/b2.6/scope-policy.v2.yaml",
     "alembic/versions/007_skeldir_foundation/202609220001_b26_p2_corrective_viii_context_robust.py",
     "alembic/versions/007_skeldir_foundation/202609230001_b26_p2_corrective_ix_consequence_authority.py",
+    "alembic/versions/007_skeldir_foundation/202609240001_b26_p2_corrective_x_assurance_sovereignty.py",
 ]
 
 PROBE_JUNK_SCOPE = '''
@@ -142,7 +143,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                image, "python", "/proof/assert_b26_p2_authority_universe.py",
                "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
               "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-              "--migration-head", "202609230001",
+              "--migration-head", "202609240001",
                "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -408,29 +409,38 @@ def main() -> int:
         # 5. Authority-universe assertion with image bytes.
         import importlib.util as _ilu
 
-        ix_spec = _ilu.spec_from_file_location(
-            "b26_p2_ix_coverage",
-            str(REPO_ROOT / "scripts" / "ci" / "b26_p2_ix_coverage.py"))
-        if ix_spec is not None and ix_spec.loader is not None:
-            coverage_mod = _ilu.module_from_spec(ix_spec)
-            sys.modules["b26_p2_ix_coverage"] = coverage_mod
-            ix_spec.loader.exec_module(coverage_mod)
-            covered = sorted(coverage_mod.IX_COVERED_SURFACES)
+        x_spec = _ilu.spec_from_file_location(
+            "b26_p2_x_coverage",
+            str(REPO_ROOT / "scripts" / "ci" / "b26_p2_x_coverage.py"))
+        if x_spec is not None and x_spec.loader is not None:
+            coverage_mod = _ilu.module_from_spec(x_spec)
+            sys.modules["b26_p2_x_coverage"] = coverage_mod
+            x_spec.loader.exec_module(coverage_mod)
+            covered = sorted(coverage_mod.X_COVERED_SURFACES)
         else:
-            spec = _ilu.spec_from_file_location(
-                "b26_p2_viii_coverage",
-                str(REPO_ROOT / "scripts" / "ci" / "b26_p2_viii_coverage.py"))
-            assert spec is not None and spec.loader is not None
-            coverage_mod = _ilu.module_from_spec(spec)
-            sys.modules["b26_p2_viii_coverage"] = coverage_mod
-            spec.loader.exec_module(coverage_mod)
-            covered = sorted(coverage_mod.VIII_COVERED_SURFACES)
+            ix_spec = _ilu.spec_from_file_location(
+                "b26_p2_ix_coverage",
+                str(REPO_ROOT / "scripts" / "ci" / "b26_p2_ix_coverage.py"))
+            if ix_spec is not None and ix_spec.loader is not None:
+                coverage_mod = _ilu.module_from_spec(ix_spec)
+                sys.modules["b26_p2_ix_coverage"] = coverage_mod
+                ix_spec.loader.exec_module(coverage_mod)
+                covered = sorted(coverage_mod.IX_COVERED_SURFACES)
+            else:
+                spec = _ilu.spec_from_file_location(
+                    "b26_p2_viii_coverage",
+                    str(REPO_ROOT / "scripts" / "ci" / "b26_p2_viii_coverage.py"))
+                assert spec is not None and spec.loader is not None
+                coverage_mod = _ilu.module_from_spec(spec)
+                sys.modules["b26_p2_viii_coverage"] = coverage_mod
+                spec.loader.exec_module(coverage_mod)
+                covered = sorted(coverage_mod.VIII_COVERED_SURFACES)
         proc = run_img(
             args.image_tag,
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
              f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
               "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-              "--migration-head", "202609230001",
+              "--migration-head", "202609240001",
               "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

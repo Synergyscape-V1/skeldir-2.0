@@ -59,6 +59,7 @@ def _existing(state="authenticity_verified", **overrides):
     row = SimpleNamespace(
         id=uuid4(),
         tenant_id="11111111-2222-3333-4444-555555555555",
+        idempotency_key="viii:unit",
         provider="stripe",
         provider_native_event_reference="evt",
         provider_native_commerce_reference="ord",
@@ -180,6 +181,13 @@ async def test_verified_exact_match_adopts_binding():
     )
     assert adopted is root
     assert root.event_id == event_id
+    # Corrective X: a genuine signed duplicate records provenance
+    # evidence through the attester (never a bare status write).
+    assert session.execute.await_count == 2
+    attester_call = session.execute.await_args_list[1]
+    assert "b26_p2_attest_provenance_evidence" in str(
+        attester_call.args[0]
+    )
 
 
 @pytest.mark.asyncio
