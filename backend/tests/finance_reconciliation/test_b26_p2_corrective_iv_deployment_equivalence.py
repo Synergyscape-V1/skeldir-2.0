@@ -120,7 +120,7 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
             )
     finally:
         conn.close()
-    return {"tenant_id": tenant_id, "ingress_id": ingress_id}
+    return {"tenant_id": tenant_id, "ingress_id": ingress_id, "event_id": event_uuid}
 
 
 def _seed_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> None:
@@ -213,6 +213,65 @@ def _canonical_scope_for_task(task: str) -> str:
             return str(cur.fetchone()[0])
     finally:
         admin.close()
+
+
+def _seed_verdict(tenant_id: UUID, ingress_id: UUID, event_id: UUID) -> None:
+    """Seed one qualifying B2.3 verdict row (setup only)."""
+    import psycopg2
+
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            cur.execute(
+                "INSERT INTO public.b23_match_verdicts (tenant_id,"
+                " attribution_event_id, webhook_ingress_identity_id,"
+                " provider, canonical_commerce_reference,"
+                " provider_native_event_reference,"
+                " provider_native_commerce_reference, status,"
+                " match_quality, attributed_amount_minor,"
+                " verified_amount_minor, currency_code,"
+                " canonical_expected_gross_amount_minor,"
+                " canonical_captured_gross_amount_minor,"
+                " canonical_net_verified_amount_minor,"
+                " discrepancy_amount_minor, discrepancy_ratio_bps,"
+                " discrepancy_band)"
+                " VALUES (%s, %s, %s, 'stripe', 'ord', 'evt', 'ord',"
+                " 'matched_confirmed', 'high', 38000, 38000, 'USD',"
+                " 38000, 38000, 38000, 0, 0, 'exact')",
+                (str(tenant_id), str(event_id), str(ingress_id)),
+            )
+    finally:
+        conn.close()
+
+
+def _conduct_lawfully(task_id: str) -> str:
+    """Complete one task through receipt + server-side gate (setup only).
+
+    Corrective X: direct conducted writes are refused for every role,
+    so test setups must conduct through the governed functions.
+    """
+    import psycopg2
+
+    scope = _canonical_scope_for_task(task_id)
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
+                (task_id, scope, 1, _P2_POLICY_SEMANTIC_SHA_V2),
+            )
+            cur.execute(
+                "SELECT public.b26_p2_mark_conducted(%s)", (task_id,)
+            )
+            return str(cur.fetchone()[0])
+    finally:
+        conn.close()
 
 
 def test_iv_outbox_fk_refuses_unknown_task() -> None:
@@ -391,7 +450,10 @@ def test_iv_delivery_forward_only() -> None:
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
-            # Lawful: pending_publish -> published -> conducted.
+            # Lawful: pending_publish -> published -> conducted. Corrective
+            # X refuses direct conducted writes for every role, so the
+            # terminal transition goes through verdict + bound receipt +
+            # the server-side gate.
             cur.execute(
                 "UPDATE public.b23_match_task_dispatches"
                 " SET delivery_state = 'published' WHERE task_id = %s",
@@ -402,15 +464,18 @@ def test_iv_delivery_forward_only() -> None:
                 " SET state = 'published' WHERE dispatch_task_id = %s",
                 (task_id,),
             )
+    finally:
+        conn.close()
+    _seed_verdict(ids["tenant_id"], ids["ingress_id"], ids["event_id"])
+    assert _conduct_lawfully(task_id) == "conducted"
+
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
             cur.execute(
-                "UPDATE public.b23_match_task_dispatches"
-                " SET delivery_state = 'conducted' WHERE task_id = %s",
-                (task_id,),
-            )
-            cur.execute(
-                "UPDATE public.b26_p2_execution_outbox"
-                " SET state = 'conducted' WHERE dispatch_task_id = %s",
-                (task_id,),
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
             )
 
             def backward() -> None:
@@ -459,7 +524,14 @@ def test_iv_delivery_skips_refused() -> None:
                 )
 
             reason = _refused(skip)
-            assert "b26_p2_dispatch_delivery_illegal_transition" in reason
+            # Corrective X: the conducted effect guard adjudicates the
+            # skipped transition first (no receipt, no consequence); the
+            # legacy forward-only guard remains behind it. Either refusal
+            # proves the skip is dead.
+            assert (
+                "b26_p2_dispatch_delivery_illegal_transition" in reason
+                or "b26_p2_conducted_effect_refused" in reason
+            )
     finally:
         conn.close()
 
@@ -607,58 +679,43 @@ def test_iv_worker_grant_shape() -> None:
         conn.close()
 
 
-def _scoped_candidate(ingress_id: UUID, tenant_id: UUID):
-    from app.finance_reconciliation.candidate_conduction import ScopedCandidate
-    from app.finance_reconciliation.scope_authority import CanonicalScopeClassification
-
-    classification = CanonicalScopeClassification(
-        tenant_id=tenant_id,
-        provider="stripe",
-        rail="stripe",
-        currency_code="USD",
-        window_start=DAY_START,
-        window_end=DAY_END,
-        scope_policy_version="b2.6-p2-scope-policy-v2",
-        disposition="SUPPORTED_AND_IN_SCOPE",
-        reason="supported_in_scope",
-    )
-    return ScopedCandidate(
-        ingress_id=ingress_id,
-        verified_amount_minor=38000,
-        provider_raw="stripe",
-        currency_raw="USD",
-        provenance="test",
-        classification=classification,
-    )
-
-
 def test_iv_identity_v3_ignores_source_bytes() -> None:
-    import inspect
+    """IV identity law at the single (SQL) semantic authority.
 
-    from app.finance_reconciliation.candidate_conduction import _compute_scope_identity
+    Corrective X deletes the Python digest formatter: no Python caller
+    can bind source bytes (or anything else) into a scope identity. The
+    live SQL authority binds the semantic SHA into the identity payload
+    and consults the source SHA only in the fail-closed binding check.
+    """
+    from app.finance_reconciliation import candidate_conduction
 
-    # Source bytes are not even a parameter of the digest function: no
-    # caller can bind them into a scope identity by accident.
-    assert "policy_source_sha256" not in inspect.signature(
-        _compute_scope_identity
-    ).parameters
-    tenant_id = uuid.uuid4()
-    scoped = (_scoped_candidate(uuid.uuid4(), tenant_id),)
-    kwargs = dict(
-        tenant=tenant_id,
-        window_start=DAY_START,
-        window_end=DAY_END,
-        scope_policy_version="b2.6-p2-scope-policy-v2",
-        scoped=scoped,
-        policy_semantic_sha256="2f5739fd235c2dad35a6ae8922cd0fa9be4f3edb71b7765495270ff41f788782",
-    )
-    first = _compute_scope_identity(**kwargs)
-    assert len(first) == 64
-    # Semantic SHA change alters identity.
-    altered = _compute_scope_identity(
-        **{**kwargs, "policy_semantic_sha256": "0" * 64}
-    )
-    assert altered != first
+    assert not hasattr(candidate_conduction, "_compute_scope_identity")
+    import psycopg2
+
+    conn = psycopg2.connect(_admin_dsn())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT pg_get_functiondef(p.oid) FROM pg_proc AS p"
+                " JOIN pg_namespace AS n ON n.oid = p.pronamespace"
+                " WHERE n.nspname = 'public'"
+                " AND p.proname = 'b26_p2_canonical_scope_identity_for_window'"
+            )
+            row = cur.fetchone()
+            assert row is not None
+            body = str(row[0])
+            # Semantic SHA is identity material ...
+            assert "_policy_semantic" in body
+            # ... while the source SHA appears only in the binding
+            # check, never in the identity payload construction.
+            base_start = body.find("_base :=")
+            assert base_start != -1
+            payload_region = body[base_start:]
+            assert "_policy_semantic" in payload_region
+            assert "_policy_source" not in payload_region
+    finally:
+        conn.close()
 
 
 def test_iv_identity_v3_version_matches_contract() -> None:

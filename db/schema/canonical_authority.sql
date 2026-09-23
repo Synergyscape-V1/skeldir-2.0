@@ -364,3 +364,69 @@ BEGIN
         GRANT EXECUTE ON FUNCTION public.b26_p2_record_scheduler_heartbeat() TO app_beat;
     END IF;
 END $$;
+
+-- === 202609240001 Corrective X: single normalization authority ===
+-- Source of truth is the 202609240001 migration. The ASCII-strip
+-- normalization family and the per-candidate classifier are the only
+-- P2 meaning implementation; the worker and the API issuer observe
+-- dispositions through them (thin adapters, no independent
+-- classification). They write nothing and hold no table authority.
+REVOKE ALL ON FUNCTION public.b26_p2_ascii_strip(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_strip_provider_token(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_strip_currency_token(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_normalize_provider(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_normalize_currency(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_classify_candidate(uuid, text, text, timestamptz, timestamptz, timestamptz, text, text) FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_ascii_strip(text) TO app_worker;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_strip_provider_token(text) TO app_worker;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_strip_currency_token(text) TO app_worker;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_normalize_provider(text) TO app_worker;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_normalize_currency(text) TO app_worker;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_classify_candidate(uuid, text, text, timestamptz, timestamptz, timestamptz, text, text) TO app_worker;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_ascii_strip(text) TO app_user;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_strip_provider_token(text) TO app_user;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_strip_currency_token(text) TO app_user;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_normalize_provider(text) TO app_user;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_normalize_currency(text) TO app_user;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_classify_candidate(uuid, text, text, timestamptz, timestamptz, timestamptz, text, text) TO app_user;
+    END IF;
+END $$;
+
+-- === 202609240001 Corrective X: effect-bound conducted/receipt guards ===
+-- Source of truth is the 202609240001 migration. Guard functions fire
+-- through the trigger mechanism only (no EXECUTE grant is required for
+-- trigger firing, proven live); the default PUBLIC grant is revoked so
+-- no runtime principal holds a direct path to the guard bodies.
+REVOKE ALL ON FUNCTION public.b26_p2_guard_conducted_transition() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_guard_conduction_receipt() FROM PUBLIC;
+
+-- === 202609240001 Corrective X: evidence-backed provenance ===
+-- Source of truth is the 202609240001 migration. Evidence rows are
+-- written only by the SECURITY DEFINER attester (EXECUTE app_user);
+-- no runtime principal holds direct table authority. The attester is
+-- the sole promotion path from unknown_legacy.
+REVOKE ALL ON TABLE public.b26_p2_provenance_evidence FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_user;
+    END IF;
+END $$;
+
+-- === 202609240001 Corrective X: beat-plane tenant enumeration ===
+-- Source of truth is the 202609240001 migration. The scheduler-plane
+-- ticker must list tenants to tick per-tenant heartbeats; the beat
+-- credential holds column-scoped SELECT(id) and nothing else on the
+-- tenant registry.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_beat') THEN
+        GRANT SELECT (id) ON TABLE public.tenants TO app_beat;
+    END IF;
+END $$;

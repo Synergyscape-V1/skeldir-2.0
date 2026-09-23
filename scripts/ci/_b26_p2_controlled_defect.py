@@ -191,10 +191,12 @@ def p2_scope_policy_version_drift() -> None:
 
 
 def p2_live_wiring_removal() -> None:
+    # Corrective X single authority: the sink observes aggregate
+    # coherence through the thin SQL-backed adapter.
     _replace_once(
         SINK_MODULE,
-        "            _p2_scope.assert_aggregate_scope_supported(\n",
-        "            _p2_scope.assert_aggregate_scope_supported_DISABLED(\n",
+        "            await _p2_conduction.assert_aggregate_scope_supported_via_authority(\n",
+        "            await _p2_conduction.assert_aggregate_scope_supported_via_authority_DISABLED(\n",
         defect="p2_live_wiring_removal",
     )
 
@@ -364,10 +366,20 @@ def p2_window_inclusive_mutation() -> None:
 
 
 def p2_identity_provider_blindness() -> None:
+    # Corrective X single authority: provider binding lives in the thin
+    # adapter's authority-observed classification (binding assertion +
+    # aggregate material). Blinding both sites must trip the conduction
+    # token census.
     _replace_once(
         CONDUCTION_MODULE,
-        '        f"{item.ingress_id}:{item.classification.provider}:"',
-        '        f"{item.ingress_id}:constant_provider:"  # NC-P2-PROVIDER-BLIND\n',
+        "            not bound.classification.provider\n",
+        "            not bound.classification.rail  # NC-P2-PROVIDER-BLIND\n",
+        defect="p2_identity_provider_blindness",
+    )
+    _replace_once(
+        CONDUCTION_MODULE,
+        '            f"{scoped.classification.provider}:"\n',
+        '            f"constant_provider:"  # NC-P2-PROVIDER-BLIND\n',
         defect="p2_identity_provider_blindness",
     )
 
@@ -471,13 +483,14 @@ def p2_outbox_fk_removal() -> None:
 
 
 def p2_source_sha_rebinding() -> None:
+    # Corrective X single authority: no Python digest exists. The
+    # equivalent violation binds source bytes into scope identity
+    # material at the thin adapter (the v3 law forbids exactly this
+    # token in the conduction module).
     _replace_once(
         CONDUCTION_MODULE,
-        "            str(scope_policy_version),\n"
-        "            str(policy_semantic_sha256 or \"\"),",
-        "            str(scope_policy_version),\n"
-        '            str(policy_source_sha256 or ""),  # NC-P2-SOURCE-SHA nonsemantic bytes bind identity\n'
-        "            str(policy_semantic_sha256 or \"\"),",
+        "        policy_source_sha256=identity.source_sha256,\n",
+        "        policy_source_sha256=str(policy_source_sha256 or \"\"),  # NC-P2-SOURCE-SHA\n",
         defect="p2_source_sha_rebinding",
     )
 

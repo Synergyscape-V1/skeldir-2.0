@@ -133,7 +133,12 @@ from app.finance_reconciliation.coverage_authority import _normalize_platforms
 report["delegation_ok"] = _normalize_platforms(None) == normalize_provider_set(None)
 
 sink_source = open("app/finance_reconciliation/canonical_sink.py", encoding="utf-8").read()
-report["wiring_ok"] = "_p2_scope.assert_aggregate_scope_supported(" in sink_source
+# Corrective X single authority: the sink observes aggregate coherence
+# through the thin SQL-backed adapter.
+report["wiring_ok"] = (
+    "_p2_conduction.assert_aggregate_scope_supported_via_authority("
+    in sink_source
+)
 report["conduction_wiring_ok"] = "derive_governed_scope(" in sink_source
 report["conduction_observation_ok"] = "b26_p2_candidate_scope_derived" in sink_source
 
@@ -193,7 +198,12 @@ report["corrective_iii_wiring_ok"] = (
     and "relay_b26_p2_pending_dispatches"
     in open("app/tasks/b26_p2_relay.py", encoding="utf-8").read()
     and conduction.SCOPE_IDENTITY_VERSION == "b2.6-p2-scope-identity-v3"
-    and "item.classification.provider" in open(
+    # Corrective X single authority: per-item provider/rail/currency are
+    # bound from the authority-observed classification (thin adapter).
+    and "classification.provider" in open(
+        "app/finance_reconciliation/candidate_conduction.py", encoding="utf-8"
+    ).read()
+    and "classification.rail" in open(
         "app/finance_reconciliation/candidate_conduction.py", encoding="utf-8"
     ).read()
 )

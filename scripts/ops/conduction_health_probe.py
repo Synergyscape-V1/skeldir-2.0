@@ -1,20 +1,23 @@
 """B2.6-P2 Corrective VIII deployed conduction-health probe
-(Corrective IX: scheduler liveness separated from evaluation freshness).
+(Corrective X: scheduler-plane honesty -- activity evidence, never
+process-liveness claims).
 
 Shipping consumer for the independent conduction signal
 (GET /health/b26-p2-conduction): exits 0 only when the endpoint is
 reachable AND reports no required action AND the evaluator heartbeat is
-present for every tenant AND the scheduler heartbeat is present for
-every tenant. Any other outcome (unreachable, 503,
-action_required, evaluator absence, scheduler absence) exits nonzero
-with a machine-readable line, so container healthchecks and platform
-alerting can consume P2 degradation automatically instead of leaving a
-JSON field unread.
+present for every tenant AND the scheduler-plane heartbeat is present
+for every tenant. Any other outcome (unreachable, 503,
+action_required, evaluator absence, scheduler-plane absence) exits
+nonzero with a machine-readable line, so container healthchecks and
+platform alerting can consume P2 degradation automatically instead of
+leaving a JSON field unread.
 
-Separation law (IX): scheduler_alive (scheduler_absent_total == 0)
-is scheduler liveness; evaluation_fresh (evaluator_absent_total == 0)
-is evaluation freshness. evaluation_fresh != scheduler_alive: each is
-checked independently and each fails the probe on its own.
+Honesty law (X): scheduler_plane_active (scheduler_absent_total == 0)
+is recent authorized scheduler-plane activity; evaluation_fresh
+(evaluator_absent_total == 0) is evaluation freshness.
+evaluation_fresh != scheduler_plane_active: each is checked
+independently and each fails the probe on its own. Neither asserts
+orchestrator-attested process liveness.
 
 Evaluates the SHIPPING observer path end to end (API process + database +
 evaluator + scheduler), never the heartbeat tables directly: a forged

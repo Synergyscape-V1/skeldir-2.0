@@ -707,6 +707,17 @@ KNOWN_NON_P2_DEFINERS = frozenset(
 
 KNOWN_P2_DEFINERS = frozenset(
     {
+        # Corrective X: the provenance attester is a new SECURITY
+        # DEFINER authority (EXECUTE app_user, hence census-visible).
+        # The effect guards are SECURITY DEFINER with no EXECUTE
+        # grant to any role (they fire through triggers only, proven
+        # live): they are tracked by the X authority validator (live
+        # source equivalence) and the bootstrap trigger census, never
+        # by the grant-based definer census. (The normalization
+        # family, the strip helpers, and the classifier are SECURITY
+        # INVOKER pure computation: EXECUTE surface census + X coverage
+        # registry.)
+        "b26_p2_attest_provenance_evidence",
         "b26_p2_canonical_scope_identity_for_window",
         "b26_p2_mark_conducted",
         "b26_p2_operational_disposition",

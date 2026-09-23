@@ -17,7 +17,7 @@ import time
 from typing import Any, Mapping, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -492,6 +492,23 @@ async def _adopt_or_promote_ingress(
             )
         existing.event_id = event_id
         existing.updated_at = datetime.now(timezone.utc)
+        # Corrective X re-ingestion restoration: a genuine signed
+        # duplicate re-establishes provenance through recorded evidence,
+        # never a bare status write. The attester binds the row's own
+        # provider idempotency key as the evidence reference and
+        # promotes unknown_legacy roots; already-known roots simply
+        # refresh their evidence trail.
+        await session.execute(
+            text(
+                "SELECT public.b26_p2_attest_provenance_evidence("
+                " :ingress_id, 'signed_provider_reingestion',"
+                " :evidence_ref)"
+            ),
+            {
+                "ingress_id": str(existing.id),
+                "evidence_ref": str(existing.idempotency_key),
+            },
+        )
         return existing
     if incoming_verified:
         for field in (

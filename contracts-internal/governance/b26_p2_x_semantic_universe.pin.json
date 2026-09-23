@@ -1,0 +1,63 @@
+{
+  "producer": "validate_b26_p2_x_semantic",
+  "entrypoint": "app.tasks.revenue_verification",
+  "modules": [
+    "app.bayesian.dirty_marker",
+    "app.bayesian.model_identity",
+    "app.celery_app",
+    "app.core",
+    "app.core.clock",
+    "app.core.config",
+    "app.core.control_plane",
+    "app.core.day_window",
+    "app.core.identity",
+    "app.core.managed_settings_contract",
+    "app.core.money",
+    "app.core.queues",
+    "app.core.secrets",
+    "app.db",
+    "app.db.session",
+    "app.finance_reconciliation",
+    "app.finance_reconciliation.candidate_conduction",
+    "app.finance_reconciliation.conduction_state",
+    "app.finance_reconciliation.dispatch_authority",
+    "app.finance_reconciliation.scope_authority",
+    "app.finance_reconciliation.tenant_authority",
+    "app.observability",
+    "app.observability.celery_task_lifecycle",
+    "app.observability.context",
+    "app.observability.logging_config",
+    "app.observability.metrics",
+    "app.observability.metrics_policy",
+    "app.observability.metrics_runtime_config",
+    "app.observability.multiprocess_shard_pruner",
+    "app.privacy.output_redaction",
+    "app.revenue_verification.batch_engine",
+    "app.revenue_verification.state_transitions",
+    "app.revenue_verification.timing_constants",
+    "app.security.auth",
+    "app.security.revocation_runtime",
+    "app.security.secret_boundary",
+    "app.services.auth_revocation",
+    "app.tasks.beat_schedule",
+    "app.tasks.context",
+    "app.tasks.revenue_verification"
+  ],
+  "b23_footprint": [
+    "canonical_commerce_reference",
+    "status",
+    "tenant_id",
+    "webhook_ingress_identity_id"
+  ],
+  "trigger_columns": [
+    "canonical_commerce_reference",
+    "status",
+    "tenant_id",
+    "webhook_ingress_identity_id"
+  ],
+  "dynamic_forms": {
+    "app.finance_reconciliation.scope_authority": [
+      "import-importlib:50"
+    ]
+  }
+}

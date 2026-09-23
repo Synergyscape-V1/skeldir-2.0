@@ -167,16 +167,17 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
                 "routing_key": f"{QUEUE_B26_P2_RELAY}.task",
             },
         }
-    # Corrective IX scheduler-liveness ticker: beat-scheduled on the same
+    # Corrective X scheduler-plane ticker: beat-scheduled on the same
     # cadence as the relay sweep / evaluator so the API threshold*4
-    # absence law observes scheduler and evaluation from one cadence.
-    # The task MUST be consumed under the beat principal (app_beat): the
-    # DB function refuses app_relay, so routing this to the relay queue
-    # fails closed by design. No queue override is set here; production
-    # provides an app_beat-principal consumer (local compose documents
-    # the gap: no beat-principal worker exists there). The disable flag
-    # exists ONLY for the falsifier (ticker removed -> scheduler_absent
-    # fires while evaluation stays fresh); no production topology sets it.
+    # absence law observes scheduler plane and evaluation from one
+    # cadence. The HealingBeatScheduler executes this entry INLINE in
+    # the beat process (which holds the app_beat credential), so no
+    # queue consumer is required: routing it to the relay queue would
+    # fail closed by design (the DB function refuses app_relay), and
+    # publishing it to the default queue would be dead wiring. The
+    # disable flag exists ONLY for the falsifier (ticker removed ->
+    # scheduler_plane_absent fires while evaluation stays fresh); no
+    # production topology sets it.
     if os.getenv("SKELDIR_B26_P2_DISABLE_SCHEDULER_HEARTBEAT_JOB") != "1":
         scheduler_interval = _b26_p2_scheduler_heartbeat_interval_seconds()
         schedule["b26-p2-scheduler-heartbeat"] = {

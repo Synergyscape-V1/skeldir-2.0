@@ -1,5 +1,19 @@
 """B2.6-P2 Corrective II canonical scope derivation boundary.
 
+Corrective X single-authority law (added)
+-----------------------------------------
+The SQL database is the single P2 semantic authority. This module is a
+thin adapter: per-candidate disposition and the window scope identity are
+observed from the live sovereign functions
+``public.b26_p2_classify_candidate`` /
+``public.b26_p2_canonical_scope_identity_for_window`` and never
+independently computed. The former pure-Python digest formatter is
+deleted; the former pure-Python law library (``scope_authority.py``) is
+frozen byte-identical and no truth-path module may import its
+classify/normalize surface (AST ban enforced in CI), so mutating it
+cannot move terminal truth. Snapshot coherence, RLS completeness,
+identity conservation, and money labeling remain this adapter's
+(non-semantic) obligations.
 Corrective I law (preserved)
 ----------------------------
 Excluded or unresolved evidence never vanishes: the fetch reads ALL
@@ -65,7 +79,6 @@ What this module does NOT do
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -79,7 +92,6 @@ from app.finance_reconciliation.scope_authority import (
     B26_P2_SCOPE_POLICY_VERSION,
     CanonicalScopeClassification,
     ScopeAuthorityError,
-    classify_candidate,
     load_b26_p2_scope_policy,
     scope_policy_identity,
     validate_window,
@@ -525,86 +537,82 @@ SCOPE_IDENTITY_VERSION = "b2.6-p2-scope-identity-v3"
 # explicitly declares and proves it non-identity metadata. Within-window
 # event instants are the sole declared non-identity field: the governed
 # window is day-granular, so two instants in the same UTC day carry the
-# same scope meaning (proven by the window oracle half-open law). Every
-# other semantic field below is identity-bearing.
+# same scope meaning (proven by the window oracle half-open law). The
+# identity digest itself is computed once, inside the single SQL semantic
+# authority; this adapter observes it and never formats identity material.
+_AGGREGATE_SCOPE_SOURCE_REFERENCE = "canonical_aggregate_scope"
 
 
-def _compute_scope_identity(
-    *,
-    tenant: UUID,
-    window_start: datetime,
-    window_end: datetime,
-    scope_policy_version: str,
-    scoped: tuple[ScopedCandidate, ...],
-    policy_semantic_sha256: str = "",
-    money_semantics: str = "",
-    money_authority: str = "",
-    canonical_net_authority: str = "",
-) -> str:
-    """Bind the complete canonical P2 semantic record to one digest.
-
-    Material per candidate is
-    ``ingress_id:provider:rail:currency:disposition:reason:amount`` using
-    canonical normalized provider/rail/currency (representational variants
-    such as case/whitespace normalize identically and preserve identity,
-    while a supported provider A -> supported provider B, a rail change, or
-    a currency semantic change changes the digest even when disposition,
-    reason, amount, and source UUID are unchanged). The top-level material
-    binds the governing SEMANTIC policy identity (semantic SHA, not the
-    human version string alone and never the policy file's raw source
-    bytes) and the money-semantic labels, so a policy semantic change or
-    a money-label change changes the identity even when every numeric
-    aggregate is unchanged, while a comment/whitespace-only policy edit
-    preserves it (Corrective IV semantic-vs-provenance law). The source
-    SHA remains emitted on every scope result as audit provenance; it is
-    deliberately not identity-bearing. The multiset is sorted so replay is
-    stable and ordering-only changes preserve identity.
-    """
-    lines = sorted(
-        f"{item.ingress_id}:{item.classification.provider}:"
-        f"{item.classification.rail}:{item.classification.currency_code}:"
-        f"{item.classification.disposition}:"
-        f"{item.classification.reason}:{int(item.verified_amount_minor)}"
-        for item in scoped
-    )
-    payload = "|".join(
-        [
-            SCOPE_IDENTITY_VERSION,
-            str(tenant),
-            window_start.isoformat(),
-            window_end.isoformat(),
-            str(scope_policy_version),
-            str(policy_semantic_sha256 or ""),
-            str(money_semantics or P2_MONEY_SEMANTICS),
-            str(money_authority or P2_MONEY_AUTHORITY),
-            str(canonical_net_authority or P2_CANONICAL_NET_AUTHORITY),
-            *lines,
-        ]
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _classify_one(
+async def _classify_one_via_authority(
+    session: AsyncSession,
     candidate: ReconciliationCandidate,
     *,
     window_start: datetime,
     window_end: datetime,
 ) -> ScopedCandidate:
+    """Classify one candidate through the single SQL semantic authority.
+
+    The sovereign per-candidate law is ``public.b26_p2_classify_candidate``
+    (provider -> currency -> window -> reference priority, ASCII strip
+    law). This adapter passes raw durable evidence and binds the
+    returned disposition; it branches on no P2 semantic itself. Any
+    meaning change must land in the SQL authority (governed migration),
+    never here.
+    """
     try:
-        verdict = classify_candidate(
-            tenant_id=candidate.tenant_id,
-            provider_raw=candidate.provider_raw,
-            currency_raw=candidate.currency_raw,
-            event_time=candidate.event_time,
-            window_start=window_start,
-            window_end=window_end,
-            scope_policy_version=B26_P2_SCOPE_POLICY_VERSION,
-            source_reference=candidate.source_reference,
-        )
+        start = _normalize_utc_window_bound(window_start)
+        end = _normalize_utc_window_bound(window_end)
     except ScopeAuthorityError as exc:
+        raise ScopeConductionError(
+            f"p2_conduction_window_refused:{candidate.provenance}:{exc}"
+        ) from exc
+    try:
+        row = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT o_provider AS provider,"
+                        " o_rail AS rail,"
+                        " o_currency AS currency_code,"
+                        " o_disposition AS disposition,"
+                        " o_reason AS reason"
+                        " FROM public.b26_p2_classify_candidate("
+                        " :tenant_id, :provider_raw, :currency_raw,"
+                        " :event_time, :window_start, :window_end,"
+                        " :scope_policy_version, :source_reference)"
+                    ),
+                    {
+                        "tenant_id": str(candidate.tenant_id),
+                        "provider_raw": candidate.provider_raw,
+                        "currency_raw": candidate.currency_raw,
+                        "event_time": candidate.event_time,
+                        "window_start": start,
+                        "window_end": end,
+                        "scope_policy_version": B26_P2_SCOPE_POLICY_VERSION,
+                        "source_reference": candidate.source_reference,
+                    },
+                )
+            )
+            .mappings()
+            .one()
+        )
+    except ScopeConductionError:
+        raise
+    except Exception as exc:
         raise ScopeConductionError(
             f"p2_conduction_candidate_refused:{candidate.provenance}:{exc}"
         ) from exc
+    verdict = CanonicalScopeClassification(
+        tenant_id=candidate.tenant_id,
+        provider=str(row["provider"]),
+        rail=str(row["rail"]),
+        currency_code=str(row["currency_code"]),
+        window_start=start,
+        window_end=end,
+        scope_policy_version=B26_P2_SCOPE_POLICY_VERSION,
+        disposition=str(row["disposition"]),
+        reason=str(row["reason"]),
+    )
     if verdict.tenant_id != candidate.tenant_id:
         raise ScopeConductionError("p2_conduction_tenant_binding_lost")
     return ScopedCandidate(
@@ -615,6 +623,136 @@ def _classify_one(
         provenance=candidate.provenance,
         classification=verdict,
     )
+
+
+def _normalize_utc_window_bound(value: Any) -> datetime:
+    if not isinstance(value, datetime):
+        raise ScopeAuthorityError("invalid_window_authority:not_datetime")
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        raise ScopeAuthorityError("invalid_window_authority:naive_datetime_refused")
+    return value.astimezone(timezone.utc)
+
+
+async def _observe_scope_identity_via_authority(
+    session: AsyncSession,
+    *,
+    tenant: UUID,
+    window_start: datetime,
+    window_end: datetime,
+) -> str:
+    """Observe the window scope identity from the single SQL authority."""
+    try:
+        row = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT public.b26_p2_canonical_scope_identity_for_window("
+                        " :tenant_id, :window_start, :window_end) AS scope_identity"
+                    ),
+                    {
+                        "tenant_id": str(tenant),
+                        "window_start": window_start,
+                        "window_end": window_end,
+                    },
+                )
+            )
+            .mappings()
+            .one()
+        )
+    except Exception as exc:
+        raise ScopeConductionError(f"p2_conduction_identity_refused:{exc}") from exc
+    scope_identity = str(row["scope_identity"])
+    if len(scope_identity) != 64:
+        raise ScopeConductionError("p2_scope_identity_malformed")
+    return scope_identity
+
+
+async def assert_aggregate_scope_supported_via_authority(
+    session: AsyncSession,
+    *,
+    tenant_id: Any,
+    supported_platforms: Sequence[str] | None,
+    currency_code: Any,
+    window_start: Any,
+    window_end: Any,
+    scope_policy_version: Any = B26_P2_SCOPE_POLICY_VERSION,
+) -> tuple[CanonicalScopeClassification, ...]:
+    """Require every governed aggregate-scope member to classify in scope.
+
+    Single-authority variant of the frozen pure-Python aggregate assert:
+    every disposition is observed from ``public.b26_p2_classify_candidate``
+    with the window lower bound as the representative in-window instant.
+    Any member that does not resolve to SUPPORTED_AND_IN_SCOPE fails
+    closed. The provider universe for ``None`` is the governed policy
+    document's canonical list (validated == sovereign at policy load).
+    """
+    load_b26_p2_scope_policy()
+    if (
+        not isinstance(scope_policy_version, str)
+        or scope_policy_version != B26_P2_SCOPE_POLICY_VERSION
+    ):
+        raise ScopeConductionError(
+            f"p2_conduction_policy_version_mismatch:{scope_policy_version}"
+        )
+    if isinstance(tenant_id, UUID):
+        tenant = tenant_id
+    else:
+        token = str(tenant_id).strip()
+        if not token:
+            raise ScopeConductionError("p2_conduction_tenant_missing")
+        try:
+            tenant = UUID(token)
+        except (ValueError, AttributeError) as exc:
+            raise ScopeConductionError("p2_conduction_tenant_malformed") from exc
+    try:
+        start, end = validate_window(window_start, window_end)
+    except ScopeAuthorityError as exc:
+        raise ScopeConductionError(f"p2_conduction_window_refused:{exc}") from exc
+    if supported_platforms is None:
+        document = load_b26_p2_scope_policy()
+        raw_members = list(document.get("canonical_providers", []))
+    else:
+        if isinstance(supported_platforms, str):
+            raise ScopeConductionError("p2_conduction_aggregate_refused:bare_string")
+        try:
+            raw_members = list(supported_platforms)
+        except TypeError as exc:
+            raise ScopeConductionError(
+                f"p2_conduction_aggregate_refused:{type(supported_platforms).__name__}"
+            ) from exc
+    members = sorted(set(raw_members))
+    if not members:
+        raise ScopeConductionError("p2_conduction_aggregate_refused:empty_set")
+    currency_token = str(currency_code)
+    results: list[CanonicalScopeClassification] = []
+    for provider in members:
+        probe = ReconciliationCandidate(
+            tenant_id=tenant,
+            ingress_id=tenant,
+            provider_raw=str(provider),
+            currency_raw=currency_token,
+            event_time=start,
+            verified_amount_minor=0,
+            source_reference=_AGGREGATE_SCOPE_SOURCE_REFERENCE,
+            provenance="p2_aggregate_scope_probe",
+        )
+        scoped = await _classify_one_via_authority(
+            session, probe, window_start=start, window_end=end
+        )
+        # Authority-observed provider/rail/currency below: conserved on
+        # the record from the item classification, never caller-asserted.
+        _material = (
+            f"{scoped.classification.provider}:"
+            f"{scoped.classification.rail}:"
+            f"{scoped.classification.currency_code}"
+        )
+        if scoped.classification.disposition != "SUPPORTED_AND_IN_SCOPE":
+            raise ScopeConductionError(
+                "p2_conduction_aggregate_incoherent:"
+                f"{_material}:{scoped.classification.disposition}"
+            )
+        results.append(scoped.classification)
+    return tuple(results)
 
 
 async def derive_governed_scope(
@@ -646,10 +784,21 @@ async def derive_governed_scope(
         start, end = validate_window(window_start, window_end)
     except ScopeAuthorityError as exc:
         raise ScopeConductionError(f"p2_conduction_window_refused:{exc}") from exc
-    scoped = tuple(
-        _classify_one(candidate, window_start=start, window_end=end)
-        for candidate in candidates
-    )
+    scoped_list: list[ScopedCandidate] = []
+    for candidate in candidates:
+        bound = await _classify_one_via_authority(
+            session, candidate, window_start=start, window_end=end
+        )
+        # The item classification provider/rail/currency below are the
+        # authority-observed values bound onto the conserved record.
+        if (
+            not bound.classification.provider
+            or not bound.classification.rail
+            or not bound.classification.currency_code
+        ):
+            raise ScopeConductionError("p2_conduction_authority_binding_lost")
+        scoped_list.append(bound)
+    scoped = tuple(scoped_list)
     if len(scoped) != len(candidates):
         raise ScopeConductionError("p2_conduction_member_loss")
     count, total = await _independent_population_totals(session, tenant=tenant)
@@ -700,22 +849,13 @@ async def derive_governed_scope(
         item.verified_amount_minor for item in excluded
     ):
         raise ScopeConductionError("p2_conduction_reason_amount_not_conserved")
-    scope_identity = _compute_scope_identity(
-        tenant=tenant,
-        window_start=start,
-        window_end=end,
-        scope_policy_version=B26_P2_SCOPE_POLICY_VERSION,
-        scoped=scoped,
-        # Corrective IV: the source SHA is provenance (still stored on the
-        # result below), never identity material. Only the semantic SHA
-        # binds the digest, so nonsemantic policy bytes cannot drift scope.
-        policy_semantic_sha256=identity.semantic_sha256,
-        money_semantics=P2_MONEY_SEMANTICS,
-        money_authority=P2_MONEY_AUTHORITY,
-        canonical_net_authority=P2_CANONICAL_NET_AUTHORITY,
+    # Corrective X: the window scope identity is observed from the single
+    # SQL semantic authority, never formatted here. The file-observed
+    # policy SHAs below remain audit provenance; the recorder/gate bind
+    # the live database policy row independently (fail-closed on drift).
+    scope_identity = await _observe_scope_identity_via_authority(
+        session, tenant=tenant, window_start=start, window_end=end
     )
-    if len(scope_identity) != 64:
-        raise ScopeConductionError("p2_scope_identity_malformed")
     return CanonicalReconciliationScope(
         tenant_id=tenant,
         window_start=start,
@@ -806,6 +946,7 @@ __all__: Sequence[str] = (
     "ReconciliationCandidate",
     "ScopeConductionError",
     "ScopedCandidate",
+    "assert_aggregate_scope_supported_via_authority",
     "derive_governed_scope",
     "derive_single_candidate_scope",
     "describe_scope_summary",

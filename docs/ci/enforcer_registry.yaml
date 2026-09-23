@@ -5359,3 +5359,245 @@
     the IX coverage gate.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-x-semantic-universe
+  path: scripts/ci/validate_b26_p2_x_semantic.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every code and database object capable of altering the
+    P2 consequence is governed: the transitive semantic universe is derived
+    from the production entrypoint, the B2.3 footprint is co-derived with
+    the temporal trigger, dynamic forms are disclosed, and the frozen
+    pure-Python surface is banned from the truth path.'
+  command: python scripts/ci/validate_b26_p2_x_semantic.py --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_semantic.py --help
+  expected_failure_meaning: A new P2 semantic dependency, an ungoverned helper
+    module, an undeclared dynamic form, or a truth-path pure-Python import
+    lands while mandatory proof stays green.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_x_semantic.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-x-two-phase
+  path: scripts/ci/check_b26_p2_x_two_phase.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'A change cannot both introduce a new load-bearing
+    semantic rule and use the new rule as its sole evidence: protected
+    history must resolve, frozen policy/law files must not drift, and
+    truth changes must carry regenerated representations.'
+  command: python scripts/ci/check_b26_p2_x_two_phase.py --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/check_b26_p2_x_two_phase.py --help
+  expected_failure_meaning: A semantic change ships with its adjudicating
+    oracle changed in the same trust action, or history is unavailable
+    and the gate self-compares.
+  first_diagnostic_command: python scripts/ci/check_b26_p2_x_two_phase.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-x-contract-oracle
+  path: scripts/ci/validate_b26_p2_x_contract_oracle.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'The single P2 semantic authority is judged by stable
+    phase laws (normalization, window, priority, disposition meanings,
+    tenant isolation), not by implementation equivalence: common-mode wrong
+    semantics RED even after every candidate representation is refreshed.'
+  command: python scripts/ci/validate_b26_p2_x_contract_oracle.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_contract_oracle.py --help
+  expected_failure_meaning: Every P2 implementation agrees on one wrong
+    meaning while the pipeline stays green.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_x_contract_oracle.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-x-authority-effect
+  path: scripts/ci/validate_b26_p2_x_authority.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'No database path can create false conducted or
+    forged receipt evidence regardless of function name, overload, helper,
+    trigger, or direct write: OID-identified writers are allowlisted by
+    exact signature, live bodies equal migration meaning, and live effect
+    canaries adjudicate behavior under real principals.'
+  command: python scripts/ci/validate_b26_p2_x_authority.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_authority.py --help
+  expected_failure_meaning: A weakened approved body, a same-name overload,
+    a hint-named helper, or a live-only pg_proc mutation produces terminal
+    effects while file validators stay green or crash.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_x_authority.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-x-proof-plane
+  path: scripts/ci/validate_b26_p2_x_proof_plane.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'The candidate cannot weaken its own proof and retain
+    merge authority: the PF-X battery mutates validators, history,
+    live bodies, pins, helpers, overloads, dependencies, policy, and
+    images, and the protected plane stays RED until effects are repaired.'
+  command: python scripts/ci/validate_b26_p2_x_proof_plane.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_proof_plane.py --help
+  expected_failure_meaning: A proof-plane mutation (neutered validator,
+    removed history, crashed check, regenerated pin, renamed helper)
+    certifies a prohibited effect.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_x_proof_plane.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-x-artifact-identity
+  path: scripts/ci/validate_b26_p2_x_artifact.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'The exact digest receiving load-bearing proof is the
+    digest selected for deployment: base images are digest-pinned, the
+    health probe ships inside the image, and post-proof substitution is
+    refused or re-proven.'
+  command: python scripts/ci/validate_b26_p2_x_artifact.py --image-tag $IMAGE --image-id
+    $DIGEST --tree-sha $TREE --commit-sha $SHA --base-image-ref "$FROM" --evidence-out
+    artifacts/b26_p2/container/x-artifact.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Candidate Container Equivalence
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_artifact.py --help
+  expected_failure_meaning: A rebuilt or substituted image deploys without
+    re-proof, or the base floats under a mutable tag.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_x_artifact.py --image-tag <tag>
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-x-canaries-library
+  path: scripts/ci/b26_p2_x_canaries.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: Live effect canaries execute approved and adversarial
+    conducted/receipt/provenance paths under real principals with
+    self-contained fixtures.
+  command: python -c "from scripts.ci.b26_p2_x_canaries import run_canaries"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_x_canaries import run_canaries"
+  expected_failure_meaning: Canary fixtures drift from the governed effect
+    law, so terminal effects go unprobed.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_x_authority.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the X authority validator executes it for
+    the live effect battery.
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-x-coverage-registry
+  path: scripts/ci/b26_p2_x_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: X registry extends IX coverage for the classifier,
+    normalization family, attester, and scheduler EXECUTE surfaces.
+  command: python -c "from scripts.ci.b26_p2_x_coverage import X_COVERED_SURFACES;
+    print(len(X_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_x_coverage import
+    X_COVERED_SURFACES"
+  expected_failure_meaning: X EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the X coverage gate.
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-x-evaluator-runner
+  path: scripts/ci/run_b26_p2_evaluator_once.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: The relay-credential evaluator executes exactly as
+    deployed (fresh process, relay DSN) for the X assurance battery.
+  command: python scripts/ci/run_b26_p2_evaluator_once.py
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python scripts/ci/run_b26_p2_evaluator_once.py
+  expected_failure_meaning: The battery tests the evaluator under the wrong
+    credential, so relay-consumption evidence is void.
+  first_diagnostic_command: python scripts/ci/run_b26_p2_evaluator_once.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the X assurance battery invokes it under
+    the relay credential.
+  subsumed_by: ''
+  registry_action: utility

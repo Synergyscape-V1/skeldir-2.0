@@ -84,6 +84,7 @@ async def evaluate_operational_health() -> dict:
     pending_total = 0
     pending_actionable_total = 0
     terminal_total = 0
+    scheduler_plane_absent_total = 0
     try:
         for tenant in tenants:
             async with _tenant_session(tenant_id=tenant) as session:
@@ -141,6 +142,38 @@ async def evaluate_operational_health() -> dict:
                     .one()
                 )
                 pending_actionable_total += int(pending_actionable_row["n"] or 0)
+                # Corrective X automatic consumption: the shipped evaluator
+                # observes scheduler-plane absence under the same
+                # threshold*4 law the API uses, so a silent scheduler
+                # plane is operator-visible through this task's WARNING
+                # even when nobody polls the endpoint. The relay
+                # credential holds SELECT on the scheduler table; only
+                # the beat principal can tick it.
+                try:
+                    sched_row = (
+                        (
+                            await session.execute(
+                                text(
+                                    "SELECT EXTRACT(EPOCH FROM (now() - last_tick)) AS age"
+                                    " FROM public.b26_p2_scheduler_heartbeat"
+                                    " WHERE tenant_id = :tenant"
+                                ),
+                                {"tenant": str(tenant)},
+                            )
+                        )
+                        .mappings()
+                        .one_or_none()
+                    )
+                    if sched_row is None or sched_row["age"] is None:
+                        scheduler_plane_absent_total += 1
+                    elif float(sched_row["age"]) > float(int(threshold) * 4):
+                        scheduler_plane_absent_total += 1
+                except Exception:
+                    logger.exception(
+                        "b26_p2_scheduler_plane_observation_failed",
+                        extra={"tenant_id": str(tenant)},
+                    )
+                    scheduler_plane_absent_total += 1
                 # Heartbeat for monitor-of-monitor (P2-CA7-06, VIII-hardened):
                 # the ONLY writer is the SECURITY DEFINER
                 # b26_p2_record_evaluator_heartbeat(), which recomputes the
@@ -195,7 +228,10 @@ async def evaluate_operational_health() -> dict:
             "quarantine_total": quarantine_total,
         }
     action_required = (
-        stale_total > 0 or quarantine_total > 0 or pending_actionable_total > 0
+        stale_total > 0
+        or quarantine_total > 0
+        or pending_actionable_total > 0
+        or scheduler_plane_absent_total > 0
     )
     logger.info(
         "b26_p2_operational_health_evaluated",
@@ -209,6 +245,7 @@ async def evaluate_operational_health() -> dict:
             "pending_total": pending_total,
             "pending_actionable_total": pending_actionable_total,
             "terminal_total": terminal_total,
+            "scheduler_plane_absent_total": scheduler_plane_absent_total,
             "action_required": action_required,
         },
     )
@@ -224,6 +261,7 @@ async def evaluate_operational_health() -> dict:
                 "pending_total": pending_total,
                 "pending_actionable_total": pending_actionable_total,
                 "terminal_total": terminal_total,
+                "scheduler_plane_absent_total": scheduler_plane_absent_total,
                 "evaluator": EVALUATOR_TASK_NAME,
             },
         )
@@ -238,6 +276,7 @@ async def evaluate_operational_health() -> dict:
         "pending_total": pending_total,
         "pending_actionable_total": pending_actionable_total,
         "terminal_total": terminal_total,
+        "scheduler_plane_absent_total": scheduler_plane_absent_total,
     }
 
 
@@ -252,24 +291,28 @@ def evaluate_b26_p2_operational_health_task(self) -> dict:
 
 
 async def tick_scheduler_heartbeat() -> dict:
-    """Tick scheduler liveness heartbeat across tenants (beat principal only).
+    """Tick the scheduler-plane heartbeat across tenants (beat principal only).
 
-    Corrective IX separation: scheduler liveness
-    (public.b26_p2_scheduler_heartbeat via
-    public.b26_p2_record_scheduler_heartbeat()) is ticked by the beat
-    process, never by the relay-queue evaluator. The database function
-    is SECURITY DEFINER and refuses every session_user except
-    app_beat/migration_owner/postgres, so invoking it here under any
-    other credential (notably app_relay) fails closed and is counted
-    as failed, never as healthy evidence.
+    Corrective X execution: the beat scheduler executes this inline on
+    its schedule entry (HealingBeatScheduler intercepts the
+    ``b26-p2-scheduler-heartbeat`` entry), so the scheduled path has a
+    shipped consumer -- the beat process itself, which already holds
+    the app_beat credential. No queue consumer is required and none is
+    assumed. The Celery task wrapper below remains for manual/compat
+    invocation under the beat DSN.
+
+    Corrective X honesty: the ticked rows prove recent authorized
+    scheduler-plane activity, never orchestrator-attested process
+    liveness. The beating instance identity is recorded for operator
+    correlation (see app.beat_instance_id).
+
+    The database function is SECURITY DEFINER and refuses every
+    session_user except app_beat/migration_owner/postgres, so invoking
+    it here under any other credential (notably app_relay) fails
+    closed and is counted as failed, never as healthy evidence.
 
     Execution requirement: run this under the beat DSN
     (DATABASE_URL=$B26_P2_BEAT_DATABASE_URL, session_user app_beat).
-    The beat schedule wires SCHEDULER_TASK_NAME on the relay-sweep
-    cadence; production must consume it with an app_beat-principal
-    worker (the relay worker's app_relay credential is refused by
-    design). Uses the process engine (beat session) so the tenant GUC
-    is set per tenant via get_session exactly like the evaluator path.
 
     Returns counts only (no PII, no financial truth).
     """

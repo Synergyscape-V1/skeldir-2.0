@@ -468,13 +468,19 @@ async def b26_p2_conduction(response: Response) -> dict:
     `ok` (no stale work) from `stale_unconducted` (operator action
     required). Dependency failure yields 503.
 
-    Corrective IX separation: scheduler liveness (`scheduler_alive`,
-    derived from `scheduler_absent_total` over
-    public.b26_p2_scheduler_heartbeat) is independent of evaluation
-    freshness (`evaluation_fresh`, derived from `evaluator_absent_total`
-    over public.b26_p2_evaluator_heartbeat). evaluation_fresh !=
-    scheduler_alive: a live scheduler with no genuine evaluation, or a
-    fresh evaluation with a dead scheduler, are distinct operator facts.
+    Corrective X honesty law: the scheduler-plane signal is named for
+    exactly what its evidence proves. `scheduler_plane_active`
+    (derived from `scheduler_absent_total` over
+    public.b26_p2_scheduler_heartbeat) proves recent authorized
+    scheduler-plane activity occurred -- the beat scheduler loop
+    executing its schedule under the app_beat credential -- and is
+    independent of evaluation freshness (`evaluation_fresh`, derived
+    from `evaluator_absent_total` over
+    public.b26_p2_evaluator_heartbeat). evaluation_fresh !=
+    scheduler_plane_active: an active scheduler plane with no genuine
+    evaluation, or a fresh evaluation with a silent scheduler plane,
+    are distinct operator facts. Orchestrator-attested process liveness
+    is deliberately never claimed: no field here asserts it.
     """
     from app.db.session import engine as _engine  # noqa: PLC0415
     from app.db.session import get_session as _tenant_session  # noqa: PLC0415
@@ -560,12 +566,13 @@ async def b26_p2_conduction(response: Response) -> dict:
                         evaluator_absent_total += 1
                 except Exception:
                     evaluator_absent_total += 1
-                # Corrective IX separation: scheduler liveness is observed
+                # Corrective X honesty: the scheduler plane is observed
                 # from the same API failure domain but over its own table
                 # (public.b26_p2_scheduler_heartbeat) under the same
                 # threshold*4 law. Only the beat principal can tick it, so
                 # a relay-side evaluation cannot manufacture scheduler
-                # health.
+                # plane activity. The signal proves credential-plane
+                # activity recency, never orchestrator process liveness.
                 try:
                     sched_row = (
                         (
@@ -673,7 +680,8 @@ async def b26_p2_conduction(response: Response) -> dict:
             "pending_actionable_total": pending_actionable_total,
             "evaluator_absent_total": evaluator_absent_total,
             "scheduler_absent_total": scheduler_absent_total,
-            "scheduler_alive": scheduler_absent_total == 0,
+            "scheduler_plane_active": scheduler_absent_total == 0,
+            "scheduler_plane_evidence": "recent_authorized_scheduler_plane_activity",
             "evaluation_fresh": evaluator_absent_total == 0,
             "terminal_total": terminal_total,
             "stale_unconducted_count": stale_total,
