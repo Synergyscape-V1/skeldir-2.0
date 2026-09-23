@@ -56,13 +56,19 @@ IDENTITY_FILES = [
     "alembic/versions/007_skeldir_foundation/202609240001_b26_p2_corrective_x_assurance_sovereignty.py",
 ]
 
-PROBE_JUNK_SCOPE = '''
-import os, psycopg2, uuid
+PROBE_X_TAB_CONDUCTION = '''
+import asyncio
+import os
+import sys
+import uuid
+import psycopg2
 from datetime import datetime, timezone
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
 DAY_NOON = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
 POLICY_SHA = "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"
+TAB = chr(9)
+RAW_PROVIDER = TAB + "stripe"
 admin = psycopg2.connect(os.environ["PROBE_ADMIN_DSN"])
 admin.autocommit = True
 ac = admin.cursor()
@@ -74,32 +80,38 @@ ac.execute("INSERT INTO public.channel_taxonomy (code, family, is_paid, display_
 e = str(uuid.uuid4())
 ing = str(uuid.uuid4())
 ac.execute("INSERT INTO public.attribution_events (id, tenant_id, occurred_at, correlation_id, session_id, revenue_cents, raw_payload, idempotency_key, event_type, channel, campaign_id, conversion_value_cents, currency, event_timestamp, processed_at, processing_status) VALUES (%s, %s, %s, %s, %s, 38000, '{}'::jsonb, %s, 'conversion', 'probe_ch', 'c', 38000, 'USD', %s, %s, 'processed')", (e, t, DAY_NOON, str(uuid.uuid4()), str(uuid.uuid4()), "probe:" + tag, DAY_NOON, DAY_NOON))
-ac.execute("INSERT INTO public.webhook_ingress_identities (id, tenant_id, event_id, provider, provider_native_event_reference, provider_native_commerce_reference, normalized_commerce_reference_kind, normalized_commerce_reference_value, verified_amount_minor, verified_amount_currency, event_timestamp, idempotency_key, verified_commerce_ingress_state) VALUES (%s, %s, %s, 'stripe', %s, %s, 'order_reference', %s, 38000, 'USD', %s, %s, 'authenticity_verified')", (ing, t, e, "evt-" + tag, "ord-" + tag, "ord-" + tag, DAY_NOON, "probe:" + tag))
-task = "probe-junk-" + tag
-user_dsn = os.environ["PROBE_WORKER_DSN"].replace("app_worker:app_worker", "app_user:app_user")
-u = psycopg2.connect(user_dsn)
-u.autocommit = True
-uc = u.cursor()
-uc.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
-uc.execute("INSERT INTO public.b23_match_task_dispatches (tenant_id, webhook_ingress_identity_id, task_id, task_name, queue, routing_key, correlation_id, provider, provider_native_event_reference, provider_native_commerce_reference, normalized_commerce_reference_value, window_start, window_end) VALUES (%s, %s, %s, 'app.tasks.revenue_verification.execute_b23_batch_match_engine', 'b23_match_engine', 'b23_match_engine.task', %s, 'stripe', 'evt', 'ord', 'ord', %s, %s)", (t, ing, task, str(uuid.uuid4()), DAY_START, DAY_END))
-uc.execute("INSERT INTO public.b26_p2_execution_outbox (tenant_id, dispatch_task_id, webhook_ingress_identity_id) VALUES (%s, %s, %s)", (t, task, ing))
-uc.execute("INSERT INTO public.b26_p2_task_authority_directory (task_id, tenant_id, webhook_ingress_identity_id, window_start, window_end) VALUES (%s, %s, %s, %s, %s)", (task, t, ing, DAY_START, DAY_END))
-u.close()
-ac.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
+ac.execute("INSERT INTO public.webhook_ingress_identities (id, tenant_id, event_id, provider, provider_native_event_reference, provider_native_commerce_reference, normalized_commerce_reference_kind, normalized_commerce_reference_value, verified_amount_minor, verified_amount_currency, event_timestamp, idempotency_key, verified_commerce_ingress_state) VALUES (%s, %s, %s, %s, %s, %s, 'order_reference', %s, 38000, 'USD', %s, %s, 'authenticity_verified')", (ing, t, e, RAW_PROVIDER, "evt-" + tag, "ord-" + tag, "ord-" + tag, DAY_NOON, "probe:" + tag))
+task = "probe-tab-" + tag
+ac.execute("INSERT INTO public.b23_match_task_dispatches (tenant_id, webhook_ingress_identity_id, task_id, task_name, queue, routing_key, correlation_id, provider, provider_native_event_reference, provider_native_commerce_reference, normalized_commerce_reference_value, status, delivery_state, publish_attempts, window_start, window_end) VALUES (%s, %s, %s, 'app.tasks.revenue_verification.execute_b23_batch_match_engine', 'b23_match_engine', 'b23_match_engine.task', %s, %s, 'evt', 'ord', 'ord', 'dispatched', 'pending_publish', 0, %s, %s)", (t, ing, task, str(uuid.uuid4()), RAW_PROVIDER, DAY_START, DAY_END))
+ac.execute("INSERT INTO public.b26_p2_execution_outbox (tenant_id, dispatch_task_id, webhook_ingress_identity_id) VALUES (%s, %s, %s)", (t, task, ing))
+ac.execute("INSERT INTO public.b26_p2_task_authority_directory (task_id, tenant_id, webhook_ingress_identity_id, window_start, window_end) VALUES (%s, %s, %s, %s, %s)", (task, t, ing, DAY_START, DAY_END))
 ac.execute("UPDATE public.b23_match_task_dispatches SET delivery_state='published', first_published_at=now() WHERE task_id=%s", (task,))
 ac.execute("UPDATE public.b26_p2_execution_outbox SET state='published' WHERE dispatch_task_id=%s", (task,))
 ac.execute("INSERT INTO public.b23_match_verdicts (tenant_id, attribution_event_id, webhook_ingress_identity_id, provider, canonical_commerce_reference, provider_native_event_reference, provider_native_commerce_reference, status, match_quality, attributed_amount_minor, verified_amount_minor, currency_code, canonical_expected_gross_amount_minor, canonical_captured_gross_amount_minor, canonical_net_verified_amount_minor, discrepancy_amount_minor, discrepancy_ratio_bps, discrepancy_band) VALUES (%s, %s, %s, 'stripe', 'ord', 'evt', 'ord', 'matched_confirmed', 'high', 38000, 38000, 'USD', 38000, 38000, 38000, 0, 0, 'exact')", (t, e, ing))
 admin.close()
+sys.path.insert(0, "/app/backend")
+from app.finance_reconciliation.tenant_authority import open_governed_b23_snapshot_session
+from app.finance_reconciliation.candidate_conduction import derive_governed_scope
+async def _derive():
+    async with open_governed_b23_snapshot_session(t) as session:
+        return await derive_governed_scope(session, tenant_id=t, window_start=DAY_START, window_end=DAY_END)
+try:
+    scope = asyncio.run(_derive())
+except Exception as exc:
+    print("X_TAB_DERIVE_REFUSED:" + str(exc).splitlines()[0][:120])
+    raise SystemExit(0)
+print("X_TAB_DISPOSITION:" + scope.candidates[0].classification.disposition)
 w = psycopg2.connect(os.environ["PROBE_WORKER_DSN"])
 w.autocommit = True
 wc = w.cursor()
 try:
-    wc.execute("SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)", (task, "ab" * 32, 1, POLICY_SHA))
+    wc.execute("SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)", (task, scope.scope_identity, 1, POLICY_SHA))
     wc.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
-    print("STALE_JUNK_SCOPE_" + str(wc.fetchone()[0]).upper())
+    print("X_TAB_" + str(wc.fetchone()[0]).upper())
 except Exception as exc:
-    print("STALE_JUNK_SCOPE_REFUSED:" + str(exc).splitlines()[0][:100])
+    print("X_TAB_REFUSED:" + str(exc).splitlines()[0][:120])
 '''
+
 
 
 def _docker(*args: str) -> subprocess.CompletedProcess:
@@ -506,6 +518,8 @@ def main() -> int:
                         f"postgresql://migration_owner:migration_owner@pg:5432/{stale_db}",
                     "DATABASE_URL":
                         f"postgresql://app_user:app_user@pg:5432/{stale_db}",
+                    "B23_WORKER_DATABASE_URL":
+                        f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{stale_db}",
                 }
                 cmd = ["run", "--rm", "--network", NETWORK, "-w", "/app"]
                 for k, v in stale_env.items():
@@ -515,7 +529,7 @@ def main() -> int:
                 if proc.returncode != 0:
                     return _fail(details, "stale_migrate_failed:"
                                  + (proc.stdout + proc.stderr)[-800:])
-                probe = PROBE_JUNK_SCOPE
+                probe = PROBE_X_TAB_CONDUCTION
                 cmd = ["run", "--rm", "--network", NETWORK]
                 for k, v in stale_env.items():
                     cmd += ["-e", f"{k}={v}"]
@@ -529,17 +543,73 @@ def main() -> int:
                     base_tag, "python", "-c", probe,
                 ]
                 proc = _docker(*cmd)
-                # Base (VIII) physics ACCEPTS a valid-shape worker-invented
-                # scope digest the candidate refuses: the probe printing
-                # STALE_JUNK_SCOPE_CONDUCTED proves the falsifier is
-                # non-vacuous (it distinguishes the artifacts on the
-                # IX-defining behavioral delta, not on VII-era minting
-                # that VIII already closed).
-                if proc.returncode != 0 or "STALE_JUNK_SCOPE_CONDUCTED" not in proc.stdout:
+                # X single-authority delta: the base-tree image derives the
+                # tab-prefixed provider through its own Python meaning
+                # (IN_SCOPE) while the terminal binds the SQL meaning, so
+                # the receipt is refused as not-canonical and the lawful
+                # task strands. The probe printing X_TAB_REFUSED with a
+                # scope_not_canonical cause proves the falsifier
+                # distinguishes the artifacts (it is not vacuous).
+                base_out = proc.stdout + proc.stderr
+                if ("X_TAB_REFUSED" not in proc.stdout
+                        or "scope_not_canonical" not in base_out):
                     return _fail(
                         details,
-                        "stale_falsifier_vacuous:base_did_not_accept:"
-                        + (proc.stdout + proc.stderr)[-500:])
+                        "stale_falsifier_vacuous:base_did_not_strand:"
+                        + base_out[-500:])
+                details["stale_falsifier_base"] = "PASS_stranded_as_required"
+                # The candidate image must conduct the same lawful task:
+                # its thin adapter observes the SQL meaning, so receipt
+                # and gate agree and the terminal conducts.
+                xdelta_db = f"{DB_NAME}_xdelta"
+                conn = psycopg2.connect(admin_dsn)
+                conn.autocommit = True
+                try:
+                    cur = conn.cursor()
+                    cur.execute(f'DROP DATABASE IF EXISTS "{xdelta_db}"')
+                    cur.execute(f'CREATE DATABASE "{xdelta_db}"')
+                finally:
+                    conn.close()
+                subprocess.run(
+                    [sys.executable,
+                     "scripts/database/prepare_migration_authority_boundary.py",
+                     "--admin-dsn", admin_dsn, "--database-name", xdelta_db],
+                    cwd=str(REPO_ROOT), capture_output=True)
+                xdelta_env = {
+                    "MIGRATION_DATABASE_URL":
+                        f"postgresql://migration_owner:migration_owner@pg:5432/{xdelta_db}",
+                    "DATABASE_URL":
+                        f"postgresql://app_user:app_user@pg:5432/{xdelta_db}",
+                    "B23_WORKER_DATABASE_URL":
+                        f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{xdelta_db}",
+                }
+                cmd = ["run", "--rm", "--network", NETWORK, "-w", "/app"]
+                for k, v in xdelta_env.items():
+                    cmd += ["-e", f"{k}={v}"]
+                cmd += [args.image_tag, "alembic", "upgrade", "head"]
+                proc = _docker(*cmd)
+                if proc.returncode != 0:
+                    return _fail(details, "xdelta_migrate_failed:"
+                                 + (proc.stdout + proc.stderr)[-800:])
+                cmd = ["run", "--rm", "--network", NETWORK]
+                for k, v in xdelta_env.items():
+                    cmd += ["-e", f"{k}={v}"]
+                cmd += [
+                    "-e",
+                    "PROBE_ADMIN_DSN=postgresql://postgres:%s@pg:5432/%s"
+                    % (PG_PASSWORD, xdelta_db),
+                    "-e",
+                    "PROBE_WORKER_DSN=postgresql://app_worker:app_worker@pg:5432/%s"
+                    % xdelta_db,
+                    args.image_tag, "python", "-c", probe,
+                ]
+                proc = _docker(*cmd)
+                cand_out = proc.stdout + proc.stderr
+                if "X_TAB_CONDUCTED" not in proc.stdout:
+                    return _fail(
+                        details,
+                        "xdelta_falsifier_candidate_did_not_conduct:"
+                        + cand_out[-500:])
                 details["stale_falsifier"] = "PASS"
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", str(worktree)],
