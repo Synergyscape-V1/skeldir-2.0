@@ -571,3 +571,36 @@ async def test_xo_inline_tick_executes_and_evaluator_observes() -> None:
     health = _json.loads((proc.stdout or "").strip().splitlines()[-1])
     assert health["scheduler_plane_absent_total"] == 0
     assert health["status"] in ("ok", "action_required")
+
+
+def test_xo_scheduler_intercept_single_definition() -> None:
+    """XO-03: the inline intercept is the effective apply_entry.
+
+    Regression guard for a shadowed duplicate: exactly one
+    apply_entry definition exists on HealingBeatScheduler and it
+    dispatches the scheduler-plane entry inline.
+    """
+    import ast
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "app"
+        / "celery_beat.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    scheduler = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+        and node.name == "HealingBeatScheduler"
+    )
+    entries = [
+        node
+        for node in scheduler.body
+        if isinstance(node, ast.FunctionDef) and node.name == "apply_entry"
+    ]
+    assert len(entries) == 1
+    body = ast.dump(entries[0])
+    assert "B26_P2_SCHEDULER_HEARTBEAT_ENTRY" in body
+    assert "_apply_scheduler_plane_tick_inline" in body

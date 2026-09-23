@@ -1569,7 +1569,13 @@ def main() -> int:
                 )
                 return _fail("falsifier_false_conducted_allowed")
             except Exception as exc:
-                if "b26_p2_conducted_requires_gate" not in str(exc).split("\n")[0]:
+                # Corrective X: the conducted effect guard adjudicates
+                # every conducted transition at the effect boundary ahead
+                # of the legacy gate-presence guard. Either refusal proves
+                # caller-authored conducted is dead.
+                _head = str(exc).split("\n")[0]
+                if ("b26_p2_conducted_requires_gate" not in _head
+                        and "b26_p2_conducted_effect_refused" not in _head):
                     return _fail(f"falsifier_false_conducted_wrong_layer:{str(exc)[:150]}")
                 falsifiers["false_conducted"] = "RED_as_required"
             try:

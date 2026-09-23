@@ -165,11 +165,12 @@ class HealingBeatScheduler(PersistentScheduler):
         self._b26_p2_beat_instance_id = str(uuid.uuid4())
 
     def apply_entry(self, entry, producer=None) -> None:
+        # Corrective X inline execution: the scheduler-plane heartbeat
+        # entry executes in this process (which holds the app_beat
+        # credential) instead of publishing to a queue nobody consumes.
         if entry.name == B26_P2_SCHEDULER_HEARTBEAT_ENTRY:
             self._apply_scheduler_plane_tick_inline(entry)
             return
-
-    def apply_entry(self, entry, producer=None) -> None:
         # Message text is identical to celery's scheduler (log consumers
         # grep "Scheduler: Sending due task <entry>").
         logger.info("Scheduler: Sending due task %s (%s)", entry.name, entry.task)
