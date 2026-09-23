@@ -3957,3 +3957,160 @@
     IX_COVERED_SURFACES"
   risk_if_removed: New IX surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-x-semantic-universe
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_x_semantic.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every P2-consequence-capable object is governed; B2.3
+    reads co-derive temporal coverage; dynamic forms are disclosed.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: Entryport-derived universe (40 modules) with live
+    plant falsifiers (novel helper, new verdict read, dynamic form all RED).
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_x_semantic.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_semantic.py
+  risk_if_removed: Ungoverned semantic dependencies could land green.
+  decision: keep_required
+- gate_id: b26-p2-x-two-phase
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/check_b26_p2_x_two_phase.py
+  owning_phase: B2.6-P2
+  protected_invariant: Semantic changes cannot self-certify through a
+    co-changed oracle; history must resolve independently.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: Fail-closed history resolution plus frozen-file and
+    companion-regen checks, with the PF-X battery as behavioral half.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_x_proof_plane.py
+  local_reproduction_command: python scripts/ci/check_b26_p2_x_two_phase.py
+  risk_if_removed: Behavior and verifier could change together undetected.
+  decision: keep_required
+- gate_id: b26-p2-x-contract-oracle
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_x_contract_oracle.py
+  owning_phase: B2.6-P2
+  protected_invariant: Common-mode wrong P2 semantics are caught by stable
+    phase law, not implementation equivalence.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: 17 hardcoded law cells RED on coordinated wrong
+    meaning after representation refresh (PF-X-08).
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_x_contract_oracle.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_contract_oracle.py
+  risk_if_removed: Uniformly wrong P2 meaning could ship green.
+  decision: keep_required
+- gate_id: b26-p2-x-authority-effect
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_x_authority.py
+  owning_phase: B2.6-P2
+  protected_invariant: No path creates false conducted or forged receipts
+    regardless of function name, overload, helper, or direct write.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: OID writer scan, pgdef equivalence over 16 routines,
+    8 live effect canaries, PUBLIC-widening census; PF-X-06/09/10 live.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_x_authority.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_authority.py
+  risk_if_removed: Weakened bodies, overloads, or helpers could conduct
+    outside canonical authority.
+  decision: keep_required
+- gate_id: b26-p2-x-proof-plane
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_x_proof_plane.py
+  owning_phase: B2.6-P2
+  protected_invariant: Proof-plane mutations cannot certify prohibited
+    effects; the protected plane stays RED until effects are repaired.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: 12/12 PF-X falsifiers GREEN to RED to GREEN with
+    byte-exact restoration.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_x_proof_plane.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_proof_plane.py
+  risk_if_removed: Neutered validators or laundered pins could certify
+    prohibited effects.
+  decision: keep_required
+- gate_id: b26-p2-x-artifact-identity
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Candidate Container Equivalence
+  script: scripts/ci/validate_b26_p2_x_artifact.py
+  owning_phase: B2.6-P2
+  protected_invariant: The tested digest is the deployed digest; base
+    images are pinned and substitution is refused.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: Digest binding, probe-in-image proof, substitution
+    witness RED, transported-bytes receipt.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_x_artifact.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_x_artifact.py
+  risk_if_removed: Rebuilt or substituted images could deploy unproven.
+  decision: keep_required
+- gate_id: b26-p2-x-canaries-library
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_x_canaries.py
+  owning_phase: B2.6-P2
+  protected_invariant: Live effect canaries probe terminal behavior under
+    real principals with self-contained fixtures.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The X authority validator executes this library for
+    the live effect battery.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_x_authority.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_x_canaries import
+    run_canaries"
+  risk_if_removed: Terminal effects could go unprobed.
+  decision: keep_utility
+- gate_id: b26-p2-x-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_x_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: X registry extends IX coverage for classifier,
+    normalization, attester, and scheduler EXECUTE surfaces.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the X coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_x_coverage import
+    X_COVERED_SURFACES"
+  risk_if_removed: New X surfaces could stay untested silently.
+  decision: keep_utility
+- gate_id: b26-p2-x-evaluator-runner
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/run_b26_p2_evaluator_once.py
+  owning_phase: B2.6-P2
+  protected_invariant: The relay-credential evaluator executes exactly as
+    deployed for the X assurance battery.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The X assurance battery invokes it under the relay
+    credential in a fresh process.
+  negative_control_preserved_by: python scripts/ci/run_b26_p2_evaluator_once.py
+  local_reproduction_command: python scripts/ci/run_b26_p2_evaluator_once.py
+  risk_if_removed: Relay-consumption evidence could be void.
+  decision: keep_utility
