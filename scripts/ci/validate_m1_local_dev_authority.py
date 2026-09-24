@@ -637,6 +637,30 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/b26_p2_vi_negatives.py",
     "scripts/ci/b26_p2_vi_probe.py",
     "scripts/ci/build_vi_appendix.py",
+    # --- B2.6-P2 Corrective XI P2-core closure surface ---
+    # Authority-only slice: the single Corrective-XI migration (witness
+    # relation, ingress principal isolation, P3 eligibility predicate,
+    # generic invariant oracle, quarantine-aware identity), the
+    # regenerated authority pin + derived semantic manifest companions,
+    # and the XI proof instruments (four live validators, coverage
+    # registry, canary updates, two-phase/in-image/topology companion
+    # updates). Same exemption shape as the Corrective-VI entry above;
+    # every prohibition retained unchanged. Proof tooling only; the
+    # manufacturing-law content scan still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609240002_b26_p2_corrective_xi_p2_core_closure.py",
+    "contracts-internal/governance/b26_p2_authority_universe.pin.json",
+    "contracts-internal/governance/b26_p2_xi_semantic_dependency_manifest.json",
+    "scripts/ci/b26_p2_x_canaries.py",
+    "scripts/ci/b26_p2_xi_coverage.py",
+    "scripts/ci/check_b26_p2_x_two_phase.py",
+    "scripts/ci/prove_b26_p2_in_image.py",
+    "scripts/ci/validate_b26_p2_x_authority.py",
+    "scripts/ci/validate_b26_p2_x_contract_oracle.py",
+    "scripts/ci/validate_b26_p2_x_proof_plane.py",
+    "scripts/ci/validate_b26_p2_xi_authentication_evidence.py",
+    "scripts/ci/validate_b26_p2_xi_historical_census.py",
+    "scripts/ci/validate_b26_p2_xi_ingress_isolation.py",
+    "scripts/ci/validate_b26_p2_xi_semantic_temporal.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [
