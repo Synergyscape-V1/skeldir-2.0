@@ -674,6 +674,12 @@ def test_xb3_ingress_least_privilege() -> None:
 # XC: semantic -> temporal totality (derived manifest gate).
 # ------------------------------------------------------------------
 
+def _repo_root() -> str:
+    from pathlib import Path
+
+    return str(Path(__file__).resolve().parents[3])
+
+
 def _run_xi_semantic(dsn: str):
     proc = subprocess.run(
         [sys.executable, "scripts/ci/validate_b26_p2_xi_semantic_temporal.py",
@@ -681,7 +687,7 @@ def _run_xi_semantic(dsn: str):
         capture_output=True,
         text=True,
         timeout=300,
-        cwd="C:\\Users\\ayewhy\\skeldir-2.0",
+        cwd=_repo_root(),
     )
     head = ((proc.stdout or "").splitlines() or [""])[0]
     return proc.returncode, head
