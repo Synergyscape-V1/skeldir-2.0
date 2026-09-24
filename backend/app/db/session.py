@@ -164,6 +164,34 @@ B23AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+# B2.6-P2 Corrective XI: dedicated authenticated-ingress pool. Only the
+# API ingress boundary mounts B26_P2_INGRESS_DATABASE_URL; the engine is
+# absent everywhere else (get_ingress_session fails closed). The
+# after_begin RLS binding below applies to these sessions through the
+# shared AsyncSession event listener, keyed off session.info tenant.
+_B26_P2_INGRESS_DATABASE_URL = os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip()
+if _B26_P2_INGRESS_DATABASE_URL:
+    _INGRESS_ASYNC_DATABASE_URL, _INGRESS_CONNECT_ARGS = (
+        _build_async_database_url_and_args(_B26_P2_INGRESS_DATABASE_URL)
+    )
+    ingress_engine = create_async_engine(
+        _INGRESS_ASYNC_DATABASE_URL,
+        connect_args=_INGRESS_CONNECT_ARGS,
+        pool_pre_ping=True,
+        echo=False,
+        pool_size=settings.DATABASE_POOL_SIZE,
+        max_overflow=settings.DATABASE_MAX_OVERFLOW,
+        pool_timeout=settings.DATABASE_POOL_TIMEOUT_SECONDS,
+    )
+    IngressAsyncSessionLocal = async_sessionmaker(
+        bind=ingress_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+else:
+    ingress_engine = None
+    IngressAsyncSessionLocal = None
+
 
 def _resolve_guc_value(session: SyncSession, key: str, context_value: str | None) -> str | None:
     value = session.info.get(key)
@@ -253,6 +281,37 @@ async def get_b23_session(
         session.info[_SESSION_INFO_USER_ID] = str(resolved_user_id)
         session.info[_SESSION_INFO_B23_TIMEOUTS] = True
 
+        if os.getenv(_MUTATION_DISABLE_TX_ENVELOPE) != "1":
+            await session.begin()
+        try:
+            yield session
+            if session.in_transaction():
+                await session.commit()
+        except Exception:
+            if session.in_transaction():
+                await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def get_ingress_session(
+    tenant_id: UUID,
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Yield a tenant-scoped session backed by the dedicated ingress pool.
+
+    B2.6-P2 Corrective XI: only the authenticated-ingress boundary holds
+    the ingress credential, so only it can author authenticity_verified
+    and record witnesses. Fails closed when the DSN is not mounted.
+    """
+    if IngressAsyncSessionLocal is None:
+        raise RuntimeError(
+            "b26_p2_ingress_credential_unavailable: verified arrival"
+            " requires B26_P2_INGRESS_DATABASE_URL"
+        )
+    assert_tenant_context_present(tenant_id)
+    async with IngressAsyncSessionLocal() as session:
+        session.info[_SESSION_INFO_TENANT_ID] = str(tenant_id)
         if os.getenv(_MUTATION_DISABLE_TX_ENVELOPE) != "1":
             await session.begin()
         try:

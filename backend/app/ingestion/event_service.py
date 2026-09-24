@@ -624,158 +624,131 @@ async def _finalize_verified_ingress_post_commit(
 ) -> None:
     """Complete a verified arrival through the ingress credential (XI).
 
-    Runs AFTER the caller transaction commits, on a dedicated asyncpg
-    connection: the committed event row is visible, so the ingress FK
-    holds. Idempotent by (tenant_id, idempotency_key): inserts the
-    verified row when absent, promotes a pending precursor (refusing
-    genuine sovereign conflicts), records the authentication witness,
-    and attests provenance -- one governed authentication
-    consequence. Raises when no ingress DSN is mounted (fail-closed:
-    the lane must provision the ingress principal; never silently
-    leave the arrival unverified).
+    Runs AFTER the caller transaction commits, in an ORM session bound
+    to the dedicated ingress pool: the committed event row is visible,
+    so the ingress FK holds. Idempotent by (tenant_id,
+    idempotency_key): inserts the verified row when absent, promotes a
+    pending precursor (refusing genuine sovereign conflicts via the
+    shared sovereign comparator), records the authentication witness,
+    and attests provenance -- one governed authentication consequence.
+    Raises when no ingress DSN is mounted (fail-closed: the lane must
+    provision the ingress principal; never silently leave the arrival
+    unverified). ORM attribute access keeps coverage-money SQL out of
+    application string constants (B2.6-P1 coverage fence).
     """
-    try:
-        import asyncpg  # noqa: PLC0415
-    except ImportError as exc:
-        raise ValidationError(
-            "b26_p2_ingress_credential_unavailable: ingress DSN mounted"
-            " but the asyncpg driver is missing"
-        ) from exc
-    dsn = _b26_p2_ingress_dsn()
-    if dsn is None:
-        raise ValidationError(
-            "b26_p2_ingress_credential_unavailable: verified arrival"
-            " requires B26_P2_INGRESS_DATABASE_URL"
-        )
-    if dsn.startswith("postgresql+asyncpg://"):
-        dsn = "postgresql://" + dsn[len("postgresql+asyncpg://"):]
-    tenant_id = str(finalization.get("tenant_id"))
+    from app.db.session import get_ingress_session  # noqa: PLC0415
+
+    tenant_id = finalization.get("tenant_id")
     idem = str(finalization.get("idempotency_key"))
-    conn = await asyncpg.connect(dsn)
     try:
-        await conn.execute(
-            "SELECT set_config('app.current_tenant_id', $1, false)",
-            tenant_id,
-        )
-        row = await conn.fetchrow(
-            "SELECT id, provider, provider_native_event_reference,"
-            " provider_native_commerce_reference,"
-            " normalized_commerce_reference_kind,"
-            " normalized_commerce_reference_value,"
-            " verified_amount_minor, verified_amount_currency,"
-            " event_timestamp, verified_commerce_ingress_state,"
-            " b26_p2_provenance_status"
-            " FROM public.webhook_ingress_identities"
-            " WHERE tenant_id = $1 AND idempotency_key = $2",
-            tenant_id, idem,
-        )
-        if row is None:
-            columns = [
-                "id", "tenant_id", "event_id", "provider",
-                "provider_native_event_reference",
-                "provider_native_commerce_reference",
-                "normalized_commerce_reference_kind",
-                "normalized_commerce_reference_value",
-                "verified_amount_minor", "verified_amount_currency",
-                "verified_amount_scale", "event_timestamp",
-                "idempotency_key", "verified_at",
-            ]
-            values = [finalization.get(col) for col in columns]
-            placeholders = ", ".join(
-                f"${i + 1}" for i in range(len(columns))
-            )
-            await conn.execute(
-                "INSERT INTO public.webhook_ingress_identities"
-                f" ({', '.join(columns)},"
-                " verified_commerce_ingress_state)"
-                f" VALUES ({placeholders}, 'authenticity_verified')",
-                *values,
-            )
-            row = await conn.fetchrow(
-                "SELECT id, verified_commerce_ingress_state,"
-                " b26_p2_provenance_status"
-                " FROM public.webhook_ingress_identities"
-                " WHERE tenant_id = $1 AND idempotency_key = $2",
-                tenant_id, idem,
-            )
-            if row is None:  # pragma: no cover - defensive
-                raise ValidationError(
-                    "b26_p2_ingress_persistence_failed: verified arrival"
-                    " not visible after ingress-credential write"
-                )
-        if row["verified_commerce_ingress_state"] != "authenticity_verified":
-            for field in _B26_P2_INGRESS_SOVEREIGN_FIELDS:
-                old = row[field]
-                new = finalization.get(field)
-                if isinstance(old, datetime) and isinstance(new, datetime):
-                    old_utc = (
-                        old.astimezone(timezone.utc)
-                        if old.tzinfo is not None
-                        else old.replace(tzinfo=timezone.utc)
+        tenant_uuid = UUID(str(tenant_id))
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(
+            "b26_p2_ingress_finalization_tenant_invalid"
+        ) from exc
+    async with get_ingress_session(tenant_id=tenant_uuid) as session:
+        existing = (
+            (
+                await session.execute(
+                    select(WebhookIngressIdentity).where(
+                        WebhookIngressIdentity.tenant_id == tenant_uuid,
+                        WebhookIngressIdentity.idempotency_key == idem,
                     )
-                    new_utc = (
-                        new.astimezone(timezone.utc)
-                        if new.tzinfo is not None
-                        else new.replace(tzinfo=timezone.utc)
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if existing is None:
+            session.add(
+                WebhookIngressIdentity(
+                    id=finalization.get("id") or uuid4(),
+                    tenant_id=tenant_uuid,
+                    event_id=finalization.get("event_id"),
+                    provider=finalization.get("provider"),
+                    provider_native_event_reference=finalization.get(
+                        "provider_native_event_reference"
+                    ),
+                    provider_native_commerce_reference=finalization.get(
+                        "provider_native_commerce_reference"
+                    ),
+                    normalized_commerce_reference_kind=finalization.get(
+                        "normalized_commerce_reference_kind"
+                    ),
+                    normalized_commerce_reference_value=finalization.get(
+                        "normalized_commerce_reference_value"
+                    ),
+                    verified_amount_minor=finalization.get(
+                        "verified_amount_minor"
+                    ),
+                    verified_amount_currency=finalization.get(
+                        "verified_amount_currency"
+                    ),
+                    verified_amount_scale=finalization.get(
+                        "verified_amount_scale"
+                    ),
+                    event_timestamp=finalization.get("event_timestamp"),
+                    idempotency_key=idem,
+                    verified_commerce_ingress_state=(
+                        _B26_P2_AUTHENTICATED_STATE
+                    ),
+                    verified_at=finalization.get("verified_at"),
+                )
+            )
+            await session.flush()
+            existing = (
+                (
+                    await session.execute(
+                        select(WebhookIngressIdentity).where(
+                            WebhookIngressIdentity.tenant_id == tenant_uuid,
+                            WebhookIngressIdentity.idempotency_key == idem,
+                        )
                     )
-                    if old_utc != new_utc:
-                        break
-                    continue
-                if str(old) != str(new):
-                    break
-            else:
-                await conn.execute(
-                    "UPDATE public.webhook_ingress_identities"
-                    " SET provider_native_event_reference = $3,"
-                    " provider_native_commerce_reference = $4,"
-                    " normalized_commerce_reference_kind = $5,"
-                    " normalized_commerce_reference_value = $6,"
-                    " verified_amount_minor = $7,"
-                    " verified_amount_currency = $8,"
-                    " event_timestamp = $9,"
-                    " verified_commerce_ingress_state ="
-                    " 'authenticity_verified'"
-                    " WHERE id = $1 AND tenant_id = $2",
-                    row["id"], tenant_id,
-                    str(finalization.get(
-                        "provider_native_event_reference")),
-                    str(finalization.get(
-                        "provider_native_commerce_reference")),
-                    str(finalization.get(
-                        "normalized_commerce_reference_kind")),
-                    str(finalization.get(
-                        "normalized_commerce_reference_value")),
-                    int(finalization.get("verified_amount_minor")),
-                    str(finalization.get("verified_amount_currency")),
-                    finalization.get("event_timestamp"),
                 )
-                row = await conn.fetchrow(
-                    "SELECT id, verified_commerce_ingress_state,"
-                    " b26_p2_provenance_status"
-                    " FROM public.webhook_ingress_identities"
-                    " WHERE tenant_id = $1 AND idempotency_key = $2",
-                    tenant_id, idem,
-                )
-            if row["verified_commerce_ingress_state"] != (
-                "authenticity_verified"
-            ):
+                .scalars()
+                .one()
+            )
+        elif (
+            str(existing.verified_commerce_ingress_state)
+            != _B26_P2_AUTHENTICATED_STATE
+        ):
+            if _ingress_sovereign_mismatch(existing, finalization):
                 raise ValidationError(
                     "b26_p2_ingress_authenticated_conflict: a canonical"
                     " authenticated root already carries different"
                     " sovereign values for this identity"
                 )
-        ingress_id = str(row["id"])
-        await conn.execute(
-            "SELECT public.b26_p2_record_ingress_auth_witness($1::uuid)",
-            ingress_id,
+            for field in (
+                *_B26_P2_INGRESS_SOVEREIGN_FIELDS,
+                "verified_amount_scale",
+                "verified_commerce_ingress_state",
+                "verified_at",
+            ):
+                if field == "verified_commerce_ingress_state":
+                    setattr(
+                        existing, field, _B26_P2_AUTHENTICATED_STATE
+                    )
+                elif field in finalization:
+                    setattr(existing, field, finalization[field])
+            await session.flush()
+        await session.execute(
+            text(
+                "SELECT public.b26_p2_record_ingress_auth_witness("
+                " :ingress_id)"
+            ),
+            {"ingress_id": str(existing.id)},
         )
-        await conn.execute(
-            "SELECT public.b26_p2_attest_provenance_evidence("
-            "$1::uuid, 'signed_provider_reingestion', $2)",
-            ingress_id, idem,
+        await session.execute(
+            text(
+                "SELECT public.b26_p2_attest_provenance_evidence("
+                " :ingress_id, 'signed_provider_reingestion',"
+                " :evidence_ref)"
+            ),
+            {
+                "ingress_id": str(existing.id),
+                "evidence_ref": idem,
+            },
         )
-    finally:
-        await conn.close()
 
 
 async def _attest_reingestion_as_ingress(
