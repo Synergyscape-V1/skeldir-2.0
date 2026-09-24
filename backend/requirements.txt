@@ -1,6 +1,12 @@
 fastapi==0.127.0
 uvicorn[standard]>=0.24.0
-sqlalchemy>=2.0.23
+# Emergency upper bound (2026-09-24): SQLAlchemy 2.1 changed the default
+# postgresql:// driver from psycopg2 to psycopg (v3), which is not in this
+# file -- every fresh install breaks with ModuleNotFoundError: No module
+# named 'psycopg'. Pinned to the 2.0 series until the psycopg2->psycopg
+# migration is deliberately planned, tested, and owned outside any
+# single-phase directive.
+sqlalchemy>=2.0.23,<2.1
 asyncpg>=0.29.0
 pydantic==2.12.5
 pydantic-settings==2.12.0
