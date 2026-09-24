@@ -1,5 +1,5 @@
 {
-  "revision": "202609190001",
+  "revision": "202609240002",
   "objects": [
     [
       "column",
@@ -3793,6 +3793,18 @@
     [
       "role",
       "app_dispatch_publisher",
+      {
+        "super": false,
+        "inherit": true,
+        "createdb": false,
+        "bypassrls": false,
+        "createrole": false,
+        "memberships": null
+      }
+    ],
+    [
+      "role",
+      "app_ingress",
       {
         "super": false,
         "inherit": true,
