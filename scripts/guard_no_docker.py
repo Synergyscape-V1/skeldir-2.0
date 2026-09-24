@@ -139,6 +139,13 @@ ALLOWED_DOCKER_PATHS = {
     Path("scripts/ci/prove_b26_p2_in_image.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),
+    # B2.6-P2 Corrective XI's ingress-isolation validator reads the
+    # compose manifests in order to *check* them: the dedicated ingress
+    # DSN must reach only the API boundary. It parses YAML, runs no
+    # container and adds no substrate -- the reference is the subject
+    # of the check. Removing it would make the gate blind to a compose
+    # edit handing the ingress credential to a generic worker.
+    Path("scripts/ci/validate_b26_p2_xi_ingress_isolation.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),
     Path("scripts/smoke/m1_runtime_smoke.py"),
 }
