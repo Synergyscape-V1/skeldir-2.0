@@ -101,19 +101,27 @@ def upgrade() -> None:
     # is granted to app_ingress alone (plus migration admins), and the
     # authorship triggers below key on session_user, which SET ROLE
     # cannot forge (no membership grants are created here).
+    #
+    # Role lifecycle note: migrations never CREATE ROLE (many lanes
+    # migrate under identities without CREATEROLE). The governed
+    # provisioner (prepare_migration_authority_boundary.py) creates
+    # the app_ingress login; every grant below is existence-guarded
+    # so role-less lanes still migrate. Lanes without the role run
+    # predecessor-compatible ingestion semantics; the XI isolation
+    # validator REDs on the missing principal wherever XI is
+    # adjudicated, so no governed lane can silently lack it.
     # ------------------------------------------------------------------
     op.execute(
         """
         DO $$
         BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
-                CREATE ROLE app_ingress WITH NOLOGIN;
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+                GRANT USAGE ON SCHEMA public TO app_ingress;
+            ELSE
+                RAISE NOTICE 'b26_p2_xi_no_ingress_role:predecessor_compatible_lane';
             END IF;
         END $$;
         """
-    )
-    op.execute(
-        "GRANT USAGE ON SCHEMA public TO app_ingress"
     )
     op.execute(
         """
