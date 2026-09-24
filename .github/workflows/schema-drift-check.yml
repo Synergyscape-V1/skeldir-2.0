@@ -45,7 +45,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install alembic sqlalchemy psycopg2-binary
+          pip install alembic "sqlalchemy>=2.0.23,<2.1" psycopg2-binary
 
       - name: Enforce migrations-derived canonical schema
         env:

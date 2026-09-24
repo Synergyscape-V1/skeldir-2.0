@@ -255,7 +255,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install alembic psycopg2-binary sqlalchemy
+          pip install alembic psycopg2-binary "sqlalchemy>=2.0.23,<2.1"
 
       - name: Create artifacts directory
         run: |
@@ -817,7 +817,7 @@ jobs:
           python -m datamodel_code_generator --input <spec> --input-file-type openapi --output <dir> --target-python-version 3.11
 
           # EG-R1-3: Fresh DB Migration
-          pip install alembic psycopg2-binary sqlalchemy
+          pip install alembic psycopg2-binary "sqlalchemy>=2.0.23,<2.1"
           cd alembic && alembic upgrade head  # Run 1
           cd alembic && alembic upgrade head  # Run 2 (idempotency check)
 
