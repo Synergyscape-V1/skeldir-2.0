@@ -9,6 +9,7 @@ B0.4.4 Enhancement: Integrated DLQHandler with error classification and retry lo
 
 import logging
 import hashlib
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -494,20 +495,17 @@ async def _adopt_or_promote_ingress(
         existing.updated_at = datetime.now(timezone.utc)
         # Corrective X re-ingestion restoration: a genuine signed
         # duplicate re-establishes provenance through recorded evidence,
-        # never a bare status write. The attester binds the row's own
-        # provider idempotency key as the evidence reference and
-        # promotes unknown_legacy roots; already-known roots simply
-        # refresh their evidence trail.
-        await session.execute(
-            text(
-                "SELECT public.b26_p2_attest_provenance_evidence("
-                " :ingress_id, 'signed_provider_reingestion',"
-                " :evidence_ref)"
-            ),
-            {
-                "ingress_id": str(existing.id),
-                "evidence_ref": str(existing.idempotency_key),
-            },
+        # never a bare status write. Corrective XI: the witness and the
+        # attestation execute with ingress authority (dedicated
+        # credential when mounted, else the caller session for
+        # admins/tests). The attester binds the row's own provider
+        # idempotency key as the evidence reference and promotes
+        # unknown_legacy roots; already-known roots simply refresh
+        # their evidence trail.
+        await _attest_reingestion_as_ingress(
+            session,
+            ingress_id=str(existing.id),
+            evidence_ref=str(existing.idempotency_key),
         )
         return existing
     if incoming_verified:
@@ -542,6 +540,153 @@ def _is_b26_p2_adoption_error(error: Exception) -> str | None:
     if "b26_p2_ingress_authenticated_conflict" in lowered:
         return "authenticated_conflict"
     return None
+
+
+def _is_b26_p2_verified_authorship_error(error: Exception) -> bool:
+    """True when a flush failed on XI ingress-authorship isolation.
+
+    B2.6-P2 Corrective XI: only the dedicated ingress principal
+    (app_ingress) may author authenticity_verified. The API session
+    (ordinary application authority) hitting this refusal must persist
+    the HMAC-verified arrival through the ingress credential instead of
+    failing the webhook. The refusal is fail-closed routing, not data.
+    """
+    return "b26_p2_verified_authorship_refused" in str(error).lower()
+
+
+def _b26_p2_ingress_dsn() -> str | None:
+    """Dedicated authenticated-ingress DSN, mounted only into the API."""
+    dsn = os.environ.get("B26_P2_INGRESS_DATABASE_URL", "").strip()
+    return dsn or None
+
+
+async def _persist_verified_ingress_via_ingress_credential(
+    ingress_payload: Mapping[str, Any],
+) -> str:
+    """Persist an HMAC-verified arrival as the ingress principal (XI).
+
+    Runs outside the caller's transaction on a dedicated asyncpg
+    connection: INSERT the verified row, record its authentication
+    witness, and attest provenance -- one governed authentication
+    consequence. Returns the witness hash. Raises when no ingress DSN
+    is mounted (fail-closed: the caller must surface the refusal,
+    never silently downgrade the arrival to unverified).
+    """
+    try:
+        import asyncpg  # noqa: PLC0415
+    except ImportError as exc:
+        raise ValidationError(
+            "b26_p2_ingress_credential_unavailable: ingress DSN mounted"
+            " but the asyncpg driver is missing"
+        ) from exc
+    dsn = _b26_p2_ingress_dsn()
+    if dsn is None:
+        raise ValidationError(
+            "b26_p2_ingress_credential_unavailable: verified arrival"
+            " requires B26_P2_INGRESS_DATABASE_URL"
+        )
+    if dsn.startswith("postgresql+asyncpg://"):
+        dsn = "postgresql://" + dsn[len("postgresql+asyncpg://"):]
+    columns = [
+        "id", "tenant_id", "event_id", "provider",
+        "provider_native_event_reference",
+        "provider_native_commerce_reference",
+        "normalized_commerce_reference_kind",
+        "normalized_commerce_reference_value",
+        "verified_amount_minor", "verified_amount_currency",
+        "event_timestamp", "idempotency_key",
+        "verified_commerce_ingress_state",
+    ]
+    values = [ingress_payload.get(col) for col in columns]
+    tenant_id = str(ingress_payload.get("tenant_id"))
+    idem = str(ingress_payload.get("idempotency_key"))
+    conn = await asyncpg.connect(dsn)
+    try:
+        await conn.execute(
+            "SELECT set_config('app.current_tenant_id', $1, false)",
+            tenant_id,
+        )
+        placeholders = ", ".join(f"${i + 1}" for i in range(len(columns)))
+        await conn.execute(
+            f"INSERT INTO public.webhook_ingress_identities"
+            f" ({', '.join(columns)}) VALUES ({placeholders})"
+            f" ON CONFLICT DO NOTHING",
+            *values,
+        )
+        row = await conn.fetchrow(
+            "SELECT id FROM public.webhook_ingress_identities"
+            " WHERE tenant_id = $1 AND idempotency_key = $2",
+            tenant_id, idem,
+        )
+        if row is None:
+            raise ValidationError(
+                "b26_p2_ingress_persistence_failed: verified arrival"
+                " not visible after ingress-credential write"
+            )
+        ingress_id = str(row["id"])
+        witness = await conn.fetchval(
+            "SELECT public.b26_p2_record_ingress_auth_witness($1::uuid)",
+            ingress_id,
+        )
+        await conn.execute(
+            "SELECT public.b26_p2_attest_provenance_evidence("
+            "$1::uuid, 'signed_provider_reingestion', $2)",
+            ingress_id, idem,
+        )
+        return str(witness)
+    finally:
+        await conn.close()
+
+
+async def _attest_reingestion_as_ingress(
+    session: AsyncSession,
+    *,
+    ingress_id: str,
+    evidence_ref: str,
+) -> None:
+    """Attest a genuine signed re-ingestion with ingress authority (XI).
+
+    Prefers the dedicated ingress credential when mounted (the API
+    production path); falls back to the caller session so migration
+    admins and test harnesses keep a working path. A bare app_user
+    session is refused by the database either way.
+    """
+    if _b26_p2_ingress_dsn() is not None:
+        try:
+            import asyncpg  # noqa: PLC0415
+        except ImportError as exc:
+            raise ValidationError(
+                "b26_p2_ingress_credential_unavailable"
+            ) from exc
+        dsn = _b26_p2_ingress_dsn()
+        assert dsn is not None
+        if dsn.startswith("postgresql+asyncpg://"):
+            dsn = "postgresql://" + dsn[len("postgresql+asyncpg://"):]
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.execute(
+                "SELECT public.b26_p2_record_ingress_auth_witness($1::uuid)",
+                ingress_id,
+            )
+            await conn.execute(
+                "SELECT public.b26_p2_attest_provenance_evidence("
+                "$1::uuid, 'signed_provider_reingestion', $2)",
+                ingress_id, evidence_ref,
+            )
+            return
+        finally:
+            await conn.close()
+    await session.execute(
+        text(
+            "SELECT public.b26_p2_attest_provenance_evidence("
+            " :ingress_id, 'signed_provider_reingestion',"
+            " :evidence_ref)"
+        ),
+        {
+            "ingress_id": ingress_id,
+            "evidence_ref": evidence_ref,
+        },
+    )
 
 
 _INGRESS_COLLISION_CONSTRAINTS = frozenset(
@@ -909,45 +1054,62 @@ class EventIngestionService:
             except Exception as flush_error:
                 if webhook_identity_payload is None:
                     raise
-                adoption = _is_b26_p2_adoption_error(flush_error)
-                if adoption is None and not _is_ingress_collision_integrity_error(
-                    flush_error
-                ):
-                    raise
-                await session.rollback()
-                # Re-attach the pending entities after the rollback.
-                session.add(event)
-                session.add(raw_event_payload)
-                if adoption == "authenticated_conflict":
-                    raise ValidationError(
-                        "b26_p2_ingress_authenticated_conflict: a canonical"
-                        " authenticated root already carries different"
-                        " sovereign values for this identity"
-                    ) from flush_error
-                adopted = await _adopt_or_promote_ingress(
-                    session,
-                    tenant_id=tenant_id,
-                    incoming=webhook_identity_payload,
-                    event_id=event.id,
-                )
-                if adopted is None:
-                    # Genuine concurrent-issue race with no precursor: if
-                    # the winner already completed ingestion, this arrival
-                    # is its duplicate (stable redrive path downstream).
-                    existing_event = await _fetch_existing_event_for_key(
-                        session, tenant_id=tenant_id,
-                        idempotency_key=idempotency_key,
+                # B2.6-P2 Corrective XI: the API session no longer
+                # authors authenticity_verified (ingress isolation).
+                # A verified arrival refused here was already
+                # HMAC-verified by this process, so persist it through
+                # the dedicated ingress credential (witness + attest
+                # included) instead of failing the webhook. Without a
+                # mounted ingress DSN the refusal stands (fail-closed).
+                if _is_b26_p2_verified_authorship_error(flush_error):
+                    await session.rollback()
+                    session.add(event)
+                    session.add(raw_event_payload)
+                    await _persist_verified_ingress_via_ingress_credential(
+                        webhook_identity_payload
                     )
-                    if existing_event is not None:
-                        events_duplicate_total.inc()
-                        return IngestionDecision(
-                            event=existing_event,
-                            state=IngestionResultState.DUPLICATE,
+                    await session.flush()
+                else:
+                    adoption = _is_b26_p2_adoption_error(flush_error)
+                    if adoption is None and not _is_ingress_collision_integrity_error(
+                        flush_error
+                    ):
+                        raise
+                    await session.rollback()
+                    # Re-attach the pending entities after the rollback.
+                    session.add(event)
+                    session.add(raw_event_payload)
+                    if adoption == "authenticated_conflict":
+                        raise ValidationError(
+                            "b26_p2_ingress_authenticated_conflict: a canonical"
+                            " authenticated root already carries different"
+                            " sovereign values for this identity"
+                        ) from flush_error
+                    adopted = await _adopt_or_promote_ingress(
+                        session,
+                        tenant_id=tenant_id,
+                        incoming=webhook_identity_payload,
+                        event_id=event.id,
+                    )
+                    if adopted is None:
+                        # Genuine concurrent-issue race with no precursor:
+                        # if the winner already completed ingestion, this
+                        # arrival is its duplicate (stable redrive path
+                        # downstream).
+                        existing_event = await _fetch_existing_event_for_key(
+                            session, tenant_id=tenant_id,
+                            idempotency_key=idempotency_key,
                         )
-                    session.add(
-                        WebhookIngressIdentity(**webhook_identity_payload)
-                    )
-                await session.flush()
+                        if existing_event is not None:
+                            events_duplicate_total.inc()
+                            return IngestionDecision(
+                                event=existing_event,
+                                state=IngestionResultState.DUPLICATE,
+                            )
+                        session.add(
+                            WebhookIngressIdentity(**webhook_identity_payload)
+                        )
+                    await session.flush()
             if order_resolution_key is not None:
                 await upsert_durable_commerce_identity_link(
                     session=session,

@@ -54,6 +54,8 @@ PROTECTED_TABLES = (
 )
 
 # Governed routines whose live meaning must equal the migration chunk.
+# Corrective XI extends the set to the rewritten/new load-bearing
+# routines (latest upgrade chunk wins; historical law is immutable).
 GOVERNED_ROUTINES = (
     "b26_p2_ascii_strip",
     "b26_p2_strip_provider_token",
@@ -71,6 +73,11 @@ GOVERNED_ROUTINES = (
     "b26_p2_guard_conducted_transition",
     "b26_p2_guard_conduction_receipt",
     "b26_p2_record_scheduler_heartbeat",
+    "b26_p2_enforce_ingress_verified_authorship",
+    "b26_p2_record_ingress_auth_witness",
+    "b26_p2_state_eligible_for_p3",
+    "b26_p2_xi_invariant_oracle",
+    "b26_p2_enforce_dispatch_quarantine_exclusion",
 )
 
 FUNC_RE = re.compile(
@@ -439,7 +446,7 @@ def main() -> int:
                         )
                         head = str(cur.fetchone()[0])
                         checks["migration_head"] = head
-                        if head != "202609240001":
+                        if head != "202609240002":
                             violations.append(
                                 "x_authority_unexpected_migration_head:"
                                 f"{head}"

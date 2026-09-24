@@ -1,0 +1,64 @@
+{
+  "canonical_routines": [
+    "b26_p2_classify_candidate",
+    "b26_p2_canonical_scope_identity_for_window"
+  ],
+  "governance_triggers": {
+    "b23_match_verdicts": [
+      "trg_b26_p2_verdict_temporal_conservation"
+    ],
+    "b26_p2_scope_policy_authority": [
+      "trg_b26_p2_policy_immutability"
+    ],
+    "webhook_ingress_identities": [
+      "trg_b26_p2_ingress_sovereign_custody",
+      "trg_b26_p2_ingress_verified_authorship",
+      "trg_b26_p2_ingress_provenance"
+    ]
+  },
+  "mechanism": "derived_live_pg_proc_readset_vs_trigger_update_of",
+  "semantic_reads": {
+    "b23_match_verdicts": [
+      "canonical_commerce_reference",
+      "status",
+      "tenant_id",
+      "webhook_ingress_identity_id"
+    ],
+    "b26_p2_scope_policy_authority": [
+      "scope_policy_version",
+      "semantic_sha256"
+    ],
+    "webhook_ingress_identities": [
+      "event_timestamp",
+      "id",
+      "provider",
+      "tenant_id",
+      "verified_amount_currency",
+      "verified_amount_minor",
+      "verified_commerce_ingress_state"
+    ]
+  },
+  "temporal_covered_columns": {
+    "b23_match_verdicts": [
+      "canonical_commerce_reference",
+      "status",
+      "tenant_id",
+      "webhook_ingress_identity_id"
+    ],
+    "b26_p2_scope_policy_authority": [
+      "scope_policy_version",
+      "semantic_sha256",
+      "source_sha256"
+    ],
+    "webhook_ingress_identities": [
+      "b26_p2_provenance_status",
+      "event_timestamp",
+      "id",
+      "provider",
+      "tenant_id",
+      "verified_amount_currency",
+      "verified_amount_minor",
+      "verified_commerce_ingress_state"
+    ]
+  }
+}

@@ -430,3 +430,82 @@ BEGIN
         GRANT SELECT (id) ON TABLE public.tenants TO app_beat;
     END IF;
 END $$;
+
+-- === 202609240002 Corrective XI: dedicated ingress principal ===
+-- Source of truth is the 202609240002 migration. Only the process
+-- boundary that verifies provider authentication (the API ingress
+-- path on the dedicated ingress credential) may author
+-- authenticity_verified or execute the witness/attester. Ordinary
+-- application authority is revoked from the attester. The ingress
+-- principal holds ingress persistence alone: it cannot write B2.3
+-- verdicts, mark P2 conducted, mutate policy, or reach any other
+-- P2 table. The generic worker holds no ingress capability at all
+-- (Procfile pins its DSN to the worker credential).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+        GRANT USAGE ON SCHEMA public TO app_ingress;
+        GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
+        GRANT SELECT ON TABLE public.tenants TO app_ingress;
+        GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
+        GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress;
+        GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_ingress;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+    END IF;
+END $$;
+
+-- === 202609240002 Corrective XI: unforgeable witness relation ===
+-- Source of truth is the 202609240002 migration. Witness rows prove a
+-- governed authenticated-ingress consequence ran; they appear only
+-- through the SECURITY DEFINER witness function (EXECUTE app_ingress
+-- alone). No runtime principal holds direct table authority, so no
+-- downstream caller can invent authentication evidence. The witness
+-- table shape (but not its grants) arrives via canonical_schema.sql.
+REVOKE ALL ON TABLE public.b26_p2_ingress_auth_witness FROM PUBLIC;
+DO $$
+DECLARE _r text;
+BEGIN
+    FOREACH _r IN ARRAY ARRAY[
+        'app_user', 'app_worker', 'app_relay', 'app_beat',
+        'app_rw', 'app_ro', 'app_ingress',
+        'app_dispatch_publisher', 'app_celery_transport'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = _r) THEN
+            EXECUTE format(
+                'REVOKE ALL ON TABLE public.b26_p2_ingress_auth_witness FROM %I',
+                _r
+            );
+        END IF;
+    END LOOP;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+        GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_ingress;
+    END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion() FROM PUBLIC;
+
+-- === 202609240002 Corrective XI: P3 eligibility predicate ===
+-- Source of truth is the 202609240002 migration. The predicate is
+-- read-only classification consumed by P3; it mints nothing and no P3
+-- principal can override it. Runtime roles hold EXECUTE and nothing
+-- else on the underlying state through this function.
+REVOKE ALL ON FUNCTION public.b26_p2_state_eligible_for_p3(text, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_xi_invariant_oracle() FROM PUBLIC;
+DO $$
+DECLARE _r text;
+BEGIN
+    FOREACH _r IN ARRAY ARRAY[
+        'app_user', 'app_worker', 'app_relay', 'app_beat', 'app_ingress'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = _r) THEN
+            EXECUTE format(
+                'GRANT EXECUTE ON FUNCTION public.b26_p2_state_eligible_for_p3(text, uuid) TO %I',
+                _r
+            );
+        END IF;
+    END LOOP;
+END $$;

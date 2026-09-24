@@ -745,7 +745,7 @@ def main() -> int:
                     )
                     head = str(cur.fetchone()[0])
                     checks["migration_head"] = head
-                    if head != "202609240001":
+                    if head != "202609240002":
                         violations.append(
                             f"x_proof_plane_unexpected_head:{head}"
                         )
@@ -753,7 +753,7 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001
                 violations.append(f"x_proof_plane_lane_unusable:{exc}")
                 head = ""
-            if head == "202609240001":
+            if head == "202609240002":
                 battery: list[tuple[str, object]] = [
                     ("PF-X-01", lambda: _pf01_protected_adjudication(args.dsn)),
                     ("PF-X-02", _pf02_history_fail_closed),

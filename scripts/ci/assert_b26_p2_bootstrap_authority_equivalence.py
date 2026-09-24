@@ -53,6 +53,8 @@ P2_TABLES = (
     "b26_p2_evaluator_heartbeat",
     "b26_p2_scheduler_heartbeat",
     "b26_p2_provenance_evidence",
+    # Corrective XI: the unforgeable authentication-witness relation.
+    "b26_p2_ingress_auth_witness",
 )
 
 P2_ROUTINES = (
@@ -85,9 +87,17 @@ P2_ROUTINES = (
     "b26_p2_stale_unconducted",
     "b26_p2_operational_disposition",
     "b26_p2_enforce_result_integrity",
+    # Corrective XI: witness recorder, P3 eligibility predicate,
+    # XI invariant oracle, quarantine-exclusion guard.
+    "b26_p2_record_ingress_auth_witness",
+    "b26_p2_state_eligible_for_p3",
+    "b26_p2_xi_invariant_oracle",
+    "b26_p2_enforce_dispatch_quarantine_exclusion",
 )
 
-P2_ROLES = ("app_user", "app_worker", "app_rw", "app_ro", "app_relay", "app_beat", "PUBLIC")
+# Corrective XI: the dedicated authenticated-ingress principal is a
+# runtime role whose authority must be bootstrap-equivalent too.
+P2_ROLES = ("app_user", "app_worker", "app_rw", "app_ro", "app_relay", "app_beat", "app_ingress", "PUBLIC")
 
 _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
     (
@@ -99,11 +109,12 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
           AND table_name IN ('b23_match_task_dispatches',
                              'b26_p2_execution_outbox',
                              'b26_p2_task_authority_directory',
-                             'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine',
-                             'b26_p2_scope_policy_authority',
-                             'b26_p2_evaluator_heartbeat')
-          AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'PUBLIC')
+                              'b26_p2_conduction_receipts',
+                              'b26_p2_execution_quarantine',
+                              'b26_p2_scope_policy_authority',
+                              'b26_p2_evaluator_heartbeat',
+                              'b26_p2_ingress_auth_witness')
+          AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'app_ingress', 'PUBLIC')
         """,
     ),
     (
@@ -115,11 +126,12 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
           AND table_name IN ('b23_match_task_dispatches',
                              'b26_p2_execution_outbox',
                              'b26_p2_task_authority_directory',
-                             'b26_p2_conduction_receipts',
-                             'b26_p2_execution_quarantine',
-                             'b26_p2_scope_policy_authority',
-                             'b26_p2_evaluator_heartbeat')
-          AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'PUBLIC')
+                              'b26_p2_conduction_receipts',
+                              'b26_p2_execution_quarantine',
+                              'b26_p2_scope_policy_authority',
+                              'b26_p2_evaluator_heartbeat',
+                              'b26_p2_ingress_auth_witness')
+          AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'app_ingress', 'PUBLIC')
         """,
     ),
     (
@@ -137,13 +149,18 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                                'b26_p2_enforce_ingress_sovereign_custody',
                                 'b26_p2_enforce_ingress_verified_authorship',
                                 'b26_p2_enforce_verdict_temporal_conservation',
+                                'b26_p2_enforce_dispatch_quarantine_exclusion',
                                'b26_p2_canonical_day_start',
                                'b26_p2_canonical_day_end',
                                'b26_p2_record_conduction_receipt',
                                'b26_p2_mark_conducted',
                                'b26_p2_stale_unconducted',
                                'b26_p2_operational_disposition',
-                               'b26_p2_enforce_result_integrity')
+                               'b26_p2_enforce_result_integrity',
+                               'b26_p2_record_ingress_auth_witness',
+                               'b26_p2_attest_provenance_evidence',
+                               'b26_p2_state_eligible_for_p3',
+                               'b26_p2_xi_invariant_oracle')
         """,
     ),
     (
@@ -159,7 +176,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                              'b26_p2_conduction_receipts',
                              'b26_p2_execution_quarantine',
                              'b26_p2_scope_policy_authority',
-                             'b26_p2_evaluator_heartbeat')
+                             'b26_p2_evaluator_heartbeat',
+                             'b26_p2_ingress_auth_witness')
         """,
     ),
     (
@@ -175,7 +193,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                              'b26_p2_conduction_receipts',
                              'b26_p2_execution_quarantine',
                              'b26_p2_scope_policy_authority',
-                             'b26_p2_evaluator_heartbeat')
+                             'b26_p2_evaluator_heartbeat',
+                             'b26_p2_ingress_auth_witness')
         """,
     ),
     (
@@ -192,7 +211,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                              'b26_p2_conduction_receipts',
                              'b26_p2_execution_quarantine',
                              'b26_p2_scope_policy_authority',
-                             'b26_p2_evaluator_heartbeat')
+                             'b26_p2_evaluator_heartbeat',
+                             'b26_p2_ingress_auth_witness')
           AND c.contype IN ('f', 'u', 'p')
         """,
     ),
@@ -236,13 +256,18 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                                'b26_p2_enforce_ingress_sovereign_custody',
                                 'b26_p2_enforce_ingress_verified_authorship',
                                 'b26_p2_enforce_verdict_temporal_conservation',
+                                'b26_p2_enforce_dispatch_quarantine_exclusion',
                                'b26_p2_canonical_day_start',
                                'b26_p2_canonical_day_end',
                                'b26_p2_record_conduction_receipt',
                                'b26_p2_mark_conducted',
                                'b26_p2_stale_unconducted',
                                'b26_p2_operational_disposition',
-                               'b26_p2_enforce_result_integrity')
+                               'b26_p2_enforce_result_integrity',
+                               'b26_p2_record_ingress_auth_witness',
+                               'b26_p2_attest_provenance_evidence',
+                               'b26_p2_state_eligible_for_p3',
+                               'b26_p2_xi_invariant_oracle')
         """,
     ),
     (
@@ -304,7 +329,8 @@ def _check_behavior_matrix(conn) -> list[str]:
                              'b26_p2_conduction_receipts',
                              'b26_p2_execution_quarantine',
                              'b26_p2_scope_policy_authority',
-                             'b26_p2_evaluator_heartbeat')
+                             'b26_p2_evaluator_heartbeat',
+                             'b26_p2_ingress_auth_witness')
           AND c.contype = 'c'
         GROUP BY c.conname, t.relname, pg_get_constraintdef(c.oid)
         ORDER BY c.conname
@@ -323,6 +349,7 @@ def _check_behavior_matrix(conn) -> list[str]:
         "'b26_p2_task_authority_directory'",
         "'b23_match_task_dispatches'",
         "'b26_p2_conduction_receipts'",
+        "'webhook_ingress_identities'",
         "'bogus_source'",
         "NULL",
     )

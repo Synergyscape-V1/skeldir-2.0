@@ -489,7 +489,40 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                 )
 
             reason = _refused(attempt)
-            assert "b26_p2_provenance_promotion_refused" in reason
+            # Corrective XI: non-ingress callers without witness
+            # visibility are refused at the capability plane
+            # (permission denied); either refusal mints nothing.
+            assert (
+                "b26_p2_provenance_promotion_refused" in reason
+                or "permission denied" in reason.lower()
+            ), reason
+            # Corrective XI: caller assertions promote nothing. The
+            # ordinary application principal cannot execute the
+            # attester at all (permission denied at the grant plane).
+            denied = _refused(
+                lambda: cur.execute(
+                    "SELECT public.b26_p2_attest_provenance_evidence"
+                    "(%s, 'governed_attestation', %s)",
+                    (str(ids["ingress_id"]), idem),
+                )
+            )
+            assert "permission denied" in denied.lower()
+    finally:
+        api.close()
+    # Corrective XI restoration: witness consequence first (ingress
+    # principal), then attestation.
+    ingress = psycopg2.connect(_role_dsn("app_ingress"))
+    ingress.autocommit = True
+    try:
+        with ingress.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            cur.execute(
+                "SELECT public.b26_p2_record_ingress_auth_witness(%s)",
+                (str(ids["ingress_id"]),),
+            )
             cur.execute(
                 "SELECT public.b26_p2_attest_provenance_evidence"
                 "(%s, 'governed_attestation', %s)",
@@ -497,7 +530,7 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
             )
             assert str(cur.fetchone()[0]) == "authenticated_known"
     finally:
-        api.close()
+        ingress.close()
     # The restored root conducts the full lawful chain.
     _seed_verdict(ids)
     task = f"x-restored-{uuid.uuid4().hex[:8]}"

@@ -16,7 +16,15 @@
 # Core Services
 db: postgres -D $PGDATA -k $PGSOCKET -h localhost -p 5432
 web: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-worker: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution
+# The generic worker serves housekeeping/maintenance/llm/attribution and
+# must never hold authenticated-ingress authority. B2.6-P2 Corrective XI:
+# foreman-style managers share one environment, so this line must override
+# DATABASE_URL explicitly -- inheriting the API DSN would hand the generic
+# worker the app_user credential, which mints sovereign ingress. The worker
+# credential cannot author authenticity_verified or execute the
+# witness/attester (see b26_p2_enforce_ingress_verified_authorship and the
+# XI ingress-isolation battery). An unset variable fails closed at import.
+worker: cd backend && DATABASE_URL=$WORKER_DATABASE_URL celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution
 # The Bayesian worker is the only process that plans fits and writes Bayesian
 # truth, so it is the only one that runs on the dedicated app_worker login.
 # Foreman-style managers share one environment, so this line must override
