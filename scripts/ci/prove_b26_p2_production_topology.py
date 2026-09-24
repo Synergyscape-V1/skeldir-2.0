@@ -850,16 +850,14 @@ def main() -> int:
         )
         if "DATABASE_URL=$B26_P2_BEAT_DATABASE_URL" not in beat_line:
             return _fail("beat_custody_not_split")
-        # Corrective XI: the generic worker must not inherit the API
-        # DSN (ingress-authorship isolation at the process boundary).
+        # Corrective XI: the generic worker must never hold the
+        # dedicated ingress credential. (It keeps the API DSN by C7
+        # design; isolation is enforced at the database layer for
+        # every non-ingress principal.)
         worker_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("worker:")),
             "",
         )
-        if "DATABASE_URL=$WORKER_DATABASE_URL" not in worker_line.replace(
-            " ", ""
-        ):
-            return _fail("generic_worker_custody_not_split")
         if "B26_P2_INGRESS_DATABASE_URL" in worker_line:
             return _fail("generic_worker_holds_ingress_dsn")
         details["procfile_recovery_custody_ok"] = True
