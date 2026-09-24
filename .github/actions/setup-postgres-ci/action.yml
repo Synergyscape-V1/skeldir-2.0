@@ -41,14 +41,6 @@ inputs:
     description: Bayesian planner/worker database password.
     required: false
     default: app_worker
-  ingress-user:
-    description: Dedicated authenticated-ingress database principal (B2.6-P2 XI).
-    required: false
-    default: app_ingress
-  ingress-password:
-    description: Dedicated authenticated-ingress database password.
-    required: false
-    default: app_ingress
   publisher-user:
     description: Dedicated cross-tenant fit-dispatch publisher principal.
     required: false
@@ -92,17 +84,13 @@ runs:
           --app-ro-role "${{ inputs.app-ro-role }}" \
           --worker-user "${{ inputs.worker-user }}" \
           --worker-password "${{ inputs.worker-password }}" \
-          --ingress-user "${{ inputs.ingress-user }}" \
-          --ingress-password "${{ inputs.ingress-password }}" \
           --publisher-user "${{ inputs.publisher-user }}" \
           --publisher-password "${{ inputs.publisher-password }}" \
           --trust-issuer-user "${{ inputs.trust-issuer-user }}" \
           --trust-issuer-password "${{ inputs.trust-issuer-password }}"
 
-    # B2.5-P13 Corrective XVI (XVI-B). Every job that provisions this boundary
-    # gets the issuance DSN automatically, so no job can silently run the Trust
-    # API with issuance-consequence authority folded back into the ordinary
-    # runtime principal. 202609061200 extends it to the two B2.8 authorities.
+    # B2.5-P13 XVI-B: issuance/signer/B2.8 DSNs export automatically so no
+    # job silently folds consequence authority into the ordinary principal.
     - name: Export Trust issuance custody DSN
       shell: bash
       run: |
@@ -110,7 +98,7 @@ runs:
         echo "TRUST_SIGNER_DATABASE_URL=postgresql://app_trust_signer:app_trust_signer@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
         echo "B28_REQUEST_DATABASE_URL=postgresql://app_b28_requester:app_b28_requester@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
         echo "B28_SOLVER_DATABASE_URL=postgresql://app_b28_solver:app_b28_solver@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
-        echo "B26_P2_INGRESS_DATABASE_URL=postgresql://${{ inputs.ingress-user }}:${{ inputs.ingress-password }}@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
+        echo "B26_P2_INGRESS_DATABASE_URL=postgresql://app_ingress:app_ingress@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
 
     - name: Run Alembic migrations
       shell: bash

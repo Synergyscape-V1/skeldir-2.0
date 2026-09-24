@@ -4114,3 +4114,88 @@
   local_reproduction_command: python scripts/ci/run_b26_p2_evaluator_once.py
   risk_if_removed: Relay-consumption evidence could be void.
   decision: keep_utility
+- gate_id: b26-p2-xi-authentication-evidence
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xi_authentication_evidence.py
+  owning_phase: B2.6-P2
+  protected_invariant: UNKNOWN becomes AUTHENTICATED only through a
+    governed witness consequence.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XI witness-gated attestation law;
+    no predecessor gate covers assertion-only promotion.
+  negative_control_preserved_by: backend/tests/finance_reconciliation/test_b26_p2_corrective_xi_closure.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xi_authentication_evidence.py --help
+  risk_if_removed: Assertion-only authentication could return silently.
+  decision: enforce
+- gate_id: b26-p2-xi-ingress-isolation
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xi_ingress_isolation.py
+  owning_phase: B2.6-P2
+  protected_invariant: Only the ingress boundary holds
+    authentication-authoring capability.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XI dedicated ingress principal;
+    no predecessor gate covers generic-worker ingress authority.
+  negative_control_preserved_by: backend/tests/finance_reconciliation/test_b26_p2_corrective_xi_closure.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xi_ingress_isolation.py --help
+  risk_if_removed: Non-ingress processes could mint sovereign ingress.
+  decision: enforce
+- gate_id: b26-p2-xi-semantic-temporal
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xi_semantic_temporal.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every semantic dependency is temporally governed
+    (derived, fail-closed on unknown).
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XI derived dependency universe;
+    no predecessor gate derives SQL-side semantic totality.
+  negative_control_preserved_by: backend/tests/finance_reconciliation/test_b26_p2_corrective_xi_closure.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xi_semantic_temporal.py --help
+  risk_if_removed: SQL-side semantic drift could evade temporal law.
+  decision: enforce
+- gate_id: b26-p2-xi-historical-census
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xi_historical_census.py
+  owning_phase: B2.6-P2
+  protected_invariant: Post-upgrade truth satisfies current invariants or
+    carries explicit disposition; P3 eligibility is mechanical.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XI generic oracle and P3
+    boundary; no predecessor gate covers unnamed survivors.
+  negative_control_preserved_by: backend/tests/finance_reconciliation/test_b26_p2_corrective_xi_closure.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xi_historical_census.py --help
+  risk_if_removed: Invalid history could found new P2/P3 truth.
+  decision: enforce
+- gate_id: b26-p2-xi-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xi_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XI registry extends X coverage for ingress, P3,
+    and persistence EXECUTE surfaces.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XI coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xi_coverage import XI_COVERED_SURFACES"
+  risk_if_removed: New XI surfaces could stay untested silently.
+  decision: keep_utility
