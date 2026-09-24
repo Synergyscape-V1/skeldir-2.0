@@ -1,7 +1,7 @@
 {
   "producer": "b26_p2_capability_surface",
   "migration_head": "202609240002",
-  "authority_universe_hash": "ca849deae8511eaa701d22fc6571840a97941c6a1b87c6a9fea9be639b6f9ddf",
+  "authority_universe_hash": "71d8b6f7a20fd88e9f681a186ad84558a3646e69075f312ff9ba07419d6efd4a",
   "reviewed_at_git_sha": "24e1665fa3b41c39e1610677522602b13884fa10",
   "meaning_surface_counts": {
     "routine_meaning": 131,
@@ -10,5 +10,5 @@
     "rls_meaning": 17,
     "ownership": 92
   },
-  "review_note": "Reviewed for Corrective XI head: X authority plus dedicated authenticated-ingress principal (app_ingress authors authenticity_verified and executes witness/attester alone; ordinary app_user attestation revoked), unforgeable authentication-witness relation, witness-gated attestation, quarantine-aware canonical identity, dispatch quarantine exclusion, generic XI invariant oracle, and read-only P3 eligibility predicate. Pin regeneration alone adjudicates nothing: the X effect authority, the XI live validators (authentication evidence, ingress isolation, semantic-temporal totality, historical census), and the DB trigger guards must remain RED while any prohibited effect survives."
+  "review_note": "Reviewed for Corrective XI head: X authority plus dedicated authenticated-ingress principal (app_ingress authors authenticity_verified and executes witness/attester alone wherever the role exists; predecessor-compatible topology rule keeps Corrective-X semantics bit-for-bit on lanes that never provision it, enforced by role presence where XI is adjudicated), unforgeable authentication-witness relation, witness-gated attestation, quarantine-aware canonical identity, dispatch quarantine exclusion, generic XI invariant oracle, and read-only P3 eligibility predicate. Pin regeneration alone adjudicates nothing: the X effect authority, the XI live validators (authentication evidence, ingress isolation, semantic-temporal totality, historical census), and the DB trigger guards must remain RED while any prohibited effect survives."
 }

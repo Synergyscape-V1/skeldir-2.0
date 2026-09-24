@@ -443,18 +443,25 @@ END $$;
 -- (Procfile pins its DSN to the worker credential).
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-        REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
-    END IF;
+    -- Predecessor-compatible topology rule (mirrors the XI
+    -- migration): the EXECUTE grant follows the live role census,
+    -- so lanes without the ingress principal keep Corrective-X
+    -- attestation semantics bit-for-bit.
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+            REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
+        END IF;
         GRANT USAGE ON SCHEMA public TO app_ingress;
         GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
         GRANT SELECT ON TABLE public.tenants TO app_ingress;
         GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
         GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress;
-        GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_ingress;
         GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
         GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+    ELSE
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+            GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_user;
+        END IF;
     END IF;
 END $$;
 

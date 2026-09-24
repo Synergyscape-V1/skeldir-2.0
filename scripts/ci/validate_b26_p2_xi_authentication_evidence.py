@@ -69,19 +69,23 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         violations.append("xi_auth_static_attester_absent")
     else:
         body = attester_blocks[-1].group(0)
-        if "'app_user'" in body and "NOT IN" in body:
-            # app_user appears only inside a NOT IN refusal list --
-            # verify it is not in a grant/allow position.
-            allow = re.findall(
-                r"session_user\s+NOT\s+IN\s*\(([^)]*)\)", body
-            )
-            admitted = set()
-            for group in allow:
-                for name in re.findall(r"'(\w+)'", group):
-                    admitted.add(name)
-            if "app_user" in admitted:
+        # Predecessor-compatible topology rule: app_user may appear
+        # ONLY inside a session_user NOT IN allowlist that does NOT
+        # also admit app_ingress (the legacy branch), AND the body
+        # must contain the role-census conditional gating that
+        # branch. Anything else (grant, strict allowlist,
+        # unconditional path) is a violation.
+        SES_RE = r"session_user\s+NOT\s+IN\s*\(([^)]*)\)"
+        gated = "rolname = 'app_ingress'" in body
+        for group in re.findall(SES_RE, body):
+            names = set(re.findall(r"'(\w+)'", group))
+            if "app_user" in names and (
+                "app_ingress" in names or not gated
+            ):
                 violations.append("xi_auth_static_app_user_admitted")
-        elif "'app_user'" in body:
+                break
+        stripped = re.sub(SES_RE, "", body)
+        if "'app_user'" in stripped:
             violations.append("xi_auth_static_app_user_admitted")
         if WITNESS_TABLE not in body:
             violations.append("xi_auth_static_attester_no_witness_gate")

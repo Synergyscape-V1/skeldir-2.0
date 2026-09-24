@@ -124,6 +124,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # B2.6-P2 Corrective XI: the dedicated ingress principal must
+          # exist BEFORE migrating so the migration's existence-guarded
+          # XI grants fire (this lane provisions runtime identities
+          # after migrating; LOGIN/password are finalized there).
+          psql "${MIGRATION_DATABASE_URL}" -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN CREATE ROLE app_ingress WITH NOLOGIN; END IF; END \$\$;"
           alembic upgrade heads
 
       - name: Provision runtime DB identity

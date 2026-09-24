@@ -88,23 +88,24 @@ def _topology_checks(violations: list[str], checks: dict) -> None:
         return
     if INGRESS_DSN_TOKEN not in env_text:
         violations.append("xi_isolation_ingress_dsn_undeclared")
-    # Backend: only the ingestion boundary may reference the DSN.
-    # Test suites are not shipped processes (they never receive
-    # production credentials); the census covers shipped code.
+    # Backend: only the ingestion boundary (consumer) and the DB
+    # pool factory (gateway, constructs but never spends the
+    # credential) may reference the DSN. Test suites are not shipped
+    # processes (they never receive production credentials); the
+    # census covers shipped code.
+    allowed_holders = {
+        "backend/app/ingestion/event_service.py",
+        "backend/app/db/session.py",
+    }
     offenders = []
     for path in sorted((REPO_ROOT / "backend" / "app").rglob("*.py")):
         try:
             body = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        if INGRESS_DSN_TOKEN in body and (
-            "ingestion/event_service.py" not in str(path).replace(
-                "\\", "/"
-            )
-        ):
-            offenders.append(
-                str(path.relative_to(REPO_ROOT)).replace("\\", "/")
-            )
+        rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+        if INGRESS_DSN_TOKEN in body and rel not in allowed_holders:
+            offenders.append(rel)
     checks["ingress_dsn_backend_holders"] = offenders
     if offenders:
         violations.append(
@@ -151,6 +152,18 @@ def _live_checks(
         return
     try:
         cur = conn.cursor()
+        # Presence gate: lanes that never provision the ingress
+        # principal run predecessor-compatible ingestion semantics;
+        # wherever XI is adjudicated the principal must exist, or no
+        # governed lane could silently lack strict isolation.
+        cur.execute(
+            "SELECT count(*) FROM pg_roles WHERE rolname = 'app_ingress'"
+        )
+        if int(cur.fetchone()[0]) != 1:
+            violations.append("xi_isolation_ingress_principal_absent")
+            checks["ingress_principal"] = "absent"
+        else:
+            checks["ingress_principal"] = "present"
         # No membership edge may connect the ingress principal to any
         # generic role (SET ROLE forgery impossible by construction).
         cur.execute(

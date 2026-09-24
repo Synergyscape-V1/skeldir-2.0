@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict YID3RjuYaB541hmByIB2Rl4cXCQ0xPUjJRRuh4VhND7TVCJxbdv4YXM13Zji4bz
+\restrict KumvQl01ddpGFeMxJL3zI9OMCH8i5cVABPJaTwCBlJo8bXB2WptehATwLYpL8Ks
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 18.0
@@ -2497,12 +2497,32 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             _witness text;
             _prev_guc text;
         BEGIN
-            -- H-R1 principal separation: ordinary application
-            -- authority (app_user) can no longer author
-            -- authentication evidence, even with a valid ref.
-            IF session_user NOT IN ('app_ingress', 'migration_owner', 'postgres') THEN
-                RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
-                    USING ERRCODE = '42501';
+            -- H-R1 principal separation with predecessor-compatible
+            -- topology rule: where the dedicated ingress principal
+            -- exists (every governed lane and the shipped topology),
+            -- ordinary application authority (app_user) can no longer
+            -- author authentication evidence, even with a valid ref.
+            -- Lanes that never provision the role keep predecessor
+            -- (Corrective X) semantics bit-for-bit; the XI isolation
+            -- validator REDs on the missing principal wherever XI is
+            -- adjudicated, so no governed lane can silently lack it.
+            -- Role existence is a catalog fact, not caller discipline.
+            IF EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                IF session_user NOT IN (
+                    'app_ingress', 'migration_owner', 'postgres'
+                ) THEN
+                    RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                IF session_user NOT IN (
+                    'app_user', 'migration_owner', 'postgres'
+                ) THEN
+                    RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
+                        USING ERRCODE = '42501';
+                END IF;
             END IF;
             IF p_kind IS DISTINCT FROM 'signed_provider_reingestion'
                AND p_kind IS DISTINCT FROM 'governed_attestation' THEN
@@ -2529,13 +2549,21 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             END IF;
             -- The authentication consequence: a witness row created by
             -- the ingress boundary. No witness, no promotion -- the
-            -- claim "authentication happened" is not evidence.
-            SELECT w.witness_hash INTO _witness
-              FROM public.b26_p2_ingress_auth_witness AS w
-             WHERE w.webhook_ingress_identity_id = p_ingress;
-            IF NOT FOUND THEN
-                RAISE EXCEPTION 'b26_p2_evidence_witness_missing'
-                    USING ERRCODE = '42501';
+            -- claim "authentication happened" is not evidence. On
+            -- predecessor-compatible lanes (no ingress role) the
+            -- Corrective-X evidence rule applies unchanged.
+            IF EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                SELECT w.witness_hash INTO _witness
+                  FROM public.b26_p2_ingress_auth_witness AS w
+                 WHERE w.webhook_ingress_identity_id = p_ingress;
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'b26_p2_evidence_witness_missing'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                _witness := NULL;
             END IF;
             BEGIN
                 _prev_guc := current_setting('app.current_tenant_id', true);
@@ -3165,17 +3193,28 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _authors text[];
         BEGIN
+            -- Predecessor-compatible topology rule (see attester).
+            IF EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                _authors := ARRAY['app_ingress', 'migration_owner', 'postgres'];
+            ELSE
+                _authors := ARRAY['app_user', 'migration_owner', 'postgres'];
+            END IF;
             IF TG_OP = 'INSERT' THEN
                 IF NEW.verified_commerce_ingress_state IS DISTINCT FROM 'authenticity_verified' THEN
                     NEW.b26_p2_provenance_status := 'pending_not_applicable';
                     RETURN NEW;
                 END IF;
-                -- XI law: verified authorship is ingress-isolated.
-                -- Non-ingress verified writes are refused at the
-                -- authorship trigger; this trigger stays consistent
-                -- by marking only ingress-authored rows known.
-                IF session_user IN ('app_ingress', 'migration_owner', 'postgres') THEN
+                -- XI law: verified authorship is ingress-isolated
+                -- where the role exists. Non-ingress verified writes
+                -- are refused at the authorship trigger; this trigger
+                -- stays consistent by marking only ingress-authored
+                -- rows known.
+                IF session_user = ANY (_authors) THEN
                     NEW.b26_p2_provenance_status := 'authenticated_known';
                 ELSE
                     NEW.b26_p2_provenance_status := 'unknown_legacy';
@@ -3185,7 +3224,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
             IF TG_OP = 'UPDATE' THEN
                 IF OLD.verified_commerce_ingress_state IS DISTINCT FROM 'authenticity_verified'
                    AND NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified' THEN
-                    IF session_user IN ('app_ingress', 'migration_owner', 'postgres') THEN
+                    IF session_user = ANY (_authors) THEN
                         NEW.b26_p2_provenance_status := 'authenticated_known';
                     ELSE
                         NEW.b26_p2_provenance_status := 'unknown_legacy';
@@ -3200,19 +3239,32 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
                     -- evidence, never a bare status write and never a
                     -- witnessless evidence echo. H-R5: NULL witness
                     -- is not FALSE evidence; IS DISTINCT FROM keeps
-                    -- UNKNOWN from becoming TRUE.
+                    -- UNKNOWN from becoming TRUE. On
+                    -- predecessor-compatible lanes the Corrective-X
+                    -- evidence rule applies unchanged.
                     IF OLD.b26_p2_provenance_status = 'unknown_legacy'
                        AND NEW.b26_p2_provenance_status = 'authenticated_known'
-                       AND NOT EXISTS (
-                            SELECT 1 FROM public.b26_p2_provenance_evidence AS e
-                             WHERE e.webhook_ingress_identity_id = OLD.id
-                               AND e.evidence_witness_hash IS NOT NULL
-                               AND char_length(e.evidence_witness_hash) > 0
-                               AND EXISTS (
-                                    SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
-                                     WHERE w.webhook_ingress_identity_id = OLD.id
-                                       AND w.witness_hash IS NOT DISTINCT FROM e.evidence_witness_hash
-                               )
+                       AND NOT (
+                            EXISTS (
+                                SELECT 1 FROM public.b26_p2_provenance_evidence AS e
+                                 WHERE e.webhook_ingress_identity_id = OLD.id
+                                   AND e.evidence_witness_hash IS NOT NULL
+                                   AND char_length(e.evidence_witness_hash) > 0
+                                   AND EXISTS (
+                                        SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                                         WHERE w.webhook_ingress_identity_id = OLD.id
+                                           AND w.witness_hash IS NOT DISTINCT FROM e.evidence_witness_hash
+                                   )
+                            )
+                            OR (
+                                NOT EXISTS (
+                                    SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+                                )
+                                AND EXISTS (
+                                    SELECT 1 FROM public.b26_p2_provenance_evidence AS e
+                                     WHERE e.webhook_ingress_identity_id = OLD.id
+                                )
+                            )
                         ) THEN
                         RAISE EXCEPTION 'b26_p2_provenance_promotion_refused' USING ERRCODE = '42501';
                     END IF;
@@ -3286,12 +3338,23 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trig
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _authors text[];
         BEGIN
+            -- Predecessor-compatible topology rule (see attester):
+            -- strict ingress authorship where the role exists,
+            -- Corrective-X authorship otherwise.
+            IF EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                _authors := ARRAY['app_ingress', 'migration_owner', 'postgres'];
+            ELSE
+                _authors := ARRAY['app_user', 'migration_owner', 'postgres'];
+            END IF;
             IF TG_OP = 'INSERT' THEN
                 IF NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM
                    'authenticity_verified'
-                    AND session_user NOT IN
-                        ('app_ingress', 'migration_owner', 'postgres') THEN
+                    AND NOT (session_user = ANY (_authors)) THEN
                     RAISE EXCEPTION 'b26_p2_verified_authorship_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -3301,8 +3364,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trig
                OLD.verified_commerce_ingress_state THEN
                 IF NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM
                    'authenticity_verified'
-                    AND session_user NOT IN
-                        ('app_ingress', 'migration_owner', 'postgres') THEN
+                    AND NOT (session_user = ANY (_authors)) THEN
                     RAISE EXCEPTION 'b26_p2_verified_authorship_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -4427,7 +4489,10 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid) RETURN
             -- H-R6: SECURITY DEFINER context is bounded explicitly.
             -- Only the ingress principal (and migration admins) may
             -- author authentication evidence. session_user cannot be
-            -- forged with SET ROLE (no membership exists).
+            -- forged with SET ROLE (no membership exists). The
+            -- ingress role is provisioned by the governed provisioner;
+            -- lanes that never provision it cannot reach this
+            -- function (no EXECUTE grant exists for them there).
             IF session_user NOT IN ('app_ingress', 'migration_owner', 'postgres') THEN
                 RAISE EXCEPTION 'b26_p2_witness_caller_refused'
                     USING ERRCODE = '42501';
@@ -23395,5 +23460,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict YID3RjuYaB541hmByIB2Rl4cXCQ0xPUjJRRuh4VhND7TVCJxbdv4YXM13Zji4bz
+\unrestrict KumvQl01ddpGFeMxJL3zI9OMCH8i5cVABPJaTwCBlJo8bXB2WptehATwLYpL8Ks
 
