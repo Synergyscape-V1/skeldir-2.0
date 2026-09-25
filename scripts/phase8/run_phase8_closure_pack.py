@@ -400,7 +400,8 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             # ingress credential (the role is provisioned above).
             "E2E_INGRESS_DATABASE_URL": (
                 f"postgresql+asyncpg://app_ingress:app_ingress"
-                f"@{db_compose_host}:5432/{db_name}"
+                f"@{os.getenv('PHASE8_DB_COMPOSE_HOST', 'postgres')}:5432/"
+                f"{_database_name_from_dsn(cfg.migration_dsn)}"
             ),
             "TENANT_API_KEY_HEADER": "X-Skeldir-Tenant-Key",
             "R3_ADMIN_DATABASE_URL": cfg.migration_dsn,
