@@ -661,6 +661,12 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xi_historical_census.py",
     "scripts/ci/validate_b26_p2_xi_ingress_isolation.py",
     "scripts/ci/validate_b26_p2_xi_semantic_temporal.py",
+    # C19 webhook-ingesting lane mounts the dedicated ingress
+    # credential into its API boundary (bulk of the surface is the
+    # pre-existing C19 topology; the XI delta is the ingress DSN
+    # mount + export only).
+    "docker-compose.c19.yml",
+    "scripts/ci/run_b25_p13_c19_context_robust_closure.sh",
 ]
 
 PROHIBITED_PATH_PATTERNS = [

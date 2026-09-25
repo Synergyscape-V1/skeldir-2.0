@@ -93,6 +93,7 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL: ${C19_INGRESS_DATABASE_URL?missing C19_INGRESS_DATABASE_URL}
       TRUST_ISSUANCE_DATABASE_URL: ${C19_ISSUER_DATABASE_URL?missing C19_ISSUER_DATABASE_URL}
       # B2.5-P14 Corrective V. The API process holds the two B2.8 causal
       # authorities the same way it holds issuance custody: as separate DSNs
