@@ -862,8 +862,10 @@ def main() -> int:
             (ln for ln in procfile.splitlines() if ln.startswith("worker:")),
             "",
         )
+        # Shell blanking (`VAR=` / `VAR= cmd`) carries no value:
+        # only `VAR=<non-space>` mounts the credential.
         _mount = re.search(
-            r"B26_P2_INGRESS_DATABASE_URL\s*=\s*\S", worker_line
+            r"B26_P2_INGRESS_DATABASE_URL=\S", worker_line
         )
         if _mount is not None:
             return _fail("generic_worker_holds_ingress_dsn")

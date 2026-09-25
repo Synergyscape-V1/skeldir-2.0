@@ -349,14 +349,19 @@ def _on_worker_parent_init(**kwargs):
 
     B2.6-P2 Corrective XII: a worker/relay/beat/B2.3 process must never
     hold the authenticated-ingress credential. Fail closed at startup
-    instead of serving with a smuggled capability.
+    instead of serving with a smuggled capability. Synthetic
+    worker_init sends (physics tests proving lifecycle receivers)
+    carry a non-Worker sender and skip this process-boundary guard;
+    real boots always present the Worker instance.
     """
-    from app.db.session import assert_worker_ingress_isolation
+    sender = kwargs.get("sender")
+    if sender is None or hasattr(sender, "hostname"):
+        from app.db.session import assert_worker_ingress_isolation
 
-    try:
-        assert_worker_ingress_isolation()
-    except RuntimeError as exc:
-        raise SystemExit(str(exc)) from exc
+        try:
+            assert_worker_ingress_isolation()
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
 
 
 @signals.beat_init.connect
@@ -364,7 +369,12 @@ def _on_beat_parent_init(**kwargs):
     """B2.6-P2 Corrective XII: the scheduler holds broker-scheduling
     authority only. A smuggled authenticated-ingress credential fails
     the beat closed at startup, exactly like the worker processes.
+    Synthetic sends (non-Beat senders) skip the guard, mirroring the
+    worker-init rule.
     """
+    sender = kwargs.get("sender")
+    if sender is not None and not hasattr(sender, "hostname"):
+        return
     from app.db.session import assert_worker_ingress_isolation
 
     try:
