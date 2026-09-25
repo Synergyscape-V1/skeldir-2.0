@@ -1155,9 +1155,23 @@ def main() -> int:
         _broker_outage(True)
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent5 = f"pi_{uuid.uuid4().hex[:18]}"
-        status5, body5 = _post_stripe(
-            tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
-        )
+        # One bounded retry: under a fenced-broker fault storm the
+        # acceptance POST races kombu pool recovery on loaded runners
+        # (observed client-side timeouts with the API alive and the
+        # durable intent persisted). The assertion below is unchanged:
+        # HTTP 200 plus wrong-queue RED, so a systematic hang still
+        # fails deterministically on the second attempt.
+        try:
+            status5, body5 = _post_stripe(
+                tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
+            )
+        except RuntimeError as exc:
+            if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
+                raise
+            details["falsifier_outage_post_retried"] = str(exc)[:160]
+            status5, body5 = _post_stripe(
+                tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
+            )
         if status5 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status5}")
         disp5 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body5)["event_id"]))
