@@ -2,11 +2,12 @@
 """B2.6-P2 Corrective XII single authentication regime (BLOCKER C).
 
 Law: one migration head plus the declared topology version uniquely
-determines the authentication authority model. The XII migration
-refuses when the required ingress principal is absent (fail-closed
-deploy, never predecessor service); no authentication law branches on
-role existence; late provisioning deterministically installs the exact
-governed grants (contract B: no third regime).
+determines the authentication authority model. No authentication law
+branches on role existence, so a lane without the required ingress
+principal carries strict law with a dead authentication plane and a
+refusing application startup (never predecessor service); late
+provisioning deterministically installs the exact governed grants
+(contract B: no third regime).
 
 Static: the XII migration contains the absent-topology refusal gate;
 no auth law body consults role existence.
@@ -40,8 +41,24 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         violations.append(f"xii_topo_static_unreadable:{exc}")
         return
     checks["migration_present"] = True
-    if "b26_p2_xii_ingress_topology_absent" not in source:
-        violations.append("xii_topo_static_no_absent_gate")
+    # Unavailability is enforced at the serving layers (§7.2), not by
+    # refusing the migration: the absent-topology refusal lives ONLY
+    # in the runtime adjudicator (topology_check, consulted at
+    # application startup), never as a bare upgrade gate that would
+    # couple every non-P2 lane to P2 deployment concerns. Proven on a
+    # real role-absent lane: migrates to the XII head, strict law,
+    # dead auth plane, refusing startup; late role + provision
+    # converges to strict (contract B).
+    upgrade_source = source.split("def downgrade", 1)[0]
+    gate_uses = upgrade_source.count("b26_p2_xii_ingress_topology_absent")
+    adjudicator_uses = upgrade_source.count(
+        "RAISE EXCEPTION 'b26_p2_xii_ingress_topology_absent'"
+    )
+    if gate_uses != adjudicator_uses or adjudicator_uses != 1:
+        violations.append(
+            "xii_topo_static_absent_gate_misplaced:%d-vs-%d"
+            % (gate_uses, adjudicator_uses)
+        )
     if "b26_p2_xii_provision_ingress_topology" not in source:
         violations.append("xii_topo_static_no_provision_fn")
     # No authentication law may branch on role existence anymore.

@@ -275,10 +275,10 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
     def universe() -> tuple[int, str, str]:
         cmd = ["run", "--rm", "--network", NETWORK, "-v", harness, "-v", out_mount,
                "-e", "PYTHONPATH=/proof:/app/backend",
-               image, "python", "/proof/assert_b26_p2_authority_universe.py",
-               "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
+                image, "python", "/proof/assert_b26_p2_authority_universe.py",
+                "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609240002",
+                "--migration-head", "202609250001",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr

@@ -62,6 +62,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -835,9 +836,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609240002" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xi")
-        details["migration_head"] = "202609240002"
+        if "202609250001" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xii")
+        details["migration_head"] = "202609250001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -850,18 +851,27 @@ def main() -> int:
         )
         if "DATABASE_URL=$B26_P2_BEAT_DATABASE_URL" not in beat_line:
             return _fail("beat_custody_not_split")
-        # Corrective XI: the generic worker must never hold the
+        # Corrective XII: the generic worker must never be MOUNTED the
         # dedicated ingress credential. (It keeps the API DSN by C7
         # design; isolation is enforced at the database layer for
-        # every non-ingress principal.)
+        # every non-ingress principal, at startup for smuggled
+        # credentials, and at the session boundary for in-process
+        # callers. Explicit blanking `VAR=` is non-possession, proven
+        # by the XII process-isolation battery.)
         worker_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("worker:")),
             "",
         )
-        if "B26_P2_INGRESS_DATABASE_URL" in worker_line:
+        _mount = re.search(
+            r"B26_P2_INGRESS_DATABASE_URL\s*=\s*\S", worker_line
+        )
+        if _mount is not None:
             return _fail("generic_worker_holds_ingress_dsn")
+        if "B26_P2_INGRESS_DATABASE_URL" not in worker_line:
+            return _fail("generic_worker_ingress_not_blanked")
         details["procfile_recovery_custody_ok"] = True
         details["procfile_xi_ingress_custody_ok"] = True
+        details["procfile_xii_ingress_blanked"] = True
 
         # 1. Build + boot the exact production topology.
         print("B26_P2_TOPOLOGY_STAGE build", flush=True)

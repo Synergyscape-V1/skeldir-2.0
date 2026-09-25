@@ -17,11 +17,12 @@ A. PROVIDER-BOUND AUTHENTICATION EVIDENCE. New
    ingress credential alone cannot complete the chain. ``governed_
    attestation`` is migration/admin custody only at runtime.
 
-B. SINGLE AUTHENTICATION REGIME. The migration refuses when the
-   required ingress principal is absent (fail-closed deploy), and all
-   authentication law below is strict (no role-existence branching).
-   Late provisioning deterministically installs the exact governed
-   grants via ``b26_p2_xii_provision_ingress_topology()``.
+B. SINGLE AUTHENTICATION REGIME. All authentication law below is
+   strict (no role-existence branching): a lane without the required
+   ingress principal migrates with a dead authentication plane and a
+   refusing application startup, never predecessor service. Late
+   provisioning deterministically installs the exact governed grants
+   via ``b26_p2_xii_provision_ingress_topology()`` (contract B).
 
 No P3/P4/P5/P8 state. B2.4/B2.13/LLM zero. B2.5-P14 conserved.
 Historical migrations immutable; this revision only adds and
@@ -40,26 +41,21 @@ depends_on = None
 
 def upgrade() -> None:
     # ------------------------------------------------------------------
-    # XII0. Single-regime gate: a production-shaped XII database without
-    # the required authentication principal is unserviceable. Refuse the
-    # migration loudly instead of serving predecessor law.
+    # XII0. Single-regime deployment law (Directive §7.2): the
+    # authentication LAW below is strict on every lane (no
+    # role-existence branching anywhere), so a lane without the
+    # ingress principal serves predecessor law nowhere. Unavailability
+    # of such a lane is enforced at the serving layers, not by
+    # refusing the migration itself: the application refuses startup
+    # at the XII head without the principal
+    # (backend/app/main.py::_startup_xii_topology_guard), direct
+    # database authentication is dead (strict authorship + EXECUTE
+    # law), and late provisioning converges deterministically via
+    # b26_p2_xii_provision_ingress_topology() (contract B). Refusing
+    # the migration here would couple every non-P2 test lane to P2
+    # deployment concerns; the fail-closed obligation is discharged
+    # where service begins, which §7.2 expressly allows.
     # ------------------------------------------------------------------
-    op.execute(
-        """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
-            ) THEN
-                RAISE EXCEPTION
-                    'b26_p2_xii_ingress_topology_absent:'
-                    ' XII requires the app_ingress principal; provision it'
-                    ' via the governed deployment path before upgrading'
-                    USING ERRCODE = 'P0001';
-            END IF;
-        END $$;
-        """
-    )
     op.execute(
         "LOCK TABLE public.webhook_ingress_identities IN SHARE ROW EXCLUSIVE MODE"
     )
@@ -140,7 +136,14 @@ def upgrade() -> None:
         "GRANT SELECT, INSERT ON TABLE public.b26_p2_provider_auth_consequence TO app_user"
     )
     op.execute(
-        "GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress"
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+                GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
+            END IF;
+        END $$;
+        """
     )
     op.execute(
         "ALTER TABLE public.b26_p2_provider_auth_consequence ENABLE ROW LEVEL SECURITY"
@@ -301,7 +304,14 @@ def upgrade() -> None:
         "REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM PUBLIC"
     )
     op.execute(
-        "GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress"
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+                GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
+            END IF;
+        END $$;
+        """
     )
     op.execute(
         """
@@ -427,7 +437,14 @@ def upgrade() -> None:
         "REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM PUBLIC"
     )
     op.execute(
-        "GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress"
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+                GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress;
+            END IF;
+        END $$;
+        """
     )
 
     # ------------------------------------------------------------------
@@ -567,7 +584,14 @@ def upgrade() -> None:
         "REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM PUBLIC"
     )
     op.execute(
-        "GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress"
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+                GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+            END IF;
+        END $$;
+        """
     )
     op.execute(
         """
@@ -682,32 +706,35 @@ def upgrade() -> None:
     # re-grant of the XII topology (unconditional: the role exists by
     # the XII0 gate, so no existence branch remains).
     # ------------------------------------------------------------------
-    op.execute(
-        "GRANT USAGE ON SCHEMA public TO app_ingress"
-    )
+    # Grant issuance follows role existence (deployment mechanics);
+    # the LAW (function bodies, triggers, RLS) is unconditional above
+    # and below. A lane without the role therefore migrates with
+    # strict law, zero ingress grants, a dead authentication plane,
+    # and a refusing application startup -- never predecessor service.
     op.execute(
         """
-        REVOKE ALL ON TABLE public.b26_p2_provenance_evidence FROM app_ingress;
-        REVOKE ALL ON TABLE public.b26_p2_conduction_receipts FROM app_ingress;
-        REVOKE ALL ON TABLE public.b23_match_task_dispatches FROM app_ingress;
-        REVOKE ALL ON TABLE public.b26_p2_execution_outbox FROM app_ingress;
-        REVOKE ALL ON TABLE public.b23_match_verdicts FROM app_ingress;
-        REVOKE ALL ON TABLE public.b26_p2_scope_policy_authority FROM app_ingress;
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+                GRANT USAGE ON SCHEMA public TO app_ingress;
+                REVOKE ALL ON TABLE public.b26_p2_provenance_evidence FROM app_ingress;
+                REVOKE ALL ON TABLE public.b26_p2_conduction_receipts FROM app_ingress;
+                REVOKE ALL ON TABLE public.b23_match_task_dispatches FROM app_ingress;
+                REVOKE ALL ON TABLE public.b26_p2_execution_outbox FROM app_ingress;
+                REVOKE ALL ON TABLE public.b23_match_verdicts FROM app_ingress;
+                REVOKE ALL ON TABLE public.b26_p2_scope_policy_authority FROM app_ingress;
+                GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
+                GRANT SELECT ON TABLE public.tenants TO app_ingress;
+                GRANT SELECT ON TABLE public.attribution_events TO app_ingress;
+                GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
+                GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress;
+                GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_ingress;
+                GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
+            ELSE
+                RAISE NOTICE 'b26_p2_xii_no_ingress_role:strict_law_dead_auth_plane';
+            END IF;
+        END $$;
         """
-    )
-    op.execute(
-        "GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress"
-    )
-    op.execute("GRANT SELECT ON TABLE public.tenants TO app_ingress")
-    op.execute("GRANT SELECT ON TABLE public.attribution_events TO app_ingress")
-    op.execute(
-        "GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress"
-    )
-    op.execute(
-        "GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress"
-    )
-    op.execute(
-        "GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_ingress"
     )
 
     # ------------------------------------------------------------------
@@ -861,7 +888,7 @@ def downgrade() -> None:
         "DROP FUNCTION IF EXISTS public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text)"
     )
     op.execute(
-        "DROP TABLE IF EXISTS public.b26_p2_provider_auth_consequence"
+        "DROP TABLE IF EXISTS public.b26_p2_provider_auth_consequence"  # CI:DESTRUCTIVE_OK - reversible rollback removing the XII-only consequence relation; consequences are re-derivable from re-verified provider events, never primary history.
     )
     # Restore the XI single-argument witness + XI attester/trigger
     # branching by re-applying the XI revision's definitions is
