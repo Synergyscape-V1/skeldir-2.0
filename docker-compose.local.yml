@@ -29,8 +29,10 @@ services:
     # B2.6-P2 Corrective XII: the lane carries strict single-regime
     # law, so the ingress principal must exist for it to be
     # serviceable. Role only (no grants/ownership); all authority
-    # flows from the migrations themselves.
-    command: bash -c "python scripts/database/ensure_ingress_principal.py && alembic upgrade head"
+    # flows from the migrations themselves. Inline (the production
+    # image deliberately ships no scripts/ directory); single-quote
+    # free by construction so YAML/shell nesting stays exact.
+    command: bash -c "python -c 'import os,psycopg2;from psycopg2 import sql;c=psycopg2.connect(os.environ.get(\"MIGRATION_DATABASE_URL\"));c.autocommit=True;u=c.cursor();u.execute(\"SELECT 1 FROM pg_roles WHERE rolname=%s\",[\"app_ingress\"]);u.fetchone() or u.execute(sql.SQL(\"CREATE ROLE {} WITH LOGIN PASSWORD {}\").format(sql.Identifier(\"app_ingress\"),sql.Literal(\"app_ingress\")));c.close()' && alembic upgrade head"
     depends_on:
       postgres:
         condition: service_healthy
