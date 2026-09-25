@@ -357,6 +357,20 @@ def _on_worker_parent_init(**kwargs):
         assert_worker_ingress_isolation()
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
+
+
+@signals.beat_init.connect
+def _on_beat_parent_init(**kwargs):
+    """B2.6-P2 Corrective XII: the scheduler holds broker-scheduling
+    authority only. A smuggled authenticated-ingress credential fails
+    the beat closed at startup, exactly like the worker processes.
+    """
+    from app.db.session import assert_worker_ingress_isolation
+
+    try:
+        assert_worker_ingress_isolation()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
     try:
         multiproc_dir = get_multiproc_dir()
     except RuntimeError as exc:
