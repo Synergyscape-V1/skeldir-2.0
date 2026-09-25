@@ -680,6 +680,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     # scan still applies beneath it.
     "alembic/versions/007_skeldir_foundation/202609250001_b26_p2_corrective_xii_fact_anchored_closure.py",
     "contracts-internal/governance/b26_p2_xii_semantic_dependency_manifest.json",
+    "scripts/database/ensure_ingress_principal.py",
     "scripts/ci/b26_p2_xii_coverage.py",
     "scripts/ci/test_b26_p2_xii_negative_controls.py",
     "scripts/ci/validate_b26_p2_xii_auth_binding.py",

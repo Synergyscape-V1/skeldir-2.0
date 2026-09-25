@@ -26,7 +26,11 @@ services:
     env_file:
       - .env.local
     working_dir: /app
-    command: alembic upgrade head
+    # B2.6-P2 Corrective XII: the lane carries strict single-regime
+    # law, so the ingress principal must exist for it to be
+    # serviceable. Role only (no grants/ownership); all authority
+    # flows from the migrations themselves.
+    command: bash -c "python scripts/database/ensure_ingress_principal.py && alembic upgrade head"
     depends_on:
       postgres:
         condition: service_healthy
