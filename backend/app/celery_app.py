@@ -355,13 +355,15 @@ def _on_worker_parent_init(**kwargs):
     real boots always present the Worker instance.
     """
     sender = kwargs.get("sender")
-    if sender is None or hasattr(sender, "hostname"):
-        from app.db.session import assert_worker_ingress_isolation
+    if sender is not None and not hasattr(sender, "hostname"):
+        return
+    from app.db.session import sanitize_worker_ingress_environment
 
-        try:
-            assert_worker_ingress_isolation()
-        except RuntimeError as exc:
-            raise SystemExit(str(exc)) from exc
+    if sanitize_worker_ingress_environment():
+        logger.critical(
+            "b26_p2_ingress_credential_in_worker: smuggled ingress"
+            " credential sanitized at worker startup"
+        )
 
 
 @signals.beat_init.connect
@@ -375,12 +377,13 @@ def _on_beat_parent_init(**kwargs):
     sender = kwargs.get("sender")
     if sender is not None and not hasattr(sender, "hostname"):
         return
-    from app.db.session import assert_worker_ingress_isolation
+    from app.db.session import sanitize_worker_ingress_environment
 
-    try:
-        assert_worker_ingress_isolation()
-    except RuntimeError as exc:
-        raise SystemExit(str(exc)) from exc
+    if sanitize_worker_ingress_environment():
+        logger.critical(
+            "b26_p2_ingress_credential_in_beat: smuggled ingress"
+            " credential sanitized at scheduler startup"
+        )
     try:
         multiproc_dir = get_multiproc_dir()
     except RuntimeError as exc:

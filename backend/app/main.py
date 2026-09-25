@@ -130,27 +130,25 @@ async def _startup_xii_topology_guard() -> None:
     """B2.6-P2 Corrective XII: a P2 ingress boundary without its auth
     topology refuses to serve.
 
-    One XII migration identity represents one authentication law. Mounting
-    ``B26_P2_INGRESS_DATABASE_URL`` declares this process a
-    provider-authentication boundary; at/above the XII head such a
-    process with a missing ingress principal or non-strict grants is
-    misconfigured and must fail closed instead of risking predecessor
-    service. Processes without the credential make no P2-serving claim:
-    they log the degraded topology loudly while non-P2 routes serve
-    (every P2 ingress path still fails closed per-request through the
-    database law and the authentication-boundary session gate).
+    One XII migration identity represents one authentication law.
+    Mounting the dedicated ingress credential declares this process a
+    provider-authentication boundary (see ingress_credential_mounted);
+    at/above the XII head such a process with a missing ingress
+    principal or non-strict grants is misconfigured and must fail
+    closed instead of risking predecessor service. Processes without
+    the credential make no P2-serving claim: they log the degraded
+    topology loudly while non-P2 routes serve (every P2 ingress path
+    still fails closed per-request through the database law and the
+    authentication-boundary session gate).
     """
     import logging
-    import os
 
     from sqlalchemy import text
 
-    from app.db.session import engine
+    from app.db.session import engine, ingress_credential_mounted
 
     logger = logging.getLogger(__name__)
-    boundary_claimed = bool(
-        os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip()
-    )
+    boundary_claimed = ingress_credential_mounted()
     try:
         async with engine.begin() as conn:
             head = await conn.execute(text("SELECT version_num FROM alembic_version"))

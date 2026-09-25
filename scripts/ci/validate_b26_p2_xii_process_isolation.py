@@ -97,11 +97,13 @@ def _topology_checks(violations: list[str], checks: dict) -> None:
         violations.append(
             "xii_proc_ingress_dsn_beyond_boundary:" + ",".join(offenders[:10])
         )
-    # The worker startup guard must exist in shipped code.
+    # The worker startup guard must exist in shipped code: smuggled
+    # credentials are sanitized (variable removed, pool nulled) with a
+    # CRITICAL log, so the capability is unavailable in the process.
     guard = (REPO_ROOT / "backend" / "app" / "celery_app.py").read_text(
         encoding="utf-8"
     )
-    if "assert_worker_ingress_isolation" not in guard:
+    if "sanitize_worker_ingress_environment" not in guard:
         violations.append("xii_proc_worker_guard_absent")
     session_src = (REPO_ROOT / "backend" / "app" / "db" / "session.py").read_text(
         encoding="utf-8"
@@ -152,25 +154,32 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
     env["PYTHONPATH"] = "%s%s%s" % (
         REPO_ROOT, os.pathsep, REPO_ROOT / "backend",
     )
-    # Worker guard refuses a smuggled credential.
+    # Worker startup sanitizes a smuggled credential: afterwards the
+    # variable is physically absent, the pool globals are nulled, and
+    # the ingress session remains unavailable (boundary gate).
+    sanitize_probe = (
+        "from app.db.session import sanitize_worker_ingress_environment\n"
+        "import app.db.session as session_module\n"
+        "import os\n"
+        "sanitized = sanitize_worker_ingress_environment()\n"
+        "assert sanitized is True, 'expected sanitization'\n"
+        "assert os.getenv('B26_P2_INGRESS_DATABASE_URL') is None\n"
+        "assert session_module.ingress_engine is None\n"
+        "assert session_module.IngressAsyncSessionLocal is None\n"
+        "print('XII_PROC_SANITIZED')\n"
+    )
     proc = subprocess.run(
-        [sys.executable, "-c",
-         "from app.db.session import assert_worker_ingress_isolation;"
-         " assert_worker_ingress_isolation()"],
+        [sys.executable, "-c", sanitize_probe],
         capture_output=True, text=True, env=env,
         cwd=str(REPO_ROOT / "backend"),
     )
-    if proc.returncode == 0:
-        violations.append("xii_proc_worker_guard_accepted_smuggled_credential")
-    elif "b26_p2_ingress_credential_in_worker" not in (
-        proc.stdout + proc.stderr
-    ):
+    if proc.returncode != 0 or "XII_PROC_SANITIZED" not in proc.stdout:
         violations.append(
-            "xii_proc_worker_guard_wrong_refusal:"
-            + (proc.stdout + proc.stderr)[:120]
+            "xii_proc_worker_sanitize_failed:"
+            + (proc.stdout + proc.stderr)[-160:]
         )
     else:
-        checks["worker_guard_refuses"] = True
+        checks["worker_guard_sanitizes"] = True
     # Unrelated code without the authentication boundary cannot obtain
     # the ingress session (process-level unavailability).
     boundary_probe = (

@@ -370,6 +370,33 @@ def assert_worker_ingress_isolation() -> None:
         )
 
 
+def ingress_credential_mounted() -> bool:
+    """True when this process was given the ingress credential."""
+    return bool(os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip())
+
+
+def sanitize_worker_ingress_environment() -> bool:
+    """Make a smuggled ingress credential unavailable in this process.
+
+    B2.6-P2 Corrective XII: worker/relay/beat/B2.3 startup calls this
+    before serving. When the credential was inherited through a shared
+    environment, it is removed from ``os.environ`` and the ingress pool
+    globals are nulled, so no code in this process can spend it: the
+    variable is physically absent afterwards, the session factory is
+    gone, the authentication-boundary token is never set here, and the
+    database denies every non-ingress principal regardless. Returns
+    True when sanitization occurred (callers log CRITICAL). Governed
+    topologies blank the variable outright, where this is a no-op.
+    """
+    global ingress_engine, IngressAsyncSessionLocal
+    if not os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip():
+        return False
+    os.environ.pop("B26_P2_INGRESS_DATABASE_URL", None)
+    ingress_engine = None
+    IngressAsyncSessionLocal = None
+    return True
+
+
 @asynccontextmanager
 async def get_ingress_session(
     tenant_id: UUID,

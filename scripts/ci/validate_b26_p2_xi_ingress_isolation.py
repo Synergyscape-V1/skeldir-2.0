@@ -66,6 +66,11 @@ def _line_mounts_ingress(line: str) -> bool:
         closer = rest.find(rest[0], 1)
         inner = rest[1:closer] if closer > 0 else rest[1:]
         return inner.strip() != ""
+    # Compose indirection with an empty default (`${VAR:-}` /
+    # `${VAR-}`) mounts nothing unless the lane opts in by exporting
+    # VAR; a non-empty default mounts the credential.
+    if re.fullmatch(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-?\}", rest):
+        return False
     return True
 
 

@@ -352,6 +352,10 @@ def _worker_env(*, include_bayesian_tasks: bool, log_path: Path) -> dict[str, st
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_ATTESTATION"] = "direct_postgres_ci_postgres15"
     env["SKELDIR_BAYESIAN_DB_TOPOLOGY_SOURCE"] = "github_actions_postgres_15_alpine"
     env["SKELDIR_BAYESIAN_DB_BACKEND_AFFINITY"] = "connection_lifetime"
+    # B2.6-P2 Corrective XII: spawned workers must never inherit the
+    # authenticated-ingress credential (physical process isolation;
+    # workers fail closed at startup if it is present).
+    env.pop("B26_P2_INGRESS_DATABASE_URL", None)
     env["BAYESIAN_PROBE_LOG_PATH"] = str(log_path)
     env["SKELDIR_BAYESIAN_WORKER_GENERATION_AUTHORITY_DIR"] = str(
         log_path.parent / "worker_authority"
@@ -372,6 +376,9 @@ def _beat_env(
     multiproc_dir.mkdir(parents=True, exist_ok=True)
     env["PROMETHEUS_MULTIPROC_DIR"] = str(multiproc_dir)
     env["SKELDIR_B24_P9_REQUIRE_DB_PROOFS"] = "1"
+    # B2.6-P2 Corrective XII: the scheduler holds broker-scheduling
+    # authority only; it must never inherit the ingress credential.
+    env.pop("B26_P2_INGRESS_DATABASE_URL", None)
     env["B24_P9_RECOVERY_RECONCILE_INTERVAL_SECONDS"] = str(
         max(1, int(recovery_interval_seconds))
     )
