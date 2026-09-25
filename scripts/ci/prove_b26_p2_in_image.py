@@ -13,11 +13,12 @@ a database the IMAGE migrated:
   4. authority-universe assertion    (meaning-closed denominator in-image)
   5. image-identity self-report      (image file SHAs vs candidate checkout;
                                      a stale image REDs here)
-  6. stale falsifier                 (optional --base-sha: build the base
-                                     tree image, prove the worker-verified
-                                     mint is ACCEPTED there while the
-                                     candidate refuses: the proof
-                                     distinguishes the artifacts)
+   6. stale falsifier                 (optional --base-sha: build the base
+                                      tree image, prove caller-assertion
+                                      attestation PROMOTES there while the
+                                      candidate refuses without a witness
+                                      (restoring only through ingress): the
+                                      proof distinguishes the artifacts)
 
 Usage (CI):
   python scripts/ci/prove_b26_p2_in_image.py \
@@ -30,6 +31,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import subprocess
 import sys
 import time
@@ -54,7 +57,76 @@ IDENTITY_FILES = [
     "alembic/versions/007_skeldir_foundation/202609220001_b26_p2_corrective_viii_context_robust.py",
     "alembic/versions/007_skeldir_foundation/202609230001_b26_p2_corrective_ix_consequence_authority.py",
     "alembic/versions/007_skeldir_foundation/202609240001_b26_p2_corrective_x_assurance_sovereignty.py",
+    "alembic/versions/007_skeldir_foundation/202609240002_b26_p2_corrective_xi_p2_core_closure.py",
 ]
+
+# Corrective XI stale falsifier probe (attestation delta): the base
+# (pre-XI) tree promotes unknown_legacy -> authenticated_known on a bare
+# caller assertion through the app_user attester; the candidate (XI) tree
+# refuses the same assertion (no EXECUTE / witness_missing) and restores
+# authority only through the ingress witness consequence. MODE=base
+# expects XI_BASE_ATTESTED; MODE=candidate expects XI_CAND_DENIED then
+# XI_CAND_RESTORED. A base that refuses (already strict) or a candidate
+# that promotes (still assertable) fails the falsifier as vacuous.
+PROBE_XI_ATTEST_DELTA = '''
+import os
+import sys
+import uuid
+import psycopg2
+DAY_NOON = __import__("datetime").datetime(2026, 1, 15, 12, 0, tzinfo=__import__("datetime").timezone.utc)
+mode = os.environ.get("PROBE_MODE", "candidate")
+admin = psycopg2.connect(os.environ["PROBE_ADMIN_DSN"])
+admin.autocommit = True
+ac = admin.cursor()
+t = str(uuid.uuid4())
+tag = uuid.uuid4().hex[:8]
+ac.execute("INSERT INTO public.tenants (id, name, api_key_hash, notification_email) VALUES (%s, %s, %s, %s)", (t, "attdelta-" + tag, uuid.uuid4().hex, tag + "@x.invalid"))
+ac.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
+ac.execute("INSERT INTO public.channel_taxonomy (code, family, is_paid, display_name, state) VALUES ('attdelta_ch', 'attdelta', true, 'ATTDELTA', 'active') ON CONFLICT (code) DO NOTHING")
+e = str(uuid.uuid4())
+ing = str(uuid.uuid4())
+idem = "attdelta:" + tag
+ac.execute("INSERT INTO public.attribution_events (id, tenant_id, occurred_at, correlation_id, session_id, revenue_cents, raw_payload, idempotency_key, event_type, channel, campaign_id, conversion_value_cents, currency, event_timestamp, processed_at, processing_status) VALUES (%s, %s, %s, %s, %s, 38000, '{}'::jsonb, %s, 'conversion', 'attdelta_ch', 'c', 38000, 'USD', %s, %s, 'processed')", (e, t, DAY_NOON, str(uuid.uuid4()), str(uuid.uuid4()), idem, DAY_NOON, DAY_NOON))
+ac.execute("INSERT INTO public.webhook_ingress_identities (id, tenant_id, event_id, provider, provider_native_event_reference, provider_native_commerce_reference, normalized_commerce_reference_kind, normalized_commerce_reference_value, verified_amount_minor, verified_amount_currency, event_timestamp, idempotency_key, verified_commerce_ingress_state) VALUES (%s, %s, %s, 'stripe', %s, %s, 'order_reference', %s, 38000, 'USD', %s, %s, 'authenticity_verified')", (ing, t, e, "evt-" + tag, "ord-" + tag, "ord-" + tag, DAY_NOON, idem))
+ac.execute("ALTER TABLE public.webhook_ingress_identities DISABLE TRIGGER trg_b26_p2_ingress_provenance")
+ac.execute("UPDATE public.webhook_ingress_identities SET b26_p2_provenance_status = 'unknown_legacy' WHERE id = %s", (ing,))
+ac.execute("ALTER TABLE public.webhook_ingress_identities ENABLE TRIGGER trg_b26_p2_ingress_provenance")
+user = psycopg2.connect(os.environ["PROBE_USER_DSN"])
+user.autocommit = True
+uc = user.cursor()
+uc.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
+try:
+    uc.execute("SELECT public.b26_p2_attest_provenance_evidence(%s, 'governed_attestation', %s)", (ing, idem))
+    outcome = str(uc.fetchone()[0])
+except Exception as exc:
+    outcome = "REFUSED:" + str(exc).split("\\n")[0][:120]
+user.close()
+if mode == "base":
+    if outcome == "authenticated_known":
+        print("XI_BASE_ATTESTED")
+    else:
+        print("XI_BASE_VACUOUS:" + outcome)
+        raise SystemExit(0)
+else:
+    if outcome == "authenticated_known":
+        print("XI_CAND_PROMOTED_BY_ASSERTION")
+        raise SystemExit(1)
+    print("XI_CAND_DENIED:" + outcome)
+    ingress = psycopg2.connect(os.environ["PROBE_INGRESS_DSN"])
+    ingress.autocommit = True
+    ic = ingress.cursor()
+    ic.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
+    ic.execute("SELECT public.b26_p2_record_ingress_auth_witness(%s)", (ing,))
+    ic.execute("SELECT public.b26_p2_attest_provenance_evidence(%s, 'governed_attestation', %s)", (ing, idem))
+    restored = str(ic.fetchone()[0])
+    ingress.close()
+    if restored == "authenticated_known":
+        print("XI_CAND_RESTORED")
+    else:
+        print("XI_CAND_RESTORE_FAILED:" + restored)
+        raise SystemExit(1)
+admin.close()
+'''
 
 PROBE_X_TAB_CONDUCTION = '''
 import asyncio
@@ -125,6 +197,34 @@ def _fail(details: dict, message: str) -> int:
     return 1
 
 
+def _base_migration_head(worktree) -> str | None:
+    """Resolve the single migration head of the base worktree.
+
+    Asks the base tree's own Alembic (host interpreter, base working
+    copy) rather than re-parsing revision graphs by hand: merges with
+    tuple down_revisions and multi-branch layouts resolve exactly as
+    the migrator sees them. The stale lane must run base-head physics.
+    """
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "alembic", "heads"],
+            cwd=str(worktree), capture_output=True, text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    heads = []
+    for line in proc.stdout.splitlines():
+        match = re.match(r"^([0-9a-f]+)\b", line.strip())
+        if match:
+            heads.append(match.group(1))
+    if len(heads) != 1:
+        return None
+    return heads[0]
+
+
 _AM8_BODY_FN = "b24_mark_fit_dispatch_running"
 
 
@@ -154,9 +254,9 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                "-e", "PYTHONPATH=/proof:/app/backend",
                image, "python", "/proof/assert_b26_p2_authority_universe.py",
                "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
-              "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-              "--migration-head", "202609240001",
-               "--covered"] + covered
+                "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
+                "--migration-head", "202609240002",
+                "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
         # The drift marker lives at the head of the output, ahead of the
@@ -421,39 +521,48 @@ def main() -> int:
         # 5. Authority-universe assertion with image bytes.
         import importlib.util as _ilu
 
-        x_spec = _ilu.spec_from_file_location(
-            "b26_p2_x_coverage",
-            str(REPO_ROOT / "scripts" / "ci" / "b26_p2_x_coverage.py"))
-        if x_spec is not None and x_spec.loader is not None:
-            coverage_mod = _ilu.module_from_spec(x_spec)
-            sys.modules["b26_p2_x_coverage"] = coverage_mod
-            x_spec.loader.exec_module(coverage_mod)
-            covered = sorted(coverage_mod.X_COVERED_SURFACES)
+        xi_spec = _ilu.spec_from_file_location(
+            "b26_p2_xi_coverage",
+            str(REPO_ROOT / "scripts" / "ci" / "b26_p2_xi_coverage.py"))
+        if xi_spec is not None and xi_spec.loader is not None:
+            coverage_mod = _ilu.module_from_spec(xi_spec)
+            sys.modules["b26_p2_xi_coverage"] = coverage_mod
+            xi_spec.loader.exec_module(coverage_mod)
+            covered = sorted(coverage_mod.XI_COVERED_SURFACES)
         else:
-            ix_spec = _ilu.spec_from_file_location(
-                "b26_p2_ix_coverage",
-                str(REPO_ROOT / "scripts" / "ci" / "b26_p2_ix_coverage.py"))
-            if ix_spec is not None and ix_spec.loader is not None:
-                coverage_mod = _ilu.module_from_spec(ix_spec)
-                sys.modules["b26_p2_ix_coverage"] = coverage_mod
-                ix_spec.loader.exec_module(coverage_mod)
-                covered = sorted(coverage_mod.IX_COVERED_SURFACES)
+            x_spec = _ilu.spec_from_file_location(
+                "b26_p2_x_coverage",
+                str(REPO_ROOT / "scripts" / "ci" / "b26_p2_x_coverage.py"))
+            if x_spec is not None and x_spec.loader is not None:
+                coverage_mod = _ilu.module_from_spec(x_spec)
+                sys.modules["b26_p2_x_coverage"] = coverage_mod
+                x_spec.loader.exec_module(coverage_mod)
+                covered = sorted(coverage_mod.X_COVERED_SURFACES)
             else:
-                spec = _ilu.spec_from_file_location(
-                    "b26_p2_viii_coverage",
-                    str(REPO_ROOT / "scripts" / "ci" / "b26_p2_viii_coverage.py"))
-                assert spec is not None and spec.loader is not None
-                coverage_mod = _ilu.module_from_spec(spec)
-                sys.modules["b26_p2_viii_coverage"] = coverage_mod
-                spec.loader.exec_module(coverage_mod)
-                covered = sorted(coverage_mod.VIII_COVERED_SURFACES)
+                ix_spec = _ilu.spec_from_file_location(
+                    "b26_p2_ix_coverage",
+                    str(REPO_ROOT / "scripts" / "ci" / "b26_p2_ix_coverage.py"))
+                if ix_spec is not None and ix_spec.loader is not None:
+                    coverage_mod = _ilu.module_from_spec(ix_spec)
+                    sys.modules["b26_p2_ix_coverage"] = coverage_mod
+                    ix_spec.loader.exec_module(coverage_mod)
+                    covered = sorted(coverage_mod.IX_COVERED_SURFACES)
+                else:
+                    spec = _ilu.spec_from_file_location(
+                        "b26_p2_viii_coverage",
+                        str(REPO_ROOT / "scripts" / "ci" / "b26_p2_viii_coverage.py"))
+                    assert spec is not None and spec.loader is not None
+                    coverage_mod = _ilu.module_from_spec(spec)
+                    sys.modules["b26_p2_viii_coverage"] = coverage_mod
+                    spec.loader.exec_module(coverage_mod)
+                    covered = sorted(coverage_mod.VIII_COVERED_SURFACES)
         proc = run_img(
             args.image_tag,
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
              f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
               "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-              "--migration-head", "202609240001",
-              "--evidence-out", "/out/authority-universe.json",
+               "--migration-head", "202609240002",
+               "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],
             env=harness_env,
@@ -521,43 +630,64 @@ def main() -> int:
                     "B23_WORKER_DATABASE_URL":
                         f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{stale_db}",
                 }
-                cmd = ["run", "--rm", "--network", NETWORK, "-w", "/app"]
-                for k, v in stale_env.items():
-                    cmd += ["-e", f"{k}={v}"]
-                cmd += [base_tag, "alembic", "upgrade", "head"]
-                proc = _docker(*cmd)
+                # The stale lane migrates with the HOST candidate
+                # alembic (pinned dependencies), not the base image's
+                # alembic: base-tree images predate dependency pins and
+                # their in-image migrate is an environment lottery.
+                # Migrating the stale lane to the BASE head with
+                # candidate bytes is faithful (linear history: the base
+                # head is an ancestor of the candidate head); the probe
+                # itself still executes inside the base image.
+                base_head = _base_migration_head(worktree)
+                if base_head is None:
+                    return _fail(details, "stale_base_head_unresolvable")
+                proc = subprocess.run(
+                    [sys.executable, "-m", "alembic", "upgrade", base_head],
+                    cwd=str(REPO_ROOT), capture_output=True, text=True,
+                    env={**os.environ,
+                         "MIGRATION_DATABASE_URL":
+                             f"postgresql://migration_owner:migration_owner"
+                             f"@127.0.0.1:{PG_PORT}/{stale_db}",
+                         "DATABASE_URL":
+                             f"postgresql://migration_owner:migration_owner"
+                             f"@127.0.0.1:{PG_PORT}/{stale_db}"},
+                )
                 if proc.returncode != 0:
                     return _fail(details, "stale_migrate_failed:"
                                  + (proc.stdout + proc.stderr)[-800:])
-                probe = PROBE_X_TAB_CONDUCTION
+                # XI attestation delta: the base (pre-XI) tree promotes
+                # by caller assertion through the app_user attester;
+                # the candidate must refuse the same assertion. (The X
+                # tab-strand expectation is obsolete: X already conducts
+                # TAB under one SQL law, so both trees conduct it.)
+                probe = PROBE_XI_ATTEST_DELTA
                 cmd = ["run", "--rm", "--network", NETWORK]
                 for k, v in stale_env.items():
                     cmd += ["-e", f"{k}={v}"]
                 cmd += [
+                    "-e", "PROBE_MODE=base",
                     "-e",
                     "PROBE_ADMIN_DSN=postgresql://postgres:%s@pg:5432/%s"
                     % (PG_PASSWORD, stale_db),
+                    "-e",
+                    "PROBE_USER_DSN=postgresql://app_user:app_user@pg:5432/%s"
+                    % stale_db,
+                    "-e",
+                    "PROBE_INGRESS_DSN=postgresql://app_ingress:app_ingress@pg:5432/%s"
+                    % stale_db,
                     "-e",
                     "PROBE_WORKER_DSN=postgresql://app_worker:app_worker@pg:5432/%s"
                     % stale_db,
                     base_tag, "python", "-c", probe,
                 ]
                 proc = _docker(*cmd)
-                # X single-authority delta: the base-tree image derives the
-                # tab-prefixed provider through its own Python meaning
-                # (IN_SCOPE) while the terminal binds the SQL meaning, so
-                # the receipt is refused as not-canonical and the lawful
-                # task strands. The probe printing X_TAB_REFUSED with a
-                # scope_not_canonical cause proves the falsifier
-                # distinguishes the artifacts (it is not vacuous).
                 base_out = proc.stdout + proc.stderr
-                if ("X_TAB_REFUSED" not in proc.stdout
-                        or "scope_not_canonical" not in base_out):
+                if "XI_BASE_ATTESTED" not in proc.stdout:
                     return _fail(
                         details,
-                        "stale_falsifier_vacuous:base_did_not_strand:"
+                        "stale_falsifier_vacuous:base_did_not_promote:"
                         + base_out[-500:])
-                details["stale_falsifier_base"] = "PASS_stranded_as_required"
+                details["stale_falsifier_base"] = "PASS_promoted_as_required"
                 # The candidate image must conduct the same lawful task:
                 # its thin adapter observes the SQL meaning, so receipt
                 # and gate agree and the terminal conducts.
@@ -595,9 +725,16 @@ def main() -> int:
                 for k, v in xdelta_env.items():
                     cmd += ["-e", f"{k}={v}"]
                 cmd += [
+                    "-e", "PROBE_MODE=candidate",
                     "-e",
                     "PROBE_ADMIN_DSN=postgresql://postgres:%s@pg:5432/%s"
                     % (PG_PASSWORD, xdelta_db),
+                    "-e",
+                    "PROBE_USER_DSN=postgresql://app_user:app_user@pg:5432/%s"
+                    % xdelta_db,
+                    "-e",
+                    "PROBE_INGRESS_DSN=postgresql://app_ingress:app_ingress@pg:5432/%s"
+                    % xdelta_db,
                     "-e",
                     "PROBE_WORKER_DSN=postgresql://app_worker:app_worker@pg:5432/%s"
                     % xdelta_db,
@@ -605,10 +742,11 @@ def main() -> int:
                 ]
                 proc = _docker(*cmd)
                 cand_out = proc.stdout + proc.stderr
-                if "X_TAB_CONDUCTED" not in proc.stdout:
+                if ("XI_CAND_DENIED" not in proc.stdout
+                        or "XI_CAND_RESTORED" not in proc.stdout):
                     return _fail(
                         details,
-                        "xdelta_falsifier_candidate_did_not_conduct:"
+                        "xdelta_falsifier_candidate_assertable:"
                         + cand_out[-500:])
                 details["stale_falsifier"] = "PASS"
             finally:

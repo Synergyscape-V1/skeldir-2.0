@@ -329,8 +329,10 @@ def test_ar8_worker_verified_mint_refused():
 
 def test_ar8_precursor_promote_signal_and_promotion_wins():
     """AR8-02/08: pending precursor + genuine arrival -> explicit promote
-    signal; promotion under app_user authority makes the authenticated
-    sovereign values canonical (amount 999000, not the precursor's 1)."""
+    signal; promotion under ingress authority (Corrective XI: only the
+    authenticated-ingress principal authors authenticity_verified) makes
+    the authenticated sovereign values canonical (amount 999000, not the
+    precursor's 1)."""
     import psycopg2
 
     ids = _seed_ingress("ar8a2", state="pending", amount=1)
@@ -355,18 +357,33 @@ def test_ar8_precursor_promote_signal_and_promotion_wins():
                     " 'b26p2viii:ar8a2', 'authenticity_verified')",
                     (str(uuid.uuid4()), tenant, str(uuid.uuid4()), DAY_NOON),
                 )
-            # Promote: authenticated values win under app_user authority.
-            cur.execute(
-                "UPDATE public.webhook_ingress_identities"
-                " SET provider='stripe', provider_native_event_reference='evt-ar8a2',"
-                " provider_native_commerce_reference='ord-ar8a2',"
-                " normalized_commerce_reference_value='ord-ar8a2',"
-                " verified_amount_minor=999000, verified_amount_currency='USD',"
-                " event_timestamp=%s,"
-                " verified_commerce_ingress_state='authenticity_verified'"
-                " WHERE id=%s",
-                (DAY_NOON, str(ids["ingress_id"])),
-            )
+            # Promote: authenticated values win under ingress
+            # authority (Corrective XI isolation law).
+            ingress = psycopg2.connect(_role_dsn("app_ingress"))
+            ingress.autocommit = True
+            try:
+                with ingress.cursor() as icur:
+                    icur.execute(
+                        "SELECT set_config('app.current_tenant_id',"
+                        " %s, false)",
+                        (tenant,),
+                    )
+                    icur.execute(
+                        "UPDATE public.webhook_ingress_identities"
+                        " SET provider='stripe',"
+                        " provider_native_event_reference='evt-ar8a2',"
+                        " provider_native_commerce_reference='ord-ar8a2',"
+                        " normalized_commerce_reference_value='ord-ar8a2',"
+                        " verified_amount_minor=999000,"
+                        " verified_amount_currency='USD',"
+                        " event_timestamp=%s,"
+                        " verified_commerce_ingress_state="
+                        "'authenticity_verified'"
+                        " WHERE id=%s",
+                        (DAY_NOON, str(ids["ingress_id"])),
+                    )
+            finally:
+                ingress.close()
             cur.execute(
                 "SELECT verified_amount_minor FROM public.webhook_ingress_identities"
                 " WHERE id=%s",

@@ -5601,3 +5601,133 @@
     the relay credential.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-xi-authentication-evidence
+  path: scripts/ci/validate_b26_p2_xi_authentication_evidence.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'UNKNOWN authentication becomes AUTHENTICATED only
+    through a governed witness consequence: caller assertions promote
+    nothing, witnessless attestation refuses, forged evidence rows refuse,
+    and genuine signed re-ingestion restores.'
+  command: python scripts/ci/validate_b26_p2_xi_authentication_evidence.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xi_authentication_evidence.py --help
+  expected_failure_meaning: An unknown legacy root becomes authenticated by
+    application assertion without provider evidence.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xi_authentication_evidence.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xi-ingress-isolation
+  path: scripts/ci/validate_b26_p2_xi_ingress_isolation.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Only the authenticated-ingress process boundary
+    holds authentication-authoring capability: the generic worker cannot
+    mint or attest, cross-tenant ingress refuses, and the ingress
+    principal holds ingress-only grants.'
+  command: python scripts/ci/validate_b26_p2_xi_ingress_isolation.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xi_ingress_isolation.py --help
+  expected_failure_meaning: A generic worker, relay, or beat process mints
+    or attests sovereign ingress, or crosses tenants.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xi_ingress_isolation.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xi-semantic-temporal
+  path: scripts/ci/validate_b26_p2_xi_semantic_temporal.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every B2.3 datum that can change canonical P2
+    meaning is temporally governed: the live SQL read-set (both
+    authorities plus transitive helpers) is covered by temporal
+    triggers, and unknown dependencies RED automatically.'
+  command: python scripts/ci/validate_b26_p2_xi_semantic_temporal.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xi_semantic_temporal.py --help
+  expected_failure_meaning: A new canonical SQL dependency changes P2
+    meaning without entering temporal/version governance.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xi_semantic_temporal.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xi-historical-census
+  path: scripts/ci/validate_b26_p2_xi_historical_census.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every truth-capable post-upgrade row satisfies
+    current XI invariants or carries explicit non-authoritative
+    disposition (generic post-migration oracle); only valid current P2
+    state is P3-eligible.'
+  command: python scripts/ci/validate_b26_p2_xi_historical_census.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xi_historical_census.py --help
+  expected_failure_meaning: A truth-capable historical invariant violation
+    survives upgrade silently, or P3 can consume invalid P2 state.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xi_historical_census.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xi-coverage-registry
+  path: scripts/ci/b26_p2_xi_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XI registry extends X coverage for the ingress
+    EXECUTE surfaces, P3 eligibility classification, and ingress
+    persistence.
+  command: python -c "from scripts.ci.b26_p2_xi_coverage import XI_COVERED_SURFACES; print(len(XI_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xi_coverage import XI_COVERED_SURFACES"
+  expected_failure_meaning: XI EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XI coverage gate.
+  subsumed_by: ''
+  registry_action: utility

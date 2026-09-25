@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
-  "migration_head": "202609240001",
-  "authority_universe_hash": "aff04ad9f129bffb249614ffc59b5e7b3e458144ce6cbbafb3bcb9e8e60eeb6e",
-  "reviewed_at_git_sha": "1e734ffe4e364ec196ab86202a7ec098cb973163",
+  "migration_head": "202609240002",
+  "authority_universe_hash": "5f505f9cdd440e7cc30a99414a0ba288a95cecb8079186595610fb1bb748cfcb",
+  "reviewed_at_git_sha": "24e1665fa3b41c39e1610677522602b13884fa10",
   "meaning_surface_counts": {
-    "routine_meaning": 127,
-    "trigger_meaning": 20,
-    "schema_meaning": 4,
+    "routine_meaning": 131,
+    "trigger_meaning": 21,
+    "schema_meaning": 5,
     "rls_meaning": 17,
-    "ownership": 88
+    "ownership": 92
   },
-  "review_note": "Reviewed for Corrective X head: single SQL P2 semantic authority (ascii-strip normalization family + per-candidate classifier), effect-bound conducted/receipt guard triggers, evidence-backed provenance (attester + evidence table), scheduler-plane inline execution with column-scoped tenant enumeration. Pin regeneration alone adjudicates nothing: the X effect authority (validate_b26_p2_x_authority, OID scan + live source equivalence + live effect canaries), the independent contract oracle, and the DB trigger guards must remain RED while any prohibited effect survives."
+  "review_note": "Reviewed for Corrective XI head: X authority plus dedicated authenticated-ingress principal (app_ingress authors authenticity_verified and executes witness/attester alone wherever the role exists; predecessor-compatible topology rule keeps Corrective-X semantics bit-for-bit on lanes that never provision it, enforced by role presence where XI is adjudicated), unforgeable authentication-witness relation, witness-gated attestation, quarantine-aware canonical identity, dispatch quarantine exclusion, generic XI invariant oracle, and read-only P3 eligibility predicate. Pin regeneration alone adjudicates nothing: the X effect authority, the XI live validators (authentication evidence, ingress isolation, semantic-temporal totality, historical census), and the DB trigger guards must remain RED while any prohibited effect survives."
 }

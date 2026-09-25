@@ -75,6 +75,8 @@ class AuthorityConfig:
     relay_password: str = "app_relay"
     beat_user: str = "app_beat"
     beat_password: str = "app_beat"
+    ingress_user: str = "app_ingress"
+    ingress_password: str = "app_ingress"
     trust_issuer_user: str = "app_trust_issuer"
     trust_issuer_password: str = "app_trust_issuer"
     trust_signer_user: str = "app_trust_signer"
@@ -112,6 +114,8 @@ def _parse_args() -> AuthorityConfig:
     parser.add_argument("--relay-password", default="app_relay")
     parser.add_argument("--beat-user", default="app_beat")
     parser.add_argument("--beat-password", default="app_beat")
+    parser.add_argument("--ingress-user", default="app_ingress")
+    parser.add_argument("--ingress-password", default="app_ingress")
     parser.add_argument("--trust-issuer-user", default="app_trust_issuer")
     parser.add_argument("--trust-issuer-password", default="app_trust_issuer")
     parser.add_argument("--trust-signer-user", default="app_trust_signer")
@@ -150,6 +154,8 @@ def _parse_args() -> AuthorityConfig:
         relay_password=args.relay_password,
         beat_user=args.beat_user,
         beat_password=args.beat_password,
+        ingress_user=args.ingress_user,
+        ingress_password=args.ingress_password,
         trust_issuer_user=args.trust_issuer_user,
         trust_issuer_password=args.trust_issuer_password,
         trust_signer_user=args.trust_signer_user,
@@ -289,6 +295,21 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                 cursor,
                 config.beat_user,
                 config.beat_password,
+                rotate_existing=rotate,
+            )
+            # B2.6-P2 Corrective XI. Authenticated ingress is its own
+            # login principal: the only runtime credential (besides
+            # migration admins) that may author authenticity_verified
+            # or execute the witness/attester. Deliberately not a
+            # member of app_rw, app_ro, app_user, or app_worker, and
+            # no other login is a member of it: session_user gates on
+            # the ingress functions cannot be forged with SET ROLE.
+            # Table privileges come only from the 202609240002
+            # migration, on ingress persistence alone.
+            _create_or_alter_login_role(
+                cursor,
+                config.ingress_user,
+                config.ingress_password,
                 rotate_existing=rotate,
             )
             # B2.5-P13 Corrective XVI. Recording a completed issuance is the
@@ -567,6 +588,7 @@ def main() -> int:
     print(f"transport_user={config.transport_user}")
     print(f"relay_user={config.relay_user}")
     print(f"beat_user={config.beat_user}")
+    print(f"ingress_user={config.ingress_user}")
     print(f"trust_issuer_user={config.trust_issuer_user}")
     print(f"trust_signer_user={config.trust_signer_user}")
     print(f"b28_requester_user={config.b28_requester_user}")

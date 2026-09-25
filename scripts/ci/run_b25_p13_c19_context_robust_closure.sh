@@ -116,6 +116,11 @@ PY
 )"
 
 export C19_API_DATABASE_URL='postgresql://app_user:app_user@postgres:5432/skeldir_c19'
+# B2.6-P2 Corrective XI: the API is the provider-authentication
+# boundary, so it alone mounts the dedicated ingress credential
+# (verified-ingress authorship + witness). No other C19 process
+# receives it.
+export C19_INGRESS_DATABASE_URL='postgresql+asyncpg://app_ingress:app_ingress@postgres:5432/skeldir_c19'
 export C19_WORKER_DATABASE_URL='postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_c19'
 export C19_PUBLISHER_DATABASE_URL='postgresql+asyncpg://app_dispatch_publisher:app_dispatch_publisher@postgres:5432/skeldir_c19'
 export C19_PUBLISHER_SYNC_DATABASE_URL='postgresql://app_dispatch_publisher:app_dispatch_publisher@postgres:5432/skeldir_c19'
@@ -139,7 +144,7 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
   : > "$teardown_env"
   teardown_names=(
     C19_POSTGRES_PORT C19_API_PORT C19_TLS_DIR
-    C19_API_DATABASE_URL C19_WORKER_DATABASE_URL
+    C19_API_DATABASE_URL C19_INGRESS_DATABASE_URL C19_WORKER_DATABASE_URL
     C19_PUBLISHER_DATABASE_URL C19_PUBLISHER_SYNC_DATABASE_URL
     C19_TRANSPORT_DATABASE_URL C19_SIGNER_DATABASE_URL C19_ISSUER_DATABASE_URL
     C19_B28_REQUEST_DATABASE_URL C19_B28_SOLVER_DATABASE_URL

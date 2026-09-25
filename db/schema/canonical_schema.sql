@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict uo4MMaOjLaDvReJrC5lfcFz3OaimhNVkJgYw5pgRnWQJgcbuf6hskYKLETb6m3W
+\restrict KumvQl01ddpGFeMxJL3zI9OMCH8i5cVABPJaTwCBlJo8bXB2WptehATwLYpL8Ks
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 18.0
@@ -2494,11 +2494,35 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             _idem text;
             _state text;
             _prov text;
+            _witness text;
             _prev_guc text;
         BEGIN
-            IF session_user NOT IN ('app_user', 'migration_owner', 'postgres') THEN
-                RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
-                    USING ERRCODE = '42501';
+            -- H-R1 principal separation with predecessor-compatible
+            -- topology rule: where the dedicated ingress principal
+            -- exists (every governed lane and the shipped topology),
+            -- ordinary application authority (app_user) can no longer
+            -- author authentication evidence, even with a valid ref.
+            -- Lanes that never provision the role keep predecessor
+            -- (Corrective X) semantics bit-for-bit; the XI isolation
+            -- validator REDs on the missing principal wherever XI is
+            -- adjudicated, so no governed lane can silently lack it.
+            -- Role existence is a catalog fact, not caller discipline.
+            IF EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                IF session_user NOT IN (
+                    'app_ingress', 'migration_owner', 'postgres'
+                ) THEN
+                    RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                IF session_user NOT IN (
+                    'app_user', 'migration_owner', 'postgres'
+                ) THEN
+                    RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
+                        USING ERRCODE = '42501';
+                END IF;
             END IF;
             IF p_kind IS DISTINCT FROM 'signed_provider_reingestion'
                AND p_kind IS DISTINCT FROM 'governed_attestation' THEN
@@ -2523,6 +2547,24 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
                 RAISE EXCEPTION 'b26_p2_evidence_ref_not_bound'
                     USING ERRCODE = '42501';
             END IF;
+            -- The authentication consequence: a witness row created by
+            -- the ingress boundary. No witness, no promotion -- the
+            -- claim "authentication happened" is not evidence. On
+            -- predecessor-compatible lanes (no ingress role) the
+            -- Corrective-X evidence rule applies unchanged.
+            IF EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                SELECT w.witness_hash INTO _witness
+                  FROM public.b26_p2_ingress_auth_witness AS w
+                 WHERE w.webhook_ingress_identity_id = p_ingress;
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'b26_p2_evidence_witness_missing'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                _witness := NULL;
+            END IF;
             BEGIN
                 _prev_guc := current_setting('app.current_tenant_id', true);
             EXCEPTION WHEN OTHERS THEN
@@ -2532,12 +2574,13 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             BEGIN
                 INSERT INTO public.b26_p2_provenance_evidence AS e (
                     webhook_ingress_identity_id, tenant_id,
-                    evidence_kind, evidence_ref
+                    evidence_kind, evidence_ref, evidence_witness_hash
                 )
-                VALUES (p_ingress, _tenant, p_kind, p_ref)
+                VALUES (p_ingress, _tenant, p_kind, p_ref, _witness)
                 ON CONFLICT (webhook_ingress_identity_id) DO UPDATE SET
                     evidence_kind = EXCLUDED.evidence_kind,
                     evidence_ref = EXCLUDED.evidence_ref,
+                    evidence_witness_hash = EXCLUDED.evidence_witness_hash,
                     attested_at = now();
                 UPDATE public.webhook_ingress_identities AS i
                    SET b26_p2_provenance_status = 'authenticated_known'
@@ -2619,10 +2662,17 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
                          || '|' || 'source_verified_gross_not_canonical_net'
                          || '|' || 'b2.2_ingress_verified_amount_minor'
                          || '|' || 'b2.3_match_verdicts.canonical_net_verified_amount_minor_only';
+                -- XI: quarantined ingress is explicitly
+                -- non-authoritative and excluded from both the
+                -- blank-shape gate and the canonical aggregate.
                 IF EXISTS (
                     SELECT 1 FROM public.webhook_ingress_identities AS i
                      WHERE i.tenant_id = p_tenant
                        AND i.verified_commerce_ingress_state = 'authenticity_verified'
+                       AND NOT EXISTS (
+                            SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                             WHERE q.webhook_ingress_identity_id = i.id
+                       )
                        AND (public.b26_p2_ascii_strip(COALESCE(i.provider,'')) = ''
                             OR public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,'')) = ''
                             OR length(public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,''))) <> 3)
@@ -2665,6 +2715,10 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
                     LATERAL (SELECT _norm._prov AS _prov, _norm._cur AS _cur, _final._disp AS _disp, _final._reason AS _reason) AS _all
                     WHERE i.tenant_id = p_tenant
                       AND i.verified_commerce_ingress_state = 'authenticity_verified'
+                      AND NOT EXISTS (
+                           SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                            WHERE q.webhook_ingress_identity_id = i.id
+                      )
                 ) AS sub;
                 IF _lines IS NULL THEN
                     _payload := _base;
@@ -2967,6 +3021,34 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
 
 
 --
+-- Name: b26_p2_enforce_dispatch_quarantine_exclusion(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF NEW.webhook_ingress_identity_id IS NOT NULL
+               AND EXISTS (
+                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                     WHERE q.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
+               ) THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_quarantined_ingress_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                 WHERE q.task_id = NEW.task_id
+            ) THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_quarantined_task_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_dispatch_sovereign_window(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3111,13 +3193,28 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _authors text[];
         BEGIN
+            -- Predecessor-compatible topology rule (see attester).
+            IF EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                _authors := ARRAY['app_ingress', 'migration_owner', 'postgres'];
+            ELSE
+                _authors := ARRAY['app_user', 'migration_owner', 'postgres'];
+            END IF;
             IF TG_OP = 'INSERT' THEN
                 IF NEW.verified_commerce_ingress_state IS DISTINCT FROM 'authenticity_verified' THEN
                     NEW.b26_p2_provenance_status := 'pending_not_applicable';
                     RETURN NEW;
                 END IF;
-                IF session_user IN ('app_user', 'migration_owner', 'postgres') THEN
+                -- XI law: verified authorship is ingress-isolated
+                -- where the role exists. Non-ingress verified writes
+                -- are refused at the authorship trigger; this trigger
+                -- stays consistent by marking only ingress-authored
+                -- rows known.
+                IF session_user = ANY (_authors) THEN
                     NEW.b26_p2_provenance_status := 'authenticated_known';
                 ELSE
                     NEW.b26_p2_provenance_status := 'unknown_legacy';
@@ -3127,7 +3224,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
             IF TG_OP = 'UPDATE' THEN
                 IF OLD.verified_commerce_ingress_state IS DISTINCT FROM 'authenticity_verified'
                    AND NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified' THEN
-                    IF session_user IN ('app_user', 'migration_owner', 'postgres') THEN
+                    IF session_user = ANY (_authors) THEN
                         NEW.b26_p2_provenance_status := 'authenticated_known';
                     ELSE
                         NEW.b26_p2_provenance_status := 'unknown_legacy';
@@ -3138,14 +3235,36 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
                        AND NEW.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known' THEN
                         RAISE EXCEPTION 'b26_p2_provenance_downgrade_refused' USING ERRCODE = '42501';
                     END IF;
-                    -- X law: promotion requires a recorded evidence event
-                    -- bound to this ingress. No role allowlist: even
-                    -- app_user cannot promote by bare status write.
+                    -- XI law: promotion requires witness-backed
+                    -- evidence, never a bare status write and never a
+                    -- witnessless evidence echo. H-R5: NULL witness
+                    -- is not FALSE evidence; IS DISTINCT FROM keeps
+                    -- UNKNOWN from becoming TRUE. On
+                    -- predecessor-compatible lanes the Corrective-X
+                    -- evidence rule applies unchanged.
                     IF OLD.b26_p2_provenance_status = 'unknown_legacy'
                        AND NEW.b26_p2_provenance_status = 'authenticated_known'
-                       AND NOT EXISTS (
-                            SELECT 1 FROM public.b26_p2_provenance_evidence AS e
-                             WHERE e.webhook_ingress_identity_id = OLD.id
+                       AND NOT (
+                            EXISTS (
+                                SELECT 1 FROM public.b26_p2_provenance_evidence AS e
+                                 WHERE e.webhook_ingress_identity_id = OLD.id
+                                   AND e.evidence_witness_hash IS NOT NULL
+                                   AND char_length(e.evidence_witness_hash) > 0
+                                   AND EXISTS (
+                                        SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                                         WHERE w.webhook_ingress_identity_id = OLD.id
+                                           AND w.witness_hash IS NOT DISTINCT FROM e.evidence_witness_hash
+                                   )
+                            )
+                            OR (
+                                NOT EXISTS (
+                                    SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+                                )
+                                AND EXISTS (
+                                    SELECT 1 FROM public.b26_p2_provenance_evidence AS e
+                                     WHERE e.webhook_ingress_identity_id = OLD.id
+                                )
+                            )
                         ) THEN
                         RAISE EXCEPTION 'b26_p2_provenance_promotion_refused' USING ERRCODE = '42501';
                     END IF;
@@ -3219,12 +3338,23 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trig
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _authors text[];
         BEGIN
+            -- Predecessor-compatible topology rule (see attester):
+            -- strict ingress authorship where the role exists,
+            -- Corrective-X authorship otherwise.
+            IF EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                _authors := ARRAY['app_ingress', 'migration_owner', 'postgres'];
+            ELSE
+                _authors := ARRAY['app_user', 'migration_owner', 'postgres'];
+            END IF;
             IF TG_OP = 'INSERT' THEN
                 IF NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM
                    'authenticity_verified'
-                    AND session_user NOT IN
-                        ('app_user', 'migration_owner', 'postgres') THEN
+                    AND NOT (session_user = ANY (_authors)) THEN
                     RAISE EXCEPTION 'b26_p2_verified_authorship_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -3234,8 +3364,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trig
                OLD.verified_commerce_ingress_state THEN
                 IF NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM
                    'authenticity_verified'
-                    AND session_user NOT IN
-                        ('app_user', 'migration_owner', 'postgres') THEN
+                    AND NOT (session_user = ANY (_authors)) THEN
                     RAISE EXCEPTION 'b26_p2_verified_authorship_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -4341,6 +4470,96 @@ CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds i
 
 
 --
+-- Name: b26_p2_record_ingress_auth_witness(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _tenant uuid;
+            _idem text;
+            _state text;
+            _provider text;
+            _existing text;
+            _witness text;
+            _prev_guc text;
+        BEGIN
+            -- H-R6: SECURITY DEFINER context is bounded explicitly.
+            -- Only the ingress principal (and migration admins) may
+            -- author authentication evidence. session_user cannot be
+            -- forged with SET ROLE (no membership exists). The
+            -- ingress role is provisioned by the governed provisioner;
+            -- lanes that never provision it cannot reach this
+            -- function (no EXECUTE grant exists for them there).
+            IF session_user NOT IN ('app_ingress', 'migration_owner', 'postgres') THEN
+                RAISE EXCEPTION 'b26_p2_witness_caller_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            SELECT i.tenant_id, i.idempotency_key,
+                   i.verified_commerce_ingress_state, i.provider
+              INTO _tenant, _idem, _state, _provider
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.id = p_ingress;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_witness_ingress_missing'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF _state IS DISTINCT FROM 'authenticity_verified' THEN
+                RAISE EXCEPTION 'b26_p2_witness_ingress_unverified'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- H-R5: three-valued SQL is fail-closed. Blank shape can
+            -- never carry authentication evidence.
+            IF public.b26_p2_ascii_strip(COALESCE(_provider, '')) = '' THEN
+                RAISE EXCEPTION 'b26_p2_witness_blank_shape_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            SELECT w.witness_hash INTO _existing
+              FROM public.b26_p2_ingress_auth_witness AS w
+             WHERE w.webhook_ingress_identity_id = p_ingress;
+            IF FOUND THEN
+                RETURN _existing;
+            END IF;
+            _witness := encode(
+                digest(
+                    gen_random_uuid()::text || '|' || p_ingress::text
+                    || '|' || _tenant::text || '|' || COALESCE(_idem, ''),
+                    'sha256'
+                ),
+                'hex'
+            );
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            PERFORM set_config('app.current_tenant_id', _tenant::text, true);
+            BEGIN
+                INSERT INTO public.b26_p2_ingress_auth_witness AS w (
+                    webhook_ingress_identity_id, tenant_id,
+                    witness_hash, witnessed_by
+                )
+                VALUES (p_ingress, _tenant, _witness, session_user)
+                ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                SELECT w.witness_hash INTO _existing
+                  FROM public.b26_p2_ingress_auth_witness AS w
+                 WHERE w.webhook_ingress_identity_id = p_ingress;
+                RETURN _existing;
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RAISE;
+            END;
+        END $$;
+
+
+--
 -- Name: b26_p2_record_scheduler_heartbeat(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4546,6 +4765,170 @@ CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DE
 
 
 --
+-- Name: b26_p2_state_eligible_for_p3(text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uuid) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _tenant uuid;
+            _ingress uuid;
+            _ws timestamptz;
+            _we timestamptz;
+            _prov text;
+            _receipt_identity text;
+            _receipt_policy text;
+            _receipt_meaning text;
+            _live_identity text;
+            _prev_guc text;
+        BEGIN
+            IF public.b26_p2_ascii_strip(COALESCE(p_task_id, '')) = '' THEN
+                RETURN FALSE;
+            END IF;
+            IF p_tenant IS NULL THEN
+                RETURN FALSE;
+            END IF;
+            -- Tenant-scoped reads (P2 tables carry FORCE RLS): bind
+            -- the caller-declared tenant first. A spoofed tenant
+            -- scopes every read away from the task and every check
+            -- below fails closed to FALSE.
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            PERFORM set_config('app.current_tenant_id', p_tenant::text, true);
+            BEGIN
+            SELECT d.tenant_id, d.webhook_ingress_identity_id,
+                   d.window_start, d.window_end
+              INTO _tenant, _ingress, _ws, _we
+              FROM public.b23_match_task_dispatches AS d
+             WHERE d.task_id = p_task_id;
+            IF NOT FOUND THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            IF _tenant IS DISTINCT FROM p_tenant THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            END;
+            -- Authenticated, witnessed provenance.
+            BEGIN
+            SELECT i.b26_p2_provenance_status INTO _prov
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.id = _ingress;
+            IF _prov IS DISTINCT FROM 'authenticated_known' THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                 WHERE w.webhook_ingress_identity_id = _ingress
+            ) THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            -- Tenant identity valid.
+            IF _tenant IS NULL
+               OR NOT EXISTS (
+                    SELECT 1 FROM public.tenants AS t WHERE t.id = _tenant
+               ) THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            -- Canonical execution identity valid: receipt bound, current,
+            -- canonically meaningful, policy-current.
+            SELECT r.p2_scope_identity, r.policy_semantic_sha256,
+                   r.ix_meaning_status
+              INTO _receipt_identity, _receipt_policy, _receipt_meaning
+              FROM public.b26_p2_conduction_receipts AS r
+             WHERE r.task_id = p_task_id;
+            IF NOT FOUND THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            IF _receipt_meaning IS DISTINCT FROM 'canonically_bound' THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            IF _receipt_policy IS DISTINCT FROM
+               'fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99' THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            BEGIN
+                _live_identity :=
+                    public.b26_p2_canonical_scope_identity_for_window(
+                        _tenant, _ws, _we
+                    );
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END;
+            IF _receipt_identity IS DISTINCT FROM _live_identity THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            -- Historical state not quarantined/stale.
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                 WHERE q.task_id = p_task_id
+            ) THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                 WHERE q.webhook_ingress_identity_id = _ingress
+            ) THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            PERFORM set_config(
+                'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+            );
+            RETURN TRUE;
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END;
+            PERFORM set_config(
+                'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+            );
+            RETURN FALSE;
+        END $$;
+
+
+--
 -- Name: b26_p2_strip_currency_token(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4567,6 +4950,113 @@ CREATE FUNCTION public.b26_p2_strip_provider_token(p_raw text) RETURNS text
     AS $$
         SELECT lower(public.b26_p2_ascii_strip(p_raw))
         $$;
+
+
+--
+-- Name: b26_p2_xi_invariant_oracle(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_xi_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            -- D-A: authenticated foundation without a witness can found
+            -- no new truth (dispatch-bearing or dispatchless: the
+            -- identity aggregate reads dispatchless verified rows).
+            RETURN QUERY
+            SELECT 'xi_witnessless_authenticated_foundation'::text,
+                   COALESCE(d.task_id::text, 'ingress:' || i.id::text),
+                   ('ingress=' || i.id::text)::text
+              FROM public.webhook_ingress_identities AS i
+              LEFT JOIN public.b23_match_task_dispatches AS d
+                ON d.webhook_ingress_identity_id = i.id
+               AND d.tenant_id = i.tenant_id
+             WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
+               AND i.b26_p2_provenance_status = 'authenticated_known'
+               AND NOT EXISTS (
+                    SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                     WHERE w.webhook_ingress_identity_id = i.id
+               )
+               AND NOT EXISTS (
+                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                     WHERE q.webhook_ingress_identity_id = i.id
+               );
+            -- D-B: blank-shape authenticated foundation.
+            RETURN QUERY
+            SELECT 'xi_blank_authenticated_foundation'::text,
+                   COALESCE(d.task_id::text, 'ingress:' || i.id::text),
+                   ('ingress=' || i.id::text)::text
+              FROM public.webhook_ingress_identities AS i
+              LEFT JOIN public.b23_match_task_dispatches AS d
+                ON d.webhook_ingress_identity_id = i.id
+               AND d.tenant_id = i.tenant_id
+             WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
+               AND i.b26_p2_provenance_status = 'authenticated_known'
+               AND (public.b26_p2_ascii_strip(COALESCE(i.provider, '')) = ''
+                    OR public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, '')) = ''
+                    OR length(public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, ''))) <> 3)
+               AND NOT EXISTS (
+                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                     WHERE q.webhook_ingress_identity_id = i.id
+               );
+            -- D-C: divergent terminal twins (conducted dispatch beside
+            -- a non-conducted outbox twin, or vice versa).
+            RETURN QUERY
+            SELECT 'xi_divergent_terminal_twins'::text, d.task_id::text,
+                   ('dispatch=' || d.delivery_state::text || ',outbox=' || COALESCE(o.state::text, 'missing'))::text
+              FROM public.b23_match_task_dispatches AS d
+              LEFT JOIN public.b26_p2_execution_outbox AS o
+                ON o.dispatch_task_id = d.task_id
+             WHERE (d.delivery_state = 'conducted'
+                    AND COALESCE(o.state::text, 'missing') IS DISTINCT FROM 'conducted')
+                OR (o.state = 'conducted'
+                    AND d.delivery_state IS DISTINCT FROM 'conducted');
+            -- D-D: garbage policy-sha receipt stamped canonically bound.
+            RETURN QUERY
+            SELECT 'xi_garbage_policy_receipt'::text, r.task_id::text,
+                   ('policy_sha=' || COALESCE(r.policy_semantic_sha256, 'null'))::text
+              FROM public.b26_p2_conduction_receipts AS r
+             WHERE r.ix_meaning_status = 'canonically_bound'
+               AND r.policy_semantic_sha256 IS DISTINCT FROM
+                   'fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99';
+            -- D-E: stale terminal binding (receipt disagrees with live
+            -- canonical identity).
+            RETURN QUERY
+            SELECT 'xi_stale_terminal_binding'::text, r.task_id::text,
+                   'receipt_identity_not_current'::text
+              FROM public.b26_p2_conduction_receipts AS r
+              JOIN public.b23_match_task_dispatches AS d
+                ON d.task_id = r.task_id
+             WHERE d.delivery_state = 'conducted'
+               AND r.ix_meaning_status = 'canonically_bound'
+               AND r.p2_scope_identity IS DISTINCT FROM
+                   public.b26_p2_canonical_scope_identity_for_window(
+                       r.tenant_id, r.window_start, r.window_end
+                   );
+            -- D-F: conducted without a canonically bound consequence.
+            RETURN QUERY
+            SELECT 'xi_conducted_without_consequence'::text, d.task_id::text,
+                   'missing_canonically_bound_receipt'::text
+              FROM public.b23_match_task_dispatches AS d
+             WHERE d.delivery_state = 'conducted'
+               AND NOT EXISTS (
+                    SELECT 1 FROM public.b26_p2_conduction_receipts AS r
+                     WHERE r.task_id = d.task_id
+                       AND r.ix_meaning_status = 'canonically_bound'
+               );
+            -- D-G: unknown-provenance truth-capable dispatch.
+            RETURN QUERY
+            SELECT 'xi_unknown_provenance_truth'::text, d.task_id::text,
+                   ('ingress=' || i.id::text)::text
+              FROM public.b23_match_task_dispatches AS d
+              JOIN public.webhook_ingress_identities AS i
+                ON i.id = d.webhook_ingress_identity_id
+               AND i.tenant_id = d.tenant_id
+             WHERE d.delivery_state IN ('published', 'conducted', 'pending_publish')
+               AND i.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known';
+            RETURN;
+        END $$;
 
 
 --
@@ -5847,7 +6337,7 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1; -- ±1 cent rounding tolerance
+            tolerance_cents INTEGER := 1; -- ┬▒1 cent rounding tolerance
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
@@ -8220,10 +8710,26 @@ CREATE TABLE public.b26_p2_execution_quarantine (
     migration_identity text NOT NULL,
     quarantined_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_b26_p2_quarantine_reason_not_blank CHECK ((char_length(reason) > 0)),
-    CONSTRAINT ck_b26_p2_quarantine_source CHECK ((source_relation = ANY (ARRAY['b26_p2_execution_outbox'::text, 'b26_p2_task_authority_directory'::text, 'b23_match_task_dispatches'::text, 'b26_p2_conduction_receipts'::text])))
+    CONSTRAINT ck_b26_p2_quarantine_source CHECK ((source_relation = ANY (ARRAY['b26_p2_execution_outbox'::text, 'b26_p2_task_authority_directory'::text, 'b23_match_task_dispatches'::text, 'b26_p2_conduction_receipts'::text, 'webhook_ingress_identities'::text])))
 );
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b26_p2_ingress_auth_witness; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_ingress_auth_witness (
+    webhook_ingress_identity_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    witness_hash text NOT NULL,
+    witnessed_at timestamp with time zone DEFAULT now() NOT NULL,
+    witnessed_by name NOT NULL,
+    CONSTRAINT ck_b26_p2_witness_hash_not_blank CHECK ((char_length(witness_hash) > 0))
+);
+
+ALTER TABLE ONLY public.b26_p2_ingress_auth_witness FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -8235,7 +8741,8 @@ CREATE TABLE public.b26_p2_provenance_evidence (
     tenant_id uuid NOT NULL,
     evidence_kind text NOT NULL,
     evidence_ref text NOT NULL,
-    attested_at timestamp with time zone DEFAULT now() NOT NULL
+    attested_at timestamp with time zone DEFAULT now() NOT NULL,
+    evidence_witness_hash text
 );
 
 ALTER TABLE ONLY public.b26_p2_provenance_evidence FORCE ROW LEVEL SECURITY;
@@ -13312,6 +13819,14 @@ ALTER TABLE ONLY public.b26_p2_execution_outbox
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine
     ADD CONSTRAINT b26_p2_execution_quarantine_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: b26_p2_ingress_auth_witness b26_p2_ingress_auth_witness_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
+    ADD CONSTRAINT b26_p2_ingress_auth_witness_pkey PRIMARY KEY (webhook_ingress_identity_id);
 
 
 --
@@ -19752,6 +20267,13 @@ CREATE TRIGGER trg_b26_p2_dispatch_provenance BEFORE INSERT ON public.b23_match_
 
 
 --
+-- Name: b23_match_task_dispatches trg_b26_p2_dispatch_quarantine_exclusion; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_dispatch_quarantine_exclusion BEFORE INSERT OR UPDATE OF webhook_ingress_identity_id, tenant_id ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion();
+
+
+--
 -- Name: b23_match_task_dispatches trg_b26_p2_dispatch_sovereign_window; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -20424,6 +20946,22 @@ ALTER TABLE ONLY public.b26_p2_execution_quarantine
 
 
 --
+-- Name: b26_p2_ingress_auth_witness b26_p2_ingress_auth_witness_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
+    ADD CONSTRAINT b26_p2_ingress_auth_witness_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_ingress_auth_witness b26_p2_ingress_auth_witness_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
+    ADD CONSTRAINT b26_p2_ingress_auth_witness_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
+--
 -- Name: b26_p2_provenance_evidence b26_p2_provenance_evidence_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20781,6 +21319,14 @@ ALTER TABLE ONLY public.b26_p2_execution_outbox
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT fk_b26_p2_receipt_execution_tuple FOREIGN KEY (task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
+
+
+--
+-- Name: b26_p2_ingress_auth_witness fk_b26_p2_witness_tenant_ingress; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
+    ADD CONSTRAINT fk_b26_p2_witness_tenant_ingress FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
 
 
 --
@@ -21416,6 +21962,12 @@ ALTER TABLE public.b26_p2_execution_outbox ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.b26_p2_execution_quarantine ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: b26_p2_ingress_auth_witness; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b26_p2_ingress_auth_witness ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: b26_p2_scope_policy_authority b26_p2_policy_global_read; Type: POLICY; Schema: public; Owner: -
@@ -22381,6 +22933,13 @@ CREATE POLICY tenant_isolation_policy_b26_p2_execution_quarantine ON public.b26_
 
 
 --
+-- Name: b26_p2_ingress_auth_witness tenant_isolation_policy_b26_p2_ingress_auth_witness; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b26_p2_ingress_auth_witness ON public.b26_p2_ingress_auth_witness USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
+
+
+--
 -- Name: b26_p2_provenance_evidence tenant_isolation_policy_b26_p2_provenance_evidence; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -22901,5 +23460,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict uo4MMaOjLaDvReJrC5lfcFz3OaimhNVkJgYw5pgRnWQJgcbuf6hskYKLETb6m3W
+\unrestrict KumvQl01ddpGFeMxJL3zI9OMCH8i5cVABPJaTwCBlJo8bXB2WptehATwLYpL8Ks
 

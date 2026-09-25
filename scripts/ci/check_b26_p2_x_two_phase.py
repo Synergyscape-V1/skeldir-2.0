@@ -46,6 +46,12 @@ TRUTH_COMPANIONS = {
         "db/schema/canonical_schema.sql",
         "db/schema/canonical_authority.sql",
     ),
+    "alembic/versions/007_skeldir_foundation/202609240002_b26_p2_corrective_xi_p2_core_closure.py": (
+        "contracts-internal/governance/b26_p2_authority_universe.pin.json",
+        "contracts-internal/governance/b26_p2_xi_semantic_dependency_manifest.json",
+        "db/schema/canonical_schema.sql",
+        "db/schema/canonical_authority.sql",
+    ),
 }
 
 
@@ -157,7 +163,7 @@ def main() -> int:
                         authority_pin.read_text(encoding="utf-8")
                     )
                     checks["authority_pin_head"] = apin.get("migration_head")
-                    if apin.get("migration_head") != "202609240001":
+                    if apin.get("migration_head") != "202609240002":
                         violations.append("x_two_phase_authority_pin_stale")
                 except (OSError, ValueError) as exc:
                     violations.append(
@@ -177,10 +183,16 @@ def main() -> int:
                     checks["schema_has_guards"] = (
                         "b26_p2_guard_conducted_transition" in text
                     )
+                    checks["schema_has_witness"] = (
+                        "b26_p2_ingress_auth_witness" in text
+                        and "b26_p2_record_ingress_auth_witness" in text
+                        and "b26_p2_state_eligible_for_p3" in text
+                    )
                     if not (
                         checks["schema_has_classifier"]
                         and checks["schema_has_evidence"]
                         and checks["schema_has_guards"]
+                        and checks["schema_has_witness"]
                     ):
                         violations.append("x_two_phase_schema_missing_x")
                 except OSError as exc:

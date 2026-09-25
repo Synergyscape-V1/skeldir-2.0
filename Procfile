@@ -16,6 +16,18 @@
 # Core Services
 db: postgres -D $PGDATA -k $PGSOCKET -h localhost -p 5432
 web: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# The generic worker serves housekeeping/maintenance/llm/attribution.
+# B2.6-P2 Corrective XI ingress isolation lives at the DATABASE layer,
+# not in this line: verified-ingress authorship and witness/attester
+# EXECUTE require the app_ingress session principal
+# (b26_p2_enforce_ingress_verified_authorship and the XI battery prove
+# every generic runtime refused live), so no holder of the API DSN can
+# mint sovereign ingress. This line deliberately keeps the API DSN:
+# pointing it at $WORKER_DATABASE_URL would hand a non-bayesian process
+# the B2.5-P13 C7 bayesian credential (C7 topology gate), and pointing
+# it at the B2.3 worker DSN would grant verdict authority. A dedicated
+# housekeeping credential remains future hygiene debt (no authority
+# effect: the DB denies ingress authorship regardless of credential).
 worker: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution
 # The Bayesian worker is the only process that plans fits and writes Bayesian
 # truth, so it is the only one that runs on the dedicated app_worker login.

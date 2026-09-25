@@ -42,7 +42,10 @@ import argparse
 import json
 from pathlib import Path
 
-RUNTIME_ROLES = ("app_user", "app_worker", "app_relay", "app_beat")
+# Corrective XI: app_ingress is a runtime principal holding P2
+# EXECUTE/table authority. It must be discovered like every other
+# runtime role: undiscovered authority is ungoverned authority.
+RUNTIME_ROLES = ("app_user", "app_worker", "app_relay", "app_beat", "app_ingress")
 
 # Prohibited effect -> tables/columns whose mutation can produce it.
 # Column sets are structural (every sovereign/bound column), not
@@ -708,7 +711,8 @@ KNOWN_NON_P2_DEFINERS = frozenset(
 KNOWN_P2_DEFINERS = frozenset(
     {
         # Corrective X: the provenance attester is a new SECURITY
-        # DEFINER authority (EXECUTE app_user, hence census-visible).
+        # DEFINER authority (census-visible). Corrective XI moves its
+        # EXECUTE to app_ingress alone (ordinary app_user revoked).
         # The effect guards are SECURITY DEFINER with no EXECUTE
         # grant to any role (they fire through triggers only, proven
         # live): they are tracked by the X authority validator (live
@@ -726,6 +730,18 @@ KNOWN_P2_DEFINERS = frozenset(
         "b26_p2_record_scheduler_heartbeat",
         "b26_p2_resolve_dispatch_authority",
         "b26_p2_stale_unconducted",
+        # Corrective XI: the authentication witness recorder (EXECUTE
+        # app_ingress alone; the witness table takes no runtime
+        # INSERT) and the read-only P3 eligibility predicate
+        # (EXECUTE runtime roles; mints nothing). Both are
+        # P2-covered (b26_p2_xi_coverage) and falsified by the XI
+        # battery (XA/XB/XE cells) plus the XI live validators. (The
+        # XI invariant oracle and the quarantine-exclusion guard fire
+        # with no runtime EXECUTE, like the X effect guards: tracked
+        # by the XI census validator and the bootstrap routine
+        # census, never by the grant-based definer census.)
+        "b26_p2_record_ingress_auth_witness",
+        "b26_p2_state_eligible_for_p3",
     }
 )
 

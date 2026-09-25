@@ -66,6 +66,11 @@ jobs:
       INGESTION_FOLLOWUP_TASKS_ENABLED: "false"
       R3_ADMIN_DATABASE_URL: postgresql://r3:r3@127.0.0.1:5432/r3
       R3_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
+      # B2.6-P2 Corrective XI: the API is the provider-authentication
+      # boundary, so it alone mounts the dedicated ingress credential
+      # (verified-ingress authorship + witness). No other process here
+      # receives it.
+      B26_P2_INGRESS_DATABASE_URL: postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/r3
       R3_API_BASE_URL: http://127.0.0.1:8000
       R3_LADDER: "50,250,1000"
       R3_CONCURRENCY: "200"
@@ -119,6 +124,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # B2.6-P2 Corrective XI: the dedicated ingress principal must
+          # exist BEFORE migrating so the migration's existence-guarded
+          # XI grants fire (this lane provisions runtime identities
+          # after migrating; LOGIN/password are finalized there).
+          psql "${MIGRATION_DATABASE_URL}" -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN CREATE ROLE app_ingress WITH NOLOGIN; END IF; END \$\$;"
           alembic upgrade heads
 
       - name: Provision runtime DB identity
@@ -133,7 +143,19 @@ jobs:
             ELSE
               ALTER ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
             END IF;
+            -- B2.6-P2 Corrective XI: the dedicated authenticated-ingress
+            -- principal owns verified-ingress authorship on this lane.
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+              CREATE ROLE app_ingress LOGIN PASSWORD 'app_ingress' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+            ELSE
+              ALTER ROLE app_ingress LOGIN PASSWORD 'app_ingress' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+            END IF;
           END$$;
+          GRANT CONNECT ON DATABASE r3 TO app_ingress;
+          GRANT USAGE ON SCHEMA public TO app_ingress;
+          -- Lane hygiene: this lane's blanket runtime grants below must
+          -- not re-open the XI witness/evidence tables to the ordinary
+          -- application principal (migration already revoked them).
           GRANT CONNECT ON DATABASE r3 TO app_user;
           GRANT USAGE ON SCHEMA public TO app_user;
           GRANT USAGE ON SCHEMA security TO app_user;
@@ -142,6 +164,19 @@ jobs:
           GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA security TO app_user;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_user;
+          REVOKE ALL ON TABLE public.b26_p2_ingress_auth_witness FROM app_user;
+          REVOKE ALL ON TABLE public.b26_p2_provenance_evidence FROM app_user;
+          -- XI ingress capability (this lane provisions after
+          -- migrating, so the migration's existence-guarded grants
+          -- could not fire: issue the governed XI grant set here).
+          GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
+          GRANT SELECT ON TABLE public.tenants TO app_ingress;
+          GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_ingress;
+          GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
+          GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress;
+          GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
+          GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+          GRANT EXECUTE ON FUNCTION public.b26_p2_state_eligible_for_p3(text, uuid) TO app_ingress;
           SQL
 
       - name: Calibrate Worker Counts

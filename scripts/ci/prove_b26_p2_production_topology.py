@@ -446,6 +446,11 @@ class _Topology:
             *self._base_env(dsn),
             "-e",
             f"B26_P2_STALENESS_SECONDS={self.args.staleness_seconds}",
+            # Corrective XI: the API is the provider-authentication
+            # boundary, so it alone mounts the dedicated ingress
+            # credential (verified-ingress authorship + witness).
+            "-e",
+            f"B26_P2_INGRESS_DATABASE_URL=postgresql+asyncpg://app_ingress:app_ingress@pg:5432/{DB_NAME}",
             self.image,
             *API_CMD,
         )
@@ -830,9 +835,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609240001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_x")
-        details["migration_head"] = "202609240001"
+        if "202609240002" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xi")
+        details["migration_head"] = "202609240002"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -845,7 +850,18 @@ def main() -> int:
         )
         if "DATABASE_URL=$B26_P2_BEAT_DATABASE_URL" not in beat_line:
             return _fail("beat_custody_not_split")
+        # Corrective XI: the generic worker must never hold the
+        # dedicated ingress credential. (It keeps the API DSN by C7
+        # design; isolation is enforced at the database layer for
+        # every non-ingress principal.)
+        worker_line = next(
+            (ln for ln in procfile.splitlines() if ln.startswith("worker:")),
+            "",
+        )
+        if "B26_P2_INGRESS_DATABASE_URL" in worker_line:
+            return _fail("generic_worker_holds_ingress_dsn")
         details["procfile_recovery_custody_ok"] = True
+        details["procfile_xi_ingress_custody_ok"] = True
 
         # 1. Build + boot the exact production topology.
         print("B26_P2_TOPOLOGY_STAGE build", flush=True)
@@ -1784,38 +1800,45 @@ def main() -> int:
             build_manifest as _build_manifest,
         )
         try:
-            from scripts.ci.b26_p2_x_coverage import (  # noqa: PLC0415
-                X_COVERED_SURFACES as _X_COVERED,
+            from scripts.ci.b26_p2_xi_coverage import (  # noqa: PLC0415
+                XI_COVERED_SURFACES as _XI_COVERED,
             )
 
-            _covered = tuple(sorted(_X_COVERED))
+            _covered = tuple(sorted(_XI_COVERED))
         except ImportError:
             try:
-                from scripts.ci.b26_p2_ix_coverage import (  # noqa: PLC0415
-                    IX_COVERED_SURFACES as _IX_COVERED,
+                from scripts.ci.b26_p2_x_coverage import (  # noqa: PLC0415
+                    X_COVERED_SURFACES as _X_COVERED,
                 )
 
-                _covered = tuple(sorted(_IX_COVERED))
+                _covered = tuple(sorted(_X_COVERED))
             except ImportError:
                 try:
-                    from scripts.ci.b26_p2_viii_coverage import (  # noqa: PLC0415
-                        VIII_COVERED_SURFACES as _VIII_COVERED,
+                    from scripts.ci.b26_p2_ix_coverage import (  # noqa: PLC0415
+                        IX_COVERED_SURFACES as _IX_COVERED,
                     )
 
-                    _covered = tuple(sorted(_VIII_COVERED))
+                    _covered = tuple(sorted(_IX_COVERED))
                 except ImportError:
                     try:
-                        from scripts.ci.b26_p2_vii_coverage import (  # noqa: PLC0415
-                            VII_COVERED_SURFACES as _VII_COVERED,
+                        from scripts.ci.b26_p2_viii_coverage import (  # noqa: PLC0415
+                            VIII_COVERED_SURFACES as _VIII_COVERED,
                         )
 
-                        _covered = tuple(sorted(_VII_COVERED))
+                        _covered = tuple(sorted(_VIII_COVERED))
                     except ImportError:
-                        from scripts.ci.b26_p2_vi_coverage import (  # noqa: PLC0415
-                            VI_COVERED_SURFACES as _VI_COVERED,
-                        )
+                        try:
+                            from scripts.ci.b26_p2_vii_coverage import (  # noqa: PLC0415
+                                VII_COVERED_SURFACES as _VII_COVERED,
+                            )
 
-                        _covered = tuple(sorted(_VI_COVERED))
+                            _covered = tuple(sorted(_VII_COVERED))
+                        except ImportError:
+                            from scripts.ci.b26_p2_vi_coverage import (  # noqa: PLC0415
+                                VI_COVERED_SURFACES as _VI_COVERED,
+                            )
+
+                            _covered = tuple(sorted(_VI_COVERED))
         _manifest = _build_manifest(_TOPO.db_admin, _covered)
         details["capability_coverage"] = {
             name: {

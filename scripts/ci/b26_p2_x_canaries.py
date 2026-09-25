@@ -174,6 +174,7 @@ def run_canaries(admin_dsn: str, violations: list[str],
     try:
         worker_dsn = _role_dsn(admin_dsn, "app_worker")
         api_dsn = _role_dsn(admin_dsn, "app_user")
+        ingress_dsn = _role_dsn(admin_dsn, "app_ingress")
     except RuntimeError as exc:
         violations.append(f"x_canary_principal_unavailable:{exc}")
         checks["live_canaries"] = "principal_unavailable"
@@ -323,13 +324,49 @@ def run_canaries(admin_dsn: str, violations: list[str],
                     " WHERE id = %s",
                     (ingress8,),
                 )
+                # Corrective XI: non-ingress callers without witness
+                # visibility are refused at the capability plane
+                # (permission denied); either refusal mints nothing.
                 results["bare_promotion_refused"] = (
                     refusal is not None
-                    and "promotion_refused" in refusal
+                    and (
+                        "promotion_refused" in refusal
+                        or "permission denied" in refusal.lower()
+                    )
                 )
                 notes["c8_bare"] = str(refusal)[:160]
-                restored = _attempt(
+                # Corrective XI: callers asserting authentication
+                # promote nothing. The ordinary application principal
+                # cannot even execute the attester; restoration
+                # requires the ingress witness consequence.
+                refused = _attempt(
                     acur,
+                    "SELECT public.b26_p2_attest_provenance_evidence"
+                    "(%s, 'governed_attestation', %s)",
+                    (ingress8, idem8),
+                )
+                results["assertion_promotes_nothing"] = (
+                    refused is not None
+                    and "SUCCEEDED" not in refused
+                )
+                notes["c8_assert"] = str(refused)[:160]
+        finally:
+            api.close()
+        # XI restoration through the ingress boundary.
+        ingress = psycopg2.connect(ingress_dsn)
+        ingress.autocommit = True
+        try:
+            with ingress.cursor() as icur:
+                icur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (tenant8,),
+                )
+                icur.execute(
+                    "SELECT public.b26_p2_record_ingress_auth_witness(%s)",
+                    (ingress8,),
+                )
+                restored = _attempt(
+                    icur,
                     "SELECT public.b26_p2_attest_provenance_evidence"
                     "(%s, 'governed_attestation', %s)",
                     (ingress8, idem8),
@@ -340,7 +377,7 @@ def run_canaries(admin_dsn: str, violations: list[str],
                 )
                 notes["c8_attest"] = str(restored)[:160]
         finally:
-            api.close()
+            ingress.close()
     finally:
         admin.close()
     checks["live_canaries"] = results

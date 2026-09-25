@@ -34,3 +34,26 @@ scripts/ci/validate_b25_p*.py @Muk223
 # Repository docs and scripts.
 docs/ @Muk223
 scripts/ @Muk223
+
+# B2.6-P2 Corrective XI temporary compensating governance (§16).
+# Until full verifier independence activates (see
+# contracts/reconciliation/b2.6/pre-external-trust-production-closure-register.v1.yaml),
+# any change to canonical P2 SQL semantics, P2 temporal/version logic,
+# scope policy semantics, P2 migrations, P2 authority grants/roles, B2.6
+# validators/oracles, or B2.6 CI workflow logic requires explicit
+# human/operator approval before merge. This is a temporary governance
+# control: it is NOT evidence of structural verifier independence.
+alembic/versions/007_skeldir_foundation/20260924*.py @Muk223
+backend/app/finance_reconciliation/ @Muk223
+backend/app/ingestion/event_service.py @Muk223
+contracts/reconciliation/b2.6/ @Muk223
+contracts-internal/governance/b26_p2_* @Muk223
+db/schema/canonical_*.sql @Muk223
+scripts/ci/validate_b26_p2_*.py @Muk223
+scripts/ci/check_b26_p2_*.py @Muk223
+scripts/ci/b26_p2_*.py @Muk223
+scripts/ci/assert_b26_p2_*.py @Muk223
+scripts/ci/prove_b26_p2_*.py @Muk223
+scripts/database/prepare_migration_authority_boundary.py @Muk223
+.github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml @Muk223
+.github/actions/setup-postgres-ci/ @Muk223

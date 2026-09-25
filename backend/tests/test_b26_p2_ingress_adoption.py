@@ -168,7 +168,12 @@ async def test_verified_mismatch_raises_dlq():
 
 
 @pytest.mark.asyncio
-async def test_verified_exact_match_adopts_binding():
+async def test_verified_exact_match_adopts_binding(monkeypatch):
+    # Hermetic: no ingress DSN in unit scope, so attestation falls
+    # back to the caller session (admins/tests path). Production
+    # mounts B26_P2_INGRESS_DATABASE_URL and takes the ingress
+    # credential branch instead.
+    monkeypatch.delenv("B26_P2_INGRESS_DATABASE_URL", raising=False)
     tenant = uuid4()
     root = _existing("authenticity_verified")
     session = _session_with(root)

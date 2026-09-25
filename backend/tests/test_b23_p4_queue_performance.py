@@ -60,18 +60,22 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
     # Worker-state seeding runs as the worker login (B2.6-P2 Corrective III
     # least privilege: verdict writes belong to app_worker, not app_user).
     # Corrective VIII authenticated-root law: the webhook ingress envelope
-    # is API-issuer authority, so the ingress INSERT below runs on an
-    # issuer pool derived from the runtime DSN by credential convention
-    # (role:role passwords; same derivation the finance batteries use).
+    # is API-issuer authority. Corrective XI ingress isolation: verified
+    # ingress authorship belongs to the dedicated ingress principal
+    # wherever it is provisioned, so the issuer pool prefers the mounted
+    # ingress DSN and falls back to the app_user derivation only on
+    # predecessor-compatible lanes (no ingress role).
     # The ambient `engine` pool cannot serve as issuer: jobs like the
     # Contract Semantic Drift Gate bind it to the worker login, and may
     # bind it with a sync driver while this seed needs async.
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    issuer_url = os.environ.get("B23_WORKER_DATABASE_URL", "") or os.environ.get(
-        "DATABASE_URL", ""
-    )
-    issuer_url = issuer_url.replace("app_worker:app_worker", "app_user:app_user")
+    issuer_url = os.environ.get("B26_P2_INGRESS_DATABASE_URL", "").strip()
+    if not issuer_url:
+        issuer_url = os.environ.get("B23_WORKER_DATABASE_URL", "") or os.environ.get(
+            "DATABASE_URL", ""
+        )
+        issuer_url = issuer_url.replace("app_worker:app_worker", "app_user:app_user")
     if issuer_url.startswith("postgresql://"):
         issuer_url = "postgresql+asyncpg://" + issuer_url[len("postgresql://"):]
     issuer_engine = create_async_engine(issuer_url or str(engine.url))
