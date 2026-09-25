@@ -44,6 +44,7 @@ scripts/ @Muk223
 # human/operator approval before merge. This is a temporary governance
 # control: it is NOT evidence of structural verifier independence.
 alembic/versions/007_skeldir_foundation/20260924*.py @Muk223
+alembic/versions/007_skeldir_foundation/20260925*.py @Muk223
 backend/app/finance_reconciliation/ @Muk223
 backend/app/ingestion/event_service.py @Muk223
 contracts/reconciliation/b2.6/ @Muk223

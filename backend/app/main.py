@@ -125,6 +125,47 @@ async def _startup_secret_contract_guard() -> None:
     assert_runtime_secret_contract("api")
 
 
+@app.on_event("startup")
+async def _startup_xii_topology_guard() -> None:
+    """B2.6-P2 Corrective XII: refuse to serve when required auth topology absent.
+
+    One XII migration identity represents one authentication law. When the
+    database is at/above the XII head but the ingress principal or its
+    strict grants are missing, the application is unmistakably
+    unavailable instead of silently serving predecessor law.
+    """
+    import logging
+
+    from sqlalchemy import text
+
+    from app.db.session import engine
+
+    logger = logging.getLogger(__name__)
+    try:
+        async with engine.begin() as conn:
+            head = await conn.execute(text("SELECT version_num FROM alembic_version"))
+            heads = [str(r[0]) for r in head.fetchall()]
+            if "202609250001" not in heads:
+                return
+            present = await conn.execute(
+                text("SELECT count(*) FROM pg_roles WHERE rolname = 'app_ingress'")
+            )
+            present_row = present.fetchone()
+            if present_row is None or int(present_row[0]) != 1:
+                raise RuntimeError(
+                    "b26_p2_xii_ingress_topology_absent: XII head requires"
+                    " the app_ingress principal"
+                )
+            topo = await conn.execute(
+                text("SELECT public.b26_p2_xii_topology_check()")
+            )
+            topo.fetchone()
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        logger.warning("b26_p2_xii_topology_guard_deferred:%s", exc)
+
+
 @app.get("/")
 async def root():
     """Root endpoint - redirects to documentation."""

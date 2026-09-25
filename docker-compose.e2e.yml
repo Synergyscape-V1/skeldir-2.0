@@ -103,6 +103,9 @@ services:
       STRIPE_BASE_URL: http://mock_platform:8080
       INGESTION_FOLLOWUP_TASKS_ENABLED: ${INGESTION_FOLLOWUP_TASKS_ENABLED:-false}
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+      # B2.6-P2 Corrective XII: non-ingress processes must not hold the
+      # authenticated-ingress credential.
+      B26_P2_INGRESS_DATABASE_URL: ""
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO
@@ -148,6 +151,7 @@ services:
       STRIPE_BASE_URL: http://mock_platform:8080
       INGESTION_FOLLOWUP_TASKS_ENABLED: ${INGESTION_FOLLOWUP_TASKS_ENABLED:-false}
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+      B26_P2_INGRESS_DATABASE_URL: ""
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO
@@ -191,6 +195,7 @@ services:
       PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
       PLATFORM_TOKEN_KEY_ID: e2e-key
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+      B26_P2_INGRESS_DATABASE_URL: ""
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO

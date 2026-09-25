@@ -341,10 +341,13 @@ def _behavioral_probes(
                     " %s, false)",
                     (tenant_id,),
                 )
+                # Witnessless signed attestation is refused for the
+                # missing witness; governed attestation is
+                # migration/admin custody only (Corrective XII).
                 try:
                     cur.execute(
                         "SELECT public.b26_p2_attest_provenance_evidence"
-                        "(%s, 'governed_attestation', %s)",
+                        "(%s, 'signed_provider_reingestion', %s)",
                         (ingress_id, idem),
                     )
                     violations.append(
@@ -356,12 +359,56 @@ def _behavioral_probes(
                             "xi_auth_live_witness_wrong_refusal:"
                             + str(exc)[:120]
                         )
-                # Probe 3 (F-XI-A3): genuine consequence restores.
                 try:
                     cur.execute(
+                        "SELECT public.b26_p2_attest_provenance_evidence"
+                        "(%s, 'governed_attestation', %s)",
+                        (ingress_id, idem),
+                    )
+                    violations.append(
+                        "xi_auth_live_governed_promoted_as_ingress"
+                    )
+                except Exception as exc:
+                    if "b26_p2_evidence_governed_admin_only" not in str(exc):
+                        violations.append(
+                            "xi_auth_live_governed_wrong_refusal:"
+                            + str(exc)[:120]
+                        )
+                # Probe 3 (F-XI-A3): genuine consequence restores.
+                # B2.6-P2 Corrective XII: the lawful path is
+                # consequence (app_user, HMAC path) -> bound witness
+                # (app_ingress) -> attestation. The bare single-arg
+                # witness is fail-closed (see the XII battery for the
+                # credential-only RED); the XI probe exercises the
+                # full lawful chain through the new binding.
+                try:
+                    cur.execute("SELECT 1")
+                    user_probe = psycopg2.connect(user_dsn)
+                    user_probe.autocommit = True
+                    try:
+                        with user_probe.cursor() as ucur:
+                            ucur.execute(
+                                "SELECT set_config('app.current_tenant_id',"
+                                " %s, false)",
+                                (tenant_id,),
+                            )
+                            ucur.execute(
+                                "SELECT public.b26_p2_record_provider_auth_consequence("
+                                "%s, 'stripe', %s, %s, %s,"
+                                " 'hmac-sha256-timestamped-hex', 'v1')",
+                                (
+                                    ingress_id,
+                                    f"evt-{idem}",
+                                    "a" * 64,
+                                    "b" * 64,
+                                ),
+                            )
+                    finally:
+                        user_probe.close()
+                    cur.execute(
                         "SELECT public.b26_p2_record_ingress_auth_witness"
-                        "(%s)",
-                        (ingress_id,),
+                        "(%s, 'stripe', %s, %s)",
+                        (ingress_id, f"evt-{idem}", "a" * 64),
                     )
                     checks["witness_hash_prefix"] = str(
                         cur.fetchone()[0]

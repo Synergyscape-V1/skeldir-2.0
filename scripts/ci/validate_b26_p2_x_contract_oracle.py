@@ -315,7 +315,9 @@ def main() -> int:
                             )
                             head = str(cur.fetchone()[0])
                             checks["migration_head"] = head
-                            if head != "202609240002":
+                            if head not in (
+                                "202609240002", "202609250001"
+                            ):
                                 violations.append(
                                     f"x_oracle_unexpected_migration_head:{head}"
                                 )

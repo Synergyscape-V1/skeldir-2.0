@@ -155,7 +155,7 @@ def _seed_ids(tag: str, *, provider: str = "stripe") -> dict:
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id,
-            "event_id": event_id, "tag": tag}
+            "event_id": event_id, "tag": tag, "provider": provider}
 
 
 def _seed_verdict(ids: dict) -> None:
@@ -247,9 +247,37 @@ def _seed_dispatch(ids: dict, task: str) -> None:
         conn.close()
 
 
-def _witness_and_attest(ids: dict, *, kind: str = "governed_attestation") -> None:
+def _witness_and_attest(
+    ids: dict, *, kind: str = "signed_provider_reingestion"
+) -> None:
+    """Lawful XII authentication chain for test fixtures.
+
+    B2.6-P2 Corrective XII: the predecessor consequence P is recorded
+    with the API application principal (the test harness stands in for
+    the HMAC-verified webhook path), then the bound witness and the
+    attestation execute with ingress authority. governed_attestation
+    is migration/admin custody only and is never used here.
+    """
     import psycopg2
 
+    evt_ref = f"evt-{ids['tag']}"
+    user = psycopg2.connect(_role_dsn("app_user"))
+    user.autocommit = True
+    try:
+        with user.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            cur.execute(
+                "SELECT public.b26_p2_record_provider_auth_consequence"
+                "(%s, %s, %s, %s, %s, %s, 'v1')",
+                (str(ids["ingress_id"]), ids.get("provider", "stripe"),
+                 evt_ref, "c" * 64, "d" * 64,
+                 "hmac-sha256-timestamped-hex"),
+            )
+    finally:
+        user.close()
     ingress = psycopg2.connect(_role_dsn("app_ingress"))
     ingress.autocommit = True
     try:
@@ -259,8 +287,10 @@ def _witness_and_attest(ids: dict, *, kind: str = "governed_attestation") -> Non
                 (str(ids["tenant_id"]),),
             )
             cur.execute(
-                "SELECT public.b26_p2_record_ingress_auth_witness(%s)",
-                (str(ids["ingress_id"]),),
+                "SELECT public.b26_p2_record_ingress_auth_witness"
+                "(%s, %s, %s, %s)",
+                (str(ids["ingress_id"]), ids.get("provider", "stripe"),
+                 evt_ref, "c" * 64),
             )
             cur.execute(
                 "SELECT public.b26_p2_attest_provenance_evidence"
@@ -395,7 +425,8 @@ def test_xa1_assertion_promotes_nothing() -> None:
             ), reason
     finally:
         user.close()
-    # Even the ingress principal is refused without a witness.
+    # Even the ingress principal is refused without a witness, and
+    # governed attestation is migration/admin custody only at runtime.
     ingress = psycopg2.connect(_role_dsn("app_ingress"))
     ingress.autocommit = True
     try:
@@ -407,11 +438,26 @@ def test_xa1_assertion_promotes_nothing() -> None:
             reason = _refused(
                 lambda: cur.execute(
                     "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s, 'governed_attestation', %s)",
+                    "(%s, 'signed_provider_reingestion', %s)",
                     (str(ids["ingress_id"]), f"b26p2xi:{ids['tag']}"),
                 )
             )
             assert "b26_p2_evidence_witness_missing" in reason
+            reason = _refused(
+                lambda: cur.execute(
+                    "SELECT public.b26_p2_attest_provenance_evidence"
+                    "(%s, 'governed_attestation', %s)",
+                    (str(ids["ingress_id"]), f"b26p2xi:{ids['tag']}"),
+                )
+            )
+            assert "b26_p2_evidence_governed_admin_only" in reason
+            reason = _refused(
+                lambda: cur.execute(
+                    "SELECT public.b26_p2_record_ingress_auth_witness(%s)",
+                    (str(ids["ingress_id"]),),
+                )
+            )
+            assert "b26_p2_witness_no_auth_consequence" in reason
     finally:
         ingress.close()
     # GREEN after exact restore: lawful witness + attestation.

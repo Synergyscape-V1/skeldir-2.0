@@ -41,6 +41,34 @@ INGRESS_DSN_TOKEN = "B26_P2_INGRESS_DATABASE_URL"
 API_DSN_TOKENS = ("DATABASE_URL=$WORKER_DATABASE_URL",)
 
 
+def _line_mounts_ingress(line: str) -> bool:
+    """True when a topology line actually delivers the credential.
+
+    B2.6-P2 Corrective XII: non-ingress processes explicitly blank the
+    variable (``VAR=`` with an empty value / ``VAR: ""``). Blanking is
+    the physical expression of non-possession; only an assignment
+    carrying a value on the ingress token itself mounts it.
+    """
+    if INGRESS_DSN_TOKEN not in line:
+        return False
+    match = re.search(INGRESS_DSN_TOKEN + r"\s*([:=])", line)
+    if match is None:
+        return True
+    rest = line[match.end():]
+    if match.group(1) == "=":
+        # Shell semantics: `VAR=value` mounts; `VAR=` / `VAR= cmd`
+        # leaves the variable empty (explicit blanking).
+        return rest != "" and rest[0] not in (" ", "\t", "#", "\n")
+    rest = rest.strip()
+    if rest == "" or rest.startswith("#"):
+        return False
+    if rest[0] in ("\"", "'"):
+        closer = rest.find(rest[0], 1)
+        inner = rest[1:closer] if closer > 0 else rest[1:]
+        return inner.strip() != ""
+    return True
+
+
 def _topology_checks(violations: list[str], checks: dict) -> None:
     procfile = REPO_ROOT / "Procfile"
     try:
@@ -61,17 +89,17 @@ def _topology_checks(violations: list[str], checks: dict) -> None:
         # The worker must never hold the dedicated ingress
         # credential. (It keeps the API DSN by C7 design; ingress
         # authority is denied at the database layer for every
-        # non-ingress principal, proven by the live probes below --
-        # credential sharing without capability is hygiene debt,
-        # not authority.)
-        if INGRESS_DSN_TOKEN in line:
+        # non-ingress principal, proven by the live probes below.
+        # Corrective XII blanks the variable on every non-ingress
+        # process line; blanking is non-possession, not holding.)
+        if _line_mounts_ingress(line):
             violations.append("xi_isolation_worker_holds_ingress_dsn")
-    # Ingress DSN must never appear on a non-API process line.
+    # Ingress DSN must never be mounted on a non-API process line.
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        if INGRESS_DSN_TOKEN in line and re.match(
+        if _line_mounts_ingress(line) and re.match(
             r"\s*(worker|relay_b26_p2|beat|worker_b23|worker_bayesian)\s*:",
             line,
         ):
@@ -110,11 +138,13 @@ def _topology_checks(violations: list[str], checks: dict) -> None:
             "xi_isolation_ingress_dsn_beyond_boundary:"
             + ",".join(offenders[:10])
         )
-    # Compose census: no non-API service may mount the ingress DSN.
+    # Compose census: no non-API service may mount the ingress DSN
+    # (blanking assignments carry no credential and are skipped).
     for name in (
         "docker-compose.local.yml",
         "docker-compose.e2e.yml",
         "docker-compose.test.yml",
+        "docker-compose.c19.yml",
     ):
         path = REPO_ROOT / name
         if not path.is_file():
@@ -124,7 +154,7 @@ def _topology_checks(violations: list[str], checks: dict) -> None:
         except OSError:
             continue
         for i, line in enumerate(body.splitlines(), 1):
-            if INGRESS_DSN_TOKEN in line:
+            if _line_mounts_ingress(line):
                 context = "\n".join(body.splitlines()[max(0, i - 12):i])
                 if not re.search(
                     r"(api|web)\s*:", context
@@ -217,6 +247,9 @@ def _live_checks(
             # Read-only event visibility (ingress rows bind their
             # committed attribution event); writes ungranted.
             "attribution_events",
+            # B2.6-P2 Corrective XII: the ingress boundary observes
+            # (never authors) the predecessor consequence P.
+            "b26_p2_provider_auth_consequence",
         }
         for table, priv in grants:
             if table not in allowed_tables:
@@ -240,6 +273,7 @@ def _live_checks(
                 "b23_match_task_dispatches",
                 "b26_p2_provenance_evidence",
                 "attribution_events",
+                "b26_p2_provider_auth_consequence",
             ) and priv != "SELECT":
                 violations.append(
                     f"xi_isolation_ingress_twin_beyond_select:{table}:{priv}"
@@ -262,6 +296,9 @@ def _live_checks(
             "b26_p2_state_eligible_for_p3",
             "b26_p2_canonical_scope_identity_for_window",
             "b26_p2_classify_candidate",
+            # B2.6-P2 Corrective XII: topology adjudication (read-only
+            # checks) are observable by the ingress boundary.
+            "b26_p2_xii_topology_check",
         }
         for routine in routines:
             if routine not in allowed_routines:

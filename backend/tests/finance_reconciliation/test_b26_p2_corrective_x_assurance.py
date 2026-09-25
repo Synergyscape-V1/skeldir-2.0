@@ -509,8 +509,33 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
             assert "permission denied" in denied.lower()
     finally:
         api.close()
-    # Corrective XI restoration: witness consequence first (ingress
-    # principal), then attestation.
+    # Corrective XII restoration: predecessor consequence first (API
+    # application principal, standing in for the HMAC-verified path),
+    # then the bound witness and the signed attestation (ingress
+    # principal). governed_attestation is migration/admin custody
+    # only and is never exercised here.
+    user = psycopg2.connect(_role_dsn("app_user"))
+    user.autocommit = True
+    try:
+        with user.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            cur.execute(
+                "SELECT provider_native_event_reference FROM"
+                " public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            evt_ref = str(cur.fetchone()[0])
+            cur.execute(
+                "SELECT public.b26_p2_record_provider_auth_consequence"
+                "(%s, 'stripe', %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ids["ingress_id"]), evt_ref, "c" * 64, "d" * 64),
+            )
+    finally:
+        user.close()
     ingress = psycopg2.connect(_role_dsn("app_ingress"))
     ingress.autocommit = True
     try:
@@ -520,12 +545,19 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                 (str(ids["tenant_id"]),),
             )
             cur.execute(
-                "SELECT public.b26_p2_record_ingress_auth_witness(%s)",
+                "SELECT provider_native_event_reference FROM"
+                " public.webhook_ingress_identities WHERE id = %s",
                 (str(ids["ingress_id"]),),
+            )
+            evt_ref = str(cur.fetchone()[0])
+            cur.execute(
+                "SELECT public.b26_p2_record_ingress_auth_witness"
+                "(%s, 'stripe', %s, %s)",
+                (str(ids["ingress_id"]), evt_ref, "c" * 64),
             )
             cur.execute(
                 "SELECT public.b26_p2_attest_provenance_evidence"
-                "(%s, 'governed_attestation', %s)",
+                "(%s, 'signed_provider_reingestion', %s)",
                 (str(ids["ingress_id"]), idem),
             )
             assert str(cur.fetchone()[0]) == "authenticated_known"

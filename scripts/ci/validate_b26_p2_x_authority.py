@@ -320,13 +320,54 @@ def _check_live_writers(conn, violations: list[str], checks: dict[str, object]) 
         violations.append(f"x_authority_live_public_widened:{name}")
 
 
+def _migration_bodies_for(name: str) -> list[str]:
+    """Return the latest-file evaluated upgrade-chunk bodies for a routine.
+
+    Historical migrations are immutable superseded law, not live
+    authority: only the latest file defining the routine governs
+    (mirrors the static check's latest-wins rule). Overloads are
+    independent classifications compared as a multiset: Corrective
+    XII governs the fail-closed single-argument witness beside the
+    bound four-argument form, so a lane missing either (or carrying
+    an unknown overload) is RED.
+    """
+    files = sorted(ALEMBIC_DIR.rglob("*.py")) if ALEMBIC_DIR.is_dir() else []
+    latest_path = None
+    latest_bodies: list[str] = []
+    for path in files:
+        sql = _upgrade_sql_of(path)
+        if not sql:
+            continue
+        bodies: list[str] = []
+        for chunk_name, _args, chunk in _function_chunks(sql):
+            if chunk_name != name:
+                continue
+            start = chunk.find("AS $$")
+            if start == -1:
+                start = chunk.find("AS $function$")
+                if start == -1:
+                    continue
+                marker = "AS $function$"
+            else:
+                marker = "AS $$"
+            end = chunk.find("$$", start + len(marker))
+            if end <= start:
+                continue
+            bodies.append(chunk[start + len(marker):end])
+        if bodies:
+            latest_path = path
+            latest_bodies = bodies
+    _ = latest_path
+    return latest_bodies
+
+
 def _check_live_equivalence(conn, violations: list[str], checks: dict[str, object]) -> None:
     drift: list[str] = []
     compared = 0
     with conn.cursor() as cur:
         for name in GOVERNED_ROUTINES:
-            expected = _migration_body_for(name)
-            if expected is None:
+            expected_bodies = _migration_bodies_for(name)
+            if not expected_bodies:
                 violations.append(
                     f"x_authority_governed_source_missing:{name}"
                 )
@@ -338,18 +379,21 @@ def _check_live_equivalence(conn, violations: list[str], checks: dict[str, objec
                 (name,),
             )
             live_rows = cur.fetchall()
-            if len(live_rows) != 1:
-                violations.append(
-                    f"x_authority_live_routine_count:{name}={len(live_rows)}"
-                )
+            live_bodies = sorted(_collapse(str(src)) for _oid, src in live_rows)
+            expected = sorted(_collapse(body) for body in expected_bodies)
+            if live_bodies != expected:
+                if len(live_rows) != len(expected):
+                    violations.append(
+                        f"x_authority_live_routine_count:{name}="
+                        f"{len(live_rows)}-vs-{len(expected)}"
+                    )
+                else:
+                    drift.append(name)
                 continue
-            compared += 1
-            live_src = str(live_rows[0][1])
-            if _collapse(live_src) != _collapse(expected):
-                drift.append(name)
+            compared += len(live_rows)
     checks["live_equivalence_compared"] = compared
-    checks["live_equivalence_drift"] = sorted(drift)
-    for name in sorted(drift):
+    checks["live_equivalence_drift"] = sorted(set(drift))
+    for name in sorted(set(drift)):
         violations.append(f"x_authority_live_source_drift:{name}")
 
 
@@ -446,7 +490,7 @@ def main() -> int:
                         )
                         head = str(cur.fetchone()[0])
                         checks["migration_head"] = head
-                        if head != "202609240002":
+                        if head not in ("202609240002", "202609250001"):
                             violations.append(
                                 "x_authority_unexpected_migration_head:"
                                 f"{head}"

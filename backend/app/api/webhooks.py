@@ -212,6 +212,52 @@ async def _resolve_tenant_info_for_webhook_auth(
         return None
 
 
+_PROVIDER_AUTH_METHOD = MappingProxyType(
+    {
+        "shopify": "hmac-sha256-base64",
+        "stripe": "hmac-sha256-timestamped-hex",
+        "paypal": "rsa-sha256-transmission",
+        "woocommerce": "hmac-sha256-base64",
+    }
+)
+
+
+def _provider_auth_method(provider: str) -> str:
+    return _PROVIDER_AUTH_METHOD.get(provider.strip().lower(), "unknown")
+
+
+def _build_provider_auth_consequence(
+    *,
+    tenant_info: Mapping[str, Any],
+    provider: str,
+    provider_event_reference: str,
+) -> dict[str, Any]:
+    """Snapshot predecessor event P for the post-commit finalizer.
+
+    B2.6-P2 Corrective XII: called only after a successful
+    provider-signature verification in this task. Binds the raw-body
+    digest, a digest of the presented signature envelope (never the
+    secret), the provider/event identities, and the method/version.
+    """
+    auth_snapshot = tenant_info.get("provider_auth_snapshot") or {}
+    event_ref = (provider_event_reference or "").strip()
+    if not event_ref:
+        raise ValueError("provider_event_reference is required for auth consequence")
+    return {
+        "provider": provider.strip().lower(),
+        "provider_event_reference": event_ref,
+        "body_sha256": str(auth_snapshot.get("body_sha256") or ""),
+        "signature_envelope_sha256": str(
+            auth_snapshot.get("signature_envelope_sha256") or ""
+        ),
+        "auth_method": str(
+            auth_snapshot.get("auth_method")
+            or _provider_auth_method(provider)
+        ),
+        "auth_version": "v1",
+    }
+
+
 async def _authorize_webhook_request(
     *,
     request: Request,
@@ -237,6 +283,17 @@ async def _authorize_webhook_request(
 
     set_tenant_id(tenant_info["tenant_id"])
     tenant_info["verified_at"] = datetime.now(timezone.utc)
+    # B2.6-P2 Corrective XII: snapshot the predecessor event P at the
+    # moment authentication succeeds. Only digests travel downstream;
+    # raw secrets and raw signatures never persist.
+    tenant_info["provider_auth_snapshot"] = {
+        "body_sha256": hashlib.sha256(raw_body).hexdigest(),
+        "signature_envelope_sha256": hashlib.sha256(
+            str(signature_header or "").encode("utf-8")
+        ).hexdigest(),
+        "auth_method": _provider_auth_method(provider),
+        "auth_version": "v1",
+    }
     return tenant_info
 
 
@@ -1067,6 +1124,7 @@ async def _handle_ingestion(
     verified_at: datetime,
     identity_payload: dict[str, Any] | None = None,
     request_headers: dict[str, str] | None = None,
+    auth_consequence: dict[str, Any] | None = None,
 ):
     verification_decision_time = (
         verified_at.astimezone(timezone.utc)
@@ -1087,6 +1145,7 @@ async def _handle_ingestion(
         source=source,
         identity_payload=identity_payload,
         request_headers=request_headers,
+        auth_consequence=auth_consequence,
     )
     if result.status == "success":
         correlation_id = get_request_correlation_id() or idempotency_key
@@ -1282,6 +1341,11 @@ async def shopify_order_create(
         verified_at=_resolve_verified_at(tenant_info),
         identity_payload=identity_payload,
         request_headers=request_headers,
+        auth_consequence=_build_provider_auth_consequence(
+            tenant_info=tenant_info,
+            provider="shopify",
+            provider_event_reference=str(payload.id),
+        ),
     )
 
 
@@ -1428,6 +1492,11 @@ async def stripe_payment_intent_succeeded(
         verified_at=_resolve_verified_at(tenant_info),
         identity_payload=identity_payload,
         request_headers=request_headers,
+        auth_consequence=_build_provider_auth_consequence(
+            tenant_info=tenant_info,
+            provider="stripe",
+            provider_event_reference=str(payload.id),
+        ),
     )
 
 
@@ -1689,6 +1758,11 @@ async def stripe_payment_intent_succeeded_v2(
         source="stripe",
         identity_payload=identity_payload or payload,
         request_headers=request_headers,
+        auth_consequence=_build_provider_auth_consequence(
+            tenant_info=tenant_info,
+            provider="stripe",
+            provider_event_reference=str(provider_event_reference),
+        ),
     )
 
     if result.status == "success":
@@ -1881,6 +1955,11 @@ async def paypal_sale_completed(
         verified_at=_resolve_verified_at(tenant_info),
         identity_payload=identity_payload,
         request_headers=request_headers,
+        auth_consequence=_build_provider_auth_consequence(
+            tenant_info=tenant_info,
+            provider="paypal",
+            provider_event_reference=str(payload.id),
+        ),
     )
 
 
@@ -2023,4 +2102,9 @@ async def woocommerce_order_completed(
         verified_at=_resolve_verified_at(tenant_info),
         identity_payload=identity_payload,
         request_headers=request_headers,
+        auth_consequence=_build_provider_auth_consequence(
+            tenant_info=tenant_info,
+            provider="woocommerce",
+            provider_event_reference=str(payload.id),
+        ),
     )

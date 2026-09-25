@@ -346,7 +346,17 @@ def _on_worker_parent_init(**kwargs):
 
     Provisioning authority is external. We validate and fail fast; we do NOT
     create/permission the directory here.
+
+    B2.6-P2 Corrective XII: a worker/relay/beat/B2.3 process must never
+    hold the authenticated-ingress credential. Fail closed at startup
+    instead of serving with a smuggled capability.
     """
+    from app.db.session import assert_worker_ingress_isolation
+
+    try:
+        assert_worker_ingress_isolation()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
     try:
         multiproc_dir = get_multiproc_dir()
     except RuntimeError as exc:

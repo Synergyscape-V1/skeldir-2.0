@@ -742,6 +742,17 @@ KNOWN_P2_DEFINERS = frozenset(
         # census, never by the grant-based definer census.)
         "b26_p2_record_ingress_auth_witness",
         "b26_p2_state_eligible_for_p3",
+        # Corrective XII: the predecessor-event recorder (EXECUTE
+        # app_user alone; the ingress principal cannot author P) and
+        # the read-only topology adjudicator (EXECUTE runtime roles;
+        # mints nothing). Both are P2-covered (b26_p2_xii_coverage)
+        # and falsified by the XII battery (AUTH/TOPO cells) plus the
+        # XII live validators. (The XII provision function and the
+        # XII oracle grant no runtime EXECUTE, like the X effect
+        # guards: tracked by the XII topology validator and the
+        # bootstrap routine census, never by the grant census.)
+        "b26_p2_record_provider_auth_consequence",
+        "b26_p2_xii_topology_check",
     }
 )
 

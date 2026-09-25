@@ -352,7 +352,25 @@ def run_canaries(admin_dsn: str, violations: list[str],
                 notes["c8_assert"] = str(refused)[:160]
         finally:
             api.close()
-        # XI restoration through the ingress boundary.
+        # XII restoration through the provider-bound chain:
+        # consequence via the application principal, bound witness +
+        # signed attestation via the ingress boundary.
+        api2 = psycopg2.connect(api_dsn)
+        api2.autocommit = True
+        try:
+            with api2.cursor() as a2cur:
+                a2cur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (tenant8,),
+                )
+                a2cur.execute(
+                    "SELECT public.b26_p2_record_provider_auth_consequence"
+                    "(%s, 'stripe', %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (ingress8, "evt-c8", "c" * 64, "d" * 64),
+                )
+        finally:
+            api2.close()
         ingress = psycopg2.connect(ingress_dsn)
         ingress.autocommit = True
         try:
@@ -362,13 +380,14 @@ def run_canaries(admin_dsn: str, violations: list[str],
                     (tenant8,),
                 )
                 icur.execute(
-                    "SELECT public.b26_p2_record_ingress_auth_witness(%s)",
-                    (ingress8,),
+                    "SELECT public.b26_p2_record_ingress_auth_witness"
+                    "(%s, 'stripe', %s, %s)",
+                    (ingress8, "evt-c8", "c" * 64),
                 )
                 restored = _attempt(
                     icur,
                     "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s, 'governed_attestation', %s)",
+                    "(%s, 'signed_provider_reingestion', %s)",
                     (ingress8, idem8),
                 )
                 results["attester_restores"] = (

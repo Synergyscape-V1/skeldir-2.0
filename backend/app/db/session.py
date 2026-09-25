@@ -8,6 +8,7 @@ row-level security enforcement.
 
 from __future__ import annotations
 
+import contextvars as _ctxvars
 import os
 import ssl
 from contextlib import asynccontextmanager
@@ -305,6 +306,70 @@ async def get_b23_session(
             raise
 
 
+class IngressBoundaryError(RuntimeError):
+    """Raised when non-authentication code attempts ingress capability."""
+
+
+# B2.6-P2 Corrective XII (Blocker B): the ingress capability is bound to
+# the actual authentication execution boundary, not to the process. The
+# HMAC-verified webhook path sets this context immediately after a
+# successful provider-signature verification; get_ingress_session
+# requires it. An unrelated API route or a generic worker process never
+# holds the token, so the session is unavailable at the process level,
+# not merely unused by convention. Context-local: never crosses tasks.
+_ingress_auth_boundary: _ctxvars.ContextVar[bool] = _ctxvars.ContextVar(
+    "b26_p2_ingress_auth_boundary", default=False
+)
+
+
+def enter_ingress_auth_boundary() -> None:
+    """Mark the current task as the authentication execution boundary."""
+    _ingress_auth_boundary.set(True)
+
+
+def exit_ingress_auth_boundary() -> None:
+    """Leave the authentication execution boundary."""
+    _ingress_auth_boundary.set(False)
+
+
+@asynccontextmanager
+async def _ingress_boundary() -> AsyncGenerator[None, None]:
+    """Scoped authentication-execution-boundary marker.
+
+    B2.6-P2 Corrective XII: the post-commit finalizer runs downstream
+    of a successful HMAC verification in the same task; this scopes
+    the ingress-session capability to that dynamic extent.
+    """
+    enter_ingress_auth_boundary()
+    try:
+        yield
+    finally:
+        exit_ingress_auth_boundary()
+
+
+def _require_ingress_auth_boundary() -> None:
+    if _ingress_auth_boundary.get() is not True:
+        raise IngressBoundaryError(
+            "b26_p2_ingress_out_of_boundary: ingress capability is"
+            " available only inside the provider-authentication"
+            " execution boundary"
+        )
+
+
+def assert_worker_ingress_isolation() -> None:
+    """Fail closed when a non-ingress worker inherits the ingress DSN.
+
+    B2.6-P2 Corrective XII: the ingress credential must not exist in a
+    generic worker/relay/beat/B2.3 process environment. Called at worker
+    startup; raises instead of serving with a smuggled capability.
+    """
+    if os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip():
+        raise RuntimeError(
+            "b26_p2_ingress_credential_in_worker: B26_P2_INGRESS_DATABASE_URL"
+            " must not be present in worker/relay/beat/B2.3 environments"
+        )
+
+
 @asynccontextmanager
 async def get_ingress_session(
     tenant_id: UUID,
@@ -315,7 +380,13 @@ async def get_ingress_session(
     B2.6-P2 Corrective XI: only the authenticated-ingress boundary holds
     the ingress credential, so only it can author authenticity_verified
     and record witnesses. Fails closed when the DSN is not mounted.
+
+    B2.6-P2 Corrective XII: additionally requires the caller to be the
+    actual authentication execution boundary (HMAC verification just
+    ran in this task). Unrelated in-process code without that context
+    cannot obtain the session.
     """
+    _require_ingress_auth_boundary()
     if IngressAsyncSessionLocal is None:
         raise RuntimeError(
             "b26_p2_ingress_credential_unavailable: verified arrival"

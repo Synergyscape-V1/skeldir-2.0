@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
-  "migration_head": "202609240002",
-  "authority_universe_hash": "5f505f9cdd440e7cc30a99414a0ba288a95cecb8079186595610fb1bb748cfcb",
-  "reviewed_at_git_sha": "24e1665fa3b41c39e1610677522602b13884fa10",
+  "migration_head": "202609250001",
+  "authority_universe_hash": "8511a24ecbdb411720075eaf79367cb862b3e840a56b0aaea6517f1cfa9f7630",
+  "reviewed_at_git_sha": "f6a34a9a91ac1bb17060ff28d130b2e85b3af506",
   "meaning_surface_counts": {
-    "routine_meaning": 131,
+    "routine_meaning": 136,
     "trigger_meaning": 21,
     "schema_meaning": 5,
     "rls_meaning": 17,
-    "ownership": 92
+    "ownership": 97
   },
-  "review_note": "Reviewed for Corrective XI head: X authority plus dedicated authenticated-ingress principal (app_ingress authors authenticity_verified and executes witness/attester alone wherever the role exists; predecessor-compatible topology rule keeps Corrective-X semantics bit-for-bit on lanes that never provision it, enforced by role presence where XI is adjudicated), unforgeable authentication-witness relation, witness-gated attestation, quarantine-aware canonical identity, dispatch quarantine exclusion, generic XI invariant oracle, and read-only P3 eligibility predicate. Pin regeneration alone adjudicates nothing: the X effect authority, the XI live validators (authentication evidence, ingress isolation, semantic-temporal totality, historical census), and the DB trigger guards must remain RED while any prohibited effect survives."
+  "review_note": "Reviewed for Corrective XII head: XI authority plus the provider-authentication consequence relation (b26_p2_provider_auth_consequence, authored by app_user alone in the HMAC-verified path and observed by app_ingress), the consequence-bound witness (deterministic digest over tenant/provider/event/ingress/body/method; single-argument form fail-closed with b26_p2_witness_no_auth_consequence), strict single-regime attestation/authorship/provenance law (no role-existence branching; governed_attestation is migration/admin custody only at runtime), the XII topology adjudicator plus deterministic late provisioning (contract B), and the XII witness-without-consequence oracle. Pin regeneration alone adjudicates nothing: the XII live validators (auth binding, process isolation, single regime, semantic closure, temporal behavioral), the XII non-vacuous battery, and the DB trigger guards must remain RED while any prohibited effect survives."
 }
