@@ -454,6 +454,7 @@ BEGIN
         GRANT USAGE ON SCHEMA public TO app_ingress;
         GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
         GRANT SELECT ON TABLE public.tenants TO app_ingress;
+        GRANT SELECT ON TABLE public.attribution_events TO app_ingress;
         GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
         GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress;
         GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;

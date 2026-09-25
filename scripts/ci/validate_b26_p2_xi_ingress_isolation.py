@@ -214,6 +214,9 @@ def _live_checks(
             # evidence trail); writes remain ungranted everywhere.
             "b23_match_task_dispatches",
             "b26_p2_provenance_evidence",
+            # Read-only event visibility (ingress rows bind their
+            # committed attribution event); writes ungranted.
+            "attribution_events",
         }
         for table, priv in grants:
             if table not in allowed_tables:
@@ -236,6 +239,7 @@ def _live_checks(
             if table in (
                 "b23_match_task_dispatches",
                 "b26_p2_provenance_evidence",
+                "attribution_events",
             ) and priv != "SELECT":
                 violations.append(
                     f"xi_isolation_ingress_twin_beyond_select:{table}:{priv}"

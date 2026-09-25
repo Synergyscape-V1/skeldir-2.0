@@ -647,6 +647,11 @@ def upgrade() -> None:
                 -- outside the ingress boundary).
                 GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
                 GRANT SELECT ON TABLE public.tenants TO app_ingress;
+                -- Read-only event visibility: ingress finalization and
+                -- governed seeding bind each ingress row to its
+                -- already-committed attribution event (FK target).
+                -- SELECT mints nothing; writes remain ungranted.
+                GRANT SELECT ON TABLE public.attribution_events TO app_ingress;
                 -- Trigger-plane visibility (read-only): the ingress
                 -- triggers evaluate as the caller and must observe the
                 -- dispatch twin (custody) and the evidence trail
