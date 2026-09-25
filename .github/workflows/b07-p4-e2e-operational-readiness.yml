@@ -54,6 +54,9 @@ jobs:
       E2E_WORKER_DATABASE_URL: postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_e2e
       E2E_CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@postgres:5432/skeldir_e2e
       E2E_CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@postgres:5432/skeldir_e2e
+      # B2.6-P2 Corrective XII: this lane serves verified webhooks
+      # through the API ingress boundary (role provisioned above).
+      E2E_INGRESS_DATABASE_URL: postgresql+asyncpg://app_ingress:app_ingress@postgres:5432/skeldir_e2e
 
     steps:
       - uses: actions/checkout@v4
@@ -110,6 +113,13 @@ jobs:
             END IF;
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
               CREATE USER app_user WITH PASSWORD 'app_user';
+            END IF;
+            -- B2.6-P2 Corrective XII: the e2e lane serves verified
+            -- webhooks through the API ingress boundary (role only;
+            -- all authority flows from the migrations under strict
+            -- single-regime law).
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+              CREATE USER app_ingress WITH PASSWORD 'app_ingress';
             END IF;
           END
           $$;

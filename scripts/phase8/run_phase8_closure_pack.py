@@ -395,6 +395,13 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "E2E_WORKER_DATABASE_URL": cfg.compose_worker_async_dsn,
             "E2E_CELERY_BROKER_URL": cfg.compose_broker_dsn,
             "E2E_CELERY_RESULT_BACKEND": cfg.compose_result_dsn,
+            # B2.6-P2 Corrective XII: the pack posts verified webhooks
+            # through the API boundary, so the boundary holds the
+            # ingress credential (the role is provisioned above).
+            "E2E_INGRESS_DATABASE_URL": (
+                f"postgresql+asyncpg://app_ingress:app_ingress"
+                f"@{db_compose_host}:5432/{db_name}"
+            ),
             "TENANT_API_KEY_HEADER": "X-Skeldir-Tenant-Key",
             "R3_ADMIN_DATABASE_URL": cfg.migration_dsn,
             "R3_RUNTIME_DATABASE_URL": cfg.runtime_sync_dsn,
@@ -679,6 +686,13 @@ def _provision_runtime_identity(cfg: _Phase8Config) -> None:
           END IF;
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
             CREATE USER app_worker WITH PASSWORD 'app_worker';
+          END IF;
+          -- B2.6-P2 Corrective XII: lanes serving verified webhooks
+          -- through the API ingress boundary provision the ingress
+          -- principal (role only; authority flows from the migrations
+          -- under strict single-regime law).
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+            CREATE USER app_ingress WITH PASSWORD 'app_ingress';
           END IF;
         END$$;
         ALTER USER app_user WITH PASSWORD 'app_user';

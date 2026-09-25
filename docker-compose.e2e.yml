@@ -59,6 +59,13 @@ services:
       REALTIME_REVENUE_ERROR_COOLDOWN_SECONDS: 5
       REALTIME_REVENUE_SINGLEFLIGHT_WAIT_SECONDS: 2
       REALTIME_REVENUE_SINGLEFLIGHT_POLL_SECONDS: 0.05
+      # B2.6-P2 Corrective XII: only lanes that serve verified
+      # webhooks through this API mount the authenticated-ingress
+      # credential (via E2E_INGRESS_DATABASE_URL) and provision the
+      # app_ingress role before migrating; all other lanes leave it
+      # blank so the boundary stays unclaimed (workers blank it
+      # unconditionally; see below).
+      B26_P2_INGRESS_DATABASE_URL: ${E2E_INGRESS_DATABASE_URL:-}
     command: >
       uvicorn app.main:app
       --host 0.0.0.0
