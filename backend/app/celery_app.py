@@ -366,6 +366,18 @@ def _on_worker_parent_init(**kwargs):
         )
 
 
+@signals.worker_shutdown.connect
+def _on_worker_parent_shutdown(**kwargs):
+    """B2.6-P2 Corrective XII: return a sanitized shared process to its
+    prior state on worker shutdown (real worker processes exit, so this
+    is a no-op in production; in-process test workers restore the API
+    boundary's credential for subsequent tests).
+    """
+    from app.db.session import restore_worker_ingress_environment
+
+    restore_worker_ingress_environment()
+
+
 @signals.beat_init.connect
 def _on_beat_parent_init(**kwargs):
     """B2.6-P2 Corrective XII: the scheduler holds broker-scheduling

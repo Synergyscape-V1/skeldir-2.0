@@ -375,25 +375,47 @@ def ingress_credential_mounted() -> bool:
     return bool(os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip())
 
 
+_SANITIZED_INGRESS_DSN: str | None = None
+
+
 def sanitize_worker_ingress_environment() -> bool:
-    """Make a smuggled ingress credential unavailable in this process.
+    """Drop a smuggled ingress credential string from this process.
 
     B2.6-P2 Corrective XII: worker/relay/beat/B2.3 startup calls this
-    before serving. When the credential was inherited through a shared
-    environment, it is removed from ``os.environ`` and the ingress pool
-    globals are nulled, so no code in this process can spend it: the
-    variable is physically absent afterwards, the session factory is
-    gone, the authentication-boundary token is never set here, and the
+    before serving. When the credential string was inherited through a
+    shared environment, it is removed from ``os.environ`` so worker
+    code cannot read and redial it; the saved value is restored on
+    worker shutdown (in-process test workers share their process with
+    the API boundary, which legitimately keeps the credential).
+    Deliberately scoped to the environment only: already-constructed
+    pools are left intact, and spending the pool additionally requires
+    the authentication-boundary token (never set here) while the
     database denies every non-ingress principal regardless. Returns
     True when sanitization occurred (callers log CRITICAL). Governed
     topologies blank the variable outright, where this is a no-op.
     """
-    global ingress_engine, IngressAsyncSessionLocal
-    if not os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip():
+    global _SANITIZED_INGRESS_DSN
+    current = os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip()
+    if not current:
         return False
+    if _SANITIZED_INGRESS_DSN is None:
+        _SANITIZED_INGRESS_DSN = os.environ.get("B26_P2_INGRESS_DATABASE_URL")
     os.environ.pop("B26_P2_INGRESS_DATABASE_URL", None)
-    ingress_engine = None
-    IngressAsyncSessionLocal = None
+    return True
+
+
+def restore_worker_ingress_environment() -> bool:
+    """Restore a credential string sanitized at worker startup.
+
+    Fires on worker shutdown: real worker processes exit, making this
+    a no-op in production, while in-process test workers return the
+    shared process to its prior state. Returns True when restored.
+    """
+    global _SANITIZED_INGRESS_DSN
+    if _SANITIZED_INGRESS_DSN is None:
+        return False
+    os.environ["B26_P2_INGRESS_DATABASE_URL"] = _SANITIZED_INGRESS_DSN
+    _SANITIZED_INGRESS_DSN = None
     return True
 
 

@@ -154,18 +154,15 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
     env["PYTHONPATH"] = "%s%s%s" % (
         REPO_ROOT, os.pathsep, REPO_ROOT / "backend",
     )
-    # Worker startup sanitizes a smuggled credential: afterwards the
-    # variable is physically absent, the pool globals are nulled, and
-    # the ingress session remains unavailable (boundary gate).
+    # Worker startup sanitizes a smuggled credential string: afterwards
+    # the variable is physically absent from the process environment
+    # while the ingress session remains unavailable (boundary gate).
     sanitize_probe = (
         "from app.db.session import sanitize_worker_ingress_environment\n"
-        "import app.db.session as session_module\n"
         "import os\n"
         "sanitized = sanitize_worker_ingress_environment()\n"
         "assert sanitized is True, 'expected sanitization'\n"
         "assert os.getenv('B26_P2_INGRESS_DATABASE_URL') is None\n"
-        "assert session_module.ingress_engine is None\n"
-        "assert session_module.IngressAsyncSessionLocal is None\n"
         "print('XII_PROC_SANITIZED')\n"
     )
     proc = subprocess.run(
