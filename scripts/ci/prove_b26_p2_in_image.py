@@ -32,7 +32,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 import time
@@ -200,30 +199,26 @@ def _fail(details: dict, message: str) -> int:
 def _base_migration_head(worktree) -> str | None:
     """Resolve the single migration head of the base worktree.
 
-    Reads revision/down_revision declarations from the base tree's
-    own migration files (no alembic invocation inside the base
-    image): the stale lane must run base-head physics.
+    Asks the base tree's own Alembic (host interpreter, base working
+    copy) rather than re-parsing revision graphs by hand: merges with
+    tuple down_revisions and multi-branch layouts resolve exactly as
+    the migrator sees them. The stale lane must run base-head physics.
     """
-    versions = worktree / "alembic" / "versions"
-    if not versions.is_dir():
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "alembic", "heads"],
+            cwd=str(worktree), capture_output=True, text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError):
         return None
-    revisions: dict[str, str | None] = {}
-    for path in versions.rglob("*.py"):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        rev = re.search(r"^revision\s*=\s*['\"]([^'\"]+)['\"]",
-                        text, re.MULTILINE)
-        if not rev:
-            continue
-        down = re.search(r"^down_revision\s*=\s*['\"]([^'\"]+)['\"]",
-                         text, re.MULTILINE)
-        revisions[rev.group(1)] = down.group(1) if down else None
-    if not revisions:
+    if proc.returncode != 0:
         return None
-    downs = {d for d in revisions.values() if d}
-    heads = sorted(set(revisions) - downs)
+    heads = []
+    for line in proc.stdout.splitlines():
+        match = re.match(r"^([0-9a-f]+)\b", line.strip())
+        if match:
+            heads.append(match.group(1))
     if len(heads) != 1:
         return None
     return heads[0]
