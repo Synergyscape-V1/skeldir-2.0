@@ -174,14 +174,26 @@ if _B26_P2_INGRESS_DATABASE_URL:
     _INGRESS_ASYNC_DATABASE_URL, _INGRESS_CONNECT_ARGS = (
         _build_async_database_url_and_args(_B26_P2_INGRESS_DATABASE_URL)
     )
+    # Mirror the application pool discipline exactly (including the
+    # test NullPool convention): pooled connections must never migrate
+    # across event loops, or post-commit finalizers reuse a connection
+    # bound to a closed loop.
+    _ingress_engine_kwargs: dict = {
+        "connect_args": _INGRESS_CONNECT_ARGS,
+        "pool_pre_ping": True,
+        "echo": False,
+    }
+    if _USE_NULL_POOL:
+        _ingress_engine_kwargs["poolclass"] = NullPool
+    else:
+        _ingress_engine_kwargs["pool_size"] = settings.DATABASE_POOL_SIZE
+        _ingress_engine_kwargs["max_overflow"] = settings.DATABASE_MAX_OVERFLOW
+        _ingress_engine_kwargs["pool_timeout"] = (
+            settings.DATABASE_POOL_TIMEOUT_SECONDS
+        )
     ingress_engine = create_async_engine(
         _INGRESS_ASYNC_DATABASE_URL,
-        connect_args=_INGRESS_CONNECT_ARGS,
-        pool_pre_ping=True,
-        echo=False,
-        pool_size=settings.DATABASE_POOL_SIZE,
-        max_overflow=settings.DATABASE_MAX_OVERFLOW,
-        pool_timeout=settings.DATABASE_POOL_TIMEOUT_SECONDS,
+        **_ingress_engine_kwargs,
     )
     IngressAsyncSessionLocal = async_sessionmaker(
         bind=ingress_engine,
