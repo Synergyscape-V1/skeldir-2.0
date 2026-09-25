@@ -127,20 +127,30 @@ async def _startup_secret_contract_guard() -> None:
 
 @app.on_event("startup")
 async def _startup_xii_topology_guard() -> None:
-    """B2.6-P2 Corrective XII: refuse to serve when required auth topology absent.
+    """B2.6-P2 Corrective XII: a P2 ingress boundary without its auth
+    topology refuses to serve.
 
-    One XII migration identity represents one authentication law. When the
-    database is at/above the XII head but the ingress principal or its
-    strict grants are missing, the application is unmistakably
-    unavailable instead of silently serving predecessor law.
+    One XII migration identity represents one authentication law. Mounting
+    ``B26_P2_INGRESS_DATABASE_URL`` declares this process a
+    provider-authentication boundary; at/above the XII head such a
+    process with a missing ingress principal or non-strict grants is
+    misconfigured and must fail closed instead of risking predecessor
+    service. Processes without the credential make no P2-serving claim:
+    they log the degraded topology loudly while non-P2 routes serve
+    (every P2 ingress path still fails closed per-request through the
+    database law and the authentication-boundary session gate).
     """
     import logging
+    import os
 
     from sqlalchemy import text
 
     from app.db.session import engine
 
     logger = logging.getLogger(__name__)
+    boundary_claimed = bool(
+        os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip()
+    )
     try:
         async with engine.begin() as conn:
             head = await conn.execute(text("SELECT version_num FROM alembic_version"))
@@ -152,9 +162,18 @@ async def _startup_xii_topology_guard() -> None:
             )
             present_row = present.fetchone()
             if present_row is None or int(present_row[0]) != 1:
+                if not boundary_claimed:
+                    logger.critical(
+                        "b26_p2_xii_ingress_topology_absent: XII head"
+                        " without the app_ingress principal; P2"
+                        " authenticated ingress is unavailable on this"
+                        " process (no ingress credential mounted)"
+                    )
+                    return
                 raise RuntimeError(
                     "b26_p2_xii_ingress_topology_absent: XII head requires"
-                    " the app_ingress principal"
+                    " the app_ingress principal for a process mounting"
+                    " the ingress credential"
                 )
             topo = await conn.execute(
                 text("SELECT public.b26_p2_xii_topology_check()")

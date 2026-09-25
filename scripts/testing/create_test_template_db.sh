@@ -19,6 +19,20 @@ CREATE DATABASE ${TEMPLATE_DB} OWNER ${TEMPLATE_OWNER};
 SQL
 
 template_url="${ADMIN_DATABASE_URL%/*}/${TEMPLATE_DB}"
+# B2.6-P2 Corrective XII: the template provisions the
+# authenticated-ingress principal before migrating (role only; schema
+# ownership and grants stay exactly as the template strategy sets
+# them), so lanes built from it carry the single-regime topology and
+# P2-ingress boundaries boot serviceable instead of authentication-dead.
+psql "${ADMIN_DATABASE_URL}" -v ON_ERROR_STOP=1 <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+    CREATE ROLE app_ingress LOGIN PASSWORD 'app_ingress';
+  END IF;
+END
+\$\$;
+SQL
 MIGRATION_DATABASE_URL="${template_url}" DATABASE_URL="${template_url}" alembic upgrade head
 
 psql "${ADMIN_DATABASE_URL}" -v ON_ERROR_STOP=1 <<SQL
