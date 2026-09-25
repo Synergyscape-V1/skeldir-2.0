@@ -1042,7 +1042,7 @@ def upgrade() -> None:
     # verdict history.
     # ------------------------------------------------------------------
     op.execute(
-        "ALTER TABLE public.b26_p2_execution_quarantine DROP CONSTRAINT IF EXISTS ck_b26_p2_quarantine_source"
+        "ALTER TABLE public.b26_p2_execution_quarantine DROP CONSTRAINT IF EXISTS ck_b26_p2_quarantine_source"  # CI:DESTRUCTIVE_OK - reversible CHECK replacement widening the quarantine source law to ingress-level dispositions; the replacement constraint is added immediately below in the same transaction.
     )
     op.execute(
         """
@@ -1476,13 +1476,13 @@ def downgrade() -> None:
         """
     )
     op.execute(
-        "ALTER TABLE public.b26_p2_provenance_evidence DROP COLUMN IF EXISTS evidence_witness_hash"
+        "ALTER TABLE public.b26_p2_provenance_evidence DROP COLUMN IF EXISTS evidence_witness_hash"  # CI:DESTRUCTIVE_OK - reversible rollback removing the XI-only witness binding column; evidence rows (kind/ref/timestamps) are preserved.
     )
     op.execute(
-        "DROP FUNCTION IF EXISTS public.b26_p2_record_ingress_auth_witness(uuid)"
+        "DROP FUNCTION IF EXISTS public.b26_p2_record_ingress_auth_witness(uuid)"  # CI:DESTRUCTIVE_OK - reversible rollback removing the XI-only witness recorder; no durable state depends on it.
     )
     op.execute(
-        "DROP TABLE IF EXISTS public.b26_p2_ingress_auth_witness"
+        "DROP TABLE IF EXISTS public.b26_p2_ingress_auth_witness"  # CI:DESTRUCTIVE_OK - reversible rollback removing the XI-only witness relation; witnesses are re-derivable capabilities, never primary history.
     )
     # Rollback removes XI dispositions before narrowing the source
     # law back to the predecessor vocabulary; otherwise the
@@ -1499,7 +1499,7 @@ def downgrade() -> None:
         " WHERE migration_identity = '202609240002'"
     )
     op.execute(
-        "ALTER TABLE public.b26_p2_execution_quarantine DROP CONSTRAINT IF EXISTS ck_b26_p2_quarantine_source"
+        "ALTER TABLE public.b26_p2_execution_quarantine DROP CONSTRAINT IF EXISTS ck_b26_p2_quarantine_source"  # CI:DESTRUCTIVE_OK - reversible rollback restoring the predecessor quarantine source law after XI dispositions are removed above.
     )
     op.execute(
         """
