@@ -13,11 +13,12 @@ a database the IMAGE migrated:
   4. authority-universe assertion    (meaning-closed denominator in-image)
   5. image-identity self-report      (image file SHAs vs candidate checkout;
                                      a stale image REDs here)
-  6. stale falsifier                 (optional --base-sha: build the base
-                                     tree image, prove the worker-verified
-                                     mint is ACCEPTED there while the
-                                     candidate refuses: the proof
-                                     distinguishes the artifacts)
+   6. stale falsifier                 (optional --base-sha: build the base
+                                      tree image, prove caller-assertion
+                                      attestation PROMOTES there while the
+                                      candidate refuses without a witness
+                                      (restoring only through ingress): the
+                                      proof distinguishes the artifacts)
 
 Usage (CI):
   python scripts/ci/prove_b26_p2_in_image.py \
@@ -30,6 +31,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import subprocess
 import sys
 import time
@@ -192,6 +195,38 @@ def _fail(details: dict, message: str) -> int:
     details["failure"] = message
     print(f"B26_P2_IN_IMAGE_FAIL {message}")
     return 1
+
+
+def _base_migration_head(worktree) -> str | None:
+    """Resolve the single migration head of the base worktree.
+
+    Reads revision/down_revision declarations from the base tree's
+    own migration files (no alembic invocation inside the base
+    image): the stale lane must run base-head physics.
+    """
+    versions = worktree / "alembic" / "versions"
+    if not versions.is_dir():
+        return None
+    revisions: dict[str, str | None] = {}
+    for path in versions.rglob("*.py"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        rev = re.search(r"^revision\s*=\s*['\"]([^'\"]+)['\"]",
+                        text, re.MULTILINE)
+        if not rev:
+            continue
+        down = re.search(r"^down_revision\s*=\s*['\"]([^'\"]+)['\"]",
+                         text, re.MULTILINE)
+        revisions[rev.group(1)] = down.group(1) if down else None
+    if not revisions:
+        return None
+    downs = {d for d in revisions.values() if d}
+    heads = sorted(set(revisions) - downs)
+    if len(heads) != 1:
+        return None
+    return heads[0]
 
 
 _AM8_BODY_FN = "b24_mark_fit_dispatch_running"
@@ -599,11 +634,28 @@ def main() -> int:
                     "B23_WORKER_DATABASE_URL":
                         f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{stale_db}",
                 }
-                cmd = ["run", "--rm", "--network", NETWORK, "-w", "/app"]
-                for k, v in stale_env.items():
-                    cmd += ["-e", f"{k}={v}"]
-                cmd += [base_tag, "alembic", "upgrade", "head"]
-                proc = _docker(*cmd)
+                # The stale lane migrates with the HOST candidate
+                # alembic (pinned dependencies), not the base image's
+                # alembic: base-tree images predate dependency pins and
+                # their in-image migrate is an environment lottery.
+                # Migrating the stale lane to the BASE head with
+                # candidate bytes is faithful (linear history: the base
+                # head is an ancestor of the candidate head); the probe
+                # itself still executes inside the base image.
+                base_head = _base_migration_head(worktree)
+                if base_head is None:
+                    return _fail(details, "stale_base_head_unresolvable")
+                proc = subprocess.run(
+                    [sys.executable, "-m", "alembic", "upgrade", base_head],
+                    cwd=str(REPO_ROOT), capture_output=True, text=True,
+                    env={**os.environ,
+                         "MIGRATION_DATABASE_URL":
+                             f"postgresql://migration_owner:migration_owner"
+                             f"@127.0.0.1:{PG_PORT}/{stale_db}",
+                         "DATABASE_URL":
+                             f"postgresql://migration_owner:migration_owner"
+                             f"@127.0.0.1:{PG_PORT}/{stale_db}"},
+                )
                 if proc.returncode != 0:
                     return _fail(details, "stale_migrate_failed:"
                                  + (proc.stdout + proc.stderr)[-800:])
