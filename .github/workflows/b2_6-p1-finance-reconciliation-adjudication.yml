@@ -366,7 +366,12 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install evidence dependencies
-        run: pip install "pyyaml>=6.0" alembic
+        # NOTE: the equivalence probes open real async DB sessions, so
+        # the async runtime (greenlet/asyncpg/psycopg2) must be installed
+        # explicitly -- relying on pip-cache luck breaks on cache misses.
+        # SQLAlchemy stays on the 2.0 series (2.1 flips the default
+        # postgresql driver to psycopg v3, absent here).
+        run: pip install "pyyaml>=6.0" alembic "sqlalchemy>=2.0.23,<2.1" greenlet asyncpg psycopg2-binary
 
       - name: Build and inspect pristine production image
         run: |
@@ -604,7 +609,12 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install evidence dependencies
-        run: pip install "pyyaml>=6.0" alembic
+        # NOTE: the equivalence probes open real async DB sessions, so
+        # the async runtime (greenlet/asyncpg/psycopg2) must be installed
+        # explicitly -- relying on pip-cache luck breaks on cache misses.
+        # SQLAlchemy stays on the 2.0 series (2.1 flips the default
+        # postgresql driver to psycopg v3, absent here).
+        run: pip install "pyyaml>=6.0" alembic "sqlalchemy>=2.0.23,<2.1" greenlet asyncpg psycopg2-binary
 
       - name: Attest independently produced C19 C20 C21 exact-SHA physics
         env:
