@@ -1041,9 +1041,34 @@ def main() -> int:
             return _fail("falsifier_worker_miswire_not_observed")
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent3 = f"pi_{uuid.uuid4().hex[:18]}"
-        status3, body3 = _post_stripe(
-            tenant["tenant_key"], tenant["stripe_secret"], intent3, 5000
-        )
+        # Same bounded stimulus retry as F-c (Corrective XVII): under
+        # CI load the acceptance POST has stalled client-side with the
+        # API alive (3/5 across heads, identical runtime bytes). One
+        # idempotent retry on the same intent distinguishes a
+        # transient stall (second attempt 200) from a systematic hang
+        # (deterministic failure); liveness is probed first so a dead
+        # API fails fast with context. The assertion below is
+        # unchanged.
+        try:
+            status3, body3 = _post_stripe(
+                tenant["tenant_key"], tenant["stripe_secret"], intent3, 5000
+            )
+        except RuntimeError as exc:
+            if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
+                raise
+            try:
+                _wait_http_ok(
+                    f"http://127.0.0.1:{args.api_port}/health/live", 15
+                )
+                details["falsifier_miswire_api_live_at_retry"] = True
+            except Exception as live_exc:
+                return _fail(
+                    f"falsifier_miswire_api_not_live:{type(live_exc).__name__}"
+                )
+            details["falsifier_miswire_post_retried"] = str(exc)[:160]
+            status3, body3 = _post_stripe(
+                tenant["tenant_key"], tenant["stripe_secret"], intent3, 5000
+            )
         if status3 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status3}")
         disp3 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body3)["event_id"]))
