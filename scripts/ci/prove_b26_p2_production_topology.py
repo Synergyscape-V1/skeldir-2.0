@@ -1158,9 +1158,11 @@ def main() -> int:
         # One bounded retry: under a fenced-broker fault storm the
         # acceptance POST races kombu pool recovery on loaded runners
         # (observed client-side timeouts with the API alive and the
-        # durable intent persisted). The assertion below is unchanged:
-        # HTTP 200 plus wrong-queue RED, so a systematic hang still
-        # fails deterministically on the second attempt.
+        # durable intent persisted). Liveness is probed first so a
+        # dead API fails fast with context instead of burning the
+        # retry budget; the idempotent retry then distinguishes a
+        # transient stall (second attempt 200) from a systematic hang
+        # (deterministic failure). The assertion below is unchanged.
         try:
             status5, body5 = _post_stripe(
                 tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
@@ -1168,6 +1170,15 @@ def main() -> int:
         except RuntimeError as exc:
             if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
                 raise
+            try:
+                _wait_http_ok(
+                    f"http://127.0.0.1:{args.api_port}/health/live", 15
+                )
+                details["falsifier_outage_api_live_at_retry"] = True
+            except Exception as live_exc:
+                return _fail(
+                    f"falsifier_outage_api_not_live:{type(live_exc).__name__}"
+                )
             details["falsifier_outage_post_retried"] = str(exc)[:160]
             status5, body5 = _post_stripe(
                 tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
