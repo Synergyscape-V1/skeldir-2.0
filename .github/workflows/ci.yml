@@ -3931,6 +3931,11 @@ jobs:
           psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
+          # B2.6-P2 Corrective XII: the dedicated ingress principal must
+          # exist before any lane serves verified arrivals; gates
+          # provision its governed grants via
+          # b26_p2_xii_provision_ingress_topology() and mount the DSN.
+          psql -h localhost -U postgres -c "CREATE USER app_ingress WITH PASSWORD 'app_ingress';"
 
       - name: H0-IMP diagnostic (environment dump)
         run: |
@@ -4070,6 +4075,9 @@ jobs:
           psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
+          # B2.6-P2 Corrective XII: the dedicated ingress principal must
+          # exist before any lane serves verified arrivals (see above).
+          psql -h localhost -U postgres -c "CREATE USER app_ingress WITH PASSWORD 'app_ingress';"
       - name: Run phase chain to B0.4
         run: |
           python scripts/phase_gates/run_chain.py B0.4

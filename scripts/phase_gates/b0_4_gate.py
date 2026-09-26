@@ -27,6 +27,57 @@ def run(cmd: list[str], log_name: str, env: dict | None = None) -> None:
         raise GateFailure(f"Command {' '.join(cmd)} failed (see {log_path})")
 
 
+def _derive_ingress_dsn(runtime_dsn: str) -> str:
+    import re  # noqa: PLC0415
+
+    dsn, n = re.subn(
+        r"://[^@/]+@", "://app_ingress:app_ingress@", runtime_dsn, count=1
+    )
+    if n == 0:
+        scheme, sep, rest = runtime_dsn.partition("://")
+        if sep and rest:
+            dsn = f"{scheme}://app_ingress:app_ingress@{rest}"
+    return dsn
+
+
+def _provision_xii_ingress_topology(env: dict) -> None:
+    """Provision the XII ingress principal for this lane.
+
+    B2.6-P2 Corrective XII: verified arrivals finalize through the
+    dedicated ingress pool and fail closed when it is unmounted, so a
+    lane that serves provider webhooks (R3 hammers the Stripe endpoint
+    with valid signatures) must provision the principal. Grants come
+    from the canonical ``b26_p2_xii_provision_ingress_topology()``
+    (contract B -- no duplicated grant law); the ``app_ingress`` role
+    itself is deployment mechanics, created by the CI lane preparation
+    (or the local operator). Runs over the migration DSN -- the same
+    grantor context that applied the upgrade -- falling back to
+    DATABASE_URL for single-principal local lanes.
+    """
+    try:
+        import psycopg2  # noqa: PLC0415
+    except ImportError as exc:
+        raise GateFailure(
+            "psycopg2 is required to provision the XII ingress topology"
+        ) from exc
+    provision_dsn = env.get("MIGRATION_DATABASE_URL") or env["DATABASE_URL"]
+    try:
+        conn = psycopg2.connect(provision_dsn)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT b26_p2_xii_provision_ingress_topology()")
+            row = cur.fetchone()
+        conn.close()
+    except Exception as exc:
+        raise GateFailure(
+            "b26_p2_xii_provision_ingress_topology() failed: "
+            f"{exc} (provision over a migration_owner/postgres DSN)"
+        ) from exc
+    if not row or row[0] != "xii_topology_provisioned":
+        raise GateFailure(f"unexpected provision result: {row!r}")
+    env["B26_P2_INGRESS_DATABASE_URL"] = _derive_ingress_dsn(env["DATABASE_URL"])
+
+
 def wait_for_http_ready(base_url: str, timeout_s: int = 60) -> None:
     import urllib.request
 
@@ -52,6 +103,7 @@ def main() -> int:
     try:
         run(["alembic", "upgrade", "202511131121"], "b0_4_alembic_core.log", env=env)
         run(["alembic", "upgrade", "skeldir_foundation@head"], "b0_4_alembic_foundation.log", env=env)
+        _provision_xii_ingress_topology(env)
         run(
             ["python", "-m", "pytest", "backend/tests/test_b04_ingestion_soundness.py", "-q"],
             "b0_4_ingestion_soundness.log",
