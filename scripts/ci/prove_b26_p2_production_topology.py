@@ -613,7 +613,7 @@ def _sign_stripe(body: bytes, secret: str) -> str:
     return f"t={ts},v1={sig}"
 
 
-def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: int) -> tuple[int, str]:
+def _post_stripe_once(tenant_key: str, stripe_secret: str, intent_id: str, amount: int) -> tuple[int, str]:
     body = json.dumps(
         {
             "id": intent_id,
@@ -640,6 +640,43 @@ def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: in
         return exc.code, exc.read().decode()
     except Exception as exc:  # noqa: BLE001 - connection/timeout: fail with context
         raise RuntimeError(f"webhook_post_failed:{type(exc).__name__}:{exc}"[:300])
+
+
+def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: int) -> tuple[int, str]:
+    """POST a provider webhook with one bounded stimulus retry.
+
+    Centralizes the Corrective XVII pattern previously inlined at
+    individual outage posts: under CI load the acceptance POST has
+    stalled client-side with the API alive at every stimulus site
+    (normal journey, recovery outage, F-a, F-b, F-c, F-v across
+    heads, on identical runtime bytes). One idempotent retry on the
+    same intent (the server dedupes by idempotency key) after a
+    liveness probe distinguishes a transient stall (second attempt
+    200) from a systematic hang (deterministic failure: dead API
+    fails fast with context, live-but-hung API fails the retry).
+    Non-timeout transport errors propagate immediately; HTTP error
+    statuses are returned, never retried. Every stage assertion is
+    unchanged.
+    """
+    try:
+        return _post_stripe_once(tenant_key, stripe_secret, intent_id, amount)
+    except RuntimeError as exc:
+        if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
+            raise
+        try:
+            _wait_http_ok(
+                f"http://127.0.0.1:{_TOPO.api_port}/health/live", 15
+            )
+        except Exception as live_exc:  # noqa: BLE001 - context carrier
+            raise RuntimeError(
+                f"stimulus_api_not_live:{type(live_exc).__name__}"
+            ) from live_exc
+        print(
+            f"B26_P2_TOPOLOGY_POST_RETRIED intent={intent_id} "
+            f"first={str(exc)[:120]}",
+            flush=True,
+        )
+        return _post_stripe_once(tenant_key, stripe_secret, intent_id, amount)
 
 
 def _broker_outage(block: bool) -> None:
@@ -991,32 +1028,10 @@ def main() -> int:
         print("B26_P2_TOPOLOGY_STAGE recovery_journey", flush=True)
         _broker_outage(True)
         intent2 = f"pi_{uuid.uuid4().hex[:18]}"
-        # Bounded stimulus retry (Corrective XVII pattern, as in F-a /
-        # F-c): this post runs inside the fenced-broker outage window,
-        # where the acceptance POST has stalled client-side with the
-        # API alive. One idempotent retry on the same intent
-        # distinguishes a transient stall (second attempt 200) from a
-        # systematic hang (deterministic failure). Assertion unchanged.
-        try:
-            status2, body2 = _post_stripe(
-                tenant["tenant_key"], tenant["stripe_secret"], intent2, 12000
-            )
-        except RuntimeError as exc:
-            if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
-                raise
-            try:
-                _wait_http_ok(
-                    f"http://127.0.0.1:{args.api_port}/health/live", 15
-                )
-                details["recovery_outage_api_live_at_retry"] = True
-            except Exception as live_exc:
-                return _fail(
-                    f"recovery_outage_api_not_live:{type(live_exc).__name__}"
-                )
-            details["recovery_outage_post_retried"] = str(exc)[:160]
-            status2, body2 = _post_stripe(
-                tenant["tenant_key"], tenant["stripe_secret"], intent2, 12000
-            )
+        # Stimulus retry lives in _post_stripe (central XVII armor).
+        status2, body2 = _post_stripe(
+            tenant["tenant_key"], tenant["stripe_secret"], intent2, 12000
+        )
         if status2 != 200:
             return _fail(f"outage_webhook_not_accepted:{status2}")
         event_id2 = str(json.loads(body2)["event_id"])
@@ -1064,34 +1079,10 @@ def main() -> int:
             return _fail("falsifier_worker_miswire_not_observed")
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent3 = f"pi_{uuid.uuid4().hex[:18]}"
-        # Same bounded stimulus retry as F-c (Corrective XVII): under
-        # CI load the acceptance POST has stalled client-side with the
-        # API alive (3/5 across heads, identical runtime bytes). One
-        # idempotent retry on the same intent distinguishes a
-        # transient stall (second attempt 200) from a systematic hang
-        # (deterministic failure); liveness is probed first so a dead
-        # API fails fast with context. The assertion below is
-        # unchanged.
-        try:
-            status3, body3 = _post_stripe(
-                tenant["tenant_key"], tenant["stripe_secret"], intent3, 5000
-            )
-        except RuntimeError as exc:
-            if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
-                raise
-            try:
-                _wait_http_ok(
-                    f"http://127.0.0.1:{args.api_port}/health/live", 15
-                )
-                details["falsifier_miswire_api_live_at_retry"] = True
-            except Exception as live_exc:
-                return _fail(
-                    f"falsifier_miswire_api_not_live:{type(live_exc).__name__}"
-                )
-            details["falsifier_miswire_post_retried"] = str(exc)[:160]
-            status3, body3 = _post_stripe(
-                tenant["tenant_key"], tenant["stripe_secret"], intent3, 5000
-            )
+        # Stimulus retry lives in _post_stripe (central XVII armor).
+        status3, body3 = _post_stripe(
+            tenant["tenant_key"], tenant["stripe_secret"], intent3, 5000
+        )
         if status3 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status3}")
         disp3 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body3)["event_id"]))
@@ -1156,33 +1147,10 @@ def main() -> int:
         _broker_outage(True)
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent4 = f"pi_{uuid.uuid4().hex[:18]}"
-        # Bounded stimulus retry (Corrective XVII pattern, as in F-a /
-        # F-c and the recovery journey): this post runs inside the
-        # fenced-broker outage window, where the acceptance POST
-        # stalled client-side on this head with the API alive
-        # (observed). One idempotent retry on the same intent
-        # distinguishes a transient stall (second attempt 200) from a
-        # systematic hang (deterministic failure). Assertion unchanged.
-        try:
-            status4, body4 = _post_stripe(
-                tenant["tenant_key"], tenant["stripe_secret"], intent4, 6000
-            )
-        except RuntimeError as exc:
-            if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
-                raise
-            try:
-                _wait_http_ok(
-                    f"http://127.0.0.1:{args.api_port}/health/live", 15
-                )
-                details["falsifier_scheduler_api_live_at_retry"] = True
-            except Exception as live_exc:
-                return _fail(
-                    f"falsifier_scheduler_api_not_live:{type(live_exc).__name__}"
-                )
-            details["falsifier_scheduler_post_retried"] = str(exc)[:160]
-            status4, body4 = _post_stripe(
-                tenant["tenant_key"], tenant["stripe_secret"], intent4, 6000
-            )
+        # Stimulus retry lives in _post_stripe (central XVII armor).
+        status4, body4 = _post_stripe(
+            tenant["tenant_key"], tenant["stripe_secret"], intent4, 6000
+        )
         if status4 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status4}")
         disp4 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body4)["event_id"]))
@@ -1227,34 +1195,12 @@ def main() -> int:
         _broker_outage(True)
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent5 = f"pi_{uuid.uuid4().hex[:18]}"
-        # One bounded retry: under a fenced-broker fault storm the
-        # acceptance POST races kombu pool recovery on loaded runners
-        # (observed client-side timeouts with the API alive and the
-        # durable intent persisted). Liveness is probed first so a
-        # dead API fails fast with context instead of burning the
-        # retry budget; the idempotent retry then distinguishes a
-        # transient stall (second attempt 200) from a systematic hang
-        # (deterministic failure). The assertion below is unchanged.
-        try:
-            status5, body5 = _post_stripe(
-                tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
-            )
-        except RuntimeError as exc:
-            if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
-                raise
-            try:
-                _wait_http_ok(
-                    f"http://127.0.0.1:{args.api_port}/health/live", 15
-                )
-                details["falsifier_outage_api_live_at_retry"] = True
-            except Exception as live_exc:
-                return _fail(
-                    f"falsifier_outage_api_not_live:{type(live_exc).__name__}"
-                )
-            details["falsifier_outage_post_retried"] = str(exc)[:160]
-            status5, body5 = _post_stripe(
-                tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
-            )
+        # Stimulus retry lives in _post_stripe (central XVII armor;
+        # this site was its first application). The assertion below
+        # is unchanged.
+        status5, body5 = _post_stripe(
+            tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
+        )
         if status5 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status5}")
         disp5 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body5)["event_id"]))
