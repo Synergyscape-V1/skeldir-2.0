@@ -146,6 +146,15 @@ ALLOWED_DOCKER_PATHS = {
     # of the check. Removing it would make the gate blind to a compose
     # edit handing the ingress credential to a generic worker.
     Path("scripts/ci/validate_b26_p2_xi_ingress_isolation.py"),
+    # B2.6-P2 Corrective XII's process-isolation validator performs the
+    # same compose census (no non-API service may mount the ingress
+    # DSN; blanking assignments carry no credential and are skipped).
+    # Same reason as the XI entry: it reads the manifests to check
+    # them, runs no container and adds no substrate -- the filenames
+    # are the subject of the check, and removing them would make the
+    # gate blind to a compose edit smuggling the ingress credential
+    # into a worker/beat/scheduler service.
+    Path("scripts/ci/validate_b26_p2_xii_process_isolation.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),
     Path("scripts/smoke/m1_runtime_smoke.py"),
 }
