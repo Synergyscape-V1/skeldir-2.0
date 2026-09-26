@@ -1,6 +1,6 @@
 {
   "contract_id": "main.branch_protection.integrity",
-  "contract_version": "1.4.0",
+  "contract_version": "1.5.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "require_live_on_main": true,
@@ -10,11 +10,11 @@
     "required_for_p7_closure": true
   },
   "review_policy": {
-    "required_approving_review_count_min": 1,
-    "require_code_owner_reviews": true
+    "required_approving_review_count_min": 0,
+    "require_code_owner_reviews": false
   },
-  "approval_authority_mode": "temporary_operator_approval_until_verifier_independence",
-  "approval_authority_note": "B2.6-P2 Corrective XII temporary compensating governance: governed P2 truth surfaces require enforced human/operator approval (CODEOWNERS routing + branch-protection review rule). Revert to self-adjudicated posture only when the deferred external-verifier-independence activation trigger fires (see contracts/reconciliation/b2.6/pre-external-trust-production-closure-register.v1.yaml).",
+  "approval_authority_mode": "operator_decision_ci_adjudicated_no_approval_required",
+  "approval_authority_note": "2026-09-26 operator decision: approval removed as a merge condition. Merges require every required automated check green through the protected merge queue with admin enforcement and zero bypass allowances. This supersedes the temporary compensating human/operator-approval governance (contract v1.4.0).",
   "enforce_admins_required": true,
   "forbid_bypass_pull_request_allowances": true
 }
