@@ -75,7 +75,21 @@ def _provision_xii_ingress_topology(env: dict) -> None:
         ) from exc
     if not row or row[0] != "xii_topology_provisioned":
         raise GateFailure(f"unexpected provision result: {row!r}")
-    env["B26_P2_INGRESS_DATABASE_URL"] = _derive_ingress_dsn(env["DATABASE_URL"])
+    # B2.6-P2 Corrective XIII: the ingress credential is file-mounted
+    # for the auth trust root only (role-gated). Write the derived DSN
+    # to a temp file, export its path, blank the legacy env string, and
+    # mark this lane process as the trust root so the pool constructs.
+    import tempfile  # noqa: PLC0415
+
+    ingress_dsn = _derive_ingress_dsn(env["DATABASE_URL"])
+    if "+asyncpg" not in ingress_dsn and ingress_dsn.startswith("postgresql://"):
+        ingress_dsn = ingress_dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
+    fd, dsn_path = tempfile.mkstemp(prefix="b26_p2_ingress_dsn_b04_")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(ingress_dsn.strip())
+    env["B26_P2_INGRESS_DATABASE_URL_FILE"] = dsn_path
+    env["B26_P2_INGRESS_DATABASE_URL"] = ""
+    env["SKELDIR_PROCESS_ROLE"] = "auth_ingress"
 
 
 def wait_for_http_ready(base_url: str, timeout_s: int = 60) -> None:

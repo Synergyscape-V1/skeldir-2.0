@@ -447,9 +447,15 @@ class _Topology:
             *self._base_env(dsn),
             "-e",
             f"B26_P2_STALENESS_SECONDS={self.args.staleness_seconds}",
-            # Corrective XI: the API is the provider-authentication
-            # boundary, so it alone mounts the dedicated ingress
-            # credential (verified-ingress authorship + witness).
+            # Corrective XIII: this proof container exercises the
+            # authentication trust-root path (verification + atomic
+            # persistence) in one process for test simplicity, so it
+            # carries the auth role with the ingress credential.
+            # Production splits them (API role blanked, dedicated
+            # auth_ingress service holds the file); the database law
+            # under test is identical.
+            "-e",
+            "SKELDIR_PROCESS_ROLE=auth_ingress",
             "-e",
             f"B26_P2_INGRESS_DATABASE_URL=postgresql+asyncpg://app_ingress:app_ingress@pg:5432/{DB_NAME}",
             self.image,

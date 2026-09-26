@@ -546,10 +546,28 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
-GRANT SELECT, INSERT ON TABLE public.b26_p2_provider_auth_consequence TO app_user;
+-- B2.6-P2 Corrective XIII: direct writes denied to every runtime
+-- principal (writes occur only through the SECURITY DEFINER recorder
+-- gated on session_user=app_ingress). Read-only observability only.
+GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_user;
 GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
 REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_user;
+-- XIII: only the dedicated authentication trust root may record P.
+GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
+    END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM app_user;
+    END IF;
+END $$;
 REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
 REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM PUBLIC;
@@ -573,3 +591,21 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.b26_p2_xii_provision_ingress_topology() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.b26_p2_xii_invariant_oracle() FROM PUBLIC;
+-- B2.6-P2 Corrective XIII topology law (strict, auth-root-only P).
+REVOKE ALL ON FUNCTION public.b26_p2_xiii_topology_check() FROM PUBLIC;
+DO $$
+DECLARE _r text;
+BEGIN
+    FOREACH _r IN ARRAY ARRAY[
+        'app_user', 'app_worker', 'app_relay', 'app_beat', 'app_ingress'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = _r) THEN
+            EXECUTE format(
+                'GRANT EXECUTE ON FUNCTION public.b26_p2_xiii_topology_check() TO %I',
+                _r
+            );
+        END IF;
+    END LOOP;
+END $$;
+REVOKE ALL ON FUNCTION public.b26_p2_xiii_provision_ingress_topology() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_xiii_invariant_oracle() FROM PUBLIC;

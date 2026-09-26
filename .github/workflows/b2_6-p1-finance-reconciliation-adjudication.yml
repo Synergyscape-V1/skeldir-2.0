@@ -213,6 +213,51 @@ jobs:
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-out artifacts/b26_p2/static/xii-negative-controls.json
 
+      # B2.6-P2 Corrective XIII: root-of-trust and closed-semantics
+      # closure. Runs after the XII battery (conserved) on the same
+      # migrated lane. The auth trust root holds the file-mounted
+      # credential with SKELDIR_PROCESS_ROLE=auth_ingress; every other
+      # lane role refuses it (see capability validator live probes).
+      - name: Prove B2.6-P2 Corrective-XIII authentication root closure (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+          SKELDIR_PROCESS_ROLE: auth_ingress
+        run: |
+          python scripts/ci/validate_b26_p2_xiii_auth_root.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiii-auth-root.json
+
+      - name: Prove B2.6-P2 Corrective-XIII capability custody (live probes)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xiii_capability_custody.py \
+            --evidence-out artifacts/b26_p2/static/xiii-capability.json
+
+      - name: Prove B2.6-P2 Corrective-XIII closed semantic contract (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xiii_semantic_contract.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiii-semantic.json
+
+      - name: Prove B2.6-P2 Corrective-XIII temporal completeness (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xiii_temporal_completeness.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiii-temporal.json
+
+      - name: Prove B2.6-P2 Corrective-XIII checks are non-vacuous (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/test_b26_p2_xiii_negative_controls.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiii-negative-controls.json
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence

@@ -79,9 +79,15 @@ def _topology_checks(violations: list[str], checks: dict) -> None:
         if not checks["procfile_%s_blanked" % name]:
             violations.append("xii_proc_worker_not_blanked:%s" % name)
     # Backend holders: only the ingestion boundary + pool factory.
+    # B2.6-P2 Corrective XIII: the dedicated authentication trust root
+    # references the FILE-mounted credential (whose name contains the
+    # legacy token as a substring); it never reads the legacy env
+    # string. Allowlisted here so the substring match does not flag the
+    # trust root that the XIII capability validator governs separately.
     allowed_holders = {
         "backend/app/ingestion/event_service.py",
         "backend/app/db/session.py",
+        "backend/app/auth_service/server.py",
     }
     offenders = []
     for path in sorted((REPO_ROOT / "backend" / "app").rglob("*.py")):

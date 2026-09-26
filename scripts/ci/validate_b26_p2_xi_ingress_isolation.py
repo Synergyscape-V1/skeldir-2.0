@@ -48,13 +48,26 @@ def _line_mounts_ingress(line: str) -> bool:
     variable (``VAR=`` with an empty value / ``VAR: ""``). Blanking is
     the physical expression of non-possession; only an assignment
     carrying a value on the ingress token itself mounts it.
+
+    B2.6-P2 Corrective XIII: the file-mounted credential
+    (B26_P2_INGRESS_DATABASE_URL_FILE) is a distinct variable governed
+    by the XIII capability validator. Strip it before legacy-env
+    analysis so a blanked or auth-only FILE reference never counts as
+    a legacy env mount.
     """
-    if INGRESS_DSN_TOKEN not in line:
+    scrubbed = re.sub(
+        r"B26_P2_INGRESS_DATABASE_URL_FILE\s*[:=]\s*[^ \t\n#\"']*"
+        r"|B26_P2_INGRESS_DATABASE_URL_FILE\s*:\s*\"[^\"]*\""
+        r"|B26_P2_INGRESS_DATABASE_URL_FILE\s*:\s*'[^']*'",
+        "",
+        line,
+    )
+    if INGRESS_DSN_TOKEN not in scrubbed:
         return False
-    match = re.search(INGRESS_DSN_TOKEN + r"\s*([:=])", line)
+    match = re.search(INGRESS_DSN_TOKEN + r"\s*([:=])", scrubbed)
     if match is None:
         return True
-    rest = line[match.end():]
+    rest = scrubbed[match.end():]
     if match.group(1) == "=":
         # Shell semantics: `VAR=value` mounts; `VAR=` / `VAR= cmd`
         # leaves the variable empty (explicit blanking).
@@ -124,9 +137,14 @@ def _topology_checks(violations: list[str], checks: dict) -> None:
     # credential) may reference the DSN. Test suites are not shipped
     # processes (they never receive production credentials); the
     # census covers shipped code.
+    # B2.6-P2 Corrective XIII: the dedicated authentication trust root
+    # references the FILE-mounted credential (substring match); it never
+    # reads the legacy env string. Allowlisted; governed by the XIII
+    # capability validator.
     allowed_holders = {
         "backend/app/ingestion/event_service.py",
         "backend/app/db/session.py",
+        "backend/app/auth_service/server.py",
     }
     offenders = []
     for path in sorted((REPO_ROOT / "backend" / "app").rglob("*.py")):

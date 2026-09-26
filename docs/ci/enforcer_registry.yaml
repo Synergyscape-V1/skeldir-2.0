@@ -5911,3 +5911,132 @@
     the XII coverage gate.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-xiii-auth-root
+  path: scripts/ci/validate_b26_p2_xiii_auth_root.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Only the dedicated authentication trust root can author
+    provider-authenticated truth: app_user holds zero recorder EXECUTE and zero
+    consequence INSERT/UPDATE; consequence rows are immutable and provider-bound;
+    INSERT-time provenance never lands authenticated_known; dispatch requires the
+    terminal state plus witness.'
+  command: python scripts/ci/validate_b26_p2_xiii_auth_root.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiii-auth-root.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiii_auth_root.py --help
+  expected_failure_meaning: Generic application authority can manufacture
+    provider-authenticated money truth, or a partial state conducts.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiii_auth_root.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiii-capability-custody
+  path: scripts/ci/validate_b26_p2_xiii_capability_custody.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Only the dedicated authentication trust root possesses the
+    authenticated-ingress persistence credential (role plus file); the general
+    API and all workers hold neither the env string nor the file reference, the
+    pool constructs only there, and sanitization deletes without retention.'
+  command: python scripts/ci/validate_b26_p2_xiii_capability_custody.py --evidence-out artifacts/b26_p2/static/xiii-capability.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiii_capability_custody.py --help
+  expected_failure_meaning: A non-auth process holds or inherits the ingress
+    credential, or a minted ContextVar yields a session.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiii_capability_custody.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiii-semantic-contract
+  path: scripts/ci/validate_b26_p2_xiii_semantic_contract.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Canonical P2 semantics belong to the closed governed
+    contract: dynamic SQL, fragmented string SQL, custom operators, regclass or
+    config-driven relation identity, unaliased reads, unregistered helpers, and
+    undeclared aggregates or set-level reads RED structurally.'
+  command: python scripts/ci/validate_b26_p2_xiii_semantic_contract.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiii-semantic.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiii_semantic_contract.py --help
+  expected_failure_meaning: An executable semantic form outside the closed
+    language changes P2 meaning with green proofs.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiii_semantic_contract.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiii-temporal-completeness
+  path: scripts/ci/validate_b26_p2_xiii_temporal_completeness.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every closed-contract semantic dependency carries exactly
+    one temporal disposition (SEM minus TEMP is EMPTY, including set-level
+    events), and every mutable disposition has an executed behavioral treatment.'
+  command: python scripts/ci/validate_b26_p2_xiii_temporal_completeness.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiii-temporal.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiii_temporal_completeness.py --help
+  expected_failure_meaning: A semantic dependency lacks temporal treatment, or a
+    treatment lacks behavioral proof.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiii_temporal_completeness.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiii-nonvacuous
+  path: scripts/ci/test_b26_p2_xiii_negative_controls.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every XIII check is non-vacuous: fragmented dynamic SQL,
+    operator and set-level plants, app_user authorship, capability injection,
+    and missing temporal disposition each RED with exact restore to GREEN.'
+  command: python scripts/ci/test_b26_p2_xiii_negative_controls.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiii-negative-controls.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/test_b26_p2_xiii_negative_controls.py --help
+  expected_failure_meaning: A load-bearing XIII check can never fail, so it
+    proves nothing.
+  first_diagnostic_command: python scripts/ci/test_b26_p2_xiii_negative_controls.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce

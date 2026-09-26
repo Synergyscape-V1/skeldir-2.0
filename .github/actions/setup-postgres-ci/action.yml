@@ -91,6 +91,11 @@ runs:
 
     # B2.5-P13 XVI-B: issuance/signer/B2.8 DSNs export automatically so no
     # job silently folds consequence authority into the ordinary principal.
+    # B2.6-P2 Corrective XIII: the authenticated-ingress credential is
+    # written to a FILE whose path is exported (not the DSN string
+    # itself). Only processes with SKELDIR_PROCESS_ROLE=auth_ingress
+    # construct the pool from that file; every other role refuses it
+    # even with the path present (role gate + startup isolation).
     - name: Export Trust issuance custody DSN
       shell: bash
       run: |
@@ -98,7 +103,9 @@ runs:
         echo "TRUST_SIGNER_DATABASE_URL=postgresql://app_trust_signer:app_trust_signer@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
         echo "B28_REQUEST_DATABASE_URL=postgresql://app_b28_requester:app_b28_requester@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
         echo "B28_SOLVER_DATABASE_URL=postgresql://app_b28_solver:app_b28_solver@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
-        echo "B26_P2_INGRESS_DATABASE_URL=postgresql://app_ingress:app_ingress@127.0.0.1:5432/${{ inputs.database-name }}" >> "$GITHUB_ENV"
+        printf '%s' "postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/${{ inputs.database-name }}" > "${RUNNER_TEMP:-/tmp}/b26_p2_ingress_dsn_${{ inputs.database-name }}"
+        echo "B26_P2_INGRESS_DATABASE_URL_FILE=${RUNNER_TEMP:-/tmp}/b26_p2_ingress_dsn_${{ inputs.database-name }}" >> "$GITHUB_ENV"
+        echo "B26_P2_INGRESS_DATABASE_URL=" >> "$GITHUB_ENV"
 
     - name: Run Alembic migrations
       shell: bash

@@ -1,0 +1,111 @@
+{
+  "contract_id": "b26.p2.xiii.semantic_contract",
+  "contract_version": "1.0.0",
+  "description": "Closed governed P2 semantic language (Corrective XIII Blocker D). Canonical P2 meaning originates from this contract; executable semantics outside it are structurally refused. The contract defines the universe; the parser only proves implementation in allowed universe.",
+  "allowed_source_relations": [
+    "b23_match_verdicts",
+    "webhook_ingress_identities",
+    "b26_p2_scope_policy_authority"
+  ],
+  "allowed_source_columns": {
+    "b23_match_verdicts": [
+      "canonical_commerce_reference",
+      "status",
+      "tenant_id",
+      "webhook_ingress_identity_id"
+    ],
+    "webhook_ingress_identities": [
+      "event_timestamp",
+      "id",
+      "provider",
+      "tenant_id",
+      "verified_amount_currency",
+      "verified_amount_minor",
+      "verified_commerce_ingress_state"
+    ],
+    "b26_p2_scope_policy_authority": [
+      "scope_policy_version",
+      "semantic_sha256"
+    ]
+  },
+  "non_semantic_relations": [
+    "b26_p2_execution_quarantine",
+    "tenants"
+  ],
+  "row_set_semantics": "one P2 identity per (tenant, canonical window, canonical commerce reference); set membership changes are semantic events",
+  "allowed_normalization_operations": [
+    "ascii_strip",
+    "strip_provider_token",
+    "strip_currency_token",
+    "normalize_provider",
+    "normalize_currency",
+    "lower",
+    "upper",
+    "canonical_day_start",
+    "canonical_day_end"
+  ],
+  "allowed_aggregate_operations": [],
+  "forbidden_constructs": [
+    "dynamic_sql_EXECUTE",
+    "dynamic_relation_resolution",
+    "custom_operator_mediated_read",
+    "unregistered_helper_function",
+    "unregistered_view",
+    "configuration_driven_relation_identity",
+    "undeclared_aggregate_set_read",
+    "undeclared_table_existence_count",
+    "to_regclass_indirection",
+    "fragmented_string_sql",
+    "bare_column_unaliased_read",
+    "operator_indirection"
+  ],
+  "allowed_closure_functions": [
+    "b26_p2_ascii_strip",
+    "b26_p2_canonical_scope_identity_for_window",
+    "b26_p2_classify_candidate",
+    "b26_p2_normalize_currency",
+    "b26_p2_normalize_provider",
+    "b26_p2_strip_currency_token",
+    "b26_p2_strip_provider_token"
+  ],
+  "provider_rail_currency_window_rules": "provider in {paypal,shopify,stripe,woocommerce} via normalize_provider; currency via normalize_currency (USD strict + ^[A-Z]{3}$); window via canonical_day_start/end on event_timestamp (UTC half-open)",
+  "scope_identity_inputs": [
+    "b23_match_verdicts.canonical_commerce_reference",
+    "b23_match_verdicts.status",
+    "b23_match_verdicts.tenant_id",
+    "b23_match_verdicts.webhook_ingress_identity_id",
+    "webhook_ingress_identities.event_timestamp",
+    "webhook_ingress_identities.id",
+    "webhook_ingress_identities.provider",
+    "webhook_ingress_identities.tenant_id",
+    "webhook_ingress_identities.verified_amount_currency",
+    "webhook_ingress_identities.verified_amount_minor",
+    "webhook_ingress_identities.verified_commerce_ingress_state",
+    "b26_p2_scope_policy_authority.scope_policy_version",
+    "b26_p2_scope_policy_authority.semantic_sha256"
+  ],
+  "policy_semantic_inputs": [
+    "b26_p2_scope_policy_authority.scope_policy_version",
+    "b26_p2_scope_policy_authority.semantic_sha256"
+  ],
+  "temporal_dispositions": {
+    "b23_match_verdicts.canonical_commerce_reference": "UPDATE_REFUSED",
+    "b23_match_verdicts.status": "UPDATE_REFUSED",
+    "b23_match_verdicts.tenant_id": "IMMUTABLE",
+    "b23_match_verdicts.webhook_ingress_identity_id": "IMMUTABLE",
+    "b23_match_verdicts.INSERT_qualifying_row": "SUPERSEDED_AND_REEVALUATED",
+    "b23_match_verdicts.DELETE_qualifying_row": "SUPERSEDED_AND_REEVALUATED",
+    "b23_match_verdicts.COUNT_qualifying_set": "SUPERSEDED_AND_REEVALUATED",
+    "webhook_ingress_identities.event_timestamp": "UPDATE_REFUSED",
+    "webhook_ingress_identities.id": "IMMUTABLE",
+    "webhook_ingress_identities.provider": "UPDATE_REFUSED",
+    "webhook_ingress_identities.tenant_id": "IMMUTABLE",
+    "webhook_ingress_identities.verified_amount_currency": "UPDATE_REFUSED",
+    "webhook_ingress_identities.verified_amount_minor": "UPDATE_REFUSED",
+    "webhook_ingress_identities.verified_commerce_ingress_state": "VERSION_BOUND",
+    "webhook_ingress_identities.INSERT_qualifying_row": "SUPERSEDED_AND_REEVALUATED",
+    "webhook_ingress_identities.DELETE_qualifying_row": "SUPERSEDED_AND_REEVALUATED",
+    "b26_p2_scope_policy_authority.scope_policy_version": "VERSION_BOUND",
+    "b26_p2_scope_policy_authority.semantic_sha256": "UPDATE_REFUSED"
+  }
+}
