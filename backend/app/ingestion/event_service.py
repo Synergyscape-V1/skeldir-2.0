@@ -631,39 +631,85 @@ def _finalization_payload(
     return snapshot
 
 
-async def _record_auth_consequence_as_app_user(
+async def _record_auth_consequence_in_txn(
+    session: AsyncSession,
+    *,
+    ingress_id: str,
+    consequence: Mapping[str, Any],
+) -> None:
+    """Record predecessor event P in the caller's transaction.
+
+    B2.6-P2 Corrective XII: P is authored by the API application
+    principal (the HMAC-verified webhook path runs as app_user) in the
+    same transaction as the precursor, so one commit makes the event,
+    the precursor, and P atomically visible to the post-commit
+    ingress finalizer -- no extra pool checkout per webhook. The
+    ingress principal cannot author P (grants deny), so possession of
+    the ingress credential alone cannot manufacture the prerequisite;
+    the split is who records, not how many sessions it takes.
+    """
+    await session.execute(
+        text(
+            "SELECT public.b26_p2_record_provider_auth_consequence("
+            " :ingress_id, :provider, :event_ref,"
+            " :body_sha256, :sig_sha256, :method, :version)"
+        ),
+        {
+            "ingress_id": str(ingress_id),
+            "provider": str(consequence.get("provider")),
+            "event_ref": str(consequence.get("provider_event_reference")),
+            "body_sha256": str(consequence.get("body_sha256")).lower(),
+            "sig_sha256": str(
+                consequence.get("signature_envelope_sha256")
+            ).lower(),
+            "method": str(consequence.get("auth_method")),
+            "version": str(consequence.get("auth_version") or "v1"),
+        },
+    )
+
+
+def _consequence_summary_for(
+    finalization: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Build the P binding summary from a finalization snapshot."""
+    consequence = finalization.get("auth_consequence")
+    if not isinstance(consequence, dict) or not consequence.get("body_sha256"):
+        return None
+    return {
+        "provider": str(finalization.get("provider")),
+        "provider_event_reference": str(
+            finalization.get("provider_native_event_reference")
+        ),
+        "body_sha256": str(consequence.get("body_sha256")).lower(),
+        "signature_envelope_sha256": str(
+            consequence.get("signature_envelope_sha256")
+        ).lower(),
+        "auth_method": str(consequence.get("auth_method")),
+        "auth_version": str(consequence.get("auth_version") or "v1"),
+    }
+
+
+async def _record_auth_consequence_post_commit(
     *,
     tenant_uuid: UUID,
     ingress_id: str,
     consequence: Mapping[str, Any],
 ) -> None:
-    """Record predecessor event P with the API application principal.
+    """Record P post-commit through the application pool (rare paths).
 
-    B2.6-P2 Corrective XII: P is authored by app_user in the
-    HMAC-verified path and consumed by the ingress boundary. The
-    ingress principal cannot author P (grants deny), so possession of
-    the ingress credential alone cannot manufacture the prerequisite.
+    Used only when the caller's transaction could not carry P itself
+    (collision lanes where the precursor predates the snapshot). The
+    common path records P atomically in-transaction; this fallback
+    preserves the crashed-winner recovery contract. Still authored by
+    the application principal, still consumed by the ingress boundary.
     """
     from app.db.session import get_session  # noqa: PLC0415
 
-    async with get_session(tenant_id=tenant_uuid) as session:
-        await session.execute(
-            text(
-                "SELECT public.b26_p2_record_provider_auth_consequence("
-                " :ingress_id, :provider, :event_ref,"
-                " :body_sha256, :sig_sha256, :method, :version)"
-            ),
-            {
-                "ingress_id": str(ingress_id),
-                "provider": str(consequence.get("provider")),
-                "event_ref": str(consequence.get("provider_event_reference")),
-                "body_sha256": str(consequence.get("body_sha256")).lower(),
-                "sig_sha256": str(
-                    consequence.get("signature_envelope_sha256")
-                ).lower(),
-                "method": str(consequence.get("auth_method")),
-                "version": str(consequence.get("auth_version") or "v1"),
-            },
+    async with get_session(tenant_id=tenant_uuid) as post_session:
+        await _record_auth_consequence_in_txn(
+            post_session,
+            ingress_id=str(ingress_id),
+            consequence=consequence,
         )
 
 
@@ -672,16 +718,19 @@ async def _finalize_verified_ingress_post_commit(
 ) -> None:
     """Complete a verified arrival through the ingress credential (XII).
 
-    Runs AFTER the caller transaction commits, in an ORM session bound
-    to the dedicated ingress pool: the committed event row is visible,
-    so the ingress FK holds. Idempotent by (tenant_id,
+    Runs AFTER the caller transaction commits, in a single ORM session
+    bound to the dedicated ingress pool: the committed event row is
+    visible, so the ingress FK holds. Idempotent by (tenant_id,
     idempotency_key): inserts the verified row when absent, promotes a
     pending precursor (refusing genuine sovereign conflicts via the
-    shared sovereign comparator), records the predecessor consequence
-    P with the application principal, derives the bound witness, and
+    shared sovereign comparator), then derives the bound witness and
     attests provenance -- one governed authentication consequence.
-    Requires the HMAC-established consequence snapshot; without P the
-    finalizer fails closed (no self-certification). Raises when no
+    The predecessor consequence P travels in the caller transaction
+    (recorded atomically with the precursor by the application
+    principal, zero extra checkouts); only rare collision lanes record
+    it here through the application pool first. Requires the
+    HMAC-established consequence snapshot; without P the witness
+    refuses and no self-certified token can result. Raises when no
     ingress DSN is mounted (fail-closed: the lane must provision the
     ingress principal; never silently leave the arrival unverified).
     ORM attribute access keeps coverage-money SQL out of application
@@ -803,37 +852,63 @@ async def _finalize_verified_ingress_post_commit(
                     setattr(existing, field, finalization[field])
             await session.flush()
         ingress_uuid = str(existing.id)
-    # First transaction committed on context exit: the ingress row is
-    # now visible to the application pool. XII: record P with the
-    # application principal (independently of the ingress credential),
-    # then derive the bound witness and attest with ingress authority.
-    # Either step failing closed leaves no self-certified token.
-    from app.db.session import _ingress_boundary as _xii_boundary2  # noqa: PLC0415
-    from app.db.session import get_ingress_session as _xii_ingress2  # noqa: PLC0415
-
-    await _record_auth_consequence_as_app_user(
-        tenant_uuid=tenant_uuid,
-        ingress_id=ingress_uuid,
-        consequence=consequence_summary,
-    )
-    async with _xii_boundary2(), _xii_ingress2(
-        tenant_id=tenant_uuid
-    ) as witness_session:
-        await witness_session.execute(
+        # First transaction committed on context exit. XII: P was
+        # recorded atomically with the precursor by the API
+        # application principal, so the common path needs only this
+        # ingress transaction (ensure/promote + bound witness +
+        # attestation). If P is nevertheless absent (rare collision
+        # lanes), record it from the snapshot through the application
+        # pool before witnessing; without any P the witness refuses
+        # and no self-certified token can result.
+        has_consequence = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT 1"
+                        " FROM public.b26_p2_provider_auth_consequence AS c"
+                        " WHERE c.webhook_ingress_identity_id = :ingress_id"
+                    ),
+                    {"ingress_id": ingress_uuid},
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if has_consequence is None:
+            if consequence_summary is None:
+                raise ValidationError(
+                    "b26_p2_ingress_finalization_no_auth_consequence:"
+                    " verified arrival requires the HMAC-established"
+                    " predecessor event"
+                )
+            await _record_auth_consequence_post_commit(
+                tenant_uuid=tenant_uuid,
+                ingress_id=ingress_uuid,
+                consequence=consequence_summary,
+            )
+        await session.execute(
             text(
                 "SELECT public.b26_p2_record_ingress_auth_witness("
                 " :ingress_id, :provider, :event_ref, :body_sha256)"
             ),
             {
                 "ingress_id": ingress_uuid,
-                "provider": consequence_summary["provider"],
-                "event_ref": consequence_summary[
-                    "provider_event_reference"
-                ],
-                "body_sha256": consequence_summary["body_sha256"],
+                "provider": consequence_summary["provider"]
+                if consequence_summary is not None
+                else "",
+                "event_ref": (
+                    consequence_summary["provider_event_reference"]
+                    if consequence_summary is not None
+                    else ""
+                ),
+                "body_sha256": (
+                    consequence_summary["body_sha256"]
+                    if consequence_summary is not None
+                    else ""
+                ),
             },
         )
-        await witness_session.execute(
+        await session.execute(
             text(
                 "SELECT public.b26_p2_attest_provenance_evidence("
                 " :ingress_id, 'signed_provider_reingestion',"
@@ -1316,12 +1391,23 @@ class EventIngestionService:
                     await session.rollback()
                     session.add(event)
                     session.add(raw_event_payload)
-                    session.add(
-                        WebhookIngressIdentity(
-                            **_precursor_payload(webhook_identity_payload)
-                        )
+                    precursor = WebhookIngressIdentity(
+                        **_precursor_payload(webhook_identity_payload)
                     )
+                    session.add(precursor)
                     await session.flush()
+                    # XII: record P atomically with the precursor (same
+                    # app_user transaction, zero extra checkouts); the
+                    # post-commit finalizer consumes it through the
+                    # ingress credential.
+                    if _is_verified_intended(
+                        webhook_identity_payload
+                    ) and isinstance(auth_consequence, dict):
+                        await _record_auth_consequence_in_txn(
+                            session,
+                            ingress_id=str(precursor.id),
+                            consequence=auth_consequence,
+                        )
                     pending_finalization = _finalization_payload(
                         webhook_identity_payload,
                         auth_consequence,
@@ -1363,6 +1449,33 @@ class EventIngestionService:
                         )
                         if existing_event is not None:
                             events_duplicate_total.inc()
+                            # XII: idempotent P for crashed-winner
+                            # recovery (same arrival data, same P).
+                            if _is_verified_intended(
+                                webhook_identity_payload
+                            ) and isinstance(auth_consequence, dict):
+                                existing_ingress = (
+                                    (
+                                        await session.execute(
+                                            select(
+                                                WebhookIngressIdentity.id
+                                            ).where(
+                                                WebhookIngressIdentity.tenant_id
+                                                == tenant_id,
+                                                WebhookIngressIdentity.idempotency_key
+                                                == idempotency_key,
+                                            )
+                                        )
+                                    )
+                                    .scalars()
+                                    .one_or_none()
+                                )
+                                if existing_ingress is not None:
+                                    await _record_auth_consequence_in_txn(
+                                        session,
+                                        ingress_id=str(existing_ingress),
+                                        consequence=auth_consequence,
+                                    )
                             return IngestionDecision(
                                 event=existing_event,
                                 state=IngestionResultState.DUPLICATE,
@@ -1402,6 +1515,31 @@ class EventIngestionService:
                         session.add(event)
                         session.add(raw_event_payload)
                         await session.flush()
+                        # XII: bind P to the committed precursor (or
+                        # nothing, when the finalizer must insert).
+                        if _is_verified_intended(
+                            webhook_identity_payload
+                        ) and isinstance(auth_consequence, dict):
+                            tail_precursor_id = (
+                                (
+                                    await session.execute(
+                                        select(WebhookIngressIdentity.id).where(
+                                            WebhookIngressIdentity.tenant_id
+                                            == tenant_id,
+                                            WebhookIngressIdentity.idempotency_key
+                                            == idempotency_key,
+                                        )
+                                    )
+                                )
+                                .scalars()
+                                .one_or_none()
+                            )
+                            if tail_precursor_id is not None:
+                                await _record_auth_consequence_in_txn(
+                                    session,
+                                    ingress_id=str(tail_precursor_id),
+                                    consequence=auth_consequence,
+                                )
                         pending_finalization = _finalization_payload(
                             webhook_identity_payload,
                             auth_consequence,
