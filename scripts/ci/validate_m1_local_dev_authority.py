@@ -688,6 +688,13 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xii_semantic_closure.py",
     "scripts/ci/validate_b26_p2_xii_temporal_behavioral.py",
     "scripts/ci/validate_b26_p2_xii_topology.py",
+    # B0.4 lane provisioning: verified arrivals finalize through the
+    # dedicated ingress pool and fail closed when it is unmounted, so
+    # the B0.4 gate (which serves valid-signature provider webhooks)
+    # provisions the ingress principal via the canonical provision
+    # function and mounts the derived DSN. Lane setup only; no
+    # manufacturing-law content (content scan still applies).
+    "scripts/phase_gates/b0_4_gate.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [
