@@ -26,7 +26,13 @@ services:
     env_file:
       - .env.local
     working_dir: /app
-    command: alembic upgrade head
+    # B2.6-P2 Corrective XII: the lane carries strict single-regime
+    # law, so the ingress principal must exist for it to be
+    # serviceable. Role only (no grants/ownership); all authority
+    # flows from the migrations themselves. Inline (the production
+    # image deliberately ships no scripts/ directory); single-quote
+    # free by construction so YAML/shell nesting stays exact.
+    command: bash -c "python -c 'import os,psycopg2;from psycopg2 import sql;c=psycopg2.connect(os.environ.get(\"MIGRATION_DATABASE_URL\"));c.autocommit=True;u=c.cursor();u.execute(\"SELECT 1 FROM pg_roles WHERE rolname=%s\",[\"app_ingress\"]);u.fetchone() or u.execute(sql.SQL(\"CREATE ROLE {} WITH LOGIN PASSWORD {}\").format(sql.Identifier(\"app_ingress\"),sql.Literal(\"app_ingress\")));c.close()' && alembic upgrade head"
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,6 +75,11 @@ services:
       # The reconciler needs issuer authority, never signer authority.
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
+      # B2.6-P2 Corrective XII: the generic worker must never hold the
+      # authenticated-ingress credential. Blanking here is the
+      # compose-level expression of the same rule the worker enforces
+      # at startup (assert_worker_ingress_isolation).
+      B26_P2_INGRESS_DATABASE_URL: ""
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO
@@ -104,6 +115,7 @@ services:
       DATABASE_URL: ${B23_WORKER_DATABASE_URL:-postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_local}
       B23_WORKER_DATABASE_URL: ${B23_WORKER_DATABASE_URL:-postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_local}
       SKELDIR_B23_REQUIRE_WORKER_DSN: "1"
+      B26_P2_INGRESS_DATABASE_URL: ""
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: >
@@ -135,6 +147,7 @@ services:
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
       DATABASE_URL: ${B26_P2_RELAY_DATABASE_URL:-postgresql+asyncpg://app_relay:app_relay@postgres:5432/skeldir_local}
       SKELDIR_CELERY_WORKER_ROLE: b26_p2_relay
+      B26_P2_INGRESS_DATABASE_URL: ""
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: >
@@ -169,6 +182,7 @@ services:
       - .env.local
     environment:
       DATABASE_URL: ${B26_P2_BEAT_DATABASE_URL:-postgresql+asyncpg://app_beat:app_beat@postgres:5432/skeldir_local}
+      B26_P2_INGRESS_DATABASE_URL: ""
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: >

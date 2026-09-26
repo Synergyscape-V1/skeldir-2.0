@@ -667,6 +667,34 @@ ALLOWED_M1_PATH_PREFIXES = [
     # mount + export only).
     "docker-compose.c19.yml",
     "scripts/ci/run_b25_p13_c19_context_robust_closure.sh",
+    # --- B2.6-P2 Corrective XII fact-anchored closure surface ---
+    # Authority-only slice: the single Corrective-XII migration
+    # (provider-authentication consequence relation, bound witness,
+    # strict single-regime law, topology adjudicator + deterministic
+    # provisioner, consequence-bound oracle), the re-reviewed
+    # authority pin + derived semantic manifest companions, and the
+    # XII proof instruments (five live validators, non-vacuous
+    # battery, coverage registry). Same exemption shape as the
+    # Corrective-XI entry above; every prohibition retained
+    # unchanged. Proof tooling only; the manufacturing-law content
+    # scan still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609250001_b26_p2_corrective_xii_fact_anchored_closure.py",
+    "contracts-internal/governance/b26_p2_xii_semantic_dependency_manifest.json",
+    "scripts/database/ensure_ingress_principal.py",
+    "scripts/ci/b26_p2_xii_coverage.py",
+    "scripts/ci/test_b26_p2_xii_negative_controls.py",
+    "scripts/ci/validate_b26_p2_xii_auth_binding.py",
+    "scripts/ci/validate_b26_p2_xii_process_isolation.py",
+    "scripts/ci/validate_b26_p2_xii_semantic_closure.py",
+    "scripts/ci/validate_b26_p2_xii_temporal_behavioral.py",
+    "scripts/ci/validate_b26_p2_xii_topology.py",
+    # B0.4 lane provisioning: verified arrivals finalize through the
+    # dedicated ingress pool and fail closed when it is unmounted, so
+    # the B0.4 gate (which serves valid-signature provider webhooks)
+    # provisions the ingress principal via the canonical provision
+    # function and mounts the derived DSN. Lane setup only; no
+    # manufacturing-law content (content scan still applies).
+    "scripts/phase_gates/b0_4_gate.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [

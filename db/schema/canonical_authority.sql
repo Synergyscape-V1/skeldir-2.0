@@ -517,3 +517,59 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+
+-- === 202609250001 Corrective XII: provider-bound authentication ===
+-- Source of truth is the 202609250001 migration. The predecessor event
+-- P (successful provider authentication) is authored by the API
+-- application principal alone and observed (never authored) by the
+-- ingress boundary; the witness is deterministically bound to P, so
+-- the ingress credential alone mints nothing. Single-regime law: no
+-- authentication grant branches on role existence (the migration
+-- refuses without the ingress principal; the application adjudicates
+-- the topology at startup; late provisioning converges
+-- deterministically). governed_attestation is migration/admin custody
+-- only at runtime.
+REVOKE ALL ON TABLE public.b26_p2_provider_auth_consequence FROM PUBLIC;
+DO $$
+DECLARE _r text;
+BEGIN
+    FOREACH _r IN ARRAY ARRAY[
+        'app_user', 'app_worker', 'app_relay', 'app_beat',
+        'app_rw', 'app_ro', 'app_ingress',
+        'app_dispatch_publisher', 'app_celery_transport'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = _r) THEN
+            EXECUTE format(
+                'REVOKE ALL ON TABLE public.b26_p2_provider_auth_consequence FROM %I',
+                _r
+            );
+        END IF;
+    END LOOP;
+END $$;
+GRANT SELECT, INSERT ON TABLE public.b26_p2_provider_auth_consequence TO app_user;
+GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
+REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_user;
+REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
+REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress;
+REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+REVOKE ALL ON FUNCTION public.b26_p2_xii_topology_check() FROM PUBLIC;
+DO $$
+DECLARE _r text;
+BEGIN
+    FOREACH _r IN ARRAY ARRAY[
+        'app_user', 'app_worker', 'app_relay', 'app_beat', 'app_ingress'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = _r) THEN
+            EXECUTE format(
+                'GRANT EXECUTE ON FUNCTION public.b26_p2_xii_topology_check() TO %I',
+                _r
+            );
+        END IF;
+    END LOOP;
+END $$;
+REVOKE ALL ON FUNCTION public.b26_p2_xii_provision_ingress_topology() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_xii_invariant_oracle() FROM PUBLIC;

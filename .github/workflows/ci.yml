@@ -3931,6 +3931,11 @@ jobs:
           psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
+          # B2.6-P2 Corrective XII: the dedicated ingress principal must
+          # exist before any lane serves verified arrivals; gates
+          # provision its governed grants via
+          # b26_p2_xii_provision_ingress_topology() and mount the DSN.
+          psql -h localhost -U postgres -c "CREATE USER app_ingress WITH PASSWORD 'app_ingress';"
 
       - name: H0-IMP diagnostic (environment dump)
         run: |
@@ -4070,6 +4075,9 @@ jobs:
           psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
+          # B2.6-P2 Corrective XII: the dedicated ingress principal must
+          # exist before any lane serves verified arrivals (see above).
+          psql -h localhost -U postgres -c "CREATE USER app_ingress WITH PASSWORD 'app_ingress';"
       - name: Run phase chain to B0.4
         run: |
           python scripts/phase_gates/run_chain.py B0.4
@@ -4220,6 +4228,9 @@ jobs:
       B057_P5_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b057_p6
       B057_P5_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
+      # B2.6-P2 Corrective XII: the p5 test posts verified webhooks
+      # through the API ingress boundary (role provisioned below).
+      B26_P2_INGRESS_DATABASE_URL: postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/skeldir_b057_p6
       B057_P6_WORKER_USER: app_worker
       B057_P5_ARTIFACT_DIR: artifacts/b057-p6
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
@@ -4286,6 +4297,7 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_ro NOLOGIN;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${RUNTIME_USER} WITH PASSWORD '${RUNTIME_PASS}';"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${B057_P6_WORKER_USER} WITH PASSWORD 'app_worker';"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER app_ingress WITH PASSWORD 'app_ingress';"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${MIGRATION_USER} WITH PASSWORD '${MIGRATION_PASS}';"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_rw TO ${RUNTIME_USER}; GRANT app_ro TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
@@ -4293,6 +4305,7 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE ${DB_NAME} TO ${B057_P6_WORKER_USER}; GRANT USAGE ON SCHEMA public TO ${B057_P6_WORKER_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE ${DB_NAME} TO app_ingress; GRANT USAGE ON SCHEMA public TO app_ingress;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
       - name: Assert runtime identity (least-privilege)

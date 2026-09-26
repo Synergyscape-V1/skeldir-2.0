@@ -115,6 +115,11 @@ def _start_worker(env: dict, log_path: Path) -> tuple[subprocess.Popen[str], lis
     prom_dir = Path(tempfile.mkdtemp(prefix="b057_p5_prom_"))
     env = dict(env)
     env.setdefault("PROMETHEUS_MULTIPROC_DIR", str(prom_dir))
+    # B2.6-P2 Corrective XII: the generic worker must never hold the
+    # authenticated-ingress credential (physical process isolation;
+    # the worker fails closed at startup if it is present). The API
+    # boundary keeps it; the worker and exporter run without it.
+    env.pop("B26_P2_INGRESS_DATABASE_URL", None)
     cmd = [
         "celery",
         "-A",

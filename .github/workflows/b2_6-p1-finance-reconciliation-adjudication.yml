@@ -158,6 +158,61 @@ jobs:
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-dir artifacts/b26_p2/static
 
+      # B2.6-P2 Corrective XII: fact-anchored closure. The XII gates run
+      # after the XI census (pristine-lane assertions) and before the
+      # consequence batteries; the temporal battery leaves explicitly
+      # quarantined dispositions (never silent survivors).
+      - name: Prove B2.6-P2 Corrective-XII provider-bound auth binding (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xii_auth_binding.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-XII process capability isolation (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xii_process_isolation.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-XII single authentication regime (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xii_topology.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-XII fixed-point semantic closure
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xii_semantic_closure.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-dir artifacts/b26_p2/static
+          # The manifest is a reviewed companion: live derivation must
+          # equal the committed manifest, never regenerate it here.
+          git diff --exit-code -- contracts-internal/governance/b26_p2_xii_semantic_dependency_manifest.json
+
+      - name: Prove B2.6-P2 Corrective-XII behavioral temporal coverage (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xii_temporal_behavioral.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-dir artifacts/b26_p2/static
+
+      - name: Prove B2.6-P2 Corrective-XII checks are non-vacuous (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/test_b26_p2_xii_negative_controls.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xii-negative-controls.json
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence

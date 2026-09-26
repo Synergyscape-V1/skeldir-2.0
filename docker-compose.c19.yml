@@ -132,6 +132,10 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
+      # B2.6-P2 Corrective XII: the authenticated-ingress credential is
+      # mounted only into api; every other process blanks it and fails
+      # closed at startup if it is ever present.
+      B26_P2_INGRESS_DATABASE_URL: ""
       SKELDIR_CELERY_WORKER_ROLE: non_bayesian
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
     command: >
@@ -144,6 +148,7 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_WORKER_DATABASE_URL?missing C19_WORKER_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL: ""
       SKELDIR_CELERY_WORKER_ROLE: non_bayesian
       B23_DATABASE_POOL_SIZE: "4"
       B23_DATABASE_MAX_OVERFLOW: "0"
@@ -162,6 +167,7 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_WORKER_DATABASE_URL?missing C19_WORKER_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL: ""
       SKELDIR_CELERY_WORKER_ROLE: non_bayesian
       B23_DATABASE_POOL_SIZE: "4"
       B23_DATABASE_MAX_OVERFLOW: "0"
@@ -183,6 +189,7 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_WORKER_DATABASE_URL?missing C19_WORKER_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL: ""
       SKELDIR_CELERY_WORKER_ROLE: bayesian
       SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "1"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
@@ -205,6 +212,7 @@ services:
       <<: *runtime-common
       DATABASE_URL: ${C19_PUBLISHER_DATABASE_URL?missing C19_PUBLISHER_DATABASE_URL}
       B24_DISPATCH_PUBLISHER_DATABASE_URL: ${C19_PUBLISHER_SYNC_DATABASE_URL?missing C19_PUBLISHER_SYNC_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL: ""
       SKELDIR_CELERY_WORKER_ROLE: bayesian_publisher
       SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS: "0"
       SKELDIR_BAYESIAN_DB_TOPOLOGY: direct_postgres
@@ -221,6 +229,7 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_TRANSPORT_DATABASE_URL?missing C19_TRANSPORT_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL: ""
       B23_TRANSITION_SWEEP_INTERVAL_SECONDS: "30"
       B24_FIT_PLANNER_INTERVAL_SECONDS: "3"
       B24_FIT_PLANNER_QUIET_PERIOD_SECONDS: "2"

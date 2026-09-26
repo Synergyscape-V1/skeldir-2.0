@@ -598,9 +598,11 @@ def validate_directive_ix_dispatch_authority(
         _require(token in beat, f"Directive XI beat schedule missing: {token}")
     for token in (
         # B2.6-P2 Corrective V: the scheduler runs under its dedicated
-        # credential (least privilege); the shipped celery beat command
-        # itself is unchanged.
-        "beat: cd backend && DATABASE_URL=$B26_P2_BEAT_DATABASE_URL celery -A app.celery_app.celery_app beat",
+        # credential (least privilege). B2.6-P2 Corrective XII: the
+        # beat process additionally blanks the authenticated-ingress
+        # credential (physical process isolation); the scheduler
+        # command and credential are otherwise unchanged.
+        "beat: cd backend && DATABASE_URL=$B26_P2_BEAT_DATABASE_URL B26_P2_INGRESS_DATABASE_URL= celery -A app.celery_app.celery_app beat",
         "worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian",
         "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1",
         "--queues=bayesian",

@@ -55,6 +55,9 @@ P2_TABLES = (
     "b26_p2_provenance_evidence",
     # Corrective XI: the unforgeable authentication-witness relation.
     "b26_p2_ingress_auth_witness",
+    # Corrective XII: the provider-authentication consequence relation
+    # (predecessor event P, authored by app_user alone).
+    "b26_p2_provider_auth_consequence",
 )
 
 P2_ROUTINES = (
@@ -93,6 +96,12 @@ P2_ROUTINES = (
     "b26_p2_state_eligible_for_p3",
     "b26_p2_xi_invariant_oracle",
     "b26_p2_enforce_dispatch_quarantine_exclusion",
+    # Corrective XII: predecessor-event recorder, single-regime
+    # topology adjudicator/provisioner, consequence-bound oracle.
+    "b26_p2_record_provider_auth_consequence",
+    "b26_p2_xii_topology_check",
+    "b26_p2_xii_provision_ingress_topology",
+    "b26_p2_xii_invariant_oracle",
 )
 
 # Corrective XI: the dedicated authenticated-ingress principal is a
@@ -113,7 +122,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                               'b26_p2_execution_quarantine',
                               'b26_p2_scope_policy_authority',
                               'b26_p2_evaluator_heartbeat',
-                              'b26_p2_ingress_auth_witness')
+                              'b26_p2_ingress_auth_witness',
+                              'b26_p2_provider_auth_consequence')
           AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'app_ingress', 'PUBLIC')
         """,
     ),
@@ -130,7 +140,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                               'b26_p2_execution_quarantine',
                               'b26_p2_scope_policy_authority',
                               'b26_p2_evaluator_heartbeat',
-                              'b26_p2_ingress_auth_witness')
+                              'b26_p2_ingress_auth_witness',
+                              'b26_p2_provider_auth_consequence')
           AND grantee IN ('app_user', 'app_worker', 'app_rw', 'app_ro', 'app_relay', 'app_beat', 'app_ingress', 'PUBLIC')
         """,
     ),
@@ -160,7 +171,11 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                                'b26_p2_record_ingress_auth_witness',
                                'b26_p2_attest_provenance_evidence',
                                'b26_p2_state_eligible_for_p3',
-                               'b26_p2_xi_invariant_oracle')
+                               'b26_p2_xi_invariant_oracle',
+                               'b26_p2_record_provider_auth_consequence',
+                               'b26_p2_xii_topology_check',
+                               'b26_p2_xii_provision_ingress_topology',
+                               'b26_p2_xii_invariant_oracle')
         """,
     ),
     (
@@ -177,7 +192,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                              'b26_p2_execution_quarantine',
                              'b26_p2_scope_policy_authority',
                              'b26_p2_evaluator_heartbeat',
-                             'b26_p2_ingress_auth_witness')
+                             'b26_p2_ingress_auth_witness',
+                              'b26_p2_provider_auth_consequence')
         """,
     ),
     (
@@ -194,7 +210,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                              'b26_p2_execution_quarantine',
                              'b26_p2_scope_policy_authority',
                              'b26_p2_evaluator_heartbeat',
-                             'b26_p2_ingress_auth_witness')
+                             'b26_p2_ingress_auth_witness',
+                              'b26_p2_provider_auth_consequence')
         """,
     ),
     (
@@ -212,7 +229,8 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                              'b26_p2_execution_quarantine',
                              'b26_p2_scope_policy_authority',
                              'b26_p2_evaluator_heartbeat',
-                             'b26_p2_ingress_auth_witness')
+                             'b26_p2_ingress_auth_witness',
+                              'b26_p2_provider_auth_consequence')
           AND c.contype IN ('f', 'u', 'p')
         """,
     ),
@@ -267,7 +285,11 @@ _CATALOG_QUERIES: tuple[tuple[str, str], ...] = (
                                'b26_p2_record_ingress_auth_witness',
                                'b26_p2_attest_provenance_evidence',
                                'b26_p2_state_eligible_for_p3',
-                               'b26_p2_xi_invariant_oracle')
+                               'b26_p2_xi_invariant_oracle',
+                               'b26_p2_record_provider_auth_consequence',
+                               'b26_p2_xii_topology_check',
+                               'b26_p2_xii_provision_ingress_topology',
+                               'b26_p2_xii_invariant_oracle')
         """,
     ),
     (
@@ -330,7 +352,8 @@ def _check_behavior_matrix(conn) -> list[str]:
                              'b26_p2_execution_quarantine',
                              'b26_p2_scope_policy_authority',
                              'b26_p2_evaluator_heartbeat',
-                             'b26_p2_ingress_auth_witness')
+                             'b26_p2_ingress_auth_witness',
+                              'b26_p2_provider_auth_consequence')
           AND c.contype = 'c'
         GROUP BY c.conname, t.relname, pg_get_constraintdef(c.oid)
         ORDER BY c.conname

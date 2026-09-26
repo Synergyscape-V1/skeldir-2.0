@@ -172,7 +172,9 @@ async def test_verified_exact_match_adopts_binding(monkeypatch):
     # Hermetic: no ingress DSN in unit scope, so attestation falls
     # back to the caller session (admins/tests path). Production
     # mounts B26_P2_INGRESS_DATABASE_URL and takes the ingress
-    # credential branch instead.
+    # credential branch instead. Corrective XII: the re-ingestion
+    # carries the HMAC-established predecessor consequence, so no
+    # consequence lookup query is issued on this path.
     monkeypatch.delenv("B26_P2_INGRESS_DATABASE_URL", raising=False)
     tenant = uuid4()
     root = _existing("authenticity_verified")
@@ -182,7 +184,12 @@ async def test_verified_exact_match_adopts_binding(monkeypatch):
     root.tenant_id = str(tenant)
     event_id = uuid4()
     adopted = await _adopt_or_promote_ingress(
-        session, tenant_id=tenant, incoming=incoming, event_id=event_id
+        session, tenant_id=tenant, incoming=incoming, event_id=event_id,
+        auth_consequence={
+            "provider": "stripe",
+            "provider_event_reference": "evt",
+            "body_sha256": "c" * 64,
+        },
     )
     assert adopted is root
     assert root.event_id == event_id

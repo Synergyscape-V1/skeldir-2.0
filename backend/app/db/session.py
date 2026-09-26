@@ -8,6 +8,7 @@ row-level security enforcement.
 
 from __future__ import annotations
 
+import contextvars as _ctxvars
 import os
 import ssl
 from contextlib import asynccontextmanager
@@ -305,6 +306,119 @@ async def get_b23_session(
             raise
 
 
+class IngressBoundaryError(RuntimeError):
+    """Raised when non-authentication code attempts ingress capability."""
+
+
+# B2.6-P2 Corrective XII (Blocker B): the ingress capability is bound to
+# the actual authentication execution boundary, not to the process. The
+# HMAC-verified webhook path sets this context immediately after a
+# successful provider-signature verification; get_ingress_session
+# requires it. An unrelated API route or a generic worker process never
+# holds the token, so the session is unavailable at the process level,
+# not merely unused by convention. Context-local: never crosses tasks.
+_ingress_auth_boundary: _ctxvars.ContextVar[bool] = _ctxvars.ContextVar(
+    "b26_p2_ingress_auth_boundary", default=False
+)
+
+
+def enter_ingress_auth_boundary() -> None:
+    """Mark the current task as the authentication execution boundary."""
+    _ingress_auth_boundary.set(True)
+
+
+def exit_ingress_auth_boundary() -> None:
+    """Leave the authentication execution boundary."""
+    _ingress_auth_boundary.set(False)
+
+
+@asynccontextmanager
+async def _ingress_boundary() -> AsyncGenerator[None, None]:
+    """Scoped authentication-execution-boundary marker.
+
+    B2.6-P2 Corrective XII: the post-commit finalizer runs downstream
+    of a successful HMAC verification in the same task; this scopes
+    the ingress-session capability to that dynamic extent.
+    """
+    enter_ingress_auth_boundary()
+    try:
+        yield
+    finally:
+        exit_ingress_auth_boundary()
+
+
+def _require_ingress_auth_boundary() -> None:
+    if _ingress_auth_boundary.get() is not True:
+        raise IngressBoundaryError(
+            "b26_p2_ingress_out_of_boundary: ingress capability is"
+            " available only inside the provider-authentication"
+            " execution boundary"
+        )
+
+
+def assert_worker_ingress_isolation() -> None:
+    """Fail closed when a non-ingress worker inherits the ingress DSN.
+
+    B2.6-P2 Corrective XII: the ingress credential must not exist in a
+    generic worker/relay/beat/B2.3 process environment. Called at worker
+    startup; raises instead of serving with a smuggled capability.
+    """
+    if os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip():
+        raise RuntimeError(
+            "b26_p2_ingress_credential_in_worker: B26_P2_INGRESS_DATABASE_URL"
+            " must not be present in worker/relay/beat/B2.3 environments"
+        )
+
+
+def ingress_credential_mounted() -> bool:
+    """True when this process was given the ingress credential."""
+    return bool(os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip())
+
+
+_SANITIZED_INGRESS_DSN: str | None = None
+
+
+def sanitize_worker_ingress_environment() -> bool:
+    """Drop a smuggled ingress credential string from this process.
+
+    B2.6-P2 Corrective XII: worker/relay/beat/B2.3 startup calls this
+    before serving. When the credential string was inherited through a
+    shared environment, it is removed from ``os.environ`` so worker
+    code cannot read and redial it; the saved value is restored on
+    worker shutdown (in-process test workers share their process with
+    the API boundary, which legitimately keeps the credential).
+    Deliberately scoped to the environment only: already-constructed
+    pools are left intact, and spending the pool additionally requires
+    the authentication-boundary token (never set here) while the
+    database denies every non-ingress principal regardless. Returns
+    True when sanitization occurred (callers log CRITICAL). Governed
+    topologies blank the variable outright, where this is a no-op.
+    """
+    global _SANITIZED_INGRESS_DSN
+    current = os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip()
+    if not current:
+        return False
+    if _SANITIZED_INGRESS_DSN is None:
+        _SANITIZED_INGRESS_DSN = os.environ.get("B26_P2_INGRESS_DATABASE_URL")
+    os.environ.pop("B26_P2_INGRESS_DATABASE_URL", None)
+    return True
+
+
+def restore_worker_ingress_environment() -> bool:
+    """Restore a credential string sanitized at worker startup.
+
+    Fires on worker shutdown: real worker processes exit, making this
+    a no-op in production, while in-process test workers return the
+    shared process to its prior state. Returns True when restored.
+    """
+    global _SANITIZED_INGRESS_DSN
+    if _SANITIZED_INGRESS_DSN is None:
+        return False
+    os.environ["B26_P2_INGRESS_DATABASE_URL"] = _SANITIZED_INGRESS_DSN
+    _SANITIZED_INGRESS_DSN = None
+    return True
+
+
 @asynccontextmanager
 async def get_ingress_session(
     tenant_id: UUID,
@@ -315,7 +429,13 @@ async def get_ingress_session(
     B2.6-P2 Corrective XI: only the authenticated-ingress boundary holds
     the ingress credential, so only it can author authenticity_verified
     and record witnesses. Fails closed when the DSN is not mounted.
+
+    B2.6-P2 Corrective XII: additionally requires the caller to be the
+    actual authentication execution boundary (HMAC verification just
+    ran in this task). Unrelated in-process code without that context
+    cannot obtain the session.
     """
+    _require_ingress_auth_boundary()
     if IngressAsyncSessionLocal is None:
         raise RuntimeError(
             "b26_p2_ingress_credential_unavailable: verified arrival"

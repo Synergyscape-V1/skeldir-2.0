@@ -125,6 +125,72 @@ async def _startup_secret_contract_guard() -> None:
     assert_runtime_secret_contract("api")
 
 
+@app.on_event("startup")
+async def _startup_xii_topology_guard() -> None:
+    """B2.6-P2 Corrective XII: a P2 ingress boundary without its auth
+    topology refuses to serve.
+
+    One XII migration identity represents one authentication law.
+    Mounting the dedicated ingress credential declares this process a
+    provider-authentication boundary (see ingress_credential_mounted);
+    at/above the XII head such a process with a missing ingress
+    principal or non-strict grants is misconfigured and must fail
+    closed instead of risking predecessor service. Processes without
+    the credential make no P2-serving claim: they log the degraded
+    topology loudly while non-P2 routes serve (every P2 ingress path
+    still fails closed per-request through the database law and the
+    authentication-boundary session gate).
+    """
+    import logging
+
+    from sqlalchemy import text
+
+    from app.db.session import engine, ingress_credential_mounted
+
+    logger = logging.getLogger(__name__)
+    boundary_claimed = ingress_credential_mounted()
+    try:
+        async with engine.begin() as conn:
+            # The adjudicator exists only at/above the XII head, and
+            # every runtime role holds EXECUTE on it, so consulting it
+            # directly works under least privilege (no version-table
+            # reads, which runtime principals are not granted).
+            try:
+                topo = await conn.execute(
+                    text("SELECT public.b26_p2_xii_topology_check()")
+                )
+                topo.fetchone()
+            except Exception as exc:
+                message = str(exc)
+                if "undefined_function" in message or "does not exist" in message:
+                    return
+                if "b26_p2_xii_ingress_topology_absent" in message:
+                    if not boundary_claimed:
+                        logger.critical(
+                            "b26_p2_xii_ingress_topology_absent: XII"
+                            " topology without the app_ingress principal;"
+                            " P2 authenticated ingress is unavailable on"
+                            " this process (no ingress credential mounted)"
+                        )
+                        return
+                    raise RuntimeError(
+                        "b26_p2_xii_ingress_topology_absent: XII topology"
+                        " requires the app_ingress principal for a process"
+                        " mounting the ingress credential"
+                    ) from exc
+                if "b26_p2_xii_ingress_topology_dead" in message:
+                    raise RuntimeError(
+                        "b26_p2_xii_ingress_topology_dead: late-created"
+                        " ingress principal without governed grants;"
+                        " run the governed provisioner"
+                    ) from exc
+                raise
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        logger.warning("b26_p2_xii_topology_guard_deferred:%s", exc)
+
+
 @app.get("/")
 async def root():
     """Root endpoint - redirects to documentation."""

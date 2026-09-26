@@ -195,6 +195,11 @@ def _start_b23_match_worker():
     os.environ["PROMETHEUS_MULTIPROC_DIR"] = (
         previous_prometheus_dir or tempfile.mkdtemp(prefix="b23_p6_prom_")
     )
+    # B2.6-P2 Corrective XII: the in-process worker shares this
+    # process with the API boundary, so the worker-startup
+    # sanitization (which drops a smuggled ingress credential string)
+    # must not leak into sibling tests: preserve and restore it here.
+    previous_ingress_dsn = os.environ.get("B26_P2_INGRESS_DATABASE_URL")
     try:
         with start_worker(
             celery_app,
@@ -208,6 +213,8 @@ def _start_b23_match_worker():
     finally:
         if previous_prometheus_dir is None:
             os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
+        if previous_ingress_dsn is not None:
+            os.environ["B26_P2_INGRESS_DATABASE_URL"] = previous_ingress_dsn
 
 
 def _auth_context(tenant_id: UUID) -> AuthContext:

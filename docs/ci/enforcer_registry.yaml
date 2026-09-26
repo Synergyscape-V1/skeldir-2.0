@@ -5731,3 +5731,183 @@
     the XI coverage gate.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-xii-auth-binding
+  path: scripts/ci/validate_b26_p2_xii_auth_binding.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'A durable authentication witness is inseparably
+    derived from a successful provider-authentication consequence recorded
+    independently of the ingress credential: credential-only mint, cross-tenant
+    use, replay, and tamper all refuse; the lawful chain restores.'
+  command: python scripts/ci/validate_b26_p2_xii_auth_binding.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_auth_binding.py --help
+  expected_failure_meaning: An ingress credential mints authenticated provenance
+    without any provider-authentication event.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xii_auth_binding.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xii-process-isolation
+  path: scripts/ci/validate_b26_p2_xii_process_isolation.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Only the authentication execution boundary holds
+    ingress capability at the process level: non-ingress Procfile/compose
+    environments blank the credential, workers fail closed on a smuggled
+    credential, and sessions require the boundary token.'
+  command: python scripts/ci/validate_b26_p2_xii_process_isolation.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_process_isolation.py --help
+  expected_failure_meaning: A generic worker or unrelated route obtains the
+    ingress capability.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xii_process_isolation.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xii-single-regime
+  path: scripts/ci/validate_b26_p2_xii_topology.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'One migration head plus the declared topology
+    version determines the authentication law: the XII migration refuses
+    without the ingress principal, no auth law branches on role
+    existence, and late provisioning converges deterministically.'
+  command: python scripts/ci/validate_b26_p2_xii_topology.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_topology.py --help
+  expected_failure_meaning: One serviceable head serves two authentication
+    regimes, or a missing principal serves predecessor law silently.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xii_topology.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xii-semantic-closure
+  path: scripts/ci/validate_b26_p2_xii_semantic_closure.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every P2 semantic dependency is discovered
+    (fixed-point closure, any-alias and parameter-qualified reads,
+    sovereign catalog cross-check, set-level forms) or explicitly blocks
+    closure; unknown and unresolved dependencies RED.'
+  command: python scripts/ci/validate_b26_p2_xii_semantic_closure.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_semantic_closure.py --help
+  expected_failure_meaning: An alias, depth, view, or set-level semantic
+    dependency escapes governance silently.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xii_semantic_closure.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xii-temporal-behavioral
+  path: scripts/ci/validate_b26_p2_xii_temporal_behavioral.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Temporal coverage is behavioral: every semantically
+    mutable dependency refuses post-conduction mutation, versions it, or
+    re-adjudicates it; stale terminals are detected, quarantined, and
+    unconsumable as current; correction/evaluation races serialize.'
+  command: python scripts/ci/validate_b26_p2_xii_temporal_behavioral.py --dsn $MIGRATION_DATABASE_URL --evidence-dir artifacts/b26_p2/static
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_temporal_behavioral.py --help
+  expected_failure_meaning: A trigger mentions every column yet permits the
+    mutation, or a stale terminal stays consumable as current.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xii_temporal_behavioral.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xii-nonvacuous
+  path: scripts/ci/test_b26_p2_xii_negative_controls.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every XII check is non-vacuous: each mutant class
+    (param alias, depth-6 chain, view, set-level count, weakened trigger)
+    REDs its governing validator with byte-exact restore to GREEN.'
+  command: python scripts/ci/test_b26_p2_xii_negative_controls.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xii-negative-controls.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/test_b26_p2_xii_negative_controls.py --help
+  expected_failure_meaning: A load-bearing XII check can never fail, so it
+    proves nothing.
+  first_diagnostic_command: python scripts/ci/test_b26_p2_xii_negative_controls.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xii-coverage-registry
+  path: scripts/ci/b26_p2_xii_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XII registry extends XI coverage for the predecessor-event
+    recorder, the bound witness overload, and the topology adjudicator.
+  command: python -c "from scripts.ci.b26_p2_xii_coverage import XII_COVERED_SURFACES; print(len(XII_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xii_coverage import XII_COVERED_SURFACES"
+  expected_failure_meaning: XII EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XII coverage gate.
+  subsumed_by: ''
+  registry_action: utility

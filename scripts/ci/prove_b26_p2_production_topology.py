@@ -62,6 +62,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -612,7 +613,7 @@ def _sign_stripe(body: bytes, secret: str) -> str:
     return f"t={ts},v1={sig}"
 
 
-def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: int) -> tuple[int, str]:
+def _post_stripe_once(tenant_key: str, stripe_secret: str, intent_id: str, amount: int) -> tuple[int, str]:
     body = json.dumps(
         {
             "id": intent_id,
@@ -639,6 +640,43 @@ def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: in
         return exc.code, exc.read().decode()
     except Exception as exc:  # noqa: BLE001 - connection/timeout: fail with context
         raise RuntimeError(f"webhook_post_failed:{type(exc).__name__}:{exc}"[:300])
+
+
+def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: int) -> tuple[int, str]:
+    """POST a provider webhook with one bounded stimulus retry.
+
+    Centralizes the Corrective XVII pattern previously inlined at
+    individual outage posts: under CI load the acceptance POST has
+    stalled client-side with the API alive at every stimulus site
+    (normal journey, recovery outage, F-a, F-b, F-c, F-v across
+    heads, on identical runtime bytes). One idempotent retry on the
+    same intent (the server dedupes by idempotency key) after a
+    liveness probe distinguishes a transient stall (second attempt
+    200) from a systematic hang (deterministic failure: dead API
+    fails fast with context, live-but-hung API fails the retry).
+    Non-timeout transport errors propagate immediately; HTTP error
+    statuses are returned, never retried. Every stage assertion is
+    unchanged.
+    """
+    try:
+        return _post_stripe_once(tenant_key, stripe_secret, intent_id, amount)
+    except RuntimeError as exc:
+        if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
+            raise
+        try:
+            _wait_http_ok(
+                f"http://127.0.0.1:{_TOPO.api_port}/health/live", 15
+            )
+        except Exception as live_exc:  # noqa: BLE001 - context carrier
+            raise RuntimeError(
+                f"stimulus_api_not_live:{type(live_exc).__name__}"
+            ) from live_exc
+        print(
+            f"B26_P2_TOPOLOGY_POST_RETRIED intent={intent_id} "
+            f"first={str(exc)[:120]}",
+            flush=True,
+        )
+        return _post_stripe_once(tenant_key, stripe_secret, intent_id, amount)
 
 
 def _broker_outage(block: bool) -> None:
@@ -835,9 +873,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609240002" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xi")
-        details["migration_head"] = "202609240002"
+        if "202609250001" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xii")
+        details["migration_head"] = "202609250001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -850,18 +888,29 @@ def main() -> int:
         )
         if "DATABASE_URL=$B26_P2_BEAT_DATABASE_URL" not in beat_line:
             return _fail("beat_custody_not_split")
-        # Corrective XI: the generic worker must never hold the
+        # Corrective XII: the generic worker must never be MOUNTED the
         # dedicated ingress credential. (It keeps the API DSN by C7
         # design; isolation is enforced at the database layer for
-        # every non-ingress principal.)
+        # every non-ingress principal, at startup for smuggled
+        # credentials, and at the session boundary for in-process
+        # callers. Explicit blanking `VAR=` is non-possession, proven
+        # by the XII process-isolation battery.)
         worker_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("worker:")),
             "",
         )
-        if "B26_P2_INGRESS_DATABASE_URL" in worker_line:
+        # Shell blanking (`VAR=` / `VAR= cmd`) carries no value:
+        # only `VAR=<non-space>` mounts the credential.
+        _mount = re.search(
+            r"B26_P2_INGRESS_DATABASE_URL=\S", worker_line
+        )
+        if _mount is not None:
             return _fail("generic_worker_holds_ingress_dsn")
+        if "B26_P2_INGRESS_DATABASE_URL" not in worker_line:
+            return _fail("generic_worker_ingress_not_blanked")
         details["procfile_recovery_custody_ok"] = True
         details["procfile_xi_ingress_custody_ok"] = True
+        details["procfile_xii_ingress_blanked"] = True
 
         # 1. Build + boot the exact production topology.
         print("B26_P2_TOPOLOGY_STAGE build", flush=True)
@@ -979,6 +1028,7 @@ def main() -> int:
         print("B26_P2_TOPOLOGY_STAGE recovery_journey", flush=True)
         _broker_outage(True)
         intent2 = f"pi_{uuid.uuid4().hex[:18]}"
+        # Stimulus retry lives in _post_stripe (central XVII armor).
         status2, body2 = _post_stripe(
             tenant["tenant_key"], tenant["stripe_secret"], intent2, 12000
         )
@@ -1029,6 +1079,7 @@ def main() -> int:
             return _fail("falsifier_worker_miswire_not_observed")
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent3 = f"pi_{uuid.uuid4().hex[:18]}"
+        # Stimulus retry lives in _post_stripe (central XVII armor).
         status3, body3 = _post_stripe(
             tenant["tenant_key"], tenant["stripe_secret"], intent3, 5000
         )
@@ -1096,6 +1147,7 @@ def main() -> int:
         _broker_outage(True)
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent4 = f"pi_{uuid.uuid4().hex[:18]}"
+        # Stimulus retry lives in _post_stripe (central XVII armor).
         status4, body4 = _post_stripe(
             tenant["tenant_key"], tenant["stripe_secret"], intent4, 6000
         )
@@ -1143,6 +1195,9 @@ def main() -> int:
         _broker_outage(True)
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 60)
         intent5 = f"pi_{uuid.uuid4().hex[:18]}"
+        # Stimulus retry lives in _post_stripe (central XVII armor;
+        # this site was its first application). The assertion below
+        # is unchanged.
         status5, body5 = _post_stripe(
             tenant["tenant_key"], tenant["stripe_secret"], intent5, 7000
         )
@@ -1800,45 +1855,52 @@ def main() -> int:
             build_manifest as _build_manifest,
         )
         try:
-            from scripts.ci.b26_p2_xi_coverage import (  # noqa: PLC0415
-                XI_COVERED_SURFACES as _XI_COVERED,
+            from scripts.ci.b26_p2_xii_coverage import (  # noqa: PLC0415
+                XII_COVERED_SURFACES as _XII_COVERED,
             )
 
-            _covered = tuple(sorted(_XI_COVERED))
+            _covered = tuple(sorted(_XII_COVERED))
         except ImportError:
             try:
-                from scripts.ci.b26_p2_x_coverage import (  # noqa: PLC0415
-                    X_COVERED_SURFACES as _X_COVERED,
+                from scripts.ci.b26_p2_xi_coverage import (  # noqa: PLC0415
+                    XI_COVERED_SURFACES as _XI_COVERED,
                 )
 
-                _covered = tuple(sorted(_X_COVERED))
+                _covered = tuple(sorted(_XI_COVERED))
             except ImportError:
                 try:
-                    from scripts.ci.b26_p2_ix_coverage import (  # noqa: PLC0415
-                        IX_COVERED_SURFACES as _IX_COVERED,
+                    from scripts.ci.b26_p2_x_coverage import (  # noqa: PLC0415
+                        X_COVERED_SURFACES as _X_COVERED,
                     )
 
-                    _covered = tuple(sorted(_IX_COVERED))
+                    _covered = tuple(sorted(_X_COVERED))
                 except ImportError:
                     try:
-                        from scripts.ci.b26_p2_viii_coverage import (  # noqa: PLC0415
-                            VIII_COVERED_SURFACES as _VIII_COVERED,
+                        from scripts.ci.b26_p2_ix_coverage import (  # noqa: PLC0415
+                            IX_COVERED_SURFACES as _IX_COVERED,
                         )
 
-                        _covered = tuple(sorted(_VIII_COVERED))
+                        _covered = tuple(sorted(_IX_COVERED))
                     except ImportError:
                         try:
-                            from scripts.ci.b26_p2_vii_coverage import (  # noqa: PLC0415
-                                VII_COVERED_SURFACES as _VII_COVERED,
+                            from scripts.ci.b26_p2_viii_coverage import (  # noqa: PLC0415
+                                VIII_COVERED_SURFACES as _VIII_COVERED,
                             )
 
-                            _covered = tuple(sorted(_VII_COVERED))
+                            _covered = tuple(sorted(_VIII_COVERED))
                         except ImportError:
-                            from scripts.ci.b26_p2_vi_coverage import (  # noqa: PLC0415
-                                VI_COVERED_SURFACES as _VI_COVERED,
-                            )
+                            try:
+                                from scripts.ci.b26_p2_vii_coverage import (  # noqa: PLC0415
+                                    VII_COVERED_SURFACES as _VII_COVERED,
+                                )
 
-                            _covered = tuple(sorted(_VI_COVERED))
+                                _covered = tuple(sorted(_VII_COVERED))
+                            except ImportError:
+                                from scripts.ci.b26_p2_vi_coverage import (  # noqa: PLC0415
+                                    VI_COVERED_SURFACES as _VI_COVERED,
+                                )
+
+                                _covered = tuple(sorted(_VI_COVERED))
         _manifest = _build_manifest(_TOPO.db_admin, _covered)
         details["capability_coverage"] = {
             name: {

@@ -4199,3 +4199,122 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xi_coverage import XI_COVERED_SURFACES"
   risk_if_removed: New XI surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xii-auth-binding
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xii_auth_binding.py
+  owning_phase: B2.6-P2
+  protected_invariant: Authentication evidence is causally bound to a
+    successful provider-authentication event recorded independently of
+    the ingress credential.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XII predecessor-event/witness
+    binding law; no predecessor gate binds the witness to provider bytes.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_auth_binding.py --help
+  risk_if_removed: Credential-only authentication mint could return silently.
+  decision: enforce
+- gate_id: b26-p2-xii-process-isolation
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xii_process_isolation.py
+  owning_phase: B2.6-P2
+  protected_invariant: Ingress capability exists only in the
+    authentication execution boundary at the process level.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XII process/capability isolation;
+    the XI gate covers DB principals only.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_process_isolation.py --help
+  risk_if_removed: Non-ingress processes could hold ingress capability.
+  decision: enforce
+- gate_id: b26-p2-xii-single-regime
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xii_topology.py
+  owning_phase: B2.6-P2
+  protected_invariant: One serviceable head carries one authentication law.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XII single-regime law; no
+    predecessor gate refuses role-absent service or converges late roles.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_topology.py --help
+  risk_if_removed: A dual-physics topology could ship silently.
+  decision: enforce
+- gate_id: b26-p2-xii-semantic-closure
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xii_semantic_closure.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every P2 semantic dependency is discovered or
+    blocks closure (fixed-point, no silent frontier).
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate superseding the depth-bounded XI parser
+    with fixed-point closure plus sovereign catalog cross-check.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_semantic_closure.py --help
+  risk_if_removed: Alias/depth/view/set-level meaning could evade governance.
+  decision: enforce
+- gate_id: b26-p2-xii-temporal-behavioral
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xii_temporal_behavioral.py
+  owning_phase: B2.6-P2
+  protected_invariant: Temporal coverage is demonstrated behaviorally per
+    dependency, with honest stale state and serialized races.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate replacing textual coverage with live
+    mutation probes; no predecessor gate executes them.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xii_temporal_behavioral.py --help
+  risk_if_removed: Vacuous triggers could permit stale truth silently.
+  decision: enforce
+- gate_id: b26-p2-xii-nonvacuous
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/test_b26_p2_xii_negative_controls.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every XII check demonstrates RED on its defect
+    class with byte-exact restore to GREEN.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New battery for XII non-vacuity; no predecessor
+    battery plants XII mutant classes.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xii_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_b26_p2_xii_negative_controls.py --help
+  risk_if_removed: Vacuous XII checks could pass forever.
+  decision: enforce
+- gate_id: b26-p2-xii-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xii_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XII registry extends XI coverage for the
+    predecessor-event recorder, bound witness, and topology check.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XII coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xii_coverage import XII_COVERED_SURFACES"
+  risk_if_removed: New XII surfaces could stay untested silently.
+  decision: keep_utility
