@@ -151,32 +151,40 @@ async def _startup_xii_topology_guard() -> None:
     boundary_claimed = ingress_credential_mounted()
     try:
         async with engine.begin() as conn:
-            head = await conn.execute(text("SELECT version_num FROM alembic_version"))
-            heads = [str(r[0]) for r in head.fetchall()]
-            if "202609250001" not in heads:
-                return
-            present = await conn.execute(
-                text("SELECT count(*) FROM pg_roles WHERE rolname = 'app_ingress'")
-            )
-            present_row = present.fetchone()
-            if present_row is None or int(present_row[0]) != 1:
-                if not boundary_claimed:
-                    logger.critical(
-                        "b26_p2_xii_ingress_topology_absent: XII head"
-                        " without the app_ingress principal; P2"
-                        " authenticated ingress is unavailable on this"
-                        " process (no ingress credential mounted)"
-                    )
-                    return
-                raise RuntimeError(
-                    "b26_p2_xii_ingress_topology_absent: XII head requires"
-                    " the app_ingress principal for a process mounting"
-                    " the ingress credential"
+            # The adjudicator exists only at/above the XII head, and
+            # every runtime role holds EXECUTE on it, so consulting it
+            # directly works under least privilege (no version-table
+            # reads, which runtime principals are not granted).
+            try:
+                topo = await conn.execute(
+                    text("SELECT public.b26_p2_xii_topology_check()")
                 )
-            topo = await conn.execute(
-                text("SELECT public.b26_p2_xii_topology_check()")
-            )
-            topo.fetchone()
+                topo.fetchone()
+            except Exception as exc:
+                message = str(exc)
+                if "undefined_function" in message or "does not exist" in message:
+                    return
+                if "b26_p2_xii_ingress_topology_absent" in message:
+                    if not boundary_claimed:
+                        logger.critical(
+                            "b26_p2_xii_ingress_topology_absent: XII"
+                            " topology without the app_ingress principal;"
+                            " P2 authenticated ingress is unavailable on"
+                            " this process (no ingress credential mounted)"
+                        )
+                        return
+                    raise RuntimeError(
+                        "b26_p2_xii_ingress_topology_absent: XII topology"
+                        " requires the app_ingress principal for a process"
+                        " mounting the ingress credential"
+                    ) from exc
+                if "b26_p2_xii_ingress_topology_dead" in message:
+                    raise RuntimeError(
+                        "b26_p2_xii_ingress_topology_dead: late-created"
+                        " ingress principal without governed grants;"
+                        " run the governed provisioner"
+                    ) from exc
+                raise
     except RuntimeError:
         raise
     except Exception as exc:
