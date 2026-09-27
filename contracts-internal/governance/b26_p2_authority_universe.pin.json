@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
   "migration_head": "202609260001",
-  "authority_universe_hash": "8511a24ecbdb411720075eaf79367cb862b3e840a56b0aaea6517f1cfa9f7630",
-  "reviewed_at_git_sha": "f6a34a9a91ac1bb17060ff28d130b2e85b3af506",
+  "authority_universe_hash": "299e5c80b72c03ba476c4f46c570dfc82469ad6722977a5c6e4fc25ec68bc92c",
+  "reviewed_at_git_sha": "8f2b32ccce7c0207871353d11cc2d4311efd2fee",
   "meaning_surface_counts": {
-    "routine_meaning": 136,
+    "routine_meaning": 141,
     "trigger_meaning": 21,
     "schema_meaning": 5,
     "rls_meaning": 17,
-    "ownership": 97
+    "ownership": 102
   },
-  "review_note": "B2.6-P2 Corrective XIII root-of-trust closure: authorship closure (app_user zero), pending_authentication law, terminal+witness dispatch, atomic transition, XIII topology/provisioner/oracle. Hash to be re-pinned from live CI universe."
+  "review_note": "B2.6-P2 Corrective XIII root-of-trust closure reviewed: trust-root-only P recorder + atomic transition + XIII topology adjudicator; app_user zero authorship; pending law; terminal+witness dispatch; live hash from auditor-owned PG15 fresh lane (prepare+alembic head) with XIII coverage; open_world_unknown empty."
 }

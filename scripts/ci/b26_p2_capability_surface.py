@@ -753,6 +753,17 @@ KNOWN_P2_DEFINERS = frozenset(
         # bootstrap routine census, never by the grant census.)
         "b26_p2_record_provider_auth_consequence",
         "b26_p2_xii_topology_check",
+        # Corrective XIII: the predecessor-event recorder moves to the
+        # trust root (EXECUTE app_ingress alone; app_user zero), the
+        # atomic transition (EXECUTE app_ingress alone; single-txn P +
+        # witness + evidence + terminal provenance) and the read-only
+        # XIII topology adjudicator (EXECUTE runtime roles; mints
+        # nothing, supersedes XII with authorship closure). All are
+        # P2-covered (b26_p2_xiii_coverage) and falsified by the XIII
+        # battery (AUTH/CAP/SEM/TEMP cells) plus the XIII live
+        # validators. (XIII provision/oracle grant no runtime EXECUTE.)
+        "b26_p2_authenticate_ingress_atomic",
+        "b26_p2_xiii_topology_check",
     }
 )
 
