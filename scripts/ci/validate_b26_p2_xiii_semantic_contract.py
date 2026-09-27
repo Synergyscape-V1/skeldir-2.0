@@ -54,11 +54,11 @@ FORMAT_SQL_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 FRAGMENT_CONCAT_RE = re.compile(
-    r"(\|\|.*(SELECT|FROM|public\.))|((SELECT|FROM|public\.).*\|\|)",
+    r"(\|\|.*\b(SELECT|FROM)\b)|(\b(SELECT|FROM)\b.*\|\|)",
     re.IGNORECASE | re.DOTALL,
 )
 OPERATOR_RE = re.compile(
-    r"\bOPERATOR\s*\(|CREATE\s+OPERATOR\b|==+|!==|===|<\->|@>|<@|\?#",
+    r"\bOPERATOR\s*\(|\bCREATE\s+OPERATOR\b|===|!==|<\->",
     re.IGNORECASE,
 )
 REGCLASS_RE = re.compile(
