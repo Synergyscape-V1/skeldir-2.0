@@ -392,6 +392,23 @@ def test_xa1_assertion_promotes_nothing() -> None:
                 "ALTER TABLE public.webhook_ingress_identities"
                 " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
             )
+            # XIII: seeder authenticates; this negative test requires
+            # witnessless unknown, so remove auth artifacts (admin).
+            cur.execute(
+                "DELETE FROM public.b26_p2_provenance_evidence"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.b26_p2_ingress_auth_witness"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.b26_p2_provider_auth_consequence"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
     finally:
         admin.close()
     # Ordinary application authority cannot execute the attester.
@@ -410,7 +427,13 @@ def test_xa1_assertion_promotes_nothing() -> None:
                     (str(ids["ingress_id"]), f"b26p2xi:{ids['tag']}"),
                 )
             )
-            assert "permission denied" in denied.lower()
+            # XIII: app_user holds zero EXECUTE (permission denied) or,
+            # where inheritance applies, in-body caller_refused; either
+            # mints nothing.
+            assert (
+                "permission denied" in denied.lower()
+                or "caller_refused" in denied.lower()
+            )
             # Bare status write is refused: no witness-backed evidence.
             # Non-ingress callers without witness visibility are
             # refused at the capability plane (permission denied);

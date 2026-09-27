@@ -467,6 +467,26 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                 "ALTER TABLE public.webhook_ingress_identities"
                 " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
             )
+            # XIII: seeder authenticates (evidence exists); this negative
+            # test requires witnessless unknown, so remove auth artifacts
+            # (as admin, allowed) before asserting promotion refusal.
+            # Cascade from ingress is disabled here to keep the ingress
+            # row; delete children explicitly.
+            cur.execute(
+                "DELETE FROM public.b26_p2_provenance_evidence"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.b26_p2_ingress_auth_witness"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.b26_p2_provider_auth_consequence"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
             cur.execute(
                 "SELECT idempotency_key FROM public.webhook_ingress_identities"
                 " WHERE id = %s",
@@ -510,7 +530,13 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                     (str(ids["ingress_id"]), idem),
                 )
             )
-            assert "permission denied" in denied.lower()
+            # XIII: app_user holds zero EXECUTE (permission denied at the
+            # grant plane) or, where role inheritance applies, is refused
+            # in-body (caller_refused); either mints nothing.
+            assert (
+                "permission denied" in denied.lower()
+                or "caller_refused" in denied.lower()
+            )
     finally:
         api.close()
     # Corrective XII restoration: predecessor consequence first (API
