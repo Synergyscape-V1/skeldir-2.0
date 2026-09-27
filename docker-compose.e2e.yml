@@ -59,14 +59,15 @@ services:
       REALTIME_REVENUE_ERROR_COOLDOWN_SECONDS: 5
       REALTIME_REVENUE_SINGLEFLIGHT_WAIT_SECONDS: 2
       REALTIME_REVENUE_SINGLEFLIGHT_POLL_SECONDS: 0.05
-      # B2.6-P2 Corrective XIII: the general API never holds the
-      # authenticated-ingress credential. Only the dedicated
-      # auth_ingress service below mounts
-      # B26_P2_INGRESS_DATABASE_URL_FILE; the API blanks both
-      # variables and fails closed if they are present.
-      B26_P2_INGRESS_DATABASE_URL: ""
+      # B2.6-P2 Corrective XIII: e2e lanes that serve verified
+      # webhooks through this API exercise the trust-root path
+      # in-process (role + credential from the lane env); lanes that
+      # leave E2E_INGRESS_DATABASE_URL blank keep the boundary unclaimed
+      # (workers blank it unconditionally). Production (local/c19) never
+      # mounts here: the dedicated auth_ingress service holds the file.
+      B26_P2_INGRESS_DATABASE_URL: ${E2E_INGRESS_DATABASE_URL:-}
       B26_P2_INGRESS_DATABASE_URL_FILE: ""
-      SKELDIR_PROCESS_ROLE: "api"
+      SKELDIR_PROCESS_ROLE: ${E2E_PROCESS_ROLE:-api}
     command: >
       uvicorn app.main:app
       --host 0.0.0.0

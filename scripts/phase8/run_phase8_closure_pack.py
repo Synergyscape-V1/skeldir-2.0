@@ -395,9 +395,11 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "E2E_WORKER_DATABASE_URL": cfg.compose_worker_async_dsn,
             "E2E_CELERY_BROKER_URL": cfg.compose_broker_dsn,
             "E2E_CELERY_RESULT_BACKEND": cfg.compose_result_dsn,
-            # B2.6-P2 Corrective XII: the pack posts verified webhooks
-            # through the API boundary, so the boundary holds the
-            # ingress credential (the role is provisioned above).
+            # B2.6-P2 Corrective XIII: the pack posts verified webhooks
+            # through the API, which exercises the trust-root path
+            # in-process (auth role + lane credential). Production splits
+            # them; the database law under test is identical.
+            "E2E_PROCESS_ROLE": "auth_ingress",
             "E2E_INGRESS_DATABASE_URL": (
                 f"postgresql+asyncpg://app_ingress:app_ingress"
                 f"@{os.getenv('PHASE8_DB_COMPOSE_HOST', 'postgres')}:5432/"
