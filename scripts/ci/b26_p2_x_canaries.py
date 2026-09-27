@@ -78,6 +78,14 @@ def _seed_ingress(cur, tenant: str, tag: str,
         (ingress_id, tenant, event_id, provider, f"evt-{tag}", f"ord-{tag}",
          f"ord-{tag}", DAY_NOON, f"x-canary:{tag}"),
     )
+    # XIII: dispatch requires terminal authentication. Fully authenticate
+    # lawful canary fixtures via the atomic transition (as admin, allowed).
+    cur.execute(
+        "SELECT public.b26_p2_authenticate_ingress_atomic("
+        "%s, %s, %s, %s, %s,"
+        " 'hmac-sha256-timestamped-hex', 'v1')",
+        (ingress_id, provider, f"evt-{tag}", "a" * 64, "b" * 64),
+    )
     return ingress_id, event_id
 
 
@@ -306,6 +314,24 @@ def run_canaries(admin_dsn: str, violations: list[str],
                     "ALTER TABLE public.webhook_ingress_identities"
                     " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
                 )
+                # XIII: seeder authenticates (evidence exists); this negative
+                # test requires witnessless unknown, so remove auth artifacts
+                # (as admin, allowed) before asserting promotion refusal.
+                cur.execute(
+                    "DELETE FROM public.b26_p2_provenance_evidence"
+                    " WHERE webhook_ingress_identity_id = %s",
+                    (ingress8,),
+                )
+                cur.execute(
+                    "DELETE FROM public.b26_p2_ingress_auth_witness"
+                    " WHERE webhook_ingress_identity_id = %s",
+                    (ingress8,),
+                )
+                cur.execute(
+                    "DELETE FROM public.b26_p2_provider_auth_consequence"
+                    " WHERE webhook_ingress_identity_id = %s",
+                    (ingress8,),
+                )
                 cur.execute(
                     "SELECT idempotency_key FROM"
                     " public.webhook_ingress_identities WHERE id = %s",
@@ -352,9 +378,9 @@ def run_canaries(admin_dsn: str, violations: list[str],
                 notes["c8_assert"] = str(refused)[:160]
         finally:
             api.close()
-        # XIII restoration through the dedicated trust root:
-        # consequence + bound witness + signed attestation all via the
-        # ingress boundary (app_user authorship is physically impossible).
+        # XIII restoration through the dedicated trust root (seeder and
+        # restoration share the a/b digests, idempotent, no immutable
+        # conflict; app_user authorship is physically impossible).
         ingress0 = psycopg2.connect(ingress_dsn)
         ingress0.autocommit = True
         try:
@@ -367,7 +393,7 @@ def run_canaries(admin_dsn: str, violations: list[str],
                     "SELECT public.b26_p2_record_provider_auth_consequence"
                     "(%s, 'stripe', %s, %s, %s,"
                     " 'hmac-sha256-timestamped-hex', 'v1')",
-                    (ingress8, "evt-c8", "c" * 64, "d" * 64),
+                    (ingress8, "evt-c8", "a" * 64, "b" * 64),
                 )
         finally:
             ingress0.close()
@@ -382,7 +408,7 @@ def run_canaries(admin_dsn: str, violations: list[str],
                 icur.execute(
                     "SELECT public.b26_p2_record_ingress_auth_witness"
                     "(%s, 'stripe', %s, %s)",
-                    (ingress8, "evt-c8", "c" * 64),
+                    (ingress8, "evt-c8", "a" * 64),
                 )
                 restored = _attempt(
                     icur,
