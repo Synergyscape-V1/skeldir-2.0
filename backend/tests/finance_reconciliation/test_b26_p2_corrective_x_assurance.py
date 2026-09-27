@@ -125,6 +125,28 @@ def _seed_ids(tag: str, *, provider: str = "stripe") -> dict:
                  f"evt-{tag}", f"ord-{tag}", f"ord-{tag}", DAY_NOON,
                  f"b26p2x:{tag}"),
             )
+            # XIII: lawful fixtures land terminal (known + witness) via
+            # the atomic transition (admin allowed), using the c/d
+            # digests that XH restoration also uses (idempotent, no
+            # immutable conflict). Negative tests force unknown /
+            # delete evidence explicitly.
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ingress_id), provider, f"evt-{tag}",
+                     "c" * 64, "d" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id,
