@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict fUSdtV2RpM0LkEFVTLgIIHoNMxMcMntoYjDhZmzC51OE6tDp6DSIS3vlnjiGtVo
+\restrict Fh9uxC3PrBhBUqRO3290oVNOAgnyTqtdGVTBeDyuW6dL65V5ggCS6aNLKnMsg6U
 
 -- Dumped from database version 15.19 (Debian 15.19-1.pgdg13+2)
 -- Dumped by pg_dump version 15.15
@@ -5437,6 +5437,9 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
+            -- Dispatch (as app_user) reads the witness for the terminal
+            -- law; SELECT confers zero authorship.
+            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
@@ -5559,6 +5562,9 @@ CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
+            -- Dispatch (as app_user) reads the witness for the terminal
+            -- law; SELECT confers zero authorship.
+            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
@@ -24089,5 +24095,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fUSdtV2RpM0LkEFVTLgIIHoNMxMcMntoYjDhZmzC51OE6tDp6DSIS3vlnjiGtVo
+\unrestrict Fh9uxC3PrBhBUqRO3290oVNOAgnyTqtdGVTBeDyuW6dL65V5ggCS6aNLKnMsg6U
 

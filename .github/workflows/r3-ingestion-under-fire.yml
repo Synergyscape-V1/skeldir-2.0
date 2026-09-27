@@ -157,8 +157,10 @@ jobs:
           GRANT CONNECT ON DATABASE r3 TO app_ingress;
           GRANT USAGE ON SCHEMA public TO app_ingress;
           -- Lane hygiene: this lane's blanket runtime grants below must
-          -- not re-open the XI witness/evidence tables to the ordinary
-          -- application principal (migration already revoked them).
+          -- not re-open witness/evidence WRITES to the ordinary
+          -- application principal. XIII dispatch law requires app_user
+          -- SELECT on the witness (terminal+witness gate); authorship
+          -- stays denied (no INSERT/UPDATE/DELETE, no EXECUTE).
           GRANT CONNECT ON DATABASE r3 TO app_user;
           GRANT USAGE ON SCHEMA public TO app_user;
           GRANT USAGE ON SCHEMA security TO app_user;
@@ -167,7 +169,8 @@ jobs:
           GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA security TO app_user;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_user;
-          REVOKE ALL ON TABLE public.b26_p2_ingress_auth_witness FROM app_user;
+          REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.b26_p2_ingress_auth_witness FROM app_user;
+          GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
           REVOKE ALL ON TABLE public.b26_p2_provenance_evidence FROM app_user;
           -- XI ingress capability (this lane provisions after
           -- migrating, so the migration's existence-guarded grants
