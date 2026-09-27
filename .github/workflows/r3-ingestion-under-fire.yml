@@ -66,10 +66,13 @@ jobs:
       INGESTION_FOLLOWUP_TASKS_ENABLED: "false"
       R3_ADMIN_DATABASE_URL: postgresql://r3:r3@127.0.0.1:5432/r3
       R3_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
-      # B2.6-P2 Corrective XI: the API is the provider-authentication
-      # boundary, so it alone mounts the dedicated ingress credential
-      # (verified-ingress authorship + witness). No other process here
-      # receives it.
+      # B2.6-P2 Corrective XIII: this test API exercises the
+      # authentication trust-root path (verification + atomic
+      # persistence) in one process, so it carries the auth role with
+      # the ingress credential. Production splits them (API role
+      # blanked, dedicated auth_ingress service holds the file); the
+      # database law under test is identical.
+      SKELDIR_PROCESS_ROLE: auth_ingress
       B26_P2_INGRESS_DATABASE_URL: postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/r3
       R3_API_BASE_URL: http://127.0.0.1:8000
       R3_LADDER: "50,250,1000"
