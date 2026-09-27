@@ -549,7 +549,10 @@ END $$;
 -- B2.6-P2 Corrective XIII: direct writes denied to every runtime
 -- principal (writes occur only through the SECURITY DEFINER recorder
 -- gated on session_user=app_ingress). Read-only observability only.
+-- Dispatch (as app_user) and its trigger read the witness to enforce
+-- the terminal+witness law; SELECT confers zero authorship.
 GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_user;
+GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
 GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
 REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM PUBLIC;
 -- XIII: only the dedicated authentication trust root may record P.

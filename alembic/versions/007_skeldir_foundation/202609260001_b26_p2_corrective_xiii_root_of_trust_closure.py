@@ -129,15 +129,20 @@ def upgrade() -> None:
         """
     )
     # Read-only observability for both principals; no direct writes.
+    # Dispatch (as app_user) and the dispatch trigger must read the
+    # witness to enforce the terminal+witness law; this SELECT confers
+    # zero authorship (no INSERT/UPDATE/DELETE, no EXECUTE).
     op.execute(
         """
         DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
                 GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_user;
+                GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
             END IF;
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
                 GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
+                GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_ingress;
             END IF;
         END $$;
         """
@@ -720,6 +725,9 @@ def upgrade() -> None:
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
+            -- Dispatch (as app_user) reads the witness for the terminal
+            -- law; SELECT confers zero authorship.
+            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
@@ -762,6 +770,9 @@ def upgrade() -> None:
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
+            -- Dispatch (as app_user) reads the witness for the terminal
+            -- law; SELECT confers zero authorship.
+            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
