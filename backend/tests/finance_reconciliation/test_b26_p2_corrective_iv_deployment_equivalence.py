@@ -118,6 +118,17 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
                     f"b26p2iv:{tag}",
                 ),
             )
+            # XIII: dispatch/conduction requires terminal authentication.
+            # Fully authenticate via the atomic transition (as admin,
+            # allowed) in the same cursor/session so provenance reads
+            # known.
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ingress_id), "stripe", f"evt-{tag}",
+                 "a" * 64, "b" * 64),
+            )
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id, "event_id": event_uuid}

@@ -148,6 +148,17 @@ def _seed_ingress(
                  f"evt-{tag}", f"ord-{tag}", f"ord-{tag}", amount, currency,
                  event_time, f"b26p2viii:{tag}", state),
             )
+            # XIII: verified INSERT lands pending (never known). Fully
+            # authenticate lawful fixtures via the atomic transition (as
+            # admin, allowed) so provenance reads known.
+            if state == "authenticity_verified":
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ingress_id), provider, f"evt-{tag}",
+                     "a" * 64, "b" * 64),
+                )
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id, "event_id": event_uuid}

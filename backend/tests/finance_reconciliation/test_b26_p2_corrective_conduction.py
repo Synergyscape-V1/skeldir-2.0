@@ -160,6 +160,22 @@ def _seed_conduction_universe(tag: str) -> dict[str, Any]:
                         f"b26p2ca1-ingress:{tag}:{provider}:{order}",
                     ),
                 )
+                # XIII: dispatch requires terminal authentication. Fully
+                # authenticate the fixture via the atomic transition (as
+                # admin, allowed) in the same cursor/session so
+                # provenance reads known for derivation/dispatch.
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        str(identity_id),
+                        provider,
+                        f"b26p2ca1-ingress-{tag}-{order}",
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
                 if verdict:
                     cur.execute(
                         "INSERT INTO public.b23_match_verdicts (id, tenant_id,"
@@ -677,6 +693,28 @@ async def test_p2ca1_scope_identity_binds_exact_producer_set() -> None:
                     f"b26p2ca1-order-identity-woo-clone-{uuid.uuid4().hex[:6]}",
                     occurred,
                     f"b26p2ca1-ingress:identity:woo-clone:{uuid.uuid4().hex[:6]}",
+                ),
+            )
+            # XIII: the substituted clone conducts (provenance known),
+            # so authenticate it in the same cursor/session (as admin,
+            # allowed) immediately after the INSERT.
+            cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(clone_ingress_id),),
+            )
+            _clone_auth = cur.fetchone()
+            assert _clone_auth is not None, "seed clone missing for auth"
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (
+                    str(clone_ingress_id),
+                    _clone_auth[0],
+                    _clone_auth[1],
+                    "a" * 64,
+                    "b" * 64,
                 ),
             )
         substituted = await _derive(universe["tenant_id"])
