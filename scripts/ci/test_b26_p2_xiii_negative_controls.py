@@ -136,6 +136,8 @@ def _control_cap_topology_surgery(violations: list[str], checks: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="XIII negative controls.")
     parser.add_argument("--dsn", default=None)
+    parser.add_argument("--evidence-out", default=None)
+    parser.add_argument("--evidence-dir", default=None)
     args = parser.parse_args()
     violations: list[str] = []
     checks: dict = {}
@@ -160,6 +162,21 @@ def main() -> int:
         print(";".join(sorted(violations)))
     else:
         print(json.dumps({"checks": checks}, sort_keys=True, default=str))
+    evidence = {
+        "gate_id": "B26-P2-XIII-NONVACUOUS",
+        "validator": "test_b26_p2_xiii_negative_controls",
+        "status": status,
+        "violations": sorted(violations),
+        "checks": checks,
+    }
+    if args.evidence_out is not None:
+        Path(args.evidence_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.evidence_out).write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+    if args.evidence_dir is not None:
+        Path(args.evidence_dir).mkdir(parents=True, exist_ok=True)
+        (Path(args.evidence_dir) / "xiii-negative-controls.json").write_text(
+            json.dumps(evidence, indent=2), encoding="utf-8"
+        )
     return 0 if not violations else 1
 
 
