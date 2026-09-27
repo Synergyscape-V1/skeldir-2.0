@@ -146,6 +146,21 @@ def _seed_ingress(
                  f"evt-{tag}", f"ord-{tag}", f"ord-{tag}", amount, currency,
                  event_time, f"b26p2viii:{tag}", state),
             )
+            # B2.6-P2 Corrective XIII: dispatch requires terminal
+            # authentication (provenance known + witness). Fully
+            # authenticate the fixture via the atomic trust-root
+            # transition (as migration_owner, allowed) so conduction
+            # tests exercise the dispatch/conduction law, not auth.
+            # Fake digests are consistent within the fixture; provider
+            # binding enforced (must equal the ingress provider).
+            if state == "authenticity_verified":
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ingress_id), provider, f"evt-{tag}",
+                     "a" * 64, "b" * 64),
+                )
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id, "event_id": event_uuid}
