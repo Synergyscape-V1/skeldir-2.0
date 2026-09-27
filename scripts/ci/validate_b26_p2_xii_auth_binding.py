@@ -398,18 +398,20 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                     )
     finally:
         ingress.close()
-    # Consequence authorship is app_user/admin only.
-    ingress = psycopg2.connect(ingress_dsn)
-    ingress.autocommit = True
+    # Consequence authorship is trust-root/admin only (XIII: app_ingress
+    # records P; app_user holds zero EXECUTE/INSERT and is refused at
+    # the grant plane before the function body runs).
+    user = psycopg2.connect(user_dsn)
+    user.autocommit = True
     try:
-        with ingress.cursor() as cur:
+        with user.cursor() as cur:
             try:
                 cur.execute(
                     "SELECT public.b26_p2_record_provider_auth_consequence("
                     "%s,'stripe','e',%s,%s,'m','v1')",
                     (ingress_b, "c" * 64, "d" * 64),
                 )
-                violations.append("xii_auth_live_ingress_recorded_consequence")
+                violations.append("xii_auth_live_app_user_recorded_consequence")
             except Exception as exc:
                 if "permission denied" not in str(exc).lower():
                     violations.append(
@@ -417,7 +419,7 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                         + str(exc)[:100]
                     )
     finally:
-        ingress.close()
+        user.close()
     # Cleanup: remove every ingress row created above (lawful and
     # falsified alike) so a shared CI lane keeps a silent oracle.
     admin = psycopg2.connect(admin_dsn)
