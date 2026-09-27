@@ -254,21 +254,21 @@ def _seed_dispatch(ids: dict, task: str) -> None:
 def _witness_and_attest(
     ids: dict, *, kind: str = "signed_provider_reingestion"
 ) -> None:
-    """Lawful XII authentication chain for test fixtures.
+    """Lawful XIII authentication chain for test fixtures.
 
-    B2.6-P2 Corrective XII: the predecessor consequence P is recorded
-    with the API application principal (the test harness stands in for
-    the HMAC-verified webhook path), then the bound witness and the
-    attestation execute with ingress authority. governed_attestation
-    is migration/admin custody only and is never used here.
+    B2.6-P2 Corrective XIII: the predecessor consequence P, bound
+    witness, and attestation all execute with the dedicated trust-root
+    ingress authority (app_user holds zero EXECUTE/INSERT and is
+    refused at the grant plane). governed_attestation is
+    migration/admin custody only and is never used here.
     """
     import psycopg2
 
     evt_ref = f"evt-{ids['tag']}"
-    user = psycopg2.connect(_role_dsn("app_user"))
-    user.autocommit = True
+    ingress = psycopg2.connect(_role_dsn("app_ingress"))
+    ingress.autocommit = True
     try:
-        with user.cursor() as cur:
+        with ingress.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
@@ -280,12 +280,6 @@ def _witness_and_attest(
                  evt_ref, "c" * 64, "d" * 64,
                  "hmac-sha256-timestamped-hex"),
             )
-    finally:
-        user.close()
-    ingress = psycopg2.connect(_role_dsn("app_ingress"))
-    ingress.autocommit = True
-    try:
-        with ingress.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),

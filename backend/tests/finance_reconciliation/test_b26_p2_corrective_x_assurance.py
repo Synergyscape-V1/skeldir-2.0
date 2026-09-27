@@ -561,15 +561,14 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
             )
     finally:
         api.close()
-    # Corrective XII restoration: predecessor consequence first (API
-    # application principal, standing in for the HMAC-verified path),
-    # then the bound witness and the signed attestation (ingress
-    # principal). governed_attestation is migration/admin custody
-    # only and is never exercised here.
-    user = psycopg2.connect(_role_dsn("app_user"))
-    user.autocommit = True
+    # Corrective XIII restoration: predecessor consequence, bound
+    # witness, and signed attestation all via the dedicated trust root
+    # (app_user holds zero authorship). governed_attestation is
+    # migration/admin custody only and is never exercised here.
+    ingress0 = psycopg2.connect(_role_dsn("app_ingress"))
+    ingress0.autocommit = True
     try:
-        with user.cursor() as cur:
+        with ingress0.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
@@ -587,7 +586,7 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                 (str(ids["ingress_id"]), evt_ref, "c" * 64, "d" * 64),
             )
     finally:
-        user.close()
+        ingress0.close()
     ingress = psycopg2.connect(_role_dsn("app_ingress"))
     ingress.autocommit = True
     try:
