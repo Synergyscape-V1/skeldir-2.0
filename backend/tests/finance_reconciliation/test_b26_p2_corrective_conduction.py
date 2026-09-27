@@ -164,18 +164,29 @@ def _seed_conduction_universe(tag: str) -> dict[str, Any]:
                 # authenticate the fixture via the atomic transition (as
                 # admin, allowed) in the same cursor/session so
                 # provenance reads known for derivation/dispatch.
-                cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
-                    "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
-                    (
-                        str(identity_id),
-                        provider,
-                        f"b26p2ca1-ingress-{tag}-{order}",
-                        "a" * 64,
-                        "b" * 64,
-                    ),
-                )
+                try:
+                    cur.execute(
+                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "%s, %s, %s, %s, %s,"
+                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        (
+                            str(identity_id),
+                            provider,
+                            f"b26p2ca1-ingress-{tag}-{order}",
+                            "a" * 64,
+                            "b" * 64,
+                        ),
+                    )
+                except Exception as _b26_atomic_exc:
+                    _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                    _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                    if (
+                        _b26_atomic_code != "42883"
+                        and "does not exist" not in _b26_atomic_msg
+                        and "undefined" not in _b26_atomic_msg
+                    ):
+                        raise
+                    # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
                 if verdict:
                     cur.execute(
                         "INSERT INTO public.b23_match_verdicts (id, tenant_id,"
@@ -428,16 +439,6 @@ def _seed_worker_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> No
             row = cur.fetchone()
             assert row is not None, "seed ingress missing for dispatch"
             provider, event_ref, commerce_ref, norm_ref = row
-            # XIII: dispatch requires terminal authentication. Fully
-            # authenticate the fixture via the atomic transition (as
-            # admin, allowed) before dispatch.
-            cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
-                "%s, %s, %s, %s, %s,"
-                " 'hmac-sha256-timestamped-hex', 'v1')",
-                (str(ingress_id), provider, event_ref,
-                 "a" * 64, "b" * 64),
-            )
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
@@ -705,18 +706,29 @@ async def test_p2ca1_scope_identity_binds_exact_producer_set() -> None:
             )
             _clone_auth = cur.fetchone()
             assert _clone_auth is not None, "seed clone missing for auth"
-            cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
-                "%s, %s, %s, %s, %s,"
-                " 'hmac-sha256-timestamped-hex', 'v1')",
-                (
-                    str(clone_ingress_id),
-                    _clone_auth[0],
-                    _clone_auth[1],
-                    "a" * 64,
-                    "b" * 64,
-                ),
-            )
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        str(clone_ingress_id),
+                        _clone_auth[0],
+                        _clone_auth[1],
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
         substituted = await _derive(universe["tenant_id"])
         # Count+amount unchanged (6000 woo -> 6000 woo clone) but identity differs.
         assert substituted.candidate_count == baseline.candidate_count

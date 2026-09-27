@@ -154,13 +154,24 @@ def _seed_ingress(
             # Fake digests are consistent within the fixture; provider
             # binding enforced (must equal the ingress provider).
             if state == "authenticity_verified":
-                cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
-                    "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
-                    (str(ingress_id), provider, f"evt-{tag}",
-                     "a" * 64, "b" * 64),
-                )
+                try:
+                    cur.execute(
+                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "%s, %s, %s, %s, %s,"
+                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        (str(ingress_id), provider, f"evt-{tag}",
+                         "a" * 64, "b" * 64),
+                    )
+                except Exception as _b26_atomic_exc:
+                    _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                    _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                    if (
+                        _b26_atomic_code != "42883"
+                        and "does not exist" not in _b26_atomic_msg
+                        and "undefined" not in _b26_atomic_msg
+                    ):
+                        raise
+                    # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id, "event_id": event_uuid}

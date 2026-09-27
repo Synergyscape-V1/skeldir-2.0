@@ -195,6 +195,10 @@ def _seed_verdict(ids: dict) -> None:
 def _seed_dispatch(ids: dict, task: str) -> None:
     import psycopg2
 
+    # Corrective XIII: dispatch requires terminal authentication, which
+    # lawful fixtures already carry (seeded via ingress auth chain).
+    # This helper dispatches as-is so negative fixtures (unknown,
+    # witnessless, pending) correctly refuse; it never re-authenticates.
     conn = psycopg2.connect(_admin_dsn())
     conn.autocommit = True
     try:
@@ -202,20 +206,6 @@ def _seed_dispatch(ids: dict, task: str) -> None:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
-            )
-            cur.execute(
-                "SELECT provider, provider_native_event_reference"
-                " FROM public.webhook_ingress_identities WHERE id = %s",
-                (str(ids["ingress_id"]),),
-            )
-            _auth_row = cur.fetchone()
-            assert _auth_row is not None, "seed ingress missing for dispatch"
-            cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
-                "%s, %s, %s, %s, %s,"
-                " 'hmac-sha256-timestamped-hex', 'v1')",
-                (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
-                 "a" * 64, "b" * 64),
             )
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
