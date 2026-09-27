@@ -5911,6 +5911,32 @@
     the XII coverage gate.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-xiii-coverage-registry
+  path: scripts/ci/b26_p2_xiii_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XIII registry extends XII coverage for the trust-root-only
+    recorder, the atomic transition, and the XIII topology adjudicator
+    (retiring app_user authorship surfaces).
+  command: python -c "from scripts.ci.b26_p2_xiii_coverage import XIII_COVERED_SURFACES; print(len(XIII_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xiii_coverage import XIII_COVERED_SURFACES"
+  expected_failure_meaning: XIII EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XIII coverage gate.
+  subsumed_by: ''
+  registry_action: utility
 - id: b26-p2-xiii-auth-root
   path: scripts/ci/validate_b26_p2_xiii_auth_root.py
   status: required
