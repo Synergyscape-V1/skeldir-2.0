@@ -352,13 +352,13 @@ def run_canaries(admin_dsn: str, violations: list[str],
                 notes["c8_assert"] = str(refused)[:160]
         finally:
             api.close()
-        # XII restoration through the provider-bound chain:
-        # consequence via the application principal, bound witness +
-        # signed attestation via the ingress boundary.
-        api2 = psycopg2.connect(api_dsn)
-        api2.autocommit = True
+        # XIII restoration through the dedicated trust root:
+        # consequence + bound witness + signed attestation all via the
+        # ingress boundary (app_user authorship is physically impossible).
+        ingress0 = psycopg2.connect(ingress_dsn)
+        ingress0.autocommit = True
         try:
-            with api2.cursor() as a2cur:
+            with ingress0.cursor() as a2cur:
                 a2cur.execute(
                     "SELECT set_config('app.current_tenant_id', %s, false)",
                     (tenant8,),
@@ -370,7 +370,7 @@ def run_canaries(admin_dsn: str, violations: list[str],
                     (ingress8, "evt-c8", "c" * 64, "d" * 64),
                 )
         finally:
-            api2.close()
+            ingress0.close()
         ingress = psycopg2.connect(ingress_dsn)
         ingress.autocommit = True
         try:

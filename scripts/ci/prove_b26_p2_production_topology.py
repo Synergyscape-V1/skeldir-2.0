@@ -879,9 +879,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609250001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xii")
-        details["migration_head"] = "202609250001"
+        if "202609260001" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xiii")
+        details["migration_head"] = "202609260001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -1860,53 +1860,27 @@ def main() -> int:
         from scripts.ci.b26_p2_capability_surface import (  # noqa: PLC0415
             build_manifest as _build_manifest,
         )
-        try:
-            from scripts.ci.b26_p2_xii_coverage import (  # noqa: PLC0415
-                XII_COVERED_SURFACES as _XII_COVERED,
-            )
-
-            _covered = tuple(sorted(_XII_COVERED))
-        except ImportError:
+        # Coverage registry: prefer the newest (XIII) law; fall back
+        # through predecessors for older lanes.
+        _covered = None
+        for _mod, _attr in (
+            ("scripts.ci.b26_p2_xiii_coverage", "XIII_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_xii_coverage", "XII_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_xi_coverage", "XI_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_x_coverage", "X_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_ix_coverage", "IX_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_viii_coverage", "VIII_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_vii_coverage", "VII_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_vi_coverage", "VI_COVERED_SURFACES"),
+        ):
             try:
-                from scripts.ci.b26_p2_xi_coverage import (  # noqa: PLC0415
-                    XI_COVERED_SURFACES as _XI_COVERED,
-                )
-
-                _covered = tuple(sorted(_XI_COVERED))
+                _m = __import__(_mod, fromlist=[_attr])
+                _covered = tuple(sorted(getattr(_m, _attr)))
+                break
             except ImportError:
-                try:
-                    from scripts.ci.b26_p2_x_coverage import (  # noqa: PLC0415
-                        X_COVERED_SURFACES as _X_COVERED,
-                    )
-
-                    _covered = tuple(sorted(_X_COVERED))
-                except ImportError:
-                    try:
-                        from scripts.ci.b26_p2_ix_coverage import (  # noqa: PLC0415
-                            IX_COVERED_SURFACES as _IX_COVERED,
-                        )
-
-                        _covered = tuple(sorted(_IX_COVERED))
-                    except ImportError:
-                        try:
-                            from scripts.ci.b26_p2_viii_coverage import (  # noqa: PLC0415
-                                VIII_COVERED_SURFACES as _VIII_COVERED,
-                            )
-
-                            _covered = tuple(sorted(_VIII_COVERED))
-                        except ImportError:
-                            try:
-                                from scripts.ci.b26_p2_vii_coverage import (  # noqa: PLC0415
-                                    VII_COVERED_SURFACES as _VII_COVERED,
-                                )
-
-                                _covered = tuple(sorted(_VII_COVERED))
-                            except ImportError:
-                                from scripts.ci.b26_p2_vi_coverage import (  # noqa: PLC0415
-                                    VI_COVERED_SURFACES as _VI_COVERED,
-                                )
-
-                                _covered = tuple(sorted(_VI_COVERED))
+                continue
+        if _covered is None:
+            raise RuntimeError("no_coverage_registry_importable")
         _manifest = _build_manifest(_TOPO.db_admin, _covered)
         details["capability_coverage"] = {
             name: {

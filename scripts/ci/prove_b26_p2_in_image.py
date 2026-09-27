@@ -59,19 +59,20 @@ IDENTITY_FILES = [
     "alembic/versions/007_skeldir_foundation/202609240001_b26_p2_corrective_x_assurance_sovereignty.py",
     "alembic/versions/007_skeldir_foundation/202609240002_b26_p2_corrective_xi_p2_core_closure.py",
     "alembic/versions/007_skeldir_foundation/202609250001_b26_p2_corrective_xii_fact_anchored_closure.py",
+    "alembic/versions/007_skeldir_foundation/202609260001_b26_p2_corrective_xiii_root_of_trust_closure.py",
 ]
 
-# Corrective XII stale falsifier probe (attestation delta): the base
-# (pre-XII) tree promotes unknown_legacy -> authenticated_known on a bare
-# caller assertion through the app_user attester (XI) or mints a witness
-# without a provider consequence (XI ingress-only mint); the candidate
-# (XII) tree refuses the same assertion (no EXECUTE / witness_missing /
-# no_auth_consequence / governed_admin_only) and restores authority only
-# through the provider-bound chain (consequence via app_user, bound
-# witness + signed attestation via ingress). MODE=base expects
-# XI_BASE_ATTESTED; MODE=candidate expects XI_CAND_DENIED then
-# XI_CAND_RESTORED. A base that refuses (already strict) or a candidate
-# that promotes (still assertable) fails the falsifier as vacuous.
+# Corrective XIII stale falsifier probe (attestation delta): the base
+# (pre-XIII) tree records the predecessor consequence via app_user and
+# promotes unknown_legacy -> authenticated_known on a bare caller
+# assertion; the candidate (XIII) tree refuses app_user authorship
+# entirely (no EXECUTE / caller_refused) and restores authority only
+# through the dedicated trust root (consequence + bound witness +
+# signed attestation via ingress, or the atomic transition). MODE=base
+# expects XI_BASE_ATTESTED; MODE=candidate expects XI_CAND_DENIED then
+# XI_CAND_RESTORED via the trust root. A base that refuses (already
+# strict) or a candidate that promotes via app_user (still assertable)
+# fails the falsifier as vacuous.
 PROBE_XI_ATTEST_DELTA = '''
 import os
 import sys
@@ -129,12 +130,14 @@ else:
         print("XI_CAND_MINTED_WITHOUT_CONSEQUENCE")
         raise SystemExit(1)
     print("XI_CAND_DENIED:" + outcome + "|" + mint_outcome)
-    user2 = psycopg2.connect(os.environ["PROBE_USER_DSN"])
-    user2.autocommit = True
-    uc2 = user2.cursor()
+    # XIII: restoration runs entirely as the dedicated trust root
+    # (app_ingress). App_user authorship is physically impossible.
+    ingress2 = psycopg2.connect(os.environ["PROBE_INGRESS_DSN"])
+    ingress2.autocommit = True
+    uc2 = ingress2.cursor()
     uc2.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
     uc2.execute("SELECT public.b26_p2_record_provider_auth_consequence(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1')", (ing, "evt-" + tag, "c" * 64, "d" * 64))
-    user2.close()
+    ingress2.close()
     ingress = psycopg2.connect(os.environ["PROBE_INGRESS_DSN"])
     ingress.autocommit = True
     ic = ingress.cursor()
@@ -542,52 +545,31 @@ def main() -> int:
         details["in_image_equivalence"] = "PASS"
 
         # 5. Authority-universe assertion with image bytes.
+        # Prefer the newest (XIII) coverage law; fall back through
+        # predecessors for older lanes.
         import importlib.util as _ilu
 
-        xii_spec = _ilu.spec_from_file_location(
-            "b26_p2_xii_coverage",
-            str(REPO_ROOT / "scripts" / "ci" / "b26_p2_xii_coverage.py"))
-        if xii_spec is not None and xii_spec.loader is not None:
-            coverage_mod = _ilu.module_from_spec(xii_spec)
-            sys.modules["b26_p2_xii_coverage"] = coverage_mod
-            xii_spec.loader.exec_module(coverage_mod)
-            covered = sorted(coverage_mod.XII_COVERED_SURFACES)
-        else:
-            xi_spec = _ilu.spec_from_file_location(
-                "b26_p2_xi_coverage",
-                str(REPO_ROOT / "scripts" / "ci" / "b26_p2_xi_coverage.py"))
-            if xi_spec is not None and xi_spec.loader is not None:
-                coverage_mod = _ilu.module_from_spec(xi_spec)
-                sys.modules["b26_p2_xi_coverage"] = coverage_mod
-                xi_spec.loader.exec_module(coverage_mod)
-                covered = sorted(coverage_mod.XI_COVERED_SURFACES)
-            else:
-                x_spec = _ilu.spec_from_file_location(
-                    "b26_p2_x_coverage",
-                    str(REPO_ROOT / "scripts" / "ci" / "b26_p2_x_coverage.py"))
-                if x_spec is not None and x_spec.loader is not None:
-                    coverage_mod = _ilu.module_from_spec(x_spec)
-                    sys.modules["b26_p2_x_coverage"] = coverage_mod
-                    x_spec.loader.exec_module(coverage_mod)
-                    covered = sorted(coverage_mod.X_COVERED_SURFACES)
-                else:
-                    ix_spec = _ilu.spec_from_file_location(
-                        "b26_p2_ix_coverage",
-                        str(REPO_ROOT / "scripts" / "ci" / "b26_p2_ix_coverage.py"))
-                    if ix_spec is not None and ix_spec.loader is not None:
-                        coverage_mod = _ilu.module_from_spec(ix_spec)
-                        sys.modules["b26_p2_ix_coverage"] = coverage_mod
-                        ix_spec.loader.exec_module(coverage_mod)
-                        covered = sorted(coverage_mod.IX_COVERED_SURFACES)
-                    else:
-                        spec = _ilu.spec_from_file_location(
-                            "b26_p2_viii_coverage",
-                            str(REPO_ROOT / "scripts" / "ci" / "b26_p2_viii_coverage.py"))
-                        assert spec is not None and spec.loader is not None
-                        coverage_mod = _ilu.module_from_spec(spec)
-                        sys.modules["b26_p2_viii_coverage"] = coverage_mod
-                    spec.loader.exec_module(coverage_mod)
-                    covered = sorted(coverage_mod.VIII_COVERED_SURFACES)
+        covered = None
+        for _modname, _fname, _attr in (
+            ("b26_p2_xiii_coverage", "b26_p2_xiii_coverage.py", "XIII_COVERED_SURFACES"),
+            ("b26_p2_xii_coverage", "b26_p2_xii_coverage.py", "XII_COVERED_SURFACES"),
+            ("b26_p2_xi_coverage", "b26_p2_xi_coverage.py", "XI_COVERED_SURFACES"),
+            ("b26_p2_x_coverage", "b26_p2_x_coverage.py", "X_COVERED_SURFACES"),
+            ("b26_p2_ix_coverage", "b26_p2_ix_coverage.py", "IX_COVERED_SURFACES"),
+            ("b26_p2_viii_coverage", "b26_p2_viii_coverage.py", "VIII_COVERED_SURFACES"),
+        ):
+            _spec = _ilu.spec_from_file_location(
+                _modname, str(REPO_ROOT / "scripts" / "ci" / _fname))
+            if _spec is not None and _spec.loader is not None:
+                try:
+                    _mod = _ilu.module_from_spec(_spec)
+                    sys.modules[_modname] = _mod
+                    _spec.loader.exec_module(_mod)
+                    covered = sorted(getattr(_mod, _attr))
+                    break
+                except (FileNotFoundError, AttributeError, ImportError):
+                    continue
+        assert covered is not None, "no_coverage_registry_found"
         proc = run_img(
             args.image_tag,
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",

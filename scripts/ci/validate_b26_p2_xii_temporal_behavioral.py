@@ -57,7 +57,6 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
     import psycopg2  # noqa: PLC0415
 
     ingress_dsn = _role_dsn(admin_dsn, "app_ingress")
-    user_dsn = _role_dsn(admin_dsn, "app_user")
     worker_dsn = _role_dsn(admin_dsn, "app_worker")
     tenant = str(uuid.uuid4())
     event_id = str(uuid.uuid4())
@@ -174,11 +173,13 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
             )
     finally:
         admin.close()
-    # Lawful XII authentication chain through exact runtime principals.
-    user = psycopg2.connect(user_dsn)
-    user.autocommit = True
+    # Lawful XIII authentication chain through the dedicated trust root.
+    # (app_user authorship is physically impossible; P, witness, and
+    # attestation all run as the ingress principal, atomically.)
+    ingress = psycopg2.connect(ingress_dsn)
+    ingress.autocommit = True
     try:
-        with user.cursor() as cur:
+        with ingress.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (tenant,),
@@ -187,16 +188,6 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 "SELECT public.b26_p2_record_provider_auth_consequence("
                 "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
                 (ingress_id, evt_ref, "c" * 64, "d" * 64),
-            )
-    finally:
-        user.close()
-    ingress = psycopg2.connect(ingress_dsn)
-    ingress.autocommit = True
-    try:
-        with ingress.cursor() as cur:
-            cur.execute(
-                "SELECT set_config('app.current_tenant_id', %s, false)",
-                (tenant,),
             )
             cur.execute(
                 "SELECT public.b26_p2_record_ingress_auth_witness"
@@ -460,11 +451,11 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
             )
     finally:
         ingress.close()
-    user_dsn = _role_dsn(admin_dsn, "app_user")
-    user = psycopg2.connect(user_dsn)
-    user.autocommit = True
+    # XIII: second lineage P via the trust root (app_user impossible).
+    ingress_b = psycopg2.connect(ingress_dsn)
+    ingress_b.autocommit = True
     try:
-        with user.cursor() as cur:
+        with ingress_b.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (tenant,),
@@ -475,7 +466,7 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 (ingress2, evt2, "e" * 64, "f" * 64),
             )
     finally:
-        user.close()
+        ingress_b.close()
     ingress = psycopg2.connect(ingress_dsn)
     ingress.autocommit = True
     try:

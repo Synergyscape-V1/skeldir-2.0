@@ -375,18 +375,16 @@ def _behavioral_probes(
                             + str(exc)[:120]
                         )
                 # Probe 3 (F-XI-A3): genuine consequence restores.
-                # B2.6-P2 Corrective XII: the lawful path is
-                # consequence (app_user, HMAC path) -> bound witness
-                # (app_ingress) -> attestation. The bare single-arg
-                # witness is fail-closed (see the XII battery for the
-                # credential-only RED); the XI probe exercises the
-                # full lawful chain through the new binding.
+                # B2.6-P2 Corrective XIII: the lawful path runs entirely
+                # through the dedicated trust root (consequence +
+                # bound witness + attestation as app_ingress, atomically).
+                # App_user authorship is physically impossible.
                 try:
                     cur.execute("SELECT 1")
-                    user_probe = psycopg2.connect(user_dsn)
-                    user_probe.autocommit = True
+                    ingress_probe = psycopg2.connect(ingress_dsn)
+                    ingress_probe.autocommit = True
                     try:
-                        with user_probe.cursor() as ucur:
+                        with ingress_probe.cursor() as ucur:
                             ucur.execute(
                                 "SELECT set_config('app.current_tenant_id',"
                                 " %s, false)",
@@ -404,7 +402,7 @@ def _behavioral_probes(
                                 ),
                             )
                     finally:
-                        user_probe.close()
+                        ingress_probe.close()
                     cur.execute(
                         "SELECT public.b26_p2_record_ingress_auth_witness"
                         "(%s, 'stripe', %s, %s)",

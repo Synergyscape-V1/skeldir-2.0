@@ -267,11 +267,12 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
     finally:
         ingress.close()
 
-    # Lawful chain restores (consequence via app_user).
-    user = psycopg2.connect(user_dsn)
-    user.autocommit = True
+    # Lawful chain restores (consequence via the dedicated trust root;
+    # XIII: app_user authorship is physically impossible).
+    ingress0 = psycopg2.connect(ingress_dsn)
+    ingress0.autocommit = True
     try:
-        with user.cursor() as cur:
+        with ingress0.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (tenant_a,),
@@ -283,7 +284,7 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
             )
             checks["consequence_recorded"] = True
     finally:
-        user.close()
+        ingress0.close()
     ingress = psycopg2.connect(ingress_dsn)
     ingress.autocommit = True
     try:
