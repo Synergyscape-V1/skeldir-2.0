@@ -155,6 +155,12 @@ ALLOWED_DOCKER_PATHS = {
     # gate blind to a compose edit smuggling the ingress credential
     # into a worker/beat/scheduler service.
     Path("scripts/ci/validate_b26_p2_xii_process_isolation.py"),
+    # B2.6-P2 Corrective XIII's capability-custody validator performs the
+    # same manifest census for the file-mounted credential (only the
+    # dedicated trust root may mount it; every other service blanks
+    # both variables). Same reason as XI/XII: it reads the manifests
+    # to check them, runs no container and adds no substrate.
+    Path("scripts/ci/validate_b26_p2_xiii_capability_custody.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),
     Path("scripts/smoke/m1_runtime_smoke.py"),
 }
