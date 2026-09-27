@@ -509,12 +509,6 @@ async def get_ingress_session(
     the ContextVar; direct environment redial is impossible because
     the credential is never read from the environment here.
     """
-    if os.getenv("SKELDIR_PROCESS_ROLE", "").strip() != "auth_ingress":
-        raise IngressBoundaryError(
-            "b26_p2_ingress_wrong_process: ingress capability exists"
-            " only in the dedicated authentication trust root"
-            " (SKELDIR_PROCESS_ROLE=auth_ingress)"
-        )
     _require_ingress_auth_boundary()
     if os.getenv("SKELDIR_PROCESS_ROLE", "").strip() != "auth_ingress":
         raise IngressBoundaryError(
