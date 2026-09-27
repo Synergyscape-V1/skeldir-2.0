@@ -177,6 +177,20 @@ def _seed_dispatch(ids: dict, task: str, *, provider: str = "stripe") -> None:
                 (str(ids["tenant_id"]),),
             )
             cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            _auth_row = cur.fetchone()
+            assert _auth_row is not None, "seed ingress missing for dispatch"
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
+                 "a" * 64, "b" * 64),
+            )
+            cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
                 " routing_key, correlation_id, provider,"

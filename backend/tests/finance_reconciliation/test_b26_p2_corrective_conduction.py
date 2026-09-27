@@ -412,6 +412,16 @@ def _seed_worker_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> No
             row = cur.fetchone()
             assert row is not None, "seed ingress missing for dispatch"
             provider, event_ref, commerce_ref, norm_ref = row
+            # XIII: dispatch requires terminal authentication. Fully
+            # authenticate the fixture via the atomic transition (as
+            # admin, allowed) before dispatch.
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ingress_id), provider, event_ref,
+                 "a" * 64, "b" * 64),
+            )
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"

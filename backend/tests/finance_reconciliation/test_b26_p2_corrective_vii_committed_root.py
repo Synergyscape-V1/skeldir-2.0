@@ -133,6 +133,26 @@ def _seed_ingress(tag: str, *, provider: str = "stripe", currency: str = "USD") 
 def _seed_dispatch(tenant_id: UUID, ingress_id: UUID, task: str) -> None:
     import psycopg2
 
+    _admin = psycopg2.connect(_admin_dsn())
+    _admin.autocommit = True
+    try:
+        with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ingress_id),),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None, "seed ingress missing for dispatch"
+            _acur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ingress_id), _auth_row[0], _auth_row[1],
+                 "a" * 64, "b" * 64),
+            )
+    finally:
+        _admin.close()
     conn = psycopg2.connect(_role_dsn("app_user"))
     conn.autocommit = True
     try:
@@ -322,6 +342,27 @@ def test_r7_worker_cannot_mint_verified_ingress():
                             (str(uuid.uuid4()), str(ids["tenant_id"]), str(event_uuid),
                              DAY_NOON, f"r7w:{uuid.uuid4().hex[:6]}"),
                         )
+                    _admin = psycopg2.connect(_admin_dsn())
+                    _admin.autocommit = True
+                    try:
+                        with _admin.cursor() as _acur:
+                            _acur.execute(
+                                "SELECT provider, provider_native_event_reference"
+                                " FROM public.webhook_ingress_identities"
+                                " WHERE id = %s",
+                                (str(ids["ingress_id"]),),
+                            )
+                            _auth_row = _acur.fetchone()
+                            assert _auth_row is not None
+                            _acur.execute(
+                                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                                "%s, %s, %s, %s, %s,"
+                                " 'hmac-sha256-timestamped-hex', 'v1')",
+                                (str(ids["ingress_id"]), _auth_row[0],
+                                 _auth_row[1], "a" * 64, "b" * 64),
+                            )
+                    finally:
+                        _admin.close()
                     with pytest.raises(Exception, match="permission denied|insufficient_privilege|sovereign"):
                         wcur.execute(
                             "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
@@ -362,6 +403,26 @@ def _barrier_race(*, reverse: bool = False, field: str = "clock") -> dict:
     tenant = str(ids["tenant_id"])
     ingress = str(ids["ingress_id"])
     task = f"rc7-{uuid.uuid4().hex[:8]}"
+    _admin = psycopg2.connect(_admin_dsn())
+    _admin.autocommit = True
+    try:
+        with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (ingress,),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None
+            _acur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (ingress, _auth_row[0], _auth_row[1],
+                 "a" * 64, "b" * 64),
+            )
+    finally:
+        _admin.close()
     barrier = threading.Barrier(2)
     outcomes: dict = {}
 
@@ -574,6 +635,26 @@ def test_c7_blank_provider_gate_refuses():
     # stronger than gate-only). This proves extensional equivalence at the
     # root: no blank root reaches B2.3/gate.
     ids = _seed_ingress("c7blank", provider="stripe")
+    _auth = psycopg2.connect(_admin_dsn())
+    _auth.autocommit = True
+    try:
+        with _auth.cursor() as _acur:
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None
+            _acur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
+                 "a" * 64, "b" * 64),
+            )
+    finally:
+        _auth.close()
     # Corrupt ingress to blank BEFORE dispatch (pre-authority, allowed by
     # custody since no dispatch references yet; shape law triggers at dispatch).
     admin = psycopg2.connect(_admin_dsn())

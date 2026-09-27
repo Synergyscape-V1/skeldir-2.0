@@ -156,6 +156,29 @@ def _seed_ingress(
 def _seed_dispatch(tenant_id: UUID, ingress_id: UUID, task: str) -> None:
     import psycopg2
 
+    # Corrective XIII: dispatch requires terminal authentication
+    # (provenance authenticated_known + witness). Authenticate via the
+    # atomic transition (as admin, allowed) before dispatch as app_user.
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
+    try:
+        with admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ingress_id),),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None, "seed ingress missing for dispatch"
+            _acur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ingress_id), _auth_row[0], _auth_row[1],
+                 "a" * 64, "b" * 64),
+            )
+    finally:
+        admin.close()
     conn = psycopg2.connect(_role_dsn("app_user"))
     conn.autocommit = True
     try:

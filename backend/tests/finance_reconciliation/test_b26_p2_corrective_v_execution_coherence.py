@@ -184,6 +184,20 @@ def _seed_dispatch(
                 (str(tenant_id),),
             )
             cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ingress_id),),
+            )
+            _auth_row = cur.fetchone()
+            assert _auth_row is not None, "seed ingress missing for dispatch"
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ingress_id), _auth_row[0], _auth_row[1],
+                 "a" * 64, "b" * 64),
+            )
+            cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
                 " routing_key, correlation_id, provider,"
@@ -299,6 +313,20 @@ def _seed_dispatch_only(tenant_id: UUID, ingress_id: UUID, task_id: str) -> None
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(tenant_id),),
+            )
+            cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ingress_id),),
+            )
+            _auth_row = cur.fetchone()
+            assert _auth_row is not None, "seed ingress missing for dispatch"
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ingress_id), _auth_row[0], _auth_row[1],
+                 "a" * 64, "b" * 64),
             )
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
@@ -745,6 +773,20 @@ def test_v_null_dispatch_window_refused_at_issuance() -> None:
             )
 
             def attempt() -> None:
+                cur.execute(
+                    "SELECT provider, provider_native_event_reference"
+                    " FROM public.webhook_ingress_identities WHERE id = %s",
+                    (str(ids["ingress_id"]),),
+                )
+                _auth_row = cur.fetchone()
+                assert _auth_row is not None
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
+                     "a" * 64, "b" * 64),
+                )
                 cur.execute(
                     "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                     " webhook_ingress_identity_id, task_id, task_name, queue,"
@@ -1250,6 +1292,26 @@ def test_v_relay_cannot_mint_execution_authority() -> None:
     ids = _seed_ingress("relay-mint")
     import psycopg2
 
+    _admin = psycopg2.connect(_admin_dsn())
+    _admin.autocommit = True
+    try:
+        with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None
+            _acur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
+                 "a" * 64, "b" * 64),
+            )
+    finally:
+        _admin.close()
     relay_dsn = _role_dsn("app_relay")
     conn = psycopg2.connect(relay_dsn)
     conn.autocommit = True

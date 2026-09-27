@@ -136,6 +136,24 @@ def _seed_dispatch(tenant_id: UUID, ingress_id: UUID, task_id: str) -> None:
                 (str(tenant_id),),
             )
             cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ingress_id),),
+            )
+            _row = cur.fetchone()
+            assert _row is not None, "seed ingress missing for dispatch"
+            _provider, _event_ref = _row[0], _row[1]
+            # Corrective XIII: dispatch requires terminal authentication
+            # (provenance authenticated_known + witness). Fully authenticate
+            # via the atomic transition (as admin, allowed) so deployment
+            # cells exercise conduction/deployment, not auth.
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (str(ingress_id), _provider, _event_ref, "a" * 64, "b" * 64),
+            )
+            cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
                 " routing_key, correlation_id, provider,"
@@ -351,6 +369,30 @@ def test_iv_outbox_fk_refuses_cross_tenant_ingress() -> None:
             # cross-tenant combination is under test. (Corrective V:
             # issuance carries a persisted window; the tuple law, not a
             # NULL window, is what this cell exercises.)
+            # Corrective XIII: dispatch requires terminal authentication
+            # (provenance authenticated_known + witness). Fully authenticate
+            # via the atomic transition (as admin, allowed) so this cell
+            # exercises the cross-tenant tuple law, not auth.
+            cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(second["ingress_id"]),),
+            )
+            _row = cur.fetchone()
+            assert _row is not None, "seed ingress missing for dispatch"
+            _provider, _event_ref = _row[0], _row[1]
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (
+                    str(second["ingress_id"]),
+                    _provider,
+                    _event_ref,
+                    "a" * 64,
+                    "b" * 64,
+                ),
+            )
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
@@ -409,6 +451,30 @@ def test_iv_split_brain_second_task_for_same_ingress_refused() -> None:
             )
 
             def attempt() -> None:
+                # Corrective XIII: dispatch requires terminal authentication.
+                # The ingress was authenticated by _seed_dispatch; re-assert
+                # the same atomic transition (idempotent) so this cell
+                # exercises split-brain refusal, not auth.
+                cur.execute(
+                    "SELECT provider, provider_native_event_reference"
+                    " FROM public.webhook_ingress_identities WHERE id = %s",
+                    (str(ids["ingress_id"]),),
+                )
+                _row = cur.fetchone()
+                assert _row is not None, "seed ingress missing for dispatch"
+                _provider, _event_ref = _row[0], _row[1]
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        str(ids["ingress_id"]),
+                        _provider,
+                        _event_ref,
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
                 cur.execute(
                     "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                     " webhook_ingress_identity_id, task_id, task_name, queue,"
@@ -955,6 +1021,30 @@ def test_iv_duplicate_seed_reuses_winner_task() -> None:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
+            )
+            # Corrective XIII: dispatch requires terminal authentication.
+            # The ingress was authenticated by _seed_dispatch; re-assert the
+            # same atomic transition (idempotent) so this cell exercises
+            # winner-reuse, not auth.
+            cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            _row = cur.fetchone()
+            assert _row is not None, "seed ingress missing for dispatch"
+            _provider, _event_ref = _row[0], _row[1]
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, %s, %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (
+                    str(ids["ingress_id"]),
+                    _provider,
+                    _event_ref,
+                    "a" * 64,
+                    "b" * 64,
+                ),
             )
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
