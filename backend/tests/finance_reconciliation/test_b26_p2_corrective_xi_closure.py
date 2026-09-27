@@ -1039,6 +1039,25 @@ def test_xd3_blank_foundation_cannot_found_truth() -> None:
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
+            # XIII: admin INSERT lands pending (never known). Force
+            # witnessless-known via replica bypass to simulate the
+            # dirty foundation the oracle must catch (as xa1 does for
+            # unknown). Then blank the provider for the blank-shape
+            # oracle class.
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " DISABLE TRIGGER trg_b26_p2_ingress_provenance"
+            )
+            cur.execute(
+                "UPDATE public.webhook_ingress_identities"
+                " SET b26_p2_provenance_status = 'authenticated_known'"
+                " WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
+            )
             cur.execute(
                 "UPDATE public.webhook_ingress_identities"
                 " SET provider = '   ' WHERE id = %s",
@@ -1067,16 +1086,25 @@ async def test_xe_p3_eligibility_matrix() -> None:
     ids = _seed_ids("xe1")
     _seed_verdict(ids)
     task = f"xi-xe1-{uuid.uuid4().hex[:8]}"
+    # XIII: witnessless rows cannot dispatch (terminal law refuses at
+    # the dispatch gate, not at P3). Verify the refusal first.
+    with_ingress_dispatch_refused = False
+    try:
+        _seed_dispatch(ids, task)
+    except Exception as exc:
+        if "provenance_unknown" in str(exc).lower() or "witness_missing" in str(exc).lower():
+            with_ingress_dispatch_refused = True
+        else:
+            raise
+    assert with_ingress_dispatch_refused, "witnessless dispatch must refuse"
+    # Genuine authentication through the trust root restores the lawful
+    # chain: dispatch, conduct, P3-eligible.
+    _witness_and_attest(ids, kind="signed_provider_reingestion")
     _seed_dispatch(ids, task)
-    # Witnessless conducted chain: conducts (admin trust) but is NOT
-    # P3-eligible until re-authenticated through the ingress boundary.
     _conduct(ids, task)
-    assert _eligible(task, ids["tenant_id"]) is False
+    assert _eligible(task, ids["tenant_id"]) is True
     # A spoofed tenant fails closed, never eligible.
     assert _eligible(task, uuid.uuid4()) is False
-    # Genuine re-ingestion restores eligibility.
-    _witness_and_attest(ids, kind="signed_provider_reingestion")
-    assert _eligible(task, ids["tenant_id"]) is True
     # Quarantined history is ineligible.
     import psycopg2
 
