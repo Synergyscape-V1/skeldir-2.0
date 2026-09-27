@@ -695,6 +695,26 @@ ALLOWED_M1_PATH_PREFIXES = [
     # function and mounts the derived DSN. Lane setup only; no
     # manufacturing-law content (content scan still applies).
     "scripts/phase_gates/b0_4_gate.py",
+    # --- B2.6-P2 Corrective XIII root-of-trust closure surface ---
+    # Authority-only slice: the single Corrective-XIII migration
+    # (authorship closure, pending_authentication law, terminal+witness
+    # dispatch, atomic transition, XIII topology/provisioner/oracle),
+    # the closed semantic contract companion, the dedicated
+    # authentication trust root service, and the XIII proof
+    # instruments (four live validators, non-vacuous battery, coverage
+    # registry). Same exemption shape as the Corrective-XII entry
+    # above; every prohibition retained unchanged. Proof tooling only;
+    # the manufacturing-law content scan still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609260001_b26_p2_corrective_xiii_root_of_trust_closure.py",
+    "contracts-internal/governance/b26_p2_xiii_semantic_contract.v1.json",
+    "backend/app/auth_service/__init__.py",
+    "backend/app/auth_service/server.py",
+    "scripts/ci/b26_p2_xiii_coverage.py",
+    "scripts/ci/test_b26_p2_xiii_negative_controls.py",
+    "scripts/ci/validate_b26_p2_xiii_auth_root.py",
+    "scripts/ci/validate_b26_p2_xiii_capability_custody.py",
+    "scripts/ci/validate_b26_p2_xiii_semantic_contract.py",
+    "scripts/ci/validate_b26_p2_xiii_temporal_completeness.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [
