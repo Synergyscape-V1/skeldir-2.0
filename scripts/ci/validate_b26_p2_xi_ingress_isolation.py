@@ -51,17 +51,11 @@ def _line_mounts_ingress(line: str) -> bool:
 
     B2.6-P2 Corrective XIII: the file-mounted credential
     (B26_P2_INGRESS_DATABASE_URL_FILE) is a distinct variable governed
-    by the XIII capability validator. Strip it before legacy-env
-    analysis so a blanked or auth-only FILE reference never counts as
-    a legacy env mount.
+    by the XIII capability validator. Strip every mention of the FILE
+    token (assignments, comments, volume references) before legacy-env
+    analysis so it never counts as a legacy env mount.
     """
-    scrubbed = re.sub(
-        r"B26_P2_INGRESS_DATABASE_URL_FILE\s*[:=]\s*[^ \t\n#\"']*"
-        r"|B26_P2_INGRESS_DATABASE_URL_FILE\s*:\s*\"[^\"]*\""
-        r"|B26_P2_INGRESS_DATABASE_URL_FILE\s*:\s*'[^']*'",
-        "",
-        line,
-    )
+    scrubbed = line.replace("B26_P2_INGRESS_DATABASE_URL_FILE", "")
     if INGRESS_DSN_TOKEN not in scrubbed:
         return False
     match = re.search(INGRESS_DSN_TOKEN + r"\s*([:=])", scrubbed)
@@ -322,6 +316,13 @@ def _live_checks(
             # B2.6-P2 Corrective XII: topology adjudication (read-only
             # checks) are observable by the ingress boundary.
             "b26_p2_xii_topology_check",
+            # B2.6-P2 Corrective XIII: the trust root records P and
+            # executes the atomic transition; both are ingress-only by
+            # design (app_user holds neither). Topology check XIII
+            # supersedes XII with the authorship closure included.
+            "b26_p2_record_provider_auth_consequence",
+            "b26_p2_authenticate_ingress_atomic",
+            "b26_p2_xiii_topology_check",
         }
         for routine in routines:
             if routine not in allowed_routines:
