@@ -112,6 +112,15 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 (ingress_id, tenant, event_id, evt_ref,
                  "ord-%s" % idem, "ord-%s" % idem, DAY_NOON, idem),
             )
+            # XIII: dispatch requires terminal authentication. Fully
+            # authenticate the fixture via the atomic transition (as
+            # admin/migration_owner, allowed) before dispatch.
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, 'stripe', %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (ingress_id, evt_ref, "c" * 64, "d" * 64),
+            )
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
