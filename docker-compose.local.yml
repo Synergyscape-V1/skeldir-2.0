@@ -212,11 +212,16 @@ services:
     # B2.6-P2 Corrective XIII authentication trust root: the SOLE
     # process that may possess the authenticated-ingress persistence
     # credential. Holds SKELDIR_PROCESS_ROLE=auth_ingress plus the
-    # file-mounted B26_P2_INGRESS_DATABASE_URL_FILE (Docker secret
+    # file-mounted B26_P2_INGRESS_DATABASE_URL_FILE (secret
     # mounted read-only, never in environment). Performs provider HMAC
     # verification and the atomic authenticated-ingress transition; no
     # other principal can manufacture its output (DB grants deny
     # app_user; manifests deny every non-auth process the file).
+    # Opt-in profile (mirrors trust-signer): local `make dev` does not
+    # start it by default; lanes serving verified webhooks start it
+    # explicitly with a provisioned secret file. Without it the API
+    # serves non-P2 routes and P2 ingress fails closed (by design).
+    profiles: ["auth-ingress"]
     build:
       context: .
       dockerfile: backend/Dockerfile

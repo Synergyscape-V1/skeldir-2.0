@@ -490,7 +490,7 @@ def main() -> int:
                         )
                         head = str(cur.fetchone()[0])
                         checks["migration_head"] = head
-                        if head not in ("202609240002", "202609250001"):
+                        if head not in ("202609240002", "202609250001", "202609260001"):
                             violations.append(
                                 "x_authority_unexpected_migration_head:"
                                 f"{head}"

@@ -538,7 +538,7 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 " reason, original_payload, migration_identity)"
                 " VALUES ('b23_match_task_dispatches', %s, %s, %s, %s, %s,"
                 " 'xii_temporal_probe:stale_terminal', '{}'::jsonb,"
-                " '202609250001')",
+                " '202609260001')",
                 (task, tenant, ingress_id, DAY_START, DAY_END),
             )
     finally:
