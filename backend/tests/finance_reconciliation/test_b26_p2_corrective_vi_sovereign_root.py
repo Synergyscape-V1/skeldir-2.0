@@ -232,6 +232,10 @@ def _seed_dispatch(
     try:
         with _admin.cursor() as _acur:
             _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",
                 (str(ingress_id),),
@@ -1044,6 +1048,10 @@ def test_vi_anchor_preset_stripped_and_stamped() -> None:
     try:
         with _admin.cursor() as _acur:
             _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",
                 (str(ids["ingress_id"]),),
@@ -1123,6 +1131,10 @@ def test_vi_anchor_takes_precedence_over_dispatched_fallback() -> None:
     _admin.autocommit = True
     try:
         with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
             _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",
@@ -1234,6 +1246,10 @@ def test_vi_outbox_issuance_and_retry_bound() -> None:
             _admin.autocommit = True
             try:
                 with _admin.cursor() as _acur:
+                    _acur.execute(
+                        "SELECT set_config('app.current_tenant_id', %s, false)",
+                        (str(ids["tenant_id"]),),
+                    )
                     _acur.execute(
                         "SELECT provider, provider_native_event_reference"
                         " FROM public.webhook_ingress_identities WHERE id = %s",
@@ -1372,6 +1388,10 @@ def test_vi_dispatch_preexisting_failure_refuses() -> None:
     try:
         with _auth_admin.cursor() as _acur:
             _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",
                 (str(ids["ingress_id"]),),
@@ -1500,6 +1520,10 @@ def test_vi_worker_ingress_cannot_become_execution() -> None:
     _admin.autocommit = True
     try:
         with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
             _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",

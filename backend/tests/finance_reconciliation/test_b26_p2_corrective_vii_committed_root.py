@@ -138,6 +138,10 @@ def _seed_dispatch(tenant_id: UUID, ingress_id: UUID, task: str) -> None:
     try:
         with _admin.cursor() as _acur:
             _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",
                 (str(ingress_id),),
@@ -347,6 +351,10 @@ def test_r7_worker_cannot_mint_verified_ingress():
                     try:
                         with _admin.cursor() as _acur:
                             _acur.execute(
+                                "SELECT set_config('app.current_tenant_id', %s, false)",
+                                (str(ids["tenant_id"]),),
+                            )
+                            _acur.execute(
                                 "SELECT provider, provider_native_event_reference"
                                 " FROM public.webhook_ingress_identities"
                                 " WHERE id = %s",
@@ -407,6 +415,10 @@ def _barrier_race(*, reverse: bool = False, field: str = "clock") -> dict:
     _admin.autocommit = True
     try:
         with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant,),
+            )
             _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",
@@ -639,6 +651,10 @@ def test_c7_blank_provider_gate_refuses():
     _auth.autocommit = True
     try:
         with _auth.cursor() as _acur:
+            _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
             _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",

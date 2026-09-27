@@ -1297,6 +1297,10 @@ def test_v_relay_cannot_mint_execution_authority() -> None:
     try:
         with _admin.cursor() as _acur:
             _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",
                 (str(ids["ingress_id"]),),

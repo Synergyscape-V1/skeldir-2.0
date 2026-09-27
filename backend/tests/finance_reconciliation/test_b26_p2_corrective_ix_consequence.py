@@ -164,6 +164,10 @@ def _seed_dispatch(tenant_id: UUID, ingress_id: UUID, task: str) -> None:
     try:
         with admin.cursor() as _acur:
             _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            _acur.execute(
                 "SELECT provider, provider_native_event_reference"
                 " FROM public.webhook_ingress_identities WHERE id = %s",
                 (str(ingress_id),),
