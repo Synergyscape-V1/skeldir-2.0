@@ -218,6 +218,15 @@ def _seed_no_verdict_task(admin_dsn: str) -> tuple[str, str, str]:
                 " 'authenticity_verified')",
                 (iid, tenant, eid, DAY_NOON, f"x-pf:{tenant[:8]}"),
             )
+            # XIII: dispatch requires terminal authentication. Fully
+            # authenticate the proof-plane fixture via the atomic
+            # transition (as admin, allowed) before dispatch/conduction.
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, 'stripe', 'e', %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (iid, "a" * 64, "b" * 64),
+            )
             task = f"x-pf-{uuid.uuid4().hex[:8]}"
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
