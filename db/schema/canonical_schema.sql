@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Fh9uxC3PrBhBUqRO3290oVNOAgnyTqtdGVTBeDyuW6dL65V5ggCS6aNLKnMsg6U
+\restrict D8Tyw08rP17guqGo3iWFOGIOcMPqdT8bijNfX4RCzBbgGrwdgazXPB19BvaxRlk
 
 -- Dumped from database version 15.19 (Debian 15.19-1.pgdg13+2)
 -- Dumped by pg_dump version 15.15
@@ -2994,6 +2994,10 @@ CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS tr
                 RETURN NEW;
             END IF;
             IF TG_OP = 'DELETE' THEN
+                -- Fixture cleanup and lawful retention run as migration
+                -- admins; runtime principals can never delete evidence
+                -- (they hold no DELETE grant, and this gate refuses them
+                -- even where a grant exists).
                 IF session_user IS DISTINCT FROM 'migration_owner'
                    AND session_user IS DISTINCT FROM 'postgres' THEN
                     RAISE EXCEPTION 'b26_p2_auth_cons_delete_refused'
@@ -24099,5 +24103,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Fh9uxC3PrBhBUqRO3290oVNOAgnyTqtdGVTBeDyuW6dL65V5ggCS6aNLKnMsg6U
+\unrestrict D8Tyw08rP17guqGo3iWFOGIOcMPqdT8bijNfX4RCzBbgGrwdgazXPB19BvaxRlk
 
