@@ -328,8 +328,16 @@ def upgrade() -> None:
                 RETURN NEW;
             END IF;
             IF TG_OP = 'DELETE' THEN
-                RAISE EXCEPTION 'b26_p2_auth_cons_delete_refused'
-                    USING ERRCODE = '42501';
+                -- Fixture cleanup and lawful retention run as migration
+                -- admins; runtime principals can never delete evidence
+                -- (they hold no DELETE grant, and this gate refuses them
+                -- even where a grant exists).
+                IF session_user IS DISTINCT FROM 'migration_owner'
+                   AND session_user IS DISTINCT FROM 'postgres' THEN
+                    RAISE EXCEPTION 'b26_p2_auth_cons_delete_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN OLD;
             END IF;
             RETURN NEW;
         END $$;

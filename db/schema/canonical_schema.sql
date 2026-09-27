@@ -2994,8 +2994,12 @@ CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS tr
                 RETURN NEW;
             END IF;
             IF TG_OP = 'DELETE' THEN
-                RAISE EXCEPTION 'b26_p2_auth_cons_delete_refused'
-                    USING ERRCODE = '42501';
+                IF session_user IS DISTINCT FROM 'migration_owner'
+                   AND session_user IS DISTINCT FROM 'postgres' THEN
+                    RAISE EXCEPTION 'b26_p2_auth_cons_delete_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN OLD;
             END IF;
             RETURN NEW;
         END $$;
