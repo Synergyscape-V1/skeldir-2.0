@@ -70,9 +70,15 @@ CONFIG_REL_RE = re.compile(
     re.IGNORECASE,
 )
 UNALIASED_FROM_RE = re.compile(
-    r"\b(?:FROM|JOIN)\s+public\.([a-z_][a-z0-9_]*)\s*(?:,|WHERE|GROUP|ORDER|LIMIT|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|;|$)",
+    r"\b(?:FROM|JOIN)\s+(?:public\.)?([a-z_][a-z0-9_]*)"
+    r"(?:\s+(?:AS\s+)?([a-z_][a-z0-9_]*))?",
     re.IGNORECASE,
 )
+FROM_KEYWORDS = frozenset({
+    "where", "group", "order", "limit", "join", "left", "right",
+    "inner", "outer", "full", "cross", "lateral", "on", "using",
+    "select", "from", "having", "union", "except", "intersect",
+})
 AGG_RE = re.compile(
     r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(|\bEXISTS\s*\(",
     re.IGNORECASE,
@@ -192,11 +198,33 @@ def _structural_checks(
             violations.append(f"xiii_semantic_config_relation:{name}")
         # Unaliased FROM: the scope-policy singleton read is the sole
         # allowed unaliased form (two-column relation, both declared).
+        # Aliased reads (AS alias or bare alias that is not a keyword)
+        # are attributed, not flagged. Non-semantic relations
+        # (quarantine/tenants exclusion scoping) may read unaliased;
+        # governed + unknown relations must be aliased (or policy).
+        governed_here = {t.lower() for t in contract.get("allowed_source_relations", [])}
+        nonsem_here = {t.lower() for t in contract.get("non_semantic_relations", [])}
         for m in UNALIASED_FROM_RE.finditer(src):
             table = m.group(1).lower()
+            alias = (m.group(2) or "").lower()
+            if alias and alias not in FROM_KEYWORDS:
+                continue
+            if table in nonsem_here:
+                continue
             if table == "b26_p2_scope_policy_authority":
                 continue
-            violations.append(f"xiii_semantic_unaliased_from:{name}:{table}")
+            # Only flag governed/unknown tables; pg_catalog and SQL
+            # keywords never reach here as table names in practice.
+            # To avoid flagging every subquery alias target, require the
+            # table to be governed or unknown-but-not-keyword.
+            if table in governed_here or table not in FROM_KEYWORDS:
+                # Unknown tables are also refused by the pg_depend
+                # ungoverned-relation check; flag here too for a direct
+                # structural signal (except obvious non-relations).
+                if table in ("select", "lateral"):
+                    continue
+                violations.append(f"xiii_semantic_unaliased_from:{name}:{table}")
+                break
         if WRITE_RE.search(src):
             violations.append(f"xiii_semantic_set_write:{name}")
         # COUNT/SUM/AVG/MIN/MAX: contract allows zero aggregates.
