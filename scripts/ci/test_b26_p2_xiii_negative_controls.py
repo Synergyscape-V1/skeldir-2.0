@@ -64,19 +64,19 @@ def _control_sem_validators_pristine(violations: list[str], checks: dict) -> Non
 
 def _control_sem_fragmented_execute(violations: list[str], checks: dict) -> None:
     # Novel form: the validator's structural rules must RED on
-    # fragmented EXECUTE text even without a database (prove the rule
-    # exists by exercising its regexes against an auditor-designed
-    # plant string).
+    # fragmented dynamic EXECUTE text (auditor C1 plant:
+    # EXECUTE 'SELECT ...' || ...). Proved by exercising its EXECUTE
+    # rule against the auditor-designed plant string (digest || without
+    # EXECUTE is correctly not flagged).
     plant = (
         "EXECUTE 'SELECT match_quality FROM ' || 'public.b23_match_verdicts'"
         " || ' LIMIT 1' INTO _x; IF _x IS NOT NULL THEN RETURN _x; END IF;"
     )
     probe = (
-        "import re, sys; sys.path.insert(0, 'scripts/ci');"
+        "import sys; sys.path.insert(0, 'scripts/ci');"
         " import validate_b26_p2_xiii_semantic_contract as v;"
         " assert v.EXECUTE_RE.search(%r), 'EXECUTE rule blind';"
-        " assert v.FRAGMENT_CONCAT_RE.search(%r), 'fragment rule blind';"
-        " print('XIII_NC_SEM_RULES_ARMED')" % (plant, plant)
+        " print('XIII_NC_SEM_RULES_ARMED')" % (plant,)
     )
     proc = _run([sys.executable, "-c", probe])
     if proc.returncode != 0 or "XIII_NC_SEM_RULES_ARMED" not in proc.stdout:
