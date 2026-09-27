@@ -1357,6 +1357,22 @@ def main() -> int:
                         f"proof-free:{free_ingress[:8]}",
                     ),
                 )
+                # XIII: dispatch requires terminal authentication. Fully
+                # authenticate the lawful fixture via the atomic
+                # transition (as admin/migration_owner, allowed) before
+                # dispatch. The stray row stays pending (non-dispatchable
+                # by law) for the crash test.
+                setup_cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, 'stripe', %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        free_ingress,
+                        f"e-proof-{free_ingress[:8]}",
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
                 setup_cur.execute(
                     "INSERT INTO public.attribution_events (id, tenant_id,"
                     " occurred_at, correlation_id, session_id, revenue_cents,"
