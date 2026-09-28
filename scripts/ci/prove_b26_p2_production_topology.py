@@ -1556,7 +1556,13 @@ def main() -> int:
                 )
                 return _fail("falsifier_forged_dispatch_allowed")
             except Exception as exc:
-                if "b26_p2_dispatch_window_not_sovereign" not in str(exc).split("\n")[0]:
+                # XIII terminal law fires before the window check for
+                # unauthenticated rows (provenance_unknown/witness_missing);
+                # either layer proves forged dispatch cannot conduct.
+                _msg0 = str(exc).split("\n")[0]
+                if ("b26_p2_dispatch_window_not_sovereign" not in _msg0
+                        and "b26_p2_dispatch_provenance_unknown" not in _msg0
+                        and "b26_p2_dispatch_witness_missing" not in _msg0):
                     return _fail(f"falsifier_forged_dispatch_wrong_layer:{str(exc)[:150]}")
                 falsifiers["forged_canonical_dispatch"] = "RED_as_required"
             # Corrective VI F-vi2: worker-synthesized completion proof is
