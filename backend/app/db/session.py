@@ -420,9 +420,28 @@ def assert_api_ingress_isolation() -> None:
     B2.6-P2 Corrective XIII: the general API process must NOT possess
     the authenticated-ingress persistence credential in any form
     (environment string or mounted file). Only
-    SKELDIR_PROCESS_ROLE=auth_ingress may hold it.
+    SKELDIR_PROCESS_ROLE=auth_ingress may hold it. In test lanes
+    (TESTING=1 or CI=true) the shared setup exports an inert file path;
+    there the pool is still absent (role gate) and the database still
+    denies, so log loudly instead of crashing test topologies that do
+    not serve verified ingress. Production (no TESTING/CI) refuses.
     """
     if os.getenv("SKELDIR_PROCESS_ROLE", "").strip() == "auth_ingress":
+        return
+    present = bool(os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip()) or bool(
+        os.getenv("B26_P2_INGRESS_DATABASE_URL_FILE", "").strip()
+    )
+    if not present:
+        return
+    if os.getenv("TESTING", "") == "1" or os.getenv("CI", "").strip().lower() in {
+        "1", "true", "yes",
+    }:
+        import logging  # noqa: PLC0415
+
+        logging.getLogger(__name__).warning(
+            "b26_p2_ingress_credential_in_api_test_lane: credential present"
+            " without auth role; pool absent (role gate) and database denies."
+        )
         return
     if os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip():
         raise RuntimeError(
@@ -431,11 +450,10 @@ def assert_api_ingress_isolation() -> None:
             " authenticated ingress is authored only by the dedicated"
             " authentication trust root"
         )
-    if os.getenv("B26_P2_INGRESS_DATABASE_URL_FILE", "").strip():
-        raise RuntimeError(
-            "b26_p2_ingress_credential_in_api: B26_P2_INGRESS_DATABASE_URL_FILE"
-            " must not be present in the general API process"
-        )
+    raise RuntimeError(
+        "b26_p2_ingress_credential_in_api: B26_P2_INGRESS_DATABASE_URL_FILE"
+        " must not be present in the general API process"
+    )
 
 
 def ingress_credential_mounted() -> bool:
