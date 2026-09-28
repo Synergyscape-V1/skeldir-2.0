@@ -438,10 +438,12 @@ def p2_worker_custody_remerge() -> None:
 
 
 def p2_worker_reads_bayesian_dsn() -> None:
+    # B2.6-P2 Corrective XIII: worker_b23 line carries the
+    # SKELDIR_PROCESS_ROLE prefix; anchor on the role-qualified form.
     _replace_once(
         PROCFILE,
-        "worker_b23: cd backend && DATABASE_URL=$B23_WORKER_DATABASE_URL",
-        "worker_b23: cd backend && DATABASE_URL=$WORKER_DATABASE_URL",
+        "worker_b23: cd backend && SKELDIR_PROCESS_ROLE=worker_b23 DATABASE_URL=$B23_WORKER_DATABASE_URL",
+        "worker_b23: cd backend && SKELDIR_PROCESS_ROLE=worker_b23 DATABASE_URL=$WORKER_DATABASE_URL",
         defect="p2_worker_reads_bayesian_dsn",
     )
 

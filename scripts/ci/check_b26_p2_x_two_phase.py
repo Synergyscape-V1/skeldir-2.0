@@ -58,6 +58,12 @@ TRUTH_COMPANIONS = {
         "db/schema/canonical_schema.sql",
         "db/schema/canonical_authority.sql",
     ),
+    "alembic/versions/007_skeldir_foundation/202609260001_b26_p2_corrective_xiii_root_of_trust_closure.py": (
+        "contracts-internal/governance/b26_p2_authority_universe.pin.json",
+        "contracts-internal/governance/b26_p2_xiii_semantic_contract.v1.json",
+        "db/schema/canonical_schema.sql",
+        "db/schema/canonical_authority.sql",
+    ),
 }
 
 
@@ -170,7 +176,7 @@ def main() -> int:
                     )
                     checks["authority_pin_head"] = apin.get("migration_head")
                     if apin.get("migration_head") not in (
-                        "202609240002", "202609250001"
+                        "202609240002", "202609250001", "202609260001"
                     ):
                         violations.append("x_two_phase_authority_pin_stale")
                 except (OSError, ValueError) as exc:

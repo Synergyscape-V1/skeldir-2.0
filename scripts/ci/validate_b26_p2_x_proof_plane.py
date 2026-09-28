@@ -218,6 +218,15 @@ def _seed_no_verdict_task(admin_dsn: str) -> tuple[str, str, str]:
                 " 'authenticity_verified')",
                 (iid, tenant, eid, DAY_NOON, f"x-pf:{tenant[:8]}"),
             )
+            # XIII: dispatch requires terminal authentication. Fully
+            # authenticate the proof-plane fixture via the atomic
+            # transition (as admin, allowed) before dispatch/conduction.
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s, 'stripe', 'e', %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (iid, "a" * 64, "b" * 64),
+            )
             task = f"x-pf-{uuid.uuid4().hex[:8]}"
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
@@ -745,7 +754,7 @@ def main() -> int:
                     )
                     head = str(cur.fetchone()[0])
                     checks["migration_head"] = head
-                    if head not in ("202609240002", "202609250001"):
+                    if head not in ("202609240002", "202609250001", "202609260001"):
                         violations.append(
                             f"x_proof_plane_unexpected_head:{head}"
                         )
@@ -753,7 +762,7 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001
                 violations.append(f"x_proof_plane_lane_unusable:{exc}")
                 head = ""
-            if head in ("202609240002", "202609250001"):
+            if head in ("202609240002", "202609250001", "202609260001"):
                 battery: list[tuple[str, object]] = [
                     ("PF-X-01", lambda: _pf01_protected_adjudication(args.dsn)),
                     ("PF-X-02", _pf02_history_fail_closed),

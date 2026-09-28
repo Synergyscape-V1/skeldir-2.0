@@ -162,6 +162,15 @@ def _completion_outcome(admin_dsn: str, state: dict) -> tuple:
                     (ingress, str(tenant), event_uuid, state["provider"],
                      state["currency"], state["event_time"], "viii-eq:%s" % tag),
                 )
+                # XIII: dispatch requires terminal authentication. Fully
+                # authenticate the corpus fixture via the atomic transition
+                # (as admin, allowed) before dispatch/conduction.
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, 'e', %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (ingress, state["provider"], "a" * 64, "b" * 64),
+                )
             except Exception as exc:
                 return (False, "upstream_refuse:ingress:%s" % str(exc).splitlines()[0][:80])
     finally:

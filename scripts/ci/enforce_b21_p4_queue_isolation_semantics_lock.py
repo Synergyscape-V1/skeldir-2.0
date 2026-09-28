@@ -115,11 +115,12 @@ def run_enforcement(
             violations.append(f"celery_file_missing_token:{token}")
 
     procfile_tokens = (
-        # B2.6-P2 Corrective XII: the generic worker blanks the
-        # authenticated-ingress credential (physical process
-        # isolation); queue topology is unchanged.
-        "worker: cd backend && B26_P2_INGRESS_DATABASE_URL= celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution",
-        "worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian",
+        # B2.6-P2 Corrective XIII: the generic worker blanks the
+        # authenticated-ingress credential in all forms (env string and
+        # file reference) and declares a non-auth process role (physical
+        # process isolation); queue topology is unchanged.
+        "B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution",
+        "worker_bayesian: cd backend && SKELDIR_PROCESS_ROLE=worker_bayesian SKELDIR_CELERY_WORKER_ROLE=bayesian",
         "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1 celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian",
     )
     for token in procfile_tokens:

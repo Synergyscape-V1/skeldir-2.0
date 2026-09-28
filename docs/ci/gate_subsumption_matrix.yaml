@@ -4318,3 +4318,105 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xii_coverage import XII_COVERED_SURFACES"
   risk_if_removed: New XII surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xiii-auth-root
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiii_auth_root.py
+  owning_phase: B2.6-P2
+  protected_invariant: Only the dedicated trust root authors authenticated
+    truth; partial states never dispatch.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XIII authorship/atomic/dispatch law;
+    no predecessor gate grants it.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiii_auth_root.py --help
+  risk_if_removed: App_user could manufacture authenticated money truth.
+  decision: enforce
+- gate_id: b26-p2-xiii-capability-custody
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiii_capability_custody.py
+  owning_phase: B2.6-P2
+  protected_invariant: Only the trust root holds the ingress credential
+    (role plus file); all other processes blanked and fail closed.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XIII process custody; no predecessor
+    gate checks the file-mounted role gate.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiii_capability_custody.py --help
+  risk_if_removed: A non-auth process could hold the ingress credential.
+  decision: enforce
+- gate_id: b26-p2-xiii-semantic-contract
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiii_semantic_contract.py
+  owning_phase: B2.6-P2
+  protected_invariant: Canonical P2 belongs to the closed contract;
+    out-of-language executable forms RED structurally.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XIII closed language; no predecessor
+    gate refuses fragmented dynamic or operator forms.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiii_semantic_contract.py --help
+  risk_if_removed: Invisible semantic dependencies could change P2 silently.
+  decision: enforce
+- gate_id: b26-p2-xiii-temporal-completeness
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiii_temporal_completeness.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every contract dependency has exactly one temporal
+    disposition (including set-level events) with behavioral proof.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XIII SEM-TEMP bijection; no
+    predecessor gate enforces set-level dispositions.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiii_temporal_completeness.py --help
+  risk_if_removed: Dependencies could lack temporal treatment silently.
+  decision: enforce
+- gate_id: b26-p2-xiii-nonvacuous
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/test_b26_p2_xiii_negative_controls.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every XIII check demonstrates RED on its defect
+    class with exact restore to GREEN.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New battery for XIII non-vacuity; no predecessor
+    battery plants XIII mutant classes.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiii_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_b26_p2_xiii_negative_controls.py --help
+  risk_if_removed: Vacuous XIII checks could pass forever.
+  decision: enforce
+- gate_id: b26-p2-xiii-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xiii_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XIII registry extends XII coverage for the
+    trust-root-only recorder, atomic transition, and topology check.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XIII coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xiii_coverage import XIII_COVERED_SURFACES"
+  risk_if_removed: New XIII surfaces could stay untested silently.
+  decision: keep_utility

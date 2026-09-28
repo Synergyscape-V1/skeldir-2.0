@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict IGk86jh0BNqkfU81SmDJUneAqrJ8DzJqKJA1YrwGCeN5gbSVt1nI1lTG3cWqct6
+\restrict ubShtyEvK8xoV7xGgMlIXygXi9aXgZGdCp7Wzp5LQMdab3Uzyuvz89OJY6BCPAB
 
 -- Dumped from database version 15.19
--- Dumped by pg_dump version 18.0
+-- Dumped by pg_dump version 15.19
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -2604,6 +2604,152 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
 
 
 --
+-- Name: b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text, p_sig_envelope_sha256 text, p_method text, p_version text DEFAULT 'v1'::text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _tenant uuid;
+            _idem text;
+            _state text;
+            _row_provider text;
+            _prov text;
+            _c_provider text;
+            _c_event text;
+            _c_body text;
+            _c_sig text;
+            _c_method text;
+            _c_version text;
+            _witness text;
+            _expected text;
+            _prev_guc text;
+        BEGIN
+            IF session_user IS DISTINCT FROM 'app_ingress'
+               AND session_user IS DISTINCT FROM 'migration_owner'
+               AND session_user IS DISTINCT FROM 'postgres' THEN
+                RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Serialize concurrent authentications for the same ingress
+            -- (one reconstructible ordering; Gate XIII-16). Crash before
+            -- commit leaves pending (retryable); after leaves authenticated.
+            SELECT i.tenant_id, i.idempotency_key,
+                   i.verified_commerce_ingress_state, i.provider,
+                   i.b26_p2_provenance_status
+              INTO _tenant, _idem, _state, _row_provider, _prov
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.id = p_ingress
+             FOR UPDATE;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_ingress_missing'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF _state IS DISTINCT FROM 'authenticity_verified' THEN
+                RAISE EXCEPTION 'b26_p2_atomic_ingress_unverified'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF p_provider IS DISTINCT FROM _row_provider THEN
+                RAISE EXCEPTION 'b26_p2_atomic_provider_mismatch'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF COALESCE(char_length(p_body_sha256), 0) <> 64
+               OR COALESCE(char_length(p_sig_envelope_sha256), 0) <> 64 THEN
+                RAISE EXCEPTION 'b26_p2_atomic_sha_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF public.b26_p2_ascii_strip(COALESCE(p_event_ref, '')) = ''
+               OR public.b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
+                RAISE EXCEPTION 'b26_p2_atomic_blank_shape_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            PERFORM set_config('app.current_tenant_id', _tenant::text, true);
+            BEGIN
+                -- Consequence (immutable: refuse rewrite).
+                SELECT c.provider, c.provider_event_reference, c.body_sha256,
+                       c.signature_envelope_sha256, c.auth_method, c.auth_version
+                  INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
+                  FROM public.b26_p2_provider_auth_consequence AS c
+                 WHERE c.webhook_ingress_identity_id = p_ingress;
+                IF NOT FOUND THEN
+                    INSERT INTO public.b26_p2_provider_auth_consequence AS c (
+                        webhook_ingress_identity_id, tenant_id, provider,
+                        provider_event_reference, body_sha256,
+                        signature_envelope_sha256, auth_method, auth_version,
+                        recorded_by
+                    )
+                    VALUES (p_ingress, _tenant, p_provider, p_event_ref,
+                            lower(p_body_sha256), lower(p_sig_envelope_sha256),
+                            p_method, COALESCE(p_version, 'v1'), session_user)
+                    ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
+                    SELECT c.provider, c.provider_event_reference, c.body_sha256,
+                           c.signature_envelope_sha256, c.auth_method, c.auth_version
+                      INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
+                      FROM public.b26_p2_provider_auth_consequence AS c
+                     WHERE c.webhook_ingress_identity_id = p_ingress;
+                ELSE
+                    IF _c_provider IS DISTINCT FROM p_provider
+                       OR _c_event IS DISTINCT FROM p_event_ref
+                       OR lower(_c_body) IS DISTINCT FROM lower(p_body_sha256)
+                       OR lower(_c_sig) IS DISTINCT FROM lower(p_sig_envelope_sha256)
+                       OR _c_method IS DISTINCT FROM p_method
+                       OR COALESCE(_c_version, 'v1') IS DISTINCT FROM COALESCE(p_version, 'v1') THEN
+                        RAISE EXCEPTION 'b26_p2_atomic_cons_immutable_refused'
+                            USING ERRCODE = '42501';
+                    END IF;
+                END IF;
+                -- Witness (deterministic binding).
+                SELECT w.witness_hash INTO _witness
+                  FROM public.b26_p2_ingress_auth_witness AS w
+                 WHERE w.webhook_ingress_identity_id = p_ingress;
+                IF NOT FOUND THEN
+                    _expected := encode(digest(
+                        _tenant::text || '|' || p_ingress::text || '|'
+                        || _c_provider || '|' || _c_event || '|'
+                        || lower(_c_body) || '|' || lower(_c_sig) || '|'
+                        || _c_method || '|' || COALESCE(_c_version, 'v1'),
+                        'sha256'), 'hex');
+                    INSERT INTO public.b26_p2_ingress_auth_witness AS w (
+                        webhook_ingress_identity_id, tenant_id,
+                        witness_hash, witnessed_by
+                    )
+                    VALUES (p_ingress, _tenant, _expected, session_user)
+                    ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
+                    SELECT w.witness_hash INTO _witness
+                      FROM public.b26_p2_ingress_auth_witness AS w
+                     WHERE w.webhook_ingress_identity_id = p_ingress;
+                END IF;
+                -- Evidence + terminal provenance in the SAME transaction.
+                INSERT INTO public.b26_p2_provenance_evidence AS e (
+                    webhook_ingress_identity_id, tenant_id,
+                    evidence_kind, evidence_ref, evidence_witness_hash
+                )
+                VALUES (p_ingress, _tenant, 'signed_provider_reingestion', _idem, _witness)
+                ON CONFLICT (webhook_ingress_identity_id) DO UPDATE SET
+                    evidence_kind = EXCLUDED.evidence_kind,
+                    evidence_ref = EXCLUDED.evidence_ref,
+                    evidence_witness_hash = EXCLUDED.evidence_witness_hash,
+                    attested_at = now();
+                UPDATE public.webhook_ingress_identities AS i
+                   SET b26_p2_provenance_status = 'authenticated_known'
+                 WHERE i.id = p_ingress;
+                PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
+                RETURN 'authenticated_known';
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
+                RAISE;
+            END;
+        END $$;
+
+
+--
 -- Name: b26_p2_canonical_day_end(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2818,6 +2964,56 @@ CREATE FUNCTION public.b26_p2_classify_candidate(p_tenant uuid, p_provider_raw t
 
 
 --
+-- Name: b26_p2_enforce_auth_consequence_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF TG_OP = 'INSERT' THEN
+                IF session_user IS DISTINCT FROM 'app_ingress'
+                   AND session_user IS DISTINCT FROM 'migration_owner'
+                   AND session_user IS DISTINCT FROM 'postgres' THEN
+                    RAISE EXCEPTION 'b26_p2_auth_cons_caller_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                NEW.recorded_by := session_user;
+                RETURN NEW;
+            END IF;
+            IF TG_OP = 'UPDATE' THEN
+                IF OLD.provider IS DISTINCT FROM NEW.provider
+                   OR OLD.provider_event_reference IS DISTINCT FROM NEW.provider_event_reference
+                   OR OLD.body_sha256 IS DISTINCT FROM NEW.body_sha256
+                   OR OLD.signature_envelope_sha256 IS DISTINCT FROM NEW.signature_envelope_sha256
+                   OR OLD.auth_method IS DISTINCT FROM NEW.auth_method
+                   OR COALESCE(OLD.auth_version, 'v1') IS DISTINCT FROM COALESCE(NEW.auth_version, 'v1')
+                   OR OLD.webhook_ingress_identity_id IS DISTINCT FROM NEW.webhook_ingress_identity_id
+                   OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+                    RAISE EXCEPTION 'b26_p2_auth_cons_immutable_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                NEW.recorded_by := OLD.recorded_by;
+                RETURN NEW;
+            END IF;
+            IF TG_OP = 'DELETE' THEN
+                -- Fixture cleanup and lawful retention run as migration
+                -- admins; runtime principals can never delete evidence
+                -- (they hold no DELETE grant, and this gate refuses them
+                -- even where a grant exists).
+                IF session_user IS DISTINCT FROM 'migration_owner'
+                   AND session_user IS DISTINCT FROM 'postgres' THEN
+                    RAISE EXCEPTION 'b26_p2_auth_cons_delete_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN OLD;
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_directory_coherence(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3017,13 +3213,23 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
     AS $$
         DECLARE
             _prov text;
+            _witness text;
         BEGIN
             SELECT i.b26_p2_provenance_status INTO _prov
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = NEW.webhook_ingress_identity_id
                AND i.tenant_id = NEW.tenant_id;
-            IF FOUND AND _prov = 'unknown_legacy' THEN
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_ingress_missing' USING ERRCODE = '42501';
+            END IF;
+            IF _prov IS DISTINCT FROM 'authenticated_known' THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_provenance_unknown' USING ERRCODE = '42501';
+            END IF;
+            SELECT w.witness_hash INTO _witness
+              FROM public.b26_p2_ingress_auth_witness AS w
+             WHERE w.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_witness_missing' USING ERRCODE = '42501';
             END IF;
             RETURN NEW;
         END $$;
@@ -3208,29 +3414,28 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
                     NEW.b26_p2_provenance_status := 'pending_not_applicable';
                     RETURN NEW;
                 END IF;
-                IF session_user IN ('app_ingress', 'migration_owner', 'postgres') THEN
-                    NEW.b26_p2_provenance_status := 'authenticated_known';
-                ELSE
-                    NEW.b26_p2_provenance_status := 'unknown_legacy';
-                END IF;
+                -- XIII: INSERT-time authority is never granted. The
+                -- authentication root's authoritative transition is the
+                -- evidence UPDATE below; until then the row is pending
+                -- and physically non-dispatchable (dispatch + P3 gates
+                -- require authenticated_known AND witness).
+                NEW.b26_p2_provenance_status := 'pending_authentication';
                 RETURN NEW;
             END IF;
             IF TG_OP = 'UPDATE' THEN
                 IF OLD.verified_commerce_ingress_state IS DISTINCT FROM 'authenticity_verified'
                    AND NEW.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified' THEN
-                    IF session_user IN ('app_ingress', 'migration_owner', 'postgres') THEN
-                        NEW.b26_p2_provenance_status := 'authenticated_known';
-                    ELSE
-                        NEW.b26_p2_provenance_status := 'unknown_legacy';
-                    END IF;
+                    -- Promotion to verified lands pending; the evidence
+                    -- guard below advances it only with full evidence.
+                    NEW.b26_p2_provenance_status := 'pending_authentication';
                 END IF;
                 IF OLD.b26_p2_provenance_status IS DISTINCT FROM NEW.b26_p2_provenance_status THEN
-                    IF OLD.b26_p2_provenance_status = 'authenticated_known'
+                    IF OLD.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                        AND NEW.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known' THEN
                         RAISE EXCEPTION 'b26_p2_provenance_downgrade_refused' USING ERRCODE = '42501';
                     END IF;
-                    IF OLD.b26_p2_provenance_status = 'unknown_legacy'
-                       AND NEW.b26_p2_provenance_status = 'authenticated_known'
+                    IF NEW.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+                       AND OLD.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known'
                        AND NOT EXISTS (
                                 SELECT 1 FROM public.b26_p2_provenance_evidence AS e
                                  WHERE e.webhook_ingress_identity_id = OLD.id
@@ -4583,9 +4788,21 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
             _tenant uuid;
             _idem text;
             _state text;
+            _row_provider text;
+            _existing_provider text;
+            _existing_event text;
+            _existing_body text;
+            _existing_sig text;
+            _existing_method text;
+            _existing_version text;
             _prev_guc text;
         BEGIN
-            IF session_user NOT IN ('app_user', 'migration_owner', 'postgres') THEN
+            -- Only the dedicated authentication trust root may record
+            -- the predecessor event. The generic application principal
+            -- is physically incapable (grant + this gate).
+            IF session_user IS DISTINCT FROM 'app_ingress'
+               AND session_user IS DISTINCT FROM 'migration_owner'
+               AND session_user IS DISTINCT FROM 'postgres' THEN
                 RAISE EXCEPTION 'b26_p2_auth_cons_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -4610,13 +4827,41 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
                     USING ERRCODE = '42501';
             END IF;
             SELECT i.tenant_id, i.idempotency_key,
-                   i.verified_commerce_ingress_state
-              INTO _tenant, _idem, _state
+                   i.verified_commerce_ingress_state, i.provider
+              INTO _tenant, _idem, _state, _row_provider
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_auth_cons_ingress_missing'
                     USING ERRCODE = '42501';
+            END IF;
+            -- Provider binding: a PayPal consequence on a Stripe row
+            -- is structurally refused (NULL-safe).
+            IF p_provider IS DISTINCT FROM _row_provider THEN
+                RAISE EXCEPTION 'b26_p2_auth_cons_provider_mismatch'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Immutability: an existing consequence is authoritative
+            -- evidence and cannot be rewritten by its author. Identical
+            -- re-record is idempotent; any digest/event/method drift
+            -- is refused (prevents post-witness substitution).
+            SELECT c.provider, c.provider_event_reference, c.body_sha256,
+                   c.signature_envelope_sha256, c.auth_method, c.auth_version
+              INTO _existing_provider, _existing_event, _existing_body,
+                   _existing_sig, _existing_method, _existing_version
+              FROM public.b26_p2_provider_auth_consequence AS c
+             WHERE c.webhook_ingress_identity_id = p_ingress;
+            IF FOUND THEN
+                IF _existing_provider IS DISTINCT FROM p_provider
+                   OR _existing_event IS DISTINCT FROM p_event_ref
+                   OR lower(_existing_body) IS DISTINCT FROM lower(p_body_sha256)
+                   OR lower(_existing_sig) IS DISTINCT FROM lower(p_sig_envelope_sha256)
+                   OR _existing_method IS DISTINCT FROM p_method
+                   OR COALESCE(_existing_version, 'v1') IS DISTINCT FROM COALESCE(p_version, 'v1') THEN
+                    RAISE EXCEPTION 'b26_p2_auth_cons_immutable_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN 'recorded';
             END IF;
             BEGIN
                 _prev_guc := current_setting('app.current_tenant_id', true);
@@ -4634,14 +4879,7 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
                 VALUES (p_ingress, _tenant, p_provider, p_event_ref,
                         lower(p_body_sha256), lower(p_sig_envelope_sha256),
                         p_method, COALESCE(p_version, 'v1'), session_user)
-                ON CONFLICT (webhook_ingress_identity_id) DO UPDATE SET
-                    provider = EXCLUDED.provider,
-                    provider_event_reference = EXCLUDED.provider_event_reference,
-                    body_sha256 = EXCLUDED.body_sha256,
-                    signature_envelope_sha256 = EXCLUDED.signature_envelope_sha256,
-                    auth_method = EXCLUDED.auth_method,
-                    auth_version = EXCLUDED.auth_version,
-                    verified_at = now();
+                ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
                 PERFORM set_config(
                     'app.current_tenant_id', COALESCE(_prev_guc, ''), true
                 );
@@ -5209,10 +5447,16 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
-            REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_ingress;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
+            -- Dispatch (as app_user) reads the witness for the terminal
+            -- law; SELECT confers zero authorship.
+            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
+            REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM app_user;
+            REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM app_user;
             RETURN 'xii_topology_provisioned';
         END $$;
 
@@ -5249,6 +5493,147 @@ CREATE FUNCTION public.b26_p2_xii_topology_check() RETURNS text
                     USING ERRCODE = 'P0001';
             END IF;
             RETURN 'xii_topology_strict';
+        END $$;
+
+
+--
+-- Name: b26_p2_xiii_invariant_oracle(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_xiii_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            -- Witness without consequence (self-certified token).
+            RETURN QUERY
+            SELECT 'xiii_witness_without_consequence'::text,
+                   ('ingress:' || i.id::text)::text,
+                   ('ingress=' || i.id::text)::text
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_ingress_auth_witness AS w
+                ON w.webhook_ingress_identity_id = i.id
+             WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND NOT EXISTS (
+                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                      WHERE c.webhook_ingress_identity_id = i.id
+               )
+               AND NOT EXISTS (
+                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                      WHERE q.webhook_ingress_identity_id = i.id
+               );
+            -- INSERT-time authority: verified + known with zero
+            -- consequence and zero witness (partial state conducting).
+            RETURN QUERY
+            SELECT 'xiii_partial_auth_authoritative'::text,
+                   ('ingress:' || i.id::text)::text,
+                   ('ingress=' || i.id::text)::text
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND NOT EXISTS (
+                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                      WHERE c.webhook_ingress_identity_id = i.id
+               )
+               AND NOT EXISTS (
+                     SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                      WHERE w.webhook_ingress_identity_id = i.id
+               )
+               AND NOT EXISTS (
+                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                      WHERE q.webhook_ingress_identity_id = i.id
+               );
+            RETURN;
+        END $$;
+
+
+--
+-- Name: b26_p2_xiii_provision_ingress_topology(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF session_user NOT IN ('migration_owner', 'postgres') THEN
+                RAISE EXCEPTION 'b26_p2_xiii_provision_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            GRANT USAGE ON SCHEMA public TO app_ingress;
+            GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
+            GRANT SELECT ON TABLE public.tenants TO app_ingress;
+            GRANT SELECT ON TABLE public.attribution_events TO app_ingress;
+            GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
+            GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress;
+            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_ingress;
+            GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
+            -- Dispatch (as app_user) reads the witness for the terminal
+            -- law; SELECT confers zero authorship.
+            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
+            REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
+            REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
+            REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
+            REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM app_user;
+            REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM app_user;
+            RETURN 'xiii_topology_provisioned';
+        END $$;
+
+
+--
+-- Name: b26_p2_xiii_topology_check(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_xiii_topology_check() RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress'
+            ) THEN
+                RAISE EXCEPTION 'b26_p2_xiii_ingress_topology_absent'
+                    USING ERRCODE = 'P0001';
+            END IF;
+            IF NOT has_function_privilege(
+                'app_ingress',
+                'public.b26_p2_record_ingress_auth_witness(uuid, text, text, text)',
+                'EXECUTE'
+            ) THEN
+                RAISE EXCEPTION 'b26_p2_xiii_ingress_topology_dead'
+                    USING ERRCODE = 'P0001';
+            END IF;
+            IF NOT has_function_privilege(
+                'app_ingress',
+                'public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text)',
+                'EXECUTE'
+            ) THEN
+                RAISE EXCEPTION 'b26_p2_xiii_ingress_topology_dead'
+                    USING ERRCODE = 'P0001';
+            END IF;
+            IF has_function_privilege(
+                'app_user',
+                'public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text)',
+                'EXECUTE'
+            ) THEN
+                RAISE EXCEPTION 'b26_p2_xiii_ingress_topology_dead'
+                    USING ERRCODE = 'P0001';
+            END IF;
+            IF has_function_privilege(
+                'app_user',
+                'public.b26_p2_attest_provenance_evidence(uuid, text, text)',
+                'EXECUTE'
+            ) THEN
+                RAISE EXCEPTION 'b26_p2_xiii_ingress_topology_dead'
+                    USING ERRCODE = 'P0001';
+            END IF;
+            RETURN 'xiii_topology_strict';
         END $$;
 
 
@@ -20458,6 +20843,13 @@ CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model
 
 
 --
+-- Name: b26_p2_provider_auth_consequence trg_b26_p2_auth_consequence_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_auth_consequence_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_auth_consequence_immutability();
+
+
+--
 -- Name: b23_match_task_dispatches trg_b26_p2_conducted_effect_guard; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -22723,7 +23115,7 @@ ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 -- Name: dead_events_quarantine quarantine_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
 
 
 --
@@ -22855,7 +23247,7 @@ CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant
 -- Name: investigation_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --
@@ -23590,14 +23982,14 @@ CREATE POLICY tenant_isolation_policy_webhook_ingress_identities ON public.webho
 -- Name: dead_events_quarantine tenant_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 
 --
 -- Name: dead_events_quarantine tenant_lane_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 
 --
@@ -23715,5 +24107,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict IGk86jh0BNqkfU81SmDJUneAqrJ8DzJqKJA1YrwGCeN5gbSVt1nI1lTG3cWqct6
+\unrestrict ubShtyEvK8xoV7xGgMlIXygXi9aXgZGdCp7Wzp5LQMdab3Uzyuvz89OJY6BCPAB
 

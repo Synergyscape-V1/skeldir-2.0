@@ -48,9 +48,17 @@ services:
     # the signer deployment unit; the public API must never receive it. Blanking
     # here is the compose-level expression of the same rule the runtime enforces
     # in assert_public_api_signer_isolation().
+    # B2.6-P2 Corrective XIII authentication trust root: the general API
+    # must NOT possess the authenticated-ingress credential in any form.
+    # Only the dedicated auth_ingress service below mounts
+    # B26_P2_INGRESS_DATABASE_URL_FILE; the API blanks both variables and
+    # fails closed at startup if they are present (assert_api_ingress_isolation).
     environment:
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
+      SKELDIR_PROCESS_ROLE: "api"
+      B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     ports:
       - "${API_PORT:-8000}:8000"
@@ -75,11 +83,13 @@ services:
       # The reconciler needs issuer authority, never signer authority.
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
-      # B2.6-P2 Corrective XII: the generic worker must never hold the
-      # authenticated-ingress credential. Blanking here is the
+      # B2.6-P2 Corrective XIII: the generic worker must never hold the
+      # authenticated-ingress credential in any form. Blanking here is the
       # compose-level expression of the same rule the worker enforces
-      # at startup (assert_worker_ingress_isolation).
+      # at startup (assert_worker_ingress_isolation + sanitize).
       B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      SKELDIR_PROCESS_ROLE: "worker"
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO
@@ -116,6 +126,8 @@ services:
       B23_WORKER_DATABASE_URL: ${B23_WORKER_DATABASE_URL:-postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_local}
       SKELDIR_B23_REQUIRE_WORKER_DSN: "1"
       B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      SKELDIR_PROCESS_ROLE: "worker_b23"
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: >
@@ -148,6 +160,8 @@ services:
       DATABASE_URL: ${B26_P2_RELAY_DATABASE_URL:-postgresql+asyncpg://app_relay:app_relay@postgres:5432/skeldir_local}
       SKELDIR_CELERY_WORKER_ROLE: b26_p2_relay
       B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      SKELDIR_PROCESS_ROLE: "b26_p2_relay"
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: >
@@ -183,11 +197,45 @@ services:
     environment:
       DATABASE_URL: ${B26_P2_BEAT_DATABASE_URL:-postgresql+asyncpg://app_beat:app_beat@postgres:5432/skeldir_local}
       B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      SKELDIR_PROCESS_ROLE: "beat"
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     command: >
       celery -A app.celery_app.celery_app beat
       --loglevel=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  auth_ingress:
+    # B2.6-P2 Corrective XIII authentication trust root: the SOLE
+    # process that may possess the authenticated-ingress persistence
+    # credential. Holds SKELDIR_PROCESS_ROLE=auth_ingress plus the
+    # file-mounted B26_P2_INGRESS_DATABASE_URL_FILE (secret
+    # mounted read-only, never in environment). Performs provider HMAC
+    # verification and the atomic authenticated-ingress transition; no
+    # other principal can manufacture its output (DB grants deny
+    # app_user; manifests deny every non-auth process the file).
+    # Opt-in profile (mirrors trust-signer): local `make dev` does not
+    # start it by default; lanes serving verified webhooks start it
+    # explicitly with a provisioned secret file. Without it the API
+    # serves non-P2 routes and P2 ingress fails closed (by design).
+    profiles: ["auth-ingress"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    container_name: skeldir-auth-ingress-local
+    env_file:
+      - .env.local
+    environment:
+      SKELDIR_PROCESS_ROLE: "auth_ingress"
+      TRUST_SIGNER_DATABASE_URL: ""
+      SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
+    volumes:
+      - ${B26_P2_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}:/run/secrets/b26_p2_ingress_dsn:ro
+    command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers 1
     depends_on:
       postgres:
         condition: service_healthy

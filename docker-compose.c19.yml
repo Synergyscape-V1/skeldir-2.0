@@ -93,7 +93,11 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
+      # XIII C19 test API: trust-root path in-process (auth role + lane
+      # credential); production splits them (auth_ingress holds the file).
       B26_P2_INGRESS_DATABASE_URL: ${C19_INGRESS_DATABASE_URL?missing C19_INGRESS_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      SKELDIR_PROCESS_ROLE: "auth_ingress"
       TRUST_ISSUANCE_DATABASE_URL: ${C19_ISSUER_DATABASE_URL?missing C19_ISSUER_DATABASE_URL}
       # B2.5-P14 Corrective V. The API process holds the two B2.8 causal
       # authorities the same way it holds issuance custody: as separate DSNs
@@ -127,15 +131,37 @@ services:
       timeout: 3s
       retries: 30
 
+  auth_ingress:
+    # B2.6-P2 Corrective XIII authentication trust root (c19): sole
+    # holder of the file-mounted ingress credential.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    environment:
+      <<: *runtime-common
+      SKELDIR_PROCESS_ROLE: "auth_ingress"
+    volumes:
+      - type: bind
+        source: ${C19_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}
+        target: /run/secrets/b26_p2_ingress_dsn
+        read_only: true
+    command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers 1
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   worker_attribution:
     <<: *worker-service
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
-      # B2.6-P2 Corrective XII: the authenticated-ingress credential is
-      # mounted only into api; every other process blanks it and fails
-      # closed at startup if it is ever present.
+      # B2.6-P2 Corrective XIII: the authenticated-ingress credential is
+      # mounted only into auth_ingress (file); every other process blanks
+      # it and fails closed at startup if it is ever present.
       B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      SKELDIR_PROCESS_ROLE: "worker"
       SKELDIR_CELERY_WORKER_ROLE: non_bayesian
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
     command: >

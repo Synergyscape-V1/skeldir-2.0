@@ -195,6 +195,10 @@ def _seed_verdict(ids: dict) -> None:
 def _seed_dispatch(ids: dict, task: str) -> None:
     import psycopg2
 
+    # Corrective XIII: dispatch requires terminal authentication, which
+    # lawful fixtures already carry (seeded via ingress auth chain).
+    # This helper dispatches as-is so negative fixtures (unknown,
+    # witnessless, pending) correctly refuse; it never re-authenticates.
     conn = psycopg2.connect(_admin_dsn())
     conn.autocommit = True
     try:
@@ -250,21 +254,21 @@ def _seed_dispatch(ids: dict, task: str) -> None:
 def _witness_and_attest(
     ids: dict, *, kind: str = "signed_provider_reingestion"
 ) -> None:
-    """Lawful XII authentication chain for test fixtures.
+    """Lawful XIII authentication chain for test fixtures.
 
-    B2.6-P2 Corrective XII: the predecessor consequence P is recorded
-    with the API application principal (the test harness stands in for
-    the HMAC-verified webhook path), then the bound witness and the
-    attestation execute with ingress authority. governed_attestation
-    is migration/admin custody only and is never used here.
+    B2.6-P2 Corrective XIII: the predecessor consequence P, bound
+    witness, and attestation all execute with the dedicated trust-root
+    ingress authority (app_user holds zero EXECUTE/INSERT and is
+    refused at the grant plane). governed_attestation is
+    migration/admin custody only and is never used here.
     """
     import psycopg2
 
     evt_ref = f"evt-{ids['tag']}"
-    user = psycopg2.connect(_role_dsn("app_user"))
-    user.autocommit = True
+    ingress = psycopg2.connect(_role_dsn("app_ingress"))
+    ingress.autocommit = True
     try:
-        with user.cursor() as cur:
+        with ingress.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
@@ -276,12 +280,6 @@ def _witness_and_attest(
                  evt_ref, "c" * 64, "d" * 64,
                  "hmac-sha256-timestamped-hex"),
             )
-    finally:
-        user.close()
-    ingress = psycopg2.connect(_role_dsn("app_ingress"))
-    ingress.autocommit = True
-    try:
-        with ingress.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
@@ -388,6 +386,23 @@ def test_xa1_assertion_promotes_nothing() -> None:
                 "ALTER TABLE public.webhook_ingress_identities"
                 " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
             )
+            # XIII: seeder authenticates; this negative test requires
+            # witnessless unknown, so remove auth artifacts (admin).
+            cur.execute(
+                "DELETE FROM public.b26_p2_provenance_evidence"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.b26_p2_ingress_auth_witness"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.b26_p2_provider_auth_consequence"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
     finally:
         admin.close()
     # Ordinary application authority cannot execute the attester.
@@ -406,7 +421,13 @@ def test_xa1_assertion_promotes_nothing() -> None:
                     (str(ids["ingress_id"]), f"b26p2xi:{ids['tag']}"),
                 )
             )
-            assert "permission denied" in denied.lower()
+            # XIII: app_user holds zero EXECUTE (permission denied) or,
+            # where inheritance applies, in-body caller_refused; either
+            # mints nothing.
+            assert (
+                "permission denied" in denied.lower()
+                or "caller_refused" in denied.lower()
+            )
             # Bare status write is refused: no witness-backed evidence.
             # Non-ingress callers without witness visibility are
             # refused at the capability plane (permission denied);
@@ -1018,6 +1039,25 @@ def test_xd3_blank_foundation_cannot_found_truth() -> None:
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
+            # XIII: admin INSERT lands pending (never known). Force
+            # witnessless-known via replica bypass to simulate the
+            # dirty foundation the oracle must catch (as xa1 does for
+            # unknown). Then blank the provider for the blank-shape
+            # oracle class.
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " DISABLE TRIGGER trg_b26_p2_ingress_provenance"
+            )
+            cur.execute(
+                "UPDATE public.webhook_ingress_identities"
+                " SET b26_p2_provenance_status = 'authenticated_known'"
+                " WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
+            )
             cur.execute(
                 "UPDATE public.webhook_ingress_identities"
                 " SET provider = '   ' WHERE id = %s",
@@ -1046,16 +1086,25 @@ async def test_xe_p3_eligibility_matrix() -> None:
     ids = _seed_ids("xe1")
     _seed_verdict(ids)
     task = f"xi-xe1-{uuid.uuid4().hex[:8]}"
+    # XIII: witnessless rows cannot dispatch (terminal law refuses at
+    # the dispatch gate, not at P3). Verify the refusal first.
+    with_ingress_dispatch_refused = False
+    try:
+        _seed_dispatch(ids, task)
+    except Exception as exc:
+        if "provenance_unknown" in str(exc).lower() or "witness_missing" in str(exc).lower():
+            with_ingress_dispatch_refused = True
+        else:
+            raise
+    assert with_ingress_dispatch_refused, "witnessless dispatch must refuse"
+    # Genuine authentication through the trust root restores the lawful
+    # chain: dispatch, conduct, P3-eligible.
+    _witness_and_attest(ids, kind="signed_provider_reingestion")
     _seed_dispatch(ids, task)
-    # Witnessless conducted chain: conducts (admin trust) but is NOT
-    # P3-eligible until re-authenticated through the ingress boundary.
     _conduct(ids, task)
-    assert _eligible(task, ids["tenant_id"]) is False
+    assert _eligible(task, ids["tenant_id"]) is True
     # A spoofed tenant fails closed, never eligible.
     assert _eligible(task, uuid.uuid4()) is False
-    # Genuine re-ingestion restores eligibility.
-    _witness_and_attest(ids, kind="signed_provider_reingestion")
-    assert _eligible(task, ids["tenant_id"]) is True
     # Quarantined history is ineligible.
     import psycopg2
 

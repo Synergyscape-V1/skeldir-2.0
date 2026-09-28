@@ -733,6 +733,11 @@ async def _redrive_pending_dispatch_for_ingress(
                             WHERE d.tenant_id = :tenant_id
                               AND i.event_id = :event_id
                               AND i.verified_commerce_ingress_state = 'authenticity_verified'
+                              AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+                              AND EXISTS (
+                                    SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                                     WHERE w.webhook_ingress_identity_id = i.id
+                              )
                             """
                         ),
                         {"tenant_id": str(tenant_id), "event_id": event_id},
@@ -848,21 +853,36 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
 
     dispatch_task_id = str(_dispatch_uuid.uuid4())
     async with get_session(tenant_id=tenant_id) as session:
+        # XIII dispatch law: dispatch may not select on verified-alone.
+        # It requires the exact terminal authentication state
+        # (provenance IS NOT DISTINCT FROM 'authenticated_known') AND
+        # witness existence. Pending rows (including INSERT-time
+        # partials with zero consequence/witness) are non-dispatchable
+        # by law; the database trigger enforces the same predicate.
         ingress = (
             (
                 await session.execute(
                     text(
                         """
                         SELECT
-                            id,
-                            provider,
-                            provider_native_event_reference,
-                            provider_native_commerce_reference,
-                            normalized_commerce_reference_value
-                        FROM public.webhook_ingress_identities
-                        WHERE tenant_id = :tenant_id
-                          AND event_id = :event_id
-                          AND verified_commerce_ingress_state = 'authenticity_verified'
+                            i.id,
+                            i.provider,
+                            i.provider_native_event_reference,
+                            i.provider_native_commerce_reference,
+                            i.normalized_commerce_reference_value
+                        FROM public.webhook_ingress_identities AS i
+                        WHERE i.tenant_id = :tenant_id
+                          AND i.event_id = :event_id
+                          AND i.verified_commerce_ingress_state = 'authenticity_verified'
+                          AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+                          AND EXISTS (
+                                SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                                 WHERE w.webhook_ingress_identity_id = i.id
+                          )
+                          AND EXISTS (
+                                SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                                 WHERE c.webhook_ingress_identity_id = i.id
+                          )
                         """
                     ),
                     {"tenant_id": str(tenant_id), "event_id": event_id},

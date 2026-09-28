@@ -127,34 +127,78 @@ async def _startup_secret_contract_guard() -> None:
 
 @app.on_event("startup")
 async def _startup_xii_topology_guard() -> None:
-    """B2.6-P2 Corrective XII: a P2 ingress boundary without its auth
-    topology refuses to serve.
+    """B2.6-P2 Corrective XIII: a P2 ingress boundary without its auth
+    topology refuses to serve; a non-auth process mounting ingress
+    capability refuses to serve.
 
-    One XII migration identity represents one authentication law.
-    Mounting the dedicated ingress credential declares this process a
-    provider-authentication boundary (see ingress_credential_mounted);
-    at/above the XII head such a process with a missing ingress
-    principal or non-strict grants is misconfigured and must fail
-    closed instead of risking predecessor service. Processes without
-    the credential make no P2-serving claim: they log the degraded
-    topology loudly while non-P2 routes serve (every P2 ingress path
-    still fails closed per-request through the database law and the
+    One XIII migration identity represents one authentication law.
+    Only SKELDIR_PROCESS_ROLE=auth_ingress may mount the dedicated
+    ingress credential (file-mounted). The general API process must
+    NOT possess it in any form: mounting declares a misconfigured
+    trust boundary and fails closed. Processes without the credential
+    make no P2-serving claim: they log the degraded topology loudly
+    while non-P2 routes serve (every P2 ingress path still fails
+    closed per-request through the database law and the
     authentication-boundary session gate).
     """
     import logging
+    import os
 
     from sqlalchemy import text
 
-    from app.db.session import engine, ingress_credential_mounted
+    from app.db.session import (
+        assert_api_ingress_isolation,
+        engine,
+        ingress_credential_mounted,
+    )
 
     logger = logging.getLogger(__name__)
+    # XIII physical custody: the general API must not hold the
+    # authenticated-ingress credential at all. Fail closed at boot
+    # instead of serving with a smuggled capability.
+    try:
+        assert_api_ingress_isolation()
+    except RuntimeError:
+        raise
     boundary_claimed = ingress_credential_mounted()
     try:
         async with engine.begin() as conn:
-            # The adjudicator exists only at/above the XII head, and
+            # The adjudicator exists only at/above the XIII head, and
             # every runtime role holds EXECUTE on it, so consulting it
             # directly works under least privilege (no version-table
             # reads, which runtime principals are not granted).
+            # Prefer the XIII strict check; fall back to XII on
+            # pre-XIII lanes.
+            try:
+                topo = await conn.execute(
+                    text("SELECT public.b26_p2_xiii_topology_check()")
+                )
+                topo.fetchone()
+                return
+            except Exception as xiii_exc:
+                xiii_msg = str(xiii_exc)
+                if "undefined_function" not in xiii_msg and "does not exist" not in xiii_msg:
+                    if "b26_p2_xiii_ingress_topology_absent" in xiii_msg:
+                        if not boundary_claimed:
+                            logger.critical(
+                                "b26_p2_xiii_ingress_topology_absent: XIII"
+                                " topology without the app_ingress principal;"
+                                " P2 authenticated ingress is unavailable on"
+                                " this process (no ingress credential mounted)"
+                            )
+                            return
+                        raise RuntimeError(
+                            "b26_p2_xiii_ingress_topology_absent: XIII topology"
+                            " requires the app_ingress principal for a process"
+                            " mounting the ingress credential"
+                        ) from xiii_exc
+                    if "b26_p2_xiii_ingress_topology_dead" in xiii_msg:
+                        raise RuntimeError(
+                            "b26_p2_xiii_ingress_topology_dead: late-created"
+                            " ingress principal without governed grants;"
+                            " run the governed provisioner"
+                        ) from xiii_exc
+                    raise
             try:
                 topo = await conn.execute(
                     text("SELECT public.b26_p2_xii_topology_check()")

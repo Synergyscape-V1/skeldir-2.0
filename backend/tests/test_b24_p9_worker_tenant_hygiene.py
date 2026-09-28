@@ -945,12 +945,14 @@ def test_b24_p9_directive_xi_recovery_scheduler_is_production_wired() -> None:
     assert "worker_process_token" not in outbox
 
     assert (
-        "beat: cd backend && DATABASE_URL=$B26_P2_BEAT_DATABASE_URL "
-        "B26_P2_INGRESS_DATABASE_URL= celery -A "
+        "beat: cd backend && SKELDIR_PROCESS_ROLE=beat "
+        "DATABASE_URL=$B26_P2_BEAT_DATABASE_URL "
+        "B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= celery -A "
         "app.celery_app.celery_app beat" in procfile
     )
     assert (
-        "worker_bayesian: cd backend && SKELDIR_CELERY_WORKER_ROLE=bayesian" in procfile
+        "worker_bayesian: cd backend && SKELDIR_PROCESS_ROLE=worker_bayesian "
+        "SKELDIR_CELERY_WORKER_ROLE=bayesian" in procfile
     )
     assert "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1" in procfile
 

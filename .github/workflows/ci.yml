@@ -110,6 +110,9 @@ jobs:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b22_p2_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p2_ci
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      # XIII: contract cohort B2.2 runtime proofs post verified webhooks
+      # through the trust-root path in-process (auth role + lane file).
+      SKELDIR_PROCESS_ROLE: auth_ingress
       SKELDIR_B22_P2_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B22_P3_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B22_P4_REQUIRE_DB_PROOFS: "1"
@@ -514,6 +517,9 @@ jobs:
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      # XIII: B2.3 proof posts verified webhooks through the trust-root path
+      # in-process (auth role + lane file credential from setup-postgres-ci).
+      SKELDIR_PROCESS_ROLE: auth_ingress
       SKELDIR_B23_P1_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B23_P2_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B23_P3_REQUIRE_DB_PROOFS: "1"
@@ -931,6 +937,9 @@ jobs:
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b22_p5_benchmark
       EXPECTED_RUNTIME_DB_USER: app_user
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      # XIII: benchmark posts verified webhooks through the trust-root path
+      # in-process (auth role + lane file credential from setup-postgres-ci).
+      SKELDIR_PROCESS_ROLE: auth_ingress
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
@@ -1012,6 +1021,9 @@ jobs:
       EXPECTED_RUNTIME_DB_USER: app_user
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      # XIII: P6 end-to-end truth-ingress posts verified webhooks through
+      # the trust-root path in-process (auth role + lane file credential).
+      SKELDIR_PROCESS_ROLE: auth_ingress
       TESTING: "1"
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       CONTRACT_TESTING: "0"
@@ -4228,8 +4240,9 @@ jobs:
       B057_P5_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b057_p6
       B057_P5_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
-      # B2.6-P2 Corrective XII: the p5 test posts verified webhooks
-      # through the API ingress boundary (role provisioned below).
+      # B2.6-P2 Corrective XIII: this test API exercises the trust-root
+      # path in one process (auth role with the ingress credential).
+      SKELDIR_PROCESS_ROLE: auth_ingress
       B26_P2_INGRESS_DATABASE_URL: postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/skeldir_b057_p6
       B057_P6_WORKER_USER: app_worker
       B057_P5_ARTIFACT_DIR: artifacts/b057-p6

@@ -447,9 +447,15 @@ class _Topology:
             *self._base_env(dsn),
             "-e",
             f"B26_P2_STALENESS_SECONDS={self.args.staleness_seconds}",
-            # Corrective XI: the API is the provider-authentication
-            # boundary, so it alone mounts the dedicated ingress
-            # credential (verified-ingress authorship + witness).
+            # Corrective XIII: this proof container exercises the
+            # authentication trust-root path (verification + atomic
+            # persistence) in one process for test simplicity, so it
+            # carries the auth role with the ingress credential.
+            # Production splits them (API role blanked, dedicated
+            # auth_ingress service holds the file); the database law
+            # under test is identical.
+            "-e",
+            "SKELDIR_PROCESS_ROLE=auth_ingress",
             "-e",
             f"B26_P2_INGRESS_DATABASE_URL=postgresql+asyncpg://app_ingress:app_ingress@pg:5432/{DB_NAME}",
             self.image,
@@ -873,9 +879,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609250001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xii")
-        details["migration_head"] = "202609250001"
+        if "202609260001" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xiii")
+        details["migration_head"] = "202609260001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -1351,6 +1357,22 @@ def main() -> int:
                         f"proof-free:{free_ingress[:8]}",
                     ),
                 )
+                # XIII: dispatch requires terminal authentication. Fully
+                # authenticate the lawful fixture via the atomic
+                # transition (as admin/migration_owner, allowed) before
+                # dispatch. The stray row stays pending (non-dispatchable
+                # by law) for the crash test.
+                setup_cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, 'stripe', %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        free_ingress,
+                        f"e-proof-{free_ingress[:8]}",
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
                 setup_cur.execute(
                     "INSERT INTO public.attribution_events (id, tenant_id,"
                     " occurred_at, correlation_id, session_id, revenue_cents,"
@@ -1534,7 +1556,13 @@ def main() -> int:
                 )
                 return _fail("falsifier_forged_dispatch_allowed")
             except Exception as exc:
-                if "b26_p2_dispatch_window_not_sovereign" not in str(exc).split("\n")[0]:
+                # XIII terminal law fires before the window check for
+                # unauthenticated rows (provenance_unknown/witness_missing);
+                # either layer proves forged dispatch cannot conduct.
+                _msg0 = str(exc).split("\n")[0]
+                if ("b26_p2_dispatch_window_not_sovereign" not in _msg0
+                        and "b26_p2_dispatch_provenance_unknown" not in _msg0
+                        and "b26_p2_dispatch_witness_missing" not in _msg0):
                     return _fail(f"falsifier_forged_dispatch_wrong_layer:{str(exc)[:150]}")
                 falsifiers["forged_canonical_dispatch"] = "RED_as_required"
             # Corrective VI F-vi2: worker-synthesized completion proof is
@@ -1854,53 +1882,27 @@ def main() -> int:
         from scripts.ci.b26_p2_capability_surface import (  # noqa: PLC0415
             build_manifest as _build_manifest,
         )
-        try:
-            from scripts.ci.b26_p2_xii_coverage import (  # noqa: PLC0415
-                XII_COVERED_SURFACES as _XII_COVERED,
-            )
-
-            _covered = tuple(sorted(_XII_COVERED))
-        except ImportError:
+        # Coverage registry: prefer the newest (XIII) law; fall back
+        # through predecessors for older lanes.
+        _covered = None
+        for _mod, _attr in (
+            ("scripts.ci.b26_p2_xiii_coverage", "XIII_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_xii_coverage", "XII_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_xi_coverage", "XI_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_x_coverage", "X_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_ix_coverage", "IX_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_viii_coverage", "VIII_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_vii_coverage", "VII_COVERED_SURFACES"),
+            ("scripts.ci.b26_p2_vi_coverage", "VI_COVERED_SURFACES"),
+        ):
             try:
-                from scripts.ci.b26_p2_xi_coverage import (  # noqa: PLC0415
-                    XI_COVERED_SURFACES as _XI_COVERED,
-                )
-
-                _covered = tuple(sorted(_XI_COVERED))
+                _m = __import__(_mod, fromlist=[_attr])
+                _covered = tuple(sorted(getattr(_m, _attr)))
+                break
             except ImportError:
-                try:
-                    from scripts.ci.b26_p2_x_coverage import (  # noqa: PLC0415
-                        X_COVERED_SURFACES as _X_COVERED,
-                    )
-
-                    _covered = tuple(sorted(_X_COVERED))
-                except ImportError:
-                    try:
-                        from scripts.ci.b26_p2_ix_coverage import (  # noqa: PLC0415
-                            IX_COVERED_SURFACES as _IX_COVERED,
-                        )
-
-                        _covered = tuple(sorted(_IX_COVERED))
-                    except ImportError:
-                        try:
-                            from scripts.ci.b26_p2_viii_coverage import (  # noqa: PLC0415
-                                VIII_COVERED_SURFACES as _VIII_COVERED,
-                            )
-
-                            _covered = tuple(sorted(_VIII_COVERED))
-                        except ImportError:
-                            try:
-                                from scripts.ci.b26_p2_vii_coverage import (  # noqa: PLC0415
-                                    VII_COVERED_SURFACES as _VII_COVERED,
-                                )
-
-                                _covered = tuple(sorted(_VII_COVERED))
-                            except ImportError:
-                                from scripts.ci.b26_p2_vi_coverage import (  # noqa: PLC0415
-                                    VI_COVERED_SURFACES as _VI_COVERED,
-                                )
-
-                                _covered = tuple(sorted(_VI_COVERED))
+                continue
+        if _covered is None:
+            raise RuntimeError("no_coverage_registry_importable")
         _manifest = _build_manifest(_TOPO.db_admin, _covered)
         details["capability_coverage"] = {
             name: {

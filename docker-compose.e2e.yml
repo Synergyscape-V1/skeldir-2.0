@@ -59,13 +59,15 @@ services:
       REALTIME_REVENUE_ERROR_COOLDOWN_SECONDS: 5
       REALTIME_REVENUE_SINGLEFLIGHT_WAIT_SECONDS: 2
       REALTIME_REVENUE_SINGLEFLIGHT_POLL_SECONDS: 0.05
-      # B2.6-P2 Corrective XII: only lanes that serve verified
-      # webhooks through this API mount the authenticated-ingress
-      # credential (via E2E_INGRESS_DATABASE_URL) and provision the
-      # app_ingress role before migrating; all other lanes leave it
-      # blank so the boundary stays unclaimed (workers blank it
-      # unconditionally; see below).
+      # B2.6-P2 Corrective XIII: e2e lanes that serve verified
+      # webhooks through this API exercise the trust-root path
+      # in-process (role + credential from the lane env); lanes that
+      # leave E2E_INGRESS_DATABASE_URL blank keep the boundary unclaimed
+      # (workers blank it unconditionally). Production (local/c19) never
+      # mounts here: the dedicated auth_ingress service holds the file.
       B26_P2_INGRESS_DATABASE_URL: ${E2E_INGRESS_DATABASE_URL:-}
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      SKELDIR_PROCESS_ROLE: ${E2E_PROCESS_ROLE:-api}
     command: >
       uvicorn app.main:app
       --host 0.0.0.0
@@ -83,6 +85,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  auth_ingress:
+    # B2.6-P2 Corrective XIII authentication trust root (e2e): sole
+    # holder of the file-mounted ingress credential.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: skeldir-auth-ingress-e2e
+    environment:
+      SKELDIR_PROCESS_ROLE: "auth_ingress"
+    volumes:
+      - ${E2E_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}:/run/secrets/b26_p2_ingress_dsn:ro
+    command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers 1
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   worker:
     build:
@@ -110,9 +128,11 @@ services:
       STRIPE_BASE_URL: http://mock_platform:8080
       INGESTION_FOLLOWUP_TASKS_ENABLED: ${INGESTION_FOLLOWUP_TASKS_ENABLED:-false}
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
-      # B2.6-P2 Corrective XII: non-ingress processes must not hold the
-      # authenticated-ingress credential.
+      # B2.6-P2 Corrective XIII: non-ingress processes must not hold the
+      # authenticated-ingress credential in any form.
       B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      SKELDIR_PROCESS_ROLE: "worker"
     command: >
       celery -A app.celery_app worker
       --loglevel=INFO

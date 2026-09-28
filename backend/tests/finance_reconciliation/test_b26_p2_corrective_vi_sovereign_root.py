@@ -151,6 +151,28 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
                     f"b26p2vi:{tag}",
                 ),
             )
+            # XIII: dispatch/conduction requires terminal authentication.
+            # Fully authenticate via the atomic transition (as admin,
+            # allowed) in the same cursor/session so provenance reads
+            # known.
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ingress_id), "stripe", f"evt-{tag}",
+                     "a" * 64, "b" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id, "event_id": event_uuid}
@@ -211,6 +233,28 @@ def _seed_extra_ingress(tenant_id: UUID, tag: str) -> UUID:
                     f"b26p2vi:{tag}",
                 ),
             )
+            # XIII: dispatch/conduction requires terminal authentication.
+            # Fully authenticate via the atomic transition (as admin,
+            # allowed) in the same cursor/session so provenance reads
+            # known.
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ingress_id), "stripe", f"evt-{tag}",
+                     "a" * 64, "b" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
     finally:
         conn.close()
     return ingress_id
@@ -227,6 +271,10 @@ def _seed_dispatch(
 ) -> None:
     import psycopg2
 
+    # Corrective XIII: dispatch requires terminal authentication, which
+    # lawful fixtures already carry (seeded via _seed_ingress atomic).
+    # This helper dispatches as-is so negative fixtures (unknown,
+    # witnessless, pending) correctly refuse; it never re-authenticates.
     conn = psycopg2.connect(dsn or _admin_dsn())
     conn.autocommit = True
     try:
@@ -632,6 +680,31 @@ def test_vi_r6_11_task_kind_locked_by_check() -> None:
 
             def attempt() -> None:
                 cur.execute(
+                    "SELECT provider, provider_native_event_reference"
+                    " FROM public.webhook_ingress_identities WHERE id = %s",
+                    (str(ids["ingress_id"]),),
+                )
+                _auth_row = cur.fetchone()
+                assert _auth_row is not None
+                try:
+                    cur.execute(
+                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "%s, %s, %s, %s, %s,"
+                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
+                         "a" * 64, "b" * 64),
+                    )
+                except Exception as _b26_atomic_exc:
+                    _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                    _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                    if (
+                        _b26_atomic_code != "42883"
+                        and "does not exist" not in _b26_atomic_msg
+                        and "undefined" not in _b26_atomic_msg
+                    ):
+                        raise
+                    # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
+                cur.execute(
                     "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                     " webhook_ingress_identity_id, task_id, task_name, queue,"
                     " routing_key, correlation_id, provider,"
@@ -1005,6 +1078,41 @@ def test_vi_anchor_preset_stripped_and_stamped() -> None:
     task_id = f"vi-anchor-{uuid.uuid4().hex[:8]}"
     import psycopg2
 
+    _admin = psycopg2.connect(_admin_dsn())
+    _admin.autocommit = True
+    try:
+        with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None
+            try:
+                _acur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
+                     "a" * 64, "b" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
+    finally:
+        _admin.close()
     conn = psycopg2.connect(_role_dsn("app_user"))
     conn.autocommit = True
     try:
@@ -1065,6 +1173,41 @@ def test_vi_anchor_takes_precedence_over_dispatched_fallback() -> None:
     task_id = f"vi-prec-{uuid.uuid4().hex[:8]}"
     import psycopg2
 
+    _admin = psycopg2.connect(_admin_dsn())
+    _admin.autocommit = True
+    try:
+        with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None
+            try:
+                _acur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
+                     "a" * 64, "b" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
+    finally:
+        _admin.close()
     conn = psycopg2.connect(_role_dsn("app_user"))
     conn.autocommit = True
     try:
@@ -1156,6 +1299,41 @@ def test_vi_outbox_issuance_and_retry_bound() -> None:
             # A dispatch-only execution on the free ingress: no outbox
             # twin exists yet, so the mint-published attempt below
             # reaches the issuance law itself (not a UNIQUE conflict).
+            _admin = psycopg2.connect(_admin_dsn())
+            _admin.autocommit = True
+            try:
+                with _admin.cursor() as _acur:
+                    _acur.execute(
+                        "SELECT set_config('app.current_tenant_id', %s, false)",
+                        (str(ids["tenant_id"]),),
+                    )
+                    _acur.execute(
+                        "SELECT provider, provider_native_event_reference"
+                        " FROM public.webhook_ingress_identities WHERE id = %s",
+                        (str(extra_ingress),),
+                    )
+                    _auth_row = _acur.fetchone()
+                    assert _auth_row is not None
+                    try:
+                        _acur.execute(
+                            "SELECT public.b26_p2_authenticate_ingress_atomic("
+                            "%s, %s, %s, %s, %s,"
+                            " 'hmac-sha256-timestamped-hex', 'v1')",
+                            (str(extra_ingress), _auth_row[0], _auth_row[1],
+                             "a" * 64, "b" * 64),
+                        )
+                    except Exception as _b26_atomic_exc:
+                        _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                        _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                        if (
+                            _b26_atomic_code != "42883"
+                            and "does not exist" not in _b26_atomic_msg
+                            and "undefined" not in _b26_atomic_msg
+                        ):
+                            raise
+                        # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
+            finally:
+                _admin.close()
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
@@ -1273,6 +1451,41 @@ def test_vi_dispatch_preexisting_failure_refuses() -> None:
             )
     finally:
         admin.close()
+    _auth_admin = psycopg2.connect(_admin_dsn())
+    _auth_admin.autocommit = True
+    try:
+        with _auth_admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None
+            try:
+                _acur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
+                     "a" * 64, "b" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
+    finally:
+        _auth_admin.close()
     conn = psycopg2.connect(_role_dsn("app_user"))
     conn.autocommit = True
     try:
@@ -1382,6 +1595,41 @@ def test_vi_worker_ingress_cannot_become_execution() -> None:
     worker_ingress = _seed_extra_ingress(ids["tenant_id"], "worker-ingress-w")
     import psycopg2
 
+    _admin = psycopg2.connect(_admin_dsn())
+    _admin.autocommit = True
+    try:
+        with _admin.cursor() as _acur:
+            _acur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            _acur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(worker_ingress),),
+            )
+            _auth_row = _acur.fetchone()
+            assert _auth_row is not None
+            try:
+                _acur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(worker_ingress), _auth_row[0], _auth_row[1],
+                     "a" * 64, "b" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
+    finally:
+        _admin.close()
     conn = psycopg2.connect(_role_dsn("app_worker"))
     conn.autocommit = True
     try:

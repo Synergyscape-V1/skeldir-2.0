@@ -148,6 +148,28 @@ def _seed_ingress(
                  f"evt-{tag}", f"ord-{tag}", f"ord-{tag}", amount, currency,
                  event_time, f"b26p2viii:{tag}", state),
             )
+            # XIII: verified INSERT lands pending (never known). Fully
+            # authenticate lawful fixtures via the atomic transition (as
+            # admin, allowed) so provenance reads known.
+            if state == "authenticity_verified":
+                try:
+                    cur.execute(
+                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "%s, %s, %s, %s, %s,"
+                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        (str(ingress_id), provider, f"evt-{tag}",
+                         "a" * 64, "b" * 64),
+                    )
+                except Exception as _b26_atomic_exc:
+                    _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                    _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                    if (
+                        _b26_atomic_code != "42883"
+                        and "does not exist" not in _b26_atomic_msg
+                        and "undefined" not in _b26_atomic_msg
+                    ):
+                        raise
+                    # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id, "event_id": event_uuid}
@@ -156,6 +178,10 @@ def _seed_ingress(
 def _seed_dispatch(tenant_id: UUID, ingress_id: UUID, task: str) -> None:
     import psycopg2
 
+    # Corrective XIII: dispatch requires terminal authentication, which
+    # lawful fixtures already carry (seeded via _seed_ingress atomic).
+    # This helper dispatches as-is so negative fixtures (unknown,
+    # witnessless, pending) correctly refuse; it never re-authenticates.
     conn = psycopg2.connect(_role_dsn("app_user"))
     conn.autocommit = True
     try:

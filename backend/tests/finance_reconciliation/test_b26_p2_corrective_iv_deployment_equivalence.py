@@ -118,6 +118,28 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
                     f"b26p2iv:{tag}",
                 ),
             )
+            # XIII: dispatch/conduction requires terminal authentication.
+            # Fully authenticate via the atomic transition (as admin,
+            # allowed) in the same cursor/session so provenance reads
+            # known.
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ingress_id), "stripe", f"evt-{tag}",
+                     "a" * 64, "b" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id, "event_id": event_uuid}
@@ -351,6 +373,41 @@ def test_iv_outbox_fk_refuses_cross_tenant_ingress() -> None:
             # cross-tenant combination is under test. (Corrective V:
             # issuance carries a persisted window; the tuple law, not a
             # NULL window, is what this cell exercises.)
+            # Corrective XIII: dispatch requires terminal authentication
+            # (provenance authenticated_known + witness). Fully authenticate
+            # via the atomic transition (as admin, allowed) so this cell
+            # exercises the cross-tenant tuple law, not auth.
+            cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(second["ingress_id"]),),
+            )
+            _row = cur.fetchone()
+            assert _row is not None, "seed ingress missing for dispatch"
+            _provider, _event_ref = _row[0], _row[1]
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        str(second["ingress_id"]),
+                        _provider,
+                        _event_ref,
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"
@@ -409,6 +466,41 @@ def test_iv_split_brain_second_task_for_same_ingress_refused() -> None:
             )
 
             def attempt() -> None:
+                # Corrective XIII: dispatch requires terminal authentication.
+                # The ingress was authenticated by _seed_dispatch; re-assert
+                # the same atomic transition (idempotent) so this cell
+                # exercises split-brain refusal, not auth.
+                cur.execute(
+                    "SELECT provider, provider_native_event_reference"
+                    " FROM public.webhook_ingress_identities WHERE id = %s",
+                    (str(ids["ingress_id"]),),
+                )
+                _row = cur.fetchone()
+                assert _row is not None, "seed ingress missing for dispatch"
+                _provider, _event_ref = _row[0], _row[1]
+                try:
+                    cur.execute(
+                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "%s, %s, %s, %s, %s,"
+                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        (
+                            str(ids["ingress_id"]),
+                            _provider,
+                            _event_ref,
+                            "a" * 64,
+                            "b" * 64,
+                        ),
+                    )
+                except Exception as _b26_atomic_exc:
+                    _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                    _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                    if (
+                        _b26_atomic_code != "42883"
+                        and "does not exist" not in _b26_atomic_msg
+                        and "undefined" not in _b26_atomic_msg
+                    ):
+                        raise
+                    # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
                 cur.execute(
                     "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                     " webhook_ingress_identity_id, task_id, task_name, queue,"
@@ -956,6 +1048,41 @@ def test_iv_duplicate_seed_reuses_winner_task() -> None:
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
+            # Corrective XIII: dispatch requires terminal authentication.
+            # The ingress was authenticated by _seed_dispatch; re-assert the
+            # same atomic transition (idempotent) so this cell exercises
+            # winner-reuse, not auth.
+            cur.execute(
+                "SELECT provider, provider_native_event_reference"
+                " FROM public.webhook_ingress_identities WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            _row = cur.fetchone()
+            assert _row is not None, "seed ingress missing for dispatch"
+            _provider, _event_ref = _row[0], _row[1]
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        str(ids["ingress_id"]),
+                        _provider,
+                        _event_ref,
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+                # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
                 " webhook_ingress_identity_id, task_id, task_name, queue,"

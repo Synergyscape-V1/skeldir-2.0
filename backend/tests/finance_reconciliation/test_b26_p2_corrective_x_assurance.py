@@ -125,6 +125,28 @@ def _seed_ids(tag: str, *, provider: str = "stripe") -> dict:
                  f"evt-{tag}", f"ord-{tag}", f"ord-{tag}", DAY_NOON,
                  f"b26p2x:{tag}"),
             )
+            # XIII: lawful fixtures land terminal (known + witness) via
+            # the atomic transition (admin allowed), using the c/d
+            # digests that XH restoration also uses (idempotent, no
+            # immutable conflict). Negative tests force unknown /
+            # delete evidence explicitly.
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (str(ingress_id), provider, f"evt-{tag}",
+                     "c" * 64, "d" * 64),
+                )
+            except Exception as _b26_atomic_exc:
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id,
@@ -168,6 +190,10 @@ def _seed_verdict(ids: dict) -> None:
 def _seed_dispatch(ids: dict, task: str, *, provider: str = "stripe") -> None:
     import psycopg2
 
+    # Corrective XIII: dispatch requires terminal authentication, which
+    # lawful fixtures already carry (seeded via ingress auth chain).
+    # This helper dispatches as-is so negative fixtures (unknown,
+    # witnessless, pending) correctly refuse; it never re-authenticates.
     conn = psycopg2.connect(_admin_dsn())
     conn.autocommit = True
     try:
@@ -463,6 +489,26 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                 "ALTER TABLE public.webhook_ingress_identities"
                 " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
             )
+            # XIII: seeder authenticates (evidence exists); this negative
+            # test requires witnessless unknown, so remove auth artifacts
+            # (as admin, allowed) before asserting promotion refusal.
+            # Cascade from ingress is disabled here to keep the ingress
+            # row; delete children explicitly.
+            cur.execute(
+                "DELETE FROM public.b26_p2_provenance_evidence"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.b26_p2_ingress_auth_witness"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
+            cur.execute(
+                "DELETE FROM public.b26_p2_provider_auth_consequence"
+                " WHERE webhook_ingress_identity_id = %s",
+                (str(ids["ingress_id"]),),
+            )
             cur.execute(
                 "SELECT idempotency_key FROM public.webhook_ingress_identities"
                 " WHERE id = %s",
@@ -506,18 +552,23 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                     (str(ids["ingress_id"]), idem),
                 )
             )
-            assert "permission denied" in denied.lower()
+            # XIII: app_user holds zero EXECUTE (permission denied at the
+            # grant plane) or, where role inheritance applies, is refused
+            # in-body (caller_refused); either mints nothing.
+            assert (
+                "permission denied" in denied.lower()
+                or "caller_refused" in denied.lower()
+            )
     finally:
         api.close()
-    # Corrective XII restoration: predecessor consequence first (API
-    # application principal, standing in for the HMAC-verified path),
-    # then the bound witness and the signed attestation (ingress
-    # principal). governed_attestation is migration/admin custody
-    # only and is never exercised here.
-    user = psycopg2.connect(_role_dsn("app_user"))
-    user.autocommit = True
+    # Corrective XIII restoration: predecessor consequence, bound
+    # witness, and signed attestation all via the dedicated trust root
+    # (app_user holds zero authorship). governed_attestation is
+    # migration/admin custody only and is never exercised here.
+    ingress0 = psycopg2.connect(_role_dsn("app_ingress"))
+    ingress0.autocommit = True
     try:
-        with user.cursor() as cur:
+        with ingress0.cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
@@ -535,7 +586,7 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                 (str(ids["ingress_id"]), evt_ref, "c" * 64, "d" * 64),
             )
     finally:
-        user.close()
+        ingress0.close()
     ingress = psycopg2.connect(_role_dsn("app_ingress"))
     ingress.autocommit = True
     try:
