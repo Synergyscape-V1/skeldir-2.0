@@ -715,6 +715,11 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xiii_capability_custody.py",
     "scripts/ci/validate_b26_p2_xiii_semantic_contract.py",
     "scripts/ci/validate_b26_p2_xiii_temporal_completeness.py",
+    # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
+    # and equivalence corpora authenticate lawful fixtures via the atomic
+    # transition (admin allowed); negative fixtures stay pending/unknown.
+    # Same exemption shape; every prohibition retained unchanged.
+    "scripts/ci/b26_p2_viii_equivalence.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [

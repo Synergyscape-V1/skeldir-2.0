@@ -145,7 +145,7 @@ services:
       SKELDIR_PROCESS_ROLE: "auth_ingress"
     volumes:
       - type: bind
-        source: ${C19_INGRESS_DSN_FILE?missing C19_INGRESS_DSN_FILE}
+        source: ${C19_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}
         target: /run/secrets/b26_p2_ingress_dsn
         read_only: true
     command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers 1
