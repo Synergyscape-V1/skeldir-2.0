@@ -504,12 +504,16 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
+            -- Serialize concurrent authentications for the same ingress
+            -- (one reconstructible ordering; Gate XIII-16). Crash before
+            -- commit leaves pending (retryable); after leaves authenticated.
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.provider,
                    i.b26_p2_provenance_status
               INTO _tenant, _idem, _state, _row_provider, _prov
               FROM public.webhook_ingress_identities AS i
-             WHERE i.id = p_ingress;
+             WHERE i.id = p_ingress
+             FOR UPDATE;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_atomic_ingress_missing'
                     USING ERRCODE = '42501';

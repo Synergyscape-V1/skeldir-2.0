@@ -1021,6 +1021,9 @@ jobs:
       EXPECTED_RUNTIME_DB_USER: app_user
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      # XIII: P6 end-to-end truth-ingress posts verified webhooks through
+      # the trust-root path in-process (auth role + lane file credential).
+      SKELDIR_PROCESS_ROLE: auth_ingress
       TESTING: "1"
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       CONTRACT_TESTING: "0"

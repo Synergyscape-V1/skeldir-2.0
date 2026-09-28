@@ -2638,7 +2638,8 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                    i.b26_p2_provenance_status
               INTO _tenant, _idem, _state, _row_provider, _prov
               FROM public.webhook_ingress_identities AS i
-             WHERE i.id = p_ingress;
+             WHERE i.id = p_ingress
+             FOR UPDATE;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_atomic_ingress_missing'
                     USING ERRCODE = '42501';
