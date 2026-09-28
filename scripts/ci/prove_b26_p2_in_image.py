@@ -594,6 +594,11 @@ def main() -> int:
         )
         details["universe_tail"] = (proc.stdout + proc.stderr)[-800:]
         if proc.returncode != 0 or "B26_P2_AUTHORITY_UNIVERSE_PASS" not in proc.stdout:
+            # Print full universe output for diagnosis (live vs pin hashes,
+            # unknown surfaces) so a hash drift can be re-pinned from logs.
+            print("IN_IMAGE_UNIVERSE_OUTPUT_BEGIN")
+            print((proc.stdout + proc.stderr)[-4000:])
+            print("IN_IMAGE_UNIVERSE_OUTPUT_END")
             return _fail(details, "in_image_universe_fail")
         details["in_image_universe"] = "PASS"
 
