@@ -514,6 +514,9 @@ jobs:
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b23_p5_ci
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      # XIII: B2.3 proof posts verified webhooks through the trust-root path
+      # in-process (auth role + lane file credential from setup-postgres-ci).
+      SKELDIR_PROCESS_ROLE: auth_ingress
       SKELDIR_B23_P1_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B23_P2_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B23_P3_REQUIRE_DB_PROOFS: "1"
