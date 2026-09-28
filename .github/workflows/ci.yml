@@ -110,6 +110,9 @@ jobs:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b22_p2_ci
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p2_ci
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      # XIII: contract cohort B2.2 runtime proofs post verified webhooks
+      # through the trust-root path in-process (auth role + lane file).
+      SKELDIR_PROCESS_ROLE: auth_ingress
       SKELDIR_B22_P2_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B22_P3_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B22_P4_REQUIRE_DB_PROOFS: "1"
