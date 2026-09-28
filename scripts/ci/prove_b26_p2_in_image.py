@@ -62,16 +62,17 @@ IDENTITY_FILES = [
     "alembic/versions/007_skeldir_foundation/202609260001_b26_p2_corrective_xiii_root_of_trust_closure.py",
 ]
 
-# Corrective XIII stale falsifier probe (attestation delta): the base
-# (pre-XIII) tree records the predecessor consequence via app_user and
-# promotes unknown_legacy -> authenticated_known on a bare caller
-# assertion; the candidate (XIII) tree refuses app_user authorship
-# entirely (no EXECUTE / caller_refused) and restores authority only
-# through the dedicated trust root (consequence + bound witness +
-# signed attestation via ingress, or the atomic transition). MODE=base
-# expects XI_BASE_ATTESTED; MODE=candidate expects XI_CAND_DENIED then
-# XI_CAND_RESTORED via the trust root. A base that refuses (already
-# strict) or a candidate that promotes via app_user (still assertable)
+# Corrective XIII stale falsifier probe (P-authorship delta): the base
+# (pre-XIII, XII head) records the predecessor consequence via app_user
+# (`recorded`); the candidate (XIII) refuses app_user authorship
+# entirely (permission denied for function / caller_refused) and
+# restores authority only through the dedicated trust root (consequence
+# + bound witness + signed attestation via ingress, or the atomic
+# transition). Attestation without P is refused on both (vacuous for
+# that sub-probe, retained as defense in depth). MODE=base expects
+# XI_BASE_P_RECORDED; MODE=candidate expects XI_CAND_P_DENIED then
+# XI_CAND_RESTORED via the trust root. A base that refuses P (already
+# strict) or a candidate that records P via app_user (still assertable)
 # fails the falsifier as vacuous.
 PROBE_XI_ATTEST_DELTA = '''
 import os
@@ -101,6 +102,11 @@ user.autocommit = True
 uc = user.cursor()
 uc.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
 try:
+    uc.execute("SELECT public.b26_p2_record_provider_auth_consequence(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1')", (ing, "evt-" + tag, "c" * 64, "d" * 64))
+    p_outcome = str(uc.fetchone()[0])
+except Exception as exc:
+    p_outcome = "REFUSED:" + str(exc).split("\\n")[0][:120]
+try:
     uc.execute("SELECT public.b26_p2_attest_provenance_evidence(%s, 'governed_attestation', %s)", (ing, idem))
     outcome = str(uc.fetchone()[0])
 except Exception as exc:
@@ -117,12 +123,17 @@ except Exception as exc:
     mint_outcome = "REFUSED:" + str(exc).split("\\n")[0][:120]
 ingress0.close()
 if mode == "base":
-    if outcome == "authenticated_known" or (mint_outcome and not mint_outcome.startswith("REFUSED")):
+    if p_outcome == "recorded":
+        print("XI_BASE_P_RECORDED")
+    elif outcome == "authenticated_known" or (mint_outcome and not mint_outcome.startswith("REFUSED")):
         print("XI_BASE_ATTESTED")
     else:
-        print("XI_BASE_VACUOUS:" + outcome + "|" + mint_outcome)
+        print("XI_BASE_VACUOUS:" + p_outcome + "|" + outcome + "|" + mint_outcome)
         raise SystemExit(0)
 else:
+    if p_outcome == "recorded":
+        print("XI_CAND_P_RECORDED_BY_APP_USER")
+        raise SystemExit(1)
     if outcome == "authenticated_known":
         print("XI_CAND_PROMOTED_BY_ASSERTION")
         raise SystemExit(1)
@@ -696,7 +707,8 @@ def main() -> int:
                 ]
                 proc = _docker(*cmd)
                 base_out = proc.stdout + proc.stderr
-                if "XI_BASE_ATTESTED" not in proc.stdout:
+                if ("XI_BASE_ATTESTED" not in proc.stdout
+                        and "XI_BASE_P_RECORDED" not in proc.stdout):
                     return _fail(
                         details,
                         "stale_falsifier_vacuous:base_did_not_promote:"
