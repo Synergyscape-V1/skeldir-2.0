@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict D8Tyw08rP17guqGo3iWFOGIOcMPqdT8bijNfX4RCzBbgGrwdgazXPB19BvaxRlk
+\restrict ubShtyEvK8xoV7xGgMlIXygXi9aXgZGdCp7Wzp5LQMdab3Uzyuvz89OJY6BCPAB
 
--- Dumped from database version 15.19 (Debian 15.19-1.pgdg13+2)
--- Dumped by pg_dump version 15.15
+-- Dumped from database version 15.19
+-- Dumped by pg_dump version 15.19
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -2633,6 +2633,9 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
+            -- Serialize concurrent authentications for the same ingress
+            -- (one reconstructible ordering; Gate XIII-16). Crash before
+            -- commit leaves pending (retryable); after leaves authenticated.
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.provider,
                    i.b26_p2_provenance_status
@@ -24104,5 +24107,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict D8Tyw08rP17guqGo3iWFOGIOcMPqdT8bijNfX4RCzBbgGrwdgazXPB19BvaxRlk
+\unrestrict ubShtyEvK8xoV7xGgMlIXygXi9aXgZGdCp7Wzp5LQMdab3Uzyuvz89OJY6BCPAB
 
