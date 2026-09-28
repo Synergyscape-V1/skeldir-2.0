@@ -93,10 +93,8 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
-      # B2.6-P2 Corrective XIII: this C19 test API exercises the trust-root
-      # path in-process (auth role with the lane credential) so verified
-      # webhooks finalize; production splits them (dedicated auth_ingress
-      # service holds the file). The database law under test is identical.
+      # XIII C19 test API: trust-root path in-process (auth role + lane
+      # credential); production splits them (auth_ingress holds the file).
       B26_P2_INGRESS_DATABASE_URL: ${C19_INGRESS_DATABASE_URL?missing C19_INGRESS_DATABASE_URL}
       B26_P2_INGRESS_DATABASE_URL_FILE: ""
       SKELDIR_PROCESS_ROLE: "auth_ingress"
