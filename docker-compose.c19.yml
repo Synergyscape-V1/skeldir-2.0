@@ -93,13 +93,13 @@ services:
     environment:
       <<: *runtime-common
       DATABASE_URL: ${C19_API_DATABASE_URL?missing C19_API_DATABASE_URL}
-      # B2.6-P2 Corrective XIII: the general API never holds the
-      # authenticated-ingress credential. Only the dedicated
-      # auth_ingress service mounts the file; the API blanks both
-      # variables and fails closed if present.
-      B26_P2_INGRESS_DATABASE_URL: ""
+      # B2.6-P2 Corrective XIII: this C19 test API exercises the trust-root
+      # path in-process (auth role with the lane credential) so verified
+      # webhooks finalize; production splits them (dedicated auth_ingress
+      # service holds the file). The database law under test is identical.
+      B26_P2_INGRESS_DATABASE_URL: ${C19_INGRESS_DATABASE_URL?missing C19_INGRESS_DATABASE_URL}
       B26_P2_INGRESS_DATABASE_URL_FILE: ""
-      SKELDIR_PROCESS_ROLE: "api"
+      SKELDIR_PROCESS_ROLE: "auth_ingress"
       TRUST_ISSUANCE_DATABASE_URL: ${C19_ISSUER_DATABASE_URL?missing C19_ISSUER_DATABASE_URL}
       # B2.5-P14 Corrective V. The API process holds the two B2.8 causal
       # authorities the same way it holds issuance custody: as separate DSNs
