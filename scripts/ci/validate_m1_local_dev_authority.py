@@ -720,6 +720,10 @@ ALLOWED_M1_PATH_PREFIXES = [
     # transition (admin allowed); negative fixtures stay pending/unknown.
     # Same exemption shape; every prohibition retained unchanged.
     "scripts/ci/b26_p2_viii_equivalence.py",
+    # B2.6-P2 Corrective XIII lane convergence (B2.5-P14 custody): the
+    # trust-root auth_ingress service carries no B28 DSNs (untrusted).
+    # Same exemption shape; every prohibition retained unchanged.
+    "scripts/ci/assert_b25_p14_custody_manifest.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [
