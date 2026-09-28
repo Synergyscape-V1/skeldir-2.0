@@ -74,6 +74,7 @@ UNTRUSTED_SERVICES = (
     "worker_publisher",
     "beat",
     "trust_signer",
+    "auth_ingress",
 )
 
 

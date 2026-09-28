@@ -1156,23 +1156,43 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             # the ingress FK observes it across pool boundaries. Corrective
             # XI: verified authorship belongs to the dedicated ingress
             # principal wherever provisioned, so prefer its mounted DSN
-            # and fall back to the app_user derivation only on
-            # predecessor-compatible lanes.
+            # (file first, no role gate: the seeder is setup authority),
+            # then the legacy string, then the migration-owner DSN (admin
+            # is authorship-allowed), and fall back to the app_user
+            # derivation only on predecessor-compatible lanes.
             from sqlalchemy.ext.asyncio import create_async_engine
 
-            issuer_url = os.environ.get("B26_P2_INGRESS_DATABASE_URL", "").strip()
-            if not issuer_url:
-                issuer_url = os.environ.get("B23_WORKER_DATABASE_URL", "") or os.environ.get(
+            def _resolve_ingress_issuer_url() -> str:
+                file_path = os.environ.get(
+                    "B26_P2_INGRESS_DATABASE_URL_FILE", ""
+                ).strip()
+                if file_path:
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as handle:
+                            file_value = handle.read().strip()
+                        if file_value:
+                            return file_value
+                    except OSError:
+                        pass
+                legacy = os.environ.get("B26_P2_INGRESS_DATABASE_URL", "").strip()
+                if legacy:
+                    return legacy
+                admin = os.environ.get("MIGRATION_DATABASE_URL", "").strip()
+                if admin:
+                    return admin
+                return os.environ.get("B23_WORKER_DATABASE_URL", "") or os.environ.get(
                     "DATABASE_URL", ""
                 )
-                issuer_url = issuer_url.replace(
-                    "app_worker:app_worker", "app_user:app_user"
-                )
+
+            issuer_url = _resolve_ingress_issuer_url()
+            # File (app_ingress) and admin (migration_owner) DSNs already
+            # carry lawful verified authorship; the replace is a no-op for
+            # them and only rewrites the predecessor fallback.
+            issuer_url = issuer_url.replace(
+                "app_worker:app_worker", "app_user:app_user"
+            )
             if issuer_url.startswith("postgresql://"):
                 issuer_url = "postgresql+asyncpg://" + issuer_url[len("postgresql://"):]
-            issuer_engine = create_async_engine(
-                issuer_url or str(engine.url)
-            )
             issuer_engine = create_async_engine(
                 issuer_url or str(engine.url)
             )

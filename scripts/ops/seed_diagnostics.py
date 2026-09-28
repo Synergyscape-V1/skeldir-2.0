@@ -244,6 +244,35 @@ def main() -> None:
                 conflict="ON CONFLICT DO NOTHING",
             )
 
+            # B2.6-P2 Corrective XIII terminal law: a verified INSERT lands
+            # pending (never known). Fully authenticate this lawful fixture
+            # via the atomic transition so provenance reads
+            # authenticated_known and the witness exists for dispatch.
+            # Old-head tolerant: pre-XIII lanes lack the function and the
+            # admin INSERT already lands known.
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s, %s, %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        webhook_ingress_identity_id,
+                        "stripe",
+                        provider_event_ref,
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
+            except Exception as _b26_atomic_exc:  # noqa: BLE001 - old-head probe
+                _b26_atomic_msg = str(_b26_atomic_exc).lower()
+                _b26_atomic_code = getattr(_b26_atomic_exc, "pgcode", "")
+                if (
+                    _b26_atomic_code != "42883"
+                    and "does not exist" not in _b26_atomic_msg
+                    and "undefined" not in _b26_atomic_msg
+                ):
+                    raise
+
             insert_dynamic(
                 cur,
                 "b23_match_task_dispatches",
