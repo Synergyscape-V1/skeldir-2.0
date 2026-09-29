@@ -3033,13 +3033,20 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
     AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                -- Writes occur only through the SECURITY DEFINER atomic
-                -- transition (current_user is the owner inside DEFINER).
-                -- Direct INSERTs as a runtime principal (current_user is
-                -- the caller) are refused. session_user remains the
-                -- caller inside DEFINER, so gate on current_user here.
-                IF current_user IS DISTINCT FROM 'migration_owner'
-                   AND current_user IS DISTINCT FROM 'postgres' THEN
+                -- Owner-agnostic gate with two lawful paths: (1) through
+                -- a SECURITY DEFINER routine (the atomic transition),
+                -- where current_user (the routine owner, whatever lane
+                -- role created it) differs from session_user (the
+                -- trust-root caller); (2) direct maintenance by a
+                -- migration admin (seeders/provisioners running as
+                -- migration_owner/postgres). Direct writes as any other
+                -- principal, including the trust-root role itself, have
+                -- identical current/session users and are refused
+                -- (table GRANTs deny runtime roles first; this is the
+                -- backstop).
+                IF current_user IS NOT DISTINCT FROM session_user
+                   AND session_user IS DISTINCT FROM 'migration_owner'
+                   AND session_user IS DISTINCT FROM 'postgres' THEN
                     RAISE EXCEPTION 'b26_p2_auth_root_evidence_direct_refused'
                         USING ERRCODE = '42501';
                 END IF;

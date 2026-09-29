@@ -41,14 +41,20 @@ def upgrade() -> None:
         AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                -- Owner-agnostic DEFINER gate: writes must arrive
-                -- through a SECURITY DEFINER routine (the atomic
-                -- transition), where current_user (the routine owner)
-                -- differs from session_user (the trust-root caller).
-                -- Direct writes as any principal, including the trust
-                -- root role itself, have identical current/session
-                -- users and are refused (table GRANTs deny them first).
-                IF current_user IS NOT DISTINCT FROM session_user THEN
+                -- Owner-agnostic gate with two lawful paths: (1) through
+                -- a SECURITY DEFINER routine (the atomic transition),
+                -- where current_user (the routine owner, whatever lane
+                -- role created it) differs from session_user (the
+                -- trust-root caller); (2) direct maintenance by a
+                -- migration admin (seeders/provisioners running as
+                -- migration_owner/postgres). Direct writes as any other
+                -- principal, including the trust-root role itself, have
+                -- identical current/session users and are refused
+                -- (table GRANTs deny runtime roles first; this is the
+                -- backstop).
+                IF current_user IS NOT DISTINCT FROM session_user
+                   AND session_user IS DISTINCT FROM 'migration_owner'
+                   AND session_user IS DISTINCT FROM 'postgres' THEN
                     RAISE EXCEPTION 'b26_p2_auth_root_evidence_direct_refused'
                         USING ERRCODE = '42501';
                 END IF;
