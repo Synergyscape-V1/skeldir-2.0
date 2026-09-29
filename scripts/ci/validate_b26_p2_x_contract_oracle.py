@@ -317,7 +317,7 @@ def main() -> int:
                             checks["migration_head"] = head
                             if head not in (
                                 "202609240002", "202609250001", "202609260001",
-                                "202609270001", "202609270002"
+                                "202609270001", "202609270002", "202609270003"
                             ):
                                 violations.append(
                                     f"x_oracle_unexpected_migration_head:{head}"

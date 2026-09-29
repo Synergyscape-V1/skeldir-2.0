@@ -89,6 +89,7 @@ NON_AUTHORITATIVE_CONSTRUCTION_ROUTES: dict[str, str] = {
     ),
 }
 
+
 def _module_revision_identifiers(source: str) -> tuple[str | None, tuple[str, ...]]:
     """Read ``revision`` and ``down_revision`` out of one migration module.
 
@@ -249,7 +250,7 @@ def _migration_modules(migrations_root: Path | None = None):
 #: to the compositional closure head (root-evidence identity, single
 #: authority effect law, historical quarantine, relay wiring): this build
 #: requires XIV physics and must refuse earlier schema.
-REQUIRED_SCHEMA_REVISION = "202609270002"
+REQUIRED_SCHEMA_REVISION = "202609270003"
 
 #: Every revision a process running this build may serve traffic against.
 #: Exactly one today. Widening this set is a deliberate, reviewable act that
