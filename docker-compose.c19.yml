@@ -153,6 +153,11 @@ services:
       B26_P2_INGRESS_DATABASE_URL: ""
       B26_P2_INGRESS_DATABASE_URL_FILE: /run/secrets/b26_p2_ingress_dsn
       SKELDIR_PROCESS_ROLE: "auth_ingress"
+      # XIV: the root resolves tenant webhook secrets itself to
+      # independently re-verify provider signatures (same platform
+      # key material as the relay lane).
+      PLATFORM_TOKEN_ENCRYPTION_KEY: c19-platform-key
+      PLATFORM_TOKEN_KEY_ID: c19-key
     volumes:
       - type: bind
         source: ${C19_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}
