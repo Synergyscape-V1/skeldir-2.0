@@ -243,7 +243,7 @@ def _build_provider_auth_consequence(
     event_ref = (provider_event_reference or "").strip()
     if not event_ref:
         raise ValueError("provider_event_reference is required for auth consequence")
-    return {
+    consequence = {
         "provider": provider.strip().lower(),
         "provider_event_reference": event_ref,
         "body_sha256": str(auth_snapshot.get("body_sha256") or ""),
@@ -251,11 +251,20 @@ def _build_provider_auth_consequence(
             auth_snapshot.get("signature_envelope_sha256") or ""
         ),
         "auth_method": str(
-            auth_snapshot.get("auth_method")
-            or _provider_auth_method(provider)
+            auth_snapshot.get("auth_method") or _provider_auth_method(provider)
         ),
         "auth_version": "v1",
     }
+    # XIV relay: carry the in-memory relay envelope (raw bytes + sig +
+    # routing key) alongside the digest consequence. Transient only.
+    relay = tenant_info.get("relay_envelope")
+    if isinstance(relay, dict) and relay.get("raw_body_b64"):
+        consequence["relay_envelope"] = {
+            "raw_body_b64": str(relay.get("raw_body_b64") or ""),
+            "signature_header": str(relay.get("signature_header") or ""),
+            "api_key": str(relay.get("api_key") or ""),
+        }
+    return consequence
 
 
 async def _authorize_webhook_request(
@@ -293,6 +302,20 @@ async def _authorize_webhook_request(
         ).hexdigest(),
         "auth_method": _provider_auth_method(provider),
         "auth_version": "v1",
+    }
+    # XIV (Architecture B relay): retain the exact raw bytes + presented
+    # signature envelope + tenant routing key IN MEMORY ONLY so the
+    # post-commit finalizer can relay the non-authoritative arrival to
+    # the dedicated authentication trust root, which independently
+    # re-verifies the provider signature before persisting any authority.
+    # This envelope is never persisted (no PII persistence) and never
+    # logged; it travels only to the root over the relay call.
+    import base64 as _b64  # noqa: PLC0415
+
+    tenant_info["relay_envelope"] = {
+        "raw_body_b64": _b64.b64encode(raw_body).decode("ascii"),
+        "signature_header": str(signature_header or ""),
+        "api_key": str(api_key or ""),
     }
     return tenant_info
 
@@ -748,9 +771,10 @@ async def _redrive_pending_dispatch_for_ingress(
             )
             if row is None:
                 return
-            if str(row["delivery_state"] or "") == "published" and str(
-                row["outbox_state"] or "published"
-            ) == "published":
+            if (
+                str(row["delivery_state"] or "") == "published"
+                and str(row["outbox_state"] or "published") == "published"
+            ):
                 return
             task_id = str(row["task_id"])
             ws = row["window_start"]

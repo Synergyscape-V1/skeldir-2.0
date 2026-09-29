@@ -25,7 +25,12 @@ from app.bayesian.dirty_marker import append_dirty_event
 from app.ingestion.channel_normalization import normalize_channel
 from app.ingestion.dlq_handler import DLQHandler
 from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
-from app.models import AttributionEvent, DeadEvent, RawEventPayload, WebhookIngressIdentity
+from app.models import (
+    AttributionEvent,
+    DeadEvent,
+    RawEventPayload,
+    WebhookIngressIdentity,
+)
 from app.observability.context import log_context
 from app.privacy.authority import minimize_event_payload_for_storage
 from app.privacy.durable_commerce_identity import upsert_durable_commerce_identity_link
@@ -310,9 +315,9 @@ def _extract_webhook_ingress_identity(
         for key in _WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS
         if event_data.get(key) not in (None, "")
     }
-    authoritative_ingress_state_present = (
-        event_data.get("verified_commerce_ingress_state") not in (None, "")
-    )
+    authoritative_ingress_state_present = event_data.get(
+        "verified_commerce_ingress_state"
+    ) not in (None, "")
     if not populated_fields:
         if authoritative_ingress_state_present:
             raise AuthoritativeIngressInvariantError(
@@ -616,14 +621,20 @@ def _finalization_payload(
     snapshot = {
         key: ingress_payload.get(key)
         for key in (
-            "id", "tenant_id", "event_id", "provider",
+            "id",
+            "tenant_id",
+            "event_id",
+            "provider",
             "provider_native_event_reference",
             "provider_native_commerce_reference",
             "normalized_commerce_reference_kind",
             "normalized_commerce_reference_value",
-            "verified_amount_minor", "verified_amount_currency",
-            "verified_amount_scale", "event_timestamp",
-            "idempotency_key", "verified_at",
+            "verified_amount_minor",
+            "verified_amount_currency",
+            "verified_amount_scale",
+            "event_timestamp",
+            "idempotency_key",
+            "verified_at",
         )
     }
     # B2.6-P2 Corrective XII: the predecessor event P (successful
@@ -634,6 +645,16 @@ def _finalization_payload(
     snapshot["auth_consequence"] = (
         dict(auth_consequence) if auth_consequence is not None else None
     )
+    # XIV relay (transient, never persisted): the exact raw bytes +
+    # signature envelope + routing key for the root relay call.
+    if isinstance(auth_consequence, Mapping):
+        relay = auth_consequence.get("relay_envelope")
+        if isinstance(relay, Mapping) and relay.get("raw_body_b64"):
+            snapshot["relay_envelope"] = {
+                "raw_body_b64": str(relay.get("raw_body_b64") or ""),
+                "signature_header": str(relay.get("signature_header") or ""),
+                "api_key": str(relay.get("api_key") or ""),
+            }
     return snapshot
 
 
@@ -667,9 +688,7 @@ async def _record_auth_consequence_in_txn(
             "provider": str(consequence.get("provider")),
             "event_ref": str(consequence.get("provider_event_reference")),
             "body_sha256": str(consequence.get("body_sha256")).lower(),
-            "sig_sha256": str(
-                consequence.get("signature_envelope_sha256")
-            ).lower(),
+            "sig_sha256": str(consequence.get("signature_envelope_sha256")).lower(),
             "method": str(consequence.get("auth_method")),
             "version": str(consequence.get("auth_version") or "v1"),
         },
@@ -718,6 +737,81 @@ async def _record_auth_consequence_post_commit(
     )
 
 
+async def _relay_verified_ingress_to_auth_root(
+    finalization: Mapping[str, Any],
+) -> bool:
+    """Relay a verified arrival to the dedicated auth root (XIV, Arch B).
+
+    Returns True when the root accepted and persisted authority, False
+    when no relay is configured (caller falls through to the direct
+    path, which fails closed without the credential). Raises on relay
+    transport/refusal errors (fail closed, never silently downgrade).
+
+    The envelope (raw bytes + signature + routing key) and commerce
+    handoff travel in memory only; nothing here persists PII.
+    """
+    import os as _relay_os  # noqa: PLC0415
+
+    root_url = _relay_os.getenv("B26_P2_AUTH_ROOT_URL", "").strip().rstrip("/")
+    if not root_url:
+        return False
+    envelope = finalization.get("relay_envelope")
+    if not isinstance(envelope, Mapping) or not envelope.get("raw_body_b64"):
+        return False
+    consequence = finalization.get("auth_consequence")
+    if not isinstance(consequence, Mapping) or not consequence.get("body_sha256"):
+        return False
+    try:
+        import httpx as _httpx  # noqa: PLC0415
+    except ImportError as exc:
+        raise ValidationError(
+            "b26_p2_ingress_relay_no_transport: httpx unavailable"
+        ) from exc
+    payload = {
+        "api_key": str(envelope.get("api_key") or ""),
+        "provider": str(finalization.get("provider") or ""),
+        "provider_event_reference": str(
+            finalization.get("provider_native_event_reference") or ""
+        ),
+        "raw_body_b64": str(envelope.get("raw_body_b64") or ""),
+        "signature_header": str(envelope.get("signature_header") or ""),
+        "event_id": str(finalization.get("idempotency_key") or ""),
+        "auth_version": str(consequence.get("auth_version") or "v1"),
+        "provider_native_commerce_reference": str(
+            finalization.get("provider_native_commerce_reference") or ""
+        ),
+        "normalized_commerce_reference_kind": str(
+            finalization.get("normalized_commerce_reference_kind") or ""
+        ),
+        "normalized_commerce_reference_value": str(
+            finalization.get("normalized_commerce_reference_value") or ""
+        ),
+        "verified_amount_minor": int(finalization.get("verified_amount_minor") or 0),
+        "verified_amount_currency": str(
+            finalization.get("verified_amount_currency") or ""
+        ),
+        "verified_amount_scale": int(finalization.get("verified_amount_scale") or 2),
+        "event_timestamp": str(finalization.get("event_timestamp") or ""),
+    }
+    try:
+        response = _httpx.post(
+            root_url + "/v1/authenticate-ingress",
+            json=payload,
+            timeout=10.0,
+        )
+    except Exception as exc:
+        raise ValidationError(
+            f"b26_p2_ingress_relay_unreachable: {type(exc).__name__}"
+        ) from exc
+    if response.status_code != 200:
+        raise ValidationError(
+            "b26_p2_ingress_relay_refused:"
+            f" status={response.status_code}"
+            f" body={response.text[:200]}"
+        )
+    return True
+
+
 async def _finalize_verified_ingress_post_commit(
     finalization: Mapping[str, Any],
 ) -> None:
@@ -740,8 +834,35 @@ async def _finalize_verified_ingress_post_commit(
     Requires SKELDIR_PROCESS_ROLE=auth_ingress with the file-mounted
     credential; otherwise fails closed. ORM attribute access keeps
     coverage-money SQL out of application string constants.
+
+    XIV (Architecture B): when this process does NOT hold the ingress
+    credential (the general API acting as non-authoritative byte relay),
+    the finalizer relays the exact raw bytes + signature envelope +
+    tenant routing key + commerce handoff to the dedicated authentication
+    trust root over HTTP (B26_P2_AUTH_ROOT_URL). The root independently
+    re-verifies the provider signature and persists authority; the relay
+    process never touches authenticated-ingress persistence. When this
+    process DOES hold the credential (dedicated root / legacy test lanes
+    with role=auth_ingress), the direct path below is used. Otherwise
+    fails closed.
     """
-    from app.db.session import _ingress_boundary, get_ingress_session  # noqa: PLC0415
+    import os as _os  # noqa: PLC0415
+
+    from app.db.session import (  # noqa: PLC0415
+        _ingress_boundary,
+        get_ingress_session,
+    )
+
+    try:
+        _holds_direct = _os.getenv("SKELDIR_PROCESS_ROLE", "").strip() == (
+            "auth_ingress"
+        ) and bool(_os.getenv("B26_P2_INGRESS_DATABASE_URL_FILE", "").strip())
+    except Exception:
+        _holds_direct = False
+    if not _holds_direct:
+        relayed = await _relay_verified_ingress_to_auth_root(finalization)
+        if relayed:
+            return
 
     tenant_id = finalization.get("tenant_id")
     idem = str(finalization.get("idempotency_key"))
@@ -754,9 +875,7 @@ async def _finalize_verified_ingress_post_commit(
     try:
         tenant_uuid = UUID(str(tenant_id))
     except (TypeError, ValueError) as exc:
-        raise ValidationError(
-            "b26_p2_ingress_finalization_tenant_invalid"
-        ) from exc
+        raise ValidationError("b26_p2_ingress_finalization_tenant_invalid") from exc
     consequence_summary = {
         "provider": str(finalization.get("provider")),
         "provider_event_reference": str(
@@ -803,20 +922,14 @@ async def _finalize_verified_ingress_post_commit(
                     normalized_commerce_reference_value=finalization.get(
                         "normalized_commerce_reference_value"
                     ),
-                    verified_amount_minor=finalization.get(
-                        "verified_amount_minor"
-                    ),
+                    verified_amount_minor=finalization.get("verified_amount_minor"),
                     verified_amount_currency=finalization.get(
                         "verified_amount_currency"
                     ),
-                    verified_amount_scale=finalization.get(
-                        "verified_amount_scale"
-                    ),
+                    verified_amount_scale=finalization.get("verified_amount_scale"),
                     event_timestamp=finalization.get("event_timestamp"),
                     idempotency_key=idem,
-                    verified_commerce_ingress_state=(
-                        _B26_P2_AUTHENTICATED_STATE
-                    ),
+                    verified_commerce_ingress_state=(_B26_P2_AUTHENTICATED_STATE),
                     verified_at=finalization.get("verified_at"),
                 )
             )
@@ -834,8 +947,7 @@ async def _finalize_verified_ingress_post_commit(
                 .one()
             )
         elif (
-            str(existing.verified_commerce_ingress_state)
-            != _B26_P2_AUTHENTICATED_STATE
+            str(existing.verified_commerce_ingress_state) != _B26_P2_AUTHENTICATED_STATE
         ):
             if _ingress_sovereign_mismatch(existing, finalization):
                 raise ValidationError(
@@ -850,9 +962,7 @@ async def _finalize_verified_ingress_post_commit(
                 "verified_at",
             ):
                 if field == "verified_commerce_ingress_state":
-                    setattr(
-                        existing, field, _B26_P2_AUTHENTICATED_STATE
-                    )
+                    setattr(existing, field, _B26_P2_AUTHENTICATED_STATE)
                 elif field in finalization:
                     setattr(existing, field, finalization[field])
             await session.flush()
@@ -862,9 +972,7 @@ async def _finalize_verified_ingress_post_commit(
         # ONE database transaction by the trust root. No app_user
         # recording, no multi-commit partials, no verified-alone
         # dispatch. Without the snapshot the atomic refuses.
-        if consequence_summary is None or not consequence_summary.get(
-            "body_sha256"
-        ):
+        if consequence_summary is None or not consequence_summary.get("body_sha256"):
             raise ValidationError(
                 "b26_p2_ingress_finalization_no_auth_consequence:"
                 " verified arrival requires the HMAC-established"
@@ -879,19 +987,13 @@ async def _finalize_verified_ingress_post_commit(
             {
                 "ingress_id": ingress_uuid,
                 "provider": str(consequence_summary.get("provider")),
-                "event_ref": str(
-                    consequence_summary.get("provider_event_reference")
-                ),
-                "body_sha256": str(
-                    consequence_summary.get("body_sha256")
-                ).lower(),
+                "event_ref": str(consequence_summary.get("provider_event_reference")),
+                "body_sha256": str(consequence_summary.get("body_sha256")).lower(),
                 "sig_sha256": str(
                     consequence_summary.get("signature_envelope_sha256")
                 ).lower(),
                 "method": str(consequence_summary.get("auth_method")),
-                "version": str(
-                    consequence_summary.get("auth_version") or "v1"
-                ),
+                "version": str(consequence_summary.get("auth_version") or "v1"),
             },
         )
 
@@ -969,9 +1071,11 @@ _INGRESS_COLLISION_CONSTRAINTS = frozenset(
 
 def _is_ingress_collision_integrity_error(error: Exception) -> bool:
     """True when a flush failed on a webhook-ingress identity unique."""
-    constraint = _integrity_error_constraint_name(error) if isinstance(
-        error, IntegrityError
-    ) else None
+    constraint = (
+        _integrity_error_constraint_name(error)
+        if isinstance(error, IntegrityError)
+        else None
+    )
     if constraint and constraint in _INGRESS_COLLISION_CONSTRAINTS:
         return True
     if isinstance(error, IntegrityError):
@@ -1027,9 +1131,8 @@ def _is_idempotency_duplicate_integrity_error(error: IntegrityError) -> bool:
         return True
 
     msg = str(error).lower()
-    return (
-        "duplicate key value violates unique constraint" in msg
-        and ("idempotency" in msg or _IDEMPOTENCY_UNIQUE_CONSTRAINT in msg)
+    return "duplicate key value violates unique constraint" in msg and (
+        "idempotency" in msg or _IDEMPOTENCY_UNIQUE_CONSTRAINT in msg
     )
 
 
@@ -1068,7 +1171,9 @@ def _is_missing_webhook_identity_relation_error(error: ProgrammingError) -> bool
     )
 
 
-def _is_missing_attribution_commerce_identity_relation_error(error: ProgrammingError) -> bool:
+def _is_missing_attribution_commerce_identity_relation_error(
+    error: ProgrammingError,
+) -> bool:
     sqlstate = _programming_error_sqlstate(error)
     lowered = str(error).lower()
     if sqlstate == "42P01":
@@ -1151,18 +1256,23 @@ class EventIngestionService:
         )
         raw_candidate_session_id = str(event_data.get("session_id", "")).strip() or None
         ingestion_event_data = dict(event_data)
-        ingestion_event_data["global_idempotency_hash"] = boundary.global_idempotency_hash
+        ingestion_event_data["global_idempotency_hash"] = (
+            boundary.global_idempotency_hash
+        )
         ingestion_event_data["pii_redacted_paths"] = list(boundary.redacted_paths)
         order_resolution_key = _extract_order_resolution_key(
             event_data=ingestion_event_data,
             identity_payload=identity_payload,
         )
-        commerce_identity_provider = _first_non_empty_resolution_token(
-            ingestion_event_data.get("provider"),
-            ingestion_event_data.get("vendor"),
-            identity_payload.get("provider"),
-            source,
-        ) or "unknown"
+        commerce_identity_provider = (
+            _first_non_empty_resolution_token(
+                ingestion_event_data.get("provider"),
+                ingestion_event_data.get("vendor"),
+                identity_payload.get("provider"),
+                source,
+            )
+            or "unknown"
+        )
         click_resolution_key = _extract_click_resolution_key(
             event_data=ingestion_event_data,
             identity_payload=identity_payload,
@@ -1187,15 +1297,19 @@ class EventIngestionService:
             )
             raise
 
-        candidate_session_uuid = await resolve_session_candidate_with_ephemeral_substrate(
-            session=session,
-            tenant_id=tenant_id,
-            candidate_session_id=raw_candidate_session_id,
-            order_id=order_resolution_key,
-            click_id=click_resolution_key,
-            now=event_authority_time,
+        candidate_session_uuid = (
+            await resolve_session_candidate_with_ephemeral_substrate(
+                session=session,
+                tenant_id=tenant_id,
+                candidate_session_id=raw_candidate_session_id,
+                order_id=order_resolution_key,
+                click_id=click_resolution_key,
+                now=event_authority_time,
+            )
         )
-        candidate_session_id = str(candidate_session_uuid) if candidate_session_uuid is not None else None
+        candidate_session_id = (
+            str(candidate_session_uuid) if candidate_session_uuid is not None else None
+        )
 
         # 1. Idempotency check - return existing event if duplicate
         existing = await self._check_duplicate(session, tenant_id, idempotency_key)
@@ -1219,7 +1333,7 @@ class EventIngestionService:
                     "vendor": ingestion_event_data.get("vendor", source),
                     "event_type": ingestion_event_data.get("event_type"),
                     **log_context(),
-                }
+                },
             )
             # B0.5.6.3: No labels on event metrics (bounded cardinality)
             events_duplicate_total.inc()
@@ -1255,7 +1369,7 @@ class EventIngestionService:
                 utm_source=ingestion_event_data.get("utm_source"),
                 utm_medium=ingestion_event_data.get("utm_medium"),
                 vendor=ingestion_event_data.get("vendor", source),
-                tenant_id=str(tenant_id)
+                tenant_id=str(tenant_id),
             )
 
             # 4. Create event entity
@@ -1277,7 +1391,9 @@ class EventIngestionService:
                 correlation_id=validated.get("correlation_id"),
                 external_event_id=ingestion_event_data.get("external_event_id"),
                 campaign_id=ingestion_event_data.get("campaign_id"),
-                conversion_value_cents=ingestion_event_data.get("conversion_value_cents"),
+                conversion_value_cents=ingestion_event_data.get(
+                    "conversion_value_cents"
+                ),
                 processing_status="pending",
                 retry_count=0,
                 created_at=datetime.now(timezone.utc),
@@ -1332,9 +1448,7 @@ class EventIngestionService:
             session.add(event)
             session.add(raw_event_payload)
             if webhook_identity_payload is not None:
-                session.add(
-                    WebhookIngressIdentity(**webhook_identity_payload)
-                )
+                session.add(WebhookIngressIdentity(**webhook_identity_payload))
             try:
                 await session.flush()  # Trigger constraint validation before commit
             except Exception as flush_error:
@@ -1391,7 +1505,8 @@ class EventIngestionService:
                         # finalization so a crashed winner cannot strand
                         # the arrival (idempotent post-commit).
                         existing_event = await _fetch_existing_event_for_key(
-                            session, tenant_id=tenant_id,
+                            session,
+                            tenant_id=tenant_id,
                             idempotency_key=idempotency_key,
                         )
                         if existing_event is not None:
@@ -1407,23 +1522,17 @@ class EventIngestionService:
                                         webhook_identity_payload,
                                         auth_consequence,
                                     )
-                                    if _is_verified_intended(
-                                        webhook_identity_payload
-                                    )
+                                    if _is_verified_intended(webhook_identity_payload)
                                     else None
                                 ),
                             )
-                        session.add(
-                            WebhookIngressIdentity(**webhook_identity_payload)
-                        )
+                        session.add(WebhookIngressIdentity(**webhook_identity_payload))
                     try:
                         await session.flush()
                     except Exception as flush_tail_error:
                         if not (
                             _is_verified_intended(webhook_identity_payload)
-                            and _is_b26_p2_verified_authorship_error(
-                                flush_tail_error
-                            )
+                            and _is_b26_p2_verified_authorship_error(flush_tail_error)
                         ):
                             raise
                         # The adoption updated a precursor toward
@@ -1484,7 +1593,7 @@ class EventIngestionService:
                     "vendor": ingestion_event_data.get("vendor", source),
                     "correlation_id_business": idempotency_key,
                     **log_context(),
-                }
+                },
             )
             duration = time.perf_counter() - start_time
             # B0.5.6.3: No labels on event metrics (bounded cardinality)
@@ -1666,7 +1775,9 @@ class EventIngestionService:
                 if isinstance(event_data["correlation_id"], UUID):
                     validated["correlation_id"] = event_data["correlation_id"]
                 else:
-                    validated["correlation_id"] = UUID(str(event_data["correlation_id"]))
+                    validated["correlation_id"] = UUID(
+                        str(event_data["correlation_id"])
+                    )
             except (ValueError, TypeError):
                 # Ignore invalid correlation_id (optional field)
                 validated["correlation_id"] = None
@@ -1727,7 +1838,9 @@ class EventIngestionService:
         # This allows DLQHandler to classify errors properly
         if "ValidationError" in error_message or error_type == "validation_error":
             error = ValidationError(error_message)
-        elif "IntegrityError" in error_message or "foreign key" in error_message.lower():
+        elif (
+            "IntegrityError" in error_message or "foreign key" in error_message.lower()
+        ):
             error = IntegrityError(error_message, None, None)
         else:
             error = Exception(error_message)
@@ -1860,7 +1973,7 @@ async def ingest_with_transaction(
             # Session commits DLQ entry (handled by context manager)
             logger.info(
                 "Ingestion failed - validation error",
-                extra={"error": str(e), "tenant_id": str(tenant_id)}
+                extra={"error": str(e), "tenant_id": str(tenant_id)},
             )
             return IngestionTransactionResult(
                 error_type="validation_error",

@@ -65,13 +65,20 @@ jobs:
       B057_P5_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p5
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p5
       B057_P5_ARTIFACT_DIR: artifacts/b057-p5
-      # B2.6-P2 Corrective XIII: this test API exercises the trust-root
-      # path in one process (auth role with the ingress credential).
+      # XIV single secret-delivery law (file-only): this test process
+      # exercises the trust-root path in one process (auth role with the
+      # file-mounted ingress credential).
       SKELDIR_PROCESS_ROLE: auth_ingress
-      B26_P2_INGRESS_DATABASE_URL: postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/skeldir_b057_p5
+      B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: /tmp/b26_p2_ingress_dsn_b057_p5
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Mount test ingress credential via file law
+        run: |
+          printf '%s' 'postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/skeldir_b057_p5' > /tmp/b26_p2_ingress_dsn_b057_p5
+          chmod 600 /tmp/b26_p2_ingress_dsn_b057_p5
 
       - uses: actions/setup-python@v5
         with:

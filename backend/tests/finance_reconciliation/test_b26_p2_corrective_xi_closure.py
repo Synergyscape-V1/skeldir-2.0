@@ -254,13 +254,18 @@ def _seed_dispatch(ids: dict, task: str) -> None:
 def _witness_and_attest(
     ids: dict, *, kind: str = "signed_provider_reingestion"
 ) -> None:
-    """Lawful XIII authentication chain for test fixtures.
+    """Lawful XIV authentication chain for test fixtures.
 
-    B2.6-P2 Corrective XIII: the predecessor consequence P, bound
-    witness, and attestation all execute with the dedicated trust-root
-    ingress authority (app_user holds zero EXECUTE/INSERT and is
-    refused at the grant plane). governed_attestation is
-    migration/admin custody only and is never used here.
+    B2.6-P2 Corrective XIV: the single authoritative commit interface
+    (the atomic transition) executes with the dedicated trust-root
+    ingress authority and creates consequence + witness + legacy
+    evidence + immutable auth-root evidence + terminal provenance in
+    one transaction. Legacy recorder/witness/attest combinations
+    without the atomic cannot promote (the provenance guard requires
+    the auth-root evidence identity); app_user holds zero
+    EXECUTE/INSERT and is refused at the grant plane.
+    governed_attestation is migration/admin custody only and is never
+    used here.
     """
     import psycopg2
 
@@ -274,26 +279,11 @@ def _witness_and_attest(
                 (str(ids["tenant_id"]),),
             )
             cur.execute(
-                "SELECT public.b26_p2_record_provider_auth_consequence"
+                "SELECT public.b26_p2_authenticate_ingress_atomic"
                 "(%s, %s, %s, %s, %s, %s, 'v1')",
                 (str(ids["ingress_id"]), ids.get("provider", "stripe"),
                  evt_ref, "c" * 64, "d" * 64,
                  "hmac-sha256-timestamped-hex"),
-            )
-            cur.execute(
-                "SELECT set_config('app.current_tenant_id', %s, false)",
-                (str(ids["tenant_id"]),),
-            )
-            cur.execute(
-                "SELECT public.b26_p2_record_ingress_auth_witness"
-                "(%s, %s, %s, %s)",
-                (str(ids["ingress_id"]), ids.get("provider", "stripe"),
-                 evt_ref, "c" * 64),
-            )
-            cur.execute(
-                "SELECT public.b26_p2_attest_provenance_evidence"
-                "(%s, %s, %s)",
-                (str(ids["ingress_id"]), kind, f"b26p2xi:{ids['tag']}"),
             )
             assert str(cur.fetchone()[0]) == "authenticated_known"
     finally:

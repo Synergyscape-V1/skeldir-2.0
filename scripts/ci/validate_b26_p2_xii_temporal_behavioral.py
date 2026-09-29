@@ -48,9 +48,7 @@ POLICY_SHA = "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"
 def _role_dsn(admin_dsn: str, role: str) -> str | None:
     if "migration_owner:migration_owner" not in admin_dsn:
         return None
-    return admin_dsn.replace(
-        "migration_owner:migration_owner", f"{role}:{role}"
-    )
+    return admin_dsn.replace("migration_owner:migration_owner", f"{role}:{role}")
 
 
 def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
@@ -71,8 +69,12 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
             cur.execute(
                 "INSERT INTO public.tenants (id, name, api_key_hash,"
                 " notification_email) VALUES (%s, %s, %s, %s)",
-                (tenant, "xii-temp-%s" % tag, uuid.uuid4().hex,
-                 "xii-temp@example.invalid"),
+                (
+                    tenant,
+                    "xii-temp-%s" % tag,
+                    uuid.uuid4().hex,
+                    "xii-temp@example.invalid",
+                ),
             )
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
@@ -93,8 +95,16 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 " VALUES (%s, %s, %s, %s, %s, 38000,"
                 " '{}'::jsonb, %s, 'conversion', 'xii_temp_ch',"
                 " 'c', 38000, 'USD', %s, %s, 'processed')",
-                (event_id, tenant, DAY_NOON, str(uuid.uuid4()),
-                 str(uuid.uuid4()), idem, DAY_NOON, DAY_NOON),
+                (
+                    event_id,
+                    tenant,
+                    DAY_NOON,
+                    str(uuid.uuid4()),
+                    str(uuid.uuid4()),
+                    idem,
+                    DAY_NOON,
+                    DAY_NOON,
+                ),
             )
             cur.execute(
                 "INSERT INTO public.webhook_ingress_identities (id,"
@@ -109,8 +119,16 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 " VALUES (%s, %s, %s, 'stripe', %s, %s,"
                 " 'order_reference', %s, 38000, 'USD', %s, %s,"
                 " 'authenticity_verified')",
-                (ingress_id, tenant, event_id, evt_ref,
-                 "ord-%s" % idem, "ord-%s" % idem, DAY_NOON, idem),
+                (
+                    ingress_id,
+                    tenant,
+                    event_id,
+                    evt_ref,
+                    "ord-%s" % idem,
+                    "ord-%s" % idem,
+                    DAY_NOON,
+                    idem,
+                ),
             )
             # XIII: dispatch requires terminal authentication. Fully
             # authenticate the fixture via the atomic transition (as
@@ -135,8 +153,17 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 " 'b23_match_engine', 'b23_match_engine.task', %s,"
                 " 'stripe', %s, %s, %s, 'dispatched', 'pending_publish',"
                 " 0, %s, %s)",
-                (tenant, ingress_id, task, str(uuid.uuid4()), evt_ref,
-                 "ord-%s" % idem, "ord-%s" % idem, DAY_START, DAY_END),
+                (
+                    tenant,
+                    ingress_id,
+                    task,
+                    str(uuid.uuid4()),
+                    evt_ref,
+                    "ord-%s" % idem,
+                    "ord-%s" % idem,
+                    DAY_START,
+                    DAY_END,
+                ),
             )
             cur.execute(
                 "INSERT INTO public.b26_p2_execution_outbox (tenant_id,"
@@ -177,14 +204,25 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 " VALUES (%s, %s, %s, 'stripe', %s, %s, %s,"
                 " 'matched_confirmed', 'high', 38000, 38000, 'USD',"
                 " 38000, 38000, 38000, 0, 0, 'exact')",
-                (tenant, event_id, ingress_id, "ord-%s" % idem, evt_ref,
-                 "ord-%s" % idem),
+                (
+                    tenant,
+                    event_id,
+                    ingress_id,
+                    "ord-%s" % idem,
+                    evt_ref,
+                    "ord-%s" % idem,
+                ),
             )
     finally:
         admin.close()
-    # Lawful XIII authentication chain through the dedicated trust root.
-    # (app_user authorship is physically impossible; P, witness, and
-    # attestation all run as the ingress principal, atomically.)
+    # Lawful XIV authentication chain through the dedicated trust root.
+    # (app_user authorship is physically impossible; the single
+    # authoritative commit interface -- the atomic transition -- runs as
+    # the ingress principal and creates consequence + witness + legacy
+    # evidence + immutable auth-root evidence + terminal provenance in
+    # one transaction. Legacy recorder/witness/attest combinations
+    # without the atomic cannot promote: the provenance guard requires
+    # the auth-root evidence identity.)
     ingress = psycopg2.connect(ingress_dsn)
     ingress.autocommit = True
     try:
@@ -194,19 +232,9 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 (tenant,),
             )
             cur.execute(
-                "SELECT public.b26_p2_record_provider_auth_consequence("
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
                 "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
                 (ingress_id, evt_ref, "c" * 64, "d" * 64),
-            )
-            cur.execute(
-                "SELECT public.b26_p2_record_ingress_auth_witness"
-                "(%s,'stripe',%s,%s)",
-                (ingress_id, evt_ref, "c" * 64),
-            )
-            cur.execute(
-                "SELECT public.b26_p2_attest_provenance_evidence"
-                "(%s,'signed_provider_reingestion',%s)",
-                (ingress_id, idem),
             )
             assert str(cur.fetchone()[0]) == "authenticated_known"
     finally:
@@ -219,8 +247,7 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
     try:
         with worker.cursor() as cur:
             cur.execute(
-                "SELECT public.b26_p2_canonical_scope_identity_for_window"
-                "(%s,%s,%s)",
+                "SELECT public.b26_p2_canonical_scope_identity_for_window" "(%s,%s,%s)",
                 (tenant, DAY_START, DAY_END),
             )
             scope = str(cur.fetchone()[0])
@@ -229,15 +256,17 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 (task, scope, 1, POLICY_SHA),
             )
             if conduct:
-                cur.execute(
-                    "SELECT public.b26_p2_mark_conducted(%s)", (task,)
-                )
+                cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
                 assert str(cur.fetchone()[0]) == "conducted"
     finally:
         worker.close()
     return {
-        "tenant": tenant, "ingress": ingress_id, "task": task,
-        "idem": idem, "evt_ref": evt_ref, "scope": scope,
+        "tenant": tenant,
+        "ingress": ingress_id,
+        "task": task,
+        "idem": idem,
+        "evt_ref": evt_ref,
+        "scope": scope,
         "event": event_id,
     }
 
@@ -294,9 +323,9 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
     finally:
         admin.close()
     status, detail = _attempt(
-        admin_role_dsn, tenant,
-        "UPDATE public.b23_match_verdicts SET status='unmatched'"
-        " WHERE id = %s",
+        admin_role_dsn,
+        tenant,
+        "UPDATE public.b23_match_verdicts SET status='unmatched'" " WHERE id = %s",
         (verdict_id,),
     )
     if status == "ok":
@@ -308,7 +337,8 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
 
     # TEMP-B: qualifying verdict INSERT into the conducted set refused.
     status, detail = _attempt(
-        admin_role_dsn, tenant,
+        admin_role_dsn,
+        tenant,
         "INSERT INTO public.b23_match_verdicts (tenant_id,"
         " attribution_event_id, webhook_ingress_identity_id,"
         " provider, canonical_commerce_reference,"
@@ -334,7 +364,8 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
 
     # TEMP-C: qualifying verdict DELETE refused.
     status, detail = _attempt(
-        admin_role_dsn, tenant,
+        admin_role_dsn,
+        tenant,
         "DELETE FROM public.b23_match_verdicts WHERE id = %s",
         (verdict_id,),
     )
@@ -347,7 +378,8 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
 
     # TEMP-D: dispatch-bearing sovereign mutation refused (custody).
     status, detail = _attempt(
-        ingress_dsn, tenant,
+        ingress_dsn,
+        tenant,
         "UPDATE public.webhook_ingress_identities SET provider='shopify'"
         " WHERE id = %s",
         (ingress_id,),
@@ -392,9 +424,7 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
             except Exception as exc:
                 detail = str(exc).splitlines()[0][:160]
                 if "b26_p2_policy_semantic_mutation_refused" not in str(exc):
-                    violations.append(
-                        "xii_temp_policy_wrong_refusal:%s" % detail
-                    )
+                    violations.append("xii_temp_policy_wrong_refusal:%s" % detail)
                 else:
                     checks["policy_refused"] = True
             finally:
@@ -429,8 +459,16 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 " VALUES (%s, %s, %s, %s, %s, 100,"
                 " '{}'::jsonb, %s, 'conversion', 'xii_temp_ch',"
                 " 'c', 100, 'USD', %s, %s, 'processed')",
-                (event2, tenant, DAY_NOON, str(uuid.uuid4()),
-                 str(uuid.uuid4()), idem2, DAY_NOON, DAY_NOON),
+                (
+                    event2,
+                    tenant,
+                    DAY_NOON,
+                    str(uuid.uuid4()),
+                    str(uuid.uuid4()),
+                    idem2,
+                    DAY_NOON,
+                    DAY_NOON,
+                ),
             )
     finally:
         admin.close()
@@ -455,8 +493,16 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 " VALUES (%s, %s, %s, 'stripe', %s, %s,"
                 " 'order_reference', %s, 200, 'USD', %s, %s,"
                 " 'authenticity_verified')",
-                (ingress2, tenant, event2, evt2, "ord-%s" % idem2,
-                 "ord-%s" % idem2, DAY_NOON, idem2),
+                (
+                    ingress2,
+                    tenant,
+                    event2,
+                    evt2,
+                    "ord-%s" % idem2,
+                    "ord-%s" % idem2,
+                    DAY_NOON,
+                    idem2,
+                ),
             )
     finally:
         ingress.close()
@@ -476,6 +522,10 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
             )
     finally:
         ingress_b.close()
+    # XIV: legacy witness+attest without the atomic cannot promote (the
+    # provenance guard requires the auth-root evidence identity the
+    # atomic alone creates). The stale lineage therefore stays pending
+    # and P3-ineligible; tolerate the expected refusal.
     ingress = psycopg2.connect(ingress_dsn)
     ingress.autocommit = True
     try:
@@ -489,11 +539,15 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 "(%s,'stripe',%s,%s)",
                 (ingress2, evt2, "e" * 64),
             )
-            cur.execute(
-                "SELECT public.b26_p2_attest_provenance_evidence"
-                "(%s,'signed_provider_reingestion',%s)",
-                (ingress2, idem2),
-            )
+            try:
+                cur.execute(
+                    "SELECT public.b26_p2_attest_provenance_evidence"
+                    "(%s,'signed_provider_reingestion',%s)",
+                    (ingress2, idem2),
+                )
+            except Exception as exc:
+                if "b26_p2_provenance_promotion_refused" not in str(exc):
+                    raise
     finally:
         ingress.close()
     worker = psycopg2.connect(worker_dsn)
@@ -527,12 +581,8 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 (task,),
             )
             oracle_rows = cur.fetchall()
-            if not any(
-                r[0] == "xi_stale_terminal_binding" for r in oracle_rows
-            ):
-                violations.append(
-                    "xii_temp_stale_undetected:%s" % (oracle_rows[:2],)
-                )
+            if not any(r[0] == "xi_stale_terminal_binding" for r in oracle_rows):
+                violations.append("xii_temp_stale_undetected:%s" % (oracle_rows[:2],))
             else:
                 checks["stale_detected"] = True
             # ...and then quarantined explicitly.
@@ -591,9 +641,7 @@ def _concurrency_probe(admin_dsn, violations, checks) -> None:
         try:
             barrier.wait(timeout=30)
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT public.b26_p2_mark_conducted(%s)", (ids["task"],)
-                )
+                cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (ids["task"],))
                 outcomes[name] = str(cur.fetchone()[0])
         except Exception as exc:
             outcomes[name] = "error:%s" % str(exc).splitlines()[0][:100]
@@ -643,18 +691,14 @@ def _concurrency_probe(admin_dsn, violations, checks) -> None:
     try:
         with worker.cursor() as cur:
             try:
-                cur.execute(
-                    "SELECT public.b26_p2_mark_conducted(%s)", (ids3["task"],)
-                )
+                cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (ids3["task"],))
                 if str(cur.fetchone()[0]) == "conducted":
                     violations.append("xii_temp_flip_conducted_mixed")
                 else:
                     checks["flip_conduct_idempotent"] = True
             except Exception as exc:
                 if "b26_p2_conducted_scope_not_canonical" not in str(exc):
-                    violations.append(
-                        "xii_temp_flip_wrong_refusal:" + str(exc)[:120]
-                    )
+                    violations.append("xii_temp_flip_wrong_refusal:" + str(exc)[:120])
                 else:
                     checks["flip_refused"] = True
     finally:
@@ -689,9 +733,7 @@ def main() -> int:
     }
     if args.evidence_out is not None:
         args.evidence_out.parent.mkdir(parents=True, exist_ok=True)
-        args.evidence_out.write_text(
-            json.dumps(evidence, indent=2), encoding="utf-8"
-        )
+        args.evidence_out.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     if args.evidence_dir is not None:
         args.evidence_dir.mkdir(parents=True, exist_ok=True)
         (args.evidence_dir / "xii-temporal-behavioral.json").write_text(

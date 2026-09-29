@@ -612,3 +612,50 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.b26_p2_xiii_provision_ingress_topology() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.b26_p2_xiii_invariant_oracle() FROM PUBLIC;
+
+-- === 202609270001 Corrective XIV: immutable auth-root evidence identity ===
+-- Source of truth is the 202609270001 migration. The evidence table shape
+-- (but not its grants) arrives via canonical_schema.sql. No runtime
+-- principal holds direct INSERT/UPDATE/DELETE (writes occur only through
+-- the SECURITY DEFINER atomic transition, gated on session_user); the
+-- SELECT grants below confer zero authorship (read-only observability).
+REVOKE ALL ON TABLE public.b26_p2_auth_root_evidence FROM PUBLIC;
+DO $$
+DECLARE _r text;
+BEGIN
+    FOREACH _r IN ARRAY ARRAY[
+        'app_user', 'app_worker', 'app_relay', 'app_beat',
+        'app_rw', 'app_ro', 'app_ingress',
+        'app_dispatch_publisher', 'app_celery_transport'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = _r) THEN
+            EXECUTE format(
+                'REVOKE ALL ON TABLE public.b26_p2_auth_root_evidence FROM %I',
+                _r
+            );
+        END IF;
+    END LOOP;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        GRANT SELECT ON TABLE public.b26_p2_auth_root_evidence TO app_user;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+        GRANT SELECT ON TABLE public.b26_p2_auth_root_evidence TO app_ingress;
+    END IF;
+END $$;
+-- B2.6-P2 Corrective XIV topology law (strict, root-evidence substrate).
+REVOKE ALL ON FUNCTION public.b26_p2_xiv_topology_check() FROM PUBLIC;
+DO $$
+DECLARE _r text;
+BEGIN
+    FOREACH _r IN ARRAY ARRAY[
+        'app_user', 'app_worker', 'app_relay', 'app_beat', 'app_ingress'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = _r) THEN
+            EXECUTE format(
+                'GRANT EXECUTE ON FUNCTION public.b26_p2_xiv_topology_check() TO %I',
+                _r
+            );
+        END IF;
+    END LOOP;
+END $$;
+REVOKE ALL ON FUNCTION public.b26_p2_xiv_provision_ingress_topology() FROM PUBLIC;

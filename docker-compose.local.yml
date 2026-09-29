@@ -59,6 +59,10 @@ services:
       SKELDIR_PROCESS_ROLE: "api"
       B26_P2_INGRESS_DATABASE_URL: ""
       B26_P2_INGRESS_DATABASE_URL_FILE: ""
+      # XIV Architecture B: the API relays verified arrivals to the
+      # dedicated authentication trust root below (same topology as
+      # c19/e2e/production). Without the root, P2 ingress fails closed.
+      B26_P2_AUTH_ROOT_URL: "http://auth_ingress:8001"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     ports:
       - "${API_PORT:-8000}:8000"
@@ -231,6 +235,8 @@ services:
       - .env.local
     environment:
       SKELDIR_PROCESS_ROLE: "auth_ingress"
+      B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: /run/secrets/b26_p2_ingress_dsn
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     volumes:

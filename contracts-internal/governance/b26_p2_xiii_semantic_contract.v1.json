@@ -44,7 +44,9 @@
     "canonical_day_start",
     "canonical_day_end"
   ],
-  "allowed_aggregate_operations": [],
+  "allowed_aggregate_operations": [
+    "string_agg"
+  ],
   "forbidden_constructs": [
     "dynamic_sql_EXECUTE",
     "dynamic_relation_resolution",
@@ -61,6 +63,8 @@
   ],
   "allowed_closure_functions": [
     "b26_p2_ascii_strip",
+    "b26_p2_canonical_day_end",
+    "b26_p2_canonical_day_start",
     "b26_p2_canonical_scope_identity_for_window",
     "b26_p2_classify_candidate",
     "b26_p2_normalize_currency",

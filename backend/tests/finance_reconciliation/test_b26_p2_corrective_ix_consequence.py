@@ -442,10 +442,12 @@ def test_pc9_count_never_truth_authority():
 # --- TC9: temporal reference-presence footprint --------------------------
 
 def test_tc9_reference_presence_footprint():
-    """TC9: post-conduction value-preserving reference rewrite
-    (ord->ord-MUTATED) is allowed and the gate stays already_conducted;
-    a presence flip (ord->'') is refused with
-    reference_presence_refused and leaves the consequence intact."""
+    """TC9 (XIV law): post-conduction commerce-reference rewrites are
+    refused under the UPDATE_REFUSED disposition -- both value rewrites
+    (ord->ord-MUTATED, refused with verdict_regression_refused) and
+    presence flips (ord->'', refused with reference_presence_refused).
+    A conducted commerce reference is sovereign deterministic truth;
+    the gate stays already_conducted and the consequence intact."""
     import psycopg2
 
     ids, task = _fresh_task("tc9ref")
@@ -458,12 +460,13 @@ def test_tc9_reference_presence_footprint():
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)", (tenant,)
             )
-            cur.execute(
-                "UPDATE public.b23_match_verdicts"
-                " SET canonical_commerce_reference='ord-tc9-mutated'"
-                " WHERE tenant_id=%s AND webhook_ingress_identity_id=%s",
-                (tenant, str(ids["ingress_id"])),
-            )
+            with pytest.raises(Exception, match="verdict_regression_refused"):
+                cur.execute(
+                    "UPDATE public.b23_match_verdicts"
+                    " SET canonical_commerce_reference='ord-tc9-mutated'"
+                    " WHERE tenant_id=%s AND webhook_ingress_identity_id=%s",
+                    (tenant, str(ids["ingress_id"])),
+                )
             cur.execute("SELECT public.b26_p2_mark_conducted(%s)", (task,))
             assert cur.fetchone()[0] == "already_conducted"
             with pytest.raises(Exception, match="reference_presence_refused"):

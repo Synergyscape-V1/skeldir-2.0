@@ -39,7 +39,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = (
-    REPO_ROOT / "contracts-internal" / "governance"
+    REPO_ROOT
+    / "contracts-internal"
+    / "governance"
     / "b26_p2_xiii_semantic_contract.v1.json"
 )
 
@@ -61,6 +63,60 @@ OPERATOR_RE = re.compile(
     r"\bOPERATOR\s*\(|\bCREATE\s+OPERATOR\b|===|!==|<\->",
     re.IGNORECASE,
 )
+# XIV: aggregate-family + set-grouping closure. Pristine canonical law
+# uses exactly one governed aggregate (string_agg over the single-row
+# identity LATERALs, explicitly allowed by the contract). Every other
+# aggregate family, GROUP BY, or FILTER clause is an undeclared
+# set-level semantic outside the closed language.
+AGG_FAMILY_RE = re.compile(
+    r"\b(ARRAY_AGG|STRING_AGG|JSON_AGG|JSONB_AGG|JSON_OBJECT_AGG|"
+    r"JSONB_OBJECT_AGG|COUNT|SUM|AVG|MIN|MAX|STDDEV|VARIANCE|"
+    r"BOOL_AND|BOOL_OR|BIT_AND|BIT_OR|EVERY)\s*\(",
+    re.IGNORECASE,
+)
+GROUP_BY_RE = re.compile(r"\bGROUP\s+BY\b", re.IGNORECASE)
+FILTER_RE = re.compile(r"\bFILTER\s*\(", re.IGNORECASE)
+# XIV: pure semantic primitives. These helpers implement mathematical
+# meaning (strip/normalize/day-boundary) and must perform no table
+# reads, no dynamic SQL, no operator indirection, and depend only on
+# declared inputs. Any relation read inside one is a meaning escape.
+PURE_HELPERS = frozenset(
+    {
+        "b26_p2_ascii_strip",
+        "b26_p2_strip_provider_token",
+        "b26_p2_strip_currency_token",
+        "b26_p2_normalize_provider",
+        "b26_p2_normalize_currency",
+        "b26_p2_canonical_day_start",
+        "b26_p2_canonical_day_end",
+    }
+)
+FROM_RE = re.compile(
+    r"\b(?:FROM|JOIN)\s+(?:public\.|pg_catalog\.)?([a-z_][a-z0-9_]*)",
+    re.IGNORECASE,
+)
+# XIV: natural custom-operator syntax. pg_depend does not record
+# operators referenced inside plpgsql bodies, so text law carries
+# these: after stripping string literals and line comments, any
+# remaining operator token built from # ? ! @ % ^ & ` ~ (outside the
+# standard SQL operator vocabulary) is an undeclared semantic
+# indirection. Pristine canonical law uses none (its % wildcards live
+# inside string literals).
+STRING_LITERAL_RE = re.compile(r"'(?:[^']|'')*'")
+LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+# XIV: standard multi-character operators that share characters with the
+# exotic set. Stripped before the exotic scan so legitimate !~/!=/:=
+# forms never flag.
+STANDARD_OP_RE = re.compile(
+    r"!~~\*|!~~|~~\*|~~|!~\*|!~|~|!=|<>|<=|>=|:=|=>|\|\|",
+    re.IGNORECASE,
+)
+# XIV: exotic operator characters. After literals, comments, and the
+# standard forms above are removed, ANY remaining # ? @ ^ & ` ~ % is an
+# undeclared operator indirection (pg_depend is blind inside plpgsql
+# bodies, so text law carries these). Bare % (modulo) is included:
+# pristine canonical law uses no modulo outside string literals.
+EXOTIC_OP_RE = re.compile(r"[#?@\^&`~%]")
 REGCLASS_RE = re.compile(
     r"\bto_regclass\b|\bto_regprocedure\b|\bpg_class\b|\bpg_operator\b",
     re.IGNORECASE,
@@ -74,11 +130,30 @@ UNALIASED_FROM_RE = re.compile(
     r"(?:\s+(?:AS\s+)?([a-z_][a-z0-9_]*))?",
     re.IGNORECASE,
 )
-FROM_KEYWORDS = frozenset({
-    "where", "group", "order", "limit", "join", "left", "right",
-    "inner", "outer", "full", "cross", "lateral", "on", "using",
-    "select", "from", "having", "union", "except", "intersect",
-})
+FROM_KEYWORDS = frozenset(
+    {
+        "where",
+        "group",
+        "order",
+        "limit",
+        "join",
+        "left",
+        "right",
+        "inner",
+        "outer",
+        "full",
+        "cross",
+        "lateral",
+        "on",
+        "using",
+        "select",
+        "from",
+        "having",
+        "union",
+        "except",
+        "intersect",
+    }
+)
 AGG_RE = re.compile(
     r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(|\bEXISTS\s*\(",
     re.IGNORECASE,
@@ -88,18 +163,73 @@ WRITE_RE = re.compile(
     re.IGNORECASE,
 )
 CALL_REF_RE = re.compile(r"\b(?:public\.)?([a-z_][a-z0-9_]*)\s*\(", re.IGNORECASE)
-SQL_KEYWORDS = frozenset({
-    "select", "exists", "coalesce", "nullif", "case", "when",
-    "string_agg", "count", "now", "set_config", "current_setting",
-    "to_char", "encode", "digest", "length", "order", "limit",
-    "cast", "in", "and", "or", "not", "distinct",
-    "group", "having", "union", "all", "as", "on", "using",
-    "return", "perform", "raise", "if", "then", "else", "elsif",
-    "end", "loop", "while", "for", "declare", "begin", "is",
-    "null", "true", "false", "like", "ilike", "between",
-    "from", "join", "left", "right", "inner", "outer", "full",
-    "cross", "lateral", "where", "into", "values", "by",
-})
+SQL_KEYWORDS = frozenset(
+    {
+        "select",
+        "exists",
+        "coalesce",
+        "nullif",
+        "case",
+        "when",
+        "string_agg",
+        "count",
+        "now",
+        "set_config",
+        "current_setting",
+        "to_char",
+        "encode",
+        "digest",
+        "length",
+        "order",
+        "limit",
+        "cast",
+        "in",
+        "and",
+        "or",
+        "not",
+        "distinct",
+        "group",
+        "having",
+        "union",
+        "all",
+        "as",
+        "on",
+        "using",
+        "return",
+        "perform",
+        "raise",
+        "if",
+        "then",
+        "else",
+        "elsif",
+        "end",
+        "loop",
+        "while",
+        "for",
+        "declare",
+        "begin",
+        "is",
+        "null",
+        "true",
+        "false",
+        "like",
+        "ilike",
+        "between",
+        "from",
+        "join",
+        "left",
+        "right",
+        "inner",
+        "outer",
+        "full",
+        "cross",
+        "lateral",
+        "where",
+        "into",
+        "values",
+        "by",
+    }
+)
 MAX_ITERS = 50
 
 
@@ -164,7 +294,9 @@ def _closure(cur) -> tuple[dict[str, str], set[str], list[str]]:
         frontier = [found[n] for n in called if n in found]
     violations = []
     if unresolved:
-        violations.append("xiii_semantic_unresolved_calls:" + ",".join(sorted(unresolved)))
+        violations.append(
+            "xiii_semantic_unresolved_calls:" + ",".join(sorted(unresolved))
+        )
     return universe, seen, violations
 
 
@@ -202,7 +334,9 @@ def _structural_checks(
         # are attributed, not flagged. Non-semantic relations
         # (quarantine/tenants exclusion scoping) may read unaliased;
         # governed + unknown relations must be aliased (or policy).
-        governed_here = {t.lower() for t in contract.get("allowed_source_relations", [])}
+        governed_here = {
+            t.lower() for t in contract.get("allowed_source_relations", [])
+        }
         nonsem_here = {t.lower() for t in contract.get("non_semantic_relations", [])}
         for m in UNALIASED_FROM_RE.finditer(src):
             table = m.group(1).lower()
@@ -227,25 +361,76 @@ def _structural_checks(
                 break
         if WRITE_RE.search(src):
             violations.append(f"xiii_semantic_set_write:{name}")
-        # COUNT/SUM/AVG/MIN/MAX: contract allows zero aggregates.
-        if re.search(r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(", src, re.IGNORECASE):
-            violations.append(f"xiii_semantic_undeclared_aggregate:{name}")
+        # XIV closed aggregate language: only the contract's explicitly
+        # allowed aggregate operations may appear. Every other aggregate
+        # family, GROUP BY, or FILTER is an undeclared set-level semantic.
+        allowed_aggs = {
+            str(a).lower() for a in contract.get("allowed_aggregate_operations", [])
+        }
+        for m in AGG_FAMILY_RE.finditer(src):
+            if m.group(1).lower() not in allowed_aggs:
+                violations.append(
+                    f"xiii_semantic_undeclared_aggregate:{name}:{m.group(1).lower()}"
+                )
+                break
+        if GROUP_BY_RE.search(src):
+            violations.append(f"xiii_semantic_group_by:{name}")
+        if FILTER_RE.search(src):
+            violations.append(f"xiii_semantic_filter:{name}")
+        # Natural custom-operator syntax (pg_depend-blind in plpgsql).
+        # After literals, comments, and standard multi-char operators
+        # are removed, any exotic character is undeclared indirection.
+        scrubbed = STRING_LITERAL_RE.sub("''", src)
+        scrubbed = LINE_COMMENT_RE.sub("", scrubbed)
+        scrubbed = STANDARD_OP_RE.sub(" ", scrubbed)
+        m = EXOTIC_OP_RE.search(scrubbed)
+        if m:
+            violations.append(f"xiii_semantic_natural_operator:{name}:{m.group(0)}")
+        # XIV pure-helper law: a pure semantic primitive may not read
+        # any relation. The allowlist name confers zero semantic
+        # authority; the body must prove purity. (pg_depend table-dep
+        # check below enforces the same law at the catalog plane; this
+        # text check fires even for dynamically hidden reads.)
+        if name in PURE_HELPERS:
+            for m in FROM_RE.finditer(src):
+                table = m.group(1).lower()
+                if table in FROM_KEYWORDS or table in ("select", "lateral"):
+                    continue
+                violations.append(
+                    f"xiii_semantic_pure_helper_reads_table:{name}:{table}"
+                )
+                break
+            if re.search(r"\bSELECT\b.*\bFROM\b", src, re.IGNORECASE | re.DOTALL):
+                if not any(
+                    v.startswith(f"xiii_semantic_pure_helper_reads_table:{name}:")
+                    for v in violations
+                ):
+                    violations.append(
+                        f"xiii_semantic_pure_helper_reads_table:{name}:select_from"
+                    )
         # EXISTS: allowed for quarantine exclusion scoping, for
         # fail-closed IF-guards that RAISE, and for governed set-level
         # reads covered by a contract set disposition (verdict
         # reference EXISTS shares the verdict COUNT/INSERT/DELETE
         # temporal law). All other EXISTS forms RED.
         governed = {t.lower() for t in contract.get("allowed_source_relations", [])}
-        treated = {str(k).lower() for k in (contract.get("temporal_dispositions", {}) or {})}
+        treated = {
+            str(k).lower() for k in (contract.get("temporal_dispositions", {}) or {})
+        }
         set_covered = set()
         for key in treated:
-            if "." in key and any(s in key for s in ("insert", "delete", "count", "exists")):
+            if "." in key and any(
+                s in key for s in ("insert", "delete", "count", "exists")
+            ):
                 set_covered.add(key.split(".", 1)[0])
         for em in re.finditer(r"\bEXISTS\s*\(", src, re.IGNORECASE):
-            window_before = src[max(0, em.start() - 200):em.start()]
-            tail = src[em.start():em.start() + 900]
+            window_before = src[max(0, em.start() - 200) : em.start()]
+            tail = src[em.start() : em.start() + 900]
             # Fail-closed IF EXISTS ... RAISE guards deny, never compute.
-            if re.search(r"\bIF\b", window_before[-80:], re.IGNORECASE) and "RAISE" in tail[:900]:
+            if (
+                re.search(r"\bIF\b", window_before[-80:], re.IGNORECASE)
+                and "RAISE" in tail[:900]
+            ):
                 continue
             # Quarantine exclusion scoping (non-semantic) allowed.
             if "b26_p2_execution_quarantine" in tail[:500].lower():
@@ -287,6 +472,62 @@ def _depend_checks(cur, contract: dict, violations: list[str]) -> None:
     for (rel,) in cur.fetchall():
         if str(rel).lower() not in allowed_rels:
             violations.append(f"xiii_semantic_ungoverned_relation:{rel}")
+    # XIV: custom-operator closure. Any operator dependency outside
+    # pg_catalog builtins is an undeclared semantic indirection: natural
+    # operator syntax ('x' #+ 'y') whose procedure reads undeclared state
+    # would otherwise pass every text check. Pristine canonical law
+    # depends on zero non-builtin operators.
+    cur.execute(
+        """
+        WITH RECURSIVE deps(obj) AS (
+            SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = 'public' AND p.proname = ANY(%s)
+            UNION
+            SELECT d.refobjid FROM pg_depend d JOIN deps ON deps.obj = d.objid
+             WHERE d.refobjsubid = 0
+        )
+        SELECT DISTINCT o.oprname, n.nspname FROM deps
+        JOIN pg_operator o ON o.oid = deps.obj
+        JOIN pg_namespace n ON n.oid = o.oprnamespace
+        """,
+        (list(CANONICAL_ROUTINES),),
+    )
+    for oprname, nspname in cur.fetchall():
+        if str(nspname).lower() != "pg_catalog":
+            violations.append(f"xiii_semantic_custom_operator_dep:{nspname}.{oprname}")
+    # XIV closed world: no custom operator may EXIST in the public
+    # schema, whether or not current canonical bodies reference it. An
+    # existing operator is load-bearing syntax waiting for a one-line
+    # plant to arm it (auditor SEM-3a); existence alone is RED.
+    cur.execute(
+        """
+        SELECT o.oprname FROM pg_operator o
+        JOIN pg_namespace n ON n.oid = o.oprnamespace
+        WHERE n.nspname = 'public'
+        """
+    )
+    for (oprname,) in cur.fetchall():
+        violations.append(f"xiii_semantic_custom_operator_exists:{oprname}")
+    # XIV: pure-helper relational purity at the catalog plane. A pure
+    # primitive must have zero table dependencies; the auditor's static
+    # aliased SELECT inside an allowlisted helper creates exactly one.
+    for helper in sorted(PURE_HELPERS):
+        cur.execute(
+            """
+            WITH RECURSIVE deps(obj) AS (
+                SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                 WHERE n.nspname = 'public' AND p.proname = %s
+                UNION
+                SELECT d.refobjid FROM pg_depend d JOIN deps ON deps.obj = d.objid
+                 WHERE d.refobjsubid = 0
+            )
+            SELECT DISTINCT c.relname FROM deps
+            JOIN pg_class c ON c.oid = deps.obj AND c.relkind IN ('r','v','m')
+            """,
+            (helper,),
+        )
+        for (rel,) in cur.fetchall():
+            violations.append(f"xiii_semantic_pure_helper_table_dep:{helper}:{rel}")
     cur.execute(
         """
         WITH RECURSIVE deps(obj) AS (
@@ -305,12 +546,13 @@ def _depend_checks(cur, contract: dict, violations: list[str]) -> None:
     allowed_fns = {f.lower() for f in contract.get("allowed_closure_functions", [])}
     allowed_fns |= {r.lower() for r in CANONICAL_ROUTINES}
     for (fn,) in cur.fetchall():
-        if str(fn).lower() not in allowed_fns and str(fn).lower() not in (
-            "digest",
-        ):
-            # pg_depend-visible helpers must be allowlisted; dynamic
-            # SQL helpers are invisible here AND caught above.
-            pass
+        if str(fn).lower() not in allowed_fns and str(fn).lower() not in ("digest",):
+            # XIV: pg_depend-visible helpers must be allowlisted. A
+            # helper reachable from canonical semantics but outside the
+            # contract is an ungoverned meaning carrier (dynamic-SQL
+            # helpers are invisible here AND caught by the EXECUTE text
+            # checks above).
+            violations.append(f"xiii_semantic_unregistered_helper_dep:{fn}")
 
 
 def _temporal_bijection(contract: dict, violations: list[str], checks: dict) -> None:
@@ -321,7 +563,9 @@ def _temporal_bijection(contract: dict, violations: list[str], checks: dict) -> 
     # Set-level event kinds are semantic dependencies too.
     for key in (contract.get("temporal_dispositions", {}) or {}).keys():
         deps.add(str(key).lower())
-    treated = {str(k).lower() for k in (contract.get("temporal_dispositions", {}) or {}).keys()}
+    treated = {
+        str(k).lower() for k in (contract.get("temporal_dispositions", {}) or {}).keys()
+    }
     # Column dependencies must each have a treatment; event keys are
     # treatments themselves.
     uncovered = set()
@@ -340,7 +584,9 @@ def _temporal_bijection(contract: dict, violations: list[str], checks: dict) -> 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate XIII closed semantic contract.")
+    parser = argparse.ArgumentParser(
+        description="Validate XIII closed semantic contract."
+    )
     parser.add_argument("--dsn", default=None)
     parser.add_argument("--evidence-out", default=None)
     args = parser.parse_args()
@@ -368,7 +614,7 @@ def main() -> int:
         # Extract canonical routine bodies crudely for static RED.
         for routine in CANONICAL_ROUTINES:
             idx = sql_text.find(routine)
-            window = sql_text[idx:idx + 20000] if idx >= 0 else ""
+            window = sql_text[idx : idx + 20000] if idx >= 0 else ""
             if EXECUTE_RE.search(window) and "UPDATE OF" not in window[:500]:
                 # Avoid false positive on trigger UPDATE OF parsing.
                 pass
@@ -390,6 +636,26 @@ def main() -> int:
         violations.extend(v)
         checks["closure_function_count"] = len(seen)
         if not v:
+            # XIV: govern every allowlisted helper body, not only the
+            # reachable closure. An allowlisted-but-unreached helper
+            # (e.g. normalize_provider) can still be invoked by future
+            # code or directly; its meaning must already be proven
+            # pure/closed. Merge their bodies into the checked universe
+            # (pg_depend is blind inside plpgsql bodies, so text law
+            # carries these).
+            governed = {
+                f.lower() for f in contract.get("allowed_closure_functions", [])
+            }
+            governed |= {r.lower() for r in CANONICAL_ROUTINES}
+            governed |= set(PURE_HELPERS)
+            missing = sorted(governed - set(seen))
+            if missing:
+                extra = _fetch_bodies(cur, set(missing))
+                for name in missing:
+                    if name in extra:
+                        universe[name] = extra[name]
+                seen |= set(extra.keys())
+                checks["governed_unreached_checked"] = sorted(extra.keys())
             _structural_checks(universe, seen, contract, violations)
             _depend_checks(cur, contract, violations)
         _temporal_bijection(contract, violations, checks)
@@ -407,8 +673,12 @@ def main() -> int:
         Path(args.evidence_out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.evidence_out).write_text(
             json.dumps(
-                {"gate_id": "B26-P2-XIII-SEMANTIC-CONTRACT", "status": status,
-                 "violations": sorted(violations), "checks": checks},
+                {
+                    "gate_id": "B26-P2-XIII-SEMANTIC-CONTRACT",
+                    "status": status,
+                    "violations": sorted(violations),
+                    "checks": checks,
+                },
                 indent=2,
             ),
             encoding="utf-8",

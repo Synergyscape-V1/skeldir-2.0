@@ -15,7 +15,7 @@
 
 # Core Services
 db: postgres -D $PGDATA -k $PGSOCKET -h localhost -p 5432
-web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= B26_P2_AUTH_ROOT_URL=http://localhost:8001 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 # B2.6-P2 Corrective XIII authentication trust root: the SOLE process
 # that may possess the authenticated-ingress persistence credential.
 # It holds the file-mounted credential (B26_P2_INGRESS_DATABASE_URL_FILE)
@@ -24,7 +24,7 @@ web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL= B26_P2_
 # The trust root performs provider HMAC verification and the atomic
 # authenticated-ingress persistence transition; no other principal can
 # manufacture its authoritative output (DB grants deny app_user).
-auth_ingress: cd backend && SKELDIR_PROCESS_ROLE=auth_ingress uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --reload
+auth_ingress: cd backend && SKELDIR_PROCESS_ROLE=auth_ingress B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE=/run/secrets/b26_p2_ingress_dsn uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --reload
 # The generic worker serves housekeeping/maintenance/llm/attribution.
 # B2.6-P2 Corrective XII ingress isolation is physical, not
 # conventional: B26_P2_INGRESS_DATABASE_URL is blanked in this
