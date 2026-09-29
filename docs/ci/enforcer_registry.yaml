@@ -6066,3 +6066,190 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+- id: b26-p2-xiv-coverage-registry
+  path: scripts/ci/b26_p2_xiv_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XIV registry extends XIII coverage for the immutable
+    auth-root evidence identity (read-only observability) and the XIV
+    topology adjudicator.
+  command: python -c "from scripts.ci.b26_p2_xiv_coverage import XIV_COVERED_SURFACES; print(len(XIV_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xiv_coverage import XIV_COVERED_SURFACES"
+  expected_failure_meaning: XIV EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XIV coverage gate.
+  subsumed_by: ''
+  registry_action: utility
+- id: b26-p2-xiv-auth-conduction
+  path: scripts/ci/validate_b26_p2_xiv_auth_conduction.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'The declared auth root is operable and exclusive:
+    full-commerce persistence satisfies the ingress schema, exactly one
+    runtime primitive (the atomic transition) can create authenticated
+    authority (legacy paths cannot promote, direct evidence writes are
+    refused), no downstream state is authenticated without the immutable
+    auth-root evidence identity, forged history is flagged and
+    quarantined, quarantined state cannot dispatch, and P3 refuses
+    invalid predecessors.'
+  command: python scripts/ci/validate_b26_p2_xiv_auth_conduction.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiv-auth-conduction.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_auth_conduction.py --help
+  expected_failure_meaning: An alternate path creates equivalent
+    authenticated authority, or unverifiable history stays eligible.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiv_auth_conduction.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiv-topology
+  path: scripts/ci/validate_b26_p2_xiv_topology.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Production, e2e, c19, and Procfile lanes share one
+    authority topology (API role=api blanked with relay URL; dedicated
+    root role=auth_ingress sole file holder) under a single file-only
+    secret-delivery law with no legacy environment-string fallback.'
+  command: python scripts/ci/validate_b26_p2_xiv_topology.py --evidence-out artifacts/b26_p2/static/xiv-topology.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_topology.py --help
+  expected_failure_meaning: A P2-equivalent lane runs API-as-auth-root or a
+    second secret-delivery path.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiv_topology.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiv-phase-oracle
+  path: scripts/ci/validate_b26_p2_xiv_phase_oracle.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Shipped contract plus executable semantics implement
+    the actual B2.6-P2 phase law (half-open window, provider/rail,
+    USD-only currency, reference, tenant, policy, identity, integer
+    money), proven by an oracle independent of the contract so
+    common-mode wrong changes RED.'
+  command: python scripts/ci/validate_b26_p2_xiv_phase_oracle.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiv-phase-oracle.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_phase_oracle.py --help
+  expected_failure_meaning: Contract and runtime agree on the wrong P2 law
+    with no independent witness.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiv_phase_oracle.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiv-semantic-behavior
+  path: scripts/ci/validate_b26_p2_xiv_semantic_behavior.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every pure semantic primitive obeys its executable
+    behavioral contract (strip/normalize/day-boundary laws, no
+    provider-selective blackout), proven live against the database
+    functions.'
+  command: python scripts/ci/validate_b26_p2_xiv_semantic_behavior.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiv-semantic-behavior.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_semantic_behavior.py --help
+  expected_failure_meaning: A helper changes P2 meaning with zero
+    dependency change and green proofs.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiv_semantic_behavior.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiv-temporal-behavior
+  path: scripts/ci/validate_b26_p2_xiv_temporal_behavior.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Declared mutable dependencies equal temporal
+    dispositions equal executed behavioral probes (three-set equality);
+    every disposition refuses or versions live, and weakening any
+    enforcement family REDs its probe (kill-switch).'
+  command: python scripts/ci/validate_b26_p2_xiv_temporal_behavior.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiv-temporal-behavior.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_temporal_behavior.py --help
+  expected_failure_meaning: Temporal metadata exists without physical
+    enforcement, or a disposition lacks an executed probe.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xiv_temporal_behavior.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xiv-nonvacuous
+  path: scripts/ci/test_b26_p2_xiv_negative_controls.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every XIV check is non-vacuous: legacy promotion,
+    forged history, helper-meaning drift, structural escape, common-mode
+    wrong law, unmapped disposition, weakened enforcement, and poisoned
+    topology each RED with exact restore to GREEN.'
+  command: python scripts/ci/test_b26_p2_xiv_negative_controls.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xiv-negative-controls.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/test_b26_p2_xiv_negative_controls.py --help
+  expected_failure_meaning: A load-bearing XIV check can never fail, so it
+    proves nothing.
+  first_diagnostic_command: python scripts/ci/test_b26_p2_xiv_negative_controls.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
