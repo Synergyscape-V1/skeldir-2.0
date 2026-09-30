@@ -43,7 +43,7 @@ def upgrade() -> None:
         RETURNS trigger
         LANGUAGE plpgsql
         SET search_path TO 'pg_catalog', 'public'
-        AS $function$
+        AS $$
         DECLARE
             _tenant uuid;
             _ingress uuid;
@@ -179,7 +179,7 @@ def upgrade() -> None:
                 RETURN NEW;
             END IF;
             RETURN NEW;
-        END $function$;
+        END $$;
         """
     )
     op.execute(

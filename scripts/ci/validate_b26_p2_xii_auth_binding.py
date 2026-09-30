@@ -267,24 +267,11 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
     finally:
         ingress.close()
 
-    # Lawful chain restores (consequence via the dedicated trust root;
-    # XIII: app_user authorship is physically impossible).
-    ingress0 = psycopg2.connect(ingress_dsn)
-    ingress0.autocommit = True
-    try:
-        with ingress0.cursor() as cur:
-            cur.execute(
-                "SELECT set_config('app.current_tenant_id', %s, false)",
-                (tenant_a,),
-            )
-            cur.execute(
-                "SELECT public.b26_p2_record_provider_auth_consequence("
-                "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
-                (ingress_a, "evt-%s" % idem_a, "c" * 64, "d" * 64),
-            )
-            checks["consequence_recorded"] = True
-    finally:
-        ingress0.close()
+    # Lawful chain restores via the single authoritative commit
+    # interface (XIV: the atomic transition as the trust root creates
+    # consequence + witness + evidence + terminal provenance in one
+    # transaction; legacy combinations without it cannot promote).
+    # XIII: app_user authorship is physically impossible.
     ingress = psycopg2.connect(ingress_dsn)
     ingress.autocommit = True
     try:
@@ -294,30 +281,25 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 (tenant_a,),
             )
             cur.execute(
-                "SELECT public.b26_p2_record_ingress_auth_witness"
-                "(%s,'stripe',%s,%s)",
-                (ingress_a, "evt-%s" % idem_a, "c" * 64),
-            )
-            checks["witness_hash_prefix"] = str(cur.fetchone()[0])[:12]
-            cur.execute(
-                "SELECT public.b26_p2_attest_provenance_evidence"
-                "(%s,'signed_provider_reingestion',%s)",
-                (ingress_a, idem_a),
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
+                (ingress_a, "evt-%s" % idem_a, "c" * 64, "d" * 64),
             )
             if str(cur.fetchone()[0]) != "authenticated_known":
                 violations.append("xii_auth_live_lawful_not_restored")
             else:
                 checks["lawful_restoration"] = True
-            # AUTH-4: tampered body fails binding.
+            # AUTH-4: tampered body fails binding (digest drift on the
+            # bound consequence is refused as immutable).
             try:
                 cur.execute(
-                    "SELECT public.b26_p2_record_ingress_auth_witness"
-                    "(%s,'stripe',%s,%s)",
-                    (ingress_a, "evt-%s" % idem_a, "e" * 64),
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
+                    (ingress_a, "evt-%s" % idem_a, "e" * 64, "e" * 64),
                 )
                 violations.append("xii_auth_live_tamper_minted")
             except Exception as exc:
-                if "b26_p2_witness_binding_conflict" not in str(exc):
+                if "b26_p2_atomic_cons_immutable_refused" not in str(exc):
                     violations.append(
                         "xii_auth_live_tamper_wrong_refusal:" + str(exc)[:100]
                     )
