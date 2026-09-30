@@ -65,18 +65,20 @@ IDENTITY_FILES = [
     "alembic/versions/007_skeldir_foundation/202609270003_b26_p2_corrective_xiv_definer_evidence.py",
 ]
 
-# Corrective XIII stale falsifier probe (P-authorship delta): the base
-# (pre-XIII, XII head) records the predecessor consequence via app_user
-# (`recorded`); the candidate (XIII) refuses app_user authorship
-# entirely (permission denied for function / caller_refused) and
-# restores authority only through the dedicated trust root (consequence
-# + bound witness + signed attestation via ingress, or the atomic
-# transition). Attestation without P is refused on both (vacuous for
-# that sub-probe, retained as defense in depth). MODE=base expects
-# XI_BASE_P_RECORDED; MODE=candidate expects XI_CAND_P_DENIED then
-# XI_CAND_RESTORED via the trust root. A base that refuses P (already
-# strict) or a candidate that records P via app_user (still assertable)
-# fails the falsifier as vacuous.
+# Corrective XIV stale falsifier probe (single-authority delta): the base
+# (pre-XIV, XIII head) still promotes through the legacy
+# recorder/witness/attest combination as the trust root
+# (`authenticated_known` without the atomic transition); the candidate
+# (XIV) refuses that same combination (the provenance guard requires
+# the immutable auth-root evidence identity only the atomic creates)
+# and restores authority only through the atomic transition. App_user
+# authorship is refused on both (permission denied); attestation
+# without P is refused on both. MODE=base expects XI_BASE_ATTESTED
+# (legacy XII bases print XI_BASE_P_RECORDED instead); MODE=candidate
+# expects XI_CAND_DENIED plus XI_CAND_LEGACY_REFUSED plus
+# XI_CAND_RESTORED via the atomic transition. A base that cannot
+# promote through the legacy path, or a candidate that still promotes
+# through it, fails the falsifier as vacuous.
 PROBE_XI_ATTEST_DELTA = '''
 import os
 import sys
@@ -125,13 +127,31 @@ try:
 except Exception as exc:
     mint_outcome = "REFUSED:" + str(exc).split("\\n")[0][:120]
 ingress0.close()
+legacy_outcome = "UNTRIED"
+try:
+    ingress0b = psycopg2.connect(os.environ["PROBE_INGRESS_DSN"])
+    ingress0b.autocommit = True
+    icb = ingress0b.cursor()
+    icb.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
+    icb.execute("SELECT public.b26_p2_record_provider_auth_consequence(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1')", (ing, "evt-" + tag, "c" * 64, "d" * 64))
+    icb.execute("SELECT public.b26_p2_record_ingress_auth_witness(%s, 'stripe', %s, %s)", (ing, "evt-" + tag, "c" * 64))
+    icb.execute("SELECT public.b26_p2_attest_provenance_evidence(%s, 'signed_provider_reingestion', %s)", (ing, idem))
+    legacy_outcome = str(icb.fetchone()[0])
+except Exception as exc:
+    legacy_outcome = "REFUSED:" + str(exc).split("\\n")[0][:120]
+try:
+    ingress0b.close()
+except Exception:
+    pass
 if mode == "base":
     if p_outcome == "recorded":
         print("XI_BASE_P_RECORDED")
     elif outcome == "authenticated_known" or (mint_outcome and not mint_outcome.startswith("REFUSED")):
         print("XI_BASE_ATTESTED")
+    elif legacy_outcome == "authenticated_known":
+        print("XI_BASE_ATTESTED")
     else:
-        print("XI_BASE_VACUOUS:" + p_outcome + "|" + outcome + "|" + mint_outcome)
+        print("XI_BASE_VACUOUS:" + p_outcome + "|" + outcome + "|" + mint_outcome + "|" + legacy_outcome)
         raise SystemExit(0)
 else:
     if p_outcome == "recorded":
@@ -144,20 +164,22 @@ else:
         print("XI_CAND_MINTED_WITHOUT_CONSEQUENCE")
         raise SystemExit(1)
     print("XI_CAND_DENIED:" + outcome + "|" + mint_outcome)
-    # XIII: restoration runs entirely as the dedicated trust root
-    # (app_ingress). App_user authorship is physically impossible.
-    ingress2 = psycopg2.connect(os.environ["PROBE_INGRESS_DSN"])
-    ingress2.autocommit = True
-    uc2 = ingress2.cursor()
-    uc2.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
-    uc2.execute("SELECT public.b26_p2_record_provider_auth_consequence(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1')", (ing, "evt-" + tag, "c" * 64, "d" * 64))
-    ingress2.close()
+    # XIV: the legacy combination without the atomic cannot promote on
+    # the candidate (provenance guard requires the auth-root evidence
+    # identity). The atomic transition restores authority in one
+    # transaction. App_user authorship is physically impossible.
+    if legacy_outcome == "authenticated_known":
+        print("XI_CAND_LEGACY_PROMOTED")
+        raise SystemExit(1)
+    if "b26_p2_provenance_promotion_refused" not in legacy_outcome:
+        print("XI_CAND_LEGACY_WRONG_REFUSAL:" + legacy_outcome)
+        raise SystemExit(1)
+    print("XI_CAND_LEGACY_REFUSED")
     ingress = psycopg2.connect(os.environ["PROBE_INGRESS_DSN"])
     ingress.autocommit = True
     ic = ingress.cursor()
     ic.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
-    ic.execute("SELECT public.b26_p2_record_ingress_auth_witness(%s, 'stripe', %s, %s)", (ing, "evt-" + tag, "c" * 64))
-    ic.execute("SELECT public.b26_p2_attest_provenance_evidence(%s, 'signed_provider_reingestion', %s)", (ing, idem))
+    ic.execute("SELECT public.b26_p2_authenticate_ingress_atomic(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1')", (ing, "evt-" + tag, "c" * 64, "d" * 64))
     restored = str(ic.fetchone()[0])
     ingress.close()
     if restored == "authenticated_known":
@@ -786,6 +808,7 @@ def main() -> int:
                 proc = _docker(*cmd)
                 cand_out = proc.stdout + proc.stderr
                 if ("XI_CAND_DENIED" not in proc.stdout
+                        or "XI_CAND_LEGACY_REFUSED" not in proc.stdout
                         or "XI_CAND_RESTORED" not in proc.stdout):
                     return _fail(
                         details,
