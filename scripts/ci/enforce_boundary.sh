@@ -13,6 +13,12 @@ ALLOWED_LLM_BOUNDARY_PATH="backend/app/llm/provider_boundary.py"
 ALLOWED_TRANSPORT_PATHS=(
   "backend/app/llm/provider_boundary.py"
   "backend/app/trust/signer_gateway.py"
+  # B2.6-P2 Corrective XIV adds a third bounded internal HTTP boundary:
+  # the general API relays verified arrivals to the dedicated
+  # authentication trust root, which independently re-verifies before
+  # persisting authority. Same shape as the signer gateway: raw
+  # transport confined here, memory-only payloads, fail-closed relay.
+  "backend/app/ingestion/auth_root_relay.py"
 )
 ALLOWED_BAYESIAN_PATHS=(
   "backend/app/bayesian/runtime_probe.py"

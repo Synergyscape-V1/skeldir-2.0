@@ -748,9 +748,17 @@ async def _relay_verified_ingress_to_auth_root(
     transport/refusal errors (fail closed, never silently downgrade).
 
     The envelope (raw bytes + signature + routing key) and commerce
-    handoff travel in memory only; nothing here persists PII.
+    handoff travel in memory only; nothing here persists PII. The HTTP
+    transport itself lives in the bounded relay module
+    (app.ingestion.auth_root_relay); this function only assembles the
+    memory-only payload.
     """
     import os as _relay_os  # noqa: PLC0415
+
+    from app.ingestion.auth_root_relay import (  # noqa: PLC0415
+        AuthRootRelayError,
+        relay_verified_ingress_to_auth_root,
+    )
 
     root_url = _relay_os.getenv("B26_P2_AUTH_ROOT_URL", "").strip().rstrip("/")
     if not root_url:
@@ -761,12 +769,6 @@ async def _relay_verified_ingress_to_auth_root(
     consequence = finalization.get("auth_consequence")
     if not isinstance(consequence, Mapping) or not consequence.get("body_sha256"):
         return False
-    try:
-        import httpx as _httpx  # noqa: PLC0415
-    except ImportError as exc:
-        raise ValidationError(
-            "b26_p2_ingress_relay_no_transport: httpx unavailable"
-        ) from exc
     payload = {
         "api_key": str(envelope.get("api_key") or ""),
         "provider": str(finalization.get("provider") or ""),
@@ -794,21 +796,9 @@ async def _relay_verified_ingress_to_auth_root(
         "event_timestamp": str(finalization.get("event_timestamp") or ""),
     }
     try:
-        response = _httpx.post(
-            root_url + "/v1/authenticate-ingress",
-            json=payload,
-            timeout=10.0,
-        )
-    except Exception as exc:
-        raise ValidationError(
-            f"b26_p2_ingress_relay_unreachable: {type(exc).__name__}"
-        ) from exc
-    if response.status_code != 200:
-        raise ValidationError(
-            "b26_p2_ingress_relay_refused:"
-            f" status={response.status_code}"
-            f" body={response.text[:200]}"
-        )
+        relay_verified_ingress_to_auth_root(root_url, payload)
+    except AuthRootRelayError as exc:
+        raise ValidationError(str(exc)) from exc
     return True
 
 
