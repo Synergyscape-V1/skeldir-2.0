@@ -36,6 +36,11 @@ PATH_SCOPED_ALLOWLIST: dict[str, set[str]] = {
     # do so. The destination is an explicitly configured signer URL, TLS is
     # required off loopback, and no provider or model egress is possible here.
     "backend/app/trust/signer_gateway.py": {"httpx"},
+    # B2.6-P2 Corrective XIV: the general API relays verified arrivals to
+    # the dedicated authentication trust root over a bounded internal HTTP
+    # boundary of the same shape (explicitly configured root URL, raw bytes
+    # never persist, fail-closed relay). Only this relay module may do so.
+    "backend/app/ingestion/auth_root_relay.py": {"httpx"},
 }
 
 ENTRYPOINTS = [
