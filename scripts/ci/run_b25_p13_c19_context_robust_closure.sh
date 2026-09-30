@@ -116,11 +116,16 @@ PY
 )"
 
 export C19_API_DATABASE_URL='postgresql://app_user:app_user@postgres:5432/skeldir_c19'
-# B2.6-P2 Corrective XI: the API is the provider-authentication
-# boundary, so it alone mounts the dedicated ingress credential
-# (verified-ingress authorship + witness). No other C19 process
-# receives it.
-export C19_INGRESS_DATABASE_URL='postgresql+asyncpg://app_ingress:app_ingress@postgres:5432/skeldir_c19'
+# B2.6-P2 Corrective XIV Architecture B: the API is a non-authoritative
+# byte relay (no ingress DB capability); the dedicated authentication
+# trust root (auth_ingress service) alone mounts the file-mounted
+# ingress credential and independently re-verifies provider signatures.
+# Single secret-delivery law: file only, written here and bind-mounted
+# read-only; the legacy environment string is never consumed.
+export C19_INGRESS_DATABASE_URL=''
+export C19_INGRESS_DSN_FILE="${RUNNER_TEMP:-/tmp}/b26_p2_ingress_dsn_c19"
+printf '%s' 'postgresql+asyncpg://app_ingress:app_ingress@postgres:5432/skeldir_c19' > "$C19_INGRESS_DSN_FILE"
+chmod 600 "$C19_INGRESS_DSN_FILE"
 export C19_WORKER_DATABASE_URL='postgresql+asyncpg://app_worker:app_worker@postgres:5432/skeldir_c19'
 export C19_PUBLISHER_DATABASE_URL='postgresql+asyncpg://app_dispatch_publisher:app_dispatch_publisher@postgres:5432/skeldir_c19'
 export C19_PUBLISHER_SYNC_DATABASE_URL='postgresql://app_dispatch_publisher:app_dispatch_publisher@postgres:5432/skeldir_c19'
