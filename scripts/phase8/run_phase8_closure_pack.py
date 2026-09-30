@@ -760,8 +760,14 @@ def _provision_ingress_dsn_file(cfg: _Phase8Config, env: dict[str, str]) -> None
     env["E2E_INGRESS_DSN_FILE"] = dsn_path
 
 
-def _wait_for_auth_root(timeout_s: int = 120) -> None:
-    """Wait until the dedicated auth root serves (relay dependency)."""
+def _wait_for_auth_root(
+    env: dict[str, str], timeout_s: int = 120
+) -> None:
+    """Wait until the dedicated auth root serves (relay dependency).
+
+    The compose interpolation context (E2E_* lane variables) is passed
+    explicitly: this probe must not depend on ambient process env.
+    """
     import subprocess as _sp
 
     deadline = time.time() + timeout_s
@@ -784,6 +790,7 @@ def _wait_for_auth_root(timeout_s: int = 120) -> None:
             capture_output=True,
             text=True,
             timeout=30,
+            env=env,
         )
         if proc.returncode == 0 and "200" in proc.stdout:
             return
@@ -1064,7 +1071,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             ],
         )
         _grant_runtime_privileges(cfg)
-        _wait_for_auth_root()
+        _wait_for_auth_root(env)
         run_step("wait_health", [sys.executable, "scripts/wait_for_e2e_health.py"])
         run_step("wait_worker", [sys.executable, "scripts/wait_for_e2e_worker.py"])
         container_identity_evidence = _run_container_identity_probes(cfg, env)
