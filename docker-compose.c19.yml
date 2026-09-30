@@ -158,6 +158,10 @@ services:
       # key material as the relay lane).
       PLATFORM_TOKEN_ENCRYPTION_KEY: c19-platform-key
       PLATFORM_TOKEN_KEY_ID: c19-key
+      # XIV: relay-lane pool sizing (see e2e lane note).
+      DATABASE_POOL_SIZE: "20"
+      DATABASE_MAX_OVERFLOW: "10"
+      DATABASE_FORCE_POOLING: "1"
     volumes:
       - type: bind
         source: ${C19_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}

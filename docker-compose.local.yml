@@ -237,6 +237,10 @@ services:
       SKELDIR_PROCESS_ROLE: "auth_ingress"
       B26_P2_INGRESS_DATABASE_URL: ""
       B26_P2_INGRESS_DATABASE_URL_FILE: /run/secrets/b26_p2_ingress_dsn
+      # XIV: relay-lane pool sizing (see e2e lane note).
+      DATABASE_POOL_SIZE: "20"
+      DATABASE_MAX_OVERFLOW: "10"
+      DATABASE_FORCE_POOLING: "1"
       TRUST_SIGNER_DATABASE_URL: ""
       SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL: ""
     volumes:
