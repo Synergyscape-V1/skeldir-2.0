@@ -70,6 +70,11 @@ def _control_auth_legacy(admin_dsn, violations, checks):
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)", (tenant,)
             )
+            cur.execute(
+                "INSERT INTO public.channel_taxonomy (code, family, is_paid,"
+                " display_name, state) VALUES ('xiv_temp_ch', 'xiv_temp', true,"
+                " 'XIVTEMP', 'active') ON CONFLICT (code) DO NOTHING"
+            )
             ev, ing = str(uuid.uuid4()), str(uuid.uuid4())
             cur.execute(
                 "INSERT INTO public.attribution_events (id, tenant_id, occurred_at, correlation_id,"
@@ -154,6 +159,11 @@ def _control_hist_oracle(admin_dsn, violations, checks):
             )
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)", (tenant,)
+            )
+            cur.execute(
+                "INSERT INTO public.channel_taxonomy (code, family, is_paid,"
+                " display_name, state) VALUES ('xiv_temp_ch', 'xiv_temp', true,"
+                " 'XIVTEMP', 'active') ON CONFLICT (code) DO NOTHING"
             )
             cur.execute(
                 "ALTER TABLE public.webhook_ingress_identities DISABLE TRIGGER trg_b26_p2_ingress_provenance"

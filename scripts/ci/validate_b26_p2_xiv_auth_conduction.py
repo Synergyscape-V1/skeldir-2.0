@@ -63,10 +63,15 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     ):
         violations.append("xiv_cond_root_insert_without_commerce")
     checks["root_operable_shape"] = True
-    # A2: relay law -- API relays, root verifies.
+    # A2: relay law -- API relays, root verifies. The HTTP transport
+    # lives in the bounded relay module (B0.7 boundary); the finalizer
+    # assembles the memory-only envelope and calls it.
     try:
         ev = (
             REPO_ROOT / "backend" / "app" / "ingestion" / "event_service.py"
+        ).read_text(encoding="utf-8")
+        relay = (
+            REPO_ROOT / "backend" / "app" / "ingestion" / "auth_root_relay.py"
         ).read_text(encoding="utf-8")
         wh = (REPO_ROOT / "backend" / "app" / "api" / "webhooks.py").read_text(
             encoding="utf-8"
@@ -77,10 +82,11 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     for token in (
         "_relay_verified_ingress_to_auth_root",
         "B26_P2_AUTH_ROOT_URL",
-        "/v1/authenticate-ingress",
     ):
         if token not in ev:
             violations.append(f"xiv_cond_relay_missing:{token}")
+    if "/v1/authenticate-ingress" not in relay:
+        violations.append("xiv_cond_relay_missing:/v1/authenticate-ingress")
     if "relay_envelope" not in wh or "relay_envelope" not in ev:
         violations.append("xiv_cond_relay_envelope_missing")
     checks["relay_wired"] = True
@@ -155,6 +161,11 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
             (tenant, "xiv-cond", uuid.uuid4().hex, "xiv-cond@example.invalid"),
         )
         cur.execute("SELECT set_config('app.current_tenant_id', %s, false)", (tenant,))
+        cur.execute(
+            "INSERT INTO public.channel_taxonomy (code, family, is_paid,"
+            " display_name, state) VALUES ('xiv_temp_ch', 'xiv_temp', true,"
+            " 'XIVTEMP', 'active') ON CONFLICT (code) DO NOTHING"
+        )
         # Lawful lineage: verified insert -> pending -> atomic -> known + evidence.
         ev1, ing1 = str(uuid.uuid4()), str(uuid.uuid4())
         cur.execute(
