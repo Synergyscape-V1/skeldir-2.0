@@ -105,13 +105,6 @@ services:
       # key material as the API relay lane).
       PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
       PLATFORM_TOKEN_KEY_ID: e2e-key
-      # XIV: the relay architecture moves per-webhook atomic persistence
-      # from the API pool (20) to this service's ingress pool; size it
-      # to match so the relay hop cannot queue behind the default
-      # 4-connection pool under sustained webhook load.
-      DATABASE_POOL_SIZE: "20"
-      DATABASE_MAX_OVERFLOW: "10"
-      DATABASE_FORCE_POOLING: "1"
     volumes:
       - ${E2E_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}:/run/secrets/b26_p2_ingress_dsn:ro
     command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers 1

@@ -19,13 +19,15 @@ class AuthRootRelayError(RuntimeError):
     """The relay transport or the root refused the arrival (fail closed)."""
 
 
-def relay_verified_ingress_to_auth_root(
+async def relay_verified_ingress_to_auth_root(
     root_url: str,
     payload: Mapping[str, Any],
     timeout_seconds: float = 10.0,
 ) -> dict[str, Any]:
     """POST the relay envelope to the auth root; return its JSON body.
 
+    Async: the single-worker API event loop must never block on the
+    relay round-trip, or sustained webhook load serializes behind it.
     Raises AuthRootRelayError when the root is unreachable or refuses
     (invalid signature, unknown tenant, schema violation). Callers
     must fail closed on this error, never fall back to manufacturing
@@ -34,11 +36,11 @@ def relay_verified_ingress_to_auth_root(
     import httpx  # noqa: PLC0415  -- bounded transport lives here only.
 
     try:
-        response = httpx.post(
-            root_url.rstrip("/") + "/v1/authenticate-ingress",
-            json=dict(payload),
-            timeout=timeout_seconds,
-        )
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await client.post(
+                root_url.rstrip("/") + "/v1/authenticate-ingress",
+                json=dict(payload),
+            )
     except Exception as exc:
         raise AuthRootRelayError(
             f"b26_p2_ingress_relay_unreachable:{type(exc).__name__}"

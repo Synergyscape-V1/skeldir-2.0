@@ -796,7 +796,7 @@ async def _relay_verified_ingress_to_auth_root(
         "event_timestamp": str(finalization.get("event_timestamp") or ""),
     }
     try:
-        relay_verified_ingress_to_auth_root(root_url, payload)
+        await relay_verified_ingress_to_auth_root(root_url, payload)
     except AuthRootRelayError as exc:
         raise ValidationError(str(exc)) from exc
     return True
