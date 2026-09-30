@@ -811,7 +811,7 @@ def downgrade() -> None:
     op.execute(
         "DROP FUNCTION IF EXISTS public.b26_p2_enforce_auth_root_evidence_immutability()"
     )
-    op.execute("DROP TABLE IF EXISTS public.b26_p2_auth_root_evidence")
+    op.execute("DROP TABLE IF EXISTS public.b26_p2_auth_root_evidence")  # CI:DESTRUCTIVE_OK - reversible rollback removing the XIV-only evidence relation on downgrade; re-upgrade recreates it and re-sweeps historical dispositions.
     # NOTE: atomic/provenance/dispatch tightening above is intentionally NOT
     # rolled back here: a downgrade from XIV leaves the strict
     # root-evidence/promotion/dispatch law in place (fail-closed), and a
