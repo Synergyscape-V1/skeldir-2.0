@@ -2,6 +2,11 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: skeldir-postgres-e2e
+    # XIV: the relay architecture splits per-webhook persistence across
+    # two pools (API relay + dedicated auth root) instead of one. Grant
+    # the lane headroom so pool sizing, not the server connection cap,
+    # is what the load tests measure.
+    command: postgres -c max_connections=200
     environment:
       POSTGRES_USER: skeldir
       POSTGRES_PASSWORD: skeldir_e2e
@@ -105,6 +110,11 @@ services:
       # key material as the API relay lane).
       PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
       PLATFORM_TOKEN_KEY_ID: e2e-key
+      # XIV: size the relay endpoint's pools to the lane's API pools so
+      # the relay hop carries the same concurrency as the relaying API.
+      DATABASE_POOL_SIZE: "20"
+      DATABASE_MAX_OVERFLOW: "10"
+      DATABASE_FORCE_POOLING: "1"
     volumes:
       - ${E2E_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}:/run/secrets/b26_p2_ingress_dsn:ro
     command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers 1
