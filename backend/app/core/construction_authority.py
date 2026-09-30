@@ -89,6 +89,7 @@ NON_AUTHORITATIVE_CONSTRUCTION_ROUTES: dict[str, str] = {
     ),
 }
 
+
 def _module_revision_identifiers(source: str) -> tuple[str | None, tuple[str, ...]]:
     """Read ``revision`` and ``down_revision`` out of one migration module.
 
@@ -245,11 +246,11 @@ def _migration_modules(migrations_root: Path | None = None):
 
 #: The single Alembic revision this build's code requires. Asserted equal to the
 #: migration graph's head by a merge-blocking test; never hand-maintained
-#: independently of the chain. B2.6-P2 Corrective XIII advances the contract
-#: to the root-of-trust closure head (authorship closure, pending law,
-#: terminal+witness dispatch, atomic transition): this build requires XIII
-#: physics and must refuse earlier schema.
-REQUIRED_SCHEMA_REVISION = "202609260001"
+#: independently of the chain. B2.6-P2 Corrective XIV advances the contract
+#: to the compositional closure head (root-evidence identity, single
+#: authority effect law, historical quarantine, relay wiring): this build
+#: requires XIV physics and must refuse earlier schema.
+REQUIRED_SCHEMA_REVISION = "202609270003"
 
 #: Every revision a process running this build may serve traffic against.
 #: Exactly one today. Widening this set is a deliberate, reviewable act that

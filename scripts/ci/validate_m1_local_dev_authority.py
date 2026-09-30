@@ -715,6 +715,27 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xiii_capability_custody.py",
     "scripts/ci/validate_b26_p2_xiii_semantic_contract.py",
     "scripts/ci/validate_b26_p2_xiii_temporal_completeness.py",
+    # --- B2.6-P2 Corrective XIV compositional closure surface ---
+    # Authority-only slice: the two Corrective-XIV migrations
+    # (root-evidence identity, single-authority effect law, historical
+    # quarantine, temporal enforcement tightening), the five XIV live
+    # validators plus non-vacuous battery, and the XIV coverage
+    # registry. Same exemption shape as the Corrective-XIII entry
+    # above; every prohibition retained unchanged. Proof tooling only;
+    # the manufacturing-law content scan still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609270001_b26_p2_corrective_xiv_compositional_closure.py",
+    "alembic/versions/007_skeldir_foundation/202609270002_b26_p2_corrective_xiv_temporal_enforcement.py",
+    "alembic/versions/007_skeldir_foundation/202609270003_b26_p2_corrective_xiv_definer_evidence.py",
+    # XIV Architecture-B relay transport (bounded internal HTTP boundary,
+    # same shape as the trust signer gateway; memory-only payloads).
+    "backend/app/ingestion/auth_root_relay.py",
+    "scripts/ci/b26_p2_xiv_coverage.py",
+    "scripts/ci/test_b26_p2_xiv_negative_controls.py",
+    "scripts/ci/validate_b26_p2_xiv_auth_conduction.py",
+    "scripts/ci/validate_b26_p2_xiv_phase_oracle.py",
+    "scripts/ci/validate_b26_p2_xiv_semantic_behavior.py",
+    "scripts/ci/validate_b26_p2_xiv_temporal_behavior.py",
+    "scripts/ci/validate_b26_p2_xiv_topology.py",
     # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
     # and equivalence corpora authenticate lawful fixtures via the atomic
     # transition (admin allowed); negative fixtures stay pending/unknown.

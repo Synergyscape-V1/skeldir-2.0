@@ -2,6 +2,11 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: skeldir-postgres-e2e
+    # XIV: the relay architecture splits per-webhook persistence across
+    # two pools (API relay + dedicated auth root) instead of one. Grant
+    # the lane headroom so pool sizing, not the server connection cap,
+    # is what the load tests measure.
+    command: postgres -c max_connections=200
     environment:
       POSTGRES_USER: skeldir
       POSTGRES_PASSWORD: skeldir_e2e
@@ -59,15 +64,14 @@ services:
       REALTIME_REVENUE_ERROR_COOLDOWN_SECONDS: 5
       REALTIME_REVENUE_SINGLEFLIGHT_WAIT_SECONDS: 2
       REALTIME_REVENUE_SINGLEFLIGHT_POLL_SECONDS: 0.05
-      # B2.6-P2 Corrective XIII: e2e lanes that serve verified
-      # webhooks through this API exercise the trust-root path
-      # in-process (role + credential from the lane env); lanes that
-      # leave E2E_INGRESS_DATABASE_URL blank keep the boundary unclaimed
-      # (workers blank it unconditionally). Production (local/c19) never
-      # mounts here: the dedicated auth_ingress service holds the file.
-      B26_P2_INGRESS_DATABASE_URL: ${E2E_INGRESS_DATABASE_URL:-}
+      # XIV Architecture B: the general API is a non-authoritative byte
+      # relay only in every lane. It holds no authenticated-ingress DB
+      # capability and relays verified arrivals to the dedicated
+      # authentication trust root below (same topology as production).
+      B26_P2_INGRESS_DATABASE_URL: ""
       B26_P2_INGRESS_DATABASE_URL_FILE: ""
-      SKELDIR_PROCESS_ROLE: ${E2E_PROCESS_ROLE:-api}
+      SKELDIR_PROCESS_ROLE: "api"
+      B26_P2_AUTH_ROOT_URL: "http://auth_ingress:8001"
     command: >
       uvicorn app.main:app
       --host 0.0.0.0
@@ -80,6 +84,8 @@ services:
         condition: service_healthy
       mock_platform:
         condition: service_healthy
+      auth_ingress:
+        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
       interval: 5s
@@ -87,14 +93,28 @@ services:
       retries: 20
 
   auth_ingress:
-    # B2.6-P2 Corrective XIII authentication trust root (e2e): sole
-    # holder of the file-mounted ingress credential.
+    # XIV authentication trust root (e2e): sole holder of the
+    # file-mounted ingress credential. Operable: verifies provider
+    # signatures and persists full-commerce ingress + atomic authority.
     build:
       context: .
       dockerfile: backend/Dockerfile
     container_name: skeldir-auth-ingress-e2e
     environment:
+      DATABASE_URL: ${E2E_DATABASE_URL?missing E2E_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: /run/secrets/b26_p2_ingress_dsn
       SKELDIR_PROCESS_ROLE: "auth_ingress"
+      # XIV: the root resolves tenant webhook secrets itself to
+      # independently re-verify provider signatures (same platform
+      # key material as the API relay lane).
+      PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
+      PLATFORM_TOKEN_KEY_ID: e2e-key
+      # XIV: size the relay endpoint's pools to the lane's API pools so
+      # the relay hop carries the same concurrency as the relaying API.
+      DATABASE_POOL_SIZE: "20"
+      DATABASE_MAX_OVERFLOW: "10"
+      DATABASE_FORCE_POOLING: "1"
     volumes:
       - ${E2E_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}:/run/secrets/b26_p2_ingress_dsn:ro
     command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers 1

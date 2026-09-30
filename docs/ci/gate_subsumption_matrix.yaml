@@ -4420,3 +4420,123 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xiii_coverage import XIII_COVERED_SURFACES"
   risk_if_removed: New XIII surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xiv-auth-conduction
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiv_auth_conduction.py
+  owning_phase: B2.6-P2
+  protected_invariant: The auth root is operable and exclusive; legacy
+    paths cannot promote; unauthenticated downstream state is
+    impossible; forged history is flagged and quarantined.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for the XIV evidence-bound single
+    authority; no predecessor gate requires the root-evidence identity.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiv_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_auth_conduction.py --help
+  risk_if_removed: Alternate paths could recreate terminal authority.
+  decision: enforce
+- gate_id: b26-p2-xiv-topology
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiv_topology.py
+  owning_phase: B2.6-P2
+  protected_invariant: All P2-equivalent lanes share one authority
+    topology under a single file-only secret-delivery law.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XIV cross-lane equivalence; no
+    predecessor gate compares production/c19/e2e/Procfile authority.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiv_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_topology.py --help
+  risk_if_removed: CI could prove a different composition than production.
+  decision: enforce
+- gate_id: b26-p2-xiv-phase-oracle
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiv_phase_oracle.py
+  owning_phase: B2.6-P2
+  protected_invariant: Shipped semantics implement the actual phase law,
+    proven independently of the contract (common-mode changes RED).
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XIV phase-law independence; no
+    predecessor oracle is contract-independent.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiv_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_phase_oracle.py --help
+  risk_if_removed: Contract and runtime could agree on the wrong law.
+  decision: enforce
+- gate_id: b26-p2-xiv-semantic-behavior
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiv_semantic_behavior.py
+  owning_phase: B2.6-P2
+  protected_invariant: Pure helpers obey executable behavioral contracts;
+    meaning drift REDs with green structure.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XIV helper meaning; no predecessor
+    gate property-tests helper behavior.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiv_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_semantic_behavior.py --help
+  risk_if_removed: Helper meaning could move invisibly.
+  decision: enforce
+- gate_id: b26-p2-xiv-temporal-behavior
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xiv_temporal_behavior.py
+  owning_phase: B2.6-P2
+  protected_invariant: Dependencies equal dispositions equal executed
+    probes; every enforcement family has a working kill-switch.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XIV behavioral temporal proof; no
+    predecessor gate executes one probe per disposition with kill-switch.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiv_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xiv_temporal_behavior.py --help
+  risk_if_removed: Temporal metadata could exist without enforcement.
+  decision: enforce
+- gate_id: b26-p2-xiv-nonvacuous
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/test_b26_p2_xiv_negative_controls.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every XIV check demonstrates RED on its defect
+    class with exact restore to GREEN.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New battery for XIV non-vacuity; no predecessor
+    battery plants XIV mutant classes.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xiv_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_b26_p2_xiv_negative_controls.py --help
+  risk_if_removed: Vacuous XIV checks could pass forever.
+  decision: enforce
+- gate_id: b26-p2-xiv-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xiv_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XIV registry extends XIII coverage for the
+    immutable evidence identity and the XIV topology adjudicator.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XIV coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xiv_coverage import XIV_COVERED_SURFACES"
+  risk_if_removed: New XIV surfaces could stay untested silently.
+  decision: keep_utility

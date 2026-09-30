@@ -64,14 +64,22 @@ jobs:
       B057_P3_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b057_p3
       B057_P3_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p3
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p3
-      # B2.6-P2 Corrective XIII: this test API exercises the trust-root
-      # path in one process (auth role with the ingress credential).
-      # Production splits them; the database law under test is identical.
+      # XIV single secret-delivery law (file-only): this test process
+      # exercises the trust-root path in one process (auth role with the
+      # file-mounted ingress credential). The legacy environment-string
+      # fallback is removed; the file below carries the same test-scoped
+      # value through the production custody law.
       SKELDIR_PROCESS_ROLE: auth_ingress
-      B26_P2_INGRESS_DATABASE_URL: postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/skeldir_b057_p3
+      B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: /tmp/b26_p2_ingress_dsn_b057_p3
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Mount test ingress credential via file law
+        run: |
+          printf '%s' 'postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/skeldir_b057_p3' > /tmp/b26_p2_ingress_dsn_b057_p3
+          chmod 600 /tmp/b26_p2_ingress_dsn_b057_p3
 
       - uses: actions/setup-python@v5
         with:

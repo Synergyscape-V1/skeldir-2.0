@@ -1,14 +1,14 @@
 {
-  "producer": "b26_p2_capability_surface",
-  "migration_head": "202609260001",
-  "authority_universe_hash": "3f76a3a86e45b7b60625efef8e4b870c0bcc700b7e3f51931349c86c42df68d3",
-  "reviewed_at_git_sha": "8f2b32ccce7c0207871353d11cc2d4311efd2fee",
-  "meaning_surface_counts": {
-    "routine_meaning": 141,
-    "trigger_meaning": 21,
-    "schema_meaning": 5,
-    "rls_meaning": 17,
-    "ownership": 102
-  },
-  "review_note": "B2.6-P2 Corrective XIII root-of-trust closure reviewed: trust-root-only P recorder + atomic transition + XIII topology adjudicator; app_user zero authorship; pending law; terminal+witness dispatch; live hash from auditor-owned PG15 fresh lane (prepare+alembic head) with XIII coverage; open_world_unknown empty."
+ "producer": "b26_p2_capability_surface",
+ "migration_head": "202609270003",
+ "authority_universe_hash": "49143ce26d9e5fd65cc266f66bd1a9a570d1af845ca67dede2159e5e36e227f7",
+ "reviewed_at_git_sha": "cd926b02270750d047559774422698d9cabd1be7",
+ "meaning_surface_counts": {
+  "routine_meaning": 144,
+  "trigger_meaning": 21,
+  "schema_meaning": 5,
+  "rls_meaning": 17,
+  "ownership": 105
+ },
+ "review_note": "B2.6-P2 Corrective XIV compositional closure reviewed: immutable auth-root evidence identity, single-authority effect law, historical quarantine with honest oracle, closed meaning with behavioral contracts and independent phase oracle, behavioral temporal matrix with kill-switches, relay wiring with single file-only custody; live hash from auditor-owned PG15 fresh lane (prepare+alembic head) with XIV coverage; open_world_unknown empty under XIV-covered registry."
 }

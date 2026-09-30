@@ -267,6 +267,11 @@ def _live_checks(
             # B2.6-P2 Corrective XII: the ingress boundary observes
             # (never authors) the predecessor consequence P.
             "b26_p2_provider_auth_consequence",
+            # B2.6-P2 Corrective XIV: the ingress boundary observes
+            # (never authors) the immutable auth-root evidence
+            # identity (SELECT-only observability; no INSERT/UPDATE/
+            # DELETE granted to any runtime principal).
+            "b26_p2_auth_root_evidence",
         }
         for table, priv in grants:
             if table not in allowed_tables:
@@ -291,6 +296,7 @@ def _live_checks(
                 "b26_p2_provenance_evidence",
                 "attribution_events",
                 "b26_p2_provider_auth_consequence",
+                "b26_p2_auth_root_evidence",
             ) and priv != "SELECT":
                 violations.append(
                     f"xi_isolation_ingress_twin_beyond_select:{table}:{priv}"
@@ -323,6 +329,10 @@ def _live_checks(
             "b26_p2_record_provider_auth_consequence",
             "b26_p2_authenticate_ingress_atomic",
             "b26_p2_xiii_topology_check",
+            # B2.6-P2 Corrective XIV: topology check XIV supersedes
+            # XIII with the root-evidence substrate (read-only checks
+            # observable by the ingress boundary; mints nothing).
+            "b26_p2_xiv_topology_check",
         }
         for routine in routines:
             if routine not in allowed_routines:

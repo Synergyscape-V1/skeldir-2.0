@@ -4240,10 +4240,12 @@ jobs:
       B057_P5_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b057_p6
       B057_P5_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
-      # B2.6-P2 Corrective XIII: this test API exercises the trust-root
-      # path in one process (auth role with the ingress credential).
+      # XIV single secret-delivery law (file-only): this test process
+      # exercises the trust-root path in one process (auth role with the
+      # file-mounted ingress credential).
       SKELDIR_PROCESS_ROLE: auth_ingress
-      B26_P2_INGRESS_DATABASE_URL: postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/skeldir_b057_p6
+      B26_P2_INGRESS_DATABASE_URL: ""
+      B26_P2_INGRESS_DATABASE_URL_FILE: /tmp/b26_p2_ingress_dsn_b057_p6
       B057_P6_WORKER_USER: app_worker
       B057_P5_ARTIFACT_DIR: artifacts/b057-p6
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
@@ -4251,6 +4253,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Mount test ingress credential via file law
+        run: |
+          printf '%s' 'postgresql+asyncpg://app_ingress:app_ingress@127.0.0.1:5432/skeldir_b057_p6' > /tmp/b26_p2_ingress_dsn_b057_p6
+          chmod 600 /tmp/b26_p2_ingress_dsn_b057_p6
 
       - uses: actions/setup-python@v5
         with:

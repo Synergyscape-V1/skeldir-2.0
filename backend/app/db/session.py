@@ -50,7 +50,9 @@ class MissingTenantContextError(RuntimeError):
 def assert_tenant_context_present(tenant_id: UUID | str | None) -> None:
     """Fail visibly before tenant-scoped domain logic can consume raw RLS zero rows."""
     if tenant_id is None or str(tenant_id).strip() == "":
-        raise MissingTenantContextError("tenant context is required for tenant-scoped database access")
+        raise MissingTenantContextError(
+            "tenant context is required for tenant-scoped database access"
+        )
 
 
 # Normalize DSN to ensure asyncpg driver is used and map unsupported parameters to connect_args.
@@ -62,9 +64,7 @@ def _build_async_database_url_and_args(raw_url: str | None = None) -> tuple[str,
     ssl_mode = query_params.pop("sslmode", None)
     channel_binding = query_params.pop("channel_binding", None)
 
-    sanitized = urlunsplit(
-        parsed._replace(query=urlencode(query_params))
-    )
+    sanitized = urlunsplit(parsed._replace(query=urlencode(query_params)))
     if sanitized.startswith("postgresql://"):
         sanitized = sanitized.replace("postgresql://", "postgresql+asyncpg://", 1)
 
@@ -73,7 +73,9 @@ def _build_async_database_url_and_args(raw_url: str | None = None) -> tuple[str,
         # asyncpg expects an SSL context rather than sslmode keyword.
         connect_args["ssl"] = ssl.create_default_context()
     if channel_binding:
-        connect_args.setdefault("server_settings", {})["channel_binding"] = channel_binding
+        connect_args.setdefault("server_settings", {})[
+            "channel_binding"
+        ] = channel_binding
     if os.getenv("SKELDIR_ASYNCPG_DISABLE_STATEMENT_CACHE", "0") == "1":
         connect_args["statement_cache_size"] = 0
 
@@ -124,12 +126,16 @@ engine = create_async_engine(
 # write). No other process sets the flag, so historical defaults elsewhere
 # are unaffected.
 _B23_WORKER_DATABASE_URL = os.getenv("B23_WORKER_DATABASE_URL", "").strip()
-if os.getenv("SKELDIR_B23_REQUIRE_WORKER_DSN", "").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-} and not _B23_WORKER_DATABASE_URL:
+if (
+    os.getenv("SKELDIR_B23_REQUIRE_WORKER_DSN", "").strip().lower()
+    in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    and not _B23_WORKER_DATABASE_URL
+):
     raise RuntimeError(
         "b23_worker_dsn_required:"
         " SKELDIR_B23_REQUIRE_WORKER_DSN is set but B23_WORKER_DATABASE_URL is empty;"
@@ -165,43 +171,42 @@ B23AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
-# B2.6-P2 Corrective XIII: dedicated authenticated-ingress pool. Only the
+# B2.6-P2 Corrective XIV: dedicated authenticated-ingress pool. Only the
 # dedicated authentication trust root (SKELDIR_PROCESS_ROLE=auth_ingress)
-# constructs this pool, preferably from the file-mounted credential
+# constructs this pool, exclusively from the file-mounted credential
 # (B26_P2_INGRESS_DATABASE_URL_FILE). The general API, generic workers,
 # B2.3/Bayesian/relay/beat processes never construct it: the engine is
 # absent there (get_ingress_session fails closed). Construction requires
-# the auth role AND a credential (file first, legacy env fallback for
-# CI/test lanes that still export the string with the auth role).
-# Non-auth processes get no pool even with a smuggled string.
+# the auth role AND the file credential; there is no environment-string
+# fallback in any lane. Non-auth processes get no pool even with a
+# smuggled string.
 _AUTH_PROCESS_ROLE = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
-_B26_P2_INGRESS_DSN_FILE = os.getenv(
-    "B26_P2_INGRESS_DATABASE_URL_FILE", ""
-).strip()
+_B26_P2_INGRESS_DSN_FILE = os.getenv("B26_P2_INGRESS_DATABASE_URL_FILE", "").strip()
 
 
 def _read_ingress_dsn_from_file() -> str | None:
     """Read the ingress DSN only in the auth trust root process.
 
-    Returns None in every non-auth process. In the auth process,
-    prefers the file-mounted credential; falls back to the legacy
-    environment string for CI/test lanes that export it with the auth
-    role. Production mounts the file only into the dedicated
-    authentication container/process.
+    XIV single secret-delivery law: file/secret mount ONLY. The legacy
+    environment-string fallback is removed: any auth-labeled process
+    without the file-mounted credential fails closed (returns None, so
+    no pool is constructed and get_ingress_session raises
+    credential_unavailable). CI/test lanes use the same file law with
+    test-scoped values (see validators/proofs that write a temp file).
+    Production mounts the file only into the dedicated authentication
+    container/process.
     """
     if os.getenv("SKELDIR_PROCESS_ROLE", "").strip() != "auth_ingress":
         return None
     path = os.getenv("B26_P2_INGRESS_DATABASE_URL_FILE", "").strip()
-    if path:
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                value = handle.read().strip()
-            if value:
-                return value
-        except OSError:
-            pass
-    legacy = os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip()
-    return legacy or None
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            value = handle.read().strip()
+    except OSError:
+        return None
+    return value or None
 
 
 _B26_P2_INGRESS_FILE_DSN = _read_ingress_dsn_from_file()
@@ -223,9 +228,7 @@ if _B26_P2_INGRESS_FILE_DSN:
     else:
         _ingress_engine_kwargs["pool_size"] = settings.DATABASE_POOL_SIZE
         _ingress_engine_kwargs["max_overflow"] = settings.DATABASE_MAX_OVERFLOW
-        _ingress_engine_kwargs["pool_timeout"] = (
-            settings.DATABASE_POOL_TIMEOUT_SECONDS
-        )
+        _ingress_engine_kwargs["pool_timeout"] = settings.DATABASE_POOL_TIMEOUT_SECONDS
     ingress_engine = create_async_engine(
         _INGRESS_ASYNC_DATABASE_URL,
         **_ingress_engine_kwargs,
@@ -240,7 +243,9 @@ else:
     IngressAsyncSessionLocal = None
 
 
-def _resolve_guc_value(session: SyncSession, key: str, context_value: str | None) -> str | None:
+def _resolve_guc_value(
+    session: SyncSession, key: str, context_value: str | None
+) -> str | None:
     value = session.info.get(key)
     if value is not None:
         return str(value)
@@ -250,7 +255,9 @@ def _resolve_guc_value(session: SyncSession, key: str, context_value: str | None
 
 
 @event.listens_for(AsyncSession.sync_session_class, "after_begin")
-def _bind_rls_context_after_begin(session: SyncSession, transaction, connection) -> None:
+def _bind_rls_context_after_begin(
+    session: SyncSession, transaction, connection
+) -> None:
     if os.getenv(_MUTATION_DISABLE_AFTER_BEGIN_BINDING) == "1":
         return
 
@@ -277,7 +284,9 @@ def _bind_rls_context_after_begin(session: SyncSession, transaction, connection)
             ),
         )
         connection.execute(
-            text(f"SET LOCAL lock_timeout = '{int(settings.B23_DATABASE_LOCK_TIMEOUT_MS)}ms'"),
+            text(
+                f"SET LOCAL lock_timeout = '{int(settings.B23_DATABASE_LOCK_TIMEOUT_MS)}ms'"
+            ),
         )
 
 
@@ -417,43 +426,29 @@ def assert_worker_ingress_isolation() -> None:
 def assert_api_ingress_isolation() -> None:
     """Fail closed when a non-auth API process mounts ingress capability.
 
-    B2.6-P2 Corrective XIII: the general API process must NOT possess
+    XIV single-custody law: the general API process must NOT possess
     the authenticated-ingress persistence credential in any form
     (environment string or mounted file). Only
-    SKELDIR_PROCESS_ROLE=auth_ingress may hold it. In test lanes
-    (TESTING=1 or CI=true) the shared setup exports an inert file path;
-    there the pool is still absent (role gate) and the database still
-    denies, so log loudly instead of crashing test topologies that do
-    not serve verified ingress. Production (no TESTING/CI) refuses.
+    SKELDIR_PROCESS_ROLE=auth_ingress may hold it, and only via the
+    file mount. Fail-closed in every lane including TESTING/CI: a
+    mis-mounted API refuses to serve instead of warning (the XIII
+    TESTING leniency was an auditor survivor -- a second topology where
+    the API carries the credential in tests but not in production).
     """
     if os.getenv("SKELDIR_PROCESS_ROLE", "").strip() == "auth_ingress":
-        return
-    present = bool(os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip()) or bool(
-        os.getenv("B26_P2_INGRESS_DATABASE_URL_FILE", "").strip()
-    )
-    if not present:
-        return
-    if os.getenv("TESTING", "") == "1" or os.getenv("CI", "").strip().lower() in {
-        "1", "true", "yes",
-    }:
-        import logging  # noqa: PLC0415
-
-        logging.getLogger(__name__).warning(
-            "b26_p2_ingress_credential_in_api_test_lane: credential present"
-            " without auth role; pool absent (role gate) and database denies."
-        )
         return
     if os.getenv("B26_P2_INGRESS_DATABASE_URL", "").strip():
         raise RuntimeError(
             "b26_p2_ingress_credential_in_api: B26_P2_INGRESS_DATABASE_URL"
             " must not be present in the general API process;"
             " authenticated ingress is authored only by the dedicated"
-            " authentication trust root"
+            " authentication trust root via the file-mounted credential"
         )
-    raise RuntimeError(
-        "b26_p2_ingress_credential_in_api: B26_P2_INGRESS_DATABASE_URL_FILE"
-        " must not be present in the general API process"
-    )
+    if os.getenv("B26_P2_INGRESS_DATABASE_URL_FILE", "").strip():
+        raise RuntimeError(
+            "b26_p2_ingress_credential_in_api: B26_P2_INGRESS_DATABASE_URL_FILE"
+            " must not be present in the general API process"
+        )
 
 
 def ingress_credential_mounted() -> bool:
@@ -614,9 +609,7 @@ def set_tenant_guc_sync(
     )
 
 
-def set_user_guc_sync(
-    session: Connection, user_id: UUID, local: bool = True
-) -> None:
+def set_user_guc_sync(session: Connection, user_id: UUID, local: bool = True) -> None:
     """
     Sync helper to set user context (app.current_user_id) on an existing sync connection.
     """
@@ -627,9 +620,13 @@ def set_user_guc_sync(
 
 
 # Backwards-compatible alias for existing async callers.
-async def set_tenant_guc(session: AsyncSession, tenant_id: UUID, local: bool = True) -> None:
+async def set_tenant_guc(
+    session: AsyncSession, tenant_id: UUID, local: bool = True
+) -> None:
     await set_tenant_guc_async(session, tenant_id, local)
 
 
-async def set_user_guc(session: AsyncSession, user_id: UUID, local: bool = True) -> None:
+async def set_user_guc(
+    session: AsyncSession, user_id: UUID, local: bool = True
+) -> None:
     await set_user_guc_async(session, user_id, local)

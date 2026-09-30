@@ -113,7 +113,11 @@ def _is_kid_keyring_payload(value: str | None) -> bool:
         parsed = json.loads(value)
     except json.JSONDecodeError:
         return False
-    return isinstance(parsed, dict) and isinstance(parsed.get("current_kid"), str) and isinstance(parsed.get("keys"), dict)
+    return (
+        isinstance(parsed, dict)
+        and isinstance(parsed.get("current_kid"), str)
+        and isinstance(parsed.get("keys"), dict)
+    )
 
 
 def _resolved_jwt_env_values() -> tuple[str, str, str]:
@@ -191,7 +195,9 @@ def _collect_runner_physics(cfg: _Phase8Config, run_authority: str) -> dict[str,
     memory_max = _read_text_if_exists(Path("/sys/fs/cgroup/memory.max"))
     cpu_quota = _read_text_if_exists(Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"))
     cpu_period = _read_text_if_exists(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us"))
-    memory_limit_v1 = _read_text_if_exists(Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"))
+    memory_limit_v1 = _read_text_if_exists(
+        Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+    )
 
     payload = {
         "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -233,10 +239,20 @@ def _sha256_file(path: Path) -> str:
 
 def _canonical_openapi_spec_hash(cfg: _Phase8Config) -> str:
     reconciliation = (
-        cfg.repo_root / "api-contracts" / "dist" / "openapi" / "v1" / "reconciliation.bundled.yaml"
+        cfg.repo_root
+        / "api-contracts"
+        / "dist"
+        / "openapi"
+        / "v1"
+        / "reconciliation.bundled.yaml"
     )
     attribution = (
-        cfg.repo_root / "api-contracts" / "dist" / "openapi" / "v1" / "attribution.bundled.yaml"
+        cfg.repo_root
+        / "api-contracts"
+        / "dist"
+        / "openapi"
+        / "v1"
+        / "attribution.bundled.yaml"
     )
     if not reconciliation.exists() or not attribution.exists():
         missing: list[str] = []
@@ -245,7 +261,9 @@ def _canonical_openapi_spec_hash(cfg: _Phase8Config) -> str:
         if not attribution.exists():
             missing.append(str(attribution))
         raise RuntimeError(f"Canonical OpenAPI bundle(s) missing: {', '.join(missing)}")
-    joined = f"{_sha256_file(reconciliation)}|{_sha256_file(attribution)}".encode("utf-8")
+    joined = f"{_sha256_file(reconciliation)}|{_sha256_file(attribution)}".encode(
+        "utf-8"
+    )
     return hashlib.sha256(joined).hexdigest()
 
 
@@ -274,7 +292,9 @@ def _parse_r3_verdicts(log_path: Path) -> dict[str, dict[str, Any]]:
     return verdicts
 
 
-def _extract_profile_metrics_from_r3_log(log_path: Path, profile_name: str) -> dict[str, Any]:
+def _extract_profile_metrics_from_r3_log(
+    log_path: Path, profile_name: str
+) -> dict[str, Any]:
     verdicts = _parse_r3_verdicts(log_path)
     payload = verdicts.get(profile_name)
     if not isinstance(payload, dict):
@@ -299,7 +319,9 @@ def _eg85_profile_metadata(cfg: _Phase8Config, env: dict[str, str]) -> dict[str,
     }
 
 
-def _default_config(*, artifact_dir: Path, ci_subset: bool, full_physics: bool) -> _Phase8Config:
+def _default_config(
+    *, artifact_dir: Path, ci_subset: bool, full_physics: bool
+) -> _Phase8Config:
     db_name = os.getenv("PHASE8_DB_NAME", "skeldir_e2e")
     db_host = os.getenv("PHASE8_DB_HOST", "127.0.0.1")
     db_compose_host = os.getenv("PHASE8_DB_COMPOSE_HOST", "postgres")
@@ -310,14 +332,18 @@ def _default_config(*, artifact_dir: Path, ci_subset: bool, full_physics: bool) 
     api_base_url = os.getenv("E2E_API_BASE_URL", "http://127.0.0.1:8000")
     mock_base_url = os.getenv("E2E_MOCK_BASE_URL", "http://127.0.0.1:8080")
 
-    runtime_sync = f"postgresql://{runtime_user}:{runtime_pass}@{db_host}:5432/{db_name}"
-    runtime_async = f"postgresql+asyncpg://{runtime_user}:{runtime_pass}@{db_host}:5432/{db_name}"
+    runtime_sync = (
+        f"postgresql://{runtime_user}:{runtime_pass}@{db_host}:5432/{db_name}"
+    )
+    runtime_async = (
+        f"postgresql+asyncpg://{runtime_user}:{runtime_pass}@{db_host}:5432/{db_name}"
+    )
     worker_sync = f"postgresql://app_worker:app_worker@{db_host}:5432/{db_name}"
     migration = f"postgresql://{admin_user}:{admin_pass}@{db_host}:5432/{db_name}"
-    compose_runtime_async = (
-        f"postgresql+asyncpg://{runtime_user}:{runtime_pass}@{db_compose_host}:5432/{db_name}"
+    compose_runtime_async = f"postgresql+asyncpg://{runtime_user}:{runtime_pass}@{db_compose_host}:5432/{db_name}"
+    compose_runtime_sync = (
+        f"postgresql://{runtime_user}:{runtime_pass}@{db_compose_host}:5432/{db_name}"
     )
-    compose_runtime_sync = f"postgresql://{runtime_user}:{runtime_pass}@{db_compose_host}:5432/{db_name}"
     # The Bayesian worker container runs on the dedicated worker login. It is
     # deliberately a different principal from the API/generic worker DSN.
     compose_worker_async = (
@@ -384,7 +410,9 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "AUTH_JWT_SECRET": jwt_private_ring,
             "AUTH_JWT_PUBLIC_KEY_RING": jwt_public_ring,
             "AUTH_JWT_ALGORITHM": jwt_algorithm,
-            "AUTH_JWT_ISSUER": os.getenv("AUTH_JWT_ISSUER", "https://issuer.skeldir.test"),
+            "AUTH_JWT_ISSUER": os.getenv(
+                "AUTH_JWT_ISSUER", "https://issuer.skeldir.test"
+            ),
             "AUTH_JWT_AUDIENCE": os.getenv("AUTH_JWT_AUDIENCE", "skeldir-api"),
             "PLATFORM_TOKEN_ENCRYPTION_KEY": os.getenv(
                 "PLATFORM_TOKEN_ENCRYPTION_KEY", "e2e-platform-key"
@@ -395,16 +423,14 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "E2E_WORKER_DATABASE_URL": cfg.compose_worker_async_dsn,
             "E2E_CELERY_BROKER_URL": cfg.compose_broker_dsn,
             "E2E_CELERY_RESULT_BACKEND": cfg.compose_result_dsn,
-            # B2.6-P2 Corrective XIII: the pack posts verified webhooks
-            # through the API, which exercises the trust-root path
-            # in-process (auth role + lane credential). Production splits
-            # them; the database law under test is identical.
-            "E2E_PROCESS_ROLE": "auth_ingress",
-            "E2E_INGRESS_DATABASE_URL": (
-                f"postgresql+asyncpg://app_ingress:app_ingress"
-                f"@{os.getenv('PHASE8_DB_COMPOSE_HOST', 'postgres')}:5432/"
-                f"{_database_name_from_dsn(cfg.migration_dsn)}"
-            ),
+            # B2.6-P2 Corrective XIV Architecture B: the pack posts
+            # verified webhooks through the API relay, which relays to
+            # the dedicated authentication trust root (same topology as
+            # production/c19/e2e). Single secret-delivery law: the
+            # ingress credential is file-mounted into the auth service
+            # only (provisioned below); the API holds no DB capability.
+            "E2E_PROCESS_ROLE": "api",
+            "E2E_INGRESS_DATABASE_URL": "",
             "TENANT_API_KEY_HEADER": "X-Skeldir-Tenant-Key",
             "R3_ADMIN_DATABASE_URL": cfg.migration_dsn,
             "R3_RUNTIME_DATABASE_URL": cfg.runtime_sync_dsn,
@@ -461,28 +487,58 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                 "R3_CONCURRENCY": os.getenv("R3_CONCURRENCY", "80"),
                 "R3_TIMEOUT_S": os.getenv("R3_TIMEOUT_S", "10"),
                 "R3_NULL_BENCHMARK": os.getenv("R3_NULL_BENCHMARK", "1"),
-                "R3_NULL_BENCHMARK_TARGET_RPS": os.getenv("R3_NULL_BENCHMARK_TARGET_RPS", "50"),
-                "R3_NULL_BENCHMARK_DURATION_S": os.getenv("R3_NULL_BENCHMARK_DURATION_S", "60"),
-                "R3_NULL_BENCHMARK_MIN_RPS": os.getenv("R3_NULL_BENCHMARK_MIN_RPS", "50"),
+                "R3_NULL_BENCHMARK_TARGET_RPS": os.getenv(
+                    "R3_NULL_BENCHMARK_TARGET_RPS", "50"
+                ),
+                "R3_NULL_BENCHMARK_DURATION_S": os.getenv(
+                    "R3_NULL_BENCHMARK_DURATION_S", "60"
+                ),
+                "R3_NULL_BENCHMARK_MIN_RPS": os.getenv(
+                    "R3_NULL_BENCHMARK_MIN_RPS", "50"
+                ),
                 "R3_EG34_P95_MAX_MS": os.getenv("R3_EG34_P95_MAX_MS", "2000"),
                 "R3_EG34_TEST1_RPS": os.getenv("R3_EG34_TEST1_RPS", "29"),
                 "R3_EG34_TEST1_DURATION_S": os.getenv("R3_EG34_TEST1_DURATION_S", "60"),
                 "R3_EG34_TEST2_RPS": os.getenv("R3_EG34_TEST2_RPS", "46"),
                 "R3_EG34_TEST2_DURATION_S": os.getenv("R3_EG34_TEST2_DURATION_S", "60"),
                 "R3_EG34_TEST3_RPS": os.getenv("R3_EG34_TEST3_RPS", "5"),
-                "R3_EG34_TEST3_DURATION_S": os.getenv("R3_EG34_TEST3_DURATION_S", "300"),
-                "E2E_ENVIRONMENT": os.getenv("E2E_ENVIRONMENT", default_shared_environment),
-                "E2E_API_ENVIRONMENT": os.getenv("E2E_API_ENVIRONMENT", default_api_environment),
-                "E2E_WORKER_ENVIRONMENT": os.getenv("E2E_WORKER_ENVIRONMENT", default_worker_environment),
-                "E2E_DATABASE_FORCE_POOLING": os.getenv("E2E_DATABASE_FORCE_POOLING", "0"),
+                "R3_EG34_TEST3_DURATION_S": os.getenv(
+                    "R3_EG34_TEST3_DURATION_S", "300"
+                ),
+                "E2E_ENVIRONMENT": os.getenv(
+                    "E2E_ENVIRONMENT", default_shared_environment
+                ),
+                "E2E_API_ENVIRONMENT": os.getenv(
+                    "E2E_API_ENVIRONMENT", default_api_environment
+                ),
+                "E2E_WORKER_ENVIRONMENT": os.getenv(
+                    "E2E_WORKER_ENVIRONMENT", default_worker_environment
+                ),
+                "E2E_DATABASE_FORCE_POOLING": os.getenv(
+                    "E2E_DATABASE_FORCE_POOLING", "0"
+                ),
                 "E2E_DATABASE_POOL_SIZE": os.getenv("E2E_DATABASE_POOL_SIZE", "20"),
-                "E2E_DATABASE_MAX_OVERFLOW": os.getenv("E2E_DATABASE_MAX_OVERFLOW", "0"),
-                "E2E_API_DATABASE_FORCE_POOLING": os.getenv("E2E_API_DATABASE_FORCE_POOLING", "1"),
-                "E2E_API_DATABASE_POOL_SIZE": os.getenv("E2E_API_DATABASE_POOL_SIZE", "40"),
-                "E2E_API_DATABASE_MAX_OVERFLOW": os.getenv("E2E_API_DATABASE_MAX_OVERFLOW", "20"),
-                "E2E_WORKER_DATABASE_FORCE_POOLING": os.getenv("E2E_WORKER_DATABASE_FORCE_POOLING", "0"),
-                "E2E_WORKER_DATABASE_POOL_SIZE": os.getenv("E2E_WORKER_DATABASE_POOL_SIZE", "20"),
-                "E2E_WORKER_DATABASE_MAX_OVERFLOW": os.getenv("E2E_WORKER_DATABASE_MAX_OVERFLOW", "0"),
+                "E2E_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_DATABASE_MAX_OVERFLOW", "0"
+                ),
+                "E2E_API_DATABASE_FORCE_POOLING": os.getenv(
+                    "E2E_API_DATABASE_FORCE_POOLING", "1"
+                ),
+                "E2E_API_DATABASE_POOL_SIZE": os.getenv(
+                    "E2E_API_DATABASE_POOL_SIZE", "40"
+                ),
+                "E2E_API_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_API_DATABASE_MAX_OVERFLOW", "20"
+                ),
+                "E2E_WORKER_DATABASE_FORCE_POOLING": os.getenv(
+                    "E2E_WORKER_DATABASE_FORCE_POOLING", "0"
+                ),
+                "E2E_WORKER_DATABASE_POOL_SIZE": os.getenv(
+                    "E2E_WORKER_DATABASE_POOL_SIZE", "20"
+                ),
+                "E2E_WORKER_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_WORKER_DATABASE_MAX_OVERFLOW", "0"
+                ),
                 "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", str(api_workers)),
             }
         )
@@ -551,7 +607,9 @@ def _parse_json_line(payload: str) -> dict[str, Any]:
     raise RuntimeError("Expected JSON object in subprocess output")
 
 
-def _assert_compose_missing_runtime_dsn_fails(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+def _assert_compose_missing_runtime_dsn_fails(
+    cfg: _Phase8Config, env: dict[str, str]
+) -> dict[str, Any]:
     neg_env = env.copy()
     neg_env.pop("E2E_DATABASE_URL", None)
     neg_env.pop("E2E_CELERY_BROKER_URL", None)
@@ -611,7 +669,9 @@ def _probe_container_db_identity(
     return proc.returncode, payload
 
 
-def _run_container_identity_probes(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+def _run_container_identity_probes(
+    cfg: _Phase8Config, env: dict[str, str]
+) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     for service in ("api", "worker"):
         _, payload = _probe_container_db_identity(
@@ -623,9 +683,13 @@ def _run_container_identity_probes(cfg: _Phase8Config, env: dict[str, str]) -> d
             log_name=f"container_identity_{service}",
         )
         if payload.get("current_user") != "app_user":
-            raise RuntimeError(f"Container {service} identity mismatch: expected app_user")
+            raise RuntimeError(
+                f"Container {service} identity mismatch: expected app_user"
+            )
         if bool(payload.get("rolsuper")):
-            raise RuntimeError(f"Container {service} identity invalid: superuser role detected")
+            raise RuntimeError(
+                f"Container {service} identity invalid: superuser role detected"
+            )
         checks.append(payload)
         (cfg.artifact_dir / f"phase8_container_identity_{service}.json").write_text(
             json.dumps(payload, indent=2, sort_keys=True),
@@ -641,7 +705,9 @@ def _run_container_identity_probes(cfg: _Phase8Config, env: dict[str, str]) -> d
         log_name="container_identity_negative_control",
     )
     if rc == 0:
-        raise RuntimeError("Container identity negative control did not fail with invalid expected user")
+        raise RuntimeError(
+            "Container identity negative control did not fail with invalid expected user"
+        )
     negative["passed"] = True
     probe_payload = {"services": checks, "negative_control": negative}
     (cfg.artifact_dir / "container_identity_probe.json").write_text(
@@ -669,6 +735,68 @@ def _exec_sql(dsn: str, sql: str) -> None:
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute(sql)
+
+
+def _provision_ingress_dsn_file(cfg: _Phase8Config, env: dict[str, str]) -> None:
+    """Write the file-mounted ingress credential for the auth root.
+
+    XIV single secret-delivery law: file/secret mount only. The DSN
+    targets the compose-network postgres host; the file lives on the
+    runner and is bind-mounted read-only into the auth_ingress service
+    via E2E_INGRESS_DSN_FILE. No process ever receives the legacy
+    environment-string credential.
+    """
+    import tempfile
+
+    db_name = _database_name_from_dsn(cfg.migration_dsn)
+    compose_host = os.getenv("PHASE8_DB_COMPOSE_HOST", "postgres")
+    ingress_dsn = (
+        f"postgresql+asyncpg://app_ingress:app_ingress"
+        f"@{compose_host}:5432/{db_name}"
+    )
+    fd, dsn_path = tempfile.mkstemp(prefix="b26_p2_ingress_dsn_p8_")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(ingress_dsn)
+    env["E2E_INGRESS_DSN_FILE"] = dsn_path
+
+
+def _wait_for_auth_root(
+    env: dict[str, str], timeout_s: int = 120
+) -> None:
+    """Wait until the dedicated auth root serves (relay dependency).
+
+    The compose interpolation context (E2E_* lane variables) is passed
+    explicitly: this probe must not depend on ambient process env.
+    """
+    import subprocess as _sp
+
+    deadline = time.time() + timeout_s
+    last_error: Exception | None = None
+    while time.time() < deadline:
+        proc = _sp.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                "docker-compose.e2e.yml",
+                "exec",
+                "-T",
+                "auth_ingress",
+                "python",
+                "-c",
+                "import urllib.request;print(urllib.request.urlopen("
+                "'http://localhost:8001/health/live', timeout=3).status)",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        if proc.returncode == 0 and "200" in proc.stdout:
+            return
+        last_error = RuntimeError(proc.stdout[-200:] + proc.stderr[-200:])
+        time.sleep(2)
+    raise RuntimeError(f"auth root not ready after {timeout_s}s: {last_error}")
 
 
 def _provision_runtime_identity(cfg: _Phase8Config) -> None:
@@ -771,7 +899,9 @@ def _verify_manifest(artifact_dir: Path) -> None:
     if set(expected.keys()) != set(actual.keys()):
         missing = sorted(set(actual.keys()) - set(expected.keys()))
         extra = sorted(set(expected.keys()) - set(actual.keys()))
-        raise RuntimeError(f"Manifest coverage mismatch; missing={missing[:5]} extra={extra[:5]}")
+        raise RuntimeError(
+            f"Manifest coverage mismatch; missing={missing[:5]} extra={extra[:5]}"
+        )
     for rel, digest in actual.items():
         if expected.get(rel) != digest:
             raise RuntimeError(f"Manifest digest mismatch: {rel}")
@@ -806,7 +936,9 @@ def _assert_secret_hygiene(log_path: Path) -> None:
     ]
     for pattern in forbidden_patterns:
         if re.search(pattern, content):
-            raise RuntimeError(f"Secret redaction gate failed; pattern matched: {pattern}")
+            raise RuntimeError(
+                f"Secret redaction gate failed; pattern matched: {pattern}"
+            )
 
 
 def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
@@ -825,12 +957,22 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         _run_logged(cfg, name=name, cmd=cmd, env=env, cwd=cwd)
 
     try:
-        negative_controls["compose_missing_runtime_dsn"] = _assert_compose_missing_runtime_dsn_fails(
-            cfg, env
+        negative_controls["compose_missing_runtime_dsn"] = (
+            _assert_compose_missing_runtime_dsn_fails(cfg, env)
         )
         run_step(
             "compose_up_substrate",
-            ["docker", "compose", "-f", "docker-compose.e2e.yml", "up", "-d", "--build", "postgres", "mock_platform"],
+            [
+                "docker",
+                "compose",
+                "-f",
+                "docker-compose.e2e.yml",
+                "up",
+                "-d",
+                "--build",
+                "postgres",
+                "mock_platform",
+            ],
         )
         _wait_for_postgres(cfg.migration_dsn)
         _provision_runtime_identity(cfg)
@@ -853,10 +995,25 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             ],
         )
 
-        run_step("pytest_p7", [sys.executable, "-m", "pytest", "-q", "backend/tests/test_b07_p7_ledger_cost_cache_audit.py"])
+        run_step(
+            "pytest_p7",
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "backend/tests/test_b07_p7_ledger_cost_cache_audit.py",
+            ],
+        )
         run_step(
             "pytest_p5",
-            [sys.executable, "-m", "pytest", "-q", "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py"],
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py",
+            ],
         )
         run_step(
             "pytest_p3_provider_swap",
@@ -884,15 +1041,37 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         )
         run_step(
             "pytest_boundary_enforcement",
-            [sys.executable, "-m", "pytest", "-q", "backend/tests/test_b07_p0_provider_boundary_enforcement.py"],
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "backend/tests/test_b07_p0_provider_boundary_enforcement.py",
+            ],
         )
         gates["eg8_3_compute_safety"] = "pass"
 
+        # XIV: provision the file-mounted ingress credential for the
+        # dedicated auth root (single secret-delivery law; the API
+        # never receives it) and boot the root alongside the relay.
+        _provision_ingress_dsn_file(cfg, env)
         run_step(
             "compose_up_runtime",
-            ["docker", "compose", "-f", "docker-compose.e2e.yml", "up", "-d", "--build", "api", "worker"],
+            [
+                "docker",
+                "compose",
+                "-f",
+                "docker-compose.e2e.yml",
+                "up",
+                "-d",
+                "--build",
+                "api",
+                "auth_ingress",
+                "worker",
+            ],
         )
         _grant_runtime_privileges(cfg)
+        _wait_for_auth_root(env)
         run_step("wait_health", [sys.executable, "scripts/wait_for_e2e_health.py"])
         run_step("wait_worker", [sys.executable, "scripts/wait_for_e2e_worker.py"])
         container_identity_evidence = _run_container_identity_probes(cfg, env)
@@ -900,11 +1079,23 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
 
         run_step(
             "pytest_p4",
-            [sys.executable, "-m", "pytest", "-q", "backend/tests/integration/test_b07_p4_operational_readiness_e2e.py"],
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "backend/tests/integration/test_b07_p4_operational_readiness_e2e.py",
+            ],
         )
         run_step(
             "pytest_p8_topology",
-            [sys.executable, "-m", "pytest", "-q", "backend/tests/integration/test_b07_p8_topology_closure_pack.py"],
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "backend/tests/integration/test_b07_p8_topology_closure_pack.py",
+            ],
         )
         gates["eg8_2_unified_topologies"] = "pass"
         gates["eg8_4_ledger_audit_cost"] = "pass"
@@ -953,7 +1144,10 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             stderr=subprocess.STDOUT,
             text=True,
         )
-        run_step("r3_ingestion_under_fire", [sys.executable, "scripts/r3/ingestion_under_fire.py"])
+        run_step(
+            "r3_ingestion_under_fire",
+            [sys.executable, "scripts/r3/ingestion_under_fire.py"],
+        )
         if llm_load_proc is not None:
             llm_load_proc.wait(timeout=llm_duration_s + 120)
         if queue_probe_proc is not None:
@@ -980,9 +1174,15 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             )
         )
         perf_llm_calls = int(sql_probe_summary.get("perf_composed_llm_calls", 0))
-        perf_llm_api_calls = int(sql_probe_summary.get("perf_composed_llm_api_calls", 0))
-        perf_llm_audit_calls = int(sql_probe_summary.get("perf_composed_llm_audit_calls", 0))
-        perf_ledger_rows = int(sql_probe_summary.get("perf_revenue_ledger_rows_during_window", 0))
+        perf_llm_api_calls = int(
+            sql_probe_summary.get("perf_composed_llm_api_calls", 0)
+        )
+        perf_llm_audit_calls = int(
+            sql_probe_summary.get("perf_composed_llm_audit_calls", 0)
+        )
+        perf_ledger_rows = int(
+            sql_probe_summary.get("perf_revenue_ledger_rows_during_window", 0)
+        )
         llm_probe_dispatched = 0
         if perf_llm_calls <= 0:
             if llm_load_artifact.exists():
@@ -998,7 +1198,9 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         numeric_status_responses = (
             sum(
                 int(v)
-                for k, v in (status_counts.items() if isinstance(status_counts, dict) else [])
+                for k, v in (
+                    status_counts.items() if isinstance(status_counts, dict) else []
+                )
                 if str(k).isdigit()
             )
             if isinstance(status_counts, dict)
@@ -1008,20 +1210,33 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         connection_error_count = int(r3_profile.get("http_connection_errors", 0) or 0)
 
         if cfg.full_physics:
-            if int(profile_metadata["target_rps"]) != 46 or int(profile_metadata["duration_s"]) != 60:
-                raise RuntimeError("EG8.5 authority profile mismatch; expected 46 rps for 60s")
+            if (
+                int(profile_metadata["target_rps"]) != 46
+                or int(profile_metadata["duration_s"]) != 60
+            ):
+                raise RuntimeError(
+                    "EG8.5 authority profile mismatch; expected 46 rps for 60s"
+                )
             if int(float(r3_profile.get("target_rps", 0.0) or 0.0)) != 46:
-                raise RuntimeError("EG8.5 target_rps drift detected in runtime verdict payload")
+                raise RuntimeError(
+                    "EG8.5 target_rps drift detected in runtime verdict payload"
+                )
             if int(r3_profile.get("duration_s", 0) or 0) != 60:
-                raise RuntimeError("EG8.5 duration_s drift detected in runtime verdict payload")
+                raise RuntimeError(
+                    "EG8.5 duration_s drift detected in runtime verdict payload"
+                )
 
         if target_request_count <= 0 or observed_request_count <= 0:
-            raise RuntimeError("Composed performance evidence invalid: missing request accounting")
+            raise RuntimeError(
+                "Composed performance evidence invalid: missing request accounting"
+            )
         if observed_request_count < int(target_request_count * 0.99):
             raise RuntimeError(
                 "Composed performance evidence invalid: observed_request_count below 99% of target"
             )
-        if numeric_status_responses + timeout_count + connection_error_count < int(observed_request_count * 0.99):
+        if numeric_status_responses + timeout_count + connection_error_count < int(
+            observed_request_count * 0.99
+        ):
             raise RuntimeError(
                 "Composed performance evidence invalid: response accounting does not match observed requests"
             )
@@ -1030,21 +1245,35 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "Composed performance evidence invalid: canonical row delta did not increase"
             )
         if not r3_profile.get("resource_stable", False):
-            raise RuntimeError("Composed performance evidence invalid: resource_stable=false")
+            raise RuntimeError(
+                "Composed performance evidence invalid: resource_stable=false"
+            )
         if float(r3_profile.get("http_error_rate_percent", 100.0)) > 0.0:
-            raise RuntimeError("Composed performance evidence invalid: non-zero HTTP error rate")
+            raise RuntimeError(
+                "Composed performance evidence invalid: non-zero HTTP error rate"
+            )
 
         worker_probe = json.loads(queue_probe_artifact.read_text(encoding="utf-8"))
-        worker_summary = worker_probe.get("summary", {}) if isinstance(worker_probe, dict) else {}
+        worker_summary = (
+            worker_probe.get("summary", {}) if isinstance(worker_probe, dict) else {}
+        )
         worker_sample_count = int(worker_summary.get("sample_count", 0) or 0)
         worker_peak_depth = int(worker_summary.get("max_total_messages", 0) or 0)
         worker_final_depth = int(worker_summary.get("final_total_messages", 0) or 0)
-        worker_drain_rate = float(worker_summary.get("drain_rate_messages_per_s", 0.0) or 0.0)
-        worker_drain_observed = worker_drain_rate > 0 or worker_final_depth < worker_peak_depth
+        worker_drain_rate = float(
+            worker_summary.get("drain_rate_messages_per_s", 0.0) or 0.0
+        )
+        worker_drain_observed = (
+            worker_drain_rate > 0 or worker_final_depth < worker_peak_depth
+        )
         if worker_sample_count <= 0:
-            raise RuntimeError("Worker liveness probe invalid: no queue samples captured")
+            raise RuntimeError(
+                "Worker liveness probe invalid: no queue samples captured"
+            )
         if worker_peak_depth <= 0:
-            raise RuntimeError("Worker liveness probe invalid: queue depth never increased above zero")
+            raise RuntimeError(
+                "Worker liveness probe invalid: queue depth never increased above zero"
+            )
         # Kombu's SQL transport can keep rows invisible and stable while workers still consume tasks.
         # For full-physics, prefer explicit queue drain or composed worker activity evidence,
         # but do not hard-fail if neither is observed on hosted runners.
@@ -1062,7 +1291,9 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "responses_received": numeric_status_responses,
             "timeout_count": timeout_count,
             "connection_error_count": connection_error_count,
-            "window_canonical_rows": int(r3_profile.get("window_canonical_rows", 0) or 0),
+            "window_canonical_rows": int(
+                r3_profile.get("window_canonical_rows", 0) or 0
+            ),
             "p50_ms": r3_profile.get("latency_p50_ms"),
             "p95_ms": r3_profile.get("latency_p95_ms"),
             "p99_ms": r3_profile.get("latency_p99_ms"),
@@ -1081,7 +1312,9 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "drain_rate_messages_per_s": worker_drain_rate,
                 "drain_observed": worker_drain_observed,
                 "llm_activity_evidence": llm_activity_evidence,
-                "probe_artifact": str(queue_probe_artifact.relative_to(cfg.artifact_dir)),
+                "probe_artifact": str(
+                    queue_probe_artifact.relative_to(cfg.artifact_dir)
+                ),
             },
             "router_engaged": any(
                 isinstance(row.get("provider_attempted"), str)
@@ -1089,7 +1322,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 for row in (sql_probe_summary.get("llm_outcomes") or [])
                 if isinstance(row, dict)
             ),
-            "safety_controls_verified_via_gate": gates.get("eg8_3_compute_safety") == "pass",
+            "safety_controls_verified_via_gate": gates.get("eg8_3_compute_safety")
+            == "pass",
         }
 
         run_step(
@@ -1175,11 +1409,11 @@ def main() -> int:
     finally:
         summary["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         canonical_summary = cfg.artifact_dir / "phase8_gate_summary.json"
-        authority_summary = cfg.artifact_dir / _summary_filename_for_authority(run_authority)
-        payload = json.dumps(summary, indent=2, sort_keys=True)
-        canonical_summary.write_text(
-            payload, encoding="utf-8"
+        authority_summary = cfg.artifact_dir / _summary_filename_for_authority(
+            run_authority
         )
+        payload = json.dumps(summary, indent=2, sort_keys=True)
+        canonical_summary.write_text(payload, encoding="utf-8")
         authority_summary.write_text(
             json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
         )

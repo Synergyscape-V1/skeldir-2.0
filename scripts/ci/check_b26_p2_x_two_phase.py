@@ -64,13 +64,34 @@ TRUTH_COMPANIONS = {
         "db/schema/canonical_schema.sql",
         "db/schema/canonical_authority.sql",
     ),
+    "alembic/versions/007_skeldir_foundation/202609270001_b26_p2_corrective_xiv_compositional_closure.py": (
+        "contracts-internal/governance/b26_p2_authority_universe.pin.json",
+        "contracts-internal/governance/b26_p2_xiii_semantic_contract.v1.json",
+        "db/schema/canonical_schema.sql",
+        "db/schema/canonical_authority.sql",
+    ),
+    "alembic/versions/007_skeldir_foundation/202609270002_b26_p2_corrective_xiv_temporal_enforcement.py": (
+        "contracts-internal/governance/b26_p2_authority_universe.pin.json",
+        "contracts-internal/governance/b26_p2_xiii_semantic_contract.v1.json",
+        "db/schema/canonical_schema.sql",
+        "db/schema/canonical_authority.sql",
+    ),
+    "alembic/versions/007_skeldir_foundation/202609270003_b26_p2_corrective_xiv_definer_evidence.py": (
+        "contracts-internal/governance/b26_p2_authority_universe.pin.json",
+        "contracts-internal/governance/b26_p2_xiii_semantic_contract.v1.json",
+        "db/schema/canonical_schema.sql",
+        "db/schema/canonical_authority.sql",
+    ),
 }
 
 
 def _git(args: list[str]) -> tuple[int, str]:
     try:
         proc = subprocess.run(
-            ["git", *args], capture_output=True, text=True, timeout=60,
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            timeout=60,
             cwd=str(REPO_ROOT),
         )
     except (OSError, subprocess.SubprocessError):
@@ -112,11 +133,7 @@ def main() -> int:
                 violations.append("x_two_phase_diff_failed")
                 changed = set()
             else:
-                changed = {
-                    line.strip()
-                    for line in out.splitlines()
-                    if line.strip()
-                }
+                changed = {line.strip() for line in out.splitlines() if line.strip()}
             rc2, out2 = _git(["status", "--porcelain"])
             if rc2 == 0:
                 for line in out2.splitlines():
@@ -138,16 +155,20 @@ def main() -> int:
                         # Companion may predate this change only if it
                         # already acknowledges the live tree state.
                         violations.append(
-                            f"x_two_phase_companion_missing:{truth}"
-                            f"->{companion}"
+                            f"x_two_phase_companion_missing:{truth}" f"->{companion}"
                         )
             # Semantic pin must acknowledge the live adapter bytes.
             pin_path = (
-                REPO_ROOT / "contracts-internal" / "governance"
+                REPO_ROOT
+                / "contracts-internal"
+                / "governance"
                 / "b26_p2_semantic_universe.pin.json"
             )
             conduction = (
-                REPO_ROOT / "backend" / "app" / "finance_reconciliation"
+                REPO_ROOT
+                / "backend"
+                / "app"
+                / "finance_reconciliation"
                 / "candidate_conduction.py"
             )
             if pin_path.is_file() and conduction.is_file():
@@ -159,30 +180,31 @@ def main() -> int:
                         "candidate_conduction_ast_sha256"
                     )
                     if pin.get("candidate_conduction_ast_sha256") != live:
-                        violations.append(
-                            "x_two_phase_adapter_pin_stale"
-                        )
+                        violations.append("x_two_phase_adapter_pin_stale")
                 except (OSError, ValueError, SyntaxError) as exc:
                     violations.append(f"x_two_phase_pin_unreadable:{exc}")
             # Authority pin must name the X head.
             authority_pin = (
-                REPO_ROOT / "contracts-internal" / "governance"
+                REPO_ROOT
+                / "contracts-internal"
+                / "governance"
                 / "b26_p2_authority_universe.pin.json"
             )
             if authority_pin.is_file():
                 try:
-                    apin = json.loads(
-                        authority_pin.read_text(encoding="utf-8")
-                    )
+                    apin = json.loads(authority_pin.read_text(encoding="utf-8"))
                     checks["authority_pin_head"] = apin.get("migration_head")
                     if apin.get("migration_head") not in (
-                        "202609240002", "202609250001", "202609260001"
+                        "202609240002",
+                        "202609250001",
+                        "202609260001",
+                        "202609270001",
+                        "202609270002",
+                        "202609270003",
                     ):
                         violations.append("x_two_phase_authority_pin_stale")
                 except (OSError, ValueError) as exc:
-                    violations.append(
-                        f"x_two_phase_authority_pin_unreadable:{exc}"
-                    )
+                    violations.append(f"x_two_phase_authority_pin_unreadable:{exc}")
             # Schema companion must carry the X objects.
             schema = REPO_ROOT / "db" / "schema" / "canonical_schema.sql"
             if schema.is_file():
@@ -191,9 +213,7 @@ def main() -> int:
                     checks["schema_has_classifier"] = (
                         "b26_p2_classify_candidate" in text
                     )
-                    checks["schema_has_evidence"] = (
-                        "b26_p2_provenance_evidence" in text
-                    )
+                    checks["schema_has_evidence"] = "b26_p2_provenance_evidence" in text
                     checks["schema_has_guards"] = (
                         "b26_p2_guard_conducted_transition" in text
                     )
@@ -223,9 +243,7 @@ def main() -> int:
     }
     if args.evidence_out is not None:
         args.evidence_out.parent.mkdir(parents=True, exist_ok=True)
-        args.evidence_out.write_text(
-            json.dumps(evidence, indent=2), encoding="utf-8"
-        )
+        args.evidence_out.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     if args.evidence_dir is not None:
         args.evidence_dir.mkdir(parents=True, exist_ok=True)
         (args.evidence_dir / "x-two-phase.json").write_text(

@@ -129,9 +129,7 @@ DISPOSITION_ROUTINES = (
     "b26_p2_record_evaluator_heartbeat",
 )
 
-ROOT_ROUTINES = (
-    "b26_p2_resolve_dispatch_authority",
-)
+ROOT_ROUTINES = ("b26_p2_resolve_dispatch_authority",)
 
 # Pure-computation oracles: IMMUTABLE, no table access, no RLS
 # interaction. EXECUTE on these cannot mutate any effect (they are the
@@ -523,9 +521,7 @@ def _rls_meaning_census(cur) -> list[str]:
         ORDER BY 1
         """
     )
-    flags = [
-        f"{rel}|rls={bool(en)}|force={bool(fc)}" for rel, en, fc in cur.fetchall()
-    ]
+    flags = [f"{rel}|rls={bool(en)}|force={bool(fc)}" for rel, en, fc in cur.fetchall()]
     cur.execute(
         """
         SELECT tablename, policyname, roles::text, cmd, qual, with_check
@@ -764,6 +760,16 @@ KNOWN_P2_DEFINERS = frozenset(
         # validators. (XIII provision/oracle grant no runtime EXECUTE.)
         "b26_p2_authenticate_ingress_atomic",
         "b26_p2_xiii_topology_check",
+        # Corrective XIV: the atomic transition additionally binds the
+        # immutable auth-root evidence identity (same grant surface, new
+        # effect) and the read-only XIV topology adjudicator
+        # (EXECUTE runtime roles; mints nothing; supersedes XIII with
+        # the root-evidence substrate). P2-covered (b26_p2_xiv_coverage)
+        # and falsified by the XIV battery (COND/TOPO/ORACLE/BEHAVIOR/
+        # TEMP cells) plus the XIV live validators. (XIV provision
+        # grants no runtime EXECUTE; the evidence table grants no
+        # runtime INSERT/UPDATE/DELETE.)
+        "b26_p2_xiv_topology_check",
     }
 )
 
@@ -781,7 +787,10 @@ def build_manifest(dsn: str, covered: tuple[str, ...]) -> dict:
         all_definers = _all_runtime_definers(cur)
         platform_invokers = _platform_invoker_routines(cur)
         discovered_all = _discover_all_reachable(
-            table_privs, column_privs, routine_privs, closure,
+            table_privs,
+            column_privs,
+            routine_privs,
+            closure,
             platform_invokers,
         )
         # Corrective VIII meaning-bearing discovery (independent planes).
@@ -895,9 +904,7 @@ def build_manifest(dsn: str, covered: tuple[str, ...]) -> dict:
     for entry in routine_meaning:
         m = _re.match(r"([^\(]+)\(([^\)]*)\)\|owner=([^\|]+)\|", entry)
         if m:
-            _sig_by_name.setdefault(m.group(1), set()).add(
-                f"{m.group(2)}|{m.group(3)}"
-            )
+            _sig_by_name.setdefault(m.group(1), set()).add(f"{m.group(2)}|{m.group(3)}")
     multi_signature_names = sorted(
         n for n, sigs in _sig_by_name.items() if len(sigs) > 1
     )

@@ -375,46 +375,26 @@ def _behavioral_probes(
                             + str(exc)[:120]
                         )
                 # Probe 3 (F-XI-A3): genuine consequence restores.
-                # B2.6-P2 Corrective XIII: the lawful path runs entirely
-                # through the dedicated trust root (consequence +
-                # bound witness + attestation as app_ingress, atomically).
-                # App_user authorship is physically impossible.
+                # B2.6-P2 Corrective XIV: the lawful path runs through
+                # the single authoritative commit interface (the atomic
+                # transition as app_ingress), which creates consequence
+                # + bound witness + legacy evidence + immutable
+                # auth-root evidence + terminal provenance in one
+                # transaction. Legacy recorder/witness/attest without
+                # the atomic cannot promote (provenance guard requires
+                # the root-evidence identity). App_user authorship is
+                # physically impossible.
                 try:
-                    cur.execute("SELECT 1")
-                    ingress_probe = psycopg2.connect(ingress_dsn)
-                    ingress_probe.autocommit = True
-                    try:
-                        with ingress_probe.cursor() as ucur:
-                            ucur.execute(
-                                "SELECT set_config('app.current_tenant_id',"
-                                " %s, false)",
-                                (tenant_id,),
-                            )
-                            ucur.execute(
-                                "SELECT public.b26_p2_record_provider_auth_consequence("
-                                "%s, 'stripe', %s, %s, %s,"
-                                " 'hmac-sha256-timestamped-hex', 'v1')",
-                                (
-                                    ingress_id,
-                                    f"evt-{idem}",
-                                    "a" * 64,
-                                    "b" * 64,
-                                ),
-                            )
-                    finally:
-                        ingress_probe.close()
                     cur.execute(
-                        "SELECT public.b26_p2_record_ingress_auth_witness"
-                        "(%s, 'stripe', %s, %s)",
-                        (ingress_id, f"evt-{idem}", "a" * 64),
-                    )
-                    checks["witness_hash_prefix"] = str(
-                        cur.fetchone()[0]
-                    )[:12]
-                    cur.execute(
-                        "SELECT public.b26_p2_attest_provenance_evidence"
-                        "(%s, 'signed_provider_reingestion', %s)",
-                        (ingress_id, idem),
+                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "%s, 'stripe', %s, %s, %s,"
+                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        (
+                            ingress_id,
+                            f"evt-{idem}",
+                            "a" * 64,
+                            "b" * 64,
+                        ),
                     )
                     if str(cur.fetchone()[0]) != "authenticated_known":
                         violations.append(

@@ -32,12 +32,20 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SEM_VALIDATOR = REPO_ROOT / "scripts" / "ci" / "validate_b26_p2_xiii_semantic_contract.py"
+SEM_VALIDATOR = (
+    REPO_ROOT / "scripts" / "ci" / "validate_b26_p2_xiii_semantic_contract.py"
+)
 AUTH_VALIDATOR = REPO_ROOT / "scripts" / "ci" / "validate_b26_p2_xiii_auth_root.py"
-CAP_VALIDATOR = REPO_ROOT / "scripts" / "ci" / "validate_b26_p2_xiii_capability_custody.py"
-TEMP_VALIDATOR = REPO_ROOT / "scripts" / "ci" / "validate_b26_p2_xiii_temporal_completeness.py"
+CAP_VALIDATOR = (
+    REPO_ROOT / "scripts" / "ci" / "validate_b26_p2_xiii_capability_custody.py"
+)
+TEMP_VALIDATOR = (
+    REPO_ROOT / "scripts" / "ci" / "validate_b26_p2_xiii_temporal_completeness.py"
+)
 CONTRACT = (
-    REPO_ROOT / "contracts-internal" / "governance"
+    REPO_ROOT
+    / "contracts-internal"
+    / "governance"
     / "b26_p2_xiii_semantic_contract.v1.json"
 )
 
@@ -48,16 +56,24 @@ def _run(cmd: list[str], env_extra: dict | None = None) -> subprocess.CompletedP
     env = dict(os.environ)
     if env_extra:
         env.update(env_extra)
-    return subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT), env=env)
+    return subprocess.run(
+        cmd, capture_output=True, text=True, cwd=str(REPO_ROOT), env=env
+    )
 
 
 def _control_sem_validators_pristine(violations: list[str], checks: dict) -> None:
     # Pristine static validators must be GREEN (proves they can be green).
-    for name, script in (("sem", SEM_VALIDATOR), ("auth", AUTH_VALIDATOR),
-                         ("cap", CAP_VALIDATOR), ("temp", TEMP_VALIDATOR)):
+    for name, script in (
+        ("sem", SEM_VALIDATOR),
+        ("auth", AUTH_VALIDATOR),
+        ("cap", CAP_VALIDATOR),
+        ("temp", TEMP_VALIDATOR),
+    ):
         proc = _run([sys.executable, str(script)])
         if proc.returncode != 0:
-            violations.append(f"xiii_nc_pristine_not_green:{name}:{(proc.stdout + proc.stderr)[:200]}")
+            violations.append(
+                f"xiii_nc_pristine_not_green:{name}:{(proc.stdout + proc.stderr)[:200]}"
+            )
         else:
             checks[f"pristine_{name}_green"] = True
 
@@ -80,7 +96,9 @@ def _control_sem_fragmented_execute(violations: list[str], checks: dict) -> None
     )
     proc = _run([sys.executable, "-c", probe])
     if proc.returncode != 0 or "XIII_NC_SEM_RULES_ARMED" not in proc.stdout:
-        violations.append("xiii_nc_sem_rules_blind:" + (proc.stdout + proc.stderr)[-200:])
+        violations.append(
+            "xiii_nc_sem_rules_blind:" + (proc.stdout + proc.stderr)[-200:]
+        )
     else:
         checks["sem_fragment_rule_armed"] = True
 
@@ -112,8 +130,8 @@ def _control_cap_topology_surgery(violations: list[str], checks: dict) -> None:
     original = procfile.read_text(encoding="utf-8")
     try:
         poisoned = original.replace(
-            "web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= uvicorn",
-            "web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL=postgresql://app_ingress:x@localhost:5432/x B26_P2_INGRESS_DATABASE_URL_FILE= uvicorn",
+            "web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE=",
+            "web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL=postgresql://app_ingress:x@localhost:5432/x B26_P2_INGRESS_DATABASE_URL_FILE=",
         )
         assert poisoned != original, "procfile anchor drifted"
         procfile.write_text(poisoned, encoding="utf-8")
@@ -121,14 +139,18 @@ def _control_cap_topology_surgery(violations: list[str], checks: dict) -> None:
         if proc.returncode == 0:
             violations.append("xiii_nc_cap_poison_not_red")
         elif "xiii_cap_legacy_mount:web" not in (proc.stdout + proc.stderr):
-            violations.append("xiii_nc_cap_wrong_red:" + (proc.stdout + proc.stderr)[:200])
+            violations.append(
+                "xiii_nc_cap_wrong_red:" + (proc.stdout + proc.stderr)[:200]
+            )
         else:
             checks["cap_poison_red"] = True
     finally:
         procfile.write_text(original, encoding="utf-8")
     proc = _run([sys.executable, str(CAP_VALIDATOR)])
     if proc.returncode != 0:
-        violations.append("xiii_nc_cap_restore_not_green:" + (proc.stdout + proc.stderr)[:200])
+        violations.append(
+            "xiii_nc_cap_restore_not_green:" + (proc.stdout + proc.stderr)[:200]
+        )
     else:
         checks["cap_restore_green"] = True
 
@@ -148,12 +170,16 @@ def main() -> int:
     if args.dsn is not None:
         # Live: auth validator against the migrated lane must be GREEN
         # pristine (proves the lane satisfies the law).
-        for name, script in (("auth_live", AUTH_VALIDATOR),
-                             ("sem_live", SEM_VALIDATOR),
-                             ("temp_live", TEMP_VALIDATOR)):
+        for name, script in (
+            ("auth_live", AUTH_VALIDATOR),
+            ("sem_live", SEM_VALIDATOR),
+            ("temp_live", TEMP_VALIDATOR),
+        ):
             proc = _run([sys.executable, str(script), "--dsn", args.dsn])
             if proc.returncode != 0:
-                violations.append(f"xiii_nc_live_not_green:{name}:{(proc.stdout + proc.stderr)[-200:]}")
+                violations.append(
+                    f"xiii_nc_live_not_green:{name}:{(proc.stdout + proc.stderr)[-200:]}"
+                )
             else:
                 checks[f"live_{name}_green"] = True
     status = "PASS" if not violations else "FAIL"
@@ -171,7 +197,9 @@ def main() -> int:
     }
     if args.evidence_out is not None:
         Path(args.evidence_out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.evidence_out).write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+        Path(args.evidence_out).write_text(
+            json.dumps(evidence, indent=2), encoding="utf-8"
+        )
     if args.evidence_dir is not None:
         Path(args.evidence_dir).mkdir(parents=True, exist_ok=True)
         (Path(args.evidence_dir) / "xiii-negative-controls.json").write_text(

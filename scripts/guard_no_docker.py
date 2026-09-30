@@ -161,6 +161,17 @@ ALLOWED_DOCKER_PATHS = {
     # both variables). Same reason as XI/XII: it reads the manifests
     # to check them, runs no container and adds no substrate.
     Path("scripts/ci/validate_b26_p2_xiii_capability_custody.py"),
+    # B2.6-P2 Corrective XIV's cross-lane topology validator performs
+    # the same manifest census across production/c19/e2e/Procfile (one
+    # authority topology, single file-only delivery law), and the XIV
+    # negative-controls battery poison-restores one compose line to
+    # prove the gate REDs. Same reason as XI/XII/XIII: both read the
+    # manifests to check them, run no container and add no substrate --
+    # the filenames are the subject of the check, and removing them
+    # would make the gates blind to a compose edit reintroducing
+    # API-as-auth-root or a second secret-delivery path.
+    Path("scripts/ci/validate_b26_p2_xiv_topology.py"),
+    Path("scripts/ci/test_b26_p2_xiv_negative_controls.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),
     Path("scripts/smoke/m1_runtime_smoke.py"),
 }

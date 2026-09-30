@@ -86,6 +86,7 @@ except Exception:  # noqa: BLE001 - non-critical on exotic platforms
 NETWORK = "b26p2-iv-net"
 PG_CONTAINER = "b26p2-iv-pg"
 API_CONTAINER = "b26p2-iv-api"
+AUTH_CONTAINER = "b26p2-iv-auth"
 WORKER_CONTAINER = "b26p2-iv-worker-b23"
 RELAY_CONTAINER = "b26p2-iv-relay"
 BEAT_CONTAINER = "b26p2-iv-beat"
@@ -121,6 +122,14 @@ BEAT_CMD = [
     "--loglevel=info",
 ]
 API_CMD = ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+AUTH_CMD = [
+    "uvicorn",
+    "app.auth_service.server:app",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8001",
+]
 
 
 def _fail(msg: str) -> int:
@@ -309,12 +318,8 @@ class _Topology:
         self.image = f"skeldir-b26-p2-deployed:{args.image_tag}"
         self.pg_port = str(args.pg_port)
         self.api_port = str(args.api_port)
-        self.admin_dsn = (
-            f"postgresql://postgres:{args.pg_password}@127.0.0.1:{self.pg_port}/postgres"
-        )
-        self.db_admin = (
-            f"postgresql://postgres:{args.pg_password}@127.0.0.1:{self.pg_port}/{DB_NAME}"
-        )
+        self.admin_dsn = f"postgresql://postgres:{args.pg_password}@127.0.0.1:{self.pg_port}/postgres"
+        self.db_admin = f"postgresql://postgres:{args.pg_password}@127.0.0.1:{self.pg_port}/{DB_NAME}"
 
     # -- lifecycle ------------------------------------------------------
     def _cleanup_container(self, name: str) -> None:
@@ -326,10 +331,17 @@ class _Topology:
             RELAY_CONTAINER,
             WORKER_CONTAINER,
             API_CONTAINER,
+            AUTH_CONTAINER,
             PG_CONTAINER,
         ):
             self._cleanup_container(name)
         _docker("network", "rm", NETWORK)
+        dsn_path = getattr(self, "_auth_dsn_path", None)
+        if dsn_path:
+            try:
+                os.unlink(dsn_path)
+            except OSError:
+                pass
 
     def build_image(self) -> str:
         if self.args.no_build:
@@ -403,9 +415,13 @@ class _Topology:
                 f"@127.0.0.1:{self.pg_port}/{DB_NAME}"
             ),
         )
-        proc = _run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=REPO_ROOT, env=env)
+        proc = _run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"], cwd=REPO_ROOT, env=env
+        )
         if proc.returncode != 0:
-            raise RuntimeError(f"migrate_failed:{proc.stdout[-1000:]}:{proc.stderr[-1000:]}")
+            raise RuntimeError(
+                f"migrate_failed:{proc.stdout[-1000:]}:{proc.stderr[-1000:]}"
+            )
 
     # -- containers -----------------------------------------------------
     def _base_env(self, dsn: str) -> list[str]:
@@ -447,26 +463,72 @@ class _Topology:
             *self._base_env(dsn),
             "-e",
             f"B26_P2_STALENESS_SECONDS={self.args.staleness_seconds}",
-            # Corrective XIII: this proof container exercises the
-            # authentication trust-root path (verification + atomic
-            # persistence) in one process for test simplicity, so it
-            # carries the auth role with the ingress credential.
-            # Production splits them (API role blanked, dedicated
-            # auth_ingress service holds the file); the database law
-            # under test is identical.
+            # XIV Architecture B (production topology): the general API
+            # is a non-authoritative byte relay only -- non-auth role,
+            # no authenticated-ingress DB capability in any form -- and
+            # relays verified arrivals to the dedicated authentication
+            # trust root below (same topology as production/c19/e2e).
             "-e",
-            "SKELDIR_PROCESS_ROLE=auth_ingress",
+            "SKELDIR_PROCESS_ROLE=api",
             "-e",
-            f"B26_P2_INGRESS_DATABASE_URL=postgresql+asyncpg://app_ingress:app_ingress@pg:5432/{DB_NAME}",
+            "B26_P2_INGRESS_DATABASE_URL=",
+            "-e",
+            "B26_P2_INGRESS_DATABASE_URL_FILE=",
+            "-e",
+            f"B26_P2_AUTH_ROOT_URL=http://{AUTH_CONTAINER}:8001",
             self.image,
             *API_CMD,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"api_start_failed:{proc.stderr[-500:]}")
 
+    def start_auth_root(self) -> None:
+        """Boot the dedicated authentication trust root (XIV).
+
+        Sole holder of the file-mounted ingress credential (XIV single
+        secret-delivery law). Verifies provider signatures and persists
+        the full-commerce ingress row + atomic authority transition.
+        Needs the application credential for tenant/secret resolution
+        alongside the ingress file credential.
+        """
+        import tempfile  # noqa: PLC0415
+
+        self._cleanup_container(AUTH_CONTAINER)
+        dsn = f"postgresql+asyncpg://app_user:app_user@pg:5432/{DB_NAME}"
+        ingress_dsn = f"postgresql+asyncpg://app_ingress:app_ingress@pg:5432/{DB_NAME}"
+        fd, dsn_path = tempfile.mkstemp(prefix="b26_p2_ingress_dsn_iv_")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(ingress_dsn)
+        self._auth_dsn_path = dsn_path
+        proc = _docker(
+            "run",
+            "-d",
+            "--name",
+            AUTH_CONTAINER,
+            *self._RESTART,
+            "--network",
+            NETWORK,
+            *self._base_env(dsn),
+            "-e",
+            "SKELDIR_PROCESS_ROLE=auth_ingress",
+            "-e",
+            "B26_P2_INGRESS_DATABASE_URL=",
+            "-e",
+            "B26_P2_INGRESS_DATABASE_URL_FILE=/run/secrets/b26_p2_ingress_dsn",
+            "-v",
+            f"{dsn_path}:/run/secrets/b26_p2_ingress_dsn:ro",
+            self.image,
+            *AUTH_CMD,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"auth_start_failed:{proc.stderr[-500:]}")
+
     def start_worker(self, dsn_override: str | None = None) -> None:
         self._cleanup_container(WORKER_CONTAINER)
-        worker_dsn = dsn_override or f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{DB_NAME}"
+        worker_dsn = (
+            dsn_override
+            or f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{DB_NAME}"
+        )
         proc = _docker(
             "run",
             "-d",
@@ -610,16 +672,24 @@ def _seed_tenant() -> dict[str, str]:
         )
     finally:
         conn.close()
-    return {"tenant_id": tenant_id, "tenant_key": tenant_key, "stripe_secret": stripe_secret}
+    return {
+        "tenant_id": tenant_id,
+        "tenant_key": tenant_key,
+        "stripe_secret": stripe_secret,
+    }
 
 
 def _sign_stripe(body: bytes, secret: str) -> str:
     ts = int(time.time())
-    sig = hmac.new(secret.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+    sig = hmac.new(
+        secret.encode(), f"{ts}.".encode() + body, hashlib.sha256
+    ).hexdigest()
     return f"t={ts},v1={sig}"
 
 
-def _post_stripe_once(tenant_key: str, stripe_secret: str, intent_id: str, amount: int) -> tuple[int, str]:
+def _post_stripe_once(
+    tenant_key: str, stripe_secret: str, intent_id: str, amount: int
+) -> tuple[int, str]:
     body = json.dumps(
         {
             "id": intent_id,
@@ -648,7 +718,9 @@ def _post_stripe_once(tenant_key: str, stripe_secret: str, intent_id: str, amoun
         raise RuntimeError(f"webhook_post_failed:{type(exc).__name__}:{exc}"[:300])
 
 
-def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: int) -> tuple[int, str]:
+def _post_stripe(
+    tenant_key: str, stripe_secret: str, intent_id: str, amount: int
+) -> tuple[int, str]:
     """POST a provider webhook with one bounded stimulus retry.
 
     Centralizes the Corrective XVII pattern previously inlined at
@@ -670,9 +742,7 @@ def _post_stripe(tenant_key: str, stripe_secret: str, intent_id: str, amount: in
         if "TimeoutError" not in str(exc) and "timed out" not in str(exc):
             raise
         try:
-            _wait_http_ok(
-                f"http://127.0.0.1:{_TOPO.api_port}/health/live", 15
-            )
+            _wait_http_ok(f"http://127.0.0.1:{_TOPO.api_port}/health/live", 15)
         except Exception as live_exc:  # noqa: BLE001 - context carrier
             raise RuntimeError(
                 f"stimulus_api_not_live:{type(live_exc).__name__}"
@@ -701,14 +771,14 @@ def _broker_outage(block: bool) -> None:
             _query(f"GRANT INSERT ON TABLE public.kombu_message TO {role}")
 
 
-def _wait_state(table: str, idcol: str, task_id: str, want: str, timeout_s: int) -> dict:
+def _wait_state(
+    table: str, idcol: str, task_id: str, want: str, timeout_s: int
+) -> dict:
     col = "delivery_state" if table == "b23_match_task_dispatches" else "state"
     idf = "task_id" if table == "b23_match_task_dispatches" else "dispatch_task_id"
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        rows = _query(
-            f"SELECT {col} FROM public.{table} WHERE {idf} = %s", (task_id,)
-        )
+        rows = _query(f"SELECT {col} FROM public.{table} WHERE {idf} = %s", (task_id,))
         if rows and str(rows[0][0]) == want:
             return {"state": want}
         time.sleep(2)
@@ -732,7 +802,11 @@ def _dispatch_for_ingress(tenant_id: str, event_id: str) -> dict:
     )
     if not rows:
         raise RuntimeError("dispatch_missing_for_ingress")
-    return {"task_id": str(rows[0][0]), "delivery_state": str(rows[0][1]), "outbox": str(rows[0][2])}
+    return {
+        "task_id": str(rows[0][0]),
+        "delivery_state": str(rows[0][1]),
+        "outbox": str(rows[0][2]),
+    }
 
 
 _TOPO: _Topology
@@ -758,9 +832,16 @@ def _dead_edge_probe() -> dict:
         cur.execute(
             "INSERT INTO public.tenants (id, name, api_key_hash,"
             " notification_email) VALUES (%s, %s, %s, %s)",
-                (tenant_id, "b26p2-iv-deadedge", uuid.uuid4().hex, "deadedge@example.invalid"),
+            (
+                tenant_id,
+                "b26p2-iv-deadedge",
+                uuid.uuid4().hex,
+                "deadedge@example.invalid",
+            ),
         )
-        cur.execute("SELECT set_config('app.current_tenant_id', %s, false)", (tenant_id,))
+        cur.execute(
+            "SELECT set_config('app.current_tenant_id', %s, false)", (tenant_id,)
+        )
         occurred = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
         event_uuid = str(uuid.uuid4())
         cur.execute(
@@ -774,12 +855,18 @@ def _dead_edge_probe() -> dict:
             " idempotency_key, event_type, channel, campaign_id,"
             " conversion_value_cents, currency, event_timestamp, processed_at,"
             " processing_status)"
-            " VALUES (%s, %s, %s, %s, %s, 38000, '{\"order_id\": \"dead\"}'::jsonb,"
+            ' VALUES (%s, %s, %s, %s, %s, 38000, \'{"order_id": "dead"}\'::jsonb,'
             " %s, 'conversion', 'b26p2ca1_channel', 'dead-campaign', 38000, 'USD',"
             " %s, %s, 'processed')",
             (
-                event_uuid, tenant_id, occurred, str(uuid.uuid4()),
-                str(uuid.uuid4()), f"deadedge:{tenant_id[:8]}", occurred, occurred,
+                event_uuid,
+                tenant_id,
+                occurred,
+                str(uuid.uuid4()),
+                str(uuid.uuid4()),
+                f"deadedge:{tenant_id[:8]}",
+                occurred,
+                occurred,
             ),
         )
         ingress_id = str(uuid.uuid4())
@@ -794,8 +881,13 @@ def _dead_edge_probe() -> dict:
             " VALUES (%s, %s, %s, 'stripe', %s, %s, 'order_reference', %s,"
             " 38000, 'USD', %s, %s, 'authenticity_verified')",
             (
-                ingress_id, tenant_id, event_uuid, f"evt-dead-{tenant_id[:8]}",
-                f"ord-dead-{tenant_id[:8]}", f"ord-dead-{tenant_id[:8]}", occurred,
+                ingress_id,
+                tenant_id,
+                event_uuid,
+                f"evt-dead-{tenant_id[:8]}",
+                f"ord-dead-{tenant_id[:8]}",
+                f"ord-dead-{tenant_id[:8]}",
+                occurred,
                 f"deadedge-ingress:{tenant_id[:8]}",
             ),
         )
@@ -879,9 +971,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609260001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xiii")
-        details["migration_head"] = "202609260001"
+        if "202609270003" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xiv")
+        details["migration_head"] = "202609270003"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -907,9 +999,7 @@ def main() -> int:
         )
         # Shell blanking (`VAR=` / `VAR= cmd`) carries no value:
         # only `VAR=<non-space>` mounts the credential.
-        _mount = re.search(
-            r"B26_P2_INGRESS_DATABASE_URL=\S", worker_line
-        )
+        _mount = re.search(r"B26_P2_INGRESS_DATABASE_URL=\S", worker_line)
         if _mount is not None:
             return _fail("generic_worker_holds_ingress_dsn")
         if "B26_P2_INGRESS_DATABASE_URL" not in worker_line:
@@ -932,12 +1022,14 @@ def main() -> int:
         print("B26_P2_TOPOLOGY_STAGE dead_edge", flush=True)
         details["dead_edge"] = _dead_edge_probe()
         print("B26_P2_TOPOLOGY_STAGE boot_services", flush=True)
+        _TOPO.start_auth_root()
         _TOPO.start_api()
         _TOPO.start_worker()
         _TOPO.start_relay()
         _TOPO.start_beat()
         _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 120)
         details["api_live"] = True
+        details["auth_root_live"] = True
         _wait_log(WORKER_CONTAINER, "ready", 180)
         _wait_log(RELAY_CONTAINER, "ready", 180)
         details["workers_ready"] = True
@@ -946,6 +1038,7 @@ def main() -> int:
         # 2. Prove the exact shipped commands are PID 1 in each container.
         pid1 = {
             "api": _pid1_cmdline(API_CONTAINER),
+            "auth_ingress": _pid1_cmdline(AUTH_CONTAINER),
             "worker_b23": _pid1_cmdline(WORKER_CONTAINER),
             "relay": _pid1_cmdline(RELAY_CONTAINER),
             "beat": _pid1_cmdline(BEAT_CONTAINER),
@@ -953,6 +1046,8 @@ def main() -> int:
         details["pid1"] = pid1
         if "uvicorn app.main:app" not in pid1["api"]:
             return _fail("api_command_not_shipped")
+        if "uvicorn app.auth_service.server:app" not in pid1["auth_ingress"]:
+            return _fail("auth_root_command_not_shipped")
         if "b23_match_engine" not in pid1["worker_b23"]:
             return _fail("worker_command_not_shipped")
         if "b26_p2_relay" not in pid1["relay"]:
@@ -961,10 +1056,38 @@ def main() -> int:
             return _fail("scheduler_command_not_shipped")
 
         # 3. Capture in-process database principals (not role names in config).
+        # XIV: the API holds no ingress credential in any form (relay
+        # only); the dedicated auth root is the sole file holder.
+        api_ingress_env = _container_env(API_CONTAINER, "B26_P2_INGRESS_DATABASE_URL")
+        api_ingress_file = _container_env(
+            API_CONTAINER, "B26_P2_INGRESS_DATABASE_URL_FILE"
+        )
+        api_role = _container_env(API_CONTAINER, "SKELDIR_PROCESS_ROLE")
+        auth_role = _container_env(AUTH_CONTAINER, "SKELDIR_PROCESS_ROLE")
+        auth_file = _container_env(AUTH_CONTAINER, "B26_P2_INGRESS_DATABASE_URL_FILE")
+        details["auth_topology"] = {
+            "api_role": api_role,
+            "api_ingress_env": api_ingress_env,
+            "api_ingress_file": api_ingress_file,
+            "auth_role": auth_role,
+            "auth_file": auth_file,
+        }
+        if api_role != "api":
+            return _fail(f"api_role_not_relay:{api_role}")
+        if api_ingress_env.strip() or api_ingress_file.strip():
+            return _fail("api_holds_ingress_credential")
+        if auth_role != "auth_ingress":
+            return _fail(f"auth_root_role:{auth_role}")
+        if not auth_file.strip():
+            return _fail("auth_root_no_file_credential")
         principals = {
             "api": _container_current_user(API_CONTAINER, "DATABASE_URL"),
-            "worker_b23": _container_current_user(WORKER_CONTAINER, "B23_WORKER_DATABASE_URL"),
-            "worker_b23_database_url": _container_current_user(WORKER_CONTAINER, "DATABASE_URL"),
+            "worker_b23": _container_current_user(
+                WORKER_CONTAINER, "B23_WORKER_DATABASE_URL"
+            ),
+            "worker_b23_database_url": _container_current_user(
+                WORKER_CONTAINER, "DATABASE_URL"
+            ),
             "relay": _container_current_user(RELAY_CONTAINER, "DATABASE_URL"),
             "beat": _container_current_user(BEAT_CONTAINER, "DATABASE_URL"),
         }
@@ -984,17 +1107,25 @@ def main() -> int:
         print("B26_P2_TOPOLOGY_STAGE normal_journey", flush=True)
         tenant = _seed_tenant()
         intent = f"pi_{uuid.uuid4().hex[:18]}"
-        status, body = _post_stripe(tenant["tenant_key"], tenant["stripe_secret"], intent, 38000)
+        status, body = _post_stripe(
+            tenant["tenant_key"], tenant["stripe_secret"], intent, 38000
+        )
         if status != 200:
             return _fail(f"signed_webhook_not_accepted:{status}:{body[:300]}")
         try:
             event_id = str(json.loads(body)["event_id"])
         except (ValueError, KeyError) as exc:
             return _fail(f"webhook_response_missing_event_id:{exc}:{body[:200]}")
-        details["webhook_accepted"] = {"intent": intent, "http": status, "event_id": event_id}
+        details["webhook_accepted"] = {
+            "intent": intent,
+            "http": status,
+            "event_id": event_id,
+        }
         disp = _dispatch_for_ingress(tenant["tenant_id"], event_id)
         details["dispatch_issued"] = disp
-        _wait_state("b23_match_task_dispatches", "task", disp["task_id"], "conducted", 180)
+        _wait_state(
+            "b23_match_task_dispatches", "task", disp["task_id"], "conducted", 180
+        )
         _wait_state("b26_p2_execution_outbox", "task", disp["task_id"], "conducted", 60)
         details["conducted"] = {"task_id": disp["task_id"]}
         # Corrective V: the conducted twin must carry a task-specific
@@ -1042,7 +1173,10 @@ def main() -> int:
             return _fail(f"outage_webhook_not_accepted:{status2}")
         event_id2 = str(json.loads(body2)["event_id"])
         disp2 = _dispatch_for_ingress(tenant["tenant_id"], event_id2)
-        if disp2["delivery_state"] != "pending_publish" or disp2["outbox"] != "pending_publish":
+        if (
+            disp2["delivery_state"] != "pending_publish"
+            or disp2["outbox"] != "pending_publish"
+        ):
             return _fail(f"outage_not_pending:{disp2}")
         details["outage_pending"] = disp2
         # While the broker is down, the scheduler must NOT conjure recovery.
@@ -1063,11 +1197,17 @@ def main() -> int:
             "worker_restarts": _restart_count(WORKER_CONTAINER),
         }
         # No manual enqueue from here on: beat + relay + worker must conduct it.
-        _wait_state("b23_match_task_dispatches", "task", disp2["task_id"], "conducted", 240)
-        _wait_state("b26_p2_execution_outbox", "task", disp2["task_id"], "conducted", 60)
+        _wait_state(
+            "b23_match_task_dispatches", "task", disp2["task_id"], "conducted", 240
+        )
+        _wait_state(
+            "b26_p2_execution_outbox", "task", disp2["task_id"], "conducted", 60
+        )
         details["natural_recovery"] = {"task_id": disp2["task_id"]}
         recovery_scope = _task_result_scope(disp2["task_id"])
-        details["natural_recovery_scope_identity"] = recovery_scope.get("scope_identity")
+        details["natural_recovery_scope_identity"] = recovery_scope.get(
+            "scope_identity"
+        )
         if len(str(recovery_scope.get("scope_identity") or "")) != 64:
             return _fail("recovery_scope_identity_malformed")
 
@@ -1091,14 +1231,19 @@ def main() -> int:
         )
         if status3 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status3}")
-        disp3 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body3)["event_id"]))
+        disp3 = _dispatch_for_ingress(
+            tenant["tenant_id"], str(json.loads(body3)["event_id"])
+        )
         try:
-            _wait_state("b23_match_task_dispatches", "task", disp3["task_id"], "conducted", 60)
+            _wait_state(
+                "b23_match_task_dispatches", "task", disp3["task_id"], "conducted", 60
+            )
             return _fail("falsifier_worker_miswire_stayed_green")
         except RuntimeError:
             pass
         meta3 = _query(
-            "SELECT status FROM public.celery_taskmeta WHERE task_id = %s", (disp3["task_id"],)
+            "SELECT status FROM public.celery_taskmeta WHERE task_id = %s",
+            (disp3["task_id"],),
         )
         dlq3 = _query(
             "SELECT count(*) FROM public.worker_failed_jobs WHERE task_id = %s",
@@ -1128,7 +1273,9 @@ def main() -> int:
             " WHERE task_id = %s",
             (disp3["task_id"],),
         )
-        _retained = bool(_still_published) and str(_still_published[0][0]) == "published"
+        _retained = (
+            bool(_still_published) and str(_still_published[0][0]) == "published"
+        )
         meta_failed = bool(meta3) and str(meta3[0][0]) == "FAILURE"
         dlq_count = int(dlq3[0][0]) if dlq3 else 0
         if not _received or not _causal or not _retained:
@@ -1159,11 +1306,16 @@ def main() -> int:
         )
         if status4 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status4}")
-        disp4 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body4)["event_id"]))
+        disp4 = _dispatch_for_ingress(
+            tenant["tenant_id"], str(json.loads(body4)["event_id"])
+        )
         _broker_outage(False)
         try:
             _wait_state(
-                "b23_match_task_dispatches", "task", disp4["task_id"], "conducted",
+                "b23_match_task_dispatches",
+                "task",
+                disp4["task_id"],
+                "conducted",
                 int(args.sweep_interval) * 3 + 15,
             )
             return _fail("falsifier_missing_scheduler_stayed_green")
@@ -1171,7 +1323,9 @@ def main() -> int:
             falsifiers["missing_scheduler"] = "RED_as_required"
         _TOPO.start_beat()
         time.sleep(int(args.sweep_interval) + 2)
-        _wait_state("b23_match_task_dispatches", "task", disp4["task_id"], "conducted", 240)
+        _wait_state(
+            "b23_match_task_dispatches", "task", disp4["task_id"], "conducted", 240
+        )
         falsifiers["scheduler_restored_green"] = "GREEN"
 
         # F-c: relay absent + sweep to an unconsumed queue stays pending.
@@ -1209,13 +1363,18 @@ def main() -> int:
         )
         if status5 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status5}")
-        disp5 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body5)["event_id"]))
+        disp5 = _dispatch_for_ingress(
+            tenant["tenant_id"], str(json.loads(body5)["event_id"])
+        )
         _broker_outage(False)
         _assert_stopped(RELAY_CONTAINER)
         _send_relay_sweep(queue="housekeeping")
         try:
             _wait_state(
-                "b23_match_task_dispatches", "task", disp5["task_id"], "conducted",
+                "b23_match_task_dispatches",
+                "task",
+                disp5["task_id"],
+                "conducted",
                 int(args.sweep_interval) * 2 + 20,
             )
             return _fail("falsifier_wrong_queue_stayed_green")
@@ -1224,15 +1383,15 @@ def main() -> int:
         _TOPO.start_relay()
         _TOPO.start_beat()
         _wait_log(RELAY_CONTAINER, "ready", 180)
-        _wait_state("b23_match_task_dispatches", "task", disp5["task_id"], "conducted", 240)
+        _wait_state(
+            "b23_match_task_dispatches", "task", disp5["task_id"], "conducted", 240
+        )
         falsifiers["relay_restored_green"] = "GREEN"
 
         # F-d: split-brain and orphan writes are refused by the database.
         import psycopg2 as _pg
 
-        user_dsn = (
-            f"postgresql://app_user:app_user@127.0.0.1:{args.pg_port}/{DB_NAME}"
-        )
+        user_dsn = f"postgresql://app_user:app_user@127.0.0.1:{args.pg_port}/{DB_NAME}"
         conn = _pg.connect(user_dsn)
         try:
             conn.autocommit = True
@@ -1450,7 +1609,9 @@ def main() -> int:
                 return _fail("falsifier_cross_product_outbox_allowed")
             except Exception as exc:
                 if "fk_b26_p2_outbox_execution_tuple" not in str(exc).split("\n")[0]:
-                    return _fail(f"falsifier_cross_product_wrong_layer:{str(exc)[:150]}")
+                    return _fail(
+                        f"falsifier_cross_product_wrong_layer:{str(exc)[:150]}"
+                    )
                 falsifiers["cross_product_outbox"] = "RED_as_required"
             try:
                 cur.execute(
@@ -1463,8 +1624,13 @@ def main() -> int:
                 )
                 return _fail("falsifier_forged_window_allowed")
             except Exception as exc:
-                if "b26_p2_directory_no_canonical_execution" not in str(exc).split("\n")[0]:
-                    return _fail(f"falsifier_forged_window_wrong_layer:{str(exc)[:150]}")
+                if (
+                    "b26_p2_directory_no_canonical_execution"
+                    not in str(exc).split("\n")[0]
+                ):
+                    return _fail(
+                        f"falsifier_forged_window_wrong_layer:{str(exc)[:150]}"
+                    )
                 falsifiers["forged_window"] = "RED_as_required"
             # Corrective VI F-vi1: a forged CANONICAL dispatch window (the
             # auditor-proven root hole: wrong UTC day, coherent otherwise)
@@ -1560,10 +1726,14 @@ def main() -> int:
                 # unauthenticated rows (provenance_unknown/witness_missing);
                 # either layer proves forged dispatch cannot conduct.
                 _msg0 = str(exc).split("\n")[0]
-                if ("b26_p2_dispatch_window_not_sovereign" not in _msg0
-                        and "b26_p2_dispatch_provenance_unknown" not in _msg0
-                        and "b26_p2_dispatch_witness_missing" not in _msg0):
-                    return _fail(f"falsifier_forged_dispatch_wrong_layer:{str(exc)[:150]}")
+                if (
+                    "b26_p2_dispatch_window_not_sovereign" not in _msg0
+                    and "b26_p2_dispatch_provenance_unknown" not in _msg0
+                    and "b26_p2_dispatch_witness_missing" not in _msg0
+                ):
+                    return _fail(
+                        f"falsifier_forged_dispatch_wrong_layer:{str(exc)[:150]}"
+                    )
                 falsifiers["forged_canonical_dispatch"] = "RED_as_required"
             # Corrective VI F-vi2: worker-synthesized completion proof is
             # impossible on the deployed plane. Direct receipt INSERT as
@@ -1606,18 +1776,30 @@ def main() -> int:
                     )
                     return _fail("falsifier_worker_receipt_synthesis_allowed")
                 except Exception as exc:
-                    if "denied" not in str(exc).lower() and "permission" not in str(exc).lower():
-                        return _fail(f"falsifier_worker_receipt_wrong_layer:{str(exc)[:150]}")
+                    if (
+                        "denied" not in str(exc).lower()
+                        and "permission" not in str(exc).lower()
+                    ):
+                        return _fail(
+                            f"falsifier_worker_receipt_wrong_layer:{str(exc)[:150]}"
+                        )
                     falsifiers["worker_receipt_synthesis"] = "RED_as_required"
                 try:
                     _vi_wcur.execute(
                         "SELECT public.b26_p2_record_conduction_receipt(%s, %s, %s, %s)",
-                        (disp["task_id"], "SYNTHETIC-FORGED-SCOPE", 1, "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99"),
+                        (
+                            disp["task_id"],
+                            "SYNTHETIC-FORGED-SCOPE",
+                            1,
+                            "fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99",
+                        ),
                     )
                     return _fail("falsifier_junk_scope_receipt_allowed")
                 except Exception as exc:
                     if "b26_p2_receipt_scope_not_bound" not in str(exc).split("\n")[0]:
-                        return _fail(f"falsifier_junk_scope_wrong_layer:{str(exc)[:150]}")
+                        return _fail(
+                            f"falsifier_junk_scope_wrong_layer:{str(exc)[:150]}"
+                        )
                     falsifiers["junk_scope_receipt"] = "RED_as_required"
             finally:
                 _vi_wconn.close()
@@ -1638,8 +1820,12 @@ def main() -> int:
         )
         if status6 != 200:
             return _fail(f"falsifier_webhook_not_accepted:{status6}")
-        disp6 = _dispatch_for_ingress(tenant["tenant_id"], str(json.loads(body6)["event_id"]))
-        _wait_state("b23_match_task_dispatches", "task", disp6["task_id"], "published", 60)
+        disp6 = _dispatch_for_ingress(
+            tenant["tenant_id"], str(json.loads(body6)["event_id"])
+        )
+        _wait_state(
+            "b23_match_task_dispatches", "task", disp6["task_id"], "published", 60
+        )
         try:
             _wait_state(
                 "b23_match_task_dispatches", "task", disp6["task_id"], "conducted", 20
@@ -1673,9 +1859,13 @@ def main() -> int:
                 # of the legacy gate-presence guard. Either refusal proves
                 # caller-authored conducted is dead.
                 _head = str(exc).split("\n")[0]
-                if ("b26_p2_conducted_requires_gate" not in _head
-                        and "b26_p2_conducted_effect_refused" not in _head):
-                    return _fail(f"falsifier_false_conducted_wrong_layer:{str(exc)[:150]}")
+                if (
+                    "b26_p2_conducted_requires_gate" not in _head
+                    and "b26_p2_conducted_effect_refused" not in _head
+                ):
+                    return _fail(
+                        f"falsifier_false_conducted_wrong_layer:{str(exc)[:150]}"
+                    )
                 falsifiers["false_conducted"] = "RED_as_required"
             try:
                 wcur.execute(
@@ -1718,7 +1908,10 @@ def main() -> int:
         # absurd threshold refuses instead of suppressing.
         _relay_logs = _docker("logs", "--tail", "500", RELAY_CONTAINER)
         _relay_output = _relay_logs.stdout + _relay_logs.stderr
-        if "app.tasks.b26_p2_health.evaluate_b26_p2_operational_health" not in _relay_output:
+        if (
+            "app.tasks.b26_p2_health.evaluate_b26_p2_operational_health"
+            not in _relay_output
+        ):
             return _fail("falsifier_health_evaluator_not_wired")
         if '"status": "success"' not in _relay_output:
             return _fail("falsifier_health_evaluator_no_success")
@@ -1794,14 +1987,19 @@ def main() -> int:
                 _stale_cur.fetchone()
                 return _fail("falsifier_absurd_threshold_suppressed")
             except Exception as exc:
-                if "b26_p2_staleness_threshold_out_of_bounds" not in str(exc).split("\n")[0]:
+                if (
+                    "b26_p2_staleness_threshold_out_of_bounds"
+                    not in str(exc).split("\n")[0]
+                ):
                     return _fail(f"falsifier_threshold_wrong_layer:{str(exc)[:150]}")
                 falsifiers["threshold_authority"] = "RED_as_required"
         finally:
             _stale_conn.close()
         _TOPO.start_worker()
         _wait_log(WORKER_CONTAINER, "ready", 180)
-        _wait_state("b23_match_task_dispatches", "task", disp6["task_id"], "conducted", 240)
+        _wait_state(
+            "b23_match_task_dispatches", "task", disp6["task_id"], "conducted", 240
+        )
         falsifiers["stopped_worker_drain_green"] = "GREEN"
 
         # F-v3: recovery principals cannot mint execution authority.
@@ -1841,7 +2039,10 @@ def main() -> int:
                 )
                 return _fail("falsifier_relay_mint_allowed")
             except Exception as exc:
-                if "denied" not in str(exc).lower() and "permission" not in str(exc).lower():
+                if (
+                    "denied" not in str(exc).lower()
+                    and "permission" not in str(exc).lower()
+                ):
                     return _fail(f"falsifier_relay_mint_wrong_layer:{str(exc)[:150]}")
                 falsifiers["relay_mint"] = "RED_as_required"
         finally:
@@ -1882,10 +2083,12 @@ def main() -> int:
         from scripts.ci.b26_p2_capability_surface import (  # noqa: PLC0415
             build_manifest as _build_manifest,
         )
-        # Coverage registry: prefer the newest (XIII) law; fall back
+
+        # Coverage registry: prefer the newest (XIV) law; fall back
         # through predecessors for older lanes.
         _covered = None
         for _mod, _attr in (
+            ("scripts.ci.b26_p2_xiv_coverage", "XIV_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xiii_coverage", "XIII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xii_coverage", "XII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xi_coverage", "XI_COVERED_SURFACES"),
@@ -1970,7 +2173,8 @@ def main() -> int:
 def _task_result_scope(task_id: str) -> dict:
     """Fetch the B2.3 task result payload and return its P2 scope summary."""
     rows = _query(
-        "SELECT status, result FROM public.celery_taskmeta WHERE task_id = %s", (task_id,)
+        "SELECT status, result FROM public.celery_taskmeta WHERE task_id = %s",
+        (task_id,),
     )
     if not rows:
         raise RuntimeError(f"task_result_missing:{task_id}")
@@ -2020,7 +2224,9 @@ def _collect_diagnostics() -> dict:
         state = _docker("inspect", "-f", "{{.State.Status}} {{.State.ExitCode}}", name)
         diag[f"state_{name}"] = state.stdout.strip() or state.stderr.strip()[-200:]
     try:
-        diag["kombu_messages"] = _query("SELECT count(*) FROM public.kombu_message")[0][0]
+        diag["kombu_messages"] = _query("SELECT count(*) FROM public.kombu_message")[0][
+            0
+        ]
     except Exception as exc:  # noqa: BLE001
         diag["kombu_messages"] = f"unavailable:{exc}"[:200]
     try:

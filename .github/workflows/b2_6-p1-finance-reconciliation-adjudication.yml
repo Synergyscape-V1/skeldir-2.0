@@ -258,6 +258,59 @@ jobs:
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-out artifacts/b26_p2/static/xiii-negative-controls.json
 
+      # B2.6-P2 Corrective XIV: compositional sovereignty and end-to-end
+      # conduction closure. Runs after the XIII battery (conserved) on the
+      # same migrated lane (now at XIV head). Each gate proves GREEN on
+      # the pristine lane and REDs on a genuine member of its class
+      # (see test_b26_p2_xiv_negative_controls for the GREEN-RED-GREEN
+      # cycle per class).
+      - name: Prove B2.6-P2 Corrective-XIV auth-root conduction closure (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xiv_auth_conduction.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiv-auth-conduction.json
+
+      - name: Prove B2.6-P2 Corrective-XIV cross-lane topology equivalence
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xiv_topology.py \
+            --evidence-out artifacts/b26_p2/static/xiv-topology.json
+
+      - name: Prove B2.6-P2 Corrective-XIV independent phase-law oracle (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xiv_phase_oracle.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiv-phase-oracle.json
+
+      - name: Prove B2.6-P2 Corrective-XIV pure-helper behavioral law (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xiv_semantic_behavior.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiv-semantic-behavior.json
+
+      - name: Prove B2.6-P2 Corrective-XIV behavioral temporal completeness (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xiv_temporal_behavior.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiv-temporal-behavior.json
+
+      - name: Prove B2.6-P2 Corrective-XIV checks are non-vacuous (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/test_b26_p2_xiv_negative_controls.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xiv-negative-controls.json
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence
