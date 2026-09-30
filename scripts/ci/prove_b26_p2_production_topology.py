@@ -971,9 +971,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609270002" not in heads.stdout:
+        if "202609270003" not in heads.stdout:
             return _fail("migration_head_missing_corrective_xiv")
-        details["migration_head"] = "202609270002"
+        details["migration_head"] = "202609270003"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",

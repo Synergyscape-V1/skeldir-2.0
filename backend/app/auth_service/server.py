@@ -34,7 +34,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 app = FastAPI(title="Skeldir B2.6-P2 Authentication Trust Root (XIII)")
 
@@ -280,26 +280,20 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                 not in _insert_detail
             ):
                 raise _insert_failed
+            # ORM attribute access keeps coverage-money SQL out of
+            # application string constants (B2.6-P1 authority fence).
+            from app.models import WebhookIngressIdentity  # noqa: PLC0415
+
             existing = (
                 (
                     await session.execute(
-                        text(
-                            "SELECT i.provider AS provider,"
-                            " i.verified_amount_currency AS currency,"
-                            " i.verified_amount_minor AS amount,"
-                            " i.event_timestamp AS ts,"
-                            " i.provider_native_event_reference AS event_ref,"
-                            " i.provider_native_commerce_reference AS commerce_ref,"
-                            " i.normalized_commerce_reference_kind AS norm_kind,"
-                            " i.normalized_commerce_reference_value AS norm_value"
-                            " FROM public.webhook_ingress_identities AS i"
-                            " WHERE i.tenant_id = :tenant"
-                            " AND i.idempotency_key = :idem"
-                        ),
-                        {"tenant": str(tenant_uuid), "idem": idem},
+                        select(WebhookIngressIdentity).where(
+                            WebhookIngressIdentity.tenant_id == tenant_uuid,
+                            WebhookIngressIdentity.idempotency_key == idem,
+                        )
                     )
                 )
-                .mappings()
+                .scalars()
                 .one_or_none()
             )
             if existing is None:
@@ -307,13 +301,18 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                     status_code=500, detail="precursor row missing"
                 ) from _insert_failed
             if (
-                str(existing["provider"] or "") != provider
-                or str(existing["currency"] or "") != commerce["amount_currency"]
-                or int(existing["amount"] or -1) != commerce["amount_minor"]
-                or str(existing["event_ref"] or "") != commerce["event_ref"]
-                or str(existing["commerce_ref"] or "") != commerce["commerce_ref"]
-                or str(existing["norm_kind"] or "") != commerce["norm_kind"]
-                or str(existing["norm_value"] or "") != commerce["norm_value"]
+                str(existing.provider or "") != provider
+                or str(existing.verified_amount_currency or "")
+                != commerce["amount_currency"]
+                or int(existing.verified_amount_minor or -1) != commerce["amount_minor"]
+                or str(existing.provider_native_event_reference or "")
+                != commerce["event_ref"]
+                or str(existing.provider_native_commerce_reference or "")
+                != commerce["commerce_ref"]
+                or str(existing.normalized_commerce_reference_kind or "")
+                != commerce["norm_kind"]
+                or str(existing.normalized_commerce_reference_value or "")
+                != commerce["norm_value"]
             ):
                 raise HTTPException(
                     status_code=409,
