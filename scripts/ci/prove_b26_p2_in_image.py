@@ -76,7 +76,7 @@ IDENTITY_FILES = [
 # XI_CAND_RESTORED via the trust root. A base that refuses P (already
 # strict) or a candidate that records P via app_user (still assertable)
 # fails the falsifier as vacuous.
-PROBE_XI_ATTEST_DELTA = '''
+PROBE_XI_ATTEST_DELTA = """
 import os
 import sys
 import uuid
@@ -165,9 +165,9 @@ else:
         print("XI_CAND_RESTORE_FAILED:" + restored)
         raise SystemExit(1)
 admin.close()
-'''
+"""
 
-PROBE_X_TAB_CONDUCTION = '''
+PROBE_X_TAB_CONDUCTION = """
 import asyncio
 import os
 import sys
@@ -221,8 +221,7 @@ try:
     print("X_TAB_" + str(wc.fetchone()[0]).upper())
 except Exception as exc:
     print("X_TAB_REFUSED:" + str(exc).splitlines()[0][:120])
-'''
-
+"""
 
 
 def _docker(*args: str) -> subprocess.CompletedProcess:
@@ -247,7 +246,9 @@ def _base_migration_head(worktree) -> str | None:
     try:
         proc = subprocess.run(
             [sys.executable, "-m", "alembic", "heads"],
-            cwd=str(worktree), capture_output=True, text=True,
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
             timeout=120,
         )
     except (OSError, subprocess.SubprocessError):
@@ -267,8 +268,9 @@ def _base_migration_head(worktree) -> str | None:
 _AM8_BODY_FN = "b24_mark_fit_dispatch_running"
 
 
-def _am8_cycle(image: str, harness: str, out_mount: str,
-               covered: list[str], host_admin_dsn: str) -> dict:
+def _am8_cycle(
+    image: str, harness: str, out_mount: str, covered: list[str], host_admin_dsn: str
+) -> dict:
     """Mutate known-authority meaning in-image; universe must RED then GREEN.
 
     Mutations execute against the proof database over the host-reachable
@@ -282,20 +284,38 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
     admin.autocommit = True
     try:
         with admin.cursor() as cur:
-            cur.execute("SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname=%s"
-                        " AND pronamespace='public'::regnamespace", (_AM8_BODY_FN,))
+            cur.execute(
+                "SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname=%s"
+                " AND pronamespace='public'::regnamespace",
+                (_AM8_BODY_FN,),
+            )
             original_body = cur.fetchone()[0]
     finally:
         admin.close()
 
     def universe() -> tuple[int, str, str]:
-        cmd = ["run", "--rm", "--network", NETWORK, "-v", harness, "-v", out_mount,
-               "-e", "PYTHONPATH=/proof:/app/backend",
-                image, "python", "/proof/assert_b26_p2_authority_universe.py",
-                "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
-                "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609270003",
-                "--covered"] + covered
+        cmd = [
+            "run",
+            "--rm",
+            "--network",
+            NETWORK,
+            "-v",
+            harness,
+            "-v",
+            out_mount,
+            "-e",
+            "PYTHONPATH=/proof:/app/backend",
+            image,
+            "python",
+            "/proof/assert_b26_p2_authority_universe.py",
+            "--dsn",
+            f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
+            "--pin",
+            "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
+            "--migration-head",
+            "202609270003",
+            "--covered",
+        ] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
         # The drift marker lives at the head of the output, ahead of the
@@ -313,26 +333,39 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
             conn.close()
 
     mutations = [
-        ("AM8-01/body", "body mutation of allowlisted definer",
-         original_body.replace("BEGIN", "BEGIN\n-- am8 probe", 1),
-         "authority_universe_drift"),
-        ("AM8-03/overload", "same-name overload with new signature",
-         "CREATE OR REPLACE FUNCTION public.%s(t text, n integer) RETURNS text"
-         " LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'pg_catalog','public'"
-         " AS $$ BEGIN RETURN 'am8'; END $$;" % _AM8_BODY_FN
-         + "GRANT EXECUTE ON FUNCTION public.%s(text, integer) TO app_worker;" % _AM8_BODY_FN,
-         "authority_universe_drift"),
-        ("AM8-05/trigger", "trigger-mediated writer behind lawful write",
-         "CREATE OR REPLACE FUNCTION public.am8_trigger_writer() RETURNS trigger"
-         " LANGUAGE plpgsql SET search_path TO 'pg_catalog','public'"
-         " AS $$ BEGIN RETURN NEW; END $$;"
-         " CREATE TRIGGER am8_probe_trigger BEFORE UPDATE ON"
-         " public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION"
-         " public.am8_trigger_writer();",
-         "authority_universe_drift"),
-        ("AM8-08/schema-create", "schema CREATE granted to runtime",
-         "GRANT CREATE ON SCHEMA public TO app_worker;",
-         "authority_universe_drift"),
+        (
+            "AM8-01/body",
+            "body mutation of allowlisted definer",
+            original_body.replace("BEGIN", "BEGIN\n-- am8 probe", 1),
+            "authority_universe_drift",
+        ),
+        (
+            "AM8-03/overload",
+            "same-name overload with new signature",
+            "CREATE OR REPLACE FUNCTION public.%s(t text, n integer) RETURNS text"
+            " LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'pg_catalog','public'"
+            " AS $$ BEGIN RETURN 'am8'; END $$;" % _AM8_BODY_FN
+            + "GRANT EXECUTE ON FUNCTION public.%s(text, integer) TO app_worker;"
+            % _AM8_BODY_FN,
+            "authority_universe_drift",
+        ),
+        (
+            "AM8-05/trigger",
+            "trigger-mediated writer behind lawful write",
+            "CREATE OR REPLACE FUNCTION public.am8_trigger_writer() RETURNS trigger"
+            " LANGUAGE plpgsql SET search_path TO 'pg_catalog','public'"
+            " AS $$ BEGIN RETURN NEW; END $$;"
+            " CREATE TRIGGER am8_probe_trigger BEFORE UPDATE ON"
+            " public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION"
+            " public.am8_trigger_writer();",
+            "authority_universe_drift",
+        ),
+        (
+            "AM8-08/schema-create",
+            "schema CREATE granted to runtime",
+            "GRANT CREATE ON SCHEMA public TO app_worker;",
+            "authority_universe_drift",
+        ),
     ]
     try:
         for name, _desc, statement, expect in mutations:
@@ -345,8 +378,10 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 result["failure"] = f"{name}_did_not_red:{tail[-200:]}"
                 return result
         # Exact restore GREEN.
-        sql("DROP TRIGGER IF EXISTS am8_probe_trigger"
-            " ON public.webhook_ingress_identities;")
+        sql(
+            "DROP TRIGGER IF EXISTS am8_probe_trigger"
+            " ON public.webhook_ingress_identities;"
+        )
         sql("DROP FUNCTION IF EXISTS public.am8_trigger_writer();")
         sql("DROP FUNCTION IF EXISTS public.%s(text, integer);" % _AM8_BODY_FN)
         sql("REVOKE CREATE ON SCHEMA public FROM app_worker;")
@@ -370,8 +405,10 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
         result["status"] = "FAIL"
         result["failure"] = f"am8_cycle_crash:{exc}"
         try:
-            sql("DROP TRIGGER IF EXISTS am8_probe_trigger"
-                " ON public.webhook_ingress_identities;")
+            sql(
+                "DROP TRIGGER IF EXISTS am8_probe_trigger"
+                " ON public.webhook_ingress_identities;"
+            )
             sql("DROP FUNCTION IF EXISTS public.am8_trigger_writer();")
             sql("DROP FUNCTION IF EXISTS public.%s(text, integer);" % _AM8_BODY_FN)
             sql("REVOKE CREATE ON SCHEMA public FROM app_worker;")
@@ -405,19 +442,21 @@ def main() -> int:
         "image_tag": args.image_tag,
     }
 
-    def run_img(image: str, inner: list[str], env: dict | None = None,
-                mounts: list[str] | None = None,
-                workdir: str | None = None) -> subprocess.CompletedProcess:
+    def run_img(
+        image: str,
+        inner: list[str],
+        env: dict | None = None,
+        mounts: list[str] | None = None,
+        workdir: str | None = None,
+    ) -> subprocess.CompletedProcess:
         cmd = ["run", "--rm", "--network", NETWORK]
         if workdir:
             cmd += ["-w", workdir]
         for m in mounts or []:
             cmd += ["-v", m]
         base_env = {
-            "MIGRATION_DATABASE_URL":
-                f"postgresql://migration_owner:migration_owner@pg:5432/{DB_NAME}",
-            "DATABASE_URL":
-                f"postgresql://app_user:app_user@pg:5432/{DB_NAME}",
+            "MIGRATION_DATABASE_URL": f"postgresql://migration_owner:migration_owner@pg:5432/{DB_NAME}",
+            "DATABASE_URL": f"postgresql://app_user:app_user@pg:5432/{DB_NAME}",
         }
         if env:
             base_env.update(env)
@@ -428,7 +467,9 @@ def main() -> int:
 
     try:
         if not args.no_build:
-            proc = _docker("build", "-f", "backend/Dockerfile", "-t", args.image_tag, ".")
+            proc = _docker(
+                "build", "-f", "backend/Dockerfile", "-t", args.image_tag, "."
+            )
             if proc.returncode != 0:
                 return _fail(details, f"image_build_failed:{proc.stderr[-1500:]}")
         proc = _docker("image", "inspect", args.image_tag, "--format", "{{.Id}}")
@@ -441,15 +482,28 @@ def main() -> int:
         _docker("network", "rm", NETWORK)
         _docker("network", "create", NETWORK)
         proc = _docker(
-            "run", "-d", "--name", PG_CONTAINER, "--network", NETWORK,
-            "--network-alias", "pg", "-e", f"POSTGRES_PASSWORD={PG_PASSWORD}",
-            "-p", f"{PG_PORT}:5432", "postgres:15-alpine",
+            "run",
+            "-d",
+            "--name",
+            PG_CONTAINER,
+            "--network",
+            NETWORK,
+            "--network-alias",
+            "pg",
+            "-e",
+            f"POSTGRES_PASSWORD={PG_PASSWORD}",
+            "-p",
+            f"{PG_PORT}:5432",
+            "postgres:15-alpine",
         )
         if proc.returncode != 0:
             return _fail(details, f"pg_start_failed:{proc.stderr[-500:]}")
         deadline = time.time() + 90
         while time.time() < deadline:
-            if _docker("exec", PG_CONTAINER, "pg_isready", "-U", "postgres").returncode == 0:
+            if (
+                _docker("exec", PG_CONTAINER, "pg_isready", "-U", "postgres").returncode
+                == 0
+            ):
                 break
             time.sleep(2)
         else:
@@ -467,9 +521,17 @@ def main() -> int:
         finally:
             conn.close()
         proc = subprocess.run(
-            [sys.executable, "scripts/database/prepare_migration_authority_boundary.py",
-             "--admin-dsn", admin_dsn, "--database-name", DB_NAME],
-            cwd=str(REPO_ROOT), capture_output=True, text=True,
+            [
+                sys.executable,
+                "scripts/database/prepare_migration_authority_boundary.py",
+                "--admin-dsn",
+                admin_dsn,
+                "--database-name",
+                DB_NAME,
+            ],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
         )
         if proc.returncode != 0:
             return _fail(details, f"provision_failed:{proc.stderr[-1000:]}")
@@ -477,8 +539,7 @@ def main() -> int:
         # 1. Migration path inside the candidate image (from /app: the
         # ini's relative script_location and sys-path prelude resolve
         # there; the image WORKDIR is /app/backend).
-        proc = run_img(args.image_tag, ["alembic", "upgrade", "head"],
-                       workdir="/app")
+        proc = run_img(args.image_tag, ["alembic", "upgrade", "head"], workdir="/app")
         if proc.returncode != 0:
             return _fail(details, f"in_image_migrate_failed:{proc.stderr[-1500:]}")
         details["in_image_migrate"] = "PASS"
@@ -500,14 +561,22 @@ def main() -> int:
         ]
         proc = run_img(
             args.image_tag,
-            ["python", "-m", "pytest",
-             "tests/finance_reconciliation/test_b26_p2_corrective_viii_context_robust.py",
-             "tests/finance_reconciliation/test_b26_p2_corrective_ix_consequence.py",
-             "-q", "-o", "asyncio_mode=auto", "-p", "no:cacheprovider"],
-            env={"DATABASE_URL":
-                 f"postgresql+asyncpg://app_user:app_user@pg:5432/{DB_NAME}",
-                 "B26_P2_SUPERUSER_DSN":
-                 f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}"},
+            [
+                "python",
+                "-m",
+                "pytest",
+                "tests/finance_reconciliation/test_b26_p2_corrective_viii_context_robust.py",
+                "tests/finance_reconciliation/test_b26_p2_corrective_ix_consequence.py",
+                "-q",
+                "-o",
+                "asyncio_mode=auto",
+                "-p",
+                "no:cacheprovider",
+            ],
+            env={
+                "DATABASE_URL": f"postgresql+asyncpg://app_user:app_user@pg:5432/{DB_NAME}",
+                "B26_P2_SUPERUSER_DSN": f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
+            },
             mounts=tests_mounts,
         )
         details["in_image_battery_tail"] = (proc.stdout + proc.stderr)[-2000:]
@@ -520,13 +589,24 @@ def main() -> int:
         # REDs here before any behavioral proof runs.
         proc = run_img(
             args.image_tag,
-            ["python", "-c",
-             "import hashlib,json;"
-             "files=%s;"
-             "print(json.dumps({f:hashlib.sha256(open('/app/'+f,'rb').read()).hexdigest() for f in files}))"
-             % json.dumps(IDENTITY_FILES)],
+            [
+                "python",
+                "-c",
+                "import hashlib,json;"
+                "files=%s;"
+                "print(json.dumps({f:hashlib.sha256(open('/app/'+f,'rb').read()).hexdigest() for f in files}))"
+                % json.dumps(IDENTITY_FILES),
+            ],
         )
         if proc.returncode != 0:
+            details["identity_self_report_stdout"] = proc.stdout[-1500:]
+            details["identity_self_report_stderr"] = proc.stderr[-1500:]
+            print("IN_IMAGE_SELF_REPORT_STDOUT_BEGIN")
+            print(proc.stdout[-3000:])
+            print("IN_IMAGE_SELF_REPORT_STDOUT_END")
+            print("IN_IMAGE_SELF_REPORT_STDERR_BEGIN")
+            print(proc.stderr[-3000:])
+            print("IN_IMAGE_SELF_REPORT_STDERR_END")
             return _fail(details, "identity_self_report_failed")
         image_files = json.loads(proc.stdout.strip().splitlines()[-1])
         mismatched = [f for f in IDENTITY_FILES if image_files.get(f) != _host_sha(f)]
@@ -539,16 +619,21 @@ def main() -> int:
         outdir = REPO_ROOT / "artifacts" / "b26_p2" / "in-image"
         outdir.mkdir(parents=True, exist_ok=True)
         out_mount = f"{outdir}:/out"
-        mig_dsn = ("postgresql://migration_owner:migration_owner"
-                   f"@pg:5432/{DB_NAME}")
+        mig_dsn = "postgresql://migration_owner:migration_owner" f"@pg:5432/{DB_NAME}"
 
         # 4. VIII equivalence with image bytes (harness mounted read-only;
         # every P2 byte and gate evaluation resolves inside the image).
         harness_env = {"PYTHONPATH": "/proof:/app/backend"}
         proc = run_img(
             args.image_tag,
-            ["python", "/proof/b26_p2_viii_equivalence.py", "--dsn", mig_dsn,
-             "--evidence-out", "/out/viii-equivalence.json"],
+            [
+                "python",
+                "/proof/b26_p2_viii_equivalence.py",
+                "--dsn",
+                mig_dsn,
+                "--evidence-out",
+                "/out/viii-equivalence.json",
+            ],
             mounts=[harness, out_mount],
             env=harness_env,
         )
@@ -565,15 +650,24 @@ def main() -> int:
         covered = None
         for _modname, _fname, _attr in (
             ("b26_p2_xiv_coverage", "b26_p2_xiv_coverage.py", "XIV_COVERED_SURFACES"),
-            ("b26_p2_xiii_coverage", "b26_p2_xiii_coverage.py", "XIII_COVERED_SURFACES"),
+            (
+                "b26_p2_xiii_coverage",
+                "b26_p2_xiii_coverage.py",
+                "XIII_COVERED_SURFACES",
+            ),
             ("b26_p2_xii_coverage", "b26_p2_xii_coverage.py", "XII_COVERED_SURFACES"),
             ("b26_p2_xi_coverage", "b26_p2_xi_coverage.py", "XI_COVERED_SURFACES"),
             ("b26_p2_x_coverage", "b26_p2_x_coverage.py", "X_COVERED_SURFACES"),
             ("b26_p2_ix_coverage", "b26_p2_ix_coverage.py", "IX_COVERED_SURFACES"),
-            ("b26_p2_viii_coverage", "b26_p2_viii_coverage.py", "VIII_COVERED_SURFACES"),
+            (
+                "b26_p2_viii_coverage",
+                "b26_p2_viii_coverage.py",
+                "VIII_COVERED_SURFACES",
+            ),
         ):
             _spec = _ilu.spec_from_file_location(
-                _modname, str(REPO_ROOT / "scripts" / "ci" / _fname))
+                _modname, str(REPO_ROOT / "scripts" / "ci" / _fname)
+            )
             if _spec is not None and _spec.loader is not None:
                 try:
                     _mod = _ilu.module_from_spec(_spec)
@@ -586,12 +680,20 @@ def main() -> int:
         assert covered is not None, "no_coverage_registry_found"
         proc = run_img(
             args.image_tag,
-            ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
-             f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
-              "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-               "--migration-head", "202609270003",
-               "--evidence-out", "/out/authority-universe.json",
-             "--covered"] + covered,
+            [
+                "python",
+                "/proof/assert_b26_p2_authority_universe.py",
+                "--dsn",
+                f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
+                "--pin",
+                "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
+                "--migration-head",
+                "202609270003",
+                "--evidence-out",
+                "/out/authority-universe.json",
+                "--covered",
+            ]
+            + covered,
             mounts=[harness, out_mount],
             env=harness_env,
         )
@@ -608,8 +710,13 @@ def main() -> int:
         # 5b. AM8 meaning-drift cycle (authority meaning, not names): each
         # mutation must RED the universe assertion for the predicted cause;
         # exact restore must return GREEN. Unknown-meaning fails closed.
-        am8 = _am8_cycle(args.image_tag, harness, out_mount, covered,
-                         f"postgresql://postgres:{PG_PASSWORD}@127.0.0.1:{PG_PORT}/{DB_NAME}")
+        am8 = _am8_cycle(
+            args.image_tag,
+            harness,
+            out_mount,
+            covered,
+            f"postgresql://postgres:{PG_PASSWORD}@127.0.0.1:{PG_PORT}/{DB_NAME}",
+        )
         details["am8_cycle"] = am8
         if am8.get("status") != "PASS":
             return _fail(details, f"am8_cycle_fail:{am8.get('failure')}")
@@ -620,25 +727,40 @@ def main() -> int:
         if args.base_sha:
             base_tag = f"{args.image_tag}-base"
             worktree = REPO_ROOT / ".viii-base-tree"
-            subprocess.run(["git", "worktree", "remove", "--force", str(worktree)],
-                           cwd=str(REPO_ROOT), capture_output=True)
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(worktree)],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+            )
             # The CI checkout pins the candidate commit only; the base
             # object must be fetched before the worktree can materialize
             # it. Fail closed when the base is unreachable: a skipped
             # stale falsifier would silently weaken artifact closure.
             fetch = subprocess.run(
                 ["git", "fetch", "origin", args.base_sha, "--depth", "1"],
-                cwd=str(REPO_ROOT), capture_output=True, text=True)
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+            )
             if fetch.returncode != 0:
                 return _fail(details, f"base_fetch_failed:{fetch.stderr[-500:]}")
             proc = subprocess.run(
                 ["git", "worktree", "add", "--detach", str(worktree), args.base_sha],
-                cwd=str(REPO_ROOT), capture_output=True, text=True)
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+            )
             if proc.returncode != 0:
                 return _fail(details, f"base_worktree_failed:{proc.stderr[-500:]}")
             try:
-                proc = _docker("build", "-f", str(worktree / "backend" / "Dockerfile"),
-                               "-t", base_tag, str(worktree))
+                proc = _docker(
+                    "build",
+                    "-f",
+                    str(worktree / "backend" / "Dockerfile"),
+                    "-t",
+                    base_tag,
+                    str(worktree),
+                )
                 if proc.returncode != 0:
                     return _fail(details, f"base_build_failed:{proc.stderr[-800:]}")
                 stale_db = f"{DB_NAME}_stale"
@@ -651,17 +773,21 @@ def main() -> int:
                 finally:
                     conn.close()
                 subprocess.run(
-                    [sys.executable,
-                     "scripts/database/prepare_migration_authority_boundary.py",
-                     "--admin-dsn", admin_dsn, "--database-name", stale_db],
-                    cwd=str(REPO_ROOT), capture_output=True)
+                    [
+                        sys.executable,
+                        "scripts/database/prepare_migration_authority_boundary.py",
+                        "--admin-dsn",
+                        admin_dsn,
+                        "--database-name",
+                        stale_db,
+                    ],
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                )
                 stale_env = {
-                    "MIGRATION_DATABASE_URL":
-                        f"postgresql://migration_owner:migration_owner@pg:5432/{stale_db}",
-                    "DATABASE_URL":
-                        f"postgresql://app_user:app_user@pg:5432/{stale_db}",
-                    "B23_WORKER_DATABASE_URL":
-                        f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{stale_db}",
+                    "MIGRATION_DATABASE_URL": f"postgresql://migration_owner:migration_owner@pg:5432/{stale_db}",
+                    "DATABASE_URL": f"postgresql://app_user:app_user@pg:5432/{stale_db}",
+                    "B23_WORKER_DATABASE_URL": f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{stale_db}",
                 }
                 # The stale lane migrates with the HOST candidate
                 # alembic (pinned dependencies), not the base image's
@@ -676,18 +802,22 @@ def main() -> int:
                     return _fail(details, "stale_base_head_unresolvable")
                 proc = subprocess.run(
                     [sys.executable, "-m", "alembic", "upgrade", base_head],
-                    cwd=str(REPO_ROOT), capture_output=True, text=True,
-                    env={**os.environ,
-                         "MIGRATION_DATABASE_URL":
-                             f"postgresql://migration_owner:migration_owner"
-                             f"@127.0.0.1:{PG_PORT}/{stale_db}",
-                         "DATABASE_URL":
-                             f"postgresql://migration_owner:migration_owner"
-                             f"@127.0.0.1:{PG_PORT}/{stale_db}"},
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                    env={
+                        **os.environ,
+                        "MIGRATION_DATABASE_URL": f"postgresql://migration_owner:migration_owner"
+                        f"@127.0.0.1:{PG_PORT}/{stale_db}",
+                        "DATABASE_URL": f"postgresql://migration_owner:migration_owner"
+                        f"@127.0.0.1:{PG_PORT}/{stale_db}",
+                    },
                 )
                 if proc.returncode != 0:
-                    return _fail(details, "stale_migrate_failed:"
-                                 + (proc.stdout + proc.stderr)[-800:])
+                    return _fail(
+                        details,
+                        "stale_migrate_failed:" + (proc.stdout + proc.stderr)[-800:],
+                    )
                 # XI attestation delta: the base (pre-XI) tree promotes
                 # by caller assertion through the app_user attester;
                 # the candidate must refuse the same assertion. (The X
@@ -698,7 +828,8 @@ def main() -> int:
                 for k, v in stale_env.items():
                     cmd += ["-e", f"{k}={v}"]
                 cmd += [
-                    "-e", "PROBE_MODE=base",
+                    "-e",
+                    "PROBE_MODE=base",
                     "-e",
                     "PROBE_ADMIN_DSN=postgresql://postgres:%s@pg:5432/%s"
                     % (PG_PASSWORD, stale_db),
@@ -711,16 +842,22 @@ def main() -> int:
                     "-e",
                     "PROBE_WORKER_DSN=postgresql://app_worker:app_worker@pg:5432/%s"
                     % stale_db,
-                    base_tag, "python", "-c", probe,
+                    base_tag,
+                    "python",
+                    "-c",
+                    probe,
                 ]
                 proc = _docker(*cmd)
                 base_out = proc.stdout + proc.stderr
-                if ("XI_BASE_ATTESTED" not in proc.stdout
-                        and "XI_BASE_P_RECORDED" not in proc.stdout):
+                if (
+                    "XI_BASE_ATTESTED" not in proc.stdout
+                    and "XI_BASE_P_RECORDED" not in proc.stdout
+                ):
                     return _fail(
                         details,
                         "stale_falsifier_vacuous:base_did_not_promote:"
-                        + base_out[-500:])
+                        + base_out[-500:],
+                    )
                 details["stale_falsifier_base"] = "PASS_promoted_as_required"
                 # The candidate image must conduct the same lawful task:
                 # its thin adapter observes the SQL meaning, so receipt
@@ -735,17 +872,21 @@ def main() -> int:
                 finally:
                     conn.close()
                 subprocess.run(
-                    [sys.executable,
-                     "scripts/database/prepare_migration_authority_boundary.py",
-                     "--admin-dsn", admin_dsn, "--database-name", xdelta_db],
-                    cwd=str(REPO_ROOT), capture_output=True)
+                    [
+                        sys.executable,
+                        "scripts/database/prepare_migration_authority_boundary.py",
+                        "--admin-dsn",
+                        admin_dsn,
+                        "--database-name",
+                        xdelta_db,
+                    ],
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                )
                 xdelta_env = {
-                    "MIGRATION_DATABASE_URL":
-                        f"postgresql://migration_owner:migration_owner@pg:5432/{xdelta_db}",
-                    "DATABASE_URL":
-                        f"postgresql://app_user:app_user@pg:5432/{xdelta_db}",
-                    "B23_WORKER_DATABASE_URL":
-                        f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{xdelta_db}",
+                    "MIGRATION_DATABASE_URL": f"postgresql://migration_owner:migration_owner@pg:5432/{xdelta_db}",
+                    "DATABASE_URL": f"postgresql://app_user:app_user@pg:5432/{xdelta_db}",
+                    "B23_WORKER_DATABASE_URL": f"postgresql+asyncpg://app_worker:app_worker@pg:5432/{xdelta_db}",
                 }
                 cmd = ["run", "--rm", "--network", NETWORK, "-w", "/app"]
                 for k, v in xdelta_env.items():
@@ -753,13 +894,16 @@ def main() -> int:
                 cmd += [args.image_tag, "alembic", "upgrade", "head"]
                 proc = _docker(*cmd)
                 if proc.returncode != 0:
-                    return _fail(details, "xdelta_migrate_failed:"
-                                 + (proc.stdout + proc.stderr)[-800:])
+                    return _fail(
+                        details,
+                        "xdelta_migrate_failed:" + (proc.stdout + proc.stderr)[-800:],
+                    )
                 cmd = ["run", "--rm", "--network", NETWORK]
                 for k, v in xdelta_env.items():
                     cmd += ["-e", f"{k}={v}"]
                 cmd += [
-                    "-e", "PROBE_MODE=candidate",
+                    "-e",
+                    "PROBE_MODE=candidate",
                     "-e",
                     "PROBE_ADMIN_DSN=postgresql://postgres:%s@pg:5432/%s"
                     % (PG_PASSWORD, xdelta_db),
@@ -772,20 +916,28 @@ def main() -> int:
                     "-e",
                     "PROBE_WORKER_DSN=postgresql://app_worker:app_worker@pg:5432/%s"
                     % xdelta_db,
-                    args.image_tag, "python", "-c", probe,
+                    args.image_tag,
+                    "python",
+                    "-c",
+                    probe,
                 ]
                 proc = _docker(*cmd)
                 cand_out = proc.stdout + proc.stderr
-                if ("XI_CAND_DENIED" not in proc.stdout
-                        or "XI_CAND_RESTORED" not in proc.stdout):
+                if (
+                    "XI_CAND_DENIED" not in proc.stdout
+                    or "XI_CAND_RESTORED" not in proc.stdout
+                ):
                     return _fail(
                         details,
-                        "xdelta_falsifier_candidate_assertable:"
-                        + cand_out[-500:])
+                        "xdelta_falsifier_candidate_assertable:" + cand_out[-500:],
+                    )
                 details["stale_falsifier"] = "PASS"
             finally:
-                subprocess.run(["git", "worktree", "remove", "--force", str(worktree)],
-                               cwd=str(REPO_ROOT), capture_output=True)
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", str(worktree)],
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                )
                 _docker("rmi", "-f", base_tag)
         else:
             details["stale_falsifier"] = "SKIPPED:no_base_sha"
@@ -796,7 +948,9 @@ def main() -> int:
     finally:
         if args.evidence_out is not None:
             args.evidence_out.parent.mkdir(parents=True, exist_ok=True)
-            args.evidence_out.write_text(json.dumps(details, indent=2), encoding="utf-8")
+            args.evidence_out.write_text(
+                json.dumps(details, indent=2), encoding="utf-8"
+            )
         _docker("rm", "-f", PG_CONTAINER)
         _docker("network", "rm", NETWORK)
 
