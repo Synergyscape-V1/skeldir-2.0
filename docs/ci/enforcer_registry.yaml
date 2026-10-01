@@ -6253,3 +6253,57 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+- id: b26-p2-xv-binding
+  path: scripts/ci/validate_b26_p2_xv_binding.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Authenticated financial meaning equals sovereign
+    derivation of the verified provider bytes: the root re-derives every
+    material commerce field and refuses handoff mismatch before
+    persistence, persists derived values only, and the relay cross-checks
+    before relaying (single semantic authority, no parallel parsers).'
+  command: python scripts/ci/validate_b26_p2_xv_binding.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xv-binding.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xv_binding.py --help
+  expected_failure_meaning: A valid provider signature can authenticate
+    altered commerce meaning (amount, currency, timestamp, references).
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xv_binding.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xv-physics
+  path: scripts/ci/validate_b26_p2_xv_physics.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Evidence creation is transition-specific (only the
+    sovereign atomic frame mints evidence), authenticated financial
+    meaning is immutable, downgrade cannot resurrect quarantined history,
+    and duplicate deliveries re-drive authentication instead of
+    reporting false success.'
+  command: python scripts/ci/validate_b26_p2_xv_physics.py --dsn $MIGRATION_DATABASE_URL --evidence-out artifacts/b26_p2/static/xv-physics.json
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xv_physics.py --help
+  expected_failure_meaning: Terminal authentication is forgeable, mutable,
+    resurrectable, or falsely reported.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xv_physics.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce

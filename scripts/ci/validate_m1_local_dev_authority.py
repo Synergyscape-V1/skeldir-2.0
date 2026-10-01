@@ -736,6 +736,20 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xiv_semantic_behavior.py",
     "scripts/ci/validate_b26_p2_xiv_temporal_behavior.py",
     "scripts/ci/validate_b26_p2_xiv_topology.py",
+    # --- B2.6-P2 Corrective XV cryptographic meaning binding surface ---
+    # Authority-only slice: the single Corrective-XV migration
+    # (transition-specific evidence gate, authenticated-meaning
+    # immutability, downgrade quarantine block), the sovereign
+    # provider-commerce derivation module shared by the API relay path
+    # and the authentication trust root, and the two XV proof
+    # instruments (binding oracle + database-physics closure). Same
+    # exemption shape as the Corrective-XIV entry above; every
+    # prohibition retained unchanged. Proof tooling only; the
+    # manufacturing-law content scan still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609280001_b26_p2_corrective_xv_binding_closure.py",
+    "backend/app/webhooks/commerce_derivation.py",
+    "scripts/ci/validate_b26_p2_xv_binding.py",
+    "scripts/ci/validate_b26_p2_xv_physics.py",
     # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
     # and equivalence corpora authenticate lawful fixtures via the atomic
     # transition (admin allowed); negative fixtures stay pending/unknown.
