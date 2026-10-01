@@ -1353,11 +1353,22 @@ async def shopify_order_create(
             request_headers=request_headers,
         )
     verified_amount_minor = parsed_minor
+    # XV (H-XV-R1): the authoritative timestamp must come from the
+    # provider-signed bytes, never from the verifier's wall clock. A
+    # missing provider instant is malformed (DLQ), not now().
+    if payload.created_at is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="shopify",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_created_at",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     event_data = {
         "event_type": "purchase",
-        "event_timestamp": (
-            payload.created_at or datetime.now(timezone.utc)
-        ).isoformat(),
+        "event_timestamp": payload.created_at.isoformat(),
         "revenue_amount": _minor_units_to_decimal_string(
             verified_amount_minor, scale=verified_amount_scale
         ),
@@ -1499,10 +1510,22 @@ async def stripe_payment_intent_succeeded(
             request_headers=request_headers,
         )
     ts = (
-        datetime.fromtimestamp(payload.created)
+        datetime.fromtimestamp(payload.created, tz=timezone.utc)
         if payload.created
-        else datetime.now(timezone.utc)
+        else None
     )
+    # XV (H-XV-R1): provider instant required; wall-clock substitution
+    # would detach authenticated meaning from authenticated bytes.
+    if ts is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_created",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     verified_amount_minor = int(payload.amount)
     verified_amount_currency = payload.currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
@@ -1953,7 +1976,19 @@ async def paypal_sale_completed(
             identity_payload=identity_payload,
             request_headers=request_headers,
         )
-    ts = payload.create_time or datetime.now(timezone.utc)
+    ts = payload.create_time
+    # XV (H-XV-R1): provider instant required; wall-clock substitution
+    # would detach authenticated meaning from authenticated bytes.
+    if ts is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_create_time",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     verified_amount_currency = payload.amount.currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
     raw_amount = payload.amount.total
@@ -2100,7 +2135,19 @@ async def woocommerce_order_completed(
             identity_payload=identity_payload,
             request_headers=request_headers,
         )
-    ts = payload.date_completed or datetime.now(timezone.utc)
+    ts = payload.date_completed
+    # XV (H-XV-R1): provider instant required; wall-clock substitution
+    # would detach authenticated meaning from authenticated bytes.
+    if ts is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="woocommerce",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_date_completed",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     verified_amount_currency = payload.currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
     raw_amount = payload.total

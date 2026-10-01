@@ -769,6 +769,67 @@ async def _relay_verified_ingress_to_auth_root(
     consequence = finalization.get("auth_consequence")
     if not isinstance(consequence, Mapping) or not consequence.get("body_sha256"):
         return False
+    # XV (H-XV-R1/R2): relay-side sovereign cross-check. The general API
+    # derives the commerce handoff from the same raw bytes via its own
+    # parsing path. Before relaying, independently re-derive meaning from
+    # the exact bytes through the single sovereign authority and refuse to
+    # relay on divergence (fail closed). The root re-enforces the same law
+    # authoritatively; this check ensures a diverged API parser can only
+    # cause refusal, never false authority.
+    try:
+        import base64 as _relay_b64  # noqa: PLC0415
+
+        from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+            CommerceDerivationError as _RelayDerivationError,
+            binding_mismatches as _relay_mismatches,
+            derive_commerce as _relay_derive,
+        )
+
+        _relay_raw = _relay_b64.b64decode(
+            str(envelope.get("raw_body_b64") or ""), validate=True
+        )
+        _relay_provider = str(finalization.get("provider") or "")
+        _relay_derived = _relay_derive(_relay_provider, _relay_raw)
+        _relay_handoff = {
+            "provider_native_event_reference": finalization.get(
+                "provider_native_event_reference"
+            ),
+            "provider_native_commerce_reference": finalization.get(
+                "provider_native_commerce_reference"
+            ),
+            "normalized_commerce_reference_kind": finalization.get(
+                "normalized_commerce_reference_kind"
+            ),
+            "normalized_commerce_reference_value": finalization.get(
+                "normalized_commerce_reference_value"
+            ),
+            "verified_amount_minor": finalization.get("verified_amount_minor"),
+            "verified_amount_currency": finalization.get("verified_amount_currency"),
+            "verified_amount_scale": finalization.get("verified_amount_scale"),
+            "event_timestamp": finalization.get("event_timestamp"),
+        }
+        # event_timestamp in finalization may be a datetime; normalize to ISO.
+        _relay_ts = _relay_handoff.get("event_timestamp")
+        if hasattr(_relay_ts, "isoformat"):
+            _relay_handoff["event_timestamp"] = _relay_ts.isoformat()
+        if _relay_mismatches(
+            provider=_relay_provider,
+            handoff=_relay_handoff,
+            derived=_relay_derived,
+        ):
+            raise ValidationError(
+                "b26_p2_handoff_binding_refused:relay_sovereign_divergence"
+            )
+    except ValidationError:
+        raise
+    except _RelayDerivationError as exc:
+        raise ValidationError(
+            f"b26_p2_handoff_binding_refused:relay_derivation_failed:{exc}"
+        ) from exc
+    except Exception as exc:
+        raise ValidationError(
+            f"b26_p2_handoff_binding_refused:relay_check_failed:{type(exc).__name__}"
+        ) from exc
     payload = {
         "api_key": str(envelope.get("api_key") or ""),
         "provider": str(finalization.get("provider") or ""),
@@ -793,7 +854,11 @@ async def _relay_verified_ingress_to_auth_root(
             finalization.get("verified_amount_currency") or ""
         ),
         "verified_amount_scale": int(finalization.get("verified_amount_scale") or 2),
-        "event_timestamp": str(finalization.get("event_timestamp") or ""),
+        "event_timestamp": (
+            finalization.get("event_timestamp").isoformat()
+            if hasattr(finalization.get("event_timestamp"), "isoformat")
+            else str(finalization.get("event_timestamp") or "")
+        ),
     }
     try:
         await relay_verified_ingress_to_auth_root(root_url, payload)
@@ -1327,9 +1392,40 @@ class EventIngestionService:
             )
             # B0.5.6.3: No labels on event metrics (bounded cardinality)
             events_duplicate_total.inc()
+            # XV (H-XV-R8/R9): honest root-outage recovery. A duplicate
+            # provider delivery must re-drive a stranded pending precursor
+            # through the sovereign root instead of reporting success while
+            # the lineage remains unauthenticated. When this arrival
+            # intends verified ingress, attach the deferred finalization so
+            # the post-commit finalizer relays the fresh raw bytes +
+            # signature to the root (idempotent adopt-or-promote). If the
+            # root is still unreachable or refuses, the finalizer raises
+            # and the HTTP layer returns explicit failure -- never a false
+            # 200 over a permanently pending lineage. The provider's retry
+            # is the durable continuation obligation for ingress auth
+            # (raw bytes are never persisted, so no scheduler can replay
+            # them; redelivery carries them).
+            redrive_finalization: dict[str, Any] | None = None
+            try:
+                _dup_identity = _extract_webhook_ingress_identity(
+                    source=source,
+                    event_data=ingestion_event_data,
+                    tenant_id=tenant_id,
+                    idempotency_key=idempotency_key,
+                    event_id=existing.id,
+                    event_timestamp=event_authority_time,
+                )
+                if _is_verified_intended(_dup_identity):
+                    redrive_finalization = _finalization_payload(
+                        _dup_identity,
+                        auth_consequence,
+                    )
+            except Exception:
+                redrive_finalization = None
             return IngestionDecision(
                 event=existing,
                 state=IngestionResultState.DUPLICATE,
+                ingress_finalization=redrive_finalization,
             )
 
         session_resolution = await resolve_session_authority(
@@ -1634,9 +1730,23 @@ class EventIngestionService:
                 )
                 # B0.5.6.3: No labels on event metrics (bounded cardinality)
                 events_duplicate_total.inc()
+                # XV (H-XV-R8/R9): race losers also re-drive stranded auth.
+                # The winner's finalizer owns authority, but a crashed
+                # winner must not strand the arrival: attach the deferred
+                # finalization so post-commit relays through the root.
+                _race_redrive: dict[str, Any] | None = None
+                try:
+                    if _is_verified_intended(webhook_identity_payload):
+                        _race_redrive = _finalization_payload(
+                            webhook_identity_payload,
+                            auth_consequence,
+                        )
+                except Exception:
+                    _race_redrive = None
                 return IngestionDecision(
                     event=existing_after_race,
                     state=IngestionResultState.DUPLICATE,
+                    ingress_finalization=_race_redrive,
                 )
 
             raise
@@ -1978,6 +2088,49 @@ async def ingest_with_transaction(
                     session, tenant_id=tenant_id, idempotency_key=idempotency_key
                 )
                 if existing:
+                    # XV (H-XV-R8/R9): wrapper-level race losers re-drive
+                    # stranded auth before reporting success. Identity-build
+                    # failure leaves prior behavior; finalizer failure
+                    # propagates as explicit failure (never false success).
+                    _wrap_final: dict[str, Any] | None = None
+                    try:
+                        from datetime import timezone as _tz  # noqa: PLC0415
+
+                        _wrap_ts_raw = event_data.get("event_timestamp")
+                        try:
+                            if hasattr(_wrap_ts_raw, "astimezone"):
+                                _wrap_ts = _wrap_ts_raw
+                            else:
+                                from datetime import datetime as _dt  # noqa: PLC0415
+
+                                _wrap_ts = _dt.fromisoformat(
+                                    str(_wrap_ts_raw).replace("Z", "+00:00")
+                                )
+                                if _wrap_ts.tzinfo is None:
+                                    _wrap_ts = _wrap_ts.replace(tzinfo=_tz.utc)
+                        except Exception:
+                            _wrap_ts = existing.occurred_at
+                        _wrap_identity = _extract_webhook_ingress_identity(
+                            source=source,
+                            event_data=dict(event_data),
+                            tenant_id=tenant_id,
+                            idempotency_key=idempotency_key,
+                            event_id=existing.id,
+                            event_timestamp=_wrap_ts,
+                        )
+                        if _is_verified_intended(_wrap_identity):
+                            _wrap_final = _finalization_payload(
+                                _wrap_identity, auth_consequence
+                            )
+                    except Exception:
+                        _wrap_final = None
+                    if _wrap_final is not None:
+                        # Commit handled by context manager on exit;
+                        # the winner's event is already durable, so
+                        # re-drive auth now (raises on root failure:
+                        # explicit failure, never false success).
+                        await session.commit()
+                        await _finalize_verified_ingress_post_commit(_wrap_final)
                     return IngestionTransactionResult(
                         decision=IngestionDecision(
                             event=existing,

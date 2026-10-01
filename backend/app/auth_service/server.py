@@ -171,6 +171,11 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         assert_api_ingress_isolation,
         get_ingress_session,
     )
+    from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+        CommerceDerivationError,
+        binding_mismatches,
+        derive_commerce,
+    )
 
     try:
         assert_api_ingress_isolation()
@@ -198,6 +203,37 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
     tenant_uuid = tenant_info["tenant_id"]
     if isinstance(tenant_uuid, str):
         tenant_uuid = UUID(tenant_uuid)
+    # XV (H-XV-R1/R2): cryptographic meaning binding. The signature above
+    # proves signature(raw_body) is valid. It says nothing about the
+    # relay-supplied commerce handoff. Sovereignly re-derive every material
+    # financial field from the verified bytes and refuse any mismatch
+    # before persistence. Persisted authority comes from the derivation,
+    # never from the handoff.
+    try:
+        derived = derive_commerce(provider, raw_body)
+    except CommerceDerivationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"b26_p2_handoff_binding_refused:sovereign_derivation_failed:{exc}",
+        ) from exc
+    handoff_view = {
+        "provider_native_event_reference": body.provider_event_reference,
+        "provider_native_commerce_reference": body.provider_native_commerce_reference,
+        "normalized_commerce_reference_kind": body.normalized_commerce_reference_kind,
+        "normalized_commerce_reference_value": body.normalized_commerce_reference_value,
+        "verified_amount_minor": body.verified_amount_minor,
+        "verified_amount_currency": body.verified_amount_currency,
+        "verified_amount_scale": body.verified_amount_scale,
+        "event_timestamp": body.event_timestamp,
+    }
+    mismatched = binding_mismatches(
+        provider=provider, handoff=handoff_view, derived=derived
+    )
+    if mismatched:
+        raise HTTPException(
+            status_code=400,
+            detail="b26_p2_handoff_binding_refused:" + ",".join(sorted(mismatched)),
+        )
     body_sha = hashlib.sha256(raw_body).hexdigest().lower()
     sig_sha = hashlib.sha256(body.signature_header.encode("utf-8")).hexdigest().lower()
     method = _provider_auth_method(provider)
@@ -216,14 +252,18 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         # provenance trigger, then the atomic transition below creates
         # consequence + witness + legacy evidence + immutable auth-root
         # evidence + terminal provenance in one transaction.
+        # XV: persist sovereignly derived meaning (from verified bytes),
+        # never the relay handoff. The handoff was equality-checked above
+        # and plays no further role in what becomes authority.
+        event_ts = derived.event_timestamp
         commerce = {
-            "event_ref": body.provider_event_reference.strip(),
-            "commerce_ref": body.provider_native_commerce_reference.strip(),
-            "norm_kind": body.normalized_commerce_reference_kind.strip(),
-            "norm_value": body.normalized_commerce_reference_value.strip(),
-            "amount_minor": int(body.verified_amount_minor),
-            "amount_currency": currency,
-            "amount_scale": int(body.verified_amount_scale),
+            "event_ref": derived.provider_native_event_reference,
+            "commerce_ref": derived.provider_native_commerce_reference,
+            "norm_kind": derived.normalized_commerce_reference_kind,
+            "norm_value": derived.normalized_commerce_reference_value,
+            "amount_minor": int(derived.verified_amount_minor),
+            "amount_currency": derived.verified_amount_currency,
+            "amount_scale": int(derived.verified_amount_scale),
         }
         # A failed INSERT aborts the database transaction; isolate the
         # attempt in a savepoint so the adopt-and-promote fallback below
@@ -368,7 +408,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             {
                 "ingress": canonical_id,
                 "provider": provider,
-                "event_ref": body.provider_event_reference.strip(),
+                "event_ref": derived.provider_native_event_reference,
                 "body_sha": body_sha,
                 "sig_sha": sig_sha,
                 "method": method,
