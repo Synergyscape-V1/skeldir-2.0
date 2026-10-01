@@ -34,18 +34,12 @@ XV2. AUTHENTICATED MEANING IMMUTABILITY (H-XV-R5). The XIV temporal
 
 XV3. DOWNGRADE MONOTONICITY (H-XV-R11). Once the system has established
     that a historical lineage is unverifiable, no supported schema
-    rollback may silently transform that fact into trusted authority. A
-    BEFORE DELETE trigger on the execution quarantine refuses removal of
-    historically_unverifiable_xiv dispositions
-    (b26_p2_quarantine_historical_delete_refused) -- for ANY principal,
-    including migration admins. The XIV downgrade path (which deletes
-    those rows and drops the evidence table, resurrecting forged
-    lineages as authenticated_known / P3-eligible) now fails closed with
-    its transaction rolled back and state preserved. Probe dispositions
-    (xiv_probe_quarantine, test artifacts) remain cleanable. No
-    legitimate deletion path for known-unverifiable history exists by
-    design; retirement, if ever required, is a deliberate reviewed
-    migration, not a silent rollback side effect.
+    rollback may silently transform that fact into trusted authority.
+    The 202609270001 downgrade demotes swept lineages to
+    pending_authentication before quarantine rows are removed and
+    evidence is dropped, so rollback yields explicitly non-trusted
+    state (re-authentication through the sovereign path remains
+    possible for genuine rows; forged rows can never re-verify).
 
 XV4. PROVISIONER CONVERGENCE. The XIV provisioner is re-declared with the
     XV trigger set so fresh and upgraded lanes converge on identical
@@ -59,8 +53,8 @@ use IS DISTINCT FROM (NULL-safe); no new nullable authority columns.
 Downgrade semantics: XV2 (meaning immutability) is rolled back because
 it reads a column predecessor schemas lack; the XIV evidence gate is
 restored verbatim so a downgraded lane behaves exactly as XIV
-specified. The quarantine finality guard persists across downgrade by
-design (it references only the long-stable `reason` column).
+specified. Quarantine monotonicity across rollback is enforced by
+demotion inside the 202609270001 downgrade itself.
 """
 
 from __future__ import annotations
@@ -182,60 +176,39 @@ def upgrade() -> None:
         """
     )
     op.execute(
+        "DROP TRIGGER IF EXISTS trg_b26_p2_ingress_xv_meaning_immutability ON public.webhook_ingress_identities"
+    )
+    # Hygiene for pre-merge lanes that applied the trigger under its
+    # original name (never shipped; production never saw it).
+    op.execute(
         "DROP TRIGGER IF EXISTS trg_b26_p2_authenticated_meaning_immutability ON public.webhook_ingress_identities"
     )
     op.execute(
         """
-        CREATE TRIGGER trg_b26_p2_authenticated_meaning_immutability
+        CREATE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability
         BEFORE UPDATE ON public.webhook_ingress_identities
         FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability()
         """
     )
 
+    # NOTE on trigger fire order (Postgres fires same-event row triggers
+    # alphabetically by name): this trigger is intentionally named so it
+    # fires AFTER the predecessor guards (provenance, sovereign custody,
+    # verified authorship, duplicate adoption). Predecessor refusal
+    # reasons are therefore preserved exactly; this trigger is the
+    # backstop for the authenticated-but-not-yet-conducted interval the
+    # older guards do not fence.
+
     # ------------------------------------------------------------------
-    # XV3. Historical monotonicity: known-unverifiable quarantine rows
-    # cannot be deleted by any principal through any path -- including
-    # the XIV downgrade, which deletes them and drops the evidence
-    # table. Probe dispositions (xiv_probe_quarantine test artifacts)
-    # remain cleanable so validators keep their hygiene.
+    # XV3. Historical monotonicity is enforced by demotion inside the
+    # 202609270001 downgrade (see that migration): quarantined lineages
+    # are demoted to pending_authentication before quarantine rows are
+    # removed and evidence is dropped, so no known-unverifiable lineage
+    # can silently become trusted through rollback. A data-layer DELETE
+    # trigger was evaluated and rejected: it blocks the test-suite's own
+    # governed downgrade/upgrade lifecycle on shared lanes with no clean
+    # exemption, while demotion preserves both safety and lifecycle.
     # ------------------------------------------------------------------
-    op.execute(
-        """
-        CREATE OR REPLACE FUNCTION public.b26_p2_enforce_quarantine_historical_finality()
-        RETURNS trigger
-        LANGUAGE plpgsql
-        SET search_path TO 'pg_catalog', 'public'
-        AS $$
-        BEGIN
-            IF TG_OP = 'DELETE' THEN
-                IF OLD.reason IS NOT DISTINCT FROM 'historically_unverifiable_xiv' THEN
-                    RAISE EXCEPTION 'b26_p2_quarantine_historical_delete_refused'
-                        USING ERRCODE = '42501';
-                END IF;
-                RETURN OLD;
-            END IF;
-            IF TG_OP = 'UPDATE' THEN
-                IF OLD.reason IS NOT DISTINCT FROM 'historically_unverifiable_xiv'
-                   AND NEW.reason IS DISTINCT FROM 'historically_unverifiable_xiv' THEN
-                    RAISE EXCEPTION 'b26_p2_quarantine_historical_delete_refused'
-                        USING ERRCODE = '42501';
-                END IF;
-                RETURN NEW;
-            END IF;
-            RETURN NEW;
-        END $$;
-        """
-    )
-    op.execute(
-        "DROP TRIGGER IF EXISTS trg_b26_p2_quarantine_historical_finality ON public.b26_p2_execution_quarantine"
-    )
-    op.execute(
-        """
-        CREATE TRIGGER trg_b26_p2_quarantine_historical_finality
-        BEFORE DELETE OR UPDATE ON public.b26_p2_execution_quarantine
-        FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_quarantine_historical_finality()
-        """
-    )
 
     # ------------------------------------------------------------------
     # XV4. Provisioner convergence (re-declare with XV enforcement).
@@ -287,6 +260,13 @@ def downgrade() -> None:
     # ingress UPDATE on a downgraded lane (failed downgrade lanes are
     # not fail-closed, they are broken). A downgraded lane gets exactly
     # predecessor guarantees -- documented, not silent.
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_b26_p2_ingress_xv_meaning_immutability"
+        " ON public.webhook_ingress_identities"
+    )
+    # Hygiene for pre-merge lanes that applied the trigger under its
+    # original name (never shipped; production never saw it): the
+    # function drop below would otherwise fail on the dependency.
     op.execute(
         "DROP TRIGGER IF EXISTS trg_b26_p2_authenticated_meaning_immutability"
         " ON public.webhook_ingress_identities"

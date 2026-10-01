@@ -707,8 +707,12 @@ def test_c7_blank_provider_gate_refuses():
                 # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
     finally:
         _auth.close()
-    # Corrupt ingress to blank BEFORE dispatch (pre-authority, allowed by
-    # custody since no dispatch references yet; shape law triggers at dispatch).
+    # XV (H-XV-R5): blanking an authenticated row is refused at write
+    # time -- no blank root can even be planted, let alone conducted.
+    # The dispatch shape gate below is still proven against a blank
+    # planted the governed way (trigger-disabled, mirroring the
+    # provenance-disable pattern): defense in depth for pre-existing
+    # dirty foundations.
     admin = psycopg2.connect(_admin_dsn())
     admin.autocommit = True
     try:
@@ -717,10 +721,27 @@ def test_c7_blank_provider_gate_refuses():
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
+            with pytest.raises(
+                Exception, match="b26_p2_authenticated_meaning_immutable_refused"
+            ):
+                cur.execute(
+                    "UPDATE public.webhook_ingress_identities SET provider='' WHERE id=%s",
+                    (str(ids["ingress_id"]),),
+                )
             cur.execute(
-                "UPDATE public.webhook_ingress_identities SET provider='' WHERE id=%s",
-                (str(ids["ingress_id"]),),
+                "ALTER TABLE public.webhook_ingress_identities"
+                " DISABLE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability"
             )
+            try:
+                cur.execute(
+                    "UPDATE public.webhook_ingress_identities SET provider='' WHERE id=%s",
+                    (str(ids["ingress_id"]),),
+                )
+            finally:
+                cur.execute(
+                    "ALTER TABLE public.webhook_ingress_identities"
+                    " ENABLE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability"
+                )
     finally:
         admin.close()
     user = psycopg2.connect(_role_dsn("app_user"))

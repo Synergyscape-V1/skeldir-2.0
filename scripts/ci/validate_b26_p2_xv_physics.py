@@ -24,6 +24,13 @@ import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+MIG_XIV = (
+    REPO_ROOT
+    / "alembic"
+    / "versions"
+    / "007_skeldir_foundation"
+    / "202609270001_b26_p2_corrective_xiv_compositional_closure.py"
+)
 MIG_XV = (
     REPO_ROOT
     / "alembic"
@@ -48,14 +55,26 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "b26_p2_auth_root_evidence_transition_refused",
         "b26_p2_enforce_authenticated_meaning_immutability",
         "b26_p2_authenticated_meaning_immutable_refused",
-        "trg_b26_p2_authenticated_meaning_immutability",
-        "b26_p2_enforce_quarantine_historical_finality",
-        "b26_p2_quarantine_historical_delete_refused",
-        "trg_b26_p2_quarantine_historical_finality",
+        "trg_b26_p2_ingress_xv_meaning_immutability",
     ):
         if token not in xv:
             violations.append(f"xv_phys_xv_missing:{token}")
     checks["xv_migration_law"] = True
+    # XV3 demotion law lives in the XIV downgrade (the migration that
+    # removes quarantine/evidence must first demote swept lineages).
+    try:
+        xiv = MIG_XIV.read_text(encoding="utf-8")
+    except OSError as exc:
+        violations.append(f"xv_phys_xiv_unreadable:{exc}")
+        return
+    for token in (
+        "pending_authentication",
+        "DISABLE TRIGGER trg_b26_p2_ingress_provenance",
+        "historically_unverifiable_xiv",
+    ):
+        if token not in xiv:
+            violations.append(f"xv_phys_demotion_missing:{token}")
+    checks["demotion_law_present"] = True
     for token in (
         "redrive_finalization",
         "_ingress_needs_redrive",
@@ -222,43 +241,11 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     cur.execute(
                         "DELETE FROM public.b26_p2_auth_root_evidence WHERE idempotency_key='xv-deputy'"
                     )
-                # XV3 live: historical quarantine rows cannot be deleted
-                # (downgrade resurrection blocked at the data layer); probe
-                # rows remain cleanable (validator hygiene preserved).
-                cur.execute(
-                    "INSERT INTO public.b26_p2_execution_quarantine (source_relation, task_id,"
-                    " tenant_id, webhook_ingress_identity_id, reason, original_payload,"
-                    " migration_identity) VALUES ('webhook_ingress_identities',%s,%s,%s,"
-                    " 'historically_unverifiable_xiv','{}','xv-phys-probe')",
-                    ("xv-phys-hist:" + ing1, tenant, ing1),
-                )
-                try:
-                    cur.execute(
-                        "DELETE FROM public.b26_p2_execution_quarantine WHERE task_id=%s",
-                        ("xv-phys-hist:" + ing1,),
-                    )
-                    violations.append("xv_phys_historical_delete_permitted")
-                except Exception as exc:
-                    if "b26_p2_quarantine_historical_delete_refused" not in str(exc):
-                        violations.append(
-                            f"xv_phys_historical_wrong_refusal:{str(exc).splitlines()[0][:160]}"
-                        )
-                    else:
-                        checks["historical_delete_refused"] = True
-                try:
-                    cur.execute(
-                        "UPDATE public.b26_p2_execution_quarantine SET reason='xiv_probe_quarantine'"
-                        " WHERE task_id=%s",
-                        ("xv-phys-hist:" + ing1,),
-                    )
-                    violations.append("xv_phys_historical_relabel_permitted")
-                except Exception as exc:
-                    if "b26_p2_quarantine_historical_delete_refused" not in str(exc):
-                        violations.append(
-                            f"xv_phys_relabel_wrong_refusal:{str(exc).splitlines()[0][:160]}"
-                        )
-                    else:
-                        checks["historical_relabel_refused"] = True
+                # XV3 live: downgrade demotion is proven by the migration
+                # lanes (dirty predecessor upgrade sweeps; downgrade
+                # demotes to pending instead of resurrecting trust).
+                # Here prove probe-row hygiene is unaffected by the
+                # demotion predicate (probe dispositions are cleanable).
                 cur.execute(
                     "INSERT INTO public.b26_p2_execution_quarantine (source_relation, task_id,"
                     " tenant_id, webhook_ingress_identity_id, reason, original_payload,"

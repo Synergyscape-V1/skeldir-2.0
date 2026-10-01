@@ -783,6 +783,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # XV (H-XV-R11): demote swept lineages BEFORE quarantine rows are
+    # removed and evidence is dropped. Without this, a downgrade silently
+    # resurrects known-unverifiable lineages as trusted
+    # authenticated_known / P3-eligible truth (the forged lineage keeps
+    # its provenance while its quarantine and evidence vanish). Demotion
+    # to pending_authentication is the predecessor-safe nontrusted state:
+    # nothing demoted can dispatch, conduct, or go P3-eligible, while
+    # genuine rows may re-authenticate through the sovereign path (forged
+    # rows can never re-verify). The provenance-downgrade-refusal trigger
+    # is disabled around the demotion itself (it exists precisely to stop
+    # non-migration authors doing this); RLS is FORCE on both tables, so
+    # it is disabled around both statements exactly as below.
     # Remove every XIV-era quarantine disposition (historical sweep +
     # validator/negative-control probe rows share XIV reasons) so a
     # continued downgrade to predecessor law (XI narrows the source
@@ -796,12 +808,40 @@ def downgrade() -> None:
         "ALTER TABLE public.b26_p2_execution_quarantine DISABLE ROW LEVEL SECURITY"
     )
     op.execute(
+        "ALTER TABLE public.webhook_ingress_identities DISABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.webhook_ingress_identities"
+        " DISABLE TRIGGER trg_b26_p2_ingress_provenance"
+    )
+    op.execute(
+        "UPDATE public.webhook_ingress_identities AS i"
+        " SET b26_p2_provenance_status = 'pending_authentication'"
+        " FROM public.b26_p2_execution_quarantine AS q"
+        " WHERE q.webhook_ingress_identity_id = i.id"
+        " AND i.verified_commerce_ingress_state"
+        " IS NOT DISTINCT FROM 'authenticity_verified'"
+        " AND i.b26_p2_provenance_status"
+        " IS NOT DISTINCT FROM 'authenticated_known'"
+        " AND (q.migration_identity IN"
+        " ('202609270001', 'xiv-probe', 'xiv-nc')"
+        " OR q.reason IN"
+        " ('historically_unverifiable_xiv', 'xiv_probe_quarantine'))"
+    )
+    op.execute(
+        "ALTER TABLE public.webhook_ingress_identities"
+        " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
+    )
+    op.execute(
         "DELETE FROM public.b26_p2_execution_quarantine"
         " WHERE migration_identity IN ('202609270001', 'xiv-probe', 'xiv-nc')"
         " OR reason IN ('historically_unverifiable_xiv', 'xiv_probe_quarantine')"
     )
     op.execute(
         "ALTER TABLE public.b26_p2_execution_quarantine ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.webhook_ingress_identities ENABLE ROW LEVEL SECURITY"
     )
     op.execute("DROP FUNCTION IF EXISTS public.b26_p2_xiv_provision_ingress_topology()")
     op.execute("DROP FUNCTION IF EXISTS public.b26_p2_xiv_topology_check()")

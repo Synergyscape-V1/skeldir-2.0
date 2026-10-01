@@ -3782,32 +3782,6 @@ CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
 
 
 --
--- Name: b26_p2_enforce_quarantine_historical_finality(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.b26_p2_enforce_quarantine_historical_finality() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'public'
-    AS $$
-        BEGIN
-            IF TG_OP = 'DELETE' THEN
-                IF OLD.reason IS NOT DISTINCT FROM 'historically_unverifiable_xiv' THEN
-                    RAISE EXCEPTION 'b26_p2_quarantine_historical_delete_refused'
-                        USING ERRCODE = '42501';
-                END IF;
-                RETURN OLD;
-            END IF;
-            IF TG_OP = 'UPDATE' THEN
-                IF OLD.reason IS NOT DISTINCT FROM 'historically_unverifiable_xiv'
-                   AND NEW.reason IS DISTINCT FROM 'historically_unverifiable_xiv' THEN
-                    RAISE EXCEPTION 'b26_p2_quarantine_historical_delete_refused'
-                        USING ERRCODE = '42501';
-                END IF;
-                RETURN NEW;
-            END IF;
-            RETURN NEW;
-        END $$;
-
 
 -- Name: b26_p2_enforce_result_integrity(); Type: FUNCTION; Schema: public; Owner: -
 --
@@ -21197,12 +21171,6 @@ CREATE TRIGGER trg_b26_p2_auth_consequence_immutability BEFORE INSERT OR DELETE 
 CREATE TRIGGER trg_b26_p2_auth_root_evidence_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability();
 
 
--- Name: webhook_ingress_identities trg_b26_p2_authenticated_meaning_immutability; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_b26_p2_authenticated_meaning_immutability BEFORE UPDATE ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability();
-
-
 -- Name: b23_match_task_dispatches trg_b26_p2_conducted_effect_guard; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -21281,6 +21249,12 @@ CREATE TRIGGER trg_b26_p2_ingress_sovereign_custody BEFORE DELETE OR UPDATE OF e
 CREATE TRIGGER trg_b26_p2_ingress_verified_authorship BEFORE INSERT OR UPDATE OF verified_commerce_ingress_state ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_verified_authorship();
 
 
+-- Name: webhook_ingress_identities trg_b26_p2_ingress_xv_meaning_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability BEFORE UPDATE ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability();
+
+
 --
 -- Name: b26_p2_execution_outbox trg_b26_p2_outbox_issuance; Type: TRIGGER; Schema: public; Owner: -
 --
@@ -21300,12 +21274,6 @@ CREATE TRIGGER trg_b26_p2_outbox_transitions BEFORE UPDATE ON public.b26_p2_exec
 --
 
 CREATE TRIGGER trg_b26_p2_policy_immutability BEFORE UPDATE ON public.b26_p2_scope_policy_authority FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_policy_immutability();
-
-
--- Name: b26_p2_execution_quarantine trg_b26_p2_quarantine_historical_finality; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_b26_p2_quarantine_historical_finality BEFORE DELETE OR UPDATE ON public.b26_p2_execution_quarantine FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_quarantine_historical_finality();
 
 
 --
@@ -21586,6 +21554,8 @@ CREATE TRIGGER trg_y_b24_c11_policy_provenance BEFORE INSERT OR UPDATE ON public
 --
 
 CREATE TRIGGER trg_z_b24_policy_bundle_write_authority BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
+
+
 
 
 --
