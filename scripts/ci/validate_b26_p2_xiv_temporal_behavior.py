@@ -281,6 +281,9 @@ PROBE_MAP = {
     "webhook_ingress_identities.id": ["ingress_id_immutable"],
     "webhook_ingress_identities.provider": ["ingress_provider_update_refused"],
     "webhook_ingress_identities.tenant_id": ["ingress_tenant_immutable"],
+    "webhook_ingress_identities.idempotency_key": [
+        "ingress_idempotency_update_refused"
+    ],
     "webhook_ingress_identities.verified_amount_currency": [
         "ingress_currency_update_refused"
     ],
@@ -468,6 +471,17 @@ def _behavioral_probes(admin_dsn, violations, checks):
         tenant,
         "UPDATE public.webhook_ingress_identities SET tenant_id=%s WHERE id=%s",
         (str(uuid.uuid4()), ingress_id),
+        "immutable",
+    )
+    # XV: idempotency identity is immutable once authenticated (even the
+    # authority holder cannot re-key a lineage; duplicates adopt the row,
+    # never rewrite its identity).
+    refused(
+        "ingress_idempotency_update_refused",
+        ingress_dsn,
+        tenant,
+        "UPDATE public.webhook_ingress_identities SET idempotency_key='mut' WHERE id=%s",
+        (ingress_id,),
         "immutable",
     )
     refused(

@@ -24,13 +24,6 @@ import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MIG_XIV = (
-    REPO_ROOT
-    / "alembic"
-    / "versions"
-    / "007_skeldir_foundation"
-    / "202609270001_b26_p2_corrective_xiv_compositional_closure.py"
-)
 MIG_XV = (
     REPO_ROOT
     / "alembic"
@@ -43,7 +36,6 @@ MIG_XV = (
 def _static_checks(violations: list[str], checks: dict) -> None:
     try:
         xv = MIG_XV.read_text(encoding="utf-8")
-        xiv = MIG_XIV.read_text(encoding="utf-8")
         ev = (
             REPO_ROOT / "backend" / "app" / "ingestion" / "event_service.py"
         ).read_text(encoding="utf-8")
@@ -57,17 +49,13 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "b26_p2_enforce_authenticated_meaning_immutability",
         "b26_p2_authenticated_meaning_immutable_refused",
         "trg_b26_p2_authenticated_meaning_immutability",
+        "b26_p2_enforce_quarantine_historical_finality",
+        "b26_p2_quarantine_historical_delete_refused",
+        "trg_b26_p2_quarantine_historical_finality",
     ):
         if token not in xv:
             violations.append(f"xv_phys_xv_missing:{token}")
     checks["xv_migration_law"] = True
-    for token in (
-        "b26_p2_downgrade_quarantine_blocked",
-        "historically_unverifiable_xiv",
-    ):
-        if token not in xiv:
-            violations.append(f"xv_phys_downgrade_missing:{token}")
-    checks["downgrade_block_present"] = True
     for token in (
         "redrive_finalization",
         "H-XV-R8/R9",
@@ -233,6 +221,58 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     cur.execute(
                         "DELETE FROM public.b26_p2_auth_root_evidence WHERE idempotency_key='xv-deputy'"
                     )
+                # XV3 live: historical quarantine rows cannot be deleted
+                # (downgrade resurrection blocked at the data layer); probe
+                # rows remain cleanable (validator hygiene preserved).
+                cur.execute(
+                    "INSERT INTO public.b26_p2_execution_quarantine (source_relation, task_id,"
+                    " tenant_id, webhook_ingress_identity_id, reason, original_payload,"
+                    " migration_identity) VALUES ('webhook_ingress_identities',%s,%s,%s,"
+                    " 'historically_unverifiable_xiv','{}','xv-phys-probe')",
+                    ("xv-phys-hist:" + ing1, tenant, ing1),
+                )
+                try:
+                    cur.execute(
+                        "DELETE FROM public.b26_p2_execution_quarantine WHERE task_id=%s",
+                        ("xv-phys-hist:" + ing1,),
+                    )
+                    violations.append("xv_phys_historical_delete_permitted")
+                except Exception as exc:
+                    if "b26_p2_quarantine_historical_delete_refused" not in str(exc):
+                        violations.append(
+                            f"xv_phys_historical_wrong_refusal:{str(exc).splitlines()[0][:160]}"
+                        )
+                    else:
+                        checks["historical_delete_refused"] = True
+                try:
+                    cur.execute(
+                        "UPDATE public.b26_p2_execution_quarantine SET reason='xiv_probe_quarantine'"
+                        " WHERE task_id=%s",
+                        ("xv-phys-hist:" + ing1,),
+                    )
+                    violations.append("xv_phys_historical_relabel_permitted")
+                except Exception as exc:
+                    if "b26_p2_quarantine_historical_delete_refused" not in str(exc):
+                        violations.append(
+                            f"xv_phys_relabel_wrong_refusal:{str(exc).splitlines()[0][:160]}"
+                        )
+                    else:
+                        checks["historical_relabel_refused"] = True
+                cur.execute(
+                    "INSERT INTO public.b26_p2_execution_quarantine (source_relation, task_id,"
+                    " tenant_id, webhook_ingress_identity_id, reason, original_payload,"
+                    " migration_identity) VALUES ('webhook_ingress_identities',%s,%s,%s,"
+                    " 'xiv_probe_quarantine','{}','xv-phys-probe')",
+                    ("xv-phys-probe:" + ing1, tenant, ing1),
+                )
+                try:
+                    cur.execute(
+                        "DELETE FROM public.b26_p2_execution_quarantine WHERE task_id=%s",
+                        ("xv-phys-probe:" + ing1,),
+                    )
+                    checks["probe_hygiene_preserved"] = True
+                except Exception as exc:
+                    violations.append(f"xv_phys_probe_hygiene_blocked:{exc}")
         finally:
             ing.close()
         cur.close()

@@ -104,6 +104,7 @@
     "webhook_ingress_identities.id": "IMMUTABLE",
     "webhook_ingress_identities.provider": "UPDATE_REFUSED",
     "webhook_ingress_identities.tenant_id": "IMMUTABLE",
+    "webhook_ingress_identities.idempotency_key": "IMMUTABLE",
     "webhook_ingress_identities.verified_amount_currency": "UPDATE_REFUSED",
     "webhook_ingress_identities.verified_amount_minor": "UPDATE_REFUSED",
     "webhook_ingress_identities.verified_commerce_ingress_state": "VERSION_BOUND",

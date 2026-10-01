@@ -1,14 +1,14 @@
 {
  "producer": "b26_p2_capability_surface",
- "migration_head": "202609270003",
- "authority_universe_hash": "49143ce26d9e5fd65cc266f66bd1a9a570d1af845ca67dede2159e5e36e227f7",
- "reviewed_at_git_sha": "cd926b02270750d047559774422698d9cabd1be7",
+ "migration_head": "202609280001",
+ "authority_universe_hash": "26533d8d77bf94a45b83c2a5b3f6f7cc22fa41d2629475d95c43eaac003d16c5",
+ "reviewed_at_git_sha": "XV-CANDIDATE-HEAD",
  "meaning_surface_counts": {
-  "routine_meaning": 144,
-  "trigger_meaning": 21,
+  "routine_meaning": 145,
+  "trigger_meaning": 22,
   "schema_meaning": 5,
   "rls_meaning": 17,
-  "ownership": 105
+  "ownership": 106
  },
- "review_note": "B2.6-P2 Corrective XIV compositional closure reviewed: immutable auth-root evidence identity, single-authority effect law, historical quarantine with honest oracle, closed meaning with behavioral contracts and independent phase oracle, behavioral temporal matrix with kill-switches, relay wiring with single file-only custody; live hash from auditor-owned PG15 fresh lane (prepare+alembic head) with XIV coverage; open_world_unknown empty under XIV-covered registry."
+ "review_note": "B2.6-P2 Corrective XV binding closure reviewed: transition-specific evidence gate (PG_CONTEXT atomic-frame check), authenticated-meaning immutability trigger, quarantine-blocked downgrade; routine/trigger/ownership +1 each (new immutability function/trigger); live hash from PG15 fresh lane (prepare+alembic head 202609280001) with XIV coverage; open_world_unknown empty under XIV-covered registry."
 }

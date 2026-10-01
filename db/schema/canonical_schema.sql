@@ -3031,29 +3031,35 @@ CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETUR
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-BEGIN
-    IF TG_OP = 'UPDATE' THEN
-        IF OLD.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
-           OR OLD.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known' THEN
-            IF OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
-               OR OLD.provider IS DISTINCT FROM NEW.provider
-               OR OLD.provider_native_event_reference IS DISTINCT FROM NEW.provider_native_event_reference
-               OR OLD.provider_native_commerce_reference IS DISTINCT FROM NEW.provider_native_commerce_reference
-               OR OLD.normalized_commerce_reference_kind IS DISTINCT FROM NEW.normalized_commerce_reference_kind
-               OR OLD.normalized_commerce_reference_value IS DISTINCT FROM NEW.normalized_commerce_reference_value
-               OR OLD.verified_amount_minor IS DISTINCT FROM NEW.verified_amount_minor
-               OR OLD.verified_amount_currency IS DISTINCT FROM NEW.verified_amount_currency
-               OR OLD.verified_amount_scale IS DISTINCT FROM NEW.verified_amount_scale
-               OR OLD.event_timestamp IS DISTINCT FROM NEW.event_timestamp
-               OR OLD.idempotency_key IS DISTINCT FROM NEW.idempotency_key THEN
-                RAISE EXCEPTION 'b26_p2_authenticated_meaning_immutable_refused'
-                    USING ERRCODE = '42501';
+        BEGIN
+            IF TG_OP = 'UPDATE' THEN
+                -- Only authenticated rows are fenced. Pending precursors
+                -- (promotion pending -> verified) and non-authenticated
+                -- states pass through to the sibling guards.
+                IF OLD.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
+                   OR OLD.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known' THEN
+                    IF OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
+                       OR OLD.provider IS DISTINCT FROM NEW.provider
+                       OR OLD.provider_native_event_reference IS DISTINCT FROM NEW.provider_native_event_reference
+                       OR OLD.provider_native_commerce_reference IS DISTINCT FROM NEW.provider_native_commerce_reference
+                       OR OLD.normalized_commerce_reference_kind IS DISTINCT FROM NEW.normalized_commerce_reference_kind
+                       OR OLD.normalized_commerce_reference_value IS DISTINCT FROM NEW.normalized_commerce_reference_value
+                       OR OLD.verified_amount_minor IS DISTINCT FROM NEW.verified_amount_minor
+                       OR OLD.verified_amount_currency IS DISTINCT FROM NEW.verified_amount_currency
+                       OR OLD.verified_amount_scale IS DISTINCT FROM NEW.verified_amount_scale
+                       OR OLD.event_timestamp IS DISTINCT FROM NEW.event_timestamp
+                       OR OLD.idempotency_key IS DISTINCT FROM NEW.idempotency_key THEN
+                        -- NOTE: the Skeldir event_id link is intentionally
+                        -- not fenced: genuine duplicate re-ingestion rebinds
+                        -- it while financial meaning stays fixed.
+                        RAISE EXCEPTION 'b26_p2_authenticated_meaning_immutable_refused'
+                            USING ERRCODE = '42501';
+                    END IF;
+                END IF;
+                RETURN NEW;
             END IF;
-        END IF;
-        RETURN NEW;
-    END IF;
-    RETURN NEW;
-END $$;
+            RETURN NEW;
+        END $$;
 
 
 -- Name: b26_p2_enforce_auth_root_evidence_immutability(); Type: FUNCTION; Schema: public; Owner: -
@@ -3776,6 +3782,33 @@ CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
 
 
 --
+-- Name: b26_p2_enforce_quarantine_historical_finality(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_quarantine_historical_finality() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                IF OLD.reason IS NOT DISTINCT FROM 'historically_unverifiable_xiv' THEN
+                    RAISE EXCEPTION 'b26_p2_quarantine_historical_delete_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN OLD;
+            END IF;
+            IF TG_OP = 'UPDATE' THEN
+                IF OLD.reason IS NOT DISTINCT FROM 'historically_unverifiable_xiv'
+                   AND NEW.reason IS DISTINCT FROM 'historically_unverifiable_xiv' THEN
+                    RAISE EXCEPTION 'b26_p2_quarantine_historical_delete_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN NEW;
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
 -- Name: b26_p2_enforce_result_integrity(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -21267,6 +21300,12 @@ CREATE TRIGGER trg_b26_p2_outbox_transitions BEFORE UPDATE ON public.b26_p2_exec
 --
 
 CREATE TRIGGER trg_b26_p2_policy_immutability BEFORE UPDATE ON public.b26_p2_scope_policy_authority FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_policy_immutability();
+
+
+-- Name: b26_p2_execution_quarantine trg_b26_p2_quarantine_historical_finality; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_quarantine_historical_finality BEFORE DELETE OR UPDATE ON public.b26_p2_execution_quarantine FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_quarantine_historical_finality();
 
 
 --

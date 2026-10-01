@@ -24,19 +24,28 @@ XV2. AUTHENTICATED MEANING IMMUTABILITY (H-XV-R5). The XIV temporal
     Once a row carries authenticity_verified state or authenticated_known
     provenance, every commerce-meaning column (tenant, provider, event and
     commerce references, normalized kind/value, amount, currency, scale,
-    timestamp, idempotency and event identity) is immutable by database
-    law. A meaning-changing update fails closed with
+    timestamp, idempotency identity) is immutable by database law. (The
+    Skeldir event_id link is intentionally unfenced to preserve genuine
+    duplicate re-ingestion.) A meaning-changing update fails closed with
     b26_p2_authenticated_meaning_immutable_refused. Precursor promotion
     (pending -> verified) is unaffected: the OLD row is not yet
     authenticated. The atomic's own provenance promotion (pending ->
     known, commerce columns untouched) is unaffected.
 
-XV3. DOWNGRADE MONOTONICITY HARDENING (H-XV-R11, complements the
-    202609270001 downgrade guard). Quarantine finality while active is
-    already runtime-irreversible (grant-denied). This migration adds the
-    forward guard record: see the edited 202609270001 downgrade(), which
-    now refuses while historically_unverifiable_xiv dispositions exist
-    instead of silently deleting them.
+XV3. DOWNGRADE MONOTONICITY (H-XV-R11). Once the system has established
+    that a historical lineage is unverifiable, no supported schema
+    rollback may silently transform that fact into trusted authority. A
+    BEFORE DELETE trigger on the execution quarantine refuses removal of
+    historically_unverifiable_xiv dispositions
+    (b26_p2_quarantine_historical_delete_refused) -- for ANY principal,
+    including migration admins. The XIV downgrade path (which deletes
+    those rows and drops the evidence table, resurrecting forged
+    lineages as authenticated_known / P3-eligible) now fails closed with
+    its transaction rolled back and state preserved. Probe dispositions
+    (xiv_probe_quarantine, test artifacts) remain cleanable. No
+    legitimate deletion path for known-unverifiable history exists by
+    design; retirement, if ever required, is a deliberate reviewed
+    migration, not a silent rollback side effect.
 
 XV4. PROVISIONER CONVERGENCE. The XIV provisioner is re-declared with the
     XV trigger set so fresh and upgraded lanes converge on identical
@@ -174,6 +183,51 @@ def upgrade() -> None:
         CREATE TRIGGER trg_b26_p2_authenticated_meaning_immutability
         BEFORE UPDATE ON public.webhook_ingress_identities
         FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability()
+        """
+    )
+
+    # ------------------------------------------------------------------
+    # XV3. Historical monotonicity: known-unverifiable quarantine rows
+    # cannot be deleted by any principal through any path -- including
+    # the XIV downgrade, which deletes them and drops the evidence
+    # table. Probe dispositions (xiv_probe_quarantine test artifacts)
+    # remain cleanable so validators keep their hygiene.
+    # ------------------------------------------------------------------
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b26_p2_enforce_quarantine_historical_finality()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path TO 'pg_catalog', 'public'
+        AS $$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                IF OLD.reason IS NOT DISTINCT FROM 'historically_unverifiable_xiv' THEN
+                    RAISE EXCEPTION 'b26_p2_quarantine_historical_delete_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN OLD;
+            END IF;
+            IF TG_OP = 'UPDATE' THEN
+                IF OLD.reason IS NOT DISTINCT FROM 'historically_unverifiable_xiv'
+                   AND NEW.reason IS DISTINCT FROM 'historically_unverifiable_xiv' THEN
+                    RAISE EXCEPTION 'b26_p2_quarantine_historical_delete_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+                RETURN NEW;
+            END IF;
+            RETURN NEW;
+        END $$;
+        """
+    )
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_b26_p2_quarantine_historical_finality ON public.b26_p2_execution_quarantine"
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_b26_p2_quarantine_historical_finality
+        BEFORE DELETE OR UPDATE ON public.b26_p2_execution_quarantine
+        FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_quarantine_historical_finality()
         """
     )
 

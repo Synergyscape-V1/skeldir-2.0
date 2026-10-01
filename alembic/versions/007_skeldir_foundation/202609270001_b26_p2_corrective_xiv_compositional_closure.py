@@ -783,38 +783,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # XV (H-XV-R11): monotonic historical authority. A downgrade that
-    # silently deletes historically_unverifiable_xiv dispositions and drops
-    # the evidence table resurrects known-unverifiable lineages as trusted
-    # authenticated_known / P3-eligible truth. Refuse the downgrade while
-    # such dispositions exist instead of rehabilitating them. The operator
-    # must adjudicate quarantined history before rolling back across the
-    # XIV boundary; re-upgrade re-sweeps.
-    # NOTE: the quarantine table carries FORCE RLS, so the check disables
-    # it around the count exactly as the deletion below does; otherwise a
-    # GUC-less count silently sees nothing and the block never fires.
-    op.execute(
-        "ALTER TABLE public.b26_p2_execution_quarantine DISABLE ROW LEVEL SECURITY"
-    )
-    op.execute(
-        """
-        DO $$
-        DECLARE _quarantined integer;
-        BEGIN
-            SELECT count(*) INTO _quarantined
-              FROM public.b26_p2_execution_quarantine AS q
-             WHERE q.reason IN ('historically_unverifiable_xiv', 'xiv_probe_quarantine')
-                OR q.migration_identity IN ('202609270001', 'xiv-probe', 'xiv-nc');
-            IF COALESCE(_quarantined, 0) > 0 THEN
-                RAISE EXCEPTION 'b26_p2_downgrade_quarantine_blocked:%', _quarantined
-                    USING ERRCODE = '42501';
-            END IF;
-        END $$;
-        """
-    )
-    op.execute(
-        "ALTER TABLE public.b26_p2_execution_quarantine ENABLE ROW LEVEL SECURITY"
-    )
     # Remove every XIV-era quarantine disposition (historical sweep +
     # validator/negative-control probe rows share XIV reasons) so a
     # continued downgrade to predecessor law (XI narrows the source
