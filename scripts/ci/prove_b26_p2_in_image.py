@@ -79,9 +79,12 @@ IDENTITY_FILES = [
 # without P is refused on both. MODE=base expects XI_BASE_ATTESTED
 # (legacy XII bases print XI_BASE_P_RECORDED instead); MODE=candidate
 # expects XI_CAND_DENIED plus XI_CAND_LEGACY_REFUSED plus
-# XI_CAND_RESTORED via the atomic transition. A base that cannot
-# promote through the legacy path, or a candidate that still promotes
-# through it, fails the falsifier as vacuous.
+# XI_CAND_RESTORED via the atomic transition. A pre-XIV base that
+# cannot promote through the legacy path, or a candidate that still
+# promotes through it, fails the falsifier as vacuous. (Post-XIV
+# bases already refuse legacy promotion by XIV law; the driver
+# records that refusal instead -- the historical promotion fact was
+# proven by the XIV cycle's own run, when its base was still pre-XIV.)
 PROBE_XI_ATTEST_DELTA = '''
 import os
 import sys
@@ -749,13 +752,36 @@ def main() -> int:
                 ]
                 proc = _docker(*cmd)
                 base_out = proc.stdout + proc.stderr
+                # Base-version-aware expectation: a pre-XIV base promotes
+                # through the legacy recorder/witness/attest combination
+                # (the defect the falsifier was built to exhibit); a base
+                # that already carries XIV correctly refuses it (the
+                # historical promotion fact was proven by the XIV cycle's
+                # own run, when its base was still pre-XIV). Either way
+                # the candidate below must refuse legacy and restore only
+                # through the atomic transition.
+                base_has_xiv = (
+                    worktree / "alembic" / "versions"
+                    / "007_skeldir_foundation"
+                    / "202609270001_b26_p2_corrective_xiv_compositional_closure.py"
+                ).is_file()
                 if ("XI_BASE_ATTESTED" not in proc.stdout
                         and "XI_BASE_P_RECORDED" not in proc.stdout):
-                    return _fail(
-                        details,
-                        "stale_falsifier_vacuous:base_did_not_promote:"
-                        + base_out[-500:])
-                details["stale_falsifier_base"] = "PASS_promoted_as_required"
+                    if base_has_xiv and (
+                        "b26_p2_provenance_promotion_refused" in base_out
+                        or "b26_p2_witness_no_auth_consequence" in base_out
+                        or "permission denied for function" in base_out
+                    ):
+                        details["stale_falsifier_base"] = (
+                            "PASS_base_refuses_legacy_as_required_xiv"
+                        )
+                    else:
+                        return _fail(
+                            details,
+                            "stale_falsifier_vacuous:base_did_not_promote:"
+                            + base_out[-500:])
+                else:
+                    details["stale_falsifier_base"] = "PASS_promoted_as_required"
                 # The candidate image must conduct the same lawful task:
                 # its thin adapter observes the SQL meaning, so receipt
                 # and gate agree and the terminal conducts.
