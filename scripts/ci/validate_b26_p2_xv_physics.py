@@ -58,6 +58,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     checks["xv_migration_law"] = True
     for token in (
         "redrive_finalization",
+        "_ingress_needs_redrive",
         "H-XV-R8/R9",
         "_finalize_verified_ingress_post_commit",
     ):

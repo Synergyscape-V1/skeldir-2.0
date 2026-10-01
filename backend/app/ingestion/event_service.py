@@ -578,6 +578,50 @@ def _is_b26_p2_verified_authorship_error(error: Exception) -> bool:
     return "b26_p2_verified_authorship_refused" in str(error).lower()
 
 
+async def _ingress_needs_redrive(
+    session: AsyncSession, *, tenant_id: UUID, idempotency_key: str
+) -> bool:
+    """True when a duplicate arrival must re-drive authentication.
+
+    XV (H-XV-R8/R9): re-drive is required only for stranded lineages --
+    missing ingress, non-authenticated state, or authenticated state
+    without root evidence. An already-authenticated lineage with root
+    evidence takes the fast success path (no extra sessions, no row
+    locks, no contention under replay storms). Read-only: no locks.
+    Any lookup failure fails OPEN toward re-drive (safe direction: the
+    finalizer is idempotent; a redundant drive can only refuse or
+    converge, never fabricate).
+    """
+    try:
+        prow = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT i.id::text AS iid,"
+                        " i.b26_p2_provenance_status AS prov,"
+                        " CASE WHEN EXISTS ("
+                        "  SELECT 1 FROM public.b26_p2_auth_root_evidence AS r"
+                        "   WHERE r.webhook_ingress_identity_id = i.id"
+                        " ) THEN 1 ELSE 0 END AS hasev"
+                        " FROM public.webhook_ingress_identities AS i"
+                        " WHERE i.tenant_id = :tenant"
+                        " AND i.idempotency_key = :idem"
+                    ),
+                    {"tenant": str(tenant_id), "idem": idempotency_key},
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+    except Exception:
+        return True
+    if prow is None:
+        return True
+    if str(prow["prov"]) != "authenticated_known":
+        return True
+    return int(prow["hasev"]) != 1
+
+
 def _b26_p2_ingress_dsn() -> str | None:
     """Dedicated authenticated-ingress DSN (REMOVED in XIII).
 
@@ -1396,15 +1440,18 @@ class EventIngestionService:
             # provider delivery must re-drive a stranded pending precursor
             # through the sovereign root instead of reporting success while
             # the lineage remains unauthenticated. When this arrival
-            # intends verified ingress, attach the deferred finalization so
-            # the post-commit finalizer relays the fresh raw bytes +
-            # signature to the root (idempotent adopt-or-promote). If the
-            # root is still unreachable or refuses, the finalizer raises
-            # and the HTTP layer returns explicit failure -- never a false
-            # 200 over a permanently pending lineage. The provider's retry
-            # is the durable continuation obligation for ingress auth
-            # (raw bytes are never persisted, so no scheduler can replay
-            # them; redelivery carries them).
+            # intends verified ingress AND the lineage still needs
+            # authentication (missing/pending/unevidenced), attach the
+            # deferred finalization so the post-commit finalizer relays
+            # the fresh raw bytes + signature to the root (idempotent
+            # adopt-or-promote). Already-authenticated lineages take the
+            # fast path (no extra sessions or row locks under replay
+            # storms). If the root is still unreachable or refuses, the
+            # finalizer raises and the HTTP layer returns explicit
+            # failure -- never a false 200 over a permanently pending
+            # lineage. The provider's retry is the durable continuation
+            # obligation for ingress auth (raw bytes are never persisted,
+            # so no scheduler can replay them; redelivery carries them).
             redrive_finalization: dict[str, Any] | None = None
             try:
                 _dup_identity = _extract_webhook_ingress_identity(
@@ -1415,7 +1462,13 @@ class EventIngestionService:
                     event_id=existing.id,
                     event_timestamp=event_authority_time,
                 )
-                if _is_verified_intended(_dup_identity):
+                if _is_verified_intended(_dup_identity) and (
+                    await _ingress_needs_redrive(
+                        session,
+                        tenant_id=tenant_id,
+                        idempotency_key=idempotency_key,
+                    )
+                ):
                     redrive_finalization = _finalization_payload(
                         _dup_identity,
                         auth_consequence,
@@ -1734,9 +1787,17 @@ class EventIngestionService:
                 # The winner's finalizer owns authority, but a crashed
                 # winner must not strand the arrival: attach the deferred
                 # finalization so post-commit relays through the root.
+                # Already-authenticated lineages skip the re-drive (fast
+                # path, no contention).
                 _race_redrive: dict[str, Any] | None = None
                 try:
-                    if _is_verified_intended(webhook_identity_payload):
+                    if _is_verified_intended(webhook_identity_payload) and (
+                        await _ingress_needs_redrive(
+                            session,
+                            tenant_id=tenant_id,
+                            idempotency_key=idempotency_key,
+                        )
+                    ):
                         _race_redrive = _finalization_payload(
                             webhook_identity_payload,
                             auth_consequence,
@@ -2092,38 +2153,50 @@ async def ingest_with_transaction(
                     # stranded auth before reporting success. Identity-build
                     # failure leaves prior behavior; finalizer failure
                     # propagates as explicit failure (never false success).
+                    # Already-authenticated lineages skip the re-drive.
                     _wrap_final: dict[str, Any] | None = None
                     try:
-                        from datetime import timezone as _tz  # noqa: PLC0415
-
-                        _wrap_ts_raw = event_data.get("event_timestamp")
-                        try:
-                            if hasattr(_wrap_ts_raw, "astimezone"):
-                                _wrap_ts = _wrap_ts_raw
-                            else:
-                                from datetime import datetime as _dt  # noqa: PLC0415
-
-                                _wrap_ts = _dt.fromisoformat(
-                                    str(_wrap_ts_raw).replace("Z", "+00:00")
-                                )
-                                if _wrap_ts.tzinfo is None:
-                                    _wrap_ts = _wrap_ts.replace(tzinfo=_tz.utc)
-                        except Exception:
-                            _wrap_ts = existing.occurred_at
-                        _wrap_identity = _extract_webhook_ingress_identity(
-                            source=source,
-                            event_data=dict(event_data),
+                        _wrap_needs = await _ingress_needs_redrive(
+                            session,
                             tenant_id=tenant_id,
                             idempotency_key=idempotency_key,
-                            event_id=existing.id,
-                            event_timestamp=_wrap_ts,
                         )
-                        if _is_verified_intended(_wrap_identity):
-                            _wrap_final = _finalization_payload(
-                                _wrap_identity, auth_consequence
-                            )
                     except Exception:
-                        _wrap_final = None
+                        _wrap_needs = True
+                    if _wrap_needs:
+                        try:
+                            from datetime import timezone as _tz  # noqa: PLC0415
+
+                            _wrap_ts_raw = event_data.get("event_timestamp")
+                            try:
+                                if hasattr(_wrap_ts_raw, "astimezone"):
+                                    _wrap_ts = _wrap_ts_raw
+                                else:
+                                    from datetime import (
+                                        datetime as _dt,
+                                    )  # noqa: PLC0415
+
+                                    _wrap_ts = _dt.fromisoformat(
+                                        str(_wrap_ts_raw).replace("Z", "+00:00")
+                                    )
+                                    if _wrap_ts.tzinfo is None:
+                                        _wrap_ts = _wrap_ts.replace(tzinfo=_tz.utc)
+                            except Exception:
+                                _wrap_ts = existing.occurred_at
+                            _wrap_identity = _extract_webhook_ingress_identity(
+                                source=source,
+                                event_data=dict(event_data),
+                                tenant_id=tenant_id,
+                                idempotency_key=idempotency_key,
+                                event_id=existing.id,
+                                event_timestamp=_wrap_ts,
+                            )
+                            if _is_verified_intended(_wrap_identity):
+                                _wrap_final = _finalization_payload(
+                                    _wrap_identity, auth_consequence
+                                )
+                        except Exception:
+                            _wrap_final = None
                     if _wrap_final is not None:
                         # Commit handled by context manager on exit;
                         # the winner's event is already durable, so
