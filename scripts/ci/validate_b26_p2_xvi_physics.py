@@ -84,7 +84,9 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         violations.append("xvi_phys_downgrade_gate_not_restored")
     checks["downgrade_restores_predecessor"] = True
     # Demote-all: the XIV downgrade must demote EVERY authenticated row
-    # before evidence is dropped, not just quarantined ones.
+    # before evidence is dropped, not just quarantined ones, and the
+    # predicate must not admit a state-label escape (no ingress-state
+    # condition at all: a NULL or odd state demotes too).
     # (Adjacent Python string literals leave embedded double quotes in
     # the flattened source; strip them before matching the SQL shape.)
     tail_flat = " ".join(
@@ -92,7 +94,8 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     )
     if tail_flat.count("pending_authentication") < 2 or (
         "SET b26_p2_provenance_status = 'pending_authentication'"
-        " WHERE i.verified_commerce_ingress_state" not in tail_flat
+        " WHERE i.b26_p2_provenance_status"
+        " IS NOT DISTINCT FROM 'authenticated_known'" not in tail_flat
     ):
         violations.append("xvi_phys_demote_all_missing")
     checks["demote_all_present"] = True

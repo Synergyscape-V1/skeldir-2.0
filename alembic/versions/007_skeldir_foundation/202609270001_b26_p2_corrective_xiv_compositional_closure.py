@@ -834,7 +834,9 @@ def downgrade() -> None:
     # statements below drop the evidence table wholesale -- trusted
     # state without the evidence required to justify it. Demote EVERY
     # remaining authenticated row to explicitly non-trusted state before
-    # evidence is destroyed. Genuine rows remain re-authenticatable via
+    # evidence is destroyed, regardless of its ingress-state label (a
+    # NULL or otherwise odd state must not escape demotion through
+    # three-valued logic). Genuine rows remain re-authenticatable via
     # provider redelivery on re-upgrade (adopt-or-promote by sovereign
     # identity); forged rows can never re-verify. This UPDATE changes
     # only provenance status (a column the meaning-immutability trigger
@@ -843,9 +845,7 @@ def downgrade() -> None:
     op.execute(
         "UPDATE public.webhook_ingress_identities AS i"
         " SET b26_p2_provenance_status = 'pending_authentication'"
-        " WHERE i.verified_commerce_ingress_state"
-        " IS NOT DISTINCT FROM 'authenticity_verified'"
-        " AND i.b26_p2_provenance_status"
+        " WHERE i.b26_p2_provenance_status"
         " IS NOT DISTINCT FROM 'authenticated_known'"
     )
     op.execute(

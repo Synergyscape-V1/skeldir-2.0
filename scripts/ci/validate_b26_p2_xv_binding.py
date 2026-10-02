@@ -36,6 +36,9 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         ev = (
             REPO_ROOT / "backend" / "app" / "ingestion" / "event_service.py"
         ).read_text(encoding="utf-8")
+        api = (
+            REPO_ROOT / "backend" / "app" / "api" / "webhooks.py"
+        ).read_text(encoding="utf-8")
     except OSError as exc:
         violations.append(f"xv_bind_unreadable:{exc}")
         return
@@ -95,6 +98,37 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         if token not in ev:
             violations.append(f"xv_bind_relay_missing:{token}")
     checks["relay_crosscheck_present"] = True
+    # XVI (§32-6): the API duplicate branch must re-drive a stranded
+    # pending dispatch on provider retry (not merely report duplicate
+    # success). Asserted on the AST, not on tokens: commenting out the
+    # call, guarding it with `if False`, or replacing it with `pass`
+    # leaves the token text in place but removes theAwait node -- and
+    # must RED. (Token presence alone was just demonstrated blind to a
+    # comment-out; see the XVI evidence record.)
+    import ast as _ast
+
+    try:
+        _tree = _ast.parse(api)
+        _found = False
+        for _node in _ast.walk(_tree):
+            if isinstance(_node, _ast.AsyncFunctionDef) and (
+                _node.name == "_handle_ingestion"
+            ):
+                for _sub in _ast.walk(_node):
+                    if isinstance(_sub, _ast.Await) and isinstance(
+                        _sub.value, _ast.Call
+                    ):
+                        _func = _sub.value.func
+                        if isinstance(_func, _ast.Name) and _func.id == (
+                            "_redrive_pending_dispatch_for_ingress"
+                        ):
+                            _found = True
+        if not _found:
+            violations.append("xv_bind_duplicate_redrive_branch_missing")
+        else:
+            checks["duplicate_redrive_branch_present"] = True
+    except SyntaxError as exc:
+        violations.append(f"xv_bind_api_unparseable:{exc}")
     # Single authority: the API must not define a competing money-scale law.
     # (Informational: the canonical scale lives in commerce_derivation;
     # webhooks.py retains a façade that must agree -- parity is proven by
