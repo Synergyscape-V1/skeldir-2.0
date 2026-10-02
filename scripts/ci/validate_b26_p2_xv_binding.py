@@ -81,9 +81,14 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         violations.append("xv_bind_root_persists_handoff")
     else:
         checks["root_persists_derived"] = True
-    # Relay-side cross-check must exist (defense in depth).
+    # Relay-side cross-check must exist (defense in depth). XVI: the
+    # relay and direct paths share one binding law in
+    # _assert_sovereign_finalization_binding (context=relay/direct);
+    # the pre-XVI inline relay token moved into that helper.
     for token in (
-        "relay_sovereign_divergence",
+        "_assert_sovereign_finalization_binding",
+        'context="relay"',
+        'context="direct"',
         "binding_mismatches",
         "derive_commerce",
     ):

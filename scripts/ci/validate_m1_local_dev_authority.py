@@ -750,6 +750,17 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/app/webhooks/commerce_derivation.py",
     "scripts/ci/validate_b26_p2_xv_binding.py",
     "scripts/ci/validate_b26_p2_xv_physics.py",
+    # --- B2.6-P2 Corrective XVI sovereign closure surface ---
+    # The XVI migration (sovereign duplicate fence, strict transition
+    # frame), the independent semantic oracle, the XVI physics closure,
+    # and the XVI governance tests. Same exemption shape; every
+    # prohibition retained unchanged. Proof tooling only; the
+    # manufacturing-law content scan still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609280002_b26_p2_corrective_xvi_sovereign_closure.py",
+    "scripts/ci/validate_b26_p2_xvi_semantic_oracle.py",
+    "scripts/ci/validate_b26_p2_xvi_physics.py",
+    "backend/tests/finance_reconciliation/test_b26_p2_xvi_independent_oracle.py",
+    "backend/tests/finance_reconciliation/test_b26_p2_xvi_authority_governance.py",
     # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
     # and equivalence corpora authenticate lawful fixtures via the atomic
     # transition (admin allowed); negative fixtures stay pending/unknown.

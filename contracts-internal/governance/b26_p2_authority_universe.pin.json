@@ -1,14 +1,14 @@
 {
- "producer": "b26_p2_capability_surface",
- "migration_head": "202609280001",
- "authority_universe_hash": "7ed49dfbcf6b7e44955a5724d0debad81c46d3985acb3b480b1a735eaaf284b6",
- "reviewed_at_git_sha": "7f89d5d95bd9e4270de160a42b8648f9add63d8d",
- "meaning_surface_counts": {
-  "routine_meaning": 145,
-  "trigger_meaning": 22,
-  "schema_meaning": 5,
-  "rls_meaning": 17,
-  "ownership": 106
- },
- "review_note": "B2.6-P2 Corrective XV binding closure reviewed: transition-specific evidence gate (PG_CONTEXT atomic-frame check), authenticated-meaning immutability trigger (fires after predecessor guards), demote-on-downgrade quarantine monotonicity; routine/trigger/ownership +1 each (new immutability function/trigger); live hash from PG15 pristine fresh lane (prepare+alembic head 202609280001, no batteries) with XIV coverage, reproduced exactly by the in-image lane; open_world_unknown empty under XIV-covered registry."
+  "producer": "b26_p2_capability_surface",
+  "migration_head": "202609280002",
+  "authority_universe_hash": "363e21d3cd9cd85d07d4a1874048d92ac0fa4aed4e45ffa93a1c8878cc3743aa",
+  "reviewed_at_git_sha": "731f8484b780c5e7f068f4a7676e332b5d6bbb7e",
+  "meaning_surface_counts": {
+   "routine_meaning": 145,
+   "trigger_meaning": 22,
+   "schema_meaning": 5,
+   "rls_meaning": 17,
+   "ownership": 106
+  },
+  "review_note": "B2.6-P2 Corrective XVI sovereign closure reviewed: content-addressed sovereign duplicate fence in the atomic (advisory lock on tenant+body digest, b26_p2_atomic_sovereign_duplicate_refused), strict exact-signature transition frame for the evidence gate, demote-all-authenticated downgrade evidence preservation; routine/trigger counts unchanged (CREATE OR REPLACE, no new objects); live hash from PG15 pristine fresh lane (prepare+alembic head 202609280002) with XVI coverage; identical-frame pg_temp spoof refused at grants."
 }

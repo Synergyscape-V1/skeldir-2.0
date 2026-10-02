@@ -6307,3 +6307,55 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+- id: b26-p2-xvi-semantic-oracle
+  path: scripts/ci/validate_b26_p2_xvi_semantic_oracle.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Provider-native commerce meaning is adjudicated by an
+    oracle independent of the production derivation implementation: per-provider
+    golden vectors plus refusal vectors, stdlib only, zero production imports.'
+  command: python scripts/ci/validate_b26_p2_xvi_semantic_oracle.py
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xvi_semantic_oracle.py --help
+  expected_failure_meaning: A shared production-parser mistake makes API, root,
+    and tests agree on false provider meaning with no independent detection.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xvi_semantic_oracle.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xvi-physics
+  path: scripts/ci/validate_b26_p2_xvi_physics.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'One payment mints one lineage (sovereign duplicate
+    fence), evidence admits only the exact sovereign frame, trusted state
+    cannot survive evidence destruction (demote-all downgrade), event linkage
+    is provably non-authoritative, and NULL never authorizes.'
+  command: python scripts/ci/validate_b26_p2_xvi_physics.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xvi_physics.py --help
+  expected_failure_meaning: Duplicate lineages for one payment, forgeable
+    evidence, trusted evidence-less state after rollback, authority-bearing
+    linkage, or NULL-authorized transitions.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xvi_physics.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce

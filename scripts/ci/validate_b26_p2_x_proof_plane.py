@@ -756,7 +756,8 @@ def main() -> int:
                     checks["migration_head"] = head
                     if head not in ("202609240002", "202609250001", "202609260001",
                                     "202609270001", "202609270002", "202609270003",
-                                    "202609280001"):
+                                    "202609280001",
+                                    "202609280002"):
                         violations.append(
                             f"x_proof_plane_unexpected_head:{head}"
                         )
@@ -766,7 +767,8 @@ def main() -> int:
                 head = ""
             if head in ("202609240002", "202609250001", "202609260001",
                           "202609270001", "202609270002", "202609270003",
-                          "202609280001"):
+                          "202609280001",
+                          "202609280002"):
                 battery: list[tuple[str, object]] = [
                     ("PF-X-01", lambda: _pf01_protected_adjudication(args.dsn)),
                     ("PF-X-02", _pf02_history_fail_closed),

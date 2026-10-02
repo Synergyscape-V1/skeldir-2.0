@@ -88,6 +88,12 @@ TRUTH_COMPANIONS = {
         "db/schema/canonical_schema.sql",
         "db/schema/canonical_authority.sql",
     ),
+    "alembic/versions/007_skeldir_foundation/202609280002_b26_p2_corrective_xvi_sovereign_closure.py": (
+        "contracts-internal/governance/b26_p2_authority_universe.pin.json",
+        "contracts-internal/governance/b26_p2_xiii_semantic_contract.v1.json",
+        "db/schema/canonical_schema.sql",
+        "db/schema/canonical_authority.sql",
+    ),
 }
 
 
@@ -208,6 +214,7 @@ def main() -> int:
                         "202609270002",
                         "202609270003",
                         "202609280001",
+                        "202609280002",
                     ):
                         violations.append("x_two_phase_authority_pin_stale")
                 except (OSError, ValueError) as exc:

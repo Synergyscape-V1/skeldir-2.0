@@ -2630,6 +2630,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             _witness text;
             _expected text;
             _prev_guc text;
+            _dup_id uuid;
         BEGIN
             IF session_user IS DISTINCT FROM 'app_ingress'
                AND session_user IS DISTINCT FROM 'migration_owner'
@@ -2664,6 +2665,35 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             IF public.b26_p2_ascii_strip(COALESCE(p_event_ref, '')) = ''
                OR public.b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_blank_shape_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XVI1: serialize authentications of identical bytes. Two
+            -- concurrent first-authentications of the same provider
+            -- event under different idempotency keys would otherwise
+            -- both pass every check above and mint two canonical
+            -- lineages for one payment. The advisory lock is keyed on
+            -- row content (tenant + body digest), never on caller
+            -- context, and is transaction-scoped (released at commit).
+            PERFORM pg_advisory_xact_lock(
+                hashtext('b26_p2_sovereign_bytes:' || _tenant::text),
+                hashtext(lower(p_body_sha256))
+            );
+            -- Refuse when a DIFFERENT row already carries terminal
+            -- authentication for these exact bytes. Pending rows never
+            -- block (crash-before-commit retry stays live); re-entry
+            -- for this same row proceeds to the idempotent path below.
+            SELECT i.id INTO _dup_id
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_provider_auth_consequence AS c
+                ON c.webhook_ingress_identity_id = i.id
+               AND c.tenant_id = i.tenant_id
+             WHERE i.tenant_id = _tenant
+               AND lower(c.body_sha256) IS NOT DISTINCT FROM lower(p_body_sha256)
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.id IS DISTINCT FROM p_ingress
+             LIMIT 1;
+            IF FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_sovereign_duplicate_refused'
                     USING ERRCODE = '42501';
             END IF;
             BEGIN
@@ -3041,12 +3071,17 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
                    AND session_user IS DISTINCT FROM 'postgres' THEN
                     -- Lawful path 2: the single sovereign transition. The
                     -- trigger fires inside the atomic's transaction, so
-                    -- PG_CONTEXT contains the atomic's frame. Any other
-                    -- SECURITY DEFINER routine (an administrator-authored
-                    -- deputy, a future helper, a confused deputy) carries
-                    -- its own frame instead and is refused here.
+                    -- PG_CONTEXT contains the atomic's exact frame. A
+                    -- substring test would also match wrappers,
+                    -- comments, or same-name overloads; the anchored
+                    -- expression below admits only the exact 7-argument
+                    -- sovereign signature. Any other SECURITY DEFINER
+                    -- routine (an administrator-authored deputy, a future
+                    -- helper, a confused deputy) carries its own frame
+                    -- instead and is refused here with
+                    -- b26_p2_auth_root_evidence_transition_refused.
                     GET DIAGNOSTICS _ctx = PG_CONTEXT;
-                    IF _ctx NOT LIKE '%b26_p2_authenticate_ingress_atomic%' THEN
+                    IF _ctx IS NULL OR _ctx !~ 'PL/pgSQL function b26_p2_authenticate_ingress_atomic\(uuid,text,text,text,text,text,text\)' THEN
                         RAISE EXCEPTION 'b26_p2_auth_root_evidence_transition_refused'
                             USING ERRCODE = '42501';
                     END IF;
