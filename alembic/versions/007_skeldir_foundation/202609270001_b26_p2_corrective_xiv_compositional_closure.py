@@ -828,6 +828,26 @@ def downgrade() -> None:
         " OR q.reason IN"
         " ('historically_unverifiable_xiv', 'xiv_probe_quarantine'))"
     )
+    # XVI (H-XVI-R8/R20): legitimate-row evidence preservation. The
+    # quarantine-scoped demotion above leaves legitimately
+    # authenticated+evidenced rows (no quarantine row) trusted while the
+    # statements below drop the evidence table wholesale -- trusted
+    # state without the evidence required to justify it. Demote EVERY
+    # remaining authenticated row to explicitly non-trusted state before
+    # evidence is destroyed. Genuine rows remain re-authenticatable via
+    # provider redelivery on re-upgrade (adopt-or-promote by sovereign
+    # identity); forged rows can never re-verify. This UPDATE changes
+    # only provenance status (a column the meaning-immutability trigger
+    # does not fence) inside the same disabled-trigger/disabled-RLS
+    # envelope as the quarantine demotion.
+    op.execute(
+        "UPDATE public.webhook_ingress_identities AS i"
+        " SET b26_p2_provenance_status = 'pending_authentication'"
+        " WHERE i.verified_commerce_ingress_state"
+        " IS NOT DISTINCT FROM 'authenticity_verified'"
+        " AND i.b26_p2_provenance_status"
+        " IS NOT DISTINCT FROM 'authenticated_known'"
+    )
     op.execute(
         "ALTER TABLE public.webhook_ingress_identities"
         " ENABLE TRIGGER trg_b26_p2_ingress_provenance"

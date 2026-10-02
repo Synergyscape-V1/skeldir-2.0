@@ -16,11 +16,24 @@ may enter this path: parsing is deterministic over the raw bytes.
 
 Supported providers: stripe, shopify, paypal, woocommerce.
 Rail law (elsewhere): rail == provider.
-Money law: integer minor units, canonical scale per currency (USD familly 2).
+Money law: integer minor units, ISO 4217 currency exponents. Canonical
+reconciliation scope is USD-only (sovereign currency universe {"USD"} in
+app/revenue_verification/verification_coverage.py, enforced at the
+persistence decision points, not in this parser): this module parses what
+the bytes say; the root and the direct finalizer refuse non-USD
+persistence with b26_p2_unsupported_currency_refused.
 Timestamp law: provider-native instant, UTC, second precision. Missing
 provider timestamps fail closed (no wall-clock substitution): an
 authoritative timestamp must come from authenticated bytes, not from the
 verifier's clock.
+
+Contract shapes (do not widen without a contract revision): stripe flat
+payment_intent or envelope event(data.object); shopify order JSON;
+paypal flat sale JSON per webhooks.paypal.bundled.yaml; woocommerce
+order JSON. Real provider envelope shapes outside the contract
+(e.g. PayPal resource-enveloped webhooks, Stripe checkout.session
+objects) fail closed here and are DLQ-routed upstream -- never coerced
+into authority.
 """
 
 from __future__ import annotations
@@ -48,6 +61,52 @@ NORMALIZED_KIND_BY_PROVIDER = MappingProxyType(
     }
 )
 
+# XVI (H-XVI-R13/R20): ISO 4217 currency exponents. Zero-decimal and
+# three-decimal currency sets follow the ISO 4217 standard; everything
+# else defaults to 2. This table is authoritative for parsing only:
+# canonical persistence is USD-only (enforced by the root / direct
+# finalizer), so non-USD exponents never enter authenticated truth.
+# They are exact here so independent oracles and DLQ classification
+# observe true provider semantics rather than a generic placeholder.
+_ZERO_DECIMAL_CURRENCIES = frozenset(
+    {
+        "BIF",
+        "CLP",
+        "DJF",
+        "GNF",
+        "ISK",
+        "JPY",
+        "KMF",
+        "KRW",
+        "PYG",
+        "RWF",
+        "UGX",
+        "UYI",
+        "VND",
+        "VUV",
+        "XAF",
+        "XOF",
+        "XPF",
+    }
+)
+_THREE_DECIMAL_CURRENCIES = frozenset(
+    {
+        "BHD",
+        "IQD",
+        "JOD",
+        "KWD",
+        "LYD",
+        "OMR",
+        "TND",
+    }
+)
+
+# The single canonical persistence currency. Must equal the sovereign
+# scope currency universe (verification_coverage.
+# SUPPORTED_VERIFICATION_COVERAGE_CURRENCIES); a CI gate asserts the
+# equality so the two laws cannot silently diverge.
+CANONICAL_PERSISTENCE_CURRENCY = "USD"
+
 _FIXED_MONEY_EXPONENT_BY_CURRENCY = MappingProxyType(
     {
         "USD": 2,
@@ -56,6 +115,16 @@ _FIXED_MONEY_EXPONENT_BY_CURRENCY = MappingProxyType(
         "CAD": 2,
         "AUD": 2,
         "NZD": 2,
+        "CHF": 2,
+        "SEK": 2,
+        "NOK": 2,
+        "DKK": 2,
+        "SGD": 2,
+        "HKD": 2,
+        "MXN": 2,
+        "BRL": 2,
+        "INR": 2,
+        "CNY": 2,
     }
 )
 _DEFAULT_MONEY_EXPONENT = 2
@@ -78,6 +147,10 @@ def canonical_money_scale(currency: str | None) -> int:
     normalized = (currency or "").strip().upper()
     if not normalized:
         return _DEFAULT_MONEY_EXPONENT
+    if normalized in _ZERO_DECIMAL_CURRENCIES:
+        return 0
+    if normalized in _THREE_DECIMAL_CURRENCIES:
+        return 3
     return int(
         _FIXED_MONEY_EXPONENT_BY_CURRENCY.get(normalized, _DEFAULT_MONEY_EXPONENT)
     )

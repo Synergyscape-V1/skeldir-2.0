@@ -31,6 +31,9 @@ from app.core.config import settings
 from app.core.tenant_context import get_tenant_with_webhook_secrets
 from app.db.session import get_session
 from app.ingestion.dlq_handler import DLQHandler
+from app.ingestion.event_service import (
+    ValidationError as IngestionValidationError,
+)
 from app.ingestion.event_service import ingest_with_transaction
 from app.models import DeadEvent
 from app.schemas.webhooks_shopify import ShopifyOrderCreateRequest
@@ -99,17 +102,6 @@ WEBHOOK_VERIFIERS: dict[str, tuple[str, WebhookVerifier]] = {
     "paypal": ("paypal_webhook_secret", verify_paypal_signature),
     "woocommerce": ("woocommerce_webhook_secret", verify_woocommerce_signature),
 }
-_FIXED_MONEY_EXPONENT_BY_CURRENCY = MappingProxyType(
-    {
-        "USD": 2,
-        "EUR": 2,
-        "GBP": 2,
-        "CAD": 2,
-        "AUD": 2,
-        "NZD": 2,
-    }
-)
-_DEFAULT_MONEY_EXPONENT = 2
 _SUPPORTED_EVENT_FAMILY_HINTS = MappingProxyType(
     {
         "shopify": frozenset({"orders.create", "order_create"}),
@@ -126,12 +118,14 @@ _SUPPORTED_EVENT_FAMILY_HINTS = MappingProxyType(
 
 
 def _canonical_money_scale(currency: str | None) -> int:
-    normalized = (currency or "").strip().upper()
-    if not normalized:
-        return _DEFAULT_MONEY_EXPONENT
-    return int(
-        _FIXED_MONEY_EXPONENT_BY_CURRENCY.get(normalized, _DEFAULT_MONEY_EXPONENT)
+    # XVI: single scale authority. The sovereign ISO 4217 table lives in
+    # app.webhooks.commerce_derivation; this relay path must not carry a
+    # parallel table that can silently diverge from it.
+    from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+        canonical_money_scale as _sovereign_money_scale,
     )
+
+    return _sovereign_money_scale(currency)
 
 
 def _paypal_auth_envelope_header(
@@ -1182,15 +1176,48 @@ async def _handle_ingestion(
         "idempotency_key": idempotency_key,
     }
     # Use transactional helper to preserve DLQ commits on validation errors
-    result = await ingest_with_transaction(
-        tenant_id=tenant_id,
-        event_data=event_data,
-        idempotency_key=idempotency_key,
-        source=source,
-        identity_payload=identity_payload,
-        request_headers=request_headers,
-        auth_consequence=auth_consequence,
-    )
+    # XVI (H-XVI-R13/R16): canonical persistence is USD-only. A non-USD
+    # event that survives schema validation would otherwise reach the
+    # post-commit finalizer, be refused there, and surface as HTTP 500
+    # with no durable record -- a pointless provider retry storm over a
+    # request that can never authenticate, and no DLQ continuation.
+    # Route governed currency exclusion to durable DLQ instead (same
+    # honesty class as timestamp-less DLQ: preserved, visible, retryable
+    # via the DLQ remediation path, explicitly not authenticated). True
+    # parser divergence still propagates as 500 (deployment defect that
+    # must page, with redelivery succeeding after the fix).
+    try:
+        result = await ingest_with_transaction(
+            tenant_id=tenant_id,
+            event_data=event_data,
+            idempotency_key=idempotency_key,
+            source=source,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+            auth_consequence=auth_consequence,
+        )
+    except IngestionValidationError as txn_exc:
+        if "b26_p2_unsupported_currency_refused" not in str(txn_exc):
+            raise
+        dead = await _route_to_dlq_direct(
+            tenant_id,
+            source,
+            get_request_correlation_id() or idempotency_key,
+            {
+                "event_data": event_data,
+                "idempotency_key": idempotency_key,
+                "identity_payload": identity_payload,
+            },
+            f"unsupported_currency_excluded:{txn_exc}",
+            error_type="validation_error",
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+        return {
+            "status": "dlq_routed",
+            "dead_event_id": str(dead.id) if dead else None,
+            "error": str(txn_exc),
+        }
     if result.status == "success":
         correlation_id = get_request_correlation_id() or idempotency_key
         event_timestamp = event_data.get("event_timestamp")

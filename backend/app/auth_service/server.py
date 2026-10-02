@@ -234,6 +234,21 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             status_code=400,
             detail="b26_p2_handoff_binding_refused:" + ",".join(sorted(mismatched)),
         )
+    # XVI (H-XVI-R13): canonical persistence is USD-only. The sovereign
+    # scope currency universe is {"USD"}; a non-USD event is
+    # EXPLICITLY_EXCLUDED from canonical reconciliation truth by scope
+    # law, so it must never enter authenticated persistence in the
+    # first place. Refuse before any INSERT; the relay pre-routes this
+    # shape to durable DLQ upstream and this refusal is the backstop
+    # for direct-root callers.
+    if derived.verified_amount_currency != "USD":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "b26_p2_unsupported_currency_refused:"
+                f"{derived.verified_amount_currency}"
+            ),
+        )
     body_sha = hashlib.sha256(raw_body).hexdigest().lower()
     sig_sha = hashlib.sha256(body.signature_header.encode("utf-8")).hexdigest().lower()
     method = _provider_auth_method(provider)
@@ -243,6 +258,43 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
     async with _ingress_boundary(), get_ingress_session(
         tenant_id=tenant_uuid
     ) as session:
+        # XVI (H-XVI-R6): sovereign content-addressed duplicate fence.
+        # The relay-supplied event_id (idempotency key) is routing
+        # information, not financial identity: the same provider event
+        # redelivered under a different key (rotated X-Idempotency-Key,
+        # crash-retry with a fresh key) carries identical bytes and must
+        # resolve to the already-authenticated lineage instead of minting
+        # a second canonical lineage for one payment. Conversely two
+        # distinct provider events never share bytes, so they never
+        # collide here (event-granular lineages preserved).
+        winner = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT i.id::text AS iid"
+                        " FROM public.webhook_ingress_identities AS i"
+                        " JOIN public.b26_p2_provider_auth_consequence AS c"
+                        " ON c.webhook_ingress_identity_id = i.id"
+                        " AND c.tenant_id = i.tenant_id"
+                        " WHERE i.tenant_id = :tenant"
+                        " AND c.body_sha256 = :body_sha"
+                        " AND i.b26_p2_provenance_status"
+                        " IS NOT DISTINCT FROM 'authenticated_known'"
+                        " LIMIT 1"
+                    ),
+                    {"tenant": str(tenant_uuid), "body_sha": body_sha},
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if winner is not None:
+            return AuthenticateResponse(
+                status="authenticated",
+                provenance_status="authenticated_known",
+                ingress_id=str(winner["iid"]),
+                tenant_id=str(tenant_uuid),
+            )
         # One transaction: verified ingress row (lands pending via
         # XIII trigger) + atomic consequence/witness/evidence +
         # terminal provenance. Crash before commit leaves nothing
@@ -327,10 +379,17 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             existing = (
                 (
                     await session.execute(
-                        select(WebhookIngressIdentity).where(
+                        # XVI (H-XVI-R7): lock the precursor row for the
+                        # check-then-promote sequence. Without FOR UPDATE a
+                        # concurrent transaction can replace precursor
+                        # identity between this read and the UPDATE below,
+                        # promoting state the root never verified.
+                        select(WebhookIngressIdentity)
+                        .where(
                             WebhookIngressIdentity.tenant_id == tenant_uuid,
                             WebhookIngressIdentity.idempotency_key == idem,
                         )
+                        .with_for_update(),
                     )
                 )
                 .scalars()
@@ -360,8 +419,17 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                 ) from _insert_failed
             await session.execute(
                 text(
+                    # XVI (H-XVI-R7): overwrite every verified field from
+                    # the sovereign derivation, including provider (the
+                    # request provider is the verified one). A field that
+                    # is checked-but-not-overwritten leaves a TOCTOU
+                    # window: verified-A can be persisted as B. Only the
+                    # lookup key (tenant, idempotency_key) and the live
+                    # delivery linkage (event_id, rebound by design on
+                    # every genuine redelivery) are preserved.
                     "UPDATE public.webhook_ingress_identities AS i"
-                    " SET provider_native_event_reference = :event_ref,"
+                    " SET provider = :provider,"
+                    " provider_native_event_reference = :event_ref,"
                     " provider_native_commerce_reference = :commerce_ref,"
                     " normalized_commerce_reference_kind = :norm_kind,"
                     " normalized_commerce_reference_value = :norm_value,"
@@ -376,6 +444,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                 {
                     "tenant": str(tenant_uuid),
                     "idem": idem,
+                    "provider": provider,
                     "event_ts": event_ts,
                     **commerce,
                 },
@@ -399,22 +468,64 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         if row is None:
             raise HTTPException(status_code=500, detail="ingress row missing")
         canonical_id = str(row["iid"])
-        await session.execute(
-            text(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
-                " :ingress, :provider, :event_ref,"
-                " :body_sha, :sig_sha, :method, :version)"
-            ),
-            {
-                "ingress": canonical_id,
-                "provider": provider,
-                "event_ref": derived.provider_native_event_reference,
-                "body_sha": body_sha,
-                "sig_sha": sig_sha,
-                "method": method,
-                "version": body.auth_version or "v1",
-            },
-        )
+        # XVI (H-XVI-R6): a concurrent first-authentication of the same
+        # bytes under a different key can pass the pre-check above; the
+        # atomic serializes on the byte identity and refuses the loser.
+        # Resolve the winner and return its lineage instead of 500ing a
+        # genuine duplicate (provider retry must observe success).
+        try:
+            await session.execute(
+                text(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    " :ingress, :provider, :event_ref,"
+                    " :body_sha, :sig_sha, :method, :version)"
+                ),
+                {
+                    "ingress": canonical_id,
+                    "provider": provider,
+                    "event_ref": derived.provider_native_event_reference,
+                    "body_sha": body_sha,
+                    "sig_sha": sig_sha,
+                    "method": method,
+                    "version": body.auth_version or "v1",
+                },
+            )
+        except Exception as atomic_exc:
+            if "b26_p2_atomic_sovereign_duplicate_refused" not in str(atomic_exc):
+                raise
+            await session.rollback()
+            resolved = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT i.id::text AS iid"
+                            " FROM public.webhook_ingress_identities AS i"
+                            " JOIN public.b26_p2_provider_auth_consequence AS c"
+                            " ON c.webhook_ingress_identity_id = i.id"
+                            " AND c.tenant_id = i.tenant_id"
+                            " WHERE i.tenant_id = :tenant"
+                            " AND c.body_sha256 = :body_sha"
+                            " AND i.b26_p2_provenance_status"
+                            " IS NOT DISTINCT FROM 'authenticated_known'"
+                            " LIMIT 1"
+                        ),
+                        {"tenant": str(tenant_uuid), "body_sha": body_sha},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if resolved is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="b26_p2_sovereign_duplicate_unresolved",
+                ) from atomic_exc
+            return AuthenticateResponse(
+                status="authenticated",
+                provenance_status="authenticated_known",
+                ingress_id=str(resolved["iid"]),
+                tenant_id=str(tenant_uuid),
+            )
     return AuthenticateResponse(
         status="authenticated",
         provenance_status="authenticated_known",

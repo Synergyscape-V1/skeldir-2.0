@@ -478,11 +478,16 @@ async def _adopt_or_promote_ingress(
     existing = (
         (
             await session.execute(
-                select(WebhookIngressIdentity).where(
+                # XVI (H-XVI-R7): lock the colliding row for the
+                # check-then-adopt sequence so the promoted state is
+                # exactly the state compared here.
+                select(WebhookIngressIdentity)
+                .where(
                     WebhookIngressIdentity.tenant_id == tenant_id,
                     WebhookIngressIdentity.idempotency_key
                     == incoming["idempotency_key"],
                 )
+                .with_for_update(),
             )
         )
         .scalars()
@@ -781,6 +786,88 @@ async def _record_auth_consequence_post_commit(
     )
 
 
+def _assert_sovereign_finalization_binding(
+    finalization: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    """Enforce bytes->meaning binding on a verified arrival (XVI, H-XVI-R11).
+
+    Single law shared by the HTTP-relay path and the direct (credential-
+    holding) finalization path: re-derive commerce meaning from the exact
+    raw provider bytes through the sovereign authority and refuse any
+    divergence between the endpoint-parsed commerce and the derivation,
+    then refuse non-USD persistence (canonical scope is USD-only).
+
+    Raises ValidationError (fail closed, never silently downgrade).
+    The ``context`` selects the refusal token namespace (relay vs direct)
+    so operators can distinguish the two dominance paths.
+    """
+    import base64 as _binding_b64  # noqa: PLC0415
+
+    from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+        CommerceDerivationError as _BindingDerivationError,
+        binding_mismatches as _binding_mismatches,
+        derive_commerce as _binding_derive,
+    )
+
+    envelope = finalization.get("relay_envelope")
+    if not isinstance(envelope, Mapping) or not envelope.get("raw_body_b64"):
+        raise ValidationError(
+            f"b26_p2_handoff_binding_refused:{context}_missing_bytes"
+        )
+    try:
+        _raw = _binding_b64.b64decode(
+            str(envelope.get("raw_body_b64") or ""), validate=True
+        )
+        _provider = str(finalization.get("provider") or "")
+        _derived = _binding_derive(_provider, _raw)
+        _handoff = {
+            "provider_native_event_reference": finalization.get(
+                "provider_native_event_reference"
+            ),
+            "provider_native_commerce_reference": finalization.get(
+                "provider_native_commerce_reference"
+            ),
+            "normalized_commerce_reference_kind": finalization.get(
+                "normalized_commerce_reference_kind"
+            ),
+            "normalized_commerce_reference_value": finalization.get(
+                "normalized_commerce_reference_value"
+            ),
+            "verified_amount_minor": finalization.get("verified_amount_minor"),
+            "verified_amount_currency": finalization.get("verified_amount_currency"),
+            "verified_amount_scale": finalization.get("verified_amount_scale"),
+            "event_timestamp": finalization.get("event_timestamp"),
+        }
+        _ts = _handoff.get("event_timestamp")
+        if hasattr(_ts, "isoformat"):
+            _handoff["event_timestamp"] = _ts.isoformat()
+        if _binding_mismatches(
+            provider=_provider,
+            handoff=_handoff,
+            derived=_derived,
+        ):
+            raise ValidationError(
+                f"b26_p2_handoff_binding_refused:{context}_sovereign_divergence"
+            )
+        if _derived.verified_amount_currency != "USD":
+            raise ValidationError(
+                "b26_p2_unsupported_currency_refused:"
+                f"{_derived.verified_amount_currency}"
+            )
+    except ValidationError:
+        raise
+    except _BindingDerivationError as exc:
+        raise ValidationError(
+            f"b26_p2_handoff_binding_refused:{context}_derivation_failed:{exc}"
+        ) from exc
+    except Exception as exc:
+        raise ValidationError(
+            f"b26_p2_handoff_binding_refused:{context}_check_failed:{type(exc).__name__}"
+        ) from exc
+
+
 async def _relay_verified_ingress_to_auth_root(
     finalization: Mapping[str, Any],
 ) -> bool:
@@ -813,67 +900,12 @@ async def _relay_verified_ingress_to_auth_root(
     consequence = finalization.get("auth_consequence")
     if not isinstance(consequence, Mapping) or not consequence.get("body_sha256"):
         return False
-    # XV (H-XV-R1/R2): relay-side sovereign cross-check. The general API
-    # derives the commerce handoff from the same raw bytes via its own
-    # parsing path. Before relaying, independently re-derive meaning from
-    # the exact bytes through the single sovereign authority and refuse to
-    # relay on divergence (fail closed). The root re-enforces the same law
-    # authoritatively; this check ensures a diverged API parser can only
-    # cause refusal, never false authority.
-    try:
-        import base64 as _relay_b64  # noqa: PLC0415
-
-        from app.webhooks.commerce_derivation import (  # noqa: PLC0415
-            CommerceDerivationError as _RelayDerivationError,
-            binding_mismatches as _relay_mismatches,
-            derive_commerce as _relay_derive,
-        )
-
-        _relay_raw = _relay_b64.b64decode(
-            str(envelope.get("raw_body_b64") or ""), validate=True
-        )
-        _relay_provider = str(finalization.get("provider") or "")
-        _relay_derived = _relay_derive(_relay_provider, _relay_raw)
-        _relay_handoff = {
-            "provider_native_event_reference": finalization.get(
-                "provider_native_event_reference"
-            ),
-            "provider_native_commerce_reference": finalization.get(
-                "provider_native_commerce_reference"
-            ),
-            "normalized_commerce_reference_kind": finalization.get(
-                "normalized_commerce_reference_kind"
-            ),
-            "normalized_commerce_reference_value": finalization.get(
-                "normalized_commerce_reference_value"
-            ),
-            "verified_amount_minor": finalization.get("verified_amount_minor"),
-            "verified_amount_currency": finalization.get("verified_amount_currency"),
-            "verified_amount_scale": finalization.get("verified_amount_scale"),
-            "event_timestamp": finalization.get("event_timestamp"),
-        }
-        # event_timestamp in finalization may be a datetime; normalize to ISO.
-        _relay_ts = _relay_handoff.get("event_timestamp")
-        if hasattr(_relay_ts, "isoformat"):
-            _relay_handoff["event_timestamp"] = _relay_ts.isoformat()
-        if _relay_mismatches(
-            provider=_relay_provider,
-            handoff=_relay_handoff,
-            derived=_relay_derived,
-        ):
-            raise ValidationError(
-                "b26_p2_handoff_binding_refused:relay_sovereign_divergence"
-            )
-    except ValidationError:
-        raise
-    except _RelayDerivationError as exc:
-        raise ValidationError(
-            f"b26_p2_handoff_binding_refused:relay_derivation_failed:{exc}"
-        ) from exc
-    except Exception as exc:
-        raise ValidationError(
-            f"b26_p2_handoff_binding_refused:relay_check_failed:{type(exc).__name__}"
-        ) from exc
+    # XV (H-XV-R1/R2) + XVI (H-XVI-R11/R13): relay-side sovereign
+    # cross-check through the single shared binding law below. A
+    # diverged API parser (or a non-USD event) can only cause refusal,
+    # never false authority; the root re-enforces the same law
+    # authoritatively.
+    _assert_sovereign_finalization_binding(finalization, context="relay")
     payload = {
         "api_key": str(envelope.get("api_key") or ""),
         "provider": str(finalization.get("provider") or ""),
@@ -963,6 +995,16 @@ async def _finalize_verified_ingress_post_commit(
         if relayed:
             return
 
+    # XVI (H-XVI-R11/R13): the direct (credential-holding) path reaches
+    # the atomic transition without an HTTP root in between, so it must
+    # enforce the same verification -> derivation -> binding dominance
+    # the root enforces: signature verification happened upstream (the
+    # HMAC snapshot below is its witness); here sovereignly re-derive
+    # meaning from the exact relayed bytes, refuse any divergence, and
+    # refuse non-USD persistence. Without the raw bytes there is no
+    # dominance to prove -- fail closed.
+    _assert_sovereign_finalization_binding(finalization, context="direct")
+
     tenant_id = finalization.get("tenant_id")
     idem = str(finalization.get("idempotency_key"))
     consequence = finalization.get("auth_consequence")
@@ -993,10 +1035,13 @@ async def _finalize_verified_ingress_post_commit(
         existing = (
             (
                 await session.execute(
-                    select(WebhookIngressIdentity).where(
+                    # XVI (H-XVI-R7): see the root adoption lock above.
+                    select(WebhookIngressIdentity)
+                    .where(
                         WebhookIngressIdentity.tenant_id == tenant_uuid,
                         WebhookIngressIdentity.idempotency_key == idem,
                     )
+                    .with_for_update(),
                 )
             )
             .scalars()
@@ -1036,10 +1081,14 @@ async def _finalize_verified_ingress_post_commit(
             existing = (
                 (
                     await session.execute(
-                        select(WebhookIngressIdentity).where(
+                        # XVI (H-XVI-R7): lock the freshly inserted row so
+                        # the promotion below observes exactly this state.
+                        select(WebhookIngressIdentity)
+                        .where(
                             WebhookIngressIdentity.tenant_id == tenant_uuid,
                             WebhookIngressIdentity.idempotency_key == idem,
                         )
+                        .with_for_update(),
                     )
                 )
                 .scalars()
@@ -1077,24 +1126,73 @@ async def _finalize_verified_ingress_post_commit(
                 " verified arrival requires the HMAC-established"
                 " predecessor event"
             )
-        await session.execute(
-            text(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
-                " :ingress_id, :provider, :event_ref,"
-                " :body_sha256, :sig_sha256, :method, :version)"
-            ),
-            {
-                "ingress_id": ingress_uuid,
-                "provider": str(consequence_summary.get("provider")),
-                "event_ref": str(consequence_summary.get("provider_event_reference")),
-                "body_sha256": str(consequence_summary.get("body_sha256")).lower(),
-                "sig_sha256": str(
-                    consequence_summary.get("signature_envelope_sha256")
-                ).lower(),
-                "method": str(consequence_summary.get("auth_method")),
-                "version": str(consequence_summary.get("auth_version") or "v1"),
-            },
-        )
+        # XVI (H-XVI-R6): same-bytes-different-key races are refused by
+        # the atomic's sovereign duplicate fence; resolve the winning
+        # lineage and complete idempotently instead of failing a genuine
+        # duplicate redelivery.
+        try:
+            await session.execute(
+                text(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    " :ingress_id, :provider, :event_ref,"
+                    " :body_sha256, :sig_sha256, :method, :version)"
+                ),
+                {
+                    "ingress_id": ingress_uuid,
+                    "provider": str(consequence_summary.get("provider")),
+                    "event_ref": str(consequence_summary.get("provider_event_reference")),
+                    "body_sha256": str(consequence_summary.get("body_sha256")).lower(),
+                    "sig_sha256": str(
+                        consequence_summary.get("signature_envelope_sha256")
+                    ).lower(),
+                    "method": str(consequence_summary.get("auth_method")),
+                    "version": str(consequence_summary.get("auth_version") or "v1"),
+                },
+            )
+        except Exception as direct_atomic_exc:
+            if "b26_p2_atomic_sovereign_duplicate_refused" not in str(
+                direct_atomic_exc
+            ):
+                raise
+            await session.rollback()
+            _dup_winner = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT i.id::text AS iid"
+                            " FROM public.webhook_ingress_identities AS i"
+                            " JOIN public.b26_p2_provider_auth_consequence AS c"
+                            " ON c.webhook_ingress_identity_id = i.id"
+                            " AND c.tenant_id = i.tenant_id"
+                            " WHERE i.tenant_id = :tenant"
+                            " AND c.body_sha256 = :body_sha"
+                            " AND i.b26_p2_provenance_status"
+                            " IS NOT DISTINCT FROM 'authenticated_known'"
+                            " LIMIT 1"
+                        ),
+                        {
+                            "tenant": str(tenant_uuid),
+                            "body_sha": str(
+                                consequence_summary.get("body_sha256")
+                            ).lower(),
+                        },
+                    )
+                )
+                .scalars()
+                .one_or_none()
+            )
+            if _dup_winner is None:
+                raise ValidationError(
+                    "b26_p2_sovereign_duplicate_unresolved"
+                ) from direct_atomic_exc
+            logger.info(
+                "b26_p2_ingress_sovereign_duplicate_adopted",
+                extra={
+                    "tenant_id": str(tenant_uuid),
+                    "ingress_id": str(_dup_winner),
+                },
+            )
+            return
 
 
 async def _attest_reingestion_as_ingress(
