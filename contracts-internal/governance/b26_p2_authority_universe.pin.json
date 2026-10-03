@@ -1,14 +1,14 @@
 {
- "producer": "b26_p2_capability_surface",
- "migration_head": "202609270003",
- "authority_universe_hash": "49143ce26d9e5fd65cc266f66bd1a9a570d1af845ca67dede2159e5e36e227f7",
- "reviewed_at_git_sha": "cd926b02270750d047559774422698d9cabd1be7",
- "meaning_surface_counts": {
-  "routine_meaning": 144,
-  "trigger_meaning": 21,
-  "schema_meaning": 5,
-  "rls_meaning": 17,
-  "ownership": 105
- },
- "review_note": "B2.6-P2 Corrective XIV compositional closure reviewed: immutable auth-root evidence identity, single-authority effect law, historical quarantine with honest oracle, closed meaning with behavioral contracts and independent phase oracle, behavioral temporal matrix with kill-switches, relay wiring with single file-only custody; live hash from auditor-owned PG15 fresh lane (prepare+alembic head) with XIV coverage; open_world_unknown empty under XIV-covered registry."
+  "producer": "b26_p2_capability_surface",
+  "migration_head": "202609280002",
+  "authority_universe_hash": "d1f895b5b00c0c94274178bb3c55dddb756e9f34f47682f656b07a7753ef0e93",
+  "reviewed_at_git_sha": "8aa50188721da158f0959c414ec9a664949204d",
+  "meaning_surface_counts": {
+   "routine_meaning": 145,
+   "trigger_meaning": 22,
+   "schema_meaning": 5,
+   "rls_meaning": 17,
+   "ownership": 106
+  },
+  "review_note": "B2.6-P2 Corrective XVI sovereign closure reviewed: content-addressed sovereign duplicate fence in the atomic (advisory lock on tenant+body digest, b26_p2_atomic_sovereign_duplicate_refused), strict exact-signature transition frame for the evidence gate, demote-all-authenticated downgrade evidence preservation; routine/trigger counts unchanged (CREATE OR REPLACE, no new objects); live hash from PG15 pristine fresh lane (prepare+alembic head 202609280002) with XVI coverage; identical-frame pg_temp spoof refused at grants."
 }

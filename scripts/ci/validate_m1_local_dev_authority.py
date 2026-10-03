@@ -163,6 +163,12 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/README.md",
     "backend/Dockerfile",
     "backend/requirements-dev.txt",
+    # B2.6-P2 Corrective XVI: the B2.2 commerce-envelope gate accepts the
+    # single-scale-authority delegation (relay façade over the sovereign
+    # table) instead of requiring the duplicated table. Governance
+    # integration fix: the gate's invariant (relay governed by canonical
+    # scale law) is unchanged, only the recognized shape widened.
+    "scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py",
     "backend/app/db/session.py",
     "backend/app/tasks/enqueue.py",
     "backend/app/tasks/observability_test.py",
@@ -736,6 +742,31 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xiv_semantic_behavior.py",
     "scripts/ci/validate_b26_p2_xiv_temporal_behavior.py",
     "scripts/ci/validate_b26_p2_xiv_topology.py",
+    # --- B2.6-P2 Corrective XV cryptographic meaning binding surface ---
+    # Authority-only slice: the single Corrective-XV migration
+    # (transition-specific evidence gate, authenticated-meaning
+    # immutability, downgrade quarantine block), the sovereign
+    # provider-commerce derivation module shared by the API relay path
+    # and the authentication trust root, and the two XV proof
+    # instruments (binding oracle + database-physics closure). Same
+    # exemption shape as the Corrective-XIV entry above; every
+    # prohibition retained unchanged. Proof tooling only; the
+    # manufacturing-law content scan still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609280001_b26_p2_corrective_xv_binding_closure.py",
+    "backend/app/webhooks/commerce_derivation.py",
+    "scripts/ci/validate_b26_p2_xv_binding.py",
+    "scripts/ci/validate_b26_p2_xv_physics.py",
+    # --- B2.6-P2 Corrective XVI sovereign closure surface ---
+    # The XVI migration (sovereign duplicate fence, strict transition
+    # frame), the independent semantic oracle, the XVI physics closure,
+    # and the XVI governance tests. Same exemption shape; every
+    # prohibition retained unchanged. Proof tooling only; the
+    # manufacturing-law content scan still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609280002_b26_p2_corrective_xvi_sovereign_closure.py",
+    "scripts/ci/validate_b26_p2_xvi_semantic_oracle.py",
+    "scripts/ci/validate_b26_p2_xvi_physics.py",
+    "backend/tests/finance_reconciliation/test_b26_p2_xvi_independent_oracle.py",
+    "backend/tests/finance_reconciliation/test_b26_p2_xvi_authority_governance.py",
     # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
     # and equivalence corpora authenticate lawful fixtures via the atomic
     # transition (admin allowed); negative fixtures stay pending/unknown.

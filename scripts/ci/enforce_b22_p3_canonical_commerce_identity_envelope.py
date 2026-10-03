@@ -139,7 +139,6 @@ def _validate_webhooks(path: Path, violations: list[str]) -> None:
         "\"verified_amount_currency\"",
         "\"verified_amount_scale\"",
         "\"verified_commerce_ingress_state\": \"authenticity_verified\"",
-        "_FIXED_MONEY_EXPONENT_BY_CURRENCY",
         "_canonical_money_scale(",
         "\"verified_at\":",
         "_resolve_verified_at(",
@@ -147,6 +146,19 @@ def _validate_webhooks(path: Path, violations: list[str]) -> None:
     for token in required_tokens:
         if token not in text:
             violations.append(f"webhooks_missing_token:{token}")
+    # XVI single-scale authority: the canonical money-scale law lives in
+    # app.webhooks.commerce_derivation; the relay path must either carry
+    # the table itself or delegate to the sovereign (import + façade
+    # call). Both shapes keep the relay governed by the canonical law;
+    # a relay with neither is ungoverned and must fail.
+    if "_FIXED_MONEY_EXPONENT_BY_CURRENCY" not in text and not (
+        "from app.webhooks.commerce_derivation import" in text
+        and "canonical_money_scale" in text
+    ):
+        violations.append(
+            "webhooks_missing_token:_FIXED_MONEY_EXPONENT_BY_CURRENCY"
+            "|sovereign_scale_delegation"
+        )
 
     forbidden_tokens = (
         "matched_order_id",

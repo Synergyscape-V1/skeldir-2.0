@@ -311,6 +311,46 @@ jobs:
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-out artifacts/b26_p2/static/xiv-negative-controls.json
 
+      # B2.6-P2 Corrective XV: cryptographic meaning binding closure.
+      # Runs after the XIV battery (conserved) on the same migrated lane
+      # (now at XVI head 202609280002). The binding gate proves the root
+      # derives commerce from verified bytes (oracle parity over all four
+      # providers + per-dimension mutation refusal); the physics gate
+      # proves transition-specific evidence, authenticated immutability,
+      # deputy refusal, and honest recovery wiring.
+      - name: Prove B2.6-P2 Corrective-XV cryptographic meaning binding
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xv_binding.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xv-binding.json
+
+      - name: Prove B2.6-P2 Corrective-XV database physics closure (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xv_physics.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xv-physics.json
+
+      # B2.6-P2 Corrective XVI: sovereign closure. The independent oracle
+      # adjudicates provider meaning without the production helper
+      # (common-mode detection); the physics gate proves the sovereign
+      # duplicate fence, strict transition frame, demote-all downgrade,
+      # provably non-authoritative linkage, and NULL fail-closed law.
+      - name: Prove B2.6-P2 Corrective-XVI independent semantic oracle
+        run: |
+          python scripts/ci/validate_b26_p2_xvi_semantic_oracle.py
+
+      - name: Prove B2.6-P2 Corrective-XVI database physics closure (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xvi_physics.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xvi-physics.json
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence

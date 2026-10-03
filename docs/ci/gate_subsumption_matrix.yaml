@@ -4540,3 +4540,78 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xiv_coverage import XIV_COVERED_SURFACES"
   risk_if_removed: New XIV surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xv-binding
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xv_binding.py
+  owning_phase: B2.6-P2
+  protected_invariant: Persisted commerce meaning equals sovereign
+    derivation of the verified provider bytes across all four providers;
+    handoff mismatch is refused before persistence.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XV cryptographic meaning binding; no
+    predecessor gate derives expectations from raw provider bytes.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_xv_binding.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xv_binding.py --help
+  risk_if_removed: Valid signatures could authenticate false money again.
+  decision: enforce
+- gate_id: b26-p2-xv-physics
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xv_physics.py
+  owning_phase: B2.6-P2
+  protected_invariant: Transition-specific evidence, authenticated
+    immutability, monotonic downgrade, honest duplicate recovery.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XV database-physics closure; no
+    predecessor gate probes deputy DEFINER, post-auth rewrite, quarantine
+    downgrade block, or recovery re-drive.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_xv_physics.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xv_physics.py --help
+  risk_if_removed: Forgeable, mutable, resurrectable, or falsely-reported
+    terminal authority could return.
+  decision: enforce
+- gate_id: b26-p2-xvi-semantic-oracle
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xvi_semantic_oracle.py
+  owning_phase: B2.6-P2
+  protected_invariant: Provider-native commerce meaning adjudicated by an
+    oracle independent of the production derivation implementation.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVI oracle independence; the XV binding
+    validator derives expectations from the production helper it adjudicates.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_xvi_semantic_oracle.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xvi_semantic_oracle.py --help
+  risk_if_removed: A shared production-parser mistake would make API, root,
+    and tests agree on false provider meaning with no detection.
+  decision: enforce
+- gate_id: b26-p2-xvi-physics
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xvi_physics.py
+  owning_phase: B2.6-P2
+  protected_invariant: Sovereign duplicate fence, strict transition frame,
+    demote-all downgrade, provably non-authoritative linkage, NULL fail-closed.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVI sovereign closure; no predecessor
+    gate fences same-bytes second lineages, pins the exact atomic frame,
+    demotes legitimate rows on evidence-destroying rollback, or proves
+    linkage non-authoritative.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_xvi_physics.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xvi_physics.py --help
+  risk_if_removed: Second lineages for one payment, frame-resemblance
+    evidence, trusted evidence-less rows, or authority-bearing linkage.
+  decision: enforce

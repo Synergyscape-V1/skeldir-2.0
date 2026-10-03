@@ -614,11 +614,17 @@ REVOKE ALL ON FUNCTION public.b26_p2_xiii_provision_ingress_topology() FROM PUBL
 REVOKE ALL ON FUNCTION public.b26_p2_xiii_invariant_oracle() FROM PUBLIC;
 
 -- === 202609270001 Corrective XIV: immutable auth-root evidence identity ===
--- Source of truth is the 202609270001 migration. The evidence table shape
--- (but not its grants) arrives via canonical_schema.sql. No runtime
--- principal holds direct INSERT/UPDATE/DELETE (writes occur only through
--- the SECURITY DEFINER atomic transition, gated on session_user); the
--- SELECT grants below confer zero authorship (read-only observability).
+-- === 202609280001 Corrective XV: transition-specific evidence law ===
+-- === 202609280002 Corrective XVI: strict sovereign frame ===
+-- Source of truth is the 202609270001 migration as narrowed by
+-- 202609280001 and 202609280002. The evidence table shape (but not its grants) arrives
+-- via canonical_schema.sql. No runtime principal holds direct
+-- INSERT/UPDATE/DELETE. INSERT occurs only inside the single sovereign
+-- transition (b26_p2_authenticate_ingress_atomic, proven by the anchored
+-- exact-signature frame match in the trigger, not by DEFINER context class):
+-- any other SECURITY DEFINER routine is refused with
+-- b26_p2_auth_root_evidence_transition_refused; the SELECT grants below
+-- confer zero authorship (read-only observability).
 REVOKE ALL ON TABLE public.b26_p2_auth_root_evidence FROM PUBLIC;
 DO $$
 DECLARE _r text;

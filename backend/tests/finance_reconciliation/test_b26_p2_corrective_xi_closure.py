@@ -1033,7 +1033,10 @@ def test_xd3_blank_foundation_cannot_found_truth() -> None:
             # witnessless-known via replica bypass to simulate the
             # dirty foundation the oracle must catch (as xa1 does for
             # unknown). Then blank the provider for the blank-shape
-            # oracle class.
+            # oracle class. XV: the meaning trigger is disabled around
+            # the plant exactly like the provenance trigger -- the
+            # plant simulates pre-existing dirty state, which the
+            # oracle must still name.
             cur.execute(
                 "ALTER TABLE public.webhook_ingress_identities"
                 " DISABLE TRIGGER trg_b26_p2_ingress_provenance"
@@ -1049,10 +1052,20 @@ def test_xd3_blank_foundation_cannot_found_truth() -> None:
                 " ENABLE TRIGGER trg_b26_p2_ingress_provenance"
             )
             cur.execute(
-                "UPDATE public.webhook_ingress_identities"
-                " SET provider = '   ' WHERE id = %s",
-                (str(ids["ingress_id"]),),
+                "ALTER TABLE public.webhook_ingress_identities"
+                " DISABLE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability"
             )
+            try:
+                cur.execute(
+                    "UPDATE public.webhook_ingress_identities"
+                    " SET provider = '   ' WHERE id = %s",
+                    (str(ids["ingress_id"]),),
+                )
+            finally:
+                cur.execute(
+                    "ALTER TABLE public.webhook_ingress_identities"
+                    " ENABLE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability"
+                )
     finally:
         admin.close()
     rows = _oracle_rows(_admin_dsn(), ids["tenant_id"])

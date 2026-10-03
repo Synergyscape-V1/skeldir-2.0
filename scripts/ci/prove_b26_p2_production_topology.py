@@ -93,6 +93,10 @@ BEAT_CONTAINER = "b26p2-iv-beat"
 DB_NAME = "skeldir_b26_p2_deployed"
 PLATFORM_KEY = "b26-p2-iv-platform-key-do-not-use-outside-ci"
 TENANT_KEY_PREFIX = "b26p2-iv-tenant-key"
+# XVI provider parity: PayPal test cert URL (paypal-suffixed host so the
+# provider URL law holds; the cryptography below is test-only via the
+# SKELDIR_PAYPAL_TEST_CERT_* override + TESTING=1 in the API container).
+_PAYPAL_CERT_URL = "https://cert.test.paypal.com/xvi-paypal-test.pem"
 
 WORKER_CMD = [
     "celery",
@@ -352,6 +356,62 @@ class _Topology:
         proc = _docker("image", "inspect", self.image, "--format", "{{.Id}}")
         return proc.stdout.strip()
 
+    def image_artifact_identity(self) -> dict:
+        """Record artifact identity: image + tree + base digest (XVI-R18).
+
+        The proof must execute the exact bytes under proof. Local content
+        Id alone does not bind the base layer; record the base image
+        digest and the exact source tree alongside it.
+        """
+        identity: dict[str, str] = {}
+        proc = _docker("image", "inspect", self.image, "--format", "{{.Id}}")
+        identity["image_id"] = proc.stdout.strip()
+        proc = _docker(
+            "image", "inspect", self.image, "--format", "{{json .RepoDigests}}"
+        )
+        identity["repo_digests"] = proc.stdout.strip()
+        proc = _run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT)
+        identity["git_sha"] = proc.stdout.strip()
+        proc = _run(["git", "rev-parse", "HEAD^{tree}"], cwd=REPO_ROOT)
+        identity["git_tree"] = proc.stdout.strip()
+        # XVI-N9: HEAD^{tree} describes the COMMIT, not the working tree.
+        # An image built from dirty bytes would otherwise carry a clean
+        # identity. Tracked modifications always void the proof; untracked
+        # files void it only under image-copied paths (backend/, alembic/,
+        # contracts/, db/, contracts-internal/) since only those enter
+        # the image (Dockerfile COPY).
+        proc = _run(["git", "diff", "HEAD", "--name-only"], cwd=REPO_ROOT)
+        tracked_dirty = proc.stdout.strip()
+        proc = _run(["git", "status", "--porcelain"], cwd=REPO_ROOT)
+        image_paths = ("backend/", "alembic/", "contracts/", "db/", "contracts-internal/")
+        untracked_dirty = sorted(
+            line[3:].strip().strip('"')
+            for line in proc.stdout.splitlines()
+            if line.startswith("??")
+            and line[3:].strip().strip('"').replace("\\", "/").startswith(image_paths)
+        )
+        dirty = tracked_dirty + "\n" + "\n".join(untracked_dirty)
+        identity["worktree_dirty"] = "false" if not dirty.strip() else "true"
+        identity["worktree_dirty_paths"] = dirty.strip()[:2000]
+        if dirty.strip():
+            raise RuntimeError(f"dirty_tree_unprovable:{dirty.strip()[:500]}")
+        dockerfile_from = next(
+            (
+                ln.split(None, 1)[1].strip()
+                for ln in (REPO_ROOT / "backend" / "Dockerfile")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if ln.strip().upper().startswith("FROM ")
+            ),
+            "",
+        )
+        identity["base_ref"] = dockerfile_from
+        base = _docker("image", "inspect", dockerfile_from, "--format", "{{.Id}}")
+        identity["base_image_id"] = (
+            base.stdout.strip() if base.returncode == 0 else "unresolved"
+        )
+        return identity
+
     def start_postgres(self) -> None:
         self._cleanup_container(PG_CONTAINER)
         _docker("network", "create", NETWORK)
@@ -404,19 +464,32 @@ class _Topology:
         )
         if proc.returncode != 0:
             raise RuntimeError(f"provision_failed:{proc.stderr[-1500:]}")
-        env = dict(
-            os.environ,
-            MIGRATION_DATABASE_URL=(
-                f"postgresql://migration_owner:migration_owner"
-                f"@127.0.0.1:{self.pg_port}/{DB_NAME}"
-            ),
-            DATABASE_URL=(
-                f"postgresql://migration_owner:migration_owner"
-                f"@127.0.0.1:{self.pg_port}/{DB_NAME}"
-            ),
+        # XVI (H-XVI-R18): the migration path under proof executes inside
+        # the compiled production image (no host alembic, no host
+        # workspace on the database's behalf). The image carries
+        # alembic.ini + the versions tree (Dockerfile COPY).
+        migrate_dsn = (
+            f"postgresql://migration_owner:migration_owner@pg:5432/{DB_NAME}"
         )
-        proc = _run(
-            [sys.executable, "-m", "alembic", "upgrade", "head"], cwd=REPO_ROOT, env=env
+        proc = _docker(
+            "run",
+            "--rm",
+            "--network",
+            NETWORK,
+            # The ini's version_locations are relative: run from /app so
+            # the image resolves the exact shipped versions tree.
+            "--workdir",
+            "/app",
+            "-e",
+            f"MIGRATION_DATABASE_URL={migrate_dsn}",
+            "-e",
+            f"DATABASE_URL={migrate_dsn}",
+            self.image,
+            "alembic",
+            "-c",
+            "/app/alembic.ini",
+            "upgrade",
+            "head",
         )
         if proc.returncode != 0:
             raise RuntimeError(
@@ -447,9 +520,12 @@ class _Topology:
     # under the same supervision or it proves a weaker topology.
     _RESTART = ("--restart", "unless-stopped")
 
-    def start_api(self) -> None:
+    def start_api(self, extra_env: list[str] | None = None) -> None:
         self._cleanup_container(API_CONTAINER)
         dsn = f"postgresql+asyncpg://app_user:app_user@pg:5432/{DB_NAME}"
+        env_extras: list[str] = []
+        for item in extra_env or []:
+            env_extras.extend(["-e", item])
         proc = _docker(
             "run",
             "-d",
@@ -476,13 +552,14 @@ class _Topology:
             "B26_P2_INGRESS_DATABASE_URL_FILE=",
             "-e",
             f"B26_P2_AUTH_ROOT_URL=http://{AUTH_CONTAINER}:8001",
+            *env_extras,
             self.image,
             *API_CMD,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"api_start_failed:{proc.stderr[-500:]}")
 
-    def start_auth_root(self) -> None:
+    def start_auth_root(self, extra_env: list[str] | None = None) -> None:
         """Boot the dedicated authentication trust root (XIV).
 
         Sole holder of the file-mounted ingress credential (XIV single
@@ -500,6 +577,9 @@ class _Topology:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(ingress_dsn)
         self._auth_dsn_path = dsn_path
+        env_extras: list[str] = []
+        for item in extra_env or []:
+            env_extras.extend(["-e", item])
         proc = _docker(
             "run",
             "-d",
@@ -508,6 +588,10 @@ class _Topology:
             *self._RESTART,
             "--network",
             NETWORK,
+            # XVI: host-mapped so hostile root-direct journeys can reach
+            # the real root process (binding-refusal negatives).
+            "-p",
+            f"{self.args.auth_port}:8001",
             *self._base_env(dsn),
             "-e",
             "SKELDIR_PROCESS_ROLE=auth_ingress",
@@ -517,6 +601,7 @@ class _Topology:
             "B26_P2_INGRESS_DATABASE_URL_FILE=/run/secrets/b26_p2_ingress_dsn",
             "-v",
             f"{dsn_path}:/run/secrets/b26_p2_ingress_dsn:ro",
+            *env_extras,
             self.image,
             *AUTH_CMD,
         )
@@ -621,11 +706,14 @@ def _seed_tenant() -> dict[str, str]:
     tenant_key = f"{TENANT_KEY_PREFIX}-{tenant_id[:8]}"
     api_key_hash = hashlib.sha256(tenant_key.encode("utf-8")).hexdigest()
     stripe_secret = f"whsec_b26p2_iv_{tenant_id[:8]}"
+    shopify_secret = f"shop_b26p2_iv_{tenant_id[:8]}"
+    paypal_secret = f"pp_b26p2_iv_{tenant_id[:8]}"
+    woo_secret = f"woo_b26p2_iv_{tenant_id[:8]}"
     secrets = webhook_secret_insert_params(
-        shopify_secret=f"shop_b26p2_iv_{tenant_id[:8]}",
+        shopify_secret=shopify_secret,
         stripe_secret=stripe_secret,
-        paypal_secret=f"pp_b26p2_iv_{tenant_id[:8]}",
-        woocommerce_secret=f"woo_b26p2_iv_{tenant_id[:8]}",
+        paypal_secret=paypal_secret,
+        woocommerce_secret=woo_secret,
     )
     import psycopg2
 
@@ -656,16 +744,16 @@ def _seed_tenant() -> dict[str, str]:
                 f"b26p2-iv-{tenant_id[:8]}",
                 api_key_hash,
                 f"b26p2-iv-{tenant_id[:8]}@example.invalid",
-                f"shop_b26p2_iv_{tenant_id[:8]}",
+                shopify_secret,
                 secrets["webhook_secret_key"],
                 secrets["webhook_secret_key_id"],
                 stripe_secret,
                 secrets["webhook_secret_key"],
                 secrets["webhook_secret_key_id"],
-                f"pp_b26p2_iv_{tenant_id[:8]}",
+                paypal_secret,
                 secrets["webhook_secret_key"],
                 secrets["webhook_secret_key_id"],
-                f"woo_b26p2_iv_{tenant_id[:8]}",
+                woo_secret,
                 secrets["webhook_secret_key"],
                 secrets["webhook_secret_key_id"],
             ),
@@ -676,6 +764,9 @@ def _seed_tenant() -> dict[str, str]:
         "tenant_id": tenant_id,
         "tenant_key": tenant_key,
         "stripe_secret": stripe_secret,
+        "shopify_secret": shopify_secret,
+        "paypal_secret": paypal_secret,
+        "woocommerce_secret": woo_secret,
     }
 
 
@@ -716,6 +807,232 @@ def _post_stripe_once(
         return exc.code, exc.read().decode()
     except Exception as exc:  # noqa: BLE001 - connection/timeout: fail with context
         raise RuntimeError(f"webhook_post_failed:{type(exc).__name__}:{exc}"[:300])
+
+
+def _post_shopify_once(
+    tenant_key: str,
+    shopify_secret: str,
+    order_id: int,
+    total: str,
+    created_iso: str | None = None,
+) -> tuple[int, str, bytes]:
+    """XVI provider parity: real HMAC-signed shopify order through the API.
+
+    Returns (http_status, body_text, exact_sent_bytes) so the proof can
+    compare persisted meaning against the independent oracle on the
+    identical bytes the provider signed.
+    """
+    import base64 as _b64
+
+    body = json.dumps(
+        {
+            "id": order_id,
+            "total_price": total,
+            "currency": "USD",
+            "created_at": created_iso or datetime.now(timezone.utc).isoformat(),
+        },
+        separators=(",", ":"),
+    ).encode()
+    sig = _b64.b64encode(
+        hmac.new(shopify_secret.encode(), body, hashlib.sha256).digest()
+    ).decode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{_TOPO.api_port}/api/webhooks/shopify/order_create",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Skeldir-Tenant-Key": tenant_key,
+            "X-Shopify-Hmac-Sha256": sig,
+            "X-Shopify-Topic": "orders/create",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status, resp.read().decode(), body
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode(), body
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"webhook_post_failed:{type(exc).__name__}:{exc}"[:300])
+
+
+def _post_woocommerce_once(
+    tenant_key: str,
+    woo_secret: str,
+    order_id: int,
+    total: str,
+    completed_iso: str | None = None,
+) -> tuple[int, str, bytes]:
+    """XVI provider parity: real HMAC-signed woocommerce order via the API."""
+    import base64 as _b64
+
+    body = json.dumps(
+        {
+            "id": order_id,
+            "total": total,
+            "currency": "USD",
+            "date_completed": completed_iso or datetime.now(timezone.utc).isoformat(),
+        },
+        separators=(",", ":"),
+    ).encode()
+    sig = _b64.b64encode(
+        hmac.new(woo_secret.encode(), body, hashlib.sha256).digest()
+    ).decode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{_TOPO.api_port}/api/webhooks/woocommerce/order_completed",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Skeldir-Tenant-Key": tenant_key,
+            "X-WC-Webhook-Signature": sig,
+            "X-WC-Webhook-Topic": "order.completed",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status, resp.read().decode(), body
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode(), body
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"webhook_post_failed:{type(exc).__name__}:{exc}"[:300])
+
+
+_PAYPAL_TEST_STATE: dict = {}
+
+
+def _paypal_test_credentials() -> dict:
+    """Generate one RSA key + self-signed cert for the PayPal test override.
+
+    The API container receives TESTING=1 plus the cert URL/PEM (wired in
+    main before the paypal journey); transmissions are RSA-SHA256 signed
+    with this key over the provider-canonical message.
+    """
+    if _PAYPAL_TEST_STATE:
+        return _PAYPAL_TEST_STATE
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "paypal-test")])
+    now = datetime.now(timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now.replace(year=now.year + 5))
+        .sign(key, hashes.SHA256())
+    )
+    _PAYPAL_TEST_STATE["private_pem"] = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    ).decode()
+    _PAYPAL_TEST_STATE["cert_pem"] = cert.public_bytes(
+        serialization.Encoding.PEM
+    ).decode()
+    _PAYPAL_TEST_STATE["key"] = key
+    return _PAYPAL_TEST_STATE
+
+
+def _post_paypal_once(
+    tenant_key: str,
+    webhook_id: str,
+    txn_id: str,
+    total: str,
+    create_iso: str | None = None,
+) -> tuple[int, str, bytes]:
+    """XVI provider parity: real RSA-signed paypal sale through the API."""
+    import base64 as _b64
+    import zlib
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+
+    creds = _paypal_test_credentials()
+    body = json.dumps(
+        {
+            "id": txn_id,
+            "amount": {"total": total, "currency": "USD"},
+            "create_time": create_iso or datetime.now(timezone.utc).isoformat(),
+        },
+        separators=(",", ":"),
+    ).encode()
+    transmission_id = f"test-{uuid.uuid4().hex[:12]}"
+    transmission_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    crc = zlib.crc32(body) & 0xFFFFFFFF
+    canonical = (
+        f"{transmission_id}|{transmission_time}|{webhook_id}|{crc}"
+    ).encode()
+    signature = creds["key"].sign(canonical, padding.PKCS1v15(), hashes.SHA256())
+    # The API rebuilds the verification envelope server-side from the
+    # individual transmission headers; the Sig header carries only the
+    # base64 signature (never a prebuilt envelope).
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{_TOPO.api_port}/api/webhooks/paypal/sale_completed",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Skeldir-Tenant-Key": tenant_key,
+            "PayPal-Transmission-Sig": _b64.b64encode(signature).decode(),
+            "PayPal-Transmission-Id": transmission_id,
+            "PayPal-Transmission-Time": transmission_time,
+            "PayPal-Webhook-Id": webhook_id,
+            "PayPal-Auth-Algo": "SHA256withRSA",
+            "PayPal-Cert-Url": _PAYPAL_CERT_URL,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status, resp.read().decode(), body
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode(), body
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"webhook_post_failed:{type(exc).__name__}:{exc}"[:300])
+
+
+def _post_root_direct(
+    tenant_key: str,
+    provider: str,
+    raw_body: bytes,
+    signature_header: str,
+    event_reference: str,
+    commerce: dict,
+    event_id: str,
+) -> tuple[int, str]:
+    """XVI hostile journey: valid provider signature, MUTATED handoff.
+
+    Calls the real auth-root process directly with bytes the provider
+    genuinely signed but commerce fields the relay did not derive from
+    them. The root must refuse (binding law) with zero persistence.
+    """
+    import base64 as _b64
+
+    payload = {
+        "api_key": tenant_key,
+        "provider": provider,
+        "provider_event_reference": event_reference,
+        "raw_body_b64": _b64.b64encode(raw_body).decode(),
+        "signature_header": signature_header,
+        "event_id": event_id,
+        "auth_version": "v1",
+        **commerce,
+    }
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{_TOPO.args.auth_port}/v1/authenticate-ingress",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status, resp.read().decode()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode()
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"root_post_failed:{type(exc).__name__}:{exc}"[:300])
 
 
 def _post_stripe(
@@ -771,6 +1088,82 @@ def _broker_outage(block: bool) -> None:
             _query(f"GRANT INSERT ON TABLE public.kombu_message TO {role}")
 
 
+def _ingress_by_key(tenant_id: str, idem: str) -> list[tuple]:
+    return _query(
+        "SELECT id::text, provider, provider_native_event_reference,"
+        " provider_native_commerce_reference,"
+        " normalized_commerce_reference_kind,"
+        " normalized_commerce_reference_value, verified_amount_minor,"
+        " verified_amount_currency, verified_amount_scale,"
+        " extract(epoch from event_timestamp)::bigint,"
+        " verified_commerce_ingress_state, b26_p2_provenance_status,"
+        " (SELECT count(*) FROM public.b26_p2_provider_auth_consequence c"
+        " WHERE c.webhook_ingress_identity_id = i.id),"
+        " (SELECT count(*) FROM public.b26_p2_auth_root_evidence r"
+        " WHERE r.webhook_ingress_identity_id = i.id),"
+        " (SELECT count(*) FROM public.b26_p2_ingress_auth_witness w"
+        " WHERE w.webhook_ingress_identity_id = i.id)"
+        " FROM public.webhook_ingress_identities i"
+        " WHERE i.tenant_id = %s AND i.idempotency_key = %s",
+        (tenant_id, idem),
+    )
+
+
+def _xvi_oracle_expected(provider: str, raw: bytes) -> dict:
+    """Independent provider-native expectation (stdlib only, no app import)."""
+    import importlib.util as _ilu
+
+    path = REPO_ROOT / "scripts" / "ci" / "validate_b26_p2_xvi_semantic_oracle.py"
+    spec = _ilu.spec_from_file_location("xvi_topo_oracle", path)
+    assert spec is not None and spec.loader is not None
+    module = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.ORACLES[provider](raw)
+
+
+def _assert_oracle_correspondence(
+    provider: str, raw: bytes, row: tuple
+) -> dict:
+    """Persisted meaning must equal the independent oracle's meaning."""
+    expected = _xvi_oracle_expected(provider, raw)
+    observed = {
+        "provider": row[1],
+        "provider_native_event_reference": row[2],
+        "provider_native_commerce_reference": row[3],
+        "normalized_commerce_reference_kind": row[4],
+        "normalized_commerce_reference_value": row[5],
+        "verified_amount_minor": int(row[6]),
+        "verified_amount_currency": row[7],
+        "verified_amount_scale": int(row[8]),
+        "event_timestamp_epoch": int(row[9]),
+    }
+    if observed != expected:
+        raise RuntimeError(f"oracle_divergence:{provider}:{observed}:{expected}")
+    return observed
+
+
+def _wait_auth_ok(timeout_s: int = 120) -> None:
+    deadline = time.time() + timeout_s
+    url = f"http://127.0.0.1:{_TOPO.args.auth_port}/health/live"
+    last = "unstarted"
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                if resp.status == 200:
+                    return
+                last = f"http_{resp.status}"
+        except Exception as exc:  # noqa: BLE001
+            last = type(exc).__name__
+        time.sleep(2)
+    raise RuntimeError(f"auth_root_not_live:{last}")
+
+
+def _stop_container(name: str) -> None:
+    proc = _docker("stop", name)
+    if proc.returncode != 0:
+        raise RuntimeError(f"container_stop_failed:{name}:{proc.stderr[-300:]}")
+
+
 def _wait_state(
     table: str, idcol: str, task_id: str, want: str, timeout_s: int
 ) -> dict:
@@ -813,15 +1206,16 @@ _TOPO: _Topology
 
 
 def _dead_edge_probe() -> dict:
-    """Prove the natural-dispatch kill-switch is honored (host-level dead edge).
+    """Prove the natural-dispatch kill-switch is honored (dead edge).
 
     With SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH set, the production
     webhook edge must persist ingress but issue NO dispatch/outbox/
-    directory rows. Runs on the host against the proof database using the
-    production webhook function (not a reimplementation).
+    directory rows. XVI (H-XVI-R18): the probe stimulus executes INSIDE
+    the shipping API container (the deployed artifact), not via a host
+    import of workspace source. Tenant/event/ingress seeding remains a
+    host SQL fixture (precondition, like the migrated schema -- not a
+    production edge and carrying no financial meaning).
     """
-    import asyncio
-
     import psycopg2 as _pg
 
     tenant_id = str(uuid.uuid4())
@@ -893,29 +1287,27 @@ def _dead_edge_probe() -> dict:
         )
     finally:
         conn.close()
-    os.environ["SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH"] = "1"
-    try:
-        from app.api.webhooks import (  # noqa: PLC0415
-            _dispatch_b23_match_task_from_persisted_ingress,
-        )
-
-        asyncio.run(
-            _dispatch_b23_match_task_from_persisted_ingress(
-                tenant_id=tenant_id,
-                event_id=event_uuid,
-                event_timestamp=occurred.isoformat(),
-                correlation_id=str(uuid.uuid4()),
-            )
-        )
-    finally:
-        del os.environ["SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH"]
+    # In-artifact stimulus: the kill-switch probe runs as the API
+    # container's own process (image bytes + container DATABASE_URL).
+    probe_code = (
+        "import asyncio, os;"
+        "os.environ['SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH']='1';"
+        "from app.api.webhooks import "
+        "_dispatch_b23_match_task_from_persisted_ingress as _d;"
+        f"asyncio.run(_d(tenant_id={tenant_id!r},event_id={event_uuid!r},"
+        f"event_timestamp={(occurred.isoformat())!r},"
+        f"correlation_id={str(uuid.uuid4())!r}))"
+    )
+    proc = _docker("exec", API_CONTAINER, "python", "-c", probe_code)
+    if proc.returncode != 0:
+        raise RuntimeError(f"dead_edge_probe_failed:{proc.stderr[-500:]}")
     rows = _query(
         "SELECT count(*) FROM public.b23_match_task_dispatches WHERE tenant_id = %s",
         (tenant_id,),
     )
     if int(rows[0][0]) != 0:
         raise RuntimeError("dead_edge_dispatch_not_suppressed")
-    return {"dead_edge_sets": True, "dispatch_rows": 0}
+    return {"dead_edge_sets": True, "dispatch_rows": 0, "in_artifact": True}
 
 
 def main() -> int:
@@ -924,6 +1316,7 @@ def main() -> int:
     parser.add_argument("--evidence-out", type=Path, default=None)
     parser.add_argument("--pg-port", default="5544")
     parser.add_argument("--api-port", default="8000")
+    parser.add_argument("--auth-port", default="18001")
     parser.add_argument("--pg-password", default="postgres")
     parser.add_argument("--image-tag", default="ci")
     parser.add_argument("--sweep-interval", default="5")
@@ -971,9 +1364,9 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609270003" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xiv")
-        details["migration_head"] = "202609270003"
+        if "202609280002" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xvi")
+        details["migration_head"] = "202609280002"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -1013,27 +1406,58 @@ def main() -> int:
         details["image_tag"] = _TOPO.image
         image_id = _TOPO.build_image()
         details["image_id"] = image_id
+        # XVI (H-XVI-R18): bind the proof to the artifact identity.
+        details["artifact_identity"] = _TOPO.image_artifact_identity()
+        # XVI: the container commands must equal the shipping Procfile
+        # commands (modulo cd/env-prefix/reload/concurrency-default).
+        # A CMD override that is not the shipping command voids
+        # deployment-equivalence credit.
+        _PROCFILE_CMDS = {
+            "api": ("web:", ["uvicorn", "app.main:app"]),
+            "auth_ingress": ("auth_ingress:", ["uvicorn", "app.auth_service.server:app"]),
+            "worker_b23": ("worker_b23:", ["celery", "-A", "app.celery_app.celery_app", "worker"]),
+            "relay": ("relay_b26_p2:", ["celery", "-A", "app.celery_app.celery_app", "worker"]),
+            "beat": ("beat:", ["celery", "-A", "app.celery_app.celery_app", "beat"]),
+        }
+        _CI_CMDS = {
+            "api": API_CMD,
+            "auth_ingress": AUTH_CMD,
+            "worker_b23": WORKER_CMD,
+            "relay": RELAY_CMD,
+            "beat": BEAT_CMD,
+        }
+        for _svc, (_prefix, _ship) in _PROCFILE_CMDS.items():
+            _pline = next(
+                (ln for ln in procfile.splitlines() if ln.startswith(_prefix)), ""
+            )
+            for _tok in _ship:
+                if _tok not in _pline:
+                    return _fail(f"procfile_cmd_drift:{_svc}:{_tok}")
+            for _tok in _CI_CMDS[_svc][: len(_ship)]:
+                if _tok not in _pline and _tok not in ("--host", "0.0.0.0"):
+                    return _fail(f"ci_cmd_not_shipping:{_svc}:{_tok}")
+        details["procfile_cmd_parity"] = True
         print("B26_P2_TOPOLOGY_STAGE postgres", flush=True)
         _TOPO.start_postgres()
         print("B26_P2_TOPOLOGY_STAGE provision", flush=True)
         _TOPO.provision()
-        # Dead-edge falsifier (host-level, production webhook function):
-        # the kill-switch must suppress dispatch issuance entirely.
-        print("B26_P2_TOPOLOGY_STAGE dead_edge", flush=True)
-        details["dead_edge"] = _dead_edge_probe()
         print("B26_P2_TOPOLOGY_STAGE boot_services", flush=True)
         _TOPO.start_auth_root()
         _TOPO.start_api()
         _TOPO.start_worker()
         _TOPO.start_relay()
         _TOPO.start_beat()
-        _wait_http_ok(f"http://127.0.0.1:{args.api_port}/health/live", 120)
+        _wait_http_ok(f"http://127.0.0.1:{_TOPO.api_port}/health/live", 120)
         details["api_live"] = True
         details["auth_root_live"] = True
         _wait_log(WORKER_CONTAINER, "ready", 180)
         _wait_log(RELAY_CONTAINER, "ready", 180)
         details["workers_ready"] = True
         print("B26_P2_TOPOLOGY_STAGE services_ready", flush=True)
+        # Dead-edge falsifier (in-artifact production webhook function):
+        # the kill-switch must suppress dispatch issuance entirely.
+        print("B26_P2_TOPOLOGY_STAGE dead_edge", flush=True)
+        details["dead_edge"] = _dead_edge_probe()
 
         # 2. Prove the exact shipped commands are PID 1 in each container.
         pid1 = {
@@ -1161,6 +1585,227 @@ def main() -> int:
         if scope.get("scope_policy_version") != "b2.6-p2-scope-policy-v2":
             return _fail("scope_policy_not_v2")
 
+        # 4b. XVI provider parity: every supported provider completes one
+        # production-realistic authenticated journey (real API + real
+        # root + real verifier + sovereign derivation + DB transition)
+        # with independent-oracle correspondence, plus one hostile
+        # semantic mutation (valid signature, mutated handoff direct to
+        # the real root) that must be refused with zero persistence.
+        print("B26_P2_TOPOLOGY_STAGE provider_parity", flush=True)
+        import uuid as _stage_uuid
+
+        parity: dict[str, dict] = {}
+        # Whole-second fixtures: the timestamp law is second precision
+        # and the column rounds sub-second inputs; whole-second inputs
+        # make oracle correspondence bit-exact by contract.
+        fixed_ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        parity_cases = [
+            {
+                "provider": "shopify",
+                "send": lambda: _post_shopify_once(
+                    tenant["tenant_key"],
+                    tenant["shopify_secret"],
+                    900001,
+                    "42.50",
+                    created_iso=fixed_ts,
+                ),
+                "idem": str(
+                    _stage_uuid.uuid5(
+                        _stage_uuid.NAMESPACE_URL, "shopify_order_create_900001"
+                    )
+                ),
+            },
+            {
+                "provider": "woocommerce",
+                "send": lambda: _post_woocommerce_once(
+                    tenant["tenant_key"],
+                    tenant["woocommerce_secret"],
+                    900002,
+                    "19.99",
+                    completed_iso=fixed_ts,
+                ),
+                "idem": str(
+                    _stage_uuid.uuid5(
+                        _stage_uuid.NAMESPACE_URL,
+                        "woocommerce_order_completed_900002",
+                    )
+                ),
+            },
+        ]
+        for case in parity_cases:
+            status_p, body_p, raw_p = case["send"]()
+            if status_p != 200:
+                return _fail(
+                    f"parity_journey_rejected:{case['provider']}:{status_p}:{body_p[:200]}"
+                )
+            rows_p = _ingress_by_key(tenant["tenant_id"], case["idem"])
+            if len(rows_p) != 1:
+                return _fail(f"parity_no_single_lineage:{case['provider']}")
+            row_p = rows_p[0]
+            if row_p[11] != "authenticated_known" or int(row_p[12]) != 1:
+                return _fail(f"parity_not_authenticated:{case['provider']}")
+            try:
+                _assert_oracle_correspondence(case["provider"], raw_p, row_p)
+            except RuntimeError as exc:
+                return _fail(str(exc))
+            parity[case["provider"]] = {"http": status_p, "key": case["idem"]}
+        # PayPal runs with the test-cert override (TESTING=1 only changes
+        # the pool class to NullPool against the same database; the
+        # override PEM is test-only and never a production secret).
+        # The API is restarted into its exact prior configuration after.
+        paypal_creds = _paypal_test_credentials()
+        paypal_override_env = [
+            "TESTING=1",
+            f"SKELDIR_PAYPAL_TEST_CERT_URL={_PAYPAL_CERT_URL}",
+            f"SKELDIR_PAYPAL_TEST_CERT_PEM={paypal_creds['cert_pem']}",
+        ]
+        _TOPO.start_api(extra_env=paypal_override_env)
+        _wait_http_ok(f"http://127.0.0.1:{_TOPO.api_port}/health/live", 120)
+        # The root re-verifies the same signature: it needs the same
+        # test-only override (restarted into the exact prior
+        # configuration after the journey).
+        _TOPO.start_auth_root(extra_env=paypal_override_env)
+        _wait_auth_ok(180)
+        paypal_txn = f"PAY-{uuid.uuid4().hex[:10]}"
+        status_pp, body_pp, raw_pp = _post_paypal_once(
+            tenant["tenant_key"],
+            tenant["paypal_secret"],
+            paypal_txn,
+            "50.00",
+            create_iso=fixed_ts,
+        )
+        if status_pp != 200:
+            return _fail(f"parity_journey_rejected:paypal:{status_pp}:{body_pp[:200]}")
+        paypal_idem = str(
+            _stage_uuid.uuid5(
+                _stage_uuid.NAMESPACE_URL, f"paypal_sale_completed_{paypal_txn}"
+            )
+        )
+        rows_pp = _ingress_by_key(tenant["tenant_id"], paypal_idem)
+        if len(rows_pp) != 1 or rows_pp[0][11] != "authenticated_known":
+            return _fail("parity_no_single_lineage:paypal")
+        try:
+            _assert_oracle_correspondence("paypal", raw_pp, rows_pp[0])
+        except RuntimeError as exc:
+            return _fail(str(exc))
+        parity["paypal"] = {"http": status_pp, "key": paypal_idem}
+        _TOPO.start_api()
+        _wait_http_ok(f"http://127.0.0.1:{_TOPO.api_port}/health/live", 120)
+        _TOPO.start_auth_root()
+        _wait_auth_ok(180)
+        details["provider_parity_lawful"] = parity
+
+        # 4c. XVI hostile journeys: fixed signed bytes, mutated handoff
+        # direct to the real root (amount/currency/reference each).
+        print("B26_P2_TOPOLOGY_STAGE hostile_journeys", flush=True)
+        hostile_raw = json.dumps(
+            {
+                "id": "pi_hostile_1",
+                "amount": 5000,
+                "currency": "usd",
+                "created": int(time.time()),
+            },
+            separators=(",", ":"),
+        ).encode()
+        hostile_sig = _sign_stripe(hostile_raw, tenant["stripe_secret"])
+        hostile_base_commerce = {
+            "provider_native_commerce_reference": "pi_hostile_1",
+            "normalized_commerce_reference_kind": "stripe_payment_intent_id",
+            "normalized_commerce_reference_value": "pi_hostile_1",
+            "verified_amount_minor": 5000,
+            "verified_amount_currency": "USD",
+            "verified_amount_scale": 2,
+            "event_timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        hostile_mutations = [
+            ("amount", {**hostile_base_commerce, "verified_amount_minor": 5001}),
+            ("currency", {**hostile_base_commerce, "verified_amount_currency": "EUR"}),
+            (
+                "reference",
+                {
+                    **hostile_base_commerce,
+                    "provider_native_commerce_reference": "pi_hostile_X",
+                    "normalized_commerce_reference_value": "pi_hostile_X",
+                },
+            ),
+        ]
+        for dim, commerce in hostile_mutations:
+            hs, hb = _post_root_direct(
+                tenant["tenant_key"],
+                "stripe",
+                hostile_raw,
+                hostile_sig,
+                "pi_hostile_1",
+                commerce,
+                f"xvi-hostile-{dim}-{uuid.uuid4().hex[:8]}",
+            )
+            if hs != 400 or "b26_p2_handoff_binding_refused" not in hb:
+                return _fail(f"hostile_not_refused:{dim}:{hs}:{hb[:200]}")
+            # Zero persistence for the refused lineage.
+            leaked = _query(
+                "SELECT count(*) FROM public.webhook_ingress_identities"
+                " WHERE tenant_id = %s AND provider_native_commerce_reference = %s",
+                (tenant["tenant_id"], "pi_hostile_X" if dim == "reference" else "pi_hostile_1"),
+            )
+            if dim == "reference" and int(leaked[0][0]) != 0:
+                return _fail(f"hostile_persisted:{dim}")
+        details["hostile_journeys_refused"] = [d for d, _ in hostile_mutations]
+
+        # 4d. XVI currency law: a lawful-signed non-USD event is
+        # governed-excluded to durable DLQ (never authenticated, never
+        # lost, never a retry storm).
+        eur_intent = f"pi_EUR{uuid.uuid4().hex[:12]}"
+        eur_body = json.dumps(
+            {
+                "id": eur_intent,
+                "amount": 5000,
+                "currency": "eur",
+                "created": int(time.time()),
+            },
+            separators=(",", ":"),
+        ).encode()
+        eur_req = urllib.request.Request(
+            f"http://127.0.0.1:{_TOPO.api_port}/api/webhooks/stripe/payment_intent_succeeded",
+            data=eur_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Skeldir-Tenant-Key": tenant["tenant_key"],
+                "Stripe-Signature": _sign_stripe(eur_body, tenant["stripe_secret"]),
+            },
+        )
+        try:
+            with urllib.request.urlopen(eur_req, timeout=60) as eur_resp:
+                eur_status, eur_text = eur_resp.status, eur_resp.read().decode()
+        except urllib.error.HTTPError as exc:
+            eur_status, eur_text = exc.code, exc.read().decode()
+        if eur_status != 200 or "dlq_routed" not in eur_text:
+            return _fail(f"eur_not_governed:{eur_status}:{eur_text[:200]}")
+        eur_idem = str(
+            _stage_uuid.uuid5(
+                _stage_uuid.NAMESPACE_URL,
+                f"stripe_payment_intent_succeeded_{eur_intent}",
+            )
+        )
+        eur_rows = _ingress_by_key(tenant["tenant_id"], eur_idem)
+        # A pending precursor may exist (committed before the governed
+        # refusal); what must never exist is authenticated truth or any
+        # evidence for the excluded currency.
+        if any(
+            r[11] == "authenticated_known" or int(r[12]) != 0 or int(r[13]) != 0
+            for r in eur_rows
+        ):
+            return _fail("eur_authenticated")
+        # The governed exclusion token lives in the durable DLQ row (the
+        # response carries only the routing disposition).
+        eur_dlq = _query(
+            "SELECT count(*) FROM public.dead_events WHERE tenant_id = %s"
+            " AND error_message LIKE '%%unsupported_currency%%'",
+            (tenant["tenant_id"],),
+        )
+        if int(eur_dlq[0][0]) < 1:
+            return _fail("eur_not_dlq_durable")
+        details["currency_law"] = {"eur": "dlq_governed"}
+
         # 5. Recovery journey: broker outage, NO provider retry, natural recovery.
         print("B26_P2_TOPOLOGY_STAGE recovery_journey", flush=True)
         _broker_outage(True)
@@ -1210,6 +1855,115 @@ def main() -> int:
         )
         if len(str(recovery_scope.get("scope_identity") or "")) != 64:
             return _fail("recovery_scope_identity_malformed")
+
+        # 5b. XVI root-outage matrix through the real processes.
+        # (a) root down before authentication: no false 2xx, pending
+        # precursor, zero evidence/consequence/witness.
+        print("B26_P2_TOPOLOGY_STAGE root_outage", flush=True)
+        _stop_container(AUTH_CONTAINER)
+        outage_intent = f"pi_OUT{uuid.uuid4().hex[:12]}"
+        outage_body = json.dumps(
+            {
+                "id": outage_intent,
+                "amount": 7700,
+                "currency": "usd",
+                "created": int(time.time()),
+            },
+            separators=(",", ":"),
+        ).encode()
+        outage_req = urllib.request.Request(
+            f"http://127.0.0.1:{_TOPO.api_port}/api/webhooks/stripe/payment_intent_succeeded",
+            data=outage_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Skeldir-Tenant-Key": tenant["tenant_key"],
+                "Stripe-Signature": _sign_stripe(outage_body, tenant["stripe_secret"]),
+            },
+        )
+        try:
+            with urllib.request.urlopen(outage_req, timeout=60) as outage_resp:
+                outage_status = outage_resp.status
+        except urllib.error.HTTPError as exc:
+            outage_status = exc.code
+        if outage_status == 200:
+            return _fail(f"root_down_false_success:{outage_status}")
+        outage_idem = str(
+            _stage_uuid.uuid5(
+                _stage_uuid.NAMESPACE_URL,
+                f"stripe_payment_intent_succeeded_{outage_intent}",
+            )
+        )
+        outage_rows = _ingress_by_key(tenant["tenant_id"], outage_idem)
+        if len(outage_rows) != 1:
+            return _fail("root_down_no_pending_precursor")
+        if outage_rows[0][11] == "authenticated_known" or int(outage_rows[0][12]) != 0:
+            return _fail("root_down_evidence_without_root")
+        details["root_outage_down"] = {"http": outage_status, "pending": True}
+        # (b) root restored + provider retry of the EXACT bytes:
+        # one lineage, authenticated, complete evidence.
+        _TOPO.start_auth_root()
+        _wait_auth_ok(180)
+        replay_req = urllib.request.Request(
+            f"http://127.0.0.1:{_TOPO.api_port}/api/webhooks/stripe/payment_intent_succeeded",
+            data=outage_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Skeldir-Tenant-Key": tenant["tenant_key"],
+                "Stripe-Signature": _sign_stripe(outage_body, tenant["stripe_secret"]),
+            },
+        )
+        try:
+            with urllib.request.urlopen(replay_req, timeout=60) as replay_resp:
+                replay_status = replay_resp.status
+        except urllib.error.HTTPError as exc:
+            replay_status = exc.code
+        if replay_status != 200:
+            return _fail(f"root_restored_replay_rejected:{replay_status}")
+        healed = _ingress_by_key(tenant["tenant_id"], outage_idem)
+        if len(healed) != 1 or healed[0][11] != "authenticated_known":
+            return _fail("root_restored_not_authenticated")
+        if int(healed[0][12]) != 1 or int(healed[0][13]) != 1:
+            return _fail("root_restored_evidence_incomplete")
+        details["root_outage_healed"] = {"http": replay_status}
+        # (c) already-authenticated replay storm: 10 concurrent
+        # duplicates converge to the single lineage (no double
+        # consequence, no second lineage).
+        import threading as _storm_threading
+
+        storm_results: list[int] = []
+        storm_errors: list[str] = []
+
+        def _storm_post() -> None:
+            try:
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{_TOPO.api_port}/api/webhooks/stripe/payment_intent_succeeded",
+                    data=outage_body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Skeldir-Tenant-Key": tenant["tenant_key"],
+                        "Stripe-Signature": _sign_stripe(
+                            outage_body, tenant["stripe_secret"]
+                        ),
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=90) as resp:
+                    storm_results.append(resp.status)
+            except urllib.error.HTTPError as exc:
+                storm_results.append(exc.code)
+            except Exception as exc:  # noqa: BLE001
+                storm_errors.append(type(exc).__name__)
+
+        storm_threads = [_storm_threading.Thread(target=_storm_post) for _ in range(10)]
+        for thread in storm_threads:
+            thread.start()
+        for thread in storm_threads:
+            thread.join()
+        if storm_errors or any(s != 200 for s in storm_results):
+            return _fail(f"replay_storm_failed:{storm_results}:{storm_errors}")
+        converged = _ingress_by_key(tenant["tenant_id"], outage_idem)
+        if len(converged) != 1 or int(converged[0][12]) != 1:
+            return _fail("replay_storm_split_lineage")
+        details["replay_storm_converged"] = {"posts": len(storm_results)}
 
         # 6. Deployment falsifiers (mutate deployed state, expect RED, restore).
         print("B26_P2_TOPOLOGY_STAGE falsifiers", flush=True)
@@ -2302,30 +3056,23 @@ def _collect_diagnostics() -> dict:
 def _send_relay_sweep(queue: str) -> None:
     """Publish one REAL relay sweep to a chosen queue (wrong-queue falsifier).
 
-    Uses the production Celery publisher path (broker transport), not a
-    hand-rolled broker row: the message is structurally valid and broker
+    XVI (H-XVI-R18): the stimulus is published by a shipping container
+    (image bytes, container broker), not by a host import of workspace
+    source. The API container publishes (it holds the same broker
+    transport it uses for natural dispatch; publishing is a broker
+    write, not task execution) because this stimulus fires while the
+    relay and scheduler are intentionally stopped -- the falsifier's
+    very premise. The message is structurally valid and broker
     acceptance succeeds; only the routing is wrong, so no consumer ever
     executes it.
     """
-    sys.path.insert(0, str(BACKEND))
-    env_broker = (
-        f"sqla+postgresql://app_user:app_user@127.0.0.1:{_TOPO.pg_port}/{DB_NAME}"
-    )
-    env_result = (
-        f"db+postgresql://app_user:app_user@127.0.0.1:{_TOPO.pg_port}/{DB_NAME}"
-    )
     code = (
-        "import os;"
-        f"os.environ['CELERY_BROKER_URL']={env_broker!r};"
-        f"os.environ['CELERY_RESULT_BACKEND']={env_result!r};"
-        f"os.environ['DATABASE_URL']='postgresql+asyncpg://app_user:app_user@127.0.0.1:{_TOPO.pg_port}/{DB_NAME}';"
         "from app.celery_app import celery_app;"
         "import app.tasks.b26_p2_relay;"
         f"r=celery_app.send_task('app.tasks.b26_p2_relay.relay_b26_p2_pending_dispatches',queue={queue!r});"
         "print('SWEEP_SENT '+str(r.id))"
     )
-    env = dict(os.environ, PYTHONPATH=str(BACKEND))
-    proc = _run([sys.executable, "-c", code], cwd=REPO_ROOT, env=env)
+    proc = _docker("exec", API_CONTAINER, "python", "-c", code)
     if proc.returncode != 0 or "SWEEP_SENT" not in proc.stdout:
         raise RuntimeError(f"sweep_send_failed:{proc.stderr[-500:]}")
 

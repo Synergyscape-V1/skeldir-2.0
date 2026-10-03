@@ -914,7 +914,13 @@ async def test_p2ciii_forged_task_causes_zero_b23_consequence() -> None:
 
 
 async def test_p2ciii_provider_swap_changes_scope_identity() -> None:
-    """Supported provider A->B changes identity with equal aggregates."""
+    """XV (H-XV-R5): post-authentication provider restatement is refused.
+
+    Provider is authenticated financial meaning: once a row carries an
+    authenticated evidence claim, rewriting it is physically refused and
+    scope identity stays exactly put (a legitimate provider correction
+    requires invalidation/re-authentication, never silent restatement).
+    """
     import psycopg2
 
     universe = _seed_conduction_universe("provider-swap")
@@ -937,15 +943,22 @@ async def test_p2ciii_provider_swap_changes_scope_identity() -> None:
                 (str(universe["tenant_id"]),),
             )
             target = cur.fetchone()[0]
-            cur.execute(
-                "UPDATE public.webhook_ingress_identities SET provider = 'paypal'"
-                " WHERE id = %s",
-                (str(target),),
-            )
+            # XV (H-XV-R5): provider is authenticated financial meaning.
+            # A post-authentication provider rewrite is physically
+            # refused -- meaning cannot be restated beside valid
+            # evidence. Scope identity therefore stays exactly put.
+            with pytest.raises(
+                Exception, match="b26_p2_authenticated_meaning_immutable_refused"
+            ):
+                cur.execute(
+                    "UPDATE public.webhook_ingress_identities SET provider = 'paypal'"
+                    " WHERE id = %s",
+                    (str(target),),
+                )
         swapped = await _derive(universe["tenant_id"])
         assert swapped.candidate_count == baseline.candidate_count
         assert swapped.total_amount_minor == baseline.total_amount_minor
-        assert swapped.scope_identity != baseline_identity
+        assert swapped.scope_identity == baseline_identity
     finally:
         conn.close()
 

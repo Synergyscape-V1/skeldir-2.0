@@ -2630,6 +2630,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             _witness text;
             _expected text;
             _prev_guc text;
+            _dup_id uuid;
         BEGIN
             IF session_user IS DISTINCT FROM 'app_ingress'
                AND session_user IS DISTINCT FROM 'migration_owner'
@@ -2664,6 +2665,47 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             IF public.b26_p2_ascii_strip(COALESCE(p_event_ref, '')) = ''
                OR public.b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_blank_shape_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XVI1: serialize authentications of identical bytes. Two
+            -- concurrent first-authentications of the same provider
+            -- event under different idempotency keys would otherwise
+            -- both pass every check above and mint two canonical
+            -- lineages for one payment. The advisory lock is keyed on
+            -- row content (tenant + body digest), never on caller
+            -- context, and is transaction-scoped (released at commit).
+            PERFORM pg_advisory_xact_lock(
+                hashtext('b26_p2_sovereign_bytes:' || _tenant::text),
+                hashtext(lower(p_body_sha256))
+            );
+            -- Refuse when a DIFFERENT row already carries terminal
+            -- authentication for these exact bytes AND the same provider
+            -- event reference. The conjunction is exact for honest
+            -- traffic: identical bytes determine identical meaning
+            -- through sovereign derivation, so a same-bytes second
+            -- lineage always presents the same reference; distinct
+            -- provider events never share bytes. The reference clause
+            -- additionally tolerates placeholder digests in pre-existing
+            -- fixtures for distinct events (same fake digest, different
+            -- references). Bypassing the conjunction requires either a
+            -- sha256 second preimage (infeasible) or TCB-level fabricated
+            -- digests (out of scope per directive §14). Pending rows
+            -- never block (crash-before-commit retry stays live);
+            -- re-entry for this same row proceeds to the idempotent
+            -- path below.
+            SELECT i.id INTO _dup_id
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_provider_auth_consequence AS c
+                ON c.webhook_ingress_identity_id = i.id
+               AND c.tenant_id = i.tenant_id
+             WHERE i.tenant_id = _tenant
+               AND lower(c.body_sha256) IS NOT DISTINCT FROM lower(p_body_sha256)
+               AND c.provider_event_reference IS NOT DISTINCT FROM p_event_ref
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.id IS DISTINCT FROM p_ingress
+             LIMIT 1;
+            IF FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_sovereign_duplicate_refused'
                     USING ERRCODE = '42501';
             END IF;
             BEGIN
@@ -3031,24 +3073,30 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _ctx text;
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                -- Owner-agnostic gate with two lawful paths: (1) through
-                -- a SECURITY DEFINER routine (the atomic transition),
-                -- where current_user (the routine owner, whatever lane
-                -- role created it) differs from session_user (the
-                -- trust-root caller); (2) direct maintenance by a
-                -- migration admin (seeders/provisioners running as
-                -- migration_owner/postgres). Direct writes as any other
-                -- principal, including the trust-root role itself, have
-                -- identical current/session users and are refused
-                -- (table GRANTs deny runtime roles first; this is the
-                -- backstop).
-                IF current_user IS NOT DISTINCT FROM session_user
-                   AND session_user IS DISTINCT FROM 'migration_owner'
+                -- Lawful path 1: migration-admin maintenance (seeders /
+                -- provisioners running as migration_owner/postgres).
+                IF session_user IS DISTINCT FROM 'migration_owner'
                    AND session_user IS DISTINCT FROM 'postgres' THEN
-                    RAISE EXCEPTION 'b26_p2_auth_root_evidence_direct_refused'
-                        USING ERRCODE = '42501';
+                    -- Lawful path 2: the single sovereign transition. The
+                    -- trigger fires inside the atomic's transaction, so
+                    -- PG_CONTEXT contains the atomic's exact frame. A
+                    -- substring test would also match wrappers,
+                    -- comments, or same-name overloads; the anchored
+                    -- expression below admits only the exact 7-argument
+                    -- sovereign signature. Any other SECURITY DEFINER
+                    -- routine (an administrator-authored deputy, a future
+                    -- helper, a confused deputy) carries its own frame
+                    -- instead and is refused here with
+                    -- b26_p2_auth_root_evidence_transition_refused.
+                    GET DIAGNOSTICS _ctx = PG_CONTEXT;
+                    IF _ctx IS NULL OR _ctx !~ 'PL/pgSQL function b26_p2_authenticate_ingress_atomic\(uuid,text,text,text,text,text,text\)' THEN
+                        RAISE EXCEPTION 'b26_p2_auth_root_evidence_transition_refused'
+                            USING ERRCODE = '42501';
+                    END IF;
                 END IF;
                 RETURN NEW;
             END IF;
@@ -3073,6 +3121,44 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
                         USING ERRCODE = '42501';
                 END IF;
                 RETURN OLD;
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+-- Name: b26_p2_enforce_authenticated_meaning_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF TG_OP = 'UPDATE' THEN
+                -- Only authenticated rows are fenced. Pending precursors
+                -- (promotion pending -> verified) and non-authenticated
+                -- states pass through to the sibling guards.
+                IF OLD.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
+                   OR OLD.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known' THEN
+                    IF OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
+                       OR OLD.provider IS DISTINCT FROM NEW.provider
+                       OR OLD.provider_native_event_reference IS DISTINCT FROM NEW.provider_native_event_reference
+                       OR OLD.provider_native_commerce_reference IS DISTINCT FROM NEW.provider_native_commerce_reference
+                       OR OLD.normalized_commerce_reference_kind IS DISTINCT FROM NEW.normalized_commerce_reference_kind
+                       OR OLD.normalized_commerce_reference_value IS DISTINCT FROM NEW.normalized_commerce_reference_value
+                       OR OLD.verified_amount_minor IS DISTINCT FROM NEW.verified_amount_minor
+                       OR OLD.verified_amount_currency IS DISTINCT FROM NEW.verified_amount_currency
+                       OR OLD.verified_amount_scale IS DISTINCT FROM NEW.verified_amount_scale
+                       OR OLD.event_timestamp IS DISTINCT FROM NEW.event_timestamp
+                       OR OLD.idempotency_key IS DISTINCT FROM NEW.idempotency_key THEN
+                        -- NOTE: the Skeldir event_id link is intentionally
+                        -- not fenced: genuine duplicate re-ingestion rebinds
+                        -- it while financial meaning stays fixed.
+                        RAISE EXCEPTION 'b26_p2_authenticated_meaning_immutable_refused'
+                            USING ERRCODE = '42501';
+                    END IF;
+                END IF;
+                RETURN NEW;
             END IF;
             RETURN NEW;
         END $$;
@@ -3743,6 +3829,7 @@ CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
 
 
 --
+
 -- Name: b26_p2_enforce_result_integrity(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -21125,14 +21212,16 @@ CREATE TRIGGER trg_b26_p2_auth_consequence_immutability BEFORE INSERT OR DELETE 
 
 
 --
--- Name: b23_match_task_dispatches trg_b26_p2_conducted_effect_guard; Type: TRIGGER; Schema: public; Owner: -
---
-
---
 -- Name: b26_p2_auth_root_evidence trg_b26_p2_auth_root_evidence_immutability; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_b26_p2_auth_root_evidence_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability();
+
+
+-- Name: b23_match_task_dispatches trg_b26_p2_conducted_effect_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+--
 
 CREATE TRIGGER trg_b26_p2_conducted_effect_guard BEFORE UPDATE OF delivery_state ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_conducted_transition();
 
@@ -21205,6 +21294,12 @@ CREATE TRIGGER trg_b26_p2_ingress_sovereign_custody BEFORE DELETE OR UPDATE OF e
 --
 
 CREATE TRIGGER trg_b26_p2_ingress_verified_authorship BEFORE INSERT OR UPDATE OF verified_commerce_ingress_state ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_verified_authorship();
+
+
+-- Name: webhook_ingress_identities trg_b26_p2_ingress_xv_meaning_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability BEFORE UPDATE ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability();
 
 
 --
@@ -21506,6 +21601,8 @@ CREATE TRIGGER trg_y_b24_c11_policy_provenance BEFORE INSERT OR UPDATE ON public
 --
 
 CREATE TRIGGER trg_z_b24_policy_bundle_write_authority BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
+
+
 
 
 --
