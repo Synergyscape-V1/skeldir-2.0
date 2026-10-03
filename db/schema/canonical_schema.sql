@@ -5891,85 +5891,6 @@ CREATE FUNCTION public.b26_p2_xiii_invariant_oracle() RETURNS TABLE(violation_ki
 
 
 --
--- Name: b26_p2_xvii_semantic_binding_oracle(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'pg_catalog', 'public'
-    AS $$
-        DECLARE
-            _canon text;
-            _expected text;
-        BEGIN
-            -- Tuple-bound witness mismatch on trusted rows.
-            FOR task_ref, detail, _canon, _expected IN
-                SELECT ('ingress:' || i.id::text)::text,
-                       ('ingress=' || i.id::text)::text,
-                       to_char(i.event_timestamp AT TIME ZONE 'UTC',
-                               'YYYY-MM-DD HH24:MI:SS.US'),
-                       encode(digest(
-                           i.tenant_id::text || '|' || i.id::text || '|'
-                           || c.provider || '|' || c.provider_event_reference || '|'
-                           || lower(c.body_sha256) || '|'
-                           || lower(c.signature_envelope_sha256) || '|'
-                           || c.auth_method || '|' || COALESCE(c.auth_version, 'v1') || '|'
-                           || COALESCE(i.normalized_commerce_reference_kind, '') || '|'
-                           || COALESCE(i.normalized_commerce_reference_value, '') || '|'
-                           || COALESCE(i.verified_amount_minor::text, '') || '|'
-                           || COALESCE(i.verified_amount_currency, '') || '|'
-                           || COALESCE(i.verified_amount_scale::text, '') || '|'
-                           || COALESCE(to_char(i.event_timestamp AT TIME ZONE 'UTC',
-                                               'YYYY-MM-DD HH24:MI:SS.US'), ''),
-                           'sha256'), 'hex')
-                  FROM public.webhook_ingress_identities AS i
-                  JOIN public.b26_p2_provider_auth_consequence AS c
-                    ON c.webhook_ingress_identity_id = i.id
-                   AND c.tenant_id = i.tenant_id
-                 WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
-            LOOP
-                -- Compare inside the loop against the stored witness.
-                PERFORM 1 FROM public.b26_p2_ingress_auth_witness AS w
-                 WHERE w.webhook_ingress_identity_id = split_part(task_ref, ':', 2)::uuid
-                   AND w.witness_hash IS NOT DISTINCT FROM _expected;
-                IF NOT FOUND THEN
-                    violation_kind := 'xvii_semantic_tuple_detached';
-                    RETURN NEXT;
-                END IF;
-            END LOOP;
-            -- Regime drift: trusted rows outside the governed regime.
-            RETURN QUERY
-            SELECT 'xvii_regime_unverifiable_trusted'::text,
-                   ('ingress:' || i.id::text)::text,
-                   ('ingress=' || i.id::text)::text
-              FROM public.webhook_ingress_identities AS i
-             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
-               AND i.b26_p2_semantic_regime IS DISTINCT FROM 'xvii-sovereign-v1';
-            -- Duplicate canonical event lineages for one provider event.
-            RETURN QUERY
-            SELECT 'xvii_duplicate_canonical_event'::text,
-                   ('tenant=' || i.tenant_id::text)::text,
-                   ('event_ref=' || i.provider_native_event_reference)::text
-              FROM public.webhook_ingress_identities AS i
-             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
-             GROUP BY i.tenant_id, i.provider, i.provider_native_event_reference
-            HAVING count(*) > 1;
-            -- Duplicate canonical financial facts for one commerce identity.
-            RETURN QUERY
-            SELECT 'xvii_duplicate_canonical_commerce'::text,
-                   ('tenant=' || i.tenant_id::text)::text,
-                   ('commerce=' || i.normalized_commerce_reference_kind
-                    || ':' || i.normalized_commerce_reference_value)::text
-              FROM public.webhook_ingress_identities AS i
-             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
-             GROUP BY i.tenant_id, i.provider,
-                      i.normalized_commerce_reference_kind,
-                      i.normalized_commerce_reference_value
-            HAVING count(*) > 1;
-        END $$;
-
-
---
 -- Name: b26_p2_xiii_provision_ingress_topology(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6141,6 +6062,87 @@ CREATE FUNCTION public.b26_p2_xiv_topology_check() RETURNS text
                     USING ERRCODE = 'P0001';
             END IF;
             RETURN 'xiv_topology_strict';
+        END $$;
+
+
+
+
+--
+-- Name: b26_p2_xvii_semantic_binding_oracle(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _canon text;
+            _expected text;
+        BEGIN
+            -- Tuple-bound witness mismatch on trusted rows.
+            FOR task_ref, detail, _canon, _expected IN
+                SELECT ('ingress:' || i.id::text)::text,
+                       ('ingress=' || i.id::text)::text,
+                       to_char(i.event_timestamp AT TIME ZONE 'UTC',
+                               'YYYY-MM-DD HH24:MI:SS.US'),
+                       encode(digest(
+                           i.tenant_id::text || '|' || i.id::text || '|'
+                           || c.provider || '|' || c.provider_event_reference || '|'
+                           || lower(c.body_sha256) || '|'
+                           || lower(c.signature_envelope_sha256) || '|'
+                           || c.auth_method || '|' || COALESCE(c.auth_version, 'v1') || '|'
+                           || COALESCE(i.normalized_commerce_reference_kind, '') || '|'
+                           || COALESCE(i.normalized_commerce_reference_value, '') || '|'
+                           || COALESCE(i.verified_amount_minor::text, '') || '|'
+                           || COALESCE(i.verified_amount_currency, '') || '|'
+                           || COALESCE(i.verified_amount_scale::text, '') || '|'
+                           || COALESCE(to_char(i.event_timestamp AT TIME ZONE 'UTC',
+                                               'YYYY-MM-DD HH24:MI:SS.US'), ''),
+                           'sha256'), 'hex')
+                  FROM public.webhook_ingress_identities AS i
+                  JOIN public.b26_p2_provider_auth_consequence AS c
+                    ON c.webhook_ingress_identity_id = i.id
+                   AND c.tenant_id = i.tenant_id
+                 WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+            LOOP
+                -- Compare inside the loop against the stored witness.
+                PERFORM 1 FROM public.b26_p2_ingress_auth_witness AS w
+                 WHERE w.webhook_ingress_identity_id = split_part(task_ref, ':', 2)::uuid
+                   AND w.witness_hash IS NOT DISTINCT FROM _expected;
+                IF NOT FOUND THEN
+                    violation_kind := 'xvii_semantic_tuple_detached';
+                    RETURN NEXT;
+                END IF;
+            END LOOP;
+            -- Regime drift: trusted rows outside the governed regime.
+            RETURN QUERY
+            SELECT 'xvii_regime_unverifiable_trusted'::text,
+                   ('ingress:' || i.id::text)::text,
+                   ('ingress=' || i.id::text)::text
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.b26_p2_semantic_regime IS DISTINCT FROM 'xvii-sovereign-v1';
+            -- Duplicate canonical event lineages for one provider event.
+            RETURN QUERY
+            SELECT 'xvii_duplicate_canonical_event'::text,
+                   ('tenant=' || i.tenant_id::text)::text,
+                   ('event_ref=' || i.provider_native_event_reference)::text
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+             GROUP BY i.tenant_id, i.provider, i.provider_native_event_reference
+            HAVING count(*) > 1;
+            -- Duplicate canonical financial facts for one commerce identity.
+            RETURN QUERY
+            SELECT 'xvii_duplicate_canonical_commerce'::text,
+                   ('tenant=' || i.tenant_id::text)::text,
+                   ('commerce=' || i.normalized_commerce_reference_kind
+                    || ':' || i.normalized_commerce_reference_value)::text
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+             GROUP BY i.tenant_id, i.provider,
+                      i.normalized_commerce_reference_kind,
+                      i.normalized_commerce_reference_value
+            HAVING count(*) > 1;
         END $$;
 
 
@@ -19342,18 +19344,6 @@ CREATE INDEX idx_webhook_ingress_identities_tenant_provider_created ON public.we
 CREATE INDEX idx_webhook_ingress_identities_tenant_reference ON public.webhook_ingress_identities USING btree (tenant_id, normalized_commerce_reference_kind, normalized_commerce_reference_value);
 
 
--- Name: uq_b26_p2_xvii_event_identity; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_b26_p2_xvii_event_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, provider_native_event_reference) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
-
-
--- Name: uq_b26_p2_xvii_commerce_identity; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_b26_p2_xvii_commerce_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, normalized_commerce_reference_kind, normalized_commerce_reference_value) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
-
-
 
 
 --
@@ -19489,11 +19479,29 @@ CREATE INDEX ix_trust_tenant_policy_latest ON public.trust_tenant_policy_events 
 CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
 
 
+
+
+
+
 --
 -- Name: uq_b24_fit_dispatch_outbox_attempt; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_b24_fit_dispatch_outbox_attempt ON public.b24_fit_dispatch_outbox USING btree (tenant_id, attempt_id);
+
+
+-- Name: uq_b26_p2_xvii_commerce_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_b26_p2_xvii_commerce_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, normalized_commerce_reference_kind, normalized_commerce_reference_value) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
+
+
+
+
+-- Name: uq_b26_p2_xvii_event_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_b26_p2_xvii_event_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, provider_native_event_reference) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
 
 
 --
