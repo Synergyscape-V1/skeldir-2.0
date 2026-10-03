@@ -34,7 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 FORBIDDEN_SYMBOLS = (
     "derive_commerce",
@@ -63,9 +63,51 @@ def _epoch(value) -> int:
 
 
 def _minor(amount_str, scale: int) -> int:
+    """XVII exact-precision law: refuse excess precision, never round.
+
+    Mirrors the production sovereign derivation exactly (same governed
+    provider semantic contract): non-plain representations and fractional
+    digits beyond scale fail closed. Trailing zeros within scale pass.
+    """
+    if isinstance(amount_str, bool):
+        raise ValueError("boolean is not money")
     quant = Decimal(10) ** (-scale)
-    rounded = Decimal(str(amount_str)).quantize(quant, rounding=ROUND_HALF_UP)
-    return int(rounded * (10**scale))
+    text = str(amount_str).strip()
+    if not text:
+        raise ValueError("empty money")
+    lowered = text.lower()
+    if "e" in lowered or "inf" in lowered or "nan" in lowered:
+        raise ValueError(f"non-plain monetary representation refused: {amount_str!r}")
+    decimal_value = Decimal(text)
+    if not decimal_value.is_finite():
+        raise ValueError(f"non-finite money: {amount_str!r}")
+    quantized = decimal_value.quantize(quant)
+    if quantized != decimal_value:
+        raise ValueError(
+            f"excess monetary precision refused: {amount_str!r} exceeds scale {scale}"
+        )
+    return int(quantized * (10**scale))
+
+
+# XVII (H-XVII-R11): full governed ISO 4217 scale law, transcribed from
+# the provider semantic contract (not imported from production: purity).
+# Must equal the production table and the contract table; the contract
+# gate asserts all three agree.
+_ORACLE_ZERO_DECIMAL = frozenset(
+    {
+        "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW",
+        "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF", "XPF",
+    }
+)
+_ORACLE_THREE_DECIMAL = frozenset({"BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"})
+
+
+def _oracle_scale(currency: str) -> int:
+    if currency in _ORACLE_ZERO_DECIMAL:
+        return 0
+    if currency in _ORACLE_THREE_DECIMAL:
+        return 3
+    return 2
 
 
 def oracle_stripe(raw: bytes) -> dict:
@@ -79,8 +121,16 @@ def oracle_stripe(raw: bytes) -> dict:
     if isinstance(data, dict):
         inner = data.get("object")
         if isinstance(inner, dict) and inner.get("id"):
+            if "amount" in payload or "currency" in payload:
+                raise ValueError(
+                    "stripe ambiguous envelope payload: top-level money present"
+                )
             obj = inner
             envelope_id = str(payload.get("id") or "").strip() or None
+        else:
+            raise ValueError("stripe data wrapper without object id is refused")
+    elif "data" in payload:
+        raise ValueError("stripe data wrapper outside contract is refused")
     commerce_id = str(obj.get("id") or "").strip()
     if not commerce_id:
         raise ValueError("stripe payment intent id is required")
@@ -93,7 +143,7 @@ def oracle_stripe(raw: bytes) -> dict:
     currency = str(obj.get("currency") or "").strip().upper()
     if len(currency) != 3 or not currency.isalpha():
         raise ValueError("stripe currency must be 3 letters")
-    scale = {"JPY": 0, "KRW": 0, "BHD": 3, "KWD": 3}.get(currency, 2)
+    scale = _oracle_scale(currency)
     created = payload.get("created")
     if created is None:
         created = obj.get("created")
@@ -123,7 +173,7 @@ def oracle_shopify(raw: bytes) -> dict:
     currency = str(payload.get("currency") or "").strip().upper()
     if len(currency) != 3 or not currency.isalpha():
         raise ValueError("shopify currency must be 3 letters")
-    scale = {"JPY": 0, "KRW": 0, "BHD": 3, "KWD": 3}.get(currency, 2)
+    scale = _oracle_scale(currency)
     total = payload.get("total_price")
     if total is None:
         raise ValueError("shopify total_price is required")
@@ -167,7 +217,7 @@ def oracle_paypal(raw: bytes) -> dict:
     currency = str(amount.get("currency") or "").strip().upper()
     if len(currency) != 3 or not currency.isalpha():
         raise ValueError("paypal currency must be 3 letters")
-    scale = {"JPY": 0, "KRW": 0, "BHD": 3, "KWD": 3}.get(currency, 2)
+    scale = _oracle_scale(currency)
     total = amount.get("total")
     if total is None:
         raise ValueError("paypal amount.total is required")
@@ -201,7 +251,7 @@ def oracle_woocommerce(raw: bytes) -> dict:
     currency = str(payload.get("currency") or "").strip().upper()
     if len(currency) != 3 or not currency.isalpha():
         raise ValueError("woocommerce currency must be 3 letters")
-    scale = {"JPY": 0, "KRW": 0, "BHD": 3, "KWD": 3}.get(currency, 2)
+    scale = _oracle_scale(currency)
     total = payload.get("total")
     if total is None:
         raise ValueError("woocommerce total is required")
@@ -362,6 +412,38 @@ GOLDEN_VECTORS = [
             "event_timestamp_epoch": 1705312800,
         },
     },
+    {
+        "id": "stripe-envelope-day-boundary",
+        "provider": "stripe",
+        "raw": b'{"id":"evt_day","created":1705276799,"data":{"object":{"id":"pi_day","amount":2500,"currency":"usd","created":1705276800}}}',
+        "expected": {
+            "provider": "stripe",
+            "provider_native_event_reference": "evt_day",
+            "provider_native_commerce_reference": "pi_day",
+            "normalized_commerce_reference_kind": "stripe_payment_intent_id",
+            "normalized_commerce_reference_value": "pi_day",
+            "verified_amount_minor": 2500,
+            "verified_amount_currency": "USD",
+            "verified_amount_scale": 2,
+            "event_timestamp_epoch": 1705276799,
+        },
+    },
+    {
+        "id": "woocommerce-completion-day-boundary",
+        "provider": "woocommerce",
+        "raw": b'{"id":2000,"total":"7.50","currency":"USD","date_completed":"2024-01-15T00:00:01+00:00","date_created":"2024-01-14T23:59:59+00:00"}',
+        "expected": {
+            "provider": "woocommerce",
+            "provider_native_event_reference": "2000",
+            "provider_native_commerce_reference": "2000",
+            "normalized_commerce_reference_kind": "woocommerce_order_id",
+            "normalized_commerce_reference_value": "2000",
+            "verified_amount_minor": 750,
+            "verified_amount_currency": "USD",
+            "verified_amount_scale": 2,
+            "event_timestamp_epoch": 1705276801,
+        },
+    },
 ]
 
 # Raw shapes that MUST be refused (fail closed, never coerced).
@@ -382,6 +464,11 @@ REFUSAL_VECTORS = [
         "raw": b'{"id":"WH-1","resource":{"id":"PAY-9","amount":{"total":"9.00","currency":"USD"},"create_time":"2024-01-15T10:00:00Z"}}',
     },
     {
+        "id": "paypal-resource-with-top-level-amount",
+        "provider": "paypal",
+        "raw": b'{"id":"WH-2","amount":{"total":"5.00","currency":"USD"},"create_time":"2024-01-15T10:00:00Z","resource":{"id":"PAY-9","amount":{"total":"9.00","currency":"USD"},"create_time":"2024-01-15T10:00:00Z"}}',
+    },
+    {
         "id": "shopify-no-timestamp",
         "provider": "shopify",
         "raw": b'{"id":5,"total_price":"1.00","currency":"USD"}',
@@ -395,6 +482,46 @@ REFUSAL_VECTORS = [
         "id": "paypal-no-timestamp",
         "provider": "paypal",
         "raw": b'{"id":"PAY-2","amount":{"total":"1.00","currency":"USD"}}',
+    },
+    {
+        "id": "stripe-data-without-inner-id",
+        "provider": "stripe",
+        "raw": b'{"id":"evt_amb","created":1700000000,"amount":500,"currency":"usd","data":{"object":{"amount":500,"currency":"usd"}}}',
+    },
+    {
+        "id": "stripe-envelope-with-top-level-amount",
+        "provider": "stripe",
+        "raw": b'{"id":"evt_amb2","created":1700000060,"amount":9999,"currency":"usd","data":{"object":{"id":"pi_amb","amount":100,"currency":"usd","created":1700000000}}}',
+    },
+    {
+        "id": "shopify-excess-precision",
+        "provider": "shopify",
+        "raw": b'{"id":7001,"total_price":"10.005","currency":"USD","created_at":"2024-01-15T10:00:00Z"}',
+    },
+    {
+        "id": "shopify-subcent-creates-money",
+        "provider": "shopify",
+        "raw": b'{"id":7002,"total_price":"0.009","currency":"USD","created_at":"2024-01-15T10:00:00Z"}',
+    },
+    {
+        "id": "shopify-scientific-notation",
+        "provider": "shopify",
+        "raw": b'{"id":7003,"total_price":"1e3","currency":"USD","created_at":"2024-01-15T10:00:00Z"}',
+    },
+    {
+        "id": "paypal-excess-precision",
+        "provider": "paypal",
+        "raw": b'{"id":"PAY-EX","amount":{"total":"50.005","currency":"USD"},"create_time":"2024-01-15T10:00:00Z"}',
+    },
+    {
+        "id": "woocommerce-excess-precision",
+        "provider": "woocommerce",
+        "raw": b'{"id":7004,"total":"19.999","currency":"USD","date_completed":"2024-01-15T10:00:00+00:00"}',
+    },
+    {
+        "id": "woocommerce-jpy-fraction",
+        "provider": "woocommerce",
+        "raw": b'{"id":7005,"total":"1000.5","currency":"JPY","date_completed":"2024-01-15T10:00:00+00:00"}',
     },
 ]
 

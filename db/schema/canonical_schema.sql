@@ -2621,6 +2621,15 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             _state text;
             _row_provider text;
             _prov text;
+            _t_kind text;
+            _t_value text;
+            _t_cref text;
+            _t_amount integer;
+            _t_ccy text;
+            _t_scale integer;
+            _t_ts timestamptz;
+            _t_ts_canon text;
+            _sem_regime text;
             _c_provider text;
             _c_event text;
             _c_body text;
@@ -2631,6 +2640,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             _expected text;
             _prev_guc text;
             _dup_id uuid;
+            _conflict_id uuid;
         BEGIN
             IF session_user IS DISTINCT FROM 'app_ingress'
                AND session_user IS DISTINCT FROM 'migration_owner'
@@ -2640,8 +2650,18 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             END IF;
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.provider,
-                   i.b26_p2_provenance_status
-              INTO _tenant, _idem, _state, _row_provider, _prov
+                   i.b26_p2_provenance_status,
+                   i.normalized_commerce_reference_kind,
+                   i.normalized_commerce_reference_value,
+                   i.provider_native_commerce_reference,
+                   i.verified_amount_minor,
+                   i.verified_amount_currency,
+                   i.verified_amount_scale,
+                   i.event_timestamp,
+                   i.b26_p2_semantic_regime
+              INTO _tenant, _idem, _state, _row_provider, _prov,
+                   _t_kind, _t_value, _t_cref, _t_amount, _t_ccy, _t_scale,
+                   _t_ts, _sem_regime
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress
              FOR UPDATE;
@@ -2667,32 +2687,30 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                 RAISE EXCEPTION 'b26_p2_atomic_blank_shape_refused'
                     USING ERRCODE = '42501';
             END IF;
-            -- XVI1: serialize authentications of identical bytes. Two
-            -- concurrent first-authentications of the same provider
-            -- event under different idempotency keys would otherwise
-            -- both pass every check above and mint two canonical
-            -- lineages for one payment. The advisory lock is keyed on
-            -- row content (tenant + body digest), never on caller
-            -- context, and is transaction-scoped (released at commit).
+            -- XVI1: serialize authentications of identical bytes.
             PERFORM pg_advisory_xact_lock(
                 hashtext('b26_p2_sovereign_bytes:' || _tenant::text),
                 hashtext(lower(p_body_sha256))
             );
-            -- Refuse when a DIFFERENT row already carries terminal
-            -- authentication for these exact bytes AND the same provider
-            -- event reference. The conjunction is exact for honest
-            -- traffic: identical bytes determine identical meaning
-            -- through sovereign derivation, so a same-bytes second
-            -- lineage always presents the same reference; distinct
-            -- provider events never share bytes. The reference clause
-            -- additionally tolerates placeholder digests in pre-existing
-            -- fixtures for distinct events (same fake digest, different
-            -- references). Bypassing the conjunction requires either a
-            -- sha256 second preimage (infeasible) or TCB-level fabricated
-            -- digests (out of scope per directive §14). Pending rows
-            -- never block (crash-before-commit retry stays live);
-            -- re-entry for this same row proceeds to the idempotent
-            -- path below.
+            -- XVII2: serialize authentications of the same provider
+            -- event and the same commerce identity, so concurrent
+            -- conflicting first-authentications cannot both pass the
+            -- checks below. Locks key on row content, never on caller
+            -- context, and are transaction-scoped (released at commit).
+            PERFORM pg_advisory_xact_lock(
+                hashtext('b26_p2_sovereign_event:' || _tenant::text
+                         || '|' || COALESCE(p_provider, '')),
+                hashtext(COALESCE(p_event_ref, ''))
+            );
+            PERFORM pg_advisory_xact_lock(
+                hashtext('b26_p2_sovereign_commerce:' || _tenant::text
+                         || '|' || COALESCE(p_provider, '')),
+                hashtext(COALESCE(_t_kind, '')
+                         || '|' || COALESCE(_t_value, ''))
+            );
+            -- XVI1 (preserved): same bytes + same reference, different
+            -- row -> duplicate redelivery, refused with the duplicate
+            -- token (callers resolve the winning lineage idempotently).
             SELECT i.id INTO _dup_id
               FROM public.webhook_ingress_identities AS i
               JOIN public.b26_p2_provider_auth_consequence AS c
@@ -2706,6 +2724,43 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
              LIMIT 1;
             IF FOUND THEN
                 RAISE EXCEPTION 'b26_p2_atomic_sovereign_duplicate_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XVII2a: same provider event reference with DIFFERENT
+            -- authenticated bytes -> conflicting provider truth. One
+            -- immutable provider event is one canonical lineage: refuse,
+            -- never mint a second lineage.
+            SELECT i.id INTO _conflict_id
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_provider_auth_consequence AS c
+                ON c.webhook_ingress_identity_id = i.id
+               AND c.tenant_id = i.tenant_id
+             WHERE i.tenant_id = _tenant
+               AND i.provider IS NOT DISTINCT FROM p_provider
+               AND i.provider_native_event_reference IS NOT DISTINCT FROM p_event_ref
+               AND lower(c.body_sha256) IS DISTINCT FROM lower(p_body_sha256)
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.id IS DISTINCT FROM p_ingress
+             LIMIT 1;
+            IF FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_event_identity_conflict_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XVII2b: same commerce identity across distinct provider
+            -- events -> conflicting financial truth. One economic
+            -- commerce identity is one canonical financial fact within
+            -- the supported lifecycle: refuse, never double-count.
+            SELECT i.id INTO _conflict_id
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.tenant_id = _tenant
+               AND i.provider IS NOT DISTINCT FROM p_provider
+               AND i.normalized_commerce_reference_kind IS NOT DISTINCT FROM _t_kind
+               AND i.normalized_commerce_reference_value IS NOT DISTINCT FROM _t_value
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.id IS DISTINCT FROM p_ingress
+             LIMIT 1;
+            IF FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_commerce_identity_conflict_refused'
                     USING ERRCODE = '42501';
             END IF;
             BEGIN
@@ -2747,16 +2802,30 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                             USING ERRCODE = '42501';
                     END IF;
                 END IF;
+                -- XVII3: tuple-bound witness. The digest covers the
+                -- cryptographic identity AND the derived semantic tuple
+                -- (kind/value, amount, currency, scale, canonical UTC
+                -- instant), so the trusted meaning cannot detach from
+                -- the evidence that justified it. Canonical instant
+                -- rendering is timezone-independent by construction.
+                _t_ts_canon := to_char(_t_ts AT TIME ZONE 'UTC',
+                                       'YYYY-MM-DD HH24:MI:SS.US');
                 SELECT w.witness_hash INTO _witness
                   FROM public.b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = p_ingress;
-                IF NOT FOUND THEN
-                    _expected := encode(digest(
+                _expected := encode(digest(
                         _tenant::text || '|' || p_ingress::text || '|'
                         || _c_provider || '|' || _c_event || '|'
                         || lower(_c_body) || '|' || lower(_c_sig) || '|'
-                        || _c_method || '|' || COALESCE(_c_version, 'v1'),
+                        || _c_method || '|' || COALESCE(_c_version, 'v1') || '|'
+                        || COALESCE(_t_kind, '') || '|'
+                        || COALESCE(_t_value, '') || '|'
+                        || COALESCE(_t_amount::text, '') || '|'
+                        || COALESCE(_t_ccy, '') || '|'
+                        || COALESCE(_t_scale::text, '') || '|'
+                        || COALESCE(_t_ts_canon, ''),
                         'sha256'), 'hex');
+                IF NOT FOUND THEN
                     INSERT INTO public.b26_p2_ingress_auth_witness AS w (
                         webhook_ingress_identity_id, tenant_id,
                         witness_hash, witnessed_by
@@ -2766,6 +2835,18 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                     SELECT w.witness_hash INTO _witness
                       FROM public.b26_p2_ingress_auth_witness AS w
                      WHERE w.webhook_ingress_identity_id = p_ingress;
+                ELSIF _witness IS DISTINCT FROM _expected THEN
+                    -- Regime rotation on re-authentication: the stored
+                    -- witness was bound under a predecessor law. Re-bind
+                    -- it deterministically to the current tuple-bound
+                    -- law inside the sole sovereign transition (no
+                    -- caller-controlled content: every preimage field
+                    -- is observed from durable rows).
+                    UPDATE public.b26_p2_ingress_auth_witness AS w
+                       SET witness_hash = _expected,
+                           witnessed_by = session_user
+                     WHERE w.webhook_ingress_identity_id = p_ingress;
+                    _witness := _expected;
                 END IF;
                 INSERT INTO public.b26_p2_provenance_evidence AS e (
                     webhook_ingress_identity_id, tenant_id,
@@ -2791,8 +2872,13 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                         lower(_c_body), lower(_c_sig),
                         _c_method, COALESCE(_c_version, 'v1'))
                 ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
+                -- XVII1: stamp the governed semantic regime and clear
+                -- any historical demotion reason: this row's meaning is
+                -- now justified under current law.
                 UPDATE public.webhook_ingress_identities AS i
-                   SET b26_p2_provenance_status = 'authenticated_known'
+                   SET b26_p2_provenance_status = 'authenticated_known',
+                       b26_p2_semantic_regime = 'xvii-sovereign-v1',
+                       b26_p2_demotion_reason = NULL
                  WHERE i.id = p_ingress;
                 PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
                 RETURN 'authenticated_known';
@@ -3369,9 +3455,11 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
     AS $$
         DECLARE
             _prov text;
+            _regime text;
             _witness text;
         BEGIN
-            SELECT i.b26_p2_provenance_status INTO _prov
+            SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime
+              INTO _prov, _regime
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = NEW.webhook_ingress_identity_id
                AND i.tenant_id = NEW.tenant_id;
@@ -3380,6 +3468,9 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
             END IF;
             IF _prov IS DISTINCT FROM 'authenticated_known' THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_provenance_unknown' USING ERRCODE = '42501';
+            END IF;
+            IF _regime IS DISTINCT FROM 'xvii-sovereign-v1' THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_regime_unverifiable_refused' USING ERRCODE = '42501';
             END IF;
             IF EXISTS (
                 SELECT 1 FROM public.b26_p2_execution_quarantine AS q
@@ -5184,17 +5275,14 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
             _dispatch_we timestamptz;
             _clock timestamptz;
             _ingress_state text;
+            _ingress_prov text;
+            _ingress_regime text;
             _exp_ws timestamptz;
             _exp_we timestamptz;
             _prev_guc text;
         BEGIN
             _task := btrim(COALESCE(p_task_id, ''));
             IF _task = '' THEN
-                -- V-compatible lookup-miss semantics: no authority row,
-                -- no exception. Callers treat the empty set as missing
-                -- authority and refuse before B2.3. Sovereign violations
-                -- below (forged/unverified/forked) DO raise: a caller must
-                -- never mistake a forged root for a merely-missing one.
                 RETURN;
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id,
@@ -5225,8 +5313,9 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
                     RAISE EXCEPTION 'b26_p2_directory_forked_authority_refused'
                         USING ERRCODE = '42501';
                 END IF;
-                SELECT i.event_timestamp, i.verified_commerce_ingress_state
-                  INTO _clock, _ingress_state
+                SELECT i.event_timestamp, i.verified_commerce_ingress_state,
+                       i.b26_p2_provenance_status, i.b26_p2_semantic_regime
+                  INTO _clock, _ingress_state, _ingress_prov, _ingress_regime
                   FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant;
@@ -5236,6 +5325,14 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
                 END IF;
                 IF _ingress_state IS DISTINCT FROM 'authenticity_verified' THEN
                     RAISE EXCEPTION 'b26_p2_dispatch_sovereign_ingress_unverified'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF _ingress_prov IS DISTINCT FROM 'authenticated_known' THEN
+                    RAISE EXCEPTION 'b26_p2_dispatch_sovereign_provenance_unknown'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF _ingress_regime IS DISTINCT FROM 'xvii-sovereign-v1' THEN
+                    RAISE EXCEPTION 'b26_p2_dispatch_sovereign_regime_unverifiable'
                         USING ERRCODE = '42501';
                 END IF;
                 _exp_ws := public.b26_p2_canonical_day_start(_clock);
@@ -5325,6 +5422,7 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
             _ws timestamptz;
             _we timestamptz;
             _prov text;
+            _regime text;
             _receipt_identity text;
             _receipt_policy text;
             _receipt_meaning text;
@@ -5337,10 +5435,6 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
             IF p_tenant IS NULL THEN
                 RETURN FALSE;
             END IF;
-            -- Tenant-scoped reads (P2 tables carry FORCE RLS): bind
-            -- the caller-declared tenant first. A spoofed tenant
-            -- scopes every read away from the task and every check
-            -- below fails closed to FALSE.
             BEGIN
                 _prev_guc := current_setting('app.current_tenant_id', true);
             EXCEPTION WHEN OTHERS THEN
@@ -5366,12 +5460,19 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 RETURN FALSE;
             END IF;
             END;
-            -- Authenticated, witnessed provenance.
+            -- Authenticated, witnessed, regime-governed provenance.
             BEGIN
-            SELECT i.b26_p2_provenance_status INTO _prov
+            SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime
+              INTO _prov, _regime
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = _ingress;
             IF _prov IS DISTINCT FROM 'authenticated_known' THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
+            IF _regime IS DISTINCT FROM 'xvii-sovereign-v1' THEN
                 PERFORM set_config(
                     'app.current_tenant_id', COALESCE(_prev_guc, ''), true
                 );
@@ -5786,6 +5887,85 @@ CREATE FUNCTION public.b26_p2_xiii_invariant_oracle() RETURNS TABLE(violation_ki
                       WHERE q.webhook_ingress_identity_id = i.id
                );
             RETURN;
+        END $$;
+
+
+--
+-- Name: b26_p2_xvii_semantic_binding_oracle(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _canon text;
+            _expected text;
+        BEGIN
+            -- Tuple-bound witness mismatch on trusted rows.
+            FOR task_ref, detail, _canon, _expected IN
+                SELECT ('ingress:' || i.id::text)::text,
+                       ('ingress=' || i.id::text)::text,
+                       to_char(i.event_timestamp AT TIME ZONE 'UTC',
+                               'YYYY-MM-DD HH24:MI:SS.US'),
+                       encode(digest(
+                           i.tenant_id::text || '|' || i.id::text || '|'
+                           || c.provider || '|' || c.provider_event_reference || '|'
+                           || lower(c.body_sha256) || '|'
+                           || lower(c.signature_envelope_sha256) || '|'
+                           || c.auth_method || '|' || COALESCE(c.auth_version, 'v1') || '|'
+                           || COALESCE(i.normalized_commerce_reference_kind, '') || '|'
+                           || COALESCE(i.normalized_commerce_reference_value, '') || '|'
+                           || COALESCE(i.verified_amount_minor::text, '') || '|'
+                           || COALESCE(i.verified_amount_currency, '') || '|'
+                           || COALESCE(i.verified_amount_scale::text, '') || '|'
+                           || COALESCE(to_char(i.event_timestamp AT TIME ZONE 'UTC',
+                                               'YYYY-MM-DD HH24:MI:SS.US'), ''),
+                           'sha256'), 'hex')
+                  FROM public.webhook_ingress_identities AS i
+                  JOIN public.b26_p2_provider_auth_consequence AS c
+                    ON c.webhook_ingress_identity_id = i.id
+                   AND c.tenant_id = i.tenant_id
+                 WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+            LOOP
+                -- Compare inside the loop against the stored witness.
+                PERFORM 1 FROM public.b26_p2_ingress_auth_witness AS w
+                 WHERE w.webhook_ingress_identity_id = split_part(task_ref, ':', 2)::uuid
+                   AND w.witness_hash IS NOT DISTINCT FROM _expected;
+                IF NOT FOUND THEN
+                    violation_kind := 'xvii_semantic_tuple_detached';
+                    RETURN NEXT;
+                END IF;
+            END LOOP;
+            -- Regime drift: trusted rows outside the governed regime.
+            RETURN QUERY
+            SELECT 'xvii_regime_unverifiable_trusted'::text,
+                   ('ingress:' || i.id::text)::text,
+                   ('ingress=' || i.id::text)::text
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.b26_p2_semantic_regime IS DISTINCT FROM 'xvii-sovereign-v1';
+            -- Duplicate canonical event lineages for one provider event.
+            RETURN QUERY
+            SELECT 'xvii_duplicate_canonical_event'::text,
+                   ('tenant=' || i.tenant_id::text)::text,
+                   ('event_ref=' || i.provider_native_event_reference)::text
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+             GROUP BY i.tenant_id, i.provider, i.provider_native_event_reference
+            HAVING count(*) > 1;
+            -- Duplicate canonical financial facts for one commerce identity.
+            RETURN QUERY
+            SELECT 'xvii_duplicate_canonical_commerce'::text,
+                   ('tenant=' || i.tenant_id::text)::text,
+                   ('commerce=' || i.normalized_commerce_reference_kind
+                    || ':' || i.normalized_commerce_reference_value)::text
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+             GROUP BY i.tenant_id, i.provider,
+                      i.normalized_commerce_reference_kind,
+                      i.normalized_commerce_reference_value
+            HAVING count(*) > 1;
         END $$;
 
 
@@ -14226,6 +14406,8 @@ CREATE TABLE public.webhook_ingress_identities (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     b26_p2_provenance_status text DEFAULT 'unknown_legacy'::text NOT NULL,
+    b26_p2_semantic_regime text DEFAULT 'pre-xvii-unverifiable'::text NOT NULL,
+    b26_p2_demotion_reason text,
     CONSTRAINT ck_webhook_ingress_amount_minor_non_negative CHECK ((verified_amount_minor >= 0)),
     CONSTRAINT ck_webhook_ingress_amount_scale_non_negative CHECK ((verified_amount_scale >= 0))
 );
@@ -19158,6 +19340,20 @@ CREATE INDEX idx_webhook_ingress_identities_tenant_provider_created ON public.we
 --
 
 CREATE INDEX idx_webhook_ingress_identities_tenant_reference ON public.webhook_ingress_identities USING btree (tenant_id, normalized_commerce_reference_kind, normalized_commerce_reference_value);
+
+
+-- Name: uq_b26_p2_xvii_event_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_b26_p2_xvii_event_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, provider_native_event_reference) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
+
+
+-- Name: uq_b26_p2_xvii_commerce_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_b26_p2_xvii_commerce_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, normalized_commerce_reference_kind, normalized_commerce_reference_value) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
+
+
 
 
 --

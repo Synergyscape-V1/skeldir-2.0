@@ -820,6 +820,21 @@ def _assert_sovereign_finalization_binding(
         _raw = _binding_b64.b64decode(
             str(envelope.get("raw_body_b64") or ""), validate=True
         )
+        # XVII (H-XVII-R15): evidence/bytes correspondence is physical on
+        # the direct path. The caller-supplied digests must be the digests
+        # of these exact bytes; a detached digest (commerce derived from
+        # A while evidence claims B) fails closed here, before any DB
+        # work. The shipping root path recomputes digests itself; this
+        # check makes the direct path equally bound.
+        _consequence = finalization.get("auth_consequence")
+        if isinstance(_consequence, Mapping) and _consequence.get("body_sha256"):
+            import hashlib as _binding_hashlib  # noqa: PLC0415
+
+            _actual_body_sha = _binding_hashlib.sha256(_raw).hexdigest().lower()
+            if str(_consequence.get("body_sha256")).lower() != _actual_body_sha:
+                raise ValidationError(
+                    f"b26_p2_handoff_binding_refused:{context}_evidence_bytes_detached"
+                )
         _provider = str(finalization.get("provider") or "")
         _derived = _binding_derive(_provider, _raw)
         _handoff = {

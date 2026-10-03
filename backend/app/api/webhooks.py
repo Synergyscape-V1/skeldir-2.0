@@ -13,7 +13,7 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal
 from collections.abc import Callable
 from types import MappingProxyType
 from uuid import UUID, uuid5, NAMESPACE_URL
@@ -483,16 +483,25 @@ def _resolve_verified_at(tenant_info: Mapping[str, Any]) -> datetime:
 
 
 def _decimal_to_minor_units(value: str | int | Decimal, *, scale: int = 2) -> int:
-    quantizer = Decimal(10) ** (-scale)
+    """Relay-side money conversion under the governed exact-precision law.
+
+    XVII (H-XVII-R11): delegates to the sovereign derivation helper so the
+    relay handoff can never round a value the authoritative derivation
+    refuses. Any divergence fails closed here (400/DLQ) instead of
+    surfacing later as a binding mismatch.
+    """
+    from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+        CommerceDerivationError,
+        decimal_to_minor_units as _sovereign_to_minor,
+    )
+
     try:
-        decimal_value = Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError) as exc:
+        return _sovereign_to_minor(value, scale=scale)
+    except CommerceDerivationError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid canonical monetary amount.",
         ) from exc
-    rounded = decimal_value.quantize(quantizer, rounding=ROUND_HALF_UP)
-    return int(rounded * (10**scale))
 
 
 def _minor_units_to_decimal_string(minor: int, *, scale: int = 2) -> str:

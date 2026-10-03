@@ -4,8 +4,14 @@
 Laws (each REDs on the effect):
 - one payment mints one lineage: the atomic refuses a second
   authenticated row for identical bytes (static: fence tokens in the
-  XVI migration; live: same-sha second auth refused, different-sha
-  allowed, same-row re-entry idempotent);
+  XVI migration; live: same-sha second auth refused, different event
+  with different-sha allowed, same-row re-entry idempotent);
+  NOTE (XVII supersession, H-XVII-R4/R5): same event reference with
+  different bytes, and same commerce identity across distinct events,
+  are now conflict-refused by the XVII atomic -- so the live
+  "distinct bytes authenticate" probe uses a DISTINCT event reference
+  AND distinct commerce identity (a genuinely distinct provider event).
+  The XVII physics gate proves the conflict refusals themselves.
 - the evidence gate admits only the exact sovereign frame (static:
   anchored signature regex present, substring LIKE absent from the XVI
   upgrade; live: lawful atomic path mints evidence, direct INSERT as
@@ -183,6 +189,11 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 " 'xvi_phys_ch','c',7600,'USD',now(),now(),'processed')",
                 (ev, tenant, str(uuid.uuid4()), str(uuid.uuid4()), tag),
             )
+            # XVII: each probe row carries a DISTINCT commerce identity so
+            # the XVII commerce-conservation fence (same commerce across
+            # distinct rows -> conflict refusal) does not trip on the XVI
+            # event-granularity probe itself.
+            cref = f"o-{tag}"
             cur.execute(
                 "INSERT INTO public.webhook_ingress_identities (id, tenant_id, event_id,"
                 " provider, provider_native_event_reference,"
@@ -191,9 +202,9 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 " normalized_commerce_reference_value, verified_amount_minor,"
                 " verified_amount_currency, event_timestamp, idempotency_key,"
                 " verified_commerce_ingress_state)"
-                " VALUES (%s,%s,%s,'stripe',%s,'o1','stripe_order_id','o1',7600,'USD',"
+                " VALUES (%s,%s,%s,'stripe',%s,%s,'stripe_order_id',%s,7600,'USD',"
                 " now(),%s,'authenticity_verified')",
-                (ing, tenant, ev, evref, key),
+                (ing, tenant, ev, evref, cref, cref, key),
             )
             return ing
 
@@ -202,6 +213,16 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe','e1',%s,%s,"
                 "'hmac-sha256-timestamped-hex','v1')",
                 (ing, sha, sig),
+            )
+            return str(icur.fetchone()[0])
+
+        def _auth_ref(icur, ing: str, eref: str, sha: str, sig: str = "b" * 64):
+            # XVII: the atomic binds the caller's event reference; a
+            # genuinely distinct provider event carries its own reference.
+            icur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe',%s,%s,%s,"
+                "'hmac-sha256-timestamped-hex','v1')",
+                (ing, eref, sha, sig),
             )
             return str(icur.fetchone()[0])
 
@@ -253,9 +274,14 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                         )
                     else:
                         checks["same_bytes_second_lineage_refused"] = True
-                # Distinct bytes still authenticate (event granularity).
-                assert _auth(icur, row2, "d" * 64) == "authenticated_known"
+                # Distinct bytes still authenticate (event granularity):
+                # XVII requires a genuinely distinct provider event --
+                # distinct reference AND distinct commerce identity -- so
+                # the row carries its own reference from birth.
+                row2b = _mkrow("xvi-phys-2b", "xvi-phys-key-2b", evref="e2")
+                assert _auth_ref(icur, row2b, "e2", "d" * 64) == "authenticated_known"
                 checks["distinct_bytes_authenticate"] = True
+                row2 = row2b
                 # Same-row re-entry stays idempotent.
                 assert _auth(icur, row1, sha) == "authenticated_known"
                 checks["same_row_reentry_idempotent"] = True
