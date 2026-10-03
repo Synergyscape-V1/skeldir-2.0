@@ -313,7 +313,7 @@ jobs:
 
       # B2.6-P2 Corrective XV: cryptographic meaning binding closure.
       # Runs after the XIV battery (conserved) on the same migrated lane
-      # (now at XVI head 202609280002). The binding gate proves the root
+      # (now at XVII head 202609290001). The binding gate proves the root
       # derives commerce from verified bytes (oracle parity over all four
       # providers + per-dimension mutation refusal); the physics gate
       # proves transition-specific evidence, authenticated immutability,
