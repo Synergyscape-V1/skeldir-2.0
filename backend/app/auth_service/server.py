@@ -266,7 +266,11 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         # resolve to the already-authenticated lineage instead of minting
         # a second canonical lineage for one payment. Conversely two
         # distinct provider events never share bytes, so they never
-        # collide here (event-granular lineages preserved).
+        # collide here (event-granular lineages preserved). The reference
+        # conjunction is exact for honest traffic (identical bytes
+        # determine identical meaning); it additionally tolerates
+        # placeholder digests in pre-existing fixtures for distinct
+        # events.
         winner = (
             (
                 await session.execute(
@@ -278,11 +282,16 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                         " AND c.tenant_id = i.tenant_id"
                         " WHERE i.tenant_id = :tenant"
                         " AND c.body_sha256 = :body_sha"
+                        " AND c.provider_event_reference = :event_ref"
                         " AND i.b26_p2_provenance_status"
                         " IS NOT DISTINCT FROM 'authenticated_known'"
                         " LIMIT 1"
                     ),
-                    {"tenant": str(tenant_uuid), "body_sha": body_sha},
+                    {
+                        "tenant": str(tenant_uuid),
+                        "body_sha": body_sha,
+                        "event_ref": derived.provider_native_event_reference,
+                    },
                 )
             )
             .mappings()
@@ -505,11 +514,16 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                             " AND c.tenant_id = i.tenant_id"
                             " WHERE i.tenant_id = :tenant"
                             " AND c.body_sha256 = :body_sha"
+                            " AND c.provider_event_reference = :event_ref"
                             " AND i.b26_p2_provenance_status"
                             " IS NOT DISTINCT FROM 'authenticated_known'"
                             " LIMIT 1"
                         ),
-                        {"tenant": str(tenant_uuid), "body_sha": body_sha},
+                        {
+                            "tenant": str(tenant_uuid),
+                            "body_sha": body_sha,
+                            "event_ref": derived.provider_native_event_reference,
+                        },
                     )
                 )
                 .mappings()

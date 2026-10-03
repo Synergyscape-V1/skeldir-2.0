@@ -1166,6 +1166,7 @@ async def _finalize_verified_ingress_post_commit(
                             " AND c.tenant_id = i.tenant_id"
                             " WHERE i.tenant_id = :tenant"
                             " AND c.body_sha256 = :body_sha"
+                            " AND c.provider_event_reference = :event_ref"
                             " AND i.b26_p2_provenance_status"
                             " IS NOT DISTINCT FROM 'authenticated_known'"
                             " LIMIT 1"
@@ -1175,6 +1176,9 @@ async def _finalize_verified_ingress_post_commit(
                             "body_sha": str(
                                 consequence_summary.get("body_sha256")
                             ).lower(),
+                            "event_ref": str(
+                                consequence_summary.get("provider_event_reference")
+                            ),
                         },
                     )
                 )

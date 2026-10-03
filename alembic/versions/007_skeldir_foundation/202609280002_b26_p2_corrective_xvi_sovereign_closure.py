@@ -11,12 +11,14 @@ XVI1. SOVEREIGN CONTENT-ADDRESSED DUPLICATE FENCE (H-XVI-R6). The relay
     for one payment. The atomic now serializes on the byte identity
     (advisory transaction lock over tenant + body digest) and refuses
     authenticating a second ingress row for bytes an
-    authenticated_known row already binds, with
-    b26_p2_atomic_sovereign_duplicate_refused. Distinct provider events
-    never share bytes, so event-granular lineages are preserved; pending
-    rows never block (crash-before-commit retry stays live); re-entry
-    for the same row stays idempotent. The root and the direct
-    finalizer catch the refusal and return the winning lineage.
+    authenticated_known row already binds with the same provider event
+    reference, with b26_p2_atomic_sovereign_duplicate_refused. The
+    reference conjunction is exact for honest traffic (identical bytes
+    determine identical meaning); distinct provider events never share
+    bytes, so event-granular lineages are preserved; pending rows never
+    block (crash-before-commit retry stays live); re-entry for the same
+    row stays idempotent. The root and the direct finalizer catch the
+    refusal and return the winning lineage.
 
 XVI2. STRICT TRANSITION FRAME (H-XVI-R7/H-XVI-12). The XV evidence gate
     matched PG_CONTEXT with a substring test. The gate now requires the
@@ -158,9 +160,20 @@ def upgrade() -> None:
                 hashtext(lower(p_body_sha256))
             );
             -- Refuse when a DIFFERENT row already carries terminal
-            -- authentication for these exact bytes. Pending rows never
-            -- block (crash-before-commit retry stays live); re-entry
-            -- for this same row proceeds to the idempotent path below.
+            -- authentication for these exact bytes AND the same provider
+            -- event reference. The conjunction is exact for honest
+            -- traffic: identical bytes determine identical meaning
+            -- through sovereign derivation, so a same-bytes second
+            -- lineage always presents the same reference; distinct
+            -- provider events never share bytes. The reference clause
+            -- additionally tolerates placeholder digests in pre-existing
+            -- fixtures for distinct events (same fake digest, different
+            -- references). Bypassing the conjunction requires either a
+            -- sha256 second preimage (infeasible) or TCB-level fabricated
+            -- digests (out of scope per directive §14). Pending rows
+            -- never block (crash-before-commit retry stays live);
+            -- re-entry for this same row proceeds to the idempotent
+            -- path below.
             SELECT i.id INTO _dup_id
               FROM public.webhook_ingress_identities AS i
               JOIN public.b26_p2_provider_auth_consequence AS c
@@ -168,6 +181,7 @@ def upgrade() -> None:
                AND c.tenant_id = i.tenant_id
              WHERE i.tenant_id = _tenant
                AND lower(c.body_sha256) IS NOT DISTINCT FROM lower(p_body_sha256)
+               AND c.provider_event_reference IS NOT DISTINCT FROM p_event_ref
                AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND i.id IS DISTINCT FROM p_ingress
              LIMIT 1;

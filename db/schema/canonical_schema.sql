@@ -2679,9 +2679,20 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                 hashtext(lower(p_body_sha256))
             );
             -- Refuse when a DIFFERENT row already carries terminal
-            -- authentication for these exact bytes. Pending rows never
-            -- block (crash-before-commit retry stays live); re-entry
-            -- for this same row proceeds to the idempotent path below.
+            -- authentication for these exact bytes AND the same provider
+            -- event reference. The conjunction is exact for honest
+            -- traffic: identical bytes determine identical meaning
+            -- through sovereign derivation, so a same-bytes second
+            -- lineage always presents the same reference; distinct
+            -- provider events never share bytes. The reference clause
+            -- additionally tolerates placeholder digests in pre-existing
+            -- fixtures for distinct events (same fake digest, different
+            -- references). Bypassing the conjunction requires either a
+            -- sha256 second preimage (infeasible) or TCB-level fabricated
+            -- digests (out of scope per directive §14). Pending rows
+            -- never block (crash-before-commit retry stays live);
+            -- re-entry for this same row proceeds to the idempotent
+            -- path below.
             SELECT i.id INTO _dup_id
               FROM public.webhook_ingress_identities AS i
               JOIN public.b26_p2_provider_auth_consequence AS c
@@ -2689,6 +2700,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                AND c.tenant_id = i.tenant_id
              WHERE i.tenant_id = _tenant
                AND lower(c.body_sha256) IS NOT DISTINCT FROM lower(p_body_sha256)
+               AND c.provider_event_reference IS NOT DISTINCT FROM p_event_ref
                AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND i.id IS DISTINCT FROM p_ingress
              LIMIT 1;

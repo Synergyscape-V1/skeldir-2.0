@@ -69,6 +69,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "b26_p2_provider_auth_consequence",
         "authenticated_known",
         "IS DISTINCT FROM p_ingress",
+        "c.provider_event_reference IS NOT DISTINCT FROM p_event_ref",
     ):
         if token not in upgrade:
             violations.append(f"xvi_phys_fence_missing:{token}")
