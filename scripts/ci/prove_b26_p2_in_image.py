@@ -65,6 +65,7 @@ IDENTITY_FILES = [
     "alembic/versions/007_skeldir_foundation/202609270003_b26_p2_corrective_xiv_definer_evidence.py",
     "alembic/versions/007_skeldir_foundation/202609280001_b26_p2_corrective_xv_binding_closure.py",
     "alembic/versions/007_skeldir_foundation/202609280002_b26_p2_corrective_xvi_sovereign_closure.py",
+    "alembic/versions/007_skeldir_foundation/202609290001_b26_p2_corrective_xvii_historical_reconciliation.py",
     "backend/app/webhooks/commerce_derivation.py",
     "backend/app/auth_service/server.py",
     "backend/app/api/webhooks.py",
@@ -325,7 +326,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 image, "python", "/proof/assert_b26_p2_authority_universe.py",
                 "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609280002",
+                "--migration-head", "202609290001",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -628,7 +629,7 @@ def main() -> int:
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
              f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609280002",
+                "--migration-head", "202609290001",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

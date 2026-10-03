@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
-  "migration_head": "202609280002",
-  "authority_universe_hash": "d1f895b5b00c0c94274178bb3c55dddb756e9f34f47682f656b07a7753ef0e93",
-  "reviewed_at_git_sha": "8aa50188721da158f0959c414ec9a664949204d",
+  "migration_head": "202609290001",
+  "authority_universe_hash": "178f4f93e52021f4fa5aeef9ec5b386de274820d89a930ce9d66da7533af0c49",
+  "reviewed_at_git_sha": "39bd199b5062f40bfd9f8e02b085f999ac4c2680",
   "meaning_surface_counts": {
-   "routine_meaning": 145,
+   "routine_meaning": 146,
    "trigger_meaning": 22,
    "schema_meaning": 5,
    "rls_meaning": 17,
-   "ownership": 106
+   "ownership": 107
   },
-  "review_note": "B2.6-P2 Corrective XVI sovereign closure reviewed: content-addressed sovereign duplicate fence in the atomic (advisory lock on tenant+body digest, b26_p2_atomic_sovereign_duplicate_refused), strict exact-signature transition frame for the evidence gate, demote-all-authenticated downgrade evidence preservation; routine/trigger counts unchanged (CREATE OR REPLACE, no new objects); live hash from PG15 pristine fresh lane (prepare+alembic head 202609280002) with XVI coverage; identical-frame pg_temp spoof refused at grants."
+  "review_note": "B2.6-P2 Corrective XVII historical reconciliation reviewed: semantic-regime identity (xvii-sovereign-v1 stamped by the atomic, enforced at dispatch/P3/admission), deterministic historical disposition (all pre-regime trusted rows demoted with explicit reason), event/commerce identity conservation (conflict refusals + partial unique indexes), tuple-bound witness + binding oracle (new routine/ownership +1), demotion-reason provenance; live hash from PG15 pristine fresh lane (prepare+alembic head 202609290001); identical-frame pg_temp spoof refused at grants (preserved)."
 }

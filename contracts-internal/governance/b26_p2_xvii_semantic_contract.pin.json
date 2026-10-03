@@ -1,0 +1,8 @@
+{
+  "producer": "validate_b26_p2_xvii_semantic_contract",
+  "contract_path": "contracts/reconciliation/b2.6/provider-semantic-contract.v1.json",
+  "contract_version": "v1",
+  "semantic_regime": "xvii-sovereign-v1",
+  "contract_sha256": "c0f7e3b580dcaf91c7221aa522bf3ca968de7dcc8aa2bf0d5f22b6440ba8e924",
+  "review_note": "B2.6-P2 Corrective XVII governed provider semantic law reviewed: exact-precision money refusal (no silent rounding, no scientific notation), explicit per-provider timestamp authority (stripe envelope-instant preference, woocommerce completion preference with governed creation fallback), explicit shape refusals (paypal resource envelopes, stripe ambiguous wrappers/dual money fields), event-identity and commerce-conservation conflict law, day-boundary golden vectors. The production parser and the independent oracle are both subordinate to this artifact: common-mode co-edit without a contract revision REDs. Parser acceptance must equal the contracted set."
+}

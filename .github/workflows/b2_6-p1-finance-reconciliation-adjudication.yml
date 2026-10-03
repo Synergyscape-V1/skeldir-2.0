@@ -313,7 +313,7 @@ jobs:
 
       # B2.6-P2 Corrective XV: cryptographic meaning binding closure.
       # Runs after the XIV battery (conserved) on the same migrated lane
-      # (now at XVI head 202609280002). The binding gate proves the root
+      # (now at XVII head 202609290001). The binding gate proves the root
       # derives commerce from verified bytes (oracle parity over all four
       # providers + per-dimension mutation refusal); the physics gate
       # proves transition-specific evidence, authenticated immutability,
@@ -350,6 +350,38 @@ jobs:
           python scripts/ci/validate_b26_p2_xvi_physics.py \
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-out artifacts/b26_p2/static/xvi-physics.json
+
+      # B2.6-P2 Corrective XVII: historical semantic reconciliation. The
+      # governed contract gate proves the production parser AND the
+      # independent oracle both obey the third contract authority
+      # (common-mode co-edit without a contract revision REDs); the
+      # physics gate proves historical disposition, regime identity,
+      # event/commerce conservation, tuple binding, and redelivery
+      # recovery on the live lane; the battery proves every relation
+      # REDs on a genuine class member and restores byte-exact GREEN.
+      - name: Prove B2.6-P2 Corrective-XVII governed semantic contract
+        run: |
+          python scripts/ci/validate_b26_p2_xvii_semantic_contract.py \
+            --evidence-out artifacts/b26_p2/static/xvii-contract.json
+
+      - name: Prove B2.6-P2 Corrective-XVII historical physics closure (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xvii_physics.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xvii-physics.json
+
+      - name: Prove B2.6-P2 Corrective-XVII relations non-vacuous (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/test_b26_p2_xvii_negative_controls.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xvii-negative-controls.json
+          # The battery mutates tracked files and must restore them
+          # byte-exact; any residue fails the job.
+          git diff --exit-code -- scripts/ci/validate_b26_p2_xvi_semantic_oracle.py backend/app/webhooks/commerce_derivation.py contracts/reconciliation/b2.6/provider-semantic-contract.v1.json
 
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:

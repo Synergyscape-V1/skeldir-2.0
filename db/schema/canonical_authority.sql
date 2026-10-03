@@ -616,15 +616,20 @@ REVOKE ALL ON FUNCTION public.b26_p2_xiii_invariant_oracle() FROM PUBLIC;
 -- === 202609270001 Corrective XIV: immutable auth-root evidence identity ===
 -- === 202609280001 Corrective XV: transition-specific evidence law ===
 -- === 202609280002 Corrective XVI: strict sovereign frame ===
+-- === 202609290001 Corrective XVII: semantic-regime identity + historical disposition ===
 -- Source of truth is the 202609270001 migration as narrowed by
--- 202609280001 and 202609280002. The evidence table shape (but not its grants) arrives
--- via canonical_schema.sql. No runtime principal holds direct
--- INSERT/UPDATE/DELETE. INSERT occurs only inside the single sovereign
--- transition (b26_p2_authenticate_ingress_atomic, proven by the anchored
--- exact-signature frame match in the trigger, not by DEFINER context class):
--- any other SECURITY DEFINER routine is refused with
+-- 202609280001, 202609280002, and 202609290001. The evidence table shape
+-- (but not its grants) arrives via canonical_schema.sql. No runtime
+-- principal holds direct INSERT/UPDATE/DELETE. INSERT occurs only inside
+-- the single sovereign transition
+-- (b26_p2_authenticate_ingress_atomic, proven by the anchored
+-- exact-signature frame match in the trigger, not by DEFINER context
+-- class): any other SECURITY DEFINER routine is refused with
 -- b26_p2_auth_root_evidence_transition_refused; the SELECT grants below
--- confer zero authorship (read-only observability).
+-- confer zero authorship (read-only observability). XVII stamps the
+-- governed semantic regime (xvii-sovereign-v1) on every new
+-- authentication and gates dispatch/P3/admission on it; the semantic
+-- binding oracle is observable only (REVOKE below), never authoritative.
 REVOKE ALL ON TABLE public.b26_p2_auth_root_evidence FROM PUBLIC;
 DO $$
 DECLARE _r text;
@@ -665,3 +670,5 @@ BEGIN
     END LOOP;
 END $$;
 REVOKE ALL ON FUNCTION public.b26_p2_xiv_provision_ingress_topology() FROM PUBLIC;
+-- B2.6-P2 Corrective XVII semantic-binding oracle (observable only).
+REVOKE ALL ON FUNCTION public.b26_p2_xvii_semantic_binding_oracle() FROM PUBLIC;

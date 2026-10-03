@@ -4615,3 +4615,64 @@
   risk_if_removed: Second lineages for one payment, frame-resemblance
     evidence, trusted evidence-less rows, or authority-bearing linkage.
   decision: enforce
+- gate_id: b26-p2-xvii-semantic-contract
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xvii_semantic_contract.py
+  owning_phase: B2.6-P2
+  protected_invariant: Governed provider semantic law constrains both the
+    production parser and the independent oracle; common-mode co-edit
+    without a contract revision fails.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVII contract authority; no predecessor
+    gate derives expectations from a governed third artifact independent
+    of both implementations.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xvii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xvii_semantic_contract.py --help
+  risk_if_removed: Production parser and oracle would share one
+    human-authored belief with no contract authority re-imposing the law.
+  decision: enforce
+- gate_id: b26-p2-xvii-physics
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xvii_physics.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'Historical semantic reconciliation at the DB plane:
+    pre-regime trusted rows demoted with reason, regime-gated
+    dispatch/P3/admission, event and commerce identity conservation,
+    tuple-bound witness, redelivery recovery.'
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVII historical reconciliation; no
+    predecessor gate dispositions historical authority, stamps or enforces
+    a semantic regime, refuses conflicting identity lineages, or binds
+    the semantic tuple to evidence.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xvii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xvii_physics.py --help
+  risk_if_removed: Historically unverifiable authority would stay
+    canonical and dispatchable; conflicting lineages would mint silently.
+  decision: enforce
+- gate_id: b26-p2-xvii-negative-controls
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/test_b26_p2_xvii_negative_controls.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every XVII relation is non-vacuous with byte-exact
+    restore discipline.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New battery for XVII relation non-vacuity; no
+    predecessor battery attacks the contract, regime, or identity
+    relations.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xvii_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_b26_p2_xvii_negative_controls.py --help
+  risk_if_removed: Load-bearing gates that can never fail would certify
+    relations they do not observe.
+  decision: enforce

@@ -767,6 +767,24 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xvi_physics.py",
     "backend/tests/finance_reconciliation/test_b26_p2_xvi_independent_oracle.py",
     "backend/tests/finance_reconciliation/test_b26_p2_xvi_authority_governance.py",
+    # --- B2.6-P2 Corrective XVII historical reconciliation surface ---
+    # Authority-only slice: the single Corrective-XVII migration
+    # (semantic-regime identity + historical disposition, event/commerce
+    # identity conservation, tuple-bound witness, regime-gated
+    # dispatch/P3/resolver, binding oracle), the governed provider
+    # semantic contract + reviewed pin companions, and the XVII proof
+    # instruments (contract-authority gate, database-physics closure,
+    # relation non-vacuity battery, semantic-closure unit gates, head-pin
+    # advance). Same exemption shape; every prohibition retained
+    # unchanged. Proof tooling only; the manufacturing-law content scan
+    # still applies beneath it.
+    "alembic/versions/007_skeldir_foundation/202609290001_b26_p2_corrective_xvii_historical_reconciliation.py",
+    "contracts-internal/governance/b26_p2_xvii_semantic_contract.pin.json",
+    "scripts/ci/validate_b26_p2_xvii_semantic_contract.py",
+    "scripts/ci/validate_b26_p2_xvii_physics.py",
+    "scripts/ci/test_b26_p2_xvii_negative_controls.py",
+    "backend/tests/finance_reconciliation/test_b26_p2_xvii_semantic_closure.py",
+    "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py",
     # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
     # and equivalence corpora authenticate lawful fixtures via the atomic
     # transition (admin allowed); negative fixtures stay pending/unknown.

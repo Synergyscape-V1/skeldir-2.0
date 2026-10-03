@@ -1,0 +1,143 @@
+{
+  "contract_id": "b26-p2-provider-semantic-contract",
+  "contract_version": "v1",
+  "semantic_regime": "xvii-sovereign-v1",
+  "governing_note": "B2.6-P2 Corrective XVII (H-XVII-R7/R8): the governed provider semantic law. The production parser (backend/app/webhooks/commerce_derivation.py) and the independent oracle (scripts/ci/validate_b26_p2_xvi_semantic_oracle.py) are BOTH subordinate to this artifact. A semantic-law change requires an explicit contract revision (new contract_version + new semantic_regime); parser+oracle co-edit without a contract revision is a violation and must RED the contract gate. Parser acceptance set must equal the supported shapes below: implementation convenience may not widen authority.",
+  "money_law": {
+    "representation": "integer minor units; no DECIMAL/FLOAT persistence",
+    "precision_rule": "exact provider precision: a decimal amount whose fractional digits exceed the currency scale is REFUSED, never rounded. Scientific notation is REFUSED (non-plain representation). Trailing zeros within scale are accepted (numeric equality).",
+    "scale_rule": "ISO 4217 currency exponents: zero-decimal set and three-decimal set below; every other currency defaults to 2.",
+    "zero_decimal_currencies": ["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF", "XPF"],
+    "three_decimal_currencies": ["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"],
+    "default_scale": 2,
+    "stripe_native": "integer minor units already (amount is integer cents); non-integer or non-positive amounts REFUSED"
+  },
+  "identity_law": {
+    "event_identity": "one immutable provider event identity denotes one canonical lineage. Same (tenant, provider, provider_native_event_reference) with different authenticated bytes MUST NOT create a second canonical lineage: explicit conflict refusal.",
+    "commerce_conservation": "one economic commerce identity denotes one canonical financial fact within the supported lifecycle. Same (tenant, provider, normalized_commerce_reference_kind, normalized_commerce_reference_value) across distinct provider events MUST NOT create a second canonical lineage: explicit conflict refusal. First-authenticated wins; conflicts are refused, never silently double-counted.",
+    "redelivery": "byte-identical redelivery of the same provider event is idempotent (same lineage); it never mints a second lineage"
+  },
+  "providers": {
+    "stripe": {
+      "supported_event_families": ["payment_intent.succeeded", "payment_intent_succeeded"],
+      "accepted_shapes": ["flat payment_intent object {id, amount, currency, created}", "envelope event {id, created, data.object{id, amount, currency, created}}"],
+      "event_identity_field": "envelope event id when in envelope shape, else payment_intent id",
+      "commerce_reference_field": "payment_intent id (data.object.id in envelope shape)",
+      "amount_field": "integer cents (data.object.amount in envelope shape)",
+      "currency_field": "3-letter code (data.object.currency in envelope shape)",
+      "timestamp_field": "top-level envelope instant payload.created preferred (reconciliation-day law); object instant obj.created as fallback; flat shape uses payload.created",
+      "timestamp_rationale": "the envelope instant is when the provider emitted the financial event; window placement follows the provider emission, not the inner object creation",
+      "refused_shapes": ["checkout.session objects (amount_total is not a payment_intent amount)", "envelope with top-level amount/currency keys (ambiguous dual-meaning payload)", "data key present without a usable data.object.id (ambiguous wrapper: neither flat nor envelope)"]
+    },
+    "shopify": {
+      "supported_event_families": ["orders.create", "order_create"],
+      "accepted_shapes": ["order JSON {id, total_price, currency, created_at}"],
+      "event_identity_field": "order id",
+      "commerce_reference_field": "order id",
+      "amount_field": "total_price decimal string in major units, exact currency precision",
+      "currency_field": "currency 3-letter code",
+      "timestamp_field": "created_at (order creation instant)",
+      "refused_shapes": ["missing created_at (no wall-clock substitution)", "scientific-notation amounts", "excess-precision amounts"]
+    },
+    "paypal": {
+      "supported_event_families": ["payment.sale.completed", "sale_completed"],
+      "accepted_shapes": ["flat sale JSON {id, amount{total, currency}, create_time}"],
+      "event_identity_field": "transaction id",
+      "commerce_reference_field": "transaction id",
+      "amount_field": "amount.total decimal string in major units, exact currency precision",
+      "currency_field": "amount.currency 3-letter code",
+      "timestamp_field": "create_time (sale completion instant)",
+      "refused_shapes": ["resource-enveloped webhooks (top-level resource object is not a transaction; must be refused, not coerced)", "missing create_time", "scientific-notation or excess-precision amounts"]
+    },
+    "woocommerce": {
+      "supported_event_families": ["order.completed", "order_completed"],
+      "accepted_shapes": ["order JSON {id, total, currency, date_completed and/or date_created}"],
+      "event_identity_field": "order id",
+      "commerce_reference_field": "order id",
+      "amount_field": "total decimal string in major units, exact currency precision",
+      "currency_field": "currency 3-letter code",
+      "timestamp_field": "date_completed preferred (completion-time law: revenue is recognized at completion); date_created as governed fallback when completion is absent",
+      "timestamp_rationale": "completion time places the financial fact in the reconciliation window where the order became revenue; the creation fallback is governed (not convenience): a completion-less order payload still denotes the order's financial fact and must not be silently dropped",
+      "refused_shapes": ["missing both date_completed and date_created", "scientific-notation or excess-precision amounts"]
+    }
+  },
+  "golden_vectors": [
+    {
+      "id": "stripe-flat-usd",
+      "provider": "stripe",
+      "raw": "{\"id\":\"pi_3O\",\"amount\":7600,\"currency\":\"usd\",\"created\":1700000000}",
+      "expected": {"provider_native_event_reference": "pi_3O", "provider_native_commerce_reference": "pi_3O", "normalized_commerce_reference_kind": "stripe_payment_intent_id", "normalized_commerce_reference_value": "pi_3O", "verified_amount_minor": 7600, "verified_amount_currency": "USD", "verified_amount_scale": 2, "event_timestamp_epoch": 1700000000}
+    },
+    {
+      "id": "stripe-envelope-eur",
+      "provider": "stripe",
+      "raw": "{\"id\":\"evt_9\",\"created\":1700000060,\"data\":{\"object\":{\"id\":\"pi_77\",\"amount\":100,\"currency\":\"eur\",\"created\":1700000000}}}",
+      "expected": {"provider_native_event_reference": "evt_9", "provider_native_commerce_reference": "pi_77", "normalized_commerce_reference_kind": "stripe_payment_intent_id", "normalized_commerce_reference_value": "pi_77", "verified_amount_minor": 100, "verified_amount_currency": "EUR", "verified_amount_scale": 2, "event_timestamp_epoch": 1700000060}
+    },
+    {
+      "id": "stripe-flat-jpy",
+      "provider": "stripe",
+      "raw": "{\"id\":\"pi_j\",\"amount\":1000,\"currency\":\"jpy\",\"created\":1700000000}",
+      "expected": {"provider_native_event_reference": "pi_j", "provider_native_commerce_reference": "pi_j", "normalized_commerce_reference_kind": "stripe_payment_intent_id", "normalized_commerce_reference_value": "pi_j", "verified_amount_minor": 1000, "verified_amount_currency": "JPY", "verified_amount_scale": 0, "event_timestamp_epoch": 1700000000}
+    },
+    {
+      "id": "shopify-order-usd",
+      "provider": "shopify",
+      "raw": "{\"id\":12345,\"total_price\":\"76.00\",\"currency\":\"USD\",\"created_at\":\"2024-01-15T10:00:00Z\"}",
+      "expected": {"provider_native_event_reference": "12345", "provider_native_commerce_reference": "12345", "normalized_commerce_reference_kind": "shopify_order_id", "normalized_commerce_reference_value": "12345", "verified_amount_minor": 7600, "verified_amount_currency": "USD", "verified_amount_scale": 2, "event_timestamp_epoch": 1705312800}
+    },
+    {
+      "id": "shopify-order-bhd",
+      "provider": "shopify",
+      "raw": "{\"id\":777,\"total_price\":\"10.000\",\"currency\":\"BHD\",\"created_at\":\"2024-01-15T10:00:00Z\"}",
+      "expected": {"provider_native_event_reference": "777", "provider_native_commerce_reference": "777", "normalized_commerce_reference_kind": "shopify_order_id", "normalized_commerce_reference_value": "777", "verified_amount_minor": 10000, "verified_amount_currency": "BHD", "verified_amount_scale": 3, "event_timestamp_epoch": 1705312800}
+    },
+    {
+      "id": "paypal-sale-usd",
+      "provider": "paypal",
+      "raw": "{\"id\":\"PAY-1\",\"amount\":{\"total\":\"50.00\",\"currency\":\"USD\"},\"create_time\":\"2024-01-15T10:00:00Z\"}",
+      "expected": {"provider_native_event_reference": "PAY-1", "provider_native_commerce_reference": "PAY-1", "normalized_commerce_reference_kind": "paypal_transaction_id", "normalized_commerce_reference_value": "PAY-1", "verified_amount_minor": 5000, "verified_amount_currency": "USD", "verified_amount_scale": 2, "event_timestamp_epoch": 1705312800}
+    },
+    {
+      "id": "woocommerce-order-usd",
+      "provider": "woocommerce",
+      "raw": "{\"id\":999,\"total\":\"19.99\",\"currency\":\"USD\",\"date_completed\":\"2024-01-15T10:00:00+00:00\"}",
+      "expected": {"provider_native_event_reference": "999", "provider_native_commerce_reference": "999", "normalized_commerce_reference_kind": "woocommerce_order_id", "normalized_commerce_reference_value": "999", "verified_amount_minor": 1999, "verified_amount_currency": "USD", "verified_amount_scale": 2, "event_timestamp_epoch": 1705312800}
+    },
+    {
+      "id": "woocommerce-date-created-fallback",
+      "provider": "woocommerce",
+      "raw": "{\"id\":1000,\"total\":\"5.00\",\"currency\":\"USD\",\"date_created\":\"2024-01-15T10:00:00+00:00\"}",
+      "expected": {"provider_native_event_reference": "1000", "provider_native_commerce_reference": "1000", "normalized_commerce_reference_kind": "woocommerce_order_id", "normalized_commerce_reference_value": "1000", "verified_amount_minor": 500, "verified_amount_currency": "USD", "verified_amount_scale": 2, "event_timestamp_epoch": 1705312800}
+    },
+    {
+      "id": "stripe-envelope-day-boundary",
+      "provider": "stripe",
+      "raw": "{\"id\":\"evt_day\",\"created\":1705276799,\"data\":{\"object\":{\"id\":\"pi_day\",\"amount\":2500,\"currency\":\"usd\",\"created\":1705276800}}}",
+      "expected": {"provider_native_event_reference": "evt_day", "provider_native_commerce_reference": "pi_day", "normalized_commerce_reference_kind": "stripe_payment_intent_id", "normalized_commerce_reference_value": "pi_day", "verified_amount_minor": 2500, "verified_amount_currency": "USD", "verified_amount_scale": 2, "event_timestamp_epoch": 1705276799}
+    },
+    {
+      "id": "woocommerce-completion-day-boundary",
+      "provider": "woocommerce",
+      "raw": "{\"id\":2000,\"total\":\"7.50\",\"currency\":\"USD\",\"date_completed\":\"2024-01-15T00:00:01+00:00\",\"date_created\":\"2024-01-14T23:59:59+00:00\"}",
+      "expected": {"provider_native_event_reference": "2000", "provider_native_commerce_reference": "2000", "normalized_commerce_reference_kind": "woocommerce_order_id", "normalized_commerce_reference_value": "2000", "verified_amount_minor": 750, "verified_amount_currency": "USD", "verified_amount_scale": 2, "event_timestamp_epoch": 1705276801}
+    }
+  ],
+  "refusal_vectors": [
+    {"id": "stripe-no-timestamp", "provider": "stripe", "raw": "{\"id\":\"pi_x\",\"amount\":100,\"currency\":\"usd\"}"},
+    {"id": "stripe-checkout-session-shape", "provider": "stripe", "raw": "{\"id\":\"cs_1\",\"object\":\"checkout.session\",\"amount_total\":5000,\"currency\":\"usd\",\"created\":1700000000}"},
+    {"id": "stripe-data-without-inner-id", "provider": "stripe", "raw": "{\"id\":\"evt_amb\",\"created\":1700000000,\"amount\":500,\"currency\":\"usd\",\"data\":{\"object\":{\"amount\":500,\"currency\":\"usd\"}}}"},
+    {"id": "stripe-envelope-with-top-level-amount", "provider": "stripe", "raw": "{\"id\":\"evt_amb2\",\"created\":1700000060,\"amount\":9999,\"currency\":\"usd\",\"data\":{\"object\":{\"id\":\"pi_amb\",\"amount\":100,\"currency\":\"usd\",\"created\":1700000000}}}"},
+    {"id": "paypal-resource-envelope", "provider": "paypal", "raw": "{\"id\":\"WH-1\",\"resource\":{\"id\":\"PAY-9\",\"amount\":{\"total\":\"9.00\",\"currency\":\"USD\"},\"create_time\":\"2024-01-15T10:00:00Z\"}}"},
+    {"id": "paypal-resource-with-top-level-amount", "provider": "paypal", "raw": "{\"id\":\"WH-2\",\"amount\":{\"total\":\"5.00\",\"currency\":\"USD\"},\"create_time\":\"2024-01-15T10:00:00Z\",\"resource\":{\"id\":\"PAY-9\",\"amount\":{\"total\":\"9.00\",\"currency\":\"USD\"},\"create_time\":\"2024-01-15T10:00:00Z\"}}"},
+    {"id": "shopify-no-timestamp", "provider": "shopify", "raw": "{\"id\":5,\"total_price\":\"1.00\",\"currency\":\"USD\"}"},
+    {"id": "woocommerce-no-timestamp", "provider": "woocommerce", "raw": "{\"id\":6,\"total\":\"1.00\",\"currency\":\"USD\"}"},
+    {"id": "paypal-no-timestamp", "provider": "paypal", "raw": "{\"id\":\"PAY-2\",\"amount\":{\"total\":\"1.00\",\"currency\":\"USD\"}}"},
+    {"id": "shopify-excess-precision", "provider": "shopify", "raw": "{\"id\":7001,\"total_price\":\"10.005\",\"currency\":\"USD\",\"created_at\":\"2024-01-15T10:00:00Z\"}"},
+    {"id": "shopify-subcent-creates-money", "provider": "shopify", "raw": "{\"id\":7002,\"total_price\":\"0.009\",\"currency\":\"USD\",\"created_at\":\"2024-01-15T10:00:00Z\"}"},
+    {"id": "shopify-scientific-notation", "provider": "shopify", "raw": "{\"id\":7003,\"total_price\":\"1e3\",\"currency\":\"USD\",\"created_at\":\"2024-01-15T10:00:00Z\"}"},
+    {"id": "paypal-excess-precision", "provider": "paypal", "raw": "{\"id\":\"PAY-EX\",\"amount\":{\"total\":\"50.005\",\"currency\":\"USD\"},\"create_time\":\"2024-01-15T10:00:00Z\"}"},
+    {"id": "woocommerce-excess-precision", "provider": "woocommerce", "raw": "{\"id\":7004,\"total\":\"19.999\",\"currency\":\"USD\",\"date_completed\":\"2024-01-15T10:00:00+00:00\"}"},
+    {"id": "woocommerce-jpy-fraction", "provider": "woocommerce", "raw": "{\"id\":7005,\"total\":\"1000.5\",\"currency\":\"JPY\",\"date_completed\":\"2024-01-15T10:00:00+00:00\"}"}
+  ]
+}

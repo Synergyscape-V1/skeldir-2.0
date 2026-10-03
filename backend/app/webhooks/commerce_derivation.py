@@ -27,13 +27,19 @@ provider timestamps fail closed (no wall-clock substitution): an
 authoritative timestamp must come from authenticated bytes, not from the
 verifier's clock.
 
-Contract shapes (do not widen without a contract revision): stripe flat
-payment_intent or envelope event(data.object); shopify order JSON;
-paypal flat sale JSON per webhooks.paypal.bundled.yaml; woocommerce
-order JSON. Real provider envelope shapes outside the contract
+Contract shapes (governed by contracts/reconciliation/b2.6/
+provider-semantic-contract.v1.json -- do not widen without a contract
+revision): stripe flat payment_intent or envelope event(data.object);
+shopify order JSON; paypal flat sale JSON per webhooks.paypal.bundled.yaml;
+woocommerce order JSON. Real provider envelope shapes outside the contract
 (e.g. PayPal resource-enveloped webhooks, Stripe checkout.session
-objects) fail closed here and are DLQ-routed upstream -- never coerced
-into authority.
+objects, ambiguous data wrappers, dual flat/envelope money fields) fail
+closed here and are DLQ-routed upstream -- never coerced into authority.
+Money law is exact provider precision (XVII): excess fractional digits
+beyond the currency scale and scientific notation are refused, never
+rounded. Timestamp law per provider is pinned in the contract (stripe:
+envelope instant preferred; woocommerce: completion preferred with
+governed creation fallback).
 """
 
 from __future__ import annotations
@@ -48,6 +54,16 @@ from typing import Any, Mapping
 
 class CommerceDerivationError(ValueError):
     """The verified bytes do not determine commerce meaning for the provider."""
+
+
+# XVII (H-XVII-R7/R8): governed semantic-regime identity. The value MUST
+# equal the governed provider semantic contract's ``semantic_regime``
+# (contracts/reconciliation/b2.6/provider-semantic-contract.v1.json).
+# The database stamps this identity on every newly authenticated row and
+# the dispatch/P3 predicates enforce it; the contract gate asserts the
+# three copies (contract, parser, database atomic) are identical, so a
+# semantic-law change without an explicit contract revision REDs.
+SEMANTIC_CONTRACT_REGIME = "xvii-sovereign-v1"
 
 
 SUPPORTED_PROVIDERS = ("stripe", "shopify", "paypal", "woocommerce")
@@ -157,20 +173,47 @@ def canonical_money_scale(currency: str | None) -> int:
 
 
 def decimal_to_minor_units(value: str | int | Decimal, *, scale: int = 2) -> int:
+    """Convert a provider-native decimal amount to integer minor units.
+
+    XVII exact-precision law (H-XVII-R11, governed by the provider
+    semantic contract): excess precision is REFUSED, never rounded.
+    Scientific notation is REFUSED (non-plain representation). Trailing
+    zeros within scale are accepted (numeric equality, not string
+    equality). Mirrors the sovereign ``to_cents`` refusal pattern in
+    app.core.money: quantize, then prove nothing was lost.
+    """
+    if isinstance(value, bool):
+        raise CommerceDerivationError(f"invalid monetary amount: {value!r}")
     quantizer = Decimal(10) ** (-scale)
     try:
-        decimal_value = Decimal(str(value))
+        text = str(value).strip()
+        if not text:
+            raise CommerceDerivationError(f"invalid monetary amount: {value!r}")
+        lowered = text.lower()
+        if (
+            "e" in lowered
+            or "inf" in lowered
+            or "nan" in lowered
+        ):
+            raise CommerceDerivationError(
+                f"non-plain monetary representation refused: {value!r}"
+            )
+        decimal_value = Decimal(text)
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise CommerceDerivationError(f"invalid monetary amount: {value!r}") from exc
+    if not decimal_value.is_finite():
+        raise CommerceDerivationError(f"non-finite monetary amount: {value!r}")
     try:
-        from decimal import ROUND_HALF_UP as _HALF_UP
-
-        rounded = decimal_value.quantize(quantizer, rounding=_HALF_UP)
+        quantized = decimal_value.quantize(quantizer)
     except (InvalidOperation, ValueError, ArithmeticError) as exc:
         raise CommerceDerivationError(
             f"unquantizable monetary amount: {value!r}"
         ) from exc
-    return int(rounded * (10**scale))
+    if quantized != decimal_value:
+        raise CommerceDerivationError(
+            f"excess monetary precision refused: {value!r} exceeds scale {scale}"
+        )
+    return int(quantized * (10**scale))
 
 
 def _require_nonblank(value: Any, *, field: str) -> str:
@@ -221,8 +264,29 @@ def _derive_stripe(payload: Mapping[str, Any]) -> SovereignCommerce:
     if isinstance(data, Mapping):
         inner = data.get("object")
         if isinstance(inner, Mapping) and inner.get("id"):
+            # XVII (H-XVII-R9): envelope mode. Top-level amount/currency
+            # keys are not part of the Event envelope contract; a payload
+            # carrying both envelope and flat money fields is ambiguous
+            # (outer vs inner meaning) and is refused, never cherry-picked.
+            for _ambiguous in ("amount", "currency"):
+                if _ambiguous in payload:
+                    raise CommerceDerivationError(
+                        "stripe ambiguous envelope payload:"
+                        f" top-level {_ambiguous!r} present alongside data.object"
+                    )
             obj = inner
             envelope_event_id = str(payload.get("id") or "").strip() or None
+        else:
+            # A data wrapper that is not a usable envelope is neither the
+            # flat contract shape nor the envelope contract shape: refuse
+            # instead of silently falling back to flat interpretation.
+            raise CommerceDerivationError(
+                "stripe data wrapper without object id is refused"
+            )
+    elif "data" in payload:
+        raise CommerceDerivationError(
+            "stripe data wrapper outside contract is refused"
+        )
     commerce_id = _require_nonblank(obj.get("id"), field="stripe payment intent id")
     raw_amount = obj.get("amount")
     if raw_amount is None or isinstance(raw_amount, bool):
@@ -299,6 +363,14 @@ def _derive_shopify(payload: Mapping[str, Any]) -> SovereignCommerce:
 
 
 def _derive_paypal(payload: Mapping[str, Any]) -> SovereignCommerce:
+    # XVII (H-XVII-R9): resource-enveloped PayPal webhooks are outside
+    # the supported contract. The refusal is explicit here (not
+    # incidental): a top-level resource object is not a transaction and
+    # must never be coerced into authority.
+    if isinstance(payload.get("resource"), dict):
+        raise CommerceDerivationError(
+            "paypal resource envelopes are out of contract"
+        )
     txn_id = _require_nonblank(payload.get("id"), field="paypal transaction id")
     amount = payload.get("amount")
     if not isinstance(amount, Mapping):
