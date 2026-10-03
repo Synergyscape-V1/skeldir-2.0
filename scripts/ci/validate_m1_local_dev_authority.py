@@ -163,6 +163,12 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/README.md",
     "backend/Dockerfile",
     "backend/requirements-dev.txt",
+    # B2.6-P2 Corrective XVI: the B2.2 commerce-envelope gate accepts the
+    # single-scale-authority delegation (relay façade over the sovereign
+    # table) instead of requiring the duplicated table. Governance
+    # integration fix: the gate's invariant (relay governed by canonical
+    # scale law) is unchanged, only the recognized shape widened.
+    "scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py",
     "backend/app/db/session.py",
     "backend/app/tasks/enqueue.py",
     "backend/app/tasks/observability_test.py",
