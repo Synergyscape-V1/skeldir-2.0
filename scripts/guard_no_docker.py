@@ -174,6 +174,15 @@ ALLOWED_DOCKER_PATHS = {
     Path("scripts/ci/test_b26_p2_xiv_negative_controls.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),
     Path("scripts/smoke/m1_runtime_smoke.py"),
+    # B2.6-P2 Corrective XVI's authority-governance battery performs the
+    # same manifest census (only the auth trust root may mount the file
+    # credential; exactly the two dominated call sites may reach the
+    # atomic; no new ingress.event_id readers). Same reason as XI/XII/
+    # XIII/XIV: it reads the manifests to check them, runs no container
+    # and adds no substrate -- the filenames are the subject of the
+    # check, and removing them would make the gate blind to a compose
+    # edit smuggling the credential into an ordinary service.
+    Path("backend/tests/finance_reconciliation/test_b26_p2_xvi_authority_governance.py"),
 }
 
 FORBIDDEN_FILENAME_SNIPPETS = ("dockerfile", "docker-compose")
