@@ -90,6 +90,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.finance_reconciliation.scope_authority import (
     B26_P2_SCOPE_POLICY_VERSION,
+    DISPOSITION_EXPLICITLY_EXCLUDED,
+    DISPOSITION_SUPPORTED_AND_IN_SCOPE,
     CanonicalScopeClassification,
     ScopeAuthorityError,
     load_b26_p2_scope_policy,
@@ -613,6 +615,44 @@ async def _classify_one_via_authority(
         disposition=str(row["disposition"]),
         reason=str(row["reason"]),
     )
+    # XVIII (H-XVIII-R6/R9): scope truth is necessary but not
+    # sufficient. A candidate the scope law would ADMIT but whose
+    # source ingress lost current P2 authority (demoted history) is
+    # EXPLICITLY_EXCLUDED with its scope truth conserved on the
+    # record: no stale consequence may conduct merely because it is
+    # in scope. Candidates the scope law already excludes keep their
+    # scope disposition/reason (more informative; still excluded).
+    # Aggregate scope probes (ingress_id == tenant sentinel) carry no
+    # ingress and skip the check.
+    if (
+        candidate.ingress_id != candidate.tenant_id
+        and verdict.disposition == DISPOSITION_SUPPORTED_AND_IN_SCOPE
+    ):
+        authority_row = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT public.b26_p2_ingress_has_current_authority("
+                        " :ingress_id) AS has_current_authority"
+                    ),
+                    {"ingress_id": str(candidate.ingress_id)},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        if authority_row["has_current_authority"] is not True:
+            verdict = CanonicalScopeClassification(
+                tenant_id=verdict.tenant_id,
+                provider=verdict.provider,
+                rail=verdict.rail,
+                currency_code=verdict.currency_code,
+                window_start=verdict.window_start,
+                window_end=verdict.window_end,
+                scope_policy_version=verdict.scope_policy_version,
+                disposition=DISPOSITION_EXPLICITLY_EXCLUDED,
+                reason="p2_historical_authority_not_current",
+            )
     if verdict.tenant_id != candidate.tenant_id:
         raise ScopeConductionError("p2_conduction_tenant_binding_lost")
     return ScopedCandidate(

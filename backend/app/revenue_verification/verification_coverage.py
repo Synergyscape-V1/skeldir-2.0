@@ -29,6 +29,10 @@ class VerificationCoverageAggregate:
     window_end: datetime
     matched_webhook_revenue_minor: int
     connected_platform_revenue_minor: int
+    # XVIII (H-XVIII-R8): explicitly non-authoritative historical money
+    # in scope. Never part of the verified numerator; carried so reads
+    # cannot mistake its exclusion for absence (no false confidence).
+    unverifiable_historical_revenue_minor: int = 0
 
 
 @dataclass(frozen=True)
@@ -145,6 +149,9 @@ async def fetch_verification_coverage_aggregate(
     aggregate_sql = text(
         """
         WITH canonical_verified_revenue AS MATERIALIZED (
+            -- XVIII (H-XVIII-R8): the verified leg measures the
+            -- currently governed truth state ONLY (central authority
+            -- predicate). Demoted history cannot enter the numerator.
             SELECT
                 wi.id,
                 wi.tenant_id,
@@ -155,6 +162,25 @@ async def fetch_verification_coverage_aggregate(
             FROM public.webhook_ingress_identities wi
             WHERE wi.tenant_id = :tenant_id
               AND wi.verified_commerce_ingress_state = 'authenticity_verified'
+              AND public.b26_p2_ingress_has_current_authority(wi.id)
+        ),
+        unverifiable_historical_revenue AS MATERIALIZED (
+            -- XVIII (H-XVIII-R8): demoted history in scope, stated
+            -- explicitly as non-authoritative context. Excluded from
+            -- the verified numerator by construction; represented here
+            -- so its absence from verified revenue is visible, never
+            -- silent, and can never read as false confidence.
+            SELECT
+                COALESCE(SUM(wi.verified_amount_minor), 0)::bigint
+                    AS unverifiable_historical_revenue_minor
+            FROM public.webhook_ingress_identities wi
+            WHERE wi.tenant_id = :tenant_id
+              AND wi.verified_commerce_ingress_state = 'authenticity_verified'
+              AND NOT public.b26_p2_ingress_has_current_authority(wi.id)
+              AND wi.event_timestamp >= :window_start
+              AND wi.event_timestamp < :window_end
+              AND wi.provider IN :supported_platforms
+              AND upper(wi.verified_amount_currency) = :currency_code
         ),
         connected_platform AS (
             SELECT
@@ -180,6 +206,7 @@ async def fetch_verification_coverage_aggregate(
               AND wi.occurred_at >= :window_start
               AND wi.occurred_at < :window_end
               AND v.status IN :matched_statuses
+              AND v.b26_p2_source_authority_state = 'current'
               AND v.provider IN :supported_platforms
               AND wi.provider IN :supported_platforms
               AND upper(v.currency_code) = :currency_code
@@ -187,9 +214,11 @@ async def fetch_verification_coverage_aggregate(
         )
         SELECT
             matched_webhook.matched_webhook_revenue_minor,
-            connected_platform.connected_platform_revenue_minor
+            connected_platform.connected_platform_revenue_minor,
+            unverifiable_historical_revenue.unverifiable_historical_revenue_minor
         FROM matched_webhook
         CROSS JOIN connected_platform
+        CROSS JOIN unverifiable_historical_revenue
         """
     ).bindparams(
         bindparam("supported_platforms", expanding=True),
@@ -219,6 +248,9 @@ async def fetch_verification_coverage_aggregate(
         window_end=normalized_end,
         matched_webhook_revenue_minor=int(row["matched_webhook_revenue_minor"]),
         connected_platform_revenue_minor=int(row["connected_platform_revenue_minor"]),
+        unverifiable_historical_revenue_minor=int(
+            row["unverifiable_historical_revenue_minor"]
+        ),
     )
 
 

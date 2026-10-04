@@ -352,12 +352,16 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
             JOIN public.attribution_events AS e
               ON e.tenant_id = v.tenant_id
              AND e.id = v.attribution_event_id
+            -- XVIII (H-XVIII-R7/R9): conducted-then-demoted verdicts
+            -- leave the snapshot via their own authority state
+            -- (transactionally maintained; no identity-table read).
             WHERE v.tenant_id = :tenant_id
               AND e.occurred_at >= :window_start
               AND e.occurred_at < :window_end
               AND e.processing_status IN :processed_statuses
               AND e.event_type IN :conversion_event_types
               AND v.status IN :match_verdict_statuses
+              AND v.b26_p2_source_authority_state = 'current'
             ORDER BY v.tenant_id ASC, e.occurred_at ASC NULLS LAST, v.id ASC
             
                 """
@@ -416,6 +420,43 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
         "b23_revenue_events": SourceRelationContract(
             relation="b23_revenue_events",
             window_key="event_occurred_at",
+            # XVIII: revenue events conduct only through currently
+            # authoritative verdicts (C19 pattern: the renderer cannot
+            # express the verdict-state EXISTS, so the authoritative
+            # text is declared here; the C7 gate still compares it).
+            select_override=textwrap.dedent(
+                """\n            SELECT
+                'b23_revenue_events' AS source_table_discriminator,
+                id::text AS id,
+                tenant_id::text AS tenant_id,
+                match_verdict_id::text AS match_verdict_id,
+                provider,
+                canonical_commerce_reference,
+                event_type,
+                upper(currency_code) AS currency_code,
+                event_occurred_at,
+                captured_amount_minor,
+                refund_amount_minor,
+                chargeback_amount_minor,
+                reversal_amount_minor,
+                net_effect_sign,
+                is_gross_capture_correction
+            FROM public.b23_revenue_events
+            -- XVIII: revenue events conduct only through currently
+            -- authoritative verdicts (verdict-local state).
+            WHERE tenant_id = :tenant_id
+              AND event_occurred_at >= :window_start
+              AND event_occurred_at < :window_end
+              AND event_type IN :revenue_event_types
+              AND EXISTS (
+                    SELECT 1 FROM public.b23_match_verdicts AS v
+                     WHERE v.tenant_id = b23_revenue_events.tenant_id
+                       AND v.id = b23_revenue_events.match_verdict_id
+                       AND v.b26_p2_source_authority_state = 'current'
+              )
+            ORDER BY tenant_id ASC, event_occurred_at ASC NULLS LAST, id ASC
+                """
+            ).strip(),
             projection=(
                 ProjectedColumn("id", "id::text", "id"),
                 ProjectedColumn("tenant_id", "tenant_id::text", "tenant_id"),

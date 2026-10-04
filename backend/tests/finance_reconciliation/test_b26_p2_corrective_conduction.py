@@ -184,9 +184,16 @@ def _seed_conduction_universe(tag: str) -> dict[str, Any]:
                         _b26_atomic_code != "42883"
                         and "does not exist" not in _b26_atomic_msg
                         and "undefined" not in _b26_atomic_msg
+                        and "b26_p2_atomic_family_unbound_refused"
+                        not in _b26_atomic_msg
                     ):
                         raise
                     # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
+                    # XVIII: unsupported providers (square/unknown/woo
+                    # distractors) are refused at the sovereign transition
+                    # itself -- a stronger exclusion than scope law. The
+                    # row stays non-authoritative and scope classification
+                    # still excludes it explicitly.
                 if verdict:
                     cur.execute(
                         "INSERT INTO public.b23_match_verdicts (id, tenant_id,"
@@ -726,9 +733,13 @@ async def test_p2ca1_scope_identity_binds_exact_producer_set() -> None:
                     _b26_atomic_code != "42883"
                     and "does not exist" not in _b26_atomic_msg
                     and "undefined" not in _b26_atomic_msg
+                    and "b26_p2_atomic_family_unbound_refused"
+                    not in _b26_atomic_msg
                 ):
                     raise
                 # Old head (VII/XI/XII): atomic absent; admin INSERT lands known.
+                # XVIII: non-sovereign providers stay non-authoritative;
+                # scope classification still counts the row explicitly.
         substituted = await _derive(universe["tenant_id"])
         # Count+amount unchanged (6000 woo -> 6000 woo clone) but identity differs.
         assert substituted.candidate_count == baseline.candidate_count

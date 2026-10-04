@@ -383,6 +383,57 @@ jobs:
           # byte-exact; any residue fails the job.
           git diff --exit-code -- scripts/ci/validate_b26_p2_xvi_semantic_oracle.py backend/app/webhooks/commerce_derivation.py contracts/reconciliation/b2.6/provider-semantic-contract.v1.json
 
+      # B2.6-P2 Corrective XVIII: authority-relation conservation. The
+      # registry gate proves the published semantic identity is
+      # immutable (common-mode co-edit under a constant regime REDs);
+      # the manifest gate proves published migration identities are
+      # content-addressed; the hierarchy gate proves the
+      # provider/API/P2 contracts cohere under one governed
+      # projection; the physics gate proves unforgeable transitions,
+      # stale-evidence refusal, candidate admission, consequence
+      # revocation, coverage honesty, family binding, batch liveness,
+      # downgrade safety, and 3VL safety on the live lane; the battery
+      # proves every relation REDs on a genuine class member (plus
+      # twelve open-world falsifiers) and restores byte-exact GREEN.
+      - name: Prove B2.6-P2 Corrective-XVIII semantic-regime registry
+        run: |
+          python scripts/ci/validate_b26_p2_xviii_semantic_registry.py \
+            --evidence-out artifacts/b26_p2/static/xviii-registry.json
+
+      - name: Prove B2.6-P2 Corrective-XVIII migration identity integrity
+        run: |
+          python scripts/ci/validate_b26_p2_xviii_migration_manifest.py \
+            --evidence-out artifacts/b26_p2/static/xviii-manifest.json
+
+      - name: Prove B2.6-P2 Corrective-XVIII contract hierarchy coherence
+        run: |
+          python scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py \
+            --evidence-out artifacts/b26_p2/static/xviii-hierarchy.json
+
+      - name: Prove B2.6-P2 Corrective-XVIII governance (wiring/isolation)
+        run: |
+          python scripts/ci/validate_b26_p2_xviii_governance.py \
+            --evidence-out artifacts/b26_p2/static/xviii-governance.json
+
+      - name: Prove B2.6-P2 Corrective-XVIII authority physics closure (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xviii_physics.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xviii-physics.json
+
+      - name: Prove B2.6-P2 Corrective-XVIII relations non-vacuous (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/test_b26_p2_xviii_negative_controls.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xviii-negative-controls.json
+          # The battery mutates tracked files and must restore them
+          # byte-exact; any residue fails the job.
+          git diff --exit-code -- scripts/ci/validate_b26_p2_xvi_semantic_oracle.py backend/app/webhooks/commerce_derivation.py contracts/reconciliation/b2.6/provider-semantic-contract.v1.json contracts-internal/governance/b26_p2_xvii_semantic_contract.pin.json alembic/versions/007_skeldir_foundation/202609280002_b26_p2_corrective_xvi_sovereign_closure.py backend/app/api/webhooks.py
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence

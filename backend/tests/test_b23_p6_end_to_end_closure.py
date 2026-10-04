@@ -1202,7 +1202,7 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
                         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                         {"tenant_id": str(tenant_id)},
                     )
-                    return await issuer.execute(
+                    inserted = await issuer.execute(
                         text(
                             """
                             INSERT INTO public.webhook_ingress_identities (
@@ -1254,6 +1254,50 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
                             ),
                         },
                     )
+                    # XVIII: authenticate the fixture through the governed
+                    # transition so it holds current P2 authority (B2.3
+                    # verified-revenue coverage measures current truth).
+                    # Unsupported providers (bank_wire distractors) are
+                    # refused at the transition itself and stay
+                    # non-authoritative, which is their exclusion.
+                    ingress_id = (
+                        await issuer.execute(
+                            text(
+                                "SELECT id FROM"
+                                " public.webhook_ingress_identities"
+                                " WHERE tenant_id = :tenant_id"
+                                " AND idempotency_key = :idempotency_key"
+                            ),
+                            {
+                                "tenant_id": str(tenant_id),
+                                "idempotency_key": (
+                                    f"b23-p6-coverage-{tenant_id}-{reference}"
+                                ),
+                            },
+                        )
+                    ).scalar_one()
+                    try:
+                        await issuer.execute(
+                            text(
+                                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                                " :ingress_id, :provider, :event_reference,"
+                                " :body_sha256, :sig_sha256,"
+                                " 'hmac-sha256-timestamped-hex', 'v1')"
+                            ),
+                            {
+                                "ingress_id": str(ingress_id),
+                                "provider": provider,
+                                "event_reference": f"coverage-event-{reference}",
+                                "body_sha256": "a" * 64,
+                                "sig_sha256": "b" * 64,
+                            },
+                        )
+                    except Exception as auth_exc:
+                        if "b26_p2_atomic_family_unbound_refused" not in str(
+                            auth_exc
+                        ):
+                            raise
+                    return inserted
             finally:
                 await issuer_engine.dispose()
 

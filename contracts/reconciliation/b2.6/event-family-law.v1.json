@@ -1,0 +1,41 @@
+{
+  "contract_id": "b26-p2-event-family-law",
+  "contract_version": "v1",
+  "semantic_regime": "xvii-sovereign-v1",
+  "governing_note": "B2.6-P2 Corrective XVIII (H-XVIII-R11/R12): the sovereign supported-event-family law. The ONLY authority for 'this payload denotes a financial family' is derive_event_family() over verified provider bytes (backend/app/webhooks/commerce_derivation.py), bound into b26_p2_provider_auth_consequence.b26_p2_event_family inside the sovereign atomic under the per-provider allowlist below. Relay route selection is advisory/defense-in-depth only and can never confer family. Signal-less shapes are accepted ONLY under the explicit family-implicit disposition recorded per provider: the shape itself is the provider's canonical representation of the supported family, and every other family of that provider arrives in a distinct refused-or-typed shape. This artifact is subordinate to the semantic regime: a family-law change requires a new semantic regime (registry-append), never an in-place edit.",
+  "families": {
+    "stripe": {
+      "canonical_family": "payment_intent.succeeded",
+      "accepted_aliases": ["payment_intent.succeeded", "payment_intent_succeeded"],
+      "native_signal_keys": ["type", "event_type", "status"],
+      "signal_rule": "a present type/event_type must alias the canonical family or the payload is REFUSED (e.g. charge.refunded, payment_intent.payment_failed); status=succeeded attests the canonical family; any other present status is REFUSED",
+      "family_implicit_shapes": ["flat payment_intent object {id, amount, currency, created}"],
+      "family_implicit_rationale": "a bare payment_intent object carries no state field; every non-succeeded Stripe family (refunds, failures, disputes, checkout sessions) arrives in a distinct typed object or envelope that this contract refuses or that carries a refusing type signal. The flat object is therefore the provider's canonical representation of the succeeded family, and the disposition is recorded here -- not inferred from the relay URL."
+    },
+    "shopify": {
+      "canonical_family": "orders.create",
+      "accepted_aliases": ["orders.create", "order_create", "orders/create"],
+      "native_signal_keys": [],
+      "signal_rule": "the contracted order JSON carries no provider family signal; family authority rests on the order shape itself (defense in depth: the relay additionally checks the X-Shopify-Topic header, but the root does not trust headers)",
+      "family_implicit_shapes": ["order JSON {id, total_price, currency, created_at}"],
+      "family_implicit_rationale": "Shopify order webhooks for distinct lifecycle events share the order shape; P2 supports exactly one financial family (orders.create) and exactly one financial fact per order (identity law). A refund/dispute lifecycle event for the same order carries a distinct topic and no new financial fact within the supported scope; it is excluded at ingestion scope, never coerced into a second canonical lineage (commerce-identity conservation)."
+    },
+    "paypal": {
+      "canonical_family": "payment.sale.completed",
+      "accepted_aliases": ["payment.sale.completed", "sale_completed", "payment.sale_completed"],
+      "native_signal_keys": ["event_type"],
+      "signal_rule": "a present event_type must alias the canonical family or the payload is REFUSED (e.g. PAYMENT.SALE.DENIED); signal-less flat sale JSON is family-implicit",
+      "family_implicit_shapes": ["flat sale JSON {id, amount{total, currency}, create_time}"],
+      "family_implicit_rationale": "the contracted flat sale shape is PayPal's completed-sale representation; resource-enveloped webhooks (all other sale lifecycle events) are refused outright, so no other family can arrive in this shape."
+    },
+    "woocommerce": {
+      "canonical_family": "order.completed",
+      "accepted_aliases": ["order.completed", "order_completed"],
+      "native_signal_keys": ["status"],
+      "signal_rule": "a present status must be completed (or alias the canonical family) or the payload is REFUSED (e.g. refunded); signal-less order JSON is family-implicit under the governed completion/date_created timestamp law",
+      "family_implicit_shapes": ["order JSON {id, total, currency, date_completed and/or date_created}"],
+      "family_implicit_rationale": "completion status, when the provider states it, must read completed; when unstated, the order-total shape under the governed timestamp law denotes the completed-order financial fact. Distinct lifecycle states that the provider states explicitly are refused, never coerced."
+    }
+  },
+  "conservation": "CURRENT TRUST = AUTHENTICATED BYTES + SUPPORTED FAMILY + CURRENT REGIME. Break any term and no financial authority exists."
+}

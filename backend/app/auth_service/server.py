@@ -175,6 +175,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         CommerceDerivationError,
         binding_mismatches,
         derive_commerce,
+        derive_event_family,
     )
 
     try:
@@ -234,6 +235,18 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             status_code=400,
             detail="b26_p2_handoff_binding_refused:" + ",".join(sorted(mismatched)),
         )
+    # XVIII (H-XVIII-R11/R12): sovereign event-family binding. The
+    # family is established HERE, from authenticated bytes, by the
+    # component that creates financial authority -- never from the
+    # relay route. An unsupported family (valid signature, parseable
+    # money, wrong family) yields no authority at all.
+    try:
+        event_family = derive_event_family(provider, raw_body)
+    except CommerceDerivationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"b26_p2_unsupported_event_family_refused:{exc}",
+        ) from exc
     # XVI (H-XVI-R13): canonical persistence is USD-only. The sovereign
     # scope currency universe is {"USD"}; a non-USD event is
     # EXPLICITLY_EXCLUDED from canonical reconciliation truth by scope
@@ -283,8 +296,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                         " WHERE i.tenant_id = :tenant"
                         " AND c.body_sha256 = :body_sha"
                         " AND c.provider_event_reference = :event_ref"
-                        " AND i.b26_p2_provenance_status"
-                        " IS NOT DISTINCT FROM 'authenticated_known'"
+                        " AND public.b26_p2_ingress_has_current_authority(i.id)"
                         " LIMIT 1"
                     ),
                     {
@@ -482,7 +494,14 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         # atomic serializes on the byte identity and refuses the loser.
         # Resolve the winner and return its lineage instead of 500ing a
         # genuine duplicate (provider retry must observe success).
+        # XVIII: the sovereign family claim travels transaction-locally
+        # (SET LOCAL: auto-cleared at commit, never leaks across pooled
+        # checkouts); the atomic allowlists and binds it.
         try:
+            await session.execute(
+                text("SET LOCAL app.b26_p2_event_family = :family"),
+                {"family": event_family},
+            )
             await session.execute(
                 text(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
@@ -515,8 +534,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                             " WHERE i.tenant_id = :tenant"
                             " AND c.body_sha256 = :body_sha"
                             " AND c.provider_event_reference = :event_ref"
-                            " AND i.b26_p2_provenance_status"
-                            " IS NOT DISTINCT FROM 'authenticated_known'"
+                            " AND public.b26_p2_ingress_has_current_authority(i.id)"
                             " LIMIT 1"
                         ),
                         {

@@ -48,6 +48,11 @@ def _match_detail_from_row(row) -> B23MatchVerdictDetailResponse:
             discrepancy_basis="gross_expected_vs_gross_captured",
         ),
         adjustments_applied=bool(row["adjustments_applied"]),
+        source_authority_state=str(
+            row["b26_p2_source_authority_state"]
+            if "b26_p2_source_authority_state" in row.keys()
+            else "unknown"
+        ),
         pending_since=row["pending_since"],
         provisional_expires_at=row["provisional_expires_at"],
         confirmed_at=row["confirmed_at"],

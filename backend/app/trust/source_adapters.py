@@ -82,6 +82,10 @@ class MatchVerdictSource:
     last_transition_at: datetime
     created_at: datetime
     updated_at: datetime
+    # XVIII (H-XVIII-R7/R9): whether the backing ingress holds current
+    # P2 authority at read time. A False source must never surface as
+    # verified financial truth: the builder degrades it explicitly.
+    ingress_has_current_authority: bool = True
 
 
 @dataclass(frozen=True)
@@ -499,6 +503,9 @@ def match_verdict_source_from_mapping(row: Any) -> MatchVerdictSource:
         last_transition_at=mapping["last_transition_at"],
         created_at=mapping["created_at"],
         updated_at=mapping["updated_at"],
+        ingress_has_current_authority=bool(
+            mapping.get("ingress_has_current_authority", True)
+        ),
     )
 
 
@@ -529,7 +536,12 @@ async def read_match_verdict_source(
                 currency_code,
                 last_transition_at,
                 created_at,
-                updated_at
+                updated_at,
+                -- XVIII: current P2 authority of the backing ingress,
+                -- observed at read time (verdict-local state; the
+                -- builder degrades non-authoritative sources).
+                b26_p2_source_authority_state = 'current'
+                    AS ingress_has_current_authority
             FROM public.b23_match_verdicts
             WHERE tenant_id = :tenant_id
               AND id = :verdict_id
@@ -633,7 +645,9 @@ async def query_match_verdict_sources(
             currency_code,
             last_transition_at,
             created_at,
-            updated_at
+            updated_at,
+            b26_p2_source_authority_state = 'current'
+                AS ingress_has_current_authority
         FROM public.b23_match_verdicts
         WHERE {' AND '.join(predicates)}
         ORDER BY updated_at ASC, id ASC

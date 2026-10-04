@@ -790,7 +790,7 @@ def _assert_sovereign_finalization_binding(
     finalization: Mapping[str, Any],
     *,
     context: str,
-) -> None:
+) -> str:
     """Enforce bytes->meaning binding on a verified arrival (XVI, H-XVI-R11).
 
     Single law shared by the HTTP-relay path and the direct (credential-
@@ -809,6 +809,7 @@ def _assert_sovereign_finalization_binding(
         CommerceDerivationError as _BindingDerivationError,
         binding_mismatches as _binding_mismatches,
         derive_commerce as _binding_derive,
+        derive_event_family as _binding_family,
     )
 
     envelope = finalization.get("relay_envelope")
@@ -871,6 +872,15 @@ def _assert_sovereign_finalization_binding(
                 "b26_p2_unsupported_currency_refused:"
                 f"{_derived.verified_amount_currency}"
             )
+        # XVIII (H-XVIII-R11/R12): sovereign family from the same
+        # verified bytes. An unsupported family fails closed here,
+        # before any persistence, on both relay and direct paths.
+        try:
+            _family = _binding_family(_provider, _raw)
+        except _BindingDerivationError as exc:
+            raise ValidationError(
+                f"b26_p2_unsupported_event_family_refused:{context}:{exc}"
+            ) from exc
     except ValidationError:
         raise
     except _BindingDerivationError as exc:
@@ -881,6 +891,7 @@ def _assert_sovereign_finalization_binding(
         raise ValidationError(
             f"b26_p2_handoff_binding_refused:{context}_check_failed:{type(exc).__name__}"
         ) from exc
+    return _family
 
 
 async def _relay_verified_ingress_to_auth_root(
@@ -1018,7 +1029,9 @@ async def _finalize_verified_ingress_post_commit(
     # meaning from the exact relayed bytes, refuse any divergence, and
     # refuse non-USD persistence. Without the raw bytes there is no
     # dominance to prove -- fail closed.
-    _assert_sovereign_finalization_binding(finalization, context="direct")
+    _direct_family = _assert_sovereign_finalization_binding(
+        finalization, context="direct"
+    )
 
     tenant_id = finalization.get("tenant_id")
     idem = str(finalization.get("idempotency_key"))
@@ -1146,6 +1159,12 @@ async def _finalize_verified_ingress_post_commit(
         # lineage and complete idempotently instead of failing a genuine
         # duplicate redelivery.
         try:
+            # XVIII: sovereign family claim, transaction-local (cleared
+            # at commit/rollback; never leaks across pooled checkouts).
+            await session.execute(
+                text("SET LOCAL app.b26_p2_event_family = :family"),
+                {"family": _direct_family},
+            )
             await session.execute(
                 text(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
@@ -1182,8 +1201,7 @@ async def _finalize_verified_ingress_post_commit(
                             " WHERE i.tenant_id = :tenant"
                             " AND c.body_sha256 = :body_sha"
                             " AND c.provider_event_reference = :event_ref"
-                            " AND i.b26_p2_provenance_status"
-                            " IS NOT DISTINCT FROM 'authenticated_known'"
+                            " AND public.b26_p2_ingress_has_current_authority(i.id)"
                             " LIMIT 1"
                         ),
                         {
