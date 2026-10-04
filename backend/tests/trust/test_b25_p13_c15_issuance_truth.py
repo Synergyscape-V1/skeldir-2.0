@@ -61,6 +61,7 @@ from test_b25_p13_e2e_trust_closure import (
     _insert_agent_client,
     _insert_tenant,
     _issue_credential,
+    _link_p13_verdicts,
     _seed_verdict,
     _worker_database_url,
 )
@@ -315,7 +316,9 @@ async def _seed_tenant(engine, label: str):
     async with engine.begin() as connection:
         await _insert_tenant(connection, tenant_id, label)
         await _insert_agent_client(connection, tenant_id, client_id)
-        subject_urn = await _seed_verdict(
+        # XVIII: _seed_verdict returns (urn, link_info); linkage to
+        # P2-authenticated ingress happens after commit (see below).
+        subject_urn, link_info = await _seed_verdict(
             connection, tenant_id=tenant_id, reference=f"c15-{uuid4().hex[:12]}"
         )
         token = await _issue_credential(
@@ -328,6 +331,9 @@ async def _seed_tenant(engine, label: str):
                 agent_client_id=client_id,
                 scope=scope.value,
             )
+    # The seeding transaction committed on block exit; link the verdict
+    # to P2-authenticated ingress so it holds current authority.
+    await _link_p13_verdicts([link_info])
     return tenant_id, token, subject_urn
 
 
