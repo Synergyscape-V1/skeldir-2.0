@@ -491,7 +491,23 @@ def main() -> int:
         p2 = _p2_outcome(state)
         conducts, detail = _completion_outcome(args.dsn, state)
         p2_success = p2[0] == "SUCCESS"
-        if "upstream_refuse" in detail:
+        if "b26_p2_atomic_family_unbound_refused" in detail:
+            # XVIII: issuance lawfully refuses non-sovereign providers
+            # at the transition itself. Consistency demands the scope
+            # law also refuse the same row (EXPLICITLY_EXCLUDED, or a
+            # REFUSAL for independently malformed scope dimensions)
+            # and nothing conduct: a lawful double-refusal, not a
+            # divergence.
+            p2_disposition = p2[1] if len(p2) > 1 else ""
+            holds = (
+                (
+                    p2_disposition == "EXPLICITLY_EXCLUDED"
+                    or p2[0] == "REFUSAL"
+                )
+                and conducts is False
+            )
+            kind = "issuance"
+        elif "upstream_refuse" in detail:
             # Refused before the gate (issuance shape law): P2 INVALID
             # must refuse there too; P2 SUCCESS with upstream refusal is
             # fail-closed strictness, recorded but not a stranding proof
