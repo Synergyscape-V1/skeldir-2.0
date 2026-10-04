@@ -86,6 +86,12 @@ class MatchVerdictSource:
     # P2 authority at read time. A False source must never surface as
     # verified financial truth: the builder degrades it explicitly.
     ingress_has_current_authority: bool = True
+    # The verdict's own authority disposition (current /
+    # historically_unverifiable / unresolved / unknown). Issuance
+    # paths refuse historically_unverifiable sources specifically:
+    # demoted history must never enter a signed export, while
+    # never-linked rows keep their honest degraded envelopes.
+    ingress_authority_state: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -506,6 +512,9 @@ def match_verdict_source_from_mapping(row: Any) -> MatchVerdictSource:
         ingress_has_current_authority=bool(
             mapping.get("ingress_has_current_authority", True)
         ),
+        ingress_authority_state=str(
+            mapping.get("ingress_authority_state", "unknown")
+        ),
     )
 
 
@@ -541,7 +550,8 @@ async def read_match_verdict_source(
                 -- observed at read time (verdict-local state; the
                 -- builder degrades non-authoritative sources).
                 b26_p2_source_authority_state = 'current'
-                    AS ingress_has_current_authority
+                    AS ingress_has_current_authority,
+                b26_p2_source_authority_state AS ingress_authority_state
             FROM public.b23_match_verdicts
             WHERE tenant_id = :tenant_id
               AND id = :verdict_id
@@ -647,7 +657,8 @@ async def query_match_verdict_sources(
             created_at,
             updated_at,
             b26_p2_source_authority_state = 'current'
-                AS ingress_has_current_authority
+                AS ingress_has_current_authority,
+            b26_p2_source_authority_state AS ingress_authority_state
         FROM public.b23_match_verdicts
         WHERE {' AND '.join(predicates)}
         ORDER BY updated_at ASC, id ASC

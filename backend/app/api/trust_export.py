@@ -498,12 +498,14 @@ async def _create_export_with_capacity(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     sources_by_id = {source.id: source for source in sources}
-    # XVIII (H-XVIII-R7/R9): non-authoritative (demoted-history) sources
-    # never enter a signed export. Exclusion here is issuance law, not
-    # display preference: a signature over demoted money would mint new
-    # authority from revoked history.
+    # XVIII (H-XVIII-R7/R9): demoted-history sources never enter a
+    # signed export. Exclusion here is issuance law, not display
+    # preference: a signature over revoked money would mint new
+    # authority from dead history. Never-linked (unresolved) rows
+    # keep their honest degraded envelopes.
     if any(
-        not source.ingress_has_current_authority for source in sources
+        source.ingress_authority_state == "historically_unverifiable"
+        for source in sources
     ):
         return _typed_error_response(
             ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
