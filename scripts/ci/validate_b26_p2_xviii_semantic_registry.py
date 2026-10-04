@@ -178,7 +178,10 @@ def main() -> int:
         if base is None:
             violations.append("registry_history_no_protected_base")
             raise RuntimeError("no-base")
-        rel = str(REGISTRY_PATH.relative_to(REPO_ROOT))
+        # Git rev:path syntax requires forward slashes even on
+        # Windows (backslashes fail with rc=128 and would silently
+        # force first-publication mode, disabling the history arm).
+        rel = REGISTRY_PATH.relative_to(REPO_ROOT).as_posix()
         try:
             base_blob = _git(["show", f"{base}:{rel}"])
             base_registry = json.loads(base_blob)

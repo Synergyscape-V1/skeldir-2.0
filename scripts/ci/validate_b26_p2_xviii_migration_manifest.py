@@ -109,7 +109,9 @@ def main() -> int:
         if shallow == "true":
             violations.append("manifest_history_unavailable_shallow_checkout")
             raise RuntimeError("shallow")
-        rel = str(MANIFEST_PATH.relative_to(REPO_ROOT))
+        # Git rev:path syntax requires forward slashes even on
+        # Windows (see registry gate).
+        rel = MANIFEST_PATH.relative_to(REPO_ROOT).as_posix()
         base = _protected_base()
         if base is None:
             violations.append("manifest_history_no_protected_base")
