@@ -26,6 +26,7 @@ import ast
 import hashlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -102,6 +103,65 @@ TRUTH_COMPANIONS = {
 }
 
 
+def _companion_acknowledges_live_state(
+    companion: str, violations: list[str], checks: dict
+) -> bool:
+    """Prove an unchanged companion still describes live state.
+
+    Currently implemented for the X semantic universe pin: re-derive
+    the module universe, B2.3 footprint, trigger columns, and dynamic
+    forms from the live tree and require exact equality with the
+    pinned content. A truth change that leaves every derived
+    representation identical (e.g. an authority overlay that adds no
+    modules, columns, or dynamic forms) keeps its companion honestly.
+    Any derivation gap returns False (companion must be regenerated).
+    """
+    if companion != (
+        "contracts-internal/governance/b26_p2_x_semantic_universe.pin.json"
+    ):
+        return False
+    try:
+        import importlib.util as _ilu
+
+        spec = _ilu.spec_from_file_location(
+            "b26_p2_x_semantic_live",
+            str(
+                REPO_ROOT
+                / "scripts"
+                / "ci"
+                / "validate_b26_p2_x_semantic.py"
+            ),
+        )
+        if spec is None or spec.loader is None:
+            return False
+        module = _ilu.module_from_spec(spec)
+        sys.modules["b26_p2_x_semantic_live"] = module
+        spec.loader.exec_module(module)
+        pin = json.loads(
+            (REPO_ROOT / companion).read_text(encoding="utf-8")
+        )
+        live_modules = module._derive()
+        acknowledged = (
+            sorted(live_modules["modules"]) == sorted(pin.get("modules", []))
+            and sorted(live_modules["b23_footprint"])
+            == sorted(pin.get("b23_footprint", []))
+            and sorted(live_modules["trigger_columns"])
+            == sorted(pin.get("trigger_columns", []))
+            and {
+                key: sorted(value)
+                for key, value in live_modules["dynamic_forms"].items()
+            }
+            == {
+                key: sorted(value)
+                for key, value in pin.get("dynamic_forms", {}).items()
+            }
+        )
+        checks["companion_live_acknowledged"] = bool(acknowledged)
+        return bool(acknowledged)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _git(args: list[str]) -> tuple[int, str]:
     try:
         proc = subprocess.run(
@@ -170,7 +230,12 @@ def main() -> int:
                 for companion in companions:
                     if companion not in changed:
                         # Companion may predate this change only if it
-                        # already acknowledges the live tree state.
+                        # already acknowledges the live tree state
+                        # (verified, not assumed).
+                        if _companion_acknowledges_live_state(
+                            companion, violations, checks
+                        ):
+                            continue
                         violations.append(
                             f"x_two_phase_companion_missing:{truth}" f"->{companion}"
                         )
@@ -221,6 +286,7 @@ def main() -> int:
                         "202609280001",
                         "202609280002",
                         "202609290001",
+                        "202609300001",
                     ):
                         violations.append("x_two_phase_authority_pin_stale")
                 except (OSError, ValueError) as exc:
