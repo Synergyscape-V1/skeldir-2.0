@@ -770,6 +770,12 @@ KNOWN_P2_DEFINERS = frozenset(
         # grants no runtime EXECUTE; the evidence table grants no
         # runtime INSERT/UPDATE/DELETE.)
         "b26_p2_xiv_topology_check",
+        # Corrective XVIII: the central current-authority predicate
+        # (STABLE, read-only SECURITY DEFINER; EXECUTE runtime reader
+        # roles; answers only, mints nothing; fail-closed). P2-covered
+        # (b26_p2_xviii_coverage) and falsified by the XVIII battery
+        # (NC/OW cells) plus the XVIII live physics role matrix.
+        "b26_p2_ingress_has_current_authority",
     }
 )
 
