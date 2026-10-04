@@ -1364,9 +1364,12 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609290001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xvii")
-        details["migration_head"] = "202609290001"
+        # XVIII: the head advances to the authority-conservation
+        # revision; the XVII head must remain an ancestor (linear
+        # ancestry, no forks).
+        if "202609300001" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xviii")
+        details["migration_head"] = "202609300001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",

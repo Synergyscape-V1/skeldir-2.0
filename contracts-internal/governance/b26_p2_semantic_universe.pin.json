@@ -1,7 +1,7 @@
 {
   "producer": "validate_b26_p2_ix_semantic",
   "scope_authority_ast_sha256": "864d0d4b3816c5dc170a9c2f7fa4e4f710353c21d292f7b71e6de22a50468cca",
-  "candidate_conduction_ast_sha256": "59b04360458ee4115ecbae172ff7084789af01e45900064002aa78a13e500ad5",
+  "candidate_conduction_ast_sha256": "921e24209d31da77e4658d16a9a1c25fa94e5efa1ebef7b6ea4bbe7a8e426c64",
   "b23_footprint": [
     "status",
     "webhook_ingress_identity_id",

@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
-  "migration_head": "202609290001",
-  "authority_universe_hash": "178f4f93e52021f4fa5aeef9ec5b386de274820d89a930ce9d66da7533af0c49",
-  "reviewed_at_git_sha": "39bd199b5062f40bfd9f8e02b085f999ac4c2680",
+  "migration_head": "202609300001",
+  "authority_universe_hash": "80916b5de6b2dd7deb193c2e9444a27fd7bd526767b4c000c4c40e74c1f5b",
+  "reviewed_at_git_sha": "b23b17da",
   "meaning_surface_counts": {
-   "routine_meaning": 146,
-   "trigger_meaning": 22,
+   "routine_meaning": 153,
+   "trigger_meaning": 26,
    "schema_meaning": 5,
    "rls_meaning": 17,
-   "ownership": 107
+   "ownership": 114
   },
-  "review_note": "B2.6-P2 Corrective XVII historical reconciliation reviewed: semantic-regime identity (xvii-sovereign-v1 stamped by the atomic, enforced at dispatch/P3/admission), deterministic historical disposition (all pre-regime trusted rows demoted with explicit reason), event/commerce identity conservation (conflict refusals + partial unique indexes), tuple-bound witness + binding oracle (new routine/ownership +1), demotion-reason provenance; live hash from PG15 pristine fresh lane (prepare+alembic head 202609290001); identical-frame pg_temp spoof refused at grants (preserved)."
+  "review_note": "B2.6-P2 Corrective XVIII authority-relation conservation reviewed: immutable regime registry (+1 table/trigger), central authority predicate (+1 routine), unforgeable trust-transition trigger + column privilege revocation, demoted-ingress refusal + floor + family allowlist in the atomic (signature byte-stable), hardened legacy attester under one promotion law, verdict authority state with stamp/propagate/guard triggers (+3), dispatch demotion/family gates, operational floor, consequence family binding; live hash from PG15 fresh lane (prepare+alembic head 202609300001)."
 }
