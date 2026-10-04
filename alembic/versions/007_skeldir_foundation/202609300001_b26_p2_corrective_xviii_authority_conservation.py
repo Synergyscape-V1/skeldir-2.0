@@ -218,14 +218,21 @@ def upgrade() -> None:
         "REVOKE ALL ON FUNCTION public.b26_p2_ingress_has_current_authority(uuid)"
         " FROM PUBLIC"
     )
+    # Role-targeted statements are existence-guarded (established XII
+    # pattern): lanes that provision only a subset of runtime roles
+    # (e.g. CI ingress-only lanes) must still migrate cleanly. Where
+    # a role is absent, its privilege is absent too -- nothing to
+    # revoke -- except EXECUTE grants, which are meaningless without
+    # the role and safely skipped.
     for _role in (
         "app_user", "app_ingress", "app_worker", "app_relay", "app_beat",
         "app_dispatch_publisher", "app_trust_issuer", "app_trust_signer",
     ):
         op.execute(
-            "GRANT EXECUTE ON FUNCTION"
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
+            " WHERE rolname = '%s') THEN EXECUTE 'GRANT EXECUTE ON FUNCTION"
             " public.b26_p2_ingress_has_current_authority(uuid)"
-            " TO %s" % _role
+            " TO %s'; END IF; END $$;" % (_role, _role)
         )
 
     # ------------------------------------------------------------------
@@ -306,9 +313,12 @@ def upgrade() -> None:
         "app_dispatch_publisher", "app_trust_issuer", "app_trust_signer",
     ):
         op.execute(
-            "REVOKE UPDATE (b26_p2_provenance_status, b26_p2_semantic_regime,"
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
+            " WHERE rolname = '%s') THEN EXECUTE 'REVOKE UPDATE"
+            " (b26_p2_provenance_status, b26_p2_semantic_regime,"
             " b26_p2_demotion_reason)"
-            " ON public.webhook_ingress_identities FROM %s" % _role
+            " ON public.webhook_ingress_identities FROM %s';"
+            " END IF; END $$;" % (_role, _role)
         )
 
     # ------------------------------------------------------------------
@@ -805,12 +815,18 @@ def upgrade() -> None:
         "uuid, text, text, text, text, text, text) FROM PUBLIC"
     )
     op.execute(
-        "GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic("
-        "uuid, text, text, text, text, text, text) TO app_ingress"
+        "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
+        " WHERE rolname = 'app_ingress') THEN EXECUTE 'GRANT EXECUTE ON"
+        " FUNCTION public.b26_p2_authenticate_ingress_atomic("
+        "uuid, text, text, text, text, text, text) TO app_ingress';"
+        " END IF; END $$;"
     )
     op.execute(
-        "REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic("
-        "uuid, text, text, text, text, text, text) FROM app_user"
+        "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
+        " WHERE rolname = 'app_user') THEN EXECUTE 'REVOKE ALL ON FUNCTION"
+        " public.b26_p2_authenticate_ingress_atomic("
+        "uuid, text, text, text, text, text, text) FROM app_user';"
+        " END IF; END $$;"
     )
 
     # ------------------------------------------------------------------
@@ -1126,8 +1142,11 @@ def upgrade() -> None:
         "app_dispatch_publisher", "app_trust_issuer", "app_trust_signer",
     ):
         op.execute(
-            "REVOKE UPDATE (b26_p2_source_authority_state)"
-            " ON public.b23_match_verdicts FROM %s" % _role
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
+            " WHERE rolname = '%s') THEN EXECUTE 'REVOKE UPDATE"
+            " (b26_p2_source_authority_state)"
+            " ON public.b23_match_verdicts FROM %s';"
+            " END IF; END $$;" % (_role, _role)
         )
 
 
@@ -1445,7 +1464,10 @@ def downgrade() -> None:
         "app_dispatch_publisher", "app_trust_issuer", "app_trust_signer",
     ):
         op.execute(
-            "GRANT UPDATE (b26_p2_provenance_status, b26_p2_semantic_regime,"
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
+            " WHERE rolname = '%s') THEN EXECUTE 'GRANT UPDATE"
+            " (b26_p2_provenance_status, b26_p2_semantic_regime,"
             " b26_p2_demotion_reason)"
-            " ON public.webhook_ingress_identities TO %s" % _role
+            " ON public.webhook_ingress_identities TO %s';"
+            " END IF; END $$;" % (_role, _role)
         )
