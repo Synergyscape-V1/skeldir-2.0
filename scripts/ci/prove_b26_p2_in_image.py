@@ -621,8 +621,13 @@ def main() -> int:
                     sys.modules[_modname] = _mod
                     _spec.loader.exec_module(_mod)
                     covered = sorted(getattr(_mod, _attr))
+                    print(f"coverage_registry_loaded:{_modname}:{len(covered)}",
+                          flush=True)
                     break
-                except (FileNotFoundError, AttributeError, ImportError):
+                except (FileNotFoundError, AttributeError, ImportError) as _exc:
+                    print(f"coverage_registry_skipped:{_modname}:"
+                          f"{type(_exc).__name__}:{_exc}"[:300],
+                          flush=True)
                     continue
         assert covered is not None, "no_coverage_registry_found"
         proc = run_img(
