@@ -334,6 +334,11 @@ async def _seed_p12_ca1_representative_source_rows(
                 },
             )
 
+    # XVIII: verdicts consumed by Bayesian eligibility must hold current
+    # P2 authority. Legs are linked to P2-authenticated ingress after the
+    # seeding transaction commits (see below); NULL-link matched rows no
+    # longer conduct anywhere.
+    legs: list[tuple] = []
     async with get_session(tenant_id) as session:
         for index in range(P12_CA1_REPRESENTATIVE_EVENT_COUNT):
             event_id = uuid4()
@@ -343,6 +348,8 @@ async def _seed_p12_ca1_representative_source_rows(
             channel_index = index % P12_CA1_REPRESENTATIVE_CHANNEL_COUNT
             campaign_index = index % P12_CA1_REPRESENTATIVE_CAMPAIGN_COUNT
             channel = f"p12ca1_{suffix}_{channel_index:02d}"
+            legs.append((index, event_id, verdict_id, revenue_cents,
+                         occurred_at))
             await session.execute(
                 text(
                     """
@@ -437,6 +444,7 @@ async def _seed_p12_ca1_representative_source_rows(
                         id,
                         tenant_id,
                         attribution_event_id,
+                        webhook_ingress_identity_id,
                         provider,
                         canonical_commerce_reference,
                         provider_native_event_reference,
@@ -459,6 +467,7 @@ async def _seed_p12_ca1_representative_source_rows(
                         :verdict_id,
                         :tenant_id,
                         :event_id,
+                        :ingress_id,
                         'stripe',
                         :commerce_ref,
                         :event_ref,
@@ -483,6 +492,9 @@ async def _seed_p12_ca1_representative_source_rows(
                     "verdict_id": str(verdict_id),
                     "tenant_id": str(tenant_id),
                     "event_id": str(event_id),
+                    # Linked after commit (see below); NULL stamps
+                    # unresolved, never verified.
+                    "ingress_id": None,
                     "commerce_ref": f"order_{suffix}_{index:04d}",
                     "event_ref": f"evt_{suffix}_{index:04d}",
                     "amount_minor": revenue_cents,
@@ -531,6 +543,68 @@ async def _seed_p12_ca1_representative_source_rows(
                     "amount_minor": revenue_cents,
                 },
             )
+    # The seeding session committed on block exit. Authenticate each leg
+    # through the governed transition (migration admin) and relink its
+    # verdict; the relink trigger re-derives authority state to current.
+    import psycopg2  # noqa: PLC0415
+
+    migration_dsn = os.getenv("MIGRATION_DATABASE_URL", "").strip()
+    if not migration_dsn:
+        raise RuntimeError("B2.4-P12 fixture needs MIGRATION_DATABASE_URL")
+    admin = psycopg2.connect(migration_dsn)
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            for index, event_id, verdict_id, revenue_cents, occurred_at in legs:
+                ingress_id = str(uuid4())
+                cur.execute(
+                    "INSERT INTO public.webhook_ingress_identities (id,"
+                    " tenant_id, event_id, provider,"
+                    " provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_kind,"
+                    " normalized_commerce_reference_value,"
+                    " verified_amount_minor, verified_amount_currency,"
+                    " event_timestamp, idempotency_key,"
+                    " verified_commerce_ingress_state)"
+                    " VALUES (%s, %s, %s, 'stripe', %s, %s,"
+                    " 'stripe_payment_intent_id', %s, %s, 'USD', %s, %s,"
+                    " 'authenticity_verified')",
+                    (
+                        ingress_id,
+                        str(tenant_id),
+                        str(event_id),
+                        f"p12ca1-evt-{suffix}-{index:04d}",
+                        f"p12ca1-order-{suffix}-{index:04d}",
+                        f"p12ca1-order-{suffix}-{index:04d}",
+                        revenue_cents,
+                        occurred_at,
+                        f"p12ca1-ingress:{suffix}:{index:04d}",
+                    ),
+                )
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    " %s, 'stripe', %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        ingress_id,
+                        f"p12ca1-evt-{suffix}-{index:04d}",
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
+                cur.execute(
+                    "UPDATE public.b23_match_verdicts"
+                    " SET webhook_ingress_identity_id = %s"
+                    " WHERE id = %s AND tenant_id = %s",
+                    (ingress_id, str(verdict_id), str(tenant_id)),
+                )
+    finally:
+        admin.close()
 
 
 async def _p12_ca1_snapshot_hash(tenant_id: UUID):
