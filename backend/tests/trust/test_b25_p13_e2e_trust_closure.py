@@ -260,7 +260,9 @@ async def _insert_agent_client(connection, tenant_id: UUID, client_id: UUID) -> 
     )
 
 
-async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
+async def _seed_verdict(
+    connection, *, tenant_id: UUID, reference: str
+) -> tuple[str, dict]:
     """Seed one authoritative deterministic subject owned by ``tenant_id``.
 
     The referential chain is real and is the point. A ``matched_confirmed``
@@ -270,6 +272,11 @@ async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
     session authority row. Seeding a bare verdict row would produce a subject the
     database itself considers impossible, and any envelope built from it would be
     proof about a fiction.
+
+    XVIII: returns (urn, link_info); the caller must pass link_info to
+    _link_p13_verdicts AFTER the seeding transaction commits, which
+    creates P2-authenticated ingress and links the verdict so it holds
+    current authority (link-less matched rows no longer conduct).
     """
     await connection.execute(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
@@ -362,6 +369,13 @@ async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
         },
     )
     verdict_id = row.scalar_one()
+    link_info = {
+        "tenant_id": str(tenant_id),
+        "verdict_id": str(verdict_id),
+        "attribution_event_id": str(attribution_event_id),
+        "reference": reference,
+        "base": base,
+    }
     await connection.execute(
         text(
             """
@@ -390,7 +404,91 @@ async def _seed_verdict(connection, *, tenant_id: UUID, reference: str) -> str:
     # Subject references are governed URNs, not raw commerce strings: the source
     # adapter parses `urn:skeldir:match_verdict:<uuid>` and returns None for
     # anything else, so a bare reference is silently a non-match.
-    return f"urn:skeldir:match_verdict:{verdict_id}"
+    return f"urn:skeldir:match_verdict:{verdict_id}", link_info
+
+
+async def _link_p13_verdicts(link_infos: list[dict]) -> None:
+    """Create P2-authenticated ingress for seeded verdicts and link them.
+
+    Runs AFTER the seeding transaction commits (FK visibility), as
+    migration admin through the governed transition. The relink trigger
+    re-derives each verdict's authority state to current.
+    """
+    if not link_infos:
+        return
+    owner_engine = create_async_engine(
+        to_asyncpg_postgres_dsn(_migration_database_url()), future=True
+    )
+    try:
+        async with owner_engine.begin() as owner:
+            for link in link_infos:
+                tenant_id = link["tenant_id"]
+                reference = link["reference"]
+                await owner.execute(
+                    text(
+                        "SELECT set_config('app.current_tenant_id',"
+                        " :tenant_id, true)"
+                    ),
+                    {"tenant_id": tenant_id},
+                )
+                ingress_id = uuid4()
+                await owner.execute(
+                    text(
+                        """
+                        INSERT INTO public.webhook_ingress_identities (id,
+                            tenant_id, event_id, provider,
+                            provider_native_event_reference,
+                            provider_native_commerce_reference,
+                            normalized_commerce_reference_kind,
+                            normalized_commerce_reference_value,
+                            verified_amount_minor, verified_amount_currency,
+                            event_timestamp, idempotency_key,
+                            verified_commerce_ingress_state)
+                        VALUES (:id, :tenant_id, :event_id, 'stripe',
+                            :event_ref, :commerce_ref,
+                            'stripe_payment_intent_id', :commerce_ref,
+                            10000, 'USD', :base, :idem,
+                            'authenticity_verified')
+                        """
+                    ),
+                    {
+                        "id": str(ingress_id),
+                        "tenant_id": tenant_id,
+                        "event_id": link["attribution_event_id"],
+                        "event_ref": f"evt-{reference}",
+                        "commerce_ref": f"commerce-{reference}",
+                        "base": link["base"],
+                        "idem": f"p13-ingress-{reference}",
+                    },
+                )
+                await owner.execute(
+                    text(
+                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        " :ingress_id, 'stripe', :event_ref,"
+                        " :body_sha256, :sig_sha256,"
+                        " 'hmac-sha256-timestamped-hex', 'v1')"
+                    ),
+                    {
+                        "ingress_id": str(ingress_id),
+                        "event_ref": f"evt-{reference}",
+                        "body_sha256": "a" * 64,
+                        "sig_sha256": "b" * 64,
+                    },
+                )
+                await owner.execute(
+                    text(
+                        "UPDATE public.b23_match_verdicts"
+                        " SET webhook_ingress_identity_id = :ingress_id"
+                        " WHERE id = :verdict_id AND tenant_id = :tenant_id"
+                    ),
+                    {
+                        "ingress_id": str(ingress_id),
+                        "verdict_id": link["verdict_id"],
+                        "tenant_id": tenant_id,
+                    },
+                )
+    finally:
+        await owner_engine.dispose()
 
 
 #: The single statement a B2.4 worker uses to terminalize a fit. Every C4/C5
@@ -2585,7 +2683,7 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             await _insert_tenant(connection, tenant_b, "intruder")
             await _insert_agent_client(connection, tenant_a, client_a)
             await _insert_agent_client(connection, tenant_b, client_b)
-            subject_urn = await _seed_verdict(
+            subject_urn, subject_link = await _seed_verdict(
                 connection, tenant_id=tenant_a, reference=reference
             )
             # G5 needs provider-controlled text that is actually hostile. The
@@ -2594,11 +2692,15 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
             # One subject per declared class (B2.5-P13 C5): the previous single
             # subject meant two of the three declared classes were asserted
             # absent without ever having been introduced.
-            hostile_urns = [
+            hostile_seeds = [
                 await _seed_verdict(
                     connection, tenant_id=tenant_a, reference=hostile_reference
                 )
                 for hostile_reference in ADVERSARIAL_PROVIDER_TEXT
+            ]
+            hostile_urns = [urn for urn, _link in hostile_seeds]
+            link_infos = [subject_link] + [
+                link for _urn, link in hostile_seeds
             ]
             confidence_refs = await _seed_confidence_fits(
                 connection, tenant_id=tenant_a
@@ -2619,6 +2721,11 @@ async def test_p13_g1_g2_g9_internal_trust_closure(tmp_path, monkeypatch) -> Non
                     agent_client_id=client_id,
                     scope=AgentScope.ENVELOPE_READ.value,
                 )
+
+        # XVIII: link seeded verdicts to P2-authenticated ingress after
+        # the seeding transaction commits (FK visibility), so subjects
+        # hold current authority when envelopes are built.
+        await _link_p13_verdicts(link_infos)
 
         # ---- G1: authorized caller receives a verifiable signed envelope -----
         auth_app = _build_authenticated_app()
