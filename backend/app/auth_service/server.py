@@ -495,11 +495,16 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         # Resolve the winner and return its lineage instead of 500ing a
         # genuine duplicate (provider retry must observe success).
         # XVIII: the sovereign family claim travels transaction-locally
-        # (SET LOCAL: auto-cleared at commit, never leaks across pooled
-        # checkouts); the atomic allowlists and binds it.
+        # (set_config is_local: auto-cleared at commit, never leaks
+        # across pooled checkouts; a function call, so the claim stays
+        # a bound parameter -- SET LOCAL cannot take bind parameters
+        # on some drivers); the atomic allowlists and binds it.
         try:
             await session.execute(
-                text("SET LOCAL app.b26_p2_event_family = :family"),
+                text(
+                    "SELECT set_config('app.b26_p2_event_family',"
+                    " :family, true)"
+                ),
                 {"family": event_family},
             )
             await session.execute(

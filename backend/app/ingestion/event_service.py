@@ -1159,10 +1159,15 @@ async def _finalize_verified_ingress_post_commit(
         # lineage and complete idempotently instead of failing a genuine
         # duplicate redelivery.
         try:
-            # XVIII: sovereign family claim, transaction-local (cleared
-            # at commit/rollback; never leaks across pooled checkouts).
+            # XVIII: sovereign family claim, transaction-local
+            # (set_config is_local: cleared at commit/rollback, never
+            # leaks across pooled checkouts; a function call, so the
+            # claim stays a bound parameter).
             await session.execute(
-                text("SET LOCAL app.b26_p2_event_family = :family"),
+                text(
+                    "SELECT set_config('app.b26_p2_event_family',"
+                    " :family, true)"
+                ),
                 {"family": _direct_family},
             )
             await session.execute(
