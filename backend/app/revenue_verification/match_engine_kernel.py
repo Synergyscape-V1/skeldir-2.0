@@ -428,9 +428,10 @@ async def _require_current_verdict_authority(
 ) -> None:
     """XVIII (H-XVIII-R7): refuse post-capture consequences on demoted verdicts.
 
-    Refunds/corrections attach only to currently authoritative
-    verdicts; demoted history must first be superseded by genuine
-    redelivery (R20), never extended.
+    Refunds/corrections attach to currently authoritative verdicts
+    and to never-linked bookkeeping rows (unresolved: no source to be
+    stale); demoted history must first be superseded by genuine
+    redelivery (R20), never extended. Unknown states fail closed.
     """
     row = await session.execute(
         text(
@@ -443,7 +444,8 @@ async def _require_current_verdict_authority(
             "match_verdict_id": str(match_verdict_id),
         },
     )
-    if row.scalar_one_or_none() != "current":
+    state = row.scalar_one_or_none()
+    if state not in ("current", "unresolved"):
         raise ValueError(
             f"b23_match_verdict_authority_not_current:{match_verdict_id}"
         )
