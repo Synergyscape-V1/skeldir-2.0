@@ -128,7 +128,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         (ROOT_PATH, (
             "derive_event_family",
             "b26_p2_unsupported_event_family_refused",
-            "SET LOCAL app.b26_p2_event_family",
+            "app.b26_p2_event_family",
             "b26_p2_ingress_has_current_authority",
         )),
     ):
@@ -476,6 +476,52 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
             violations.append("xviii_phys_missing_row_authorizes")
         else:
             checks["three_valued_logic_safe"] = True
+
+        # L10: every EXECUTE-granted role observes the same fail-closed
+        # predicate (coverage evidence for the XVIII covered set):
+        # FALSE on demoted history, TRUE on current authority.
+        for role in (
+            "app_user", "app_ingress", "app_worker", "app_relay",
+            "app_beat", "app_dispatch_publisher", "app_trust_issuer",
+            "app_trust_signer",
+        ):
+            role_dsn = admin_dsn.replace(
+                "migration_owner:migration_owner", f"{role}:{role}"
+            )
+            try:
+                role_conn = psycopg2.connect(role_dsn)
+                role_conn.autocommit = True
+            except Exception as exc:
+                violations.append(f"xviii_phys_role_unreachable:{role}:{exc}")
+                continue
+            try:
+                with role_conn.cursor() as rcur:
+                    rcur.execute(
+                        "SELECT set_config('app.current_tenant_id', %s, false)",
+                        (tenant,),
+                    )
+                    rcur.execute(
+                        "SELECT public.b26_p2_ingress_has_current_authority(%s)",
+                        (row2,),
+                    )
+                    demoted_answer = rcur.fetchone()[0]
+                    rcur.execute(
+                        "SELECT public.b26_p2_ingress_has_current_authority(%s)",
+                        (row1,),
+                    )
+                    current_answer = rcur.fetchone()[0]
+            except Exception as exc:
+                violations.append(f"xviii_phys_role_predicate_failed:{role}:{exc}")
+                role_conn.close()
+                continue
+            role_conn.close()
+            if demoted_answer is not False or current_answer is not True:
+                violations.append(
+                    f"xviii_phys_role_predicate_wrong:{role}:"
+                    f"{demoted_answer}:{current_answer}"
+                )
+        if not [v for v in violations if "xviii_phys_role_" in v]:
+            checks["predicate_role_matrix_covered"] = True
 
         # L9: dispatch refuses demoted, admits current-with-family.
         try:

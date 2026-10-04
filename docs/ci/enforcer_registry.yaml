@@ -6092,6 +6092,31 @@
     the XIV coverage gate.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-xviii-coverage-registry
+  path: scripts/ci/b26_p2_xviii_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XVIII registry extends XIV coverage for the central
+    current-authority predicate (read-only, fail-closed EXECUTE surfaces).
+  command: python -c "from scripts.ci.b26_p2_xviii_coverage import XVIII_COVERED_SURFACES; print(len(XVIII_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xviii_coverage import XVIII_COVERED_SURFACES"
+  expected_failure_meaning: XVIII EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XVIII coverage gate.
+  subsumed_by: ''
+  registry_action: utility
 - id: b26-p2-xiv-auth-conduction
   path: scripts/ci/validate_b26_p2_xiv_auth_conduction.py
   status: required

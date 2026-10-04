@@ -4540,6 +4540,23 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xiv_coverage import XIV_COVERED_SURFACES"
   risk_if_removed: New XIV surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xviii-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xviii_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XVIII registry extends XIV coverage for the central
+    current-authority predicate EXECUTE surfaces.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XVIII coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xviii_coverage import XVIII_COVERED_SURFACES"
+  risk_if_removed: New XVIII surfaces could stay untested silently.
+  decision: keep_utility
 - gate_id: b26-p2-xv-binding
   workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
   job: B2.6-P1 Static Semantic Authority

@@ -604,6 +604,7 @@ def main() -> int:
 
         covered = None
         for _modname, _fname, _attr in (
+            ("b26_p2_xviii_coverage", "b26_p2_xviii_coverage.py", "XVIII_COVERED_SURFACES"),
             ("b26_p2_xiv_coverage", "b26_p2_xiv_coverage.py", "XIV_COVERED_SURFACES"),
             ("b26_p2_xiii_coverage", "b26_p2_xiii_coverage.py", "XIII_COVERED_SURFACES"),
             ("b26_p2_xii_coverage", "b26_p2_xii_coverage.py", "XII_COVERED_SURFACES"),
