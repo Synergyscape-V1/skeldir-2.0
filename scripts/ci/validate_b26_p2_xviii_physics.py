@@ -77,14 +77,34 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "b26_p2_dispatch_demotion_active_refused",
         "b26_p2_dispatch_family_unbound_refused",
         "b26_p2_governed_transition",
-        "REVOKE UPDATE (b26_p2_provenance_status",
-        "REVOKE UPDATE (b26_p2_source_authority_state)",
         "b26_p2_registry_history_immutable_refused",
     ):
         if token not in upgrade:
             violations.append(f"xviii_phys_law_missing:{token}")
     if not [v for v in violations if "xviii_phys_law_missing" in v]:
         checks["xviii_law_present"] = True
+    # Column-privilege layer: the REVOKE statements are
+    # existence-guarded DO blocks, so the assertion is whitespace-
+    # and split-insensitive (a bare substring would be brittle
+    # across the guarded string boundaries).
+    import re as _re  # noqa: PLC0415
+
+    _compact = _re.sub(r"\s+", " ", text)
+    for label, pattern in (
+        (
+            "ingress_authority_columns",
+            r"REVOKE UPDATE.{0,80}b26_p2_provenance_status"
+            r".{0,80}b26_p2_semantic_regime.{0,80}b26_p2_demotion_reason",
+        ),
+        (
+            "verdict_authority_column",
+            r"REVOKE UPDATE.{0,80}b26_p2_source_authority_state",
+        ),
+    ):
+        if not _re.search(pattern, _compact):
+            violations.append(f"xviii_phys_privilege_missing:{label}")
+        else:
+            checks[f"privilege_{label}"] = True
     # The sovereign signature is byte-stable (XVI strict frame gate).
     if "p_version text DEFAULT 'v1'\n        )" not in upgrade:
         violations.append("xviii_phys_atomic_signature_drift")

@@ -189,12 +189,23 @@ def main() -> int:
         "trg_b26_p2_verdict_authority_stamp",
         "trg_b26_p2_verdict_authority_propagate",
         "b26_p2_evidence_demoted_ingress_refused",
-        "REVOKE UPDATE (b26_p2_provenance_status",
-        "b26_p2_semantic_regime_registry",
-        "b26_p2_operational_floor",
     ):
         if token not in mig_text:
             violations.append(f"db_authority_missing:{token}")
+    _compact_gov = re.sub(r"\s+", " ", mig_text)
+    for label, pattern in (
+        (
+            "ingress_authority_columns",
+            r"REVOKE UPDATE.{0,80}b26_p2_provenance_status"
+            r".{0,80}b26_p2_semantic_regime.{0,80}b26_p2_demotion_reason",
+        ),
+        (
+            "verdict_authority_column",
+            r"REVOKE UPDATE.{0,80}b26_p2_source_authority_state",
+        ),
+    ):
+        if not re.search(pattern, _compact_gov):
+            violations.append(f"db_authority_missing:privilege_{label}")
     if not [v for v in violations if "db_authority_missing" in v]:
         checks["authority_database_enforced"] = True
 
