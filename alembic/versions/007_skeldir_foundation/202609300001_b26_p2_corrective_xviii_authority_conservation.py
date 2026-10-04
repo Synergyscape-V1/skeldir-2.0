@@ -1429,8 +1429,8 @@ def downgrade() -> None:
     op.execute(
         "DROP FUNCTION IF EXISTS public.b26_p2_enforce_registry_immutability()"
     )
-    op.execute("DROP TABLE IF EXISTS public.b26_p2_semantic_regime_registry")
-    op.execute("DROP TABLE IF EXISTS public.b26_p2_operational_floor")
+    op.execute("DROP TABLE IF EXISTS public.b26_p2_semantic_regime_registry")  # CI:DESTRUCTIVE_OK - downgrade removes XVIII enforcement objects only; hardened transition retained (fail-closed retention)
+    op.execute("DROP TABLE IF EXISTS public.b26_p2_operational_floor")  # CI:DESTRUCTIVE_OK - downgrade removes the floor so serving fails closed until re-upgrade
     op.execute(
         "DROP TRIGGER IF EXISTS trg_b26_p2_verdict_authority_stamp"
         " ON public.b23_match_verdicts"
