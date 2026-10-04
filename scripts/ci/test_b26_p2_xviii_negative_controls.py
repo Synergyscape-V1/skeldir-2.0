@@ -284,6 +284,9 @@ def _live_controls(
     user_dsn = admin_dsn.replace(
         "migration_owner:migration_owner", "app_user:app_user"
     )
+    worker_dsn = admin_dsn.replace(
+        "migration_owner:migration_owner", "app_worker:app_worker"
+    )
     super_dsn = admin_dsn.replace(
         "migration_owner:migration_owner", "postgres:postgres"
     )
@@ -431,6 +434,101 @@ def _live_controls(
                 except Exception:
                     usr.rollback()
                     checks["ow03_verdict_relink_red"] = True
+                # OW-03b: worker-role cross-lineage verdict relink. The
+                # verdict writer (app_worker) holds table+column UPDATE on
+                # the link, unlike app_user in OW-03, so OW-03 passes
+                # vacuously for this attacker. Attaching an
+                # arbitrary-amount verdict to a foreign current ingress
+                # must be refused; same-lineage linkage must keep working
+                # (R20 supersession and fixture linkage preserved).
+                try:
+                    wrk = psycopg2.connect(worker_dsn)
+                    wrk.autocommit = True
+                except Exception as exc:
+                    violations.append(
+                        f"xviii_ow03b_worker_unavailable:{exc}"
+                    )
+                    wrk = None
+                if wrk is not None:
+                    try:
+                        with wrk.cursor() as wcur:
+                            wcur.execute(
+                                "SELECT set_config('app.current_tenant_id',"
+                                " %s, false)",
+                                (tenant,),
+                            )
+                            own_row, own_ev = _mkrow("nc-own", "nc-own-c", 5000)
+                            assert _auth(
+                                own_row, "nc-own", "e" * 64
+                            ) == "authenticated_known"
+                            foreign_row, _ = _mkrow(
+                                "nc-foreign", "nc-foreign-c", 6000
+                            )
+                            assert _auth(
+                                foreign_row, "nc-foreign", "f" * 64
+                            ) == "authenticated_known"
+                            cur.execute(
+                                "INSERT INTO public.b23_match_verdicts"
+                                " (tenant_id, attribution_event_id, provider,"
+                                " canonical_commerce_reference,"
+                                " provider_native_event_reference,"
+                                " provider_native_commerce_reference,"
+                                " status, match_quality,"
+                                " attributed_amount_minor,"
+                                " verified_amount_minor, currency_code,"
+                                " confirmed_at, last_transition_at,"
+                                " canonical_expected_gross_amount_minor,"
+                                " canonical_captured_gross_amount_minor,"
+                                " canonical_net_verified_amount_minor,"
+                                " discrepancy_amount_minor,"
+                                " discrepancy_ratio_bps, discrepancy_band)"
+                                " VALUES (%s,%s,'stripe','nc-own-c','nc-own',"
+                                " 'nc-own-c','matched_confirmed','high',"
+                                " 5000,5000,'USD',now(),now(),5000,5000,"
+                                " 5000,0,0,'exact') RETURNING id",
+                                (tenant, own_ev),
+                            )
+                            probe_verdict = cur.fetchone()[0]
+                            try:
+                                wcur.execute(
+                                    "UPDATE public.b23_match_verdicts"
+                                    " SET webhook_ingress_identity_id=%s"
+                                    " WHERE id=%s",
+                                    (foreign_row, probe_verdict),
+                                )
+                                violations.append(
+                                    "xviii_ow03b_worker_cross_relink_permitted"
+                                )
+                            except Exception as exc:
+                                wrk.rollback()
+                                if "b26_p2_verdict_relink_lineage_refused" not in str(
+                                    exc
+                                ):
+                                    violations.append(
+                                        "xviii_ow03b_worker_wrong_refusal:"
+                                        f"{str(exc).splitlines()[0][:100]}"
+                                    )
+                                else:
+                                    checks["ow03b_worker_cross_relink_red"] = True
+                            wcur.execute(
+                                "UPDATE public.b23_match_verdicts"
+                                " SET webhook_ingress_identity_id=%s"
+                                " WHERE id=%s",
+                                (own_row, probe_verdict),
+                            )
+                            cur.execute(
+                                "SELECT b26_p2_source_authority_state"
+                                " FROM public.b23_match_verdicts WHERE id=%s",
+                                (probe_verdict,),
+                            )
+                            if cur.fetchone()[0] != "current":
+                                violations.append(
+                                    "xviii_ow03b_same_lineage_not_current"
+                                )
+                            else:
+                                checks["ow03b_same_lineage_conducts"] = True
+                    finally:
+                        wrk.close()
                 # OW-04: consequence DELETE.
                 try:
                     ucur.execute(

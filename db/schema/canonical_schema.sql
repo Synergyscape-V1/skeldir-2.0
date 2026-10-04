@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict bpQ2Oj4ZVwoR76pJSe5Fl6qbAencXEB9tdlyP4xqNGe8FcEO42xuxqNPjnYpS7m
+\restrict BygeiEm1efCLGKafY2qlEBtLL0usRCbDRtsTIKJi8Q5x28TYh1qyhYi9PuuzwNb
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -4660,6 +4660,9 @@ CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
     AS $$
         DECLARE
             _governed text;
+            _link_tenant uuid;
+            _link_provider text;
+            _link_ref text;
         BEGIN
             -- Relink re-derivation (R20): when the verdict's source
             -- ingress changes (genuine redelivery supersedes a demoted
@@ -4669,6 +4672,34 @@ CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
             -- superseded row cannot keep two simultaneous truths.
             IF NEW.webhook_ingress_identity_id
                    IS DISTINCT FROM OLD.webhook_ingress_identity_id THEN
+                -- Lineage binding (R7/R18): a relink is a claim that
+                -- THIS verdict's financial lineage is the NEW ingress's
+                -- lineage. Cross-lineage relink (different tenant,
+                -- provider, or provider event reference) is refused:
+                -- otherwise any verdict writer could attach an
+                -- arbitrary-amount verdict to a current ingress and
+                -- mint current authority for money that was never
+                -- authenticated (worker-role laundering). Genuine
+                -- redelivery supersession keeps the event reference
+                -- by construction (conflict target), so lawful relinks
+                -- always pass. Unlinking (NULL) only sheds authority
+                -- and stays permitted; the derivation handles it.
+                IF NEW.webhook_ingress_identity_id IS NOT NULL THEN
+                    SELECT i.tenant_id, i.provider,
+                           i.provider_native_event_reference
+                      INTO _link_tenant, _link_provider, _link_ref
+                      FROM public.webhook_ingress_identities AS i
+                     WHERE i.id = NEW.webhook_ingress_identity_id;
+                    IF NOT FOUND
+                       OR _link_tenant IS DISTINCT FROM NEW.tenant_id
+                       OR _link_provider IS DISTINCT FROM NEW.provider
+                       OR _link_ref IS DISTINCT FROM
+                          NEW.provider_native_event_reference THEN
+                        RAISE EXCEPTION
+                            'b26_p2_verdict_relink_lineage_refused'
+                            USING ERRCODE = '42501';
+                    END IF;
+                END IF;
                 NEW.b26_p2_source_authority_state :=
                     public.b26_p2_derive_verdict_authority(
                         NEW.webhook_ingress_identity_id);
@@ -25224,5 +25255,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict bpQ2Oj4ZVwoR76pJSe5Fl6qbAencXEB9tdlyP4xqNGe8FcEO42xuxqNPjnYpS7m
+\unrestrict BygeiEm1efCLGKafY2qlEBtLL0usRCbDRtsTIKJi8Q5x28TYh1qyhYi9PuuzwNb
 
