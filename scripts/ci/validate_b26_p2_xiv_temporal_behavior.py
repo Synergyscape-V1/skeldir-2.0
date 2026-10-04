@@ -484,13 +484,15 @@ def _behavioral_probes(admin_dsn, violations, checks):
         (ingress_id,),
         "immutable",
     )
+    # XVIII: the unforgeable trust-transition trigger refuses first for
+    # the same class (direct authority demotion by a runtime role).
     refused(
         "ingress_state_downgrade_refused",
         ingress_dsn,
         tenant,
         "UPDATE public.webhook_ingress_identities SET b26_p2_provenance_status='pending_authentication' WHERE id=%s",
         (ingress_id,),
-        "downgrade_refused",
+        "b26_p2_authority_transition_refused",
     )
     # Ingress INSERT qualifying: same idempotency cannot create a second row.
     status, detail = _attempt(
