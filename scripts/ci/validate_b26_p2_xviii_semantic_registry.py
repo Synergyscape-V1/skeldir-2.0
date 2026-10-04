@@ -77,6 +77,30 @@ def _git(args: list[str]) -> str:
     return proc.stdout
 
 
+def _protected_base() -> str | None:
+    """Resolve the protected-history reference for publication checks.
+
+    Merge-base with origin/main when available (PR and main-push
+    topologies); the merge-base itself otherwise. None when no
+    protected history is resolvable (fail closed by the caller).
+    """
+    for args in (
+        ["merge-base", "HEAD", "origin/main"],
+        ["rev-parse", "origin/main"],
+        ["merge-base", "HEAD", "main"],
+        ["rev-parse", "main"],
+    ):
+        proc = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip().splitlines()[0]
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="XVIII registry gate.")
     parser.add_argument("--dsn", default=None)
@@ -139,60 +163,54 @@ def main() -> int:
     else:
         checks["registry_activation_revision_bound"] = True
 
-    # History arm: the published digest for the identity is single-valued
-    # across every commit that ever carried the registry file. A
-    # same-identity semantic change (contract+pin co-edit) leaves the
-    # head consistent but the history multi-valued -> RED.
+    # History arm: "published" means protected main, not the feature
+    # branch. Development commits on an unmerged branch may iterate;
+    # only divergence from the merge-base (the last protected state)
+    # is a violation. A same-identity semantic change (contract+pin
+    # co-edit) keeps the head self-consistent but diverges from the
+    # published law -> RED.
     try:
         shallow = _git(["rev-parse", "--is-shallow-repository"]).strip()
         if shallow == "true":
             violations.append("registry_history_unavailable_shallow_checkout")
             raise RuntimeError("shallow")
-        # First publication (file absent from HEAD, e.g. the commit
-        # that introduces the registry): coherence arms above carry
-        # the proof and the PR review carries the publication. Every
-        # LATER change is history-bound below.
-        first_publication = subprocess.run(
-            ["git", "cat-file", "-e",
-             f"HEAD:{REGISTRY_PATH.relative_to(REPO_ROOT)}"],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-        ).returncode != 0
-        if first_publication:
+        base = _protected_base()
+        if base is None:
+            violations.append("registry_history_no_protected_base")
+            raise RuntimeError("no-base")
+        rel = str(REGISTRY_PATH.relative_to(REPO_ROOT))
+        try:
+            base_blob = _git(["show", f"{base}:{rel}"])
+            base_registry = json.loads(base_blob)
+            base_by_id = {
+                entry.get("regime_id"): entry
+                for entry in base_registry.get("regimes", [])
+            }
+        except (RuntimeError, ValueError):
+            base_by_id = None
+        if base_by_id is None:
+            # First publication (absent from protected history): the
+            # coherence arms above carry the proof; PR review carries
+            # the publication.
             checks["registry_first_publication_coherent"] = True
-            commits = []
         else:
-            commits = [
-                line.strip()
-                for line in _git(
-                    ["log", "--format=%H", "--",
-                     str(REGISTRY_PATH.relative_to(REPO_ROOT))]
-                ).splitlines()
-                if line.strip()
-            ]
-        if not commits and not first_publication:
-            violations.append("registry_history_empty")
-        elif not first_publication:
-            historical: set[str] = set()
-            for sha in commits:
-                try:
-                    blob = _git(
-                        ["show", f"{sha}:{REGISTRY_PATH.relative_to(REPO_ROOT)}"]
+            for regime_id, current_entry in sorted(by_id.items()):
+                base_entry = base_by_id.get(regime_id)
+                if base_entry is None:
+                    continue  # new identity: legitimate evolution
+                if str(base_entry.get("contract_digest")) != str(
+                    current_entry.get("contract_digest")
+                ):
+                    violations.append(
+                        "registry_published_digest_changed_under_same_identity"
+                        f":{regime_id}"
                     )
-                    old = json.loads(blob)
-                    for old_entry in old.get("regimes", []):
-                        if old_entry.get("regime_id") == REGIME:
-                            historical.add(str(old_entry.get("contract_digest")))
-                except (RuntimeError, ValueError):
-                    violations.append(f"registry_history_unreadable:{sha[:12]}")
-                    break
-            if len(historical) > 1:
-                violations.append(
-                    "registry_published_digest_changed_under_same_identity"
-                )
-            elif historical != {live_digest}:
-                violations.append("registry_history_diverges_from_published_law")
-            else:
+            for regime_id in sorted(base_by_id):
+                if regime_id not in by_id:
+                    violations.append(
+                        f"registry_published_identity_removed:{regime_id}"
+                    )
+            if not [v for v in violations if "registry_published_" in v]:
                 checks["registry_history_single_valued"] = True
     except RuntimeError as exc:
         if "registry_history_unavailable" not in ";".join(violations):

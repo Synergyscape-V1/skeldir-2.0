@@ -45,6 +45,30 @@ def _git(args: list[str]) -> str:
     return proc.stdout
 
 
+def _protected_base() -> str | None:
+    """Resolve the protected-history reference for publication checks.
+
+    Merge-base with origin/main when available (PR and main-push
+    topologies); the merge-base itself otherwise. None when no
+    protected history is resolvable (fail closed by the caller).
+    """
+    for args in (
+        ["merge-base", "HEAD", "origin/main"],
+        ["rev-parse", "origin/main"],
+        ["merge-base", "HEAD", "main"],
+        ["rev-parse", "main"],
+    ):
+        proc = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip().splitlines()[0]
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="XVIII manifest gate.")
     parser.add_argument("--evidence-out", default=None)
@@ -75,56 +99,50 @@ def main() -> int:
             or "manifest_revision_file_missing" in v]:
         checks["manifest_hashes_match"] = True
 
-    # History arm: no published entry may change across history.
+    # History arm: "published" means protected main, not the feature
+    # branch. Development commits on an unmerged branch may iterate;
+    # only divergence from the merge-base (the last protected state)
+    # is a violation. Existing entries are immutable; evolution adds
+    # entries; removal is forbidden.
     try:
         shallow = _git(["rev-parse", "--is-shallow-repository"]).strip()
         if shallow == "true":
             violations.append("manifest_history_unavailable_shallow_checkout")
             raise RuntimeError("shallow")
         rel = str(MANIFEST_PATH.relative_to(REPO_ROOT))
-        first_publication = subprocess.run(
-            ["git", "cat-file", "-e", f"HEAD:{rel}"],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-        ).returncode != 0
-        if first_publication:
+        base = _protected_base()
+        if base is None:
+            violations.append("manifest_history_no_protected_base")
+            raise RuntimeError("no-base")
+        try:
+            base_blob = _git(["show", f"{base}:{rel}"])
+            base_manifest = json.loads(base_blob)
+            base_revisions = base_manifest.get("revisions", {})
+        except (RuntimeError, ValueError):
+            base_revisions = None
+        if base_revisions is None:
             checks["manifest_first_publication_coherent"] = True
         else:
-            commits = [
-                line.strip()
-                for line in _git(["log", "--format=%H", "--", rel]).splitlines()
-                if line.strip()
-            ]
-            if not commits:
-                violations.append("manifest_history_empty")
-            else:
-                for revision, current in sorted(live.items()):
-                    seen: set[str] = set()
-                    for sha in commits:
-                        try:
-                            blob = _git(["show", f"{sha}:{rel}"])
-                            old = json.loads(blob)
-                            old_entry = old.get("revisions", {}).get(revision)
-                            if old_entry is not None:
-                                seen.add(str(old_entry.get("sha256")))
-                        except (RuntimeError, ValueError):
-                            violations.append(
-                                f"manifest_history_unreadable:{sha[:12]}"
-                            )
-                            break
-                    if len(seen) > 1:
-                        violations.append(
-                            "manifest_published_digest_changed:"
-                            f"{revision}"
-                        )
-                    elif seen and seen != {current}:
-                        violations.append(
-                            f"manifest_history_diverges:{revision}"
-                        )
-                if not [v for v in violations
-                        if "manifest_published_digest_changed" in v
-                        or "manifest_history_diverges" in v]:
-                    checks["manifest_history_single_valued"] = True
+            for revision, entry in sorted(revisions.items()):
+                base_entry = base_revisions.get(revision)
+                if base_entry is None:
+                    continue  # new entry: legitimate evolution
+                if str(base_entry.get("sha256")) != str(entry.get("sha256")):
+                    violations.append(
+                        f"manifest_published_digest_changed:{revision}"
+                    )
+                if str(base_entry.get("file")) != str(entry.get("file")):
+                    violations.append(
+                        f"manifest_published_file_changed:{revision}"
+                    )
+            for revision in sorted(base_revisions):
+                if revision not in revisions:
+                    violations.append(
+                        f"manifest_published_entry_removed:{revision}"
+                    )
+            if not [v for v in violations
+                    if "manifest_published_" in v]:
+                checks["manifest_history_single_valued"] = True
     except RuntimeError as exc:
         if "manifest_history_unavailable" not in ";".join(violations):
             violations.append(f"manifest_history_check_failed:{exc}")
