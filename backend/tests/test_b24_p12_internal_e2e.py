@@ -547,8 +547,11 @@ async def _seed_p12_ca1_representative_source_rows(
     # through the governed transition (migration admin) and relink its
     # verdict; the relink trigger re-derives authority state to current.
     import psycopg2  # noqa: PLC0415
+    from app.core.secrets import get_migration_database_url  # noqa: PLC0415
 
-    migration_dsn = os.getenv("MIGRATION_DATABASE_URL", "").strip()
+    # Governed secrets accessor (B1.1-P4 DSN-authority scan forbids raw
+    # environment reads of database DSNs outside the accessor).
+    migration_dsn = get_migration_database_url().strip()
     if not migration_dsn:
         raise RuntimeError("B2.4-P12 fixture needs MIGRATION_DATABASE_URL")
     admin = psycopg2.connect(migration_dsn)

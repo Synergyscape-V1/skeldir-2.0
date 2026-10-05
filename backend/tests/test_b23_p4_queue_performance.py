@@ -270,7 +270,14 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
         " AND wi.idempotency_key LIKE"
         " 'b23-p4-webhook-' || CAST(:tenant_id AS text) || '-%'"
     )
-    _p4_admin_dsn = os.environ.get("MIGRATION_DATABASE_URL", "").strip()
+    # Governed secrets accessor (B1.1-P4 DSN-authority scan forbids raw
+    # environment reads of database DSNs; see the trust-closure helper
+    # _migration_database_url for the rationale). get_secret (not
+    # require_secret): absence falls through to the ingress-issuer path
+    # below, exactly as before.
+    from app.core.secrets import get_secret  # noqa: PLC0415
+
+    _p4_admin_dsn = (get_secret("MIGRATION_DATABASE_URL") or "").strip()
     if _p4_admin_dsn:
         import psycopg2  # noqa: PLC0415
 

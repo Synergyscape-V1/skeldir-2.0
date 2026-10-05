@@ -512,10 +512,14 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
     # authority state to current. Same lineage by construction
     # (identical tenant/provider/event-ref on both sides), so the new
     # lineage guard admits every relink. Fixed digests: harness setup.
-    migration_dsn = os.getenv("MIGRATION_DATABASE_URL", "").strip()
+    import psycopg2  # noqa: PLC0415
+    from app.core.secrets import get_migration_database_url  # noqa: PLC0415
+
+    # Governed secrets accessor (B1.1-P4 DSN-authority scan forbids raw
+    # environment reads of database DSNs outside the accessor).
+    migration_dsn = get_migration_database_url().strip()
     if not migration_dsn:
         raise RuntimeError("B2.5-P13-C6 fixture needs MIGRATION_DATABASE_URL")
-    import psycopg2  # noqa: PLC0415
 
     admin = psycopg2.connect(migration_dsn)
     admin.autocommit = True

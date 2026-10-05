@@ -280,8 +280,11 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
     # seeders) and the verdict links to it; NULL-link matched rows no
     # longer conduct anywhere.
     import psycopg2  # noqa: PLC0415
+    from app.core.secrets import get_migration_database_url  # noqa: PLC0415
 
-    migration_dsn = os.getenv("MIGRATION_DATABASE_URL", "").strip()
+    # Governed secrets accessor (B1.1-P4 DSN-authority scan forbids raw
+    # environment reads of database DSNs outside the accessor).
+    migration_dsn = get_migration_database_url().strip()
     if not migration_dsn:
         raise RuntimeError("B2.4-P6 fixture needs MIGRATION_DATABASE_URL")
     admin = psycopg2.connect(migration_dsn)
