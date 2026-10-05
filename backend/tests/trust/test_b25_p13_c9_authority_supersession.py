@@ -186,6 +186,66 @@ def _seed_settlement(conn, tenant_id, *, index: int, occurred_at: datetime) -> N
     )
 
 
+def _link_c9s_settlements(conn, tenant_id) -> None:
+    """Authenticate ingress for seeded settlements and link verdicts (XVIII).
+
+    The supersession proof needs content hashes, not the
+    insufficient-data sentinel: verdicts must hold current authority for
+    the snapshot to read them. All settlements are lawful (stripe,
+    distinct refs/commerce per row), so each mints its own ingress
+    through the governed transition; the relink trigger re-derives each
+    verdict to current. Membership-neutral (window/status/allocation
+    untouched). Fixed digests: harness setup, not authenticity evidence.
+    """
+    conn.execute(
+        text(
+            "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
+            " event_id, provider, provider_native_event_reference,"
+            " provider_native_commerce_reference,"
+            " normalized_commerce_reference_kind,"
+            " normalized_commerce_reference_value, verified_amount_minor,"
+            " verified_amount_currency, event_timestamp, idempotency_key,"
+            " verified_commerce_ingress_state)"
+            " SELECT gen_random_uuid(), v.tenant_id, v.attribution_event_id,"
+            " v.provider, v.provider_native_event_reference,"
+            " v.provider_native_commerce_reference,"
+            " 'stripe_payment_intent_id',"
+            " v.provider_native_commerce_reference, v.verified_amount_minor,"
+            " v.currency_code, v.last_transition_at,"
+            " 'c9s-ingress-' || v.id::text, 'authenticity_verified'"
+            " FROM public.b23_match_verdicts AS v"
+            " WHERE v.tenant_id = :t"
+            " AND v.webhook_ingress_identity_id IS NULL"
+            " AND v.provider = 'stripe'"
+        ),
+        {"t": str(tenant_id)},
+    )
+    conn.execute(
+        text(
+            "SELECT public.b26_p2_authenticate_ingress_atomic("
+            " wi.id, wi.provider, wi.provider_native_event_reference,"
+            " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
+            " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
+            " 'hmac-sha256-timestamped-hex', 'v1')"
+            " FROM public.webhook_ingress_identities AS wi"
+            " WHERE wi.tenant_id = :t"
+            " AND wi.idempotency_key LIKE 'c9s-ingress-%'"
+        ),
+        {"t": str(tenant_id)},
+    )
+    conn.execute(
+        text(
+            "UPDATE public.b23_match_verdicts AS v"
+            " SET webhook_ingress_identity_id = wi.id"
+            " FROM public.webhook_ingress_identities AS wi"
+            " WHERE v.tenant_id = :t AND wi.tenant_id = v.tenant_id"
+            " AND wi.idempotency_key = 'c9s-ingress-' || v.id::text"
+            " AND v.webhook_ingress_identity_id IS NULL"
+        ),
+        {"t": str(tenant_id)},
+    )
+
+
 def _observed_hash(tenant_id) -> str:
     from app.bayesian.feature_cardinality import (
         measure_source_window_within_one_snapshot,
@@ -319,6 +379,7 @@ def test_c9_a_request_for_a_superseded_snapshot_terminates_rather_than_retrying(
                     occurred_at=WINDOW_START
                     + timedelta(days=index % 20, hours=1 + index % 5),
                 )
+            _link_c9s_settlements(conn, tenant_id)
     finally:
         engine.dispose()
 
@@ -337,6 +398,7 @@ def test_c9_a_request_for_a_superseded_snapshot_terminates_rather_than_retrying(
                 index=900,
                 occurred_at=WINDOW_START + timedelta(days=2, hours=7),
             )
+            _link_c9s_settlements(conn, tenant_id)
     finally:
         engine.dispose()
 
@@ -392,6 +454,7 @@ def test_c9_a_request_for_the_current_snapshot_still_completes() -> None:
                     occurred_at=WINDOW_START
                     + timedelta(days=index % 20, hours=2 + index % 4),
                 )
+            _link_c9s_settlements(conn, tenant_id)
     finally:
         engine.dispose()
 
