@@ -705,6 +705,65 @@ def test_c8_financial_change_reaches_a_jwks_verified_trust_claim(
             verdicts = _seed_financial_history(
                 conn, tenant_id, days=MIN_FIT_WINDOW_DAYS, per_day=3
             )
+            # XVIII: feature-authority requests are accepted only for
+            # currently-authoritative evidence. All settled history is
+            # lawful (stripe, distinct refs/commerce per row), so each
+            # verdict mints its own ingress through the governed
+            # transition; the relink trigger re-derives current.
+            # Fixed digests: harness setup, not authenticity evidence.
+            conn.execute(
+                text(
+                    "INSERT INTO public.webhook_ingress_identities (id,"
+                    " tenant_id, event_id, provider,"
+                    " provider_native_event_reference,"
+                    " provider_native_commerce_reference,"
+                    " normalized_commerce_reference_kind,"
+                    " normalized_commerce_reference_value,"
+                    " verified_amount_minor, verified_amount_currency,"
+                    " event_timestamp, idempotency_key,"
+                    " verified_commerce_ingress_state)"
+                    " SELECT gen_random_uuid(), v.tenant_id,"
+                    " v.attribution_event_id, v.provider,"
+                    " v.provider_native_event_reference,"
+                    " v.provider_native_commerce_reference,"
+                    " 'stripe_payment_intent_id',"
+                    " v.provider_native_commerce_reference,"
+                    " v.verified_amount_minor, v.currency_code,"
+                    " v.last_transition_at,"
+                    " 'c8n-ingress-' || v.id::text,"
+                    " 'authenticity_verified'"
+                    " FROM public.b23_match_verdicts AS v"
+                    " WHERE v.tenant_id = :t"
+                    " AND v.webhook_ingress_identity_id IS NULL"
+                    " AND v.provider = 'stripe'"
+                ),
+                {"t": str(tenant_id)},
+            )
+            conn.execute(
+                text(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    " wi.id, wi.provider,"
+                    " wi.provider_native_event_reference,"
+                    " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
+                    " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
+                    " 'hmac-sha256-timestamped-hex', 'v1')"
+                    " FROM public.webhook_ingress_identities AS wi"
+                    " WHERE wi.tenant_id = :t"
+                    " AND wi.idempotency_key LIKE 'c8n-ingress-%'"
+                ),
+                {"t": str(tenant_id)},
+            )
+            conn.execute(
+                text(
+                    "UPDATE public.b23_match_verdicts AS v"
+                    " SET webhook_ingress_identity_id = wi.id"
+                    " FROM public.webhook_ingress_identities AS wi"
+                    " WHERE v.tenant_id = :t AND wi.tenant_id = v.tenant_id"
+                    " AND wi.idempotency_key = 'c8n-ingress-' || v.id::text"
+                    " AND v.webhook_ingress_identity_id IS NULL"
+                ),
+                {"t": str(tenant_id)},
+            )
 
             # Building the fixture is itself a source write, so the production
             # triggers have already recorded evidence describing the fixture's
