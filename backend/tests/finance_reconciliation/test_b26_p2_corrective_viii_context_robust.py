@@ -574,7 +574,14 @@ def test_tc8_identity_move_refused_without_status_change():
             )
             # Same-tenant fixture required: move within the conducted tenant
             # to another ingress of the same tenant is refused.
-            with pytest.raises(Exception, match="identity_refused|regression_refused"):
+            # XVIII lineage binding refuses cross-lineage moves first
+            # (relink_lineage_refused); the conducted-identity guard
+            # remains load-bearing for same-lineage moves. Either token
+            # proves the move did not happen.
+            with pytest.raises(
+                Exception,
+                match="identity_refused|regression_refused|relink_lineage_refused",
+            ):
                 cur.execute(
                     "UPDATE public.b23_match_verdicts"
                     " SET webhook_ingress_identity_id=%s"
@@ -697,7 +704,13 @@ def test_tc8_new_link_into_conducted_refused():
     try:
         with worker.cursor() as cur:
             cur.execute("SELECT set_config('app.current_tenant_id', %s, false)", (tenant,))
-            with pytest.raises(Exception, match="conducted_verdict_identity_refused"):
+            # Cross-lineage move (o2/e2 verdict onto the tc8nl ingress):
+            # the XVIII lineage guard refuses before the conducted guard.
+            # Either refusal proves the consequence did not move.
+            with pytest.raises(
+                Exception,
+                match="conducted_verdict_identity_refused|relink_lineage_refused",
+            ):
                 cur.execute(
                     "UPDATE public.b23_match_verdicts"
                     " SET webhook_ingress_identity_id=%s"
