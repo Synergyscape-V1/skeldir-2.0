@@ -571,20 +571,23 @@ async def _seed_p12_ca1_representative_source_rows(
                     " verified_amount_minor, verified_amount_currency,"
                     " event_timestamp, idempotency_key,"
                     " verified_commerce_ingress_state)"
-                    " VALUES (%s, %s, %s, 'stripe', %s, %s,"
-                    " 'stripe_payment_intent_id', %s, %s, 'USD', %s, %s,"
-                    " 'authenticity_verified')",
-                    (
-                        ingress_id,
-                        str(tenant_id),
-                        str(event_id),
-                        f"p12ca1-evt-{suffix}-{index:04d}",
-                        f"p12ca1-order-{suffix}-{index:04d}",
-                        f"p12ca1-order-{suffix}-{index:04d}",
-                        revenue_cents,
-                        occurred_at,
-                        f"p12ca1-ingress:{suffix}:{index:04d}",
-                    ),
+                " VALUES (%s, %s, %s, 'stripe', %s, %s,"
+                " 'stripe_payment_intent_id', %s, %s, 'USD', %s, %s,"
+                " 'authenticity_verified')",
+                # Lineage law (see P6 linker): the ingress MUST carry
+                # the verdict's own event/commerce references; the
+                # verdict authority guard refuses cross-lineage relinks.
+                (
+                    ingress_id,
+                    str(tenant_id),
+                    str(event_id),
+                    f"evt_{suffix}_{index:04d}",
+                    f"order_{suffix}_{index:04d}",
+                    f"order_{suffix}_{index:04d}",
+                    revenue_cents,
+                    occurred_at,
+                    f"p12ca1-ingress:{suffix}:{index:04d}",
+                ),
                 )
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
@@ -592,7 +595,7 @@ async def _seed_p12_ca1_representative_source_rows(
                     " 'hmac-sha256-timestamped-hex', 'v1')",
                     (
                         ingress_id,
-                        f"p12ca1-evt-{suffix}-{index:04d}",
+                        f"evt_{suffix}_{index:04d}",
                         "a" * 64,
                         "b" * 64,
                     ),

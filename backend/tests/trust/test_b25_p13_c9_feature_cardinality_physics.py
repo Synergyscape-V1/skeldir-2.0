@@ -217,6 +217,80 @@ def _seed_row(
     )
 
 
+#: Providers the sovereign atomic can authenticate. Fixture rows carrying
+#: other provider names are shape-only scaffolding for the authority-blind
+#: width walk (provider/channel/campaign dimensions); they are deliberately
+#: left unlinked because no lawful ingress can back them. Rows carrying a
+#: supported provider are lawful settlements and must hold current authority
+#: for the verdict-derived dimensions (currency) to read them.
+_LINKABLE_PROVIDERS = ("stripe", "shopify", "paypal", "woocommerce")
+
+
+def _link_c9_current_providers(conn, tenant_id) -> None:
+    """Authenticate ingress for lawful settlements and link verdicts (XVIII).
+
+    Membership-neutral by construction: linking flips only
+    `b26_p2_source_authority_state` (NULL-link `unresolved` → `current`).
+    Window, status, allocation, and event-type membership are untouched, so
+    member/non-member, window, late-reconciliation, and overflow assertions
+    keep discriminating exactly what they did before. Synthetic-provider
+    rows are skipped (the atomic allowlists supported families only; the
+    width walk that measures them is authority-blind by design — see the
+    report). Fixed digests: harness setup, not authenticity evidence.
+    """
+    conn.execute(
+        text(
+            "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
+            " event_id, provider, provider_native_event_reference,"
+            " provider_native_commerce_reference,"
+            " normalized_commerce_reference_kind,"
+            " normalized_commerce_reference_value, verified_amount_minor,"
+            " verified_amount_currency, event_timestamp, idempotency_key,"
+            " verified_commerce_ingress_state)"
+            " SELECT gen_random_uuid(), v.tenant_id, v.attribution_event_id,"
+            " v.provider, v.provider_native_event_reference,"
+            " v.provider_native_commerce_reference,"
+            " CASE v.provider"
+            " WHEN 'shopify' THEN 'shopify_order_id'"
+            " WHEN 'paypal' THEN 'paypal_transaction_id'"
+            " WHEN 'woocommerce' THEN 'woocommerce_order_id'"
+            " ELSE 'stripe_payment_intent_id' END,"
+            " v.provider_native_commerce_reference, v.verified_amount_minor,"
+            " v.currency_code, v.last_transition_at,"
+            " 'c9-link-' || v.id::text, 'authenticity_verified'"
+            " FROM public.b23_match_verdicts AS v"
+            " WHERE v.tenant_id = :t"
+            " AND v.webhook_ingress_identity_id IS NULL"
+            " AND v.provider IN ('stripe', 'shopify', 'paypal', 'woocommerce')"
+        ),
+        {"t": str(tenant_id)},
+    )
+    conn.execute(
+        text(
+            "SELECT public.b26_p2_authenticate_ingress_atomic("
+            " wi.id, wi.provider, wi.provider_native_event_reference,"
+            " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
+            " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
+            " 'hmac-sha256-timestamped-hex', 'v1')"
+            " FROM public.webhook_ingress_identities AS wi"
+            " WHERE wi.tenant_id = :t"
+            " AND wi.idempotency_key LIKE 'c9-link-%'"
+        ),
+        {"t": str(tenant_id)},
+    )
+    conn.execute(
+        text(
+            "UPDATE public.b23_match_verdicts AS v"
+            " SET webhook_ingress_identity_id = wi.id"
+            " FROM public.webhook_ingress_identities AS wi"
+            " WHERE v.tenant_id = :t AND wi.tenant_id = v.tenant_id"
+            " AND wi.idempotency_key = 'c9-link-' || v.id::text"
+            " AND v.webhook_ingress_identity_id IS NULL"
+        ),
+        {"t": str(tenant_id)},
+    )
+
+
 def _measure(tenant_id, *, barrier=None) -> dict:
     """Measure the way production measures: one snapshot, five reads.
 
@@ -289,6 +363,9 @@ def test_c9_cardinality_is_the_shape_of_the_snapshot() -> None:
         with engine.begin() as conn:
             tenant_id = _new_tenant(conn, "shape")
             # 12 settlements: 4 channels, 3 campaigns, 2 providers, 2 currencies.
+            # Providers are P2-supported on purpose: the currency dimension
+            # reads verdict-derived money, which conducts only under current
+            # authority (XVIII). Counting behavior is unchanged.
             for index in range(12):
                 _seed_row(
                     conn,
@@ -296,10 +373,11 @@ def test_c9_cardinality_is_the_shape_of_the_snapshot() -> None:
                     index=index,
                     channel=f"c9_channel_{index % 4}",
                     campaign=f"c9-campaign-{index % 3}",
-                    provider=f"c9prov{index % 2}",
+                    provider=["stripe", "shopify"][index % 2],
                     currency="USD" if index % 2 == 0 else "EUR",
                     occurred_at=INSIDE + timedelta(minutes=index),
                 )
+            _link_c9_current_providers(conn, tenant_id)
     finally:
         engine.dispose()
 
@@ -337,6 +415,8 @@ def test_c9_provider_cardinality_unions_both_governed_relations() -> None:
                     currency="USD",
                     occurred_at=INSIDE + timedelta(minutes=index),
                 )
+            # No link call: synthetic providers cannot hold P2 authority and
+            # this test measures the authority-blind provider walk only.
             # One revenue event whose provider appears nowhere else.
             conn.execute(
                 text(
@@ -402,6 +482,8 @@ def test_c9_provider_width_survives_late_verdict_reconciliation() -> None:
                 ),
                 {"t": str(tenant_id)},
             )
+            # No link call: synthetic providers only; the asserted provider
+            # width comes from the authority-blind walk (see helper note).
     finally:
         engine.dispose()
 
@@ -489,6 +571,7 @@ def test_c20_allocation_write_clock_cannot_change_b24_resource_decision() -> Non
                 ),
                 {"inside": INSIDE, "tenant_id": str(tenant_id)},
             )
+            # No link call: synthetic provider; channel-walk assertions only.
     finally:
         engine.dispose()
 
@@ -597,6 +680,10 @@ def test_c9_overflow_is_reported_as_cap_plus_one_not_as_a_count() -> None:
                     currency="USD",
                     occurred_at=INSIDE + timedelta(minutes=index),
                 )
+            # Deliberately NOT linked: 20 distinct providers cannot all
+            # hold supported families, and this test measures the
+            # authority-blind width walk only (provider dimension).
+            # Linking is unnecessary and would destroy the overflow shape.
     finally:
         engine.dispose()
 
@@ -628,10 +715,14 @@ def test_c9_currency_overflow_follows_the_same_reporting_rule() -> None:
                     index=index,
                     channel="c9_currency_channel",
                     campaign="c9-currency-campaign",
-                    provider="c9prov",
+                    # Supported provider on purpose: this dimension reads
+                    # P2 verdict money, which conducts only under current
+                    # authority (XVIII). Counting behavior is unchanged.
+                    provider="stripe",
                     currency=code,
                     occurred_at=INSIDE + timedelta(minutes=index),
                 )
+            _link_c9_current_providers(conn, tenant_id)
     finally:
         engine.dispose()
 
@@ -680,6 +771,8 @@ def test_c9_non_member_rows_do_not_widen_the_snapshot() -> None:
                 event_status="pending",
                 event_type="pageview",
             )
+            # No link call: synthetic providers; channel/campaign assertions
+            # read the attribution walk, which is authority-blind.
     finally:
         engine.dispose()
 
@@ -697,6 +790,9 @@ def test_c9_rows_outside_the_window_do_not_widen_the_snapshot() -> None:
     try:
         with engine.begin() as conn:
             tenant_id = _new_tenant(conn, "window")
+            # Supported provider on purpose: the asserted currency width
+            # reads verdict-derived money, which conducts only under
+            # current authority (XVIII). Window binding is unchanged.
             for index in range(3):
                 _seed_row(
                     conn,
@@ -704,7 +800,7 @@ def test_c9_rows_outside_the_window_do_not_widen_the_snapshot() -> None:
                     index=index,
                     channel="c9_inside_channel",
                     campaign="c9-inside-campaign",
-                    provider="inside_provider",
+                    provider="stripe",
                     currency="USD",
                     occurred_at=INSIDE + timedelta(minutes=index),
                 )
@@ -714,7 +810,7 @@ def test_c9_rows_outside_the_window_do_not_widen_the_snapshot() -> None:
                 index=91,
                 channel="c9_before_channel",
                 campaign="c9-before-campaign",
-                provider="before_provider",
+                provider="stripe",
                 currency="USD",
                 occurred_at=OUTSIDE,
             )
@@ -724,10 +820,11 @@ def test_c9_rows_outside_the_window_do_not_widen_the_snapshot() -> None:
                 index=92,
                 channel="c9_boundary_channel",
                 campaign="c9-boundary-campaign",
-                provider="boundary_provider",
+                provider="stripe",
                 currency="USD",
                 occurred_at=WINDOW_END,
             )
+            _link_c9_current_providers(conn, tenant_id)
     finally:
         engine.dispose()
 

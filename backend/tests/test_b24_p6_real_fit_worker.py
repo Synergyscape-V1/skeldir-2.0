@@ -514,6 +514,10 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
     # The async session committed on block exit. Now authenticate each
     # leg through the governed transition and relink its verdict (the
     # relink trigger re-derives authority state to current).
+    # Lineage law: the ingress MUST carry the verdict's own
+    # (tenant, provider, event reference). A cross-lineage link is
+    # refused by the verdict authority guard (OW-03b laundering class),
+    # so the refs below mirror the seeded verdict exactly.
     with admin.cursor() as cur:
         for index, event_id, verdict_id, revenue_cents, occurred_at in legs:
             ingress_id = str(uuid4())
@@ -534,9 +538,9 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                     ingress_id,
                     str(tenant_id),
                     str(event_id),
-                    f"p6-evt-{suffix}-{index:02d}",
-                    f"p6-order-{suffix}-{index:02d}",
-                    f"p6-order-{suffix}-{index:02d}",
+                    f"evt_{suffix}_{index:02d}",
+                    f"order_{suffix}_{index:02d}",
+                    f"order_{suffix}_{index:02d}",
                     revenue_cents,
                     occurred_at,
                     f"p6-ingress:{suffix}:{index:02d}",
@@ -548,7 +552,7 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                 " 'hmac-sha256-timestamped-hex', 'v1')",
                 (
                     ingress_id,
-                    f"p6-evt-{suffix}-{index:02d}",
+                    f"evt_{suffix}_{index:02d}",
                     "a" * 64,
                     "b" * 64,
                 ),
