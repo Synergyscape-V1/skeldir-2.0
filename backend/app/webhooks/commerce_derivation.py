@@ -68,6 +68,57 @@ SEMANTIC_CONTRACT_REGIME = "xvii-sovereign-v1"
 
 SUPPORTED_PROVIDERS = ("stripe", "shopify", "paypal", "woocommerce")
 
+# XVIII (H-XVIII-R11/R12): sovereign supported-event-family law. The
+# ONLY authority for "this payload denotes a financial family" is this
+# module over verified bytes, governed by
+# contracts/reconciliation/b2.6/event-family-law.v1.json. The relay's
+# route selection is advisory only and can never confer family.
+#
+# Canonical family per provider (the single financial family P2
+# supports for that provider):
+CANONICAL_EVENT_FAMILY_BY_PROVIDER = MappingProxyType(
+    {
+        "stripe": "payment_intent.succeeded",
+        "shopify": "orders.create",
+        "paypal": "payment.sale.completed",
+        "woocommerce": "order.completed",
+    }
+)
+
+# Provider-native family signals: payload keys whose presence asserts a
+# family. A present-but-unsupported signal is REFUSED (never coerced).
+# A signal-less shape is accepted ONLY as the governed family-implicit
+# canonical family above (explicit contract disposition for flat
+# provider shapes that carry no family indicator: the shape itself --
+# e.g. a bare payment_intent object, a bare order JSON -- is the
+# provider's canonical representation of the supported family, and
+# every other family of that provider arrives in a distinct,
+# refused-or-typed shape).
+_NATIVE_FAMILY_SIGNAL_KEYS_BY_PROVIDER = MappingProxyType(
+    {
+        "stripe": ("type", "event_type", "status"),
+        "shopify": (),
+        "paypal": ("event_type",),
+        "woocommerce": ("status",),
+    }
+)
+
+# Normalized aliases accepted for each canonical family (provider
+# webhook vocabularies: dotted event names and underscored relay
+# variants denote the same family).
+_FAMILY_ALIASES_BY_PROVIDER = MappingProxyType(
+    {
+        "stripe": frozenset(
+            {"payment_intent.succeeded", "payment_intent_succeeded"}
+        ),
+        "shopify": frozenset({"orders.create", "order_create", "orders/create"}),
+        "paypal": frozenset(
+            {"payment.sale.completed", "sale_completed", "payment.sale_completed"}
+        ),
+        "woocommerce": frozenset({"order.completed", "order_completed"}),
+    }
+)
+
 NORMALIZED_KIND_BY_PROVIDER = MappingProxyType(
     {
         "stripe": "stripe_payment_intent_id",
@@ -444,6 +495,49 @@ def _derive_woocommerce(payload: Mapping[str, Any]) -> SovereignCommerce:
         verified_amount_scale=scale,
         event_timestamp=event_ts,
     )
+
+
+def _normalize_family_token(value: Any) -> str | None:
+    if value is None:
+        return None
+    token = str(value).strip().lower().replace("/", ".")
+    return token or None
+
+
+def derive_event_family(provider: str, raw_body: bytes) -> str:
+    """Sovereignly establish the supported event family from verified bytes.
+
+    Returns the canonical family for the provider. Raises
+    CommerceDerivationError when the bytes carry a native family signal
+    outside the supported family (valid signature + parseable money +
+    unsupported family yields NO financial authority).
+
+    Shapes carrying no native signal are attested as the governed
+    family-implicit canonical family (see module law above): the
+    authority for that disposition is this function over bytes plus the
+    governed family-law contract -- never the relay route selected.
+    """
+    normalized = (provider or "").strip().lower()
+    if normalized not in SUPPORTED_PROVIDERS:
+        raise CommerceDerivationError(f"unsupported provider: {provider!r}")
+    if not isinstance(raw_body, (bytes, bytearray)) or not bytes(raw_body):
+        raise CommerceDerivationError("raw provider body is required")
+    payload = _parse_json_object(bytes(raw_body))
+    canonical = CANONICAL_EVENT_FAMILY_BY_PROVIDER[normalized]
+    for key in _NATIVE_FAMILY_SIGNAL_KEYS_BY_PROVIDER[normalized]:
+        observed = _normalize_family_token(payload.get(key))
+        if observed is None:
+            continue
+        if normalized == "woocommerce" and observed == "completed":
+            return canonical
+        if normalized == "stripe" and observed == "succeeded":
+            return canonical
+        if observed in _FAMILY_ALIASES_BY_PROVIDER[normalized]:
+            return canonical
+        raise CommerceDerivationError(
+            f"unsupported event family for {normalized}: {key}={observed!r}"
+        )
+    return canonical
 
 
 def derive_commerce(provider: str, raw_body: bytes) -> SovereignCommerce:

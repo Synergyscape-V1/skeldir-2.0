@@ -266,6 +266,8 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Current P2 authority of the verdict source ingress at read time: current, historically_unverifiable, unresolved, or unknown. */
+            source_authority_state?: string;
         };
         B23ExceptionRecordResponse: {
             /** Format: uuid */
@@ -1497,6 +1499,8 @@ export interface operations {
                         created_at: string;
                         /** Format: date-time */
                         updated_at: string;
+                        /** @description Current P2 authority of the verdict source ingress at read time: current, historically_unverifiable, unresolved, or unknown. */
+                        source_authority_state?: string;
                     };
                 };
             };

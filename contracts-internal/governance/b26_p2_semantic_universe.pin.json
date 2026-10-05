@@ -1,12 +1,12 @@
 {
   "producer": "validate_b26_p2_ix_semantic",
   "scope_authority_ast_sha256": "864d0d4b3816c5dc170a9c2f7fa4e4f710353c21d292f7b71e6de22a50468cca",
-  "candidate_conduction_ast_sha256": "a5db98f474db6fdf1f53bec135a5be1008831474f0c6801a55d9232acc10e0d4",
+  "candidate_conduction_ast_sha256": "921e24209d31da77e4658d16a9a1c25fa94e5efa1ebef7b6ea4bbe7a8e426c64",
   "b23_footprint": [
     "status",
     "webhook_ingress_identity_id",
     "tenant_id",
     "canonical_commerce_reference"
   ],
-  "review_note": "Reviewed for Corrective X head: candidate_conduction.py is a thin adapter over the single SQL semantic authority (b26_p2_classify_candidate per candidate, b26_p2_canonical_scope_identity_for_window for identity); the Python digest formatter is deleted and no truth-path classification remains in Python. scope_authority.py is frozen byte-identical (pure law library, provably unimported on the truth path). The B2.3 footprint is unchanged and still trigger-covered. Pin regeneration alone adjudicates nothing: the X contract oracle, X authority live canaries, and DB effect guards must remain RED while any prohibited effect survives."
+  "review_note": "Reviewed for Corrective XVIII head: candidate_conduction.py remains a thin adapter over the single SQL semantic authority (b26_p2_classify_candidate per candidate, b26_p2_canonical_scope_identity_for_window for identity) PLUS the central P2 current-authority predicate (b26_p2_ingress_has_current_authority) observed per candidate: scope truth is conserved and demoted history is EXPLICITLY_EXCLUDED with reason p2_historical_authority_not_current. No truth-path classification moved into Python (the override only applies the DB-observed authority bit to the governed disposition vocabulary). scope_authority.py is frozen byte-identical. The B2.3 footprint is unchanged and still trigger-covered. Pin regeneration alone adjudicates nothing: the X contract oracle, X authority live canaries, and DB effect guards must remain RED while any prohibited effect survives."
 }

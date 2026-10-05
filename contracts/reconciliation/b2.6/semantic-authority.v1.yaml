@@ -46,22 +46,30 @@ coverage_authority:
   aggregate_callable: app.revenue_verification.verification_coverage.fetch_verification_coverage_aggregate
   metric_object: app.revenue_verification.verification_coverage.VERIFICATION_COVERAGE
   metric_method: compute
-  implementation_ast_sha256: c97ce3814f9b28635494cd89dd31b988decce50e95c5ce020b2ba2cf6d103217
+  implementation_ast_sha256: db03ffc30beac7939e1e48ca2f9e5c9a04852c9d1982723112e2cbb6ad8a3ca7
   supported_provider_scope_reference: app.revenue_verification.verification_coverage.SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS
   supported_currency_scope_reference: app.revenue_verification.verification_coverage.SUPPORTED_VERIFICATION_COVERAGE_CURRENCIES
   numerator:
     name: matched_webhook_revenue_minor
     definition: >-
       Sum canonical_net_verified_amount_minor from tenant-bound B2.3 verdicts in
-      matched_provisional, matched_confirmed, or adjusted state, joined by the
-      durable webhook_ingress_identity_id to authenticity-verified ingress in
-      the same supported-provider, currency, and half-open event window.
+      matched_provisional, matched_confirmed, or adjusted state that are
+      themselves currently authoritative
+      (b26_p2_source_authority_state = 'current'), joined by the durable
+      webhook_ingress_identity_id to currently authoritative ingress
+      (authenticated_known + current semantic regime + no demotion) in the
+      same supported-provider, currency, and half-open event window.
+      Demoted history never enters the verified numerator.
   denominator:
     name: connected_platform_revenue_minor
     definition: >-
-      Sum verified_amount_minor from tenant-bound, authenticity-verified ingress
-      for connected supported providers in the same currency and half-open
-      event_timestamp window, whether or not a matching verdict is final.
+      Sum verified_amount_minor from tenant-bound, currently authoritative
+      ingress for connected supported providers in the same currency and
+      half-open event_timestamp window, whether or not a matching verdict
+      is final. Demoted history is excluded from both legs and reported
+      separately as unverifiable_historical_revenue_minor context, so its
+      absence from verified revenue is visible and can never read as
+      false confidence.
   window_semantics:
     interval: half_open
     lower_bound: inclusive

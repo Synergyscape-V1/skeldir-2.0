@@ -145,6 +145,12 @@ _PREFLIGHT_SQL = (
               AND a.verified = true
         ),
         eligible_match_verdicts AS (
+            -- XVIII (H-XVIII-R7/R9): a conducted verdict whose source
+            -- ingress lost current authority (demoted history) is not
+            -- eligible evidence. Authority travels ON the verdict row
+            -- (b26_p2_source_authority_state, maintained
+            -- transactionally by the P2 transition graph), so this
+            -- aggregate-only preflight never touches identity tables.
             SELECT v.id, nullif(v.provider, '') AS provider,
                    upper(v.currency_code) AS currency_code,
                    v.canonical_net_verified_amount_minor, v.last_transition_at,
@@ -154,6 +160,7 @@ _PREFLIGHT_SQL = (
               ON e.id = v.attribution_event_id
             WHERE v.tenant_id = :tenant_id
               AND v.status IN :match_verdict_statuses
+              AND v.b26_p2_source_authority_state = 'current'
         ),
         excluded_match_verdicts AS (
             SELECT v.status, count(*)::bigint AS count
@@ -165,17 +172,26 @@ _PREFLIGHT_SQL = (
             GROUP BY v.status
         ),
         eligible_revenue_events AS (
+            -- XVIII: revenue events conduct only through currently
+            -- authoritative verdicts (verdict-local state; no identity
+            -- reads in this aggregate preflight).
             SELECT id, nullif(provider, '') AS provider, upper(currency_code) AS currency_code,
                    coalesce(captured_amount_minor, 0)
                    + coalesce(refund_amount_minor, 0)
                    + coalesce(chargeback_amount_minor, 0)
                    + coalesce(reversal_amount_minor, 0) AS amount_minor,
                    event_occurred_at
-            FROM public.b23_revenue_events
+            FROM public.b23_revenue_events AS re
             WHERE tenant_id = :tenant_id
               AND event_occurred_at >= :window_start
               AND event_occurred_at < :window_end
               AND event_type IN :revenue_event_types
+              AND EXISTS (
+                    SELECT 1 FROM public.b23_match_verdicts AS v
+                     WHERE v.tenant_id = re.tenant_id
+                       AND v.id = re.match_verdict_id
+                       AND v.b26_p2_source_authority_state = 'current'
+              )
         ),
         excluded_revenue_events AS (
             SELECT event_type, count(*)::bigint AS count

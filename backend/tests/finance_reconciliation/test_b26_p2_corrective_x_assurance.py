@@ -145,8 +145,13 @@ def _seed_ids(tag: str, *, provider: str = "stripe") -> dict:
                     _b26_atomic_code != "42883"
                     and "does not exist" not in _b26_atomic_msg
                     and "undefined" not in _b26_atomic_msg
+                    and "b26_p2_atomic_family_unbound_refused"
+                    not in _b26_atomic_msg
                 ):
                     raise
+                # XVIII: non-sovereign providers stay non-authoritative
+                # at the transition; adapter-identity tests still
+                # observe the row explicitly.
     finally:
         conn.close()
     return {"tenant_id": tenant_id, "ingress_id": ingress_id,
@@ -538,8 +543,11 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
             # Corrective XI: non-ingress callers without witness
             # visibility are refused at the capability plane
             # (permission denied); either refusal mints nothing.
+            # XVIII: the unforgeable trust-transition trigger refuses
+            # first for the same class.
             assert (
                 "b26_p2_provenance_promotion_refused" in reason
+                or "b26_p2_authority_transition_refused" in reason
                 or "permission denied" in reason.lower()
             ), reason
             # Corrective XI: caller assertions promote nothing. The

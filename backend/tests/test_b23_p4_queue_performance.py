@@ -249,6 +249,70 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
             ),
             {"tenant_id": str(tenant_id), "now_utc": now},
         )
+    # XVIII: the batch candidate universe is authority-normalized
+    # (b26_p2_ingress_has_current_authority): only currently
+    # authoritative ingress enters matching. Authenticate the 1000
+    # benchmark rows through the governed sovereign transition in a
+    # single set-based statement. Refs and commerce identities are
+    # distinct per row, so no sovereign-conflict refusal applies.
+    # The transition admits app_ingress / migration_owner / postgres
+    # callers: prefer the migration admin (like every P2 fixture
+    # seeder), else reuse the ingress issuer when it already carries
+    # a lawful caller.
+    _p4_auth_sql_async = (
+        "SELECT public.b26_p2_authenticate_ingress_atomic("
+        " wi.id, wi.provider, wi.provider_native_event_reference,"
+        " 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',"
+        " 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',"
+        " 'hmac-sha256-timestamped-hex', 'v1')"
+        " FROM public.webhook_ingress_identities AS wi"
+        " WHERE wi.tenant_id = CAST(:tenant_id AS uuid)"
+        " AND wi.idempotency_key LIKE"
+        " 'b23-p4-webhook-' || CAST(:tenant_id AS text) || '-%'"
+    )
+    # Governed secrets accessor (B1.1-P4 DSN-authority scan forbids raw
+    # environment reads of database DSNs; see the trust-closure helper
+    # _migration_database_url for the rationale). get_secret (not
+    # require_secret): absence falls through to the ingress-issuer path
+    # below, exactly as before.
+    from app.core.secrets import get_secret  # noqa: PLC0415
+
+    _p4_admin_dsn = (get_secret("MIGRATION_DATABASE_URL") or "").strip()
+    if _p4_admin_dsn:
+        import psycopg2  # noqa: PLC0415
+
+        _p4_admin = psycopg2.connect(_p4_admin_dsn)
+        _p4_admin.autocommit = True
+        try:
+            with _p4_admin.cursor() as _p4_cur:
+                _p4_cur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (str(tenant_id),),
+                )
+                # psycopg2 uses %s placeholders: bind the tenant twice
+                # and escape the LIKE wildcard (a bare % is a
+                # placeholder introducer to psycopg2).
+                _p4_auth_sql_sync = _p4_auth_sql_async.replace(
+                    ":tenant_id", "%s"
+                ).replace("'-%'", "'-%%'")
+                _p4_cur.execute(
+                    _p4_auth_sql_sync,
+                    (str(tenant_id), str(tenant_id)),
+                )
+        finally:
+            _p4_admin.close()
+    else:
+        async with issuer_engine.begin() as _p4_auth_issuer:
+            await _p4_auth_issuer.execute(
+                text(
+                    "SELECT set_config('app.current_tenant_id',"
+                    " :tenant_id, true)"
+                ),
+                {"tenant_id": str(tenant_id)},
+            )
+            await _p4_auth_issuer.execute(
+                text(_p4_auth_sql_async), {"tenant_id": str(tenant_id)}
+            )
     async with b23_engine.begin() as conn:
         await conn.execute(
             text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),

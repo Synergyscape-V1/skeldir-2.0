@@ -326,7 +326,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 image, "python", "/proof/assert_b26_p2_authority_universe.py",
                 "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609290001",
+                "--migration-head", "202609300001",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -604,6 +604,7 @@ def main() -> int:
 
         covered = None
         for _modname, _fname, _attr in (
+            ("b26_p2_xviii_coverage", "b26_p2_xviii_coverage.py", "XVIII_COVERED_SURFACES"),
             ("b26_p2_xiv_coverage", "b26_p2_xiv_coverage.py", "XIV_COVERED_SURFACES"),
             ("b26_p2_xiii_coverage", "b26_p2_xiii_coverage.py", "XIII_COVERED_SURFACES"),
             ("b26_p2_xii_coverage", "b26_p2_xii_coverage.py", "XII_COVERED_SURFACES"),
@@ -620,8 +621,13 @@ def main() -> int:
                     sys.modules[_modname] = _mod
                     _spec.loader.exec_module(_mod)
                     covered = sorted(getattr(_mod, _attr))
+                    print(f"coverage_registry_loaded:{_modname}:{len(covered)}",
+                          flush=True)
                     break
-                except (FileNotFoundError, AttributeError, ImportError):
+                except (FileNotFoundError, AttributeError, ImportError) as _exc:
+                    print(f"coverage_registry_skipped:{_modname}:"
+                          f"{type(_exc).__name__}:{_exc}"[:300],
+                          flush=True)
                     continue
         assert covered is not None, "no_coverage_registry_found"
         proc = run_img(
@@ -629,7 +635,7 @@ def main() -> int:
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
              f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609290001",
+                "--migration-head", "202609300001",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

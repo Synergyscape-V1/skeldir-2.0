@@ -6092,6 +6092,31 @@
     the XIV coverage gate.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-xviii-coverage-registry
+  path: scripts/ci/b26_p2_xviii_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XVIII registry extends XIV coverage for the central
+    current-authority predicate (read-only, fail-closed EXECUTE surfaces).
+  command: python -c "from scripts.ci.b26_p2_xviii_coverage import XVIII_COVERED_SURFACES; print(len(XVIII_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xviii_coverage import XVIII_COVERED_SURFACES"
+  expected_failure_meaning: XVIII EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XVIII coverage gate.
+  subsumed_by: ''
+  registry_action: utility
 - id: b26-p2-xiv-auth-conduction
   path: scripts/ci/validate_b26_p2_xiv_auth_conduction.py
   status: required
@@ -6431,6 +6456,161 @@
   expected_failure_meaning: A load-bearing gate that can never fail
     certifies relations it does not observe.
   first_diagnostic_command: python scripts/ci/test_b26_p2_xvii_negative_controls.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xviii-semantic-registry
+  path: scripts/ci/validate_b26_p2_xviii_semantic_registry.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Published semantic-regime identity denotes exactly one
+    immutable contract law: live bytes, reviewed pin, migration seed, and live
+    table agree, and the published digest never changes across git history.
+    Common-mode co-edit under a constant regime fails.'
+  command: python scripts/ci/validate_b26_p2_xviii_semantic_registry.py
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_semantic_registry.py --help
+  expected_failure_meaning: The published semantic identity is mutable in
+    place while every pin-correspondence gate stays green.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xviii_semantic_registry.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xviii-migration-manifest
+  path: scripts/ci/validate_b26_p2_xviii_migration_manifest.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Published P2 migration revisions are
+    content-addressed: file hashes match the manifest and no published
+    entry changes across history. Same-revision semantic mutation fails.'
+  command: python scripts/ci/validate_b26_p2_xviii_migration_manifest.py
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_migration_manifest.py --help
+  expected_failure_meaning: A deployed revision is edited under the same
+    identity without detection.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xviii_migration_manifest.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xviii-contract-hierarchy
+  path: scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Provider, API, and P2 semantic contracts cohere under
+    one governed projection: every served route is sovereign-declared with a
+    sovereign family, and every divergence is explicitly governed. Undeclared
+    authority masquerade fails.'
+  command: python scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py --help
+  expected_failure_meaning: A route claims P2 authority outside sovereign law
+    or contracts contradict without a governed rule.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xviii-governance
+  path: scripts/ci/validate_b26_p2_xviii_governance.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Consequence revocation is transactional DB state
+    (no new async machinery), the P2 authority path is free of
+    inference dependencies, and authority surfaces are database-enforced.'
+  command: python scripts/ci/validate_b26_p2_xviii_governance.py
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_governance.py --help
+  expected_failure_meaning: An unwired repair flow exists in source, an
+    inference dependency enters the authority path, or authority rests on
+    application convention.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xviii_governance.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xviii-physics
+  path: scripts/ci/validate_b26_p2_xviii_physics.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Authority conservation holds at the DB plane:
+    unforgeable transitions, stale-evidence refusal (both entry points),
+    candidate admission, consequence revocation, coverage honesty, family
+    binding, batch liveness, downgrade safety, and 3VL safety.'
+  command: python scripts/ci/validate_b26_p2_xviii_physics.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_physics.py --help
+  expected_failure_meaning: Demoted history re-mints authority, conducts
+    revenue, wedges batches, or serves downgraded law.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xviii_physics.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xviii-negative-controls
+  path: scripts/ci/test_b26_p2_xviii_negative_controls.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every XVIII relation is non-vacuous: all fourteen
+    directive negative controls plus twelve open-world falsifiers turn a
+    mandatory gate red on a genuine class member and restore byte-exact
+    green.'
+  command: python scripts/ci/test_b26_p2_xviii_negative_controls.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/test_b26_p2_xviii_negative_controls.py --help
+  expected_failure_meaning: A load-bearing gate that can never fail
+    certifies relations it does not observe.
+  first_diagnostic_command: python scripts/ci/test_b26_p2_xviii_negative_controls.py --dsn $MIGRATION_DATABASE_URL
   depends_on_db: true
   depends_on_celery: false
   depends_on_pooler: false

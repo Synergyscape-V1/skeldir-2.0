@@ -274,6 +274,32 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                 },
             )
 
+    # XVIII: verdicts consumed by Bayesian eligibility must hold
+    # current P2 authority. Each leg is authenticated through the
+    # governed transition (migration admin, like all P2 fixture
+    # seeders) and the verdict links to it; NULL-link matched rows no
+    # longer conduct anywhere.
+    import psycopg2  # noqa: PLC0415
+    from app.core.secrets import get_migration_database_url  # noqa: PLC0415
+
+    # Governed secrets accessor (B1.1-P4 DSN-authority scan forbids raw
+    # environment reads of database DSNs outside the accessor).
+    migration_dsn = get_migration_database_url().strip()
+    if not migration_dsn:
+        raise RuntimeError("B2.4-P6 fixture needs MIGRATION_DATABASE_URL")
+    admin = psycopg2.connect(migration_dsn)
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+    except Exception:
+        admin.close()
+        raise
+
+    legs: list[tuple] = []
     async with get_session(tenant_id) as session:
         for index in range(20):
             event_id = uuid4()
@@ -281,6 +307,8 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
             revenue_cents = 10_000 + index
             occurred_at = START + timedelta(days=index)
             channel = f"p6_{suffix}_{index:02d}"
+            legs.append((index, event_id, verdict_id, revenue_cents,
+                         occurred_at))
             await session.execute(
                 text(
                     """
@@ -342,6 +370,7 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
             # C19 makes the database, not the fixture, decide verification.
             # This row begins unverified; the confirmed B2.3 verdict inserted
             # below projects the only state that P6 eligibility may consume.
+            # XVIII: ingress linkage happens after commit (see below).
             await session.execute(
                 text(
                     """
@@ -386,6 +415,7 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                         id,
                         tenant_id,
                         attribution_event_id,
+                        webhook_ingress_identity_id,
                         provider,
                         canonical_commerce_reference,
                         provider_native_event_reference,
@@ -408,6 +438,7 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                         :verdict_id,
                         :tenant_id,
                         :event_id,
+                        :ingress_id,
                         'stripe',
                         :commerce_ref,
                         :event_ref,
@@ -432,6 +463,9 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                     "verdict_id": str(verdict_id),
                     "tenant_id": str(tenant_id),
                     "event_id": str(event_id),
+                    # Linked to P2-authenticated ingress after commit
+                    # (see below); NULL stamps unresolved, never verified.
+                    "ingress_id": None,
                     "commerce_ref": f"order_{suffix}_{index:02d}",
                     "event_ref": f"evt_{suffix}_{index:02d}",
                     "amount_minor": revenue_cents,
@@ -480,6 +514,59 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                     "amount_minor": revenue_cents,
                 },
             )
+    # The async session committed on block exit. Now authenticate each
+    # leg through the governed transition and relink its verdict (the
+    # relink trigger re-derives authority state to current).
+    # Lineage law: the ingress MUST carry the verdict's own
+    # (tenant, provider, event reference). A cross-lineage link is
+    # refused by the verdict authority guard (OW-03b laundering class),
+    # so the refs below mirror the seeded verdict exactly.
+    with admin.cursor() as cur:
+        for index, event_id, verdict_id, revenue_cents, occurred_at in legs:
+            ingress_id = str(uuid4())
+            cur.execute(
+                "INSERT INTO public.webhook_ingress_identities (id,"
+                " tenant_id, event_id, provider,"
+                " provider_native_event_reference,"
+                " provider_native_commerce_reference,"
+                " normalized_commerce_reference_kind,"
+                " normalized_commerce_reference_value,"
+                " verified_amount_minor, verified_amount_currency,"
+                " event_timestamp, idempotency_key,"
+                " verified_commerce_ingress_state)"
+                " VALUES (%s, %s, %s, 'stripe', %s, %s,"
+                " 'stripe_payment_intent_id', %s, %s, 'USD', %s, %s,"
+                " 'authenticity_verified')",
+                (
+                    ingress_id,
+                    str(tenant_id),
+                    str(event_id),
+                    f"evt_{suffix}_{index:02d}",
+                    f"order_{suffix}_{index:02d}",
+                    f"order_{suffix}_{index:02d}",
+                    revenue_cents,
+                    occurred_at,
+                    f"p6-ingress:{suffix}:{index:02d}",
+                ),
+            )
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                " %s, 'stripe', %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1')",
+                (
+                    ingress_id,
+                    f"evt_{suffix}_{index:02d}",
+                    "a" * 64,
+                    "b" * 64,
+                ),
+            )
+            cur.execute(
+                "UPDATE public.b23_match_verdicts"
+                " SET webhook_ingress_identity_id = %s"
+                " WHERE id = %s AND tenant_id = %s",
+                (ingress_id, str(verdict_id), str(tenant_id)),
+            )
+    admin.close()
 
 
 async def _snapshot_hash(tenant_id: UUID):

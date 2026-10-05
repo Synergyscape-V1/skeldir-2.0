@@ -1364,9 +1364,12 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if "202609290001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xvii")
-        details["migration_head"] = "202609290001"
+        # XVIII: the head advances to the authority-conservation
+        # revision; the XVII head must remain an ancestor (linear
+        # ancestry, no forks).
+        if "202609300001" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xviii")
+        details["migration_head"] = "202609300001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -2838,10 +2841,11 @@ def main() -> int:
             build_manifest as _build_manifest,
         )
 
-        # Coverage registry: prefer the newest (XIV) law; fall back
+        # Coverage registry: prefer the newest (XVIII) law; fall back
         # through predecessors for older lanes.
         _covered = None
         for _mod, _attr in (
+            ("scripts.ci.b26_p2_xviii_coverage", "XVIII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xiv_coverage", "XIV_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xiii_coverage", "XIII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xii_coverage", "XII_COVERED_SURFACES"),

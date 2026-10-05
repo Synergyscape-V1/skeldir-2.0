@@ -395,6 +395,62 @@ async def reconcile_b23_attribution_exception_lifecycle(
     )
 
 
+async def _require_current_ingress_authority(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    webhook_ingress_identity_id: UUID,
+) -> None:
+    """XVIII (H-XVIII-R6/R7): refuse consequence creation on demoted ingress.
+
+    The batch admission path is the primary fence; this is the second
+    wall for direct kernel callers. UNKNOWN (missing row) never
+    authorizes.
+    """
+    authorized = await session.execute(
+        text(
+            "SELECT public.b26_p2_ingress_has_current_authority(:ingress_id)"
+        ),
+        {"ingress_id": str(webhook_ingress_identity_id)},
+    )
+    if authorized.scalar_one_or_none() is not True:
+        raise ValueError(
+            "b23_match_ingress_authority_not_current:"
+            f"{webhook_ingress_identity_id}"
+        )
+
+
+async def _require_current_verdict_authority(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    match_verdict_id: UUID,
+) -> None:
+    """XVIII (H-XVIII-R7): refuse post-capture consequences on demoted verdicts.
+
+    Refunds/corrections attach to currently authoritative verdicts
+    and to never-linked bookkeeping rows (unresolved: no source to be
+    stale); demoted history must first be superseded by genuine
+    redelivery (R20), never extended. Unknown states fail closed.
+    """
+    row = await session.execute(
+        text(
+            "SELECT b26_p2_source_authority_state"
+            " FROM b23_match_verdicts"
+            " WHERE tenant_id = :tenant_id AND id = :match_verdict_id"
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "match_verdict_id": str(match_verdict_id),
+        },
+    )
+    state = row.scalar_one_or_none()
+    if state not in ("current", "unresolved"):
+        raise ValueError(
+            f"b23_match_verdict_authority_not_current:{match_verdict_id}"
+        )
+
+
 async def _acquire_match_lock(
     session: AsyncSession,
     *,
@@ -413,6 +469,12 @@ async def process_b23_capture_match(
     session: AsyncSession,
     match_input: B23CaptureMatchInput,
 ) -> B23MatchKernelOutcome:
+    if match_input.webhook_ingress_identity_id is not None:
+        await _require_current_ingress_authority(
+            session,
+            tenant_id=match_input.tenant_id,
+            webhook_ingress_identity_id=match_input.webhook_ingress_identity_id,
+        )
     await _acquire_match_lock(
         session,
         tenant_id=match_input.tenant_id,
@@ -1053,6 +1115,12 @@ async def register_b23_post_capture_event(
     if canonical_reference is None:
         await _insert_unresolved_post_capture_failure(session, post_capture_input)
         return False
+    if post_capture_input.match_verdict_id is not None:
+        await _require_current_verdict_authority(
+            session,
+            tenant_id=post_capture_input.tenant_id,
+            match_verdict_id=post_capture_input.match_verdict_id,
+        )
 
     (
         captured_amount_minor,

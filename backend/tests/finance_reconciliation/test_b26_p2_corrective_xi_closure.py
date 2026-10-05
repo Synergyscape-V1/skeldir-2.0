@@ -430,8 +430,13 @@ def test_xa1_assertion_promotes_nothing() -> None:
                     (str(ids["ingress_id"]),),
                 )
             )
+            # XVIII: the unforgeable trust-transition trigger
+            # (b26_p2_authority_transition_refused) fires before the
+            # legacy provenance trigger for the same class; either
+            # refusal -- or the privilege plane -- is fail-closed.
             assert (
                 "b26_p2_provenance_promotion_refused" in reason
+                or "b26_p2_authority_transition_refused" in reason
                 or "permission denied" in reason.lower()
             ), reason
     finally:

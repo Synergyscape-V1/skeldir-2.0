@@ -759,7 +759,7 @@ async def _redrive_pending_dispatch_for_ingress(
                             WHERE d.tenant_id = :tenant_id
                               AND i.event_id = :event_id
                               AND i.verified_commerce_ingress_state = 'authenticity_verified'
-                              AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+                              AND public.b26_p2_ingress_has_current_authority(i.id)
                               AND EXISTS (
                                     SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                                      WHERE w.webhook_ingress_identity_id = i.id
@@ -901,7 +901,7 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
                         WHERE i.tenant_id = :tenant_id
                           AND i.event_id = :event_id
                           AND i.verified_commerce_ingress_state = 'authenticity_verified'
-                          AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+                          AND public.b26_p2_ingress_has_current_authority(i.id)
                           AND EXISTS (
                                 SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                                  WHERE w.webhook_ingress_identity_id = i.id

@@ -333,6 +333,11 @@ def _live_checks(
             # XIII with the root-evidence substrate (read-only checks
             # observable by the ingress boundary; mints nothing).
             "b26_p2_xiv_topology_check",
+            # B2.6-P2 Corrective XVIII: central current-authority
+            # predicate (STABLE, read-only STABLE DEFINER; answers
+            # only, mints nothing; fail-closed). The trust root reads
+            # it on the duplicate-resolution path.
+            "b26_p2_ingress_has_current_authority",
         }
         for routine in routines:
             if routine not in allowed_routines:

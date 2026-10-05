@@ -60,6 +60,14 @@ def build_b24_confidence_projection_query() -> TextClause:
             WHERE revenue.tenant_id = :tenant_id
               AND revenue.event_occurred_at >= :source_window_start
               AND revenue.event_occurred_at < :source_window_end
+              -- XVIII: deterministic revenue conducts only through
+              -- currently authoritative verdicts (verdict-local state).
+              AND EXISTS (
+                    SELECT 1 FROM public.b23_match_verdicts AS v
+                     WHERE v.tenant_id = revenue.tenant_id
+                       AND v.id = revenue.match_verdict_id
+                       AND v.b26_p2_source_authority_state = 'current'
+              )
             GROUP BY revenue.tenant_id, UPPER(TRIM(revenue.currency_code))
         ),
         latest_matching_fit AS (

@@ -353,10 +353,13 @@ def run_canaries(admin_dsn: str, violations: list[str],
                 # Corrective XI: non-ingress callers without witness
                 # visibility are refused at the capability plane
                 # (permission denied); either refusal mints nothing.
+                # XVIII: the unforgeable trust-transition trigger
+                # refuses first for the same class.
                 results["bare_promotion_refused"] = (
                     refusal is not None
                     and (
                         "promotion_refused" in refusal
+                        or "authority_transition_refused" in refusal
                         or "permission denied" in refusal.lower()
                     )
                 )

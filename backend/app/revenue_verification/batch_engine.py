@@ -48,35 +48,62 @@ async def _execute_b23_batch_chunk(
             text(
                 """
                 WITH candidate_webhooks AS MATERIALIZED (
-                    SELECT
-                        wi.id AS webhook_ingress_identity_id,
-                        wi.tenant_id,
-                        wi.provider,
-                        wi.provider_native_event_reference,
-                        wi.provider_native_commerce_reference,
-                        wi.normalized_commerce_reference_value AS canonical_commerce_reference,
-                        wi.verified_amount_minor,
-                        wi.verified_amount_currency,
-                        wi.event_timestamp
-                    FROM public.webhook_ingress_identities wi
-                    WHERE wi.tenant_id = :tenant_id
-                      AND wi.verified_commerce_ingress_state = 'authenticity_verified'
-                      AND wi.event_timestamp >= :window_start
-                      AND wi.event_timestamp < :window_end
-                      AND NOT EXISTS (
-                          SELECT 1
-                          FROM public.b23_match_verdicts existing
-                          WHERE existing.tenant_id = wi.tenant_id
-                            AND existing.webhook_ingress_identity_id = wi.id
-                      )
-                      AND NOT EXISTS (
-                          SELECT 1
-                          FROM public.b23_match_verdicts existing
-                          WHERE existing.tenant_id = wi.tenant_id
-                            AND existing.provider = wi.provider
-                            AND existing.provider_native_event_reference = wi.provider_native_event_reference
-                      )
-                    ORDER BY wi.event_timestamp ASC, wi.id ASC
+                    -- XVIII (H-XVIII-R6/R10/R20): the candidate universe
+                    -- is authority-normalized BEFORE the verdict upsert.
+                    -- Only currently authoritative ingress (the central
+                    -- predicate: authenticated_known + current regime +
+                    -- no demotion) enters matching, and at most one row
+                    -- per provider event reference survives (the current
+                    -- canonical row wins): a demoted historical precursor
+                    -- can neither conduct stale money nor wedge the batch
+                    -- with a cardinality violation against its genuine
+                    -- redelivery. R20: redelivery supersedes via the
+                    -- upsert's event-reference conflict target.
+                    SELECT ranked.*
+                    FROM (
+                        SELECT
+                            wi.id AS webhook_ingress_identity_id,
+                            wi.tenant_id,
+                            wi.provider,
+                            wi.provider_native_event_reference,
+                            wi.provider_native_commerce_reference,
+                            wi.normalized_commerce_reference_value AS canonical_commerce_reference,
+                            wi.verified_amount_minor,
+                            wi.verified_amount_currency,
+                            wi.event_timestamp,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY wi.tenant_id, wi.provider,
+                                             wi.provider_native_event_reference
+                                ORDER BY wi.event_timestamp DESC, wi.id DESC
+                            ) AS event_ref_rank
+                        FROM public.webhook_ingress_identities wi
+                        WHERE wi.tenant_id = :tenant_id
+                          AND wi.verified_commerce_ingress_state = 'authenticity_verified'
+                          AND public.b26_p2_ingress_has_current_authority(wi.id)
+                          AND wi.event_timestamp >= :window_start
+                          AND wi.event_timestamp < :window_end
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM public.b23_match_verdicts existing
+                              WHERE existing.tenant_id = wi.tenant_id
+                                AND existing.webhook_ingress_identity_id = wi.id
+                          )
+                          -- XVIII (H-XVIII-R20): a stale (non-current)
+                          -- verdict never blocks its genuine redelivery:
+                          -- the upsert supersedes it deterministically
+                          -- (relink re-derivation), so exactly one
+                          -- consequence universe survives.
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM public.b23_match_verdicts existing
+                              WHERE existing.tenant_id = wi.tenant_id
+                                AND existing.provider = wi.provider
+                                AND existing.provider_native_event_reference = wi.provider_native_event_reference
+                                AND existing.b26_p2_source_authority_state = 'current'
+                          )
+                    ) AS ranked
+                    WHERE ranked.event_ref_rank = 1
+                    ORDER BY ranked.event_timestamp ASC, ranked.webhook_ingress_identity_id ASC
                     LIMIT :chunk_size
                 ),
                 claimed_webhooks AS MATERIALIZED (

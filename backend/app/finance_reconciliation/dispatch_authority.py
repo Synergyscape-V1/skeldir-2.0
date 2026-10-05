@@ -213,6 +213,7 @@ async def resolve_dispatch_authority(
                     " WHERE id = :ingress_id"
                     " AND tenant_id = :tenant_id"
                     " AND verified_commerce_ingress_state = 'authenticity_verified'"
+                    " AND public.b26_p2_ingress_has_current_authority(id)"
                 ),
                 {"ingress_id": str(ingress_id), "tenant_id": str(dispatch_tenant)},
             )

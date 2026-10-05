@@ -798,11 +798,15 @@ def test_c20_referential_nullification_still_succeeds() -> None:
                 " verified_commerce_ingress_state)"
                 " VALUES (%s, %s, %s, 'stripe', %s, %s, 'order_reference', %s,"
                 " %s, 'USD', %s, %s, 'authenticity_verified')",
+                # Lineage law (XVIII OW-03b): the setup link must carry
+                # the verdict's own event reference
+                # (``c20-event-{label}``); the test's intent is the
+                # DELETE → SET NULL path, which is ref-agnostic.
                 (
                     str(identity_id),
                     str(settlement["tenant_id"]),
                     str(settlement["event_id"]),
-                    f"c20-ingress-{label}",
+                    f"c20-event-{label}",
                     f"c20-order-{label}",
                     f"c20-order-{label}",
                     settlement["amount"],

@@ -78,6 +78,10 @@ class B23MatchVerdictDetailResponse(BaseModel):
     last_transition_at: datetime
     created_at: datetime
     updated_at: datetime
+    # XVIII (H-XVIII-R7/R9): current P2 authority of the verdict's
+    # source ingress at read time. 'current' verdicts may conduct;
+    # any other state is explicitly non-authoritative history.
+    source_authority_state: str = "unknown"
 
 
 class B23ExceptionRecordResponse(BaseModel):

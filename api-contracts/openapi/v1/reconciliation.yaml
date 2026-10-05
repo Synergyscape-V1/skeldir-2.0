@@ -569,6 +569,11 @@ components:
         updated_at:
           type: string
           format: date-time
+        source_authority_state:
+          type: string
+          description: 'Current P2 authority of the verdict source ingress
+            at read time: current, historically_unverifiable, unresolved,
+            or unknown.'
 
     B23ExceptionRecordResponse:
       type: object

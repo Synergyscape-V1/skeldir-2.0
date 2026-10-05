@@ -302,12 +302,16 @@ _SOURCE_QUERIES = {
             JOIN public.attribution_events AS e
               ON e.tenant_id = v.tenant_id
              AND e.id = v.attribution_event_id
+            -- XVIII (H-XVIII-R7/R9): conducted-then-demoted verdicts
+            -- leave the snapshot via their own authority state
+            -- (transactionally maintained; no identity-table read).
             WHERE v.tenant_id = :tenant_id
               AND e.occurred_at >= :window_start
               AND e.occurred_at < :window_end
               AND e.processing_status IN :processed_statuses
               AND e.event_type IN :conversion_event_types
               AND v.status IN :match_verdict_statuses
+              AND v.b26_p2_source_authority_state = 'current'
             ORDER BY v.tenant_id ASC, e.occurred_at ASC NULLS LAST, v.id ASC
             """
         )
@@ -335,10 +339,18 @@ _SOURCE_QUERIES = {
                 net_effect_sign,
                 is_gross_capture_correction
             FROM public.b23_revenue_events
+            -- XVIII: revenue events conduct only through currently
+            -- authoritative verdicts (verdict-local state).
             WHERE tenant_id = :tenant_id
               AND event_occurred_at >= :window_start
               AND event_occurred_at < :window_end
               AND event_type IN :revenue_event_types
+              AND EXISTS (
+                    SELECT 1 FROM public.b23_match_verdicts AS v
+                     WHERE v.tenant_id = b23_revenue_events.tenant_id
+                       AND v.id = b23_revenue_events.match_verdict_id
+                       AND v.b26_p2_source_authority_state = 'current'
+              )
             ORDER BY tenant_id ASC, event_occurred_at ASC NULLS LAST, id ASC
             """
         ).bindparams(bindparam("revenue_event_types", expanding=True))

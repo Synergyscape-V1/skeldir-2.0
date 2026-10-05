@@ -205,6 +205,21 @@ def _seed_ratio_tenant(matched: int, connected: int, tag: str) -> UUID:
                         f"b26v-ingress:{tag}:{order}",
                     ),
                 )
+                # XVIII: authenticate the fixture through the governed
+                # transition so it holds current P2 authority (verified
+                # revenue measures current truth, not verified-state
+                # shape). Seeding runs as migration admin (lawful).
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    " %s, 'stripe', %s, %s, %s,"
+                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    (
+                        str(identity_id),
+                        f"b26v-ingress-{tag}-{order}",
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                )
                 if verdict:
                     cur.execute(
                         "INSERT INTO public.b23_match_verdicts (id, tenant_id,"

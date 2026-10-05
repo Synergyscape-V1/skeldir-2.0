@@ -1,0 +1,50 @@
+{
+  "manifest_id": "b26-p2-migration-manifest",
+  "governing_note": "B2.6-P2 Corrective XVIII (H-XVIII-R16): content-addressed identity for published P2 authority-law migration revisions. Already-published revision identities must never change unnoticed: the XVIII manifest gate recomputes every hash and REDs on mismatch, and the history arm REDs when a published entry's digest changes across git history. Legitimate evolution APPENDS a new revision entry; existing entries are immutable.",
+  "revisions": {
+    "202609240001": {
+      "file": "202609240001_b26_p2_corrective_x_assurance_sovereignty.py",
+      "sha256": "b9ee1760782c0f2d7942ef9efe18322f1889dbdab0afa3a4be5789ade6d88a85"
+    },
+    "202609240002": {
+      "file": "202609240002_b26_p2_corrective_xi_p2_core_closure.py",
+      "sha256": "e6b062609f5bca2a8c0a78af659c5afe8b24698b981cd4f0300bb4dfdc402075"
+    },
+    "202609250001": {
+      "file": "202609250001_b26_p2_corrective_xii_fact_anchored_closure.py",
+      "sha256": "7998669d3a93def5f28acba410044b88a21b1822ba5ed8a44f6f8aebc77c29c3"
+    },
+    "202609260001": {
+      "file": "202609260001_b26_p2_corrective_xiii_root_of_trust_closure.py",
+      "sha256": "6e2c0874ad197f53d41c3e6b01bab4e8822909cfe692b86ebc694f404871ae70"
+    },
+    "202609270001": {
+      "file": "202609270001_b26_p2_corrective_xiv_compositional_closure.py",
+      "sha256": "fce0452a1a962f842189909a32003092e096f10ea338e6386a44ad450fd0e173"
+    },
+    "202609270002": {
+      "file": "202609270002_b26_p2_corrective_xiv_temporal_enforcement.py",
+      "sha256": "b3946e3cc2950902167c5f035222829b7687c458d686809bd8e0d5ce8c1067cf"
+    },
+    "202609270003": {
+      "file": "202609270003_b26_p2_corrective_xiv_definer_evidence.py",
+      "sha256": "e9996bcb83c8d8c4f376adc59bccbd81458b97660a2437de40d8ab52e674dd3e"
+    },
+    "202609280001": {
+      "file": "202609280001_b26_p2_corrective_xv_binding_closure.py",
+      "sha256": "59e21207f2e1591e0ad5162d384507975f648ad831dea6dd0436fb8429cbc910"
+    },
+    "202609280002": {
+      "file": "202609280002_b26_p2_corrective_xvi_sovereign_closure.py",
+      "sha256": "fdff03110a26ec0bde87b7a0655499a274a3fb2aadfad3fb89f8d89067197eae"
+    },
+    "202609290001": {
+      "file": "202609290001_b26_p2_corrective_xvii_historical_reconciliation.py",
+      "sha256": "e4c2baa1638bfd1412844c82ad4f964c99b3029d2be819f3009c83a25c13554f"
+    },
+    "202609300001": {
+      "file": "202609300001_b26_p2_corrective_xviii_authority_conservation.py",
+      "sha256": "0fbfcd4bd990c99a9065bc9114e9da63cda05d0fcb1612e9474a3da7bba65699"
+    }
+  }
+}

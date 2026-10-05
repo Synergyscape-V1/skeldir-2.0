@@ -951,15 +951,36 @@ def _match_verdict_payload(
             "source_snapshot_hash": source_snapshot_hash,
             "source_system": "skeldir_b23_match_engine",
         },
-        "match_verdict_status": normalize_match_verdict_status(source.status),
+        # XVIII (H-XVIII-R7/R9): a verdict whose backing ingress lost
+        # current P2 authority (demoted history) never surfaces as
+        # verified truth: explicit degraded semantics instead. The
+        # amount stays the verdict's recorded figure; the STATUS is
+        # what an agent/LLM must read, and it reads unavailable.
+        # NOTE: no new top-level envelope field is introduced: the
+        # envelope schema is closed (additionalProperties forbidden)
+        # and C14 fails closed on undeclared signed fields. The
+        # degraded semantics travel through governed fields only.
+        "match_verdict_status": (
+            normalize_match_verdict_status(source.status)
+            if source.ingress_has_current_authority
+            else "unavailable"
+        ),
         "confidence_metadata": _confidence_unavailable(),
         "provenance_chain": build_match_verdict_provenance_chain(
             source=source,
             display_data=display_data,
             money_authority_projection=money_decision.external_projection(),
-            reason_code=None,
+            reason_code=(
+                None
+                if source.ingress_has_current_authority
+                else "source_authority_not_current"
+            ),
         ),
-        "data_completeness_status": data_completeness_for_match_status(source.status),
+        "data_completeness_status": (
+            data_completeness_for_match_status(source.status)
+            if source.ingress_has_current_authority
+            else "unavailable"
+        ),
         "benchmark_metadata": unavailable_benchmark_metadata(),
         "policy_action_authority": read_only_policy_authority(),
         "fallback_applied": False,

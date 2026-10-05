@@ -581,6 +581,29 @@ def _seed_p2_universe(tag: str) -> dict[str, Any]:
                         f"b26p2-ingress:{tag}:{provider}:{order}",
                     ),
                 )
+                # XVIII: authenticate the fixture through the governed
+                # transition (verified revenue measures current P2
+                # truth). Non-sovereign providers stay
+                # non-authoritative by law; scope still excludes them
+                # explicitly.
+                try:
+                    cur.execute(
+                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        " %s, %s, %s, %s, %s,"
+                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        (
+                            str(identity_id),
+                            provider,
+                            f"b26p2-ingress-{tag}-{order}",
+                            "a" * 64,
+                            "b" * 64,
+                        ),
+                    )
+                except Exception as _b26_atomic_exc:
+                    if "b26_p2_atomic_family_unbound_refused" not in str(
+                        _b26_atomic_exc
+                    ):
+                        raise
                 if verdict:
                     cur.execute(
                         "INSERT INTO public.b23_match_verdicts (id, tenant_id,"

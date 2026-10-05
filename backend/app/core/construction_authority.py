@@ -246,12 +246,12 @@ def _migration_modules(migrations_root: Path | None = None):
 
 #: The single Alembic revision this build's code requires. Asserted equal to the
 #: migration graph's head by a merge-blocking test; never hand-maintained
-#: independently of the chain. B2.6-P2 Corrective XVII advances the contract
-#: to the historical reconciliation head (semantic-regime identity,
-#: deterministic historical disposition, event/commerce identity
-#: conservation, tuple-bound witness, regime-gated dispatch/P3): this build
-#: requires XVII physics and must refuse earlier schema.
-REQUIRED_SCHEMA_REVISION = "202609290001"
+#: independently of the chain. B2.6-P2 Corrective XVIII advances the contract
+#: to the authority-conservation head (immutable regime registry, unforgeable
+#: trust transition, stale-evidence refusal, sovereign event-family binding,
+#: consequence revocation, downgrade floor): this build requires XVIII
+#: physics and must refuse earlier schema.
+REQUIRED_SCHEMA_REVISION = "202609300001"
 
 #: Every revision a process running this build may serve traffic against.
 #: Exactly one today. Widening this set is a deliberate, reviewable act that

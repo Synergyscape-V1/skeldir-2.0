@@ -1,0 +1,15 @@
+{
+  "registry_id": "b26-p2-semantic-regime-registry",
+  "governing_note": "B2.6-P2 Corrective XVIII (H-XVIII-R1/R2): append-only semantic-regime history. Each regime identifier maps permanently to exactly one governed contract digest. Existing entries are NEVER modified: legitimate semantic evolution APPENDS a new regime row via a new forward migration (with a new contract artifact + new digest). The XVIII registry gate enforces this against git history: a published digest that changes under the same identity REDs. The database table public.b26_p2_semantic_regime_registry is the runtime mirror of this file; the gate asserts file == migration seed == live table == live contract bytes.",
+  "regimes": [
+    {
+      "regime_id": "xvii-sovereign-v1",
+      "contract_version": "v1",
+      "contract_artifact": "contracts/reconciliation/b2.6/provider-semantic-contract.v1.json",
+      "contract_digest": "c0f7e3b580dcaf91c7221aa522bf3ca968de7dcc8aa2bf0d5f22b6440ba8e924",
+      "activation_revision": "202609300001",
+      "status": "active",
+      "historical_disposition": "rows authenticated under predecessor semantics were demoted to pending_authentication with reason xvii-pre-binding-unverifiable by migration 202609290001; only redelivery under this regime reconstitutes truth"
+    }
+  ]
+}

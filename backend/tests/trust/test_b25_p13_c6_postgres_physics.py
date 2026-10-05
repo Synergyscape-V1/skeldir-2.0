@@ -505,6 +505,76 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
         await app_engine.dispose()
         await worker_engine.dispose()
 
+    # XVIII: eligibility consumes only currently-authoritative verdicts.
+    # The worker-authored settlements above carry no ingress linkage, so
+    # authenticate each leg through the governed transition (migration
+    # admin) and relink its verdict; the relink trigger re-derives
+    # authority state to current. Same lineage by construction
+    # (identical tenant/provider/event-ref on both sides), so the new
+    # lineage guard admits every relink. Fixed digests: harness setup.
+    import psycopg2  # noqa: PLC0415
+    from app.core.secrets import get_migration_database_url  # noqa: PLC0415
+
+    # Governed secrets accessor (B1.1-P4 DSN-authority scan forbids raw
+    # environment reads of database DSNs outside the accessor).
+    migration_dsn = get_migration_database_url().strip()
+    if not migration_dsn:
+        raise RuntimeError("B2.5-P13-C6 fixture needs MIGRATION_DATABASE_URL")
+
+    admin = psycopg2.connect(migration_dsn)
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            cur.execute(
+                "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
+                " event_id, provider, provider_native_event_reference,"
+                " provider_native_commerce_reference,"
+                " normalized_commerce_reference_kind,"
+                " normalized_commerce_reference_value, verified_amount_minor,"
+                " verified_amount_currency, event_timestamp, idempotency_key,"
+                " verified_commerce_ingress_state)"
+                " SELECT gen_random_uuid(), v.tenant_id,"
+                " v.attribution_event_id, v.provider,"
+                " v.provider_native_event_reference,"
+                " v.provider_native_commerce_reference,"
+                " 'stripe_payment_intent_id',"
+                " v.provider_native_commerce_reference,"
+                " v.verified_amount_minor, v.currency_code,"
+                " v.last_transition_at, 'c6-ingress-' || v.id::text,"
+                " 'authenticity_verified'"
+                " FROM public.b23_match_verdicts AS v"
+                " WHERE v.tenant_id = %s"
+                " AND v.webhook_ingress_identity_id IS NULL"
+                " AND v.provider_native_event_reference LIKE 'c6-event-%%'",
+                (str(tenant_id),),
+            )
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                " wi.id, wi.provider, wi.provider_native_event_reference,"
+                " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
+                " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
+                " 'hmac-sha256-timestamped-hex', 'v1')"
+                " FROM public.webhook_ingress_identities AS wi"
+                " WHERE wi.tenant_id = %s"
+                " AND wi.idempotency_key LIKE 'c6-ingress-%%'",
+                (str(tenant_id),),
+            )
+            cur.execute(
+                "UPDATE public.b23_match_verdicts AS v"
+                " SET webhook_ingress_identity_id = wi.id"
+                " FROM public.webhook_ingress_identities AS wi"
+                " WHERE v.tenant_id = %s AND wi.tenant_id = v.tenant_id"
+                " AND wi.idempotency_key = 'c6-ingress-' || v.id::text"
+                " AND v.webhook_ingress_identity_id IS NULL",
+                (str(tenant_id),),
+            )
+    finally:
+        admin.close()
+
 
 @pytest.mark.asyncio
 async def test_c6_real_stimulus_reaches_registered_planner_and_one_dispatch() -> None:

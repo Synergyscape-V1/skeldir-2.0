@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ubShtyEvK8xoV7xGgMlIXygXi9aXgZGdCp7Wzp5LQMdab3Uzyuvz89OJY6BCPAB
+\restrict BygeiEm1efCLGKafY2qlEBtLL0usRCbDRtsTIKJi8Q5x28TYh1qyhYi9PuuzwNb
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -2494,6 +2494,10 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             _idem text;
             _state text;
             _prov_status text;
+            _demotion text;
+            _row_provider text;
+            _family text;
+            _fam_provider text;
             _witness text;
             _c_provider text;
             _c_event text;
@@ -2526,9 +2530,23 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
                 RAISE EXCEPTION 'b26_p2_evidence_governed_admin_only'
                     USING ERRCODE = '42501';
             END IF;
+            -- XVIII floor: a downgraded schema cannot mint authority
+            -- through this entry point either.
+            BEGIN
+                PERFORM 1 FROM public.b26_p2_operational_floor AS f
+                 WHERE f.id = 1 AND f.floor_revision = '202609300001';
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            EXCEPTION WHEN undefined_table THEN
+                RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
+                    USING ERRCODE = '42501';
+            END;
             SELECT i.tenant_id, i.idempotency_key,
-                   i.verified_commerce_ingress_state, i.b26_p2_provenance_status
-              INTO _tenant, _idem, _state, _prov_status
+                   i.verified_commerce_ingress_state, i.b26_p2_provenance_status,
+                   i.b26_p2_demotion_reason, i.provider
+              INTO _tenant, _idem, _state, _prov_status, _demotion, _row_provider
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
@@ -2537,6 +2555,12 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             END IF;
             IF _state IS DISTINCT FROM 'authenticity_verified' THEN
                 RAISE EXCEPTION 'b26_p2_evidence_ingress_unverified'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XVIII: demoted history is never promoted in place
+            -- through this entry point either.
+            IF _demotion IS NOT NULL THEN
+                RAISE EXCEPTION 'b26_p2_evidence_demoted_ingress_refused'
                     USING ERRCODE = '42501';
             END IF;
             IF public.b26_p2_ascii_strip(COALESCE(p_ref, '')) = ''
@@ -2574,6 +2598,72 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
                 RAISE EXCEPTION 'b26_p2_evidence_witness_not_bound'
                     USING ERRCODE = '42501';
             END IF;
+            -- XVIII family: allowlist the governed claim (or attest
+            -- the family-implicit canonical family) and bind it into
+            -- the consequence row when unbound, so dispatch's family
+            -- requirement holds for attester-minted rows exactly as
+            -- for atomic-minted rows.
+            BEGIN
+                _family := current_setting(
+                    'app.b26_p2_event_family', true);
+            EXCEPTION WHEN OTHERS THEN
+                _family := NULL;
+            END;
+            IF _family IS NULL
+               OR public.b26_p2_ascii_strip(_family) = '' THEN
+                _family := NULL;
+            END IF;
+            -- Same ascii-strip normalization as the atomic (XA-01):
+            -- a tab-padded provider conducts under one meaning.
+            _fam_provider := lower(
+                public.b26_p2_ascii_strip(COALESCE(_row_provider, '')));
+            IF _fam_provider = 'stripe' THEN
+                IF _family IS NULL THEN
+                    _family := 'payment_intent.succeeded';
+                ELSIF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('payment_intent.succeeded',
+                          'payment_intent_succeeded') THEN
+                    _family := 'payment_intent.succeeded';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'shopify' THEN
+                IF _family IS NULL THEN
+                    _family := 'orders.create';
+                ELSIF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('orders.create', 'order_create',
+                          'orders/create') THEN
+                    _family := 'orders.create';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'paypal' THEN
+                IF _family IS NULL THEN
+                    _family := 'payment.sale.completed';
+                ELSIF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('payment.sale.completed', 'sale_completed',
+                          'payment.sale_completed') THEN
+                    _family := 'payment.sale.completed';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'woocommerce' THEN
+                IF _family IS NULL THEN
+                    _family := 'order.completed';
+                ELSIF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('order.completed', 'order_completed') THEN
+                    _family := 'order.completed';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                    USING ERRCODE = '42501';
+            END IF;
             BEGIN
                 _prev_guc := current_setting('app.current_tenant_id', true);
             EXCEPTION WHEN OTHERS THEN
@@ -2581,6 +2671,10 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             END;
             PERFORM set_config('app.current_tenant_id', _tenant::text, true);
             BEGIN
+                UPDATE public.b26_p2_provider_auth_consequence AS c
+                   SET b26_p2_event_family = _family
+                 WHERE c.webhook_ingress_identity_id = p_ingress
+                   AND c.b26_p2_event_family IS NULL;
                 INSERT INTO public.b26_p2_provenance_evidence AS e (
                     webhook_ingress_identity_id, tenant_id,
                     evidence_kind, evidence_ref, evidence_witness_hash
@@ -2591,21 +2685,34 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
                     evidence_ref = EXCLUDED.evidence_ref,
                     evidence_witness_hash = EXCLUDED.evidence_witness_hash,
                     attested_at = now();
+                -- The stamp carries the governed mark the
+                -- authority-transition trigger admits (same law as
+                -- the atomic; the mark confers nothing without the
+                -- column privilege, which runtime roles lack).
+                -- One effective promotion law: the full conjunction
+                -- (provenance + current regime + cleared reason), so
+                -- attester-minted rows satisfy dispatch, P3, and
+                -- readers exactly like atomic-minted rows. Reachable
+                -- only for non-demoted rows (refused above).
+                PERFORM set_config(
+                    'app.b26_p2_governed_transition', '1', true);
                 UPDATE public.webhook_ingress_identities AS i
-                   SET b26_p2_provenance_status = 'authenticated_known'
+                   SET b26_p2_provenance_status = 'authenticated_known',
+                       b26_p2_semantic_regime = 'xvii-sovereign-v1',
+                       b26_p2_demotion_reason = NULL
                  WHERE i.id = p_ingress;
+                PERFORM set_config(
+                    'app.b26_p2_governed_transition', '', true);
                 PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
                 RETURN 'authenticated_known';
             EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config(
+                    'app.b26_p2_governed_transition', '', true);
                 PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
                 RAISE;
             END;
         END $$;
 
-
---
--- Name: b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
---
 
 --
 -- Name: b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
@@ -2630,6 +2737,9 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             _t_ts timestamptz;
             _t_ts_canon text;
             _sem_regime text;
+            _demotion text;
+            _family text;
+            _fam_provider text;
             _c_provider text;
             _c_event text;
             _c_body text;
@@ -2648,6 +2758,22 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
+            -- XVIII-5: operational floor. A downgraded schema (floor
+            -- row/table absent) cannot mint authority: serving is
+            -- physically disabled, not merely undocumented. The
+            -- undefined_table handler keeps the refusal clean even
+            -- when the floor table itself was removed by downgrade.
+            BEGIN
+                PERFORM 1 FROM public.b26_p2_operational_floor AS f
+                 WHERE f.id = 1 AND f.floor_revision = '202609300001';
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            EXCEPTION WHEN undefined_table THEN
+                RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
+                    USING ERRCODE = '42501';
+            END;
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.provider,
                    i.b26_p2_provenance_status,
@@ -2658,10 +2784,11 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                    i.verified_amount_currency,
                    i.verified_amount_scale,
                    i.event_timestamp,
-                   i.b26_p2_semantic_regime
+                   i.b26_p2_semantic_regime,
+                   i.b26_p2_demotion_reason
               INTO _tenant, _idem, _state, _row_provider, _prov,
                    _t_kind, _t_value, _t_cref, _t_amount, _t_ccy, _t_scale,
-                   _t_ts, _sem_regime
+                   _t_ts, _sem_regime, _demotion
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress
              FOR UPDATE;
@@ -2671,6 +2798,15 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             END IF;
             IF _state IS DISTINCT FROM 'authenticity_verified' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_ingress_unverified'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XVIII-6a: demoted history is never promoted in place.
+            -- A row the migration declared semantically insufficient
+            -- keeps its stale evidence AND its non-authority: genuine
+            -- provider redelivery mints a NEW row (fresh evidence
+            -- under current law) instead of blessing stale money.
+            IF _demotion IS NOT NULL THEN
+                RAISE EXCEPTION 'b26_p2_atomic_demoted_ingress_refused'
                     USING ERRCODE = '42501';
             END IF;
             IF p_provider IS DISTINCT FROM _row_provider THEN
@@ -2685,6 +2821,79 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             IF public.b26_p2_ascii_strip(COALESCE(p_event_ref, '')) = ''
                OR public.b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_blank_shape_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XVIII-4: sovereign event-family allowlist. The family's
+            -- only authority is this transition over provider + the
+            -- root-supplied governed claim (transaction-local GUC
+            -- app.b26_p2_event_family, derived by the root from
+            -- authenticated bytes): relay route selection cannot
+            -- confer it. An absent claim is attested as the governed
+            -- family-implicit canonical family (contract disposition
+            -- for signal-less shapes); an unsupported claim is
+            -- refused, never coerced.
+            BEGIN
+                _family := current_setting(
+                    'app.b26_p2_event_family', true);
+            EXCEPTION WHEN OTHERS THEN
+                _family := NULL;
+            END;
+            IF _family IS NULL
+               OR public.b26_p2_ascii_strip(_family) = '' THEN
+                _family := NULL;
+            END IF;
+            -- XVIII (H-XVIII-R11/XA-01): the provider key is
+            -- ascii-stripped before the family dispatch, matching the
+            -- scope ascii law: a tab-padded 'stripe' conducts as
+            -- stripe (one meaning), while a non-ascii distinction
+            -- (NBSP) stays distinct and is refused below.
+            _fam_provider := lower(
+                public.b26_p2_ascii_strip(COALESCE(p_provider, '')));
+            IF _fam_provider = 'stripe' THEN
+                IF _family IS NULL THEN
+                    _family := 'payment_intent.succeeded';
+                ELSIF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('payment_intent.succeeded',
+                          'payment_intent_succeeded') THEN
+                    _family := 'payment_intent.succeeded';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'shopify' THEN
+                IF _family IS NULL THEN
+                    _family := 'orders.create';
+                ELSIF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('orders.create', 'order_create',
+                          'orders/create') THEN
+                    _family := 'orders.create';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'paypal' THEN
+                IF _family IS NULL THEN
+                    _family := 'payment.sale.completed';
+                ELSIF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('payment.sale.completed', 'sale_completed',
+                          'payment.sale_completed') THEN
+                    _family := 'payment.sale.completed';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'woocommerce' THEN
+                IF _family IS NULL THEN
+                    _family := 'order.completed';
+                ELSIF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('order.completed', 'order_completed') THEN
+                    _family := 'order.completed';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
             -- XVI1: serialize authentications of identical bytes.
@@ -2780,11 +2989,12 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                         webhook_ingress_identity_id, tenant_id, provider,
                         provider_event_reference, body_sha256,
                         signature_envelope_sha256, auth_method, auth_version,
-                        recorded_by
+                        b26_p2_event_family, recorded_by
                     )
                     VALUES (p_ingress, _tenant, p_provider, p_event_ref,
                             lower(p_body_sha256), lower(p_sig_envelope_sha256),
-                            p_method, COALESCE(p_version, 'v1'), session_user)
+                            p_method, COALESCE(p_version, 'v1'), _family,
+                            session_user)
                     ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
                     SELECT c.provider, c.provider_event_reference, c.body_sha256,
                            c.signature_envelope_sha256, c.auth_method, c.auth_version
@@ -2801,6 +3011,12 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                         RAISE EXCEPTION 'b26_p2_atomic_cons_immutable_refused'
                             USING ERRCODE = '42501';
                     END IF;
+                    -- Backfill the family binding for consequence rows
+                    -- minted before the family became bound state.
+                    UPDATE public.b26_p2_provider_auth_consequence AS c
+                       SET b26_p2_event_family = _family
+                     WHERE c.webhook_ingress_identity_id = p_ingress
+                       AND c.b26_p2_event_family IS NULL;
                 END IF;
                 -- XVII3: tuple-bound witness. The digest covers the
                 -- cryptographic identity AND the derived semantic tuple
@@ -2874,15 +3090,30 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                 ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
                 -- XVII1: stamp the governed semantic regime and clear
                 -- any historical demotion reason: this row's meaning is
-                -- now justified under current law.
+                -- now justified under current law. (Reachable only for
+                -- non-demoted rows: XVIII-6a refused demoted rows
+                -- above, so this stamp can never bless stale money.)
+                -- The authority-transition trigger observes this write:
+                -- it is marked governed for this transaction (the mark
+                -- is unforgeable-as-authority because runtime roles
+                -- hold no column privilege to write at all).
+                PERFORM set_config(
+                    'app.b26_p2_governed_transition', '1', true);
                 UPDATE public.webhook_ingress_identities AS i
                    SET b26_p2_provenance_status = 'authenticated_known',
                        b26_p2_semantic_regime = 'xvii-sovereign-v1',
                        b26_p2_demotion_reason = NULL
                  WHERE i.id = p_ingress;
+                PERFORM set_config(
+                    'app.b26_p2_governed_transition', '', true);
                 PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
                 RETURN 'authenticated_known';
             EXCEPTION WHEN OTHERS THEN
+                -- Never leak the governed mark past a failure: a
+                -- caller that catches the refusal must not inherit a
+                -- transaction that can stamp authority.
+                PERFORM set_config(
+                    'app.b26_p2_governed_transition', '', true);
                 PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
                 RAISE;
             END;
@@ -3104,6 +3335,25 @@ CREATE FUNCTION public.b26_p2_classify_candidate(p_tenant uuid, p_provider_raw t
 
 
 --
+-- Name: b26_p2_derive_verdict_authority(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_derive_verdict_authority(p_ingress uuid) RETURNS text
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF p_ingress IS NULL THEN
+                RETURN 'unresolved';
+            END IF;
+            IF public.b26_p2_ingress_has_current_authority(p_ingress) THEN
+                RETURN 'current';
+            END IF;
+            RETURN 'historically_unverifiable';
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_auth_consequence_immutability(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3151,6 +3401,8 @@ CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS tr
             END IF;
             RETURN NEW;
         END $$;
+
+
 --
 -- Name: b26_p2_enforce_auth_root_evidence_immutability(); Type: FUNCTION; Schema: public; Owner: -
 --
@@ -3212,6 +3464,7 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
         END $$;
 
 
+--
 -- Name: b26_p2_enforce_authenticated_meaning_immutability(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3249,6 +3502,47 @@ CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETUR
             RETURN NEW;
         END $$;
 
+
+--
+-- Name: b26_p2_enforce_authority_transition(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_authority_transition() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _governed text;
+        BEGIN
+            -- The sovereign atomic performs its stamp with owner
+            -- privilege and marks the transaction governed (see the
+            -- atomic body). The mark alone confers nothing: runtime
+            -- roles hold no UPDATE privilege on these columns (XVIII
+            -- column REVOKE below), so a forged mark cannot authorize
+            -- a write the privilege layer already denied. The mark
+            -- exists so the trigger can distinguish the atomic's
+            -- stamp from any other owner-privileged write.
+            BEGIN
+                _governed := current_setting(
+                    'app.b26_p2_governed_transition', true);
+            EXCEPTION WHEN OTHERS THEN
+                _governed := NULL;
+            END;
+            IF session_user IS DISTINCT FROM 'migration_owner'
+               AND session_user IS DISTINCT FROM 'postgres'
+               AND COALESCE(_governed, '') IS DISTINCT FROM '1' THEN
+                IF OLD.b26_p2_provenance_status
+                       IS DISTINCT FROM NEW.b26_p2_provenance_status
+                   OR OLD.b26_p2_semantic_regime
+                       IS DISTINCT FROM NEW.b26_p2_semantic_regime
+                   OR OLD.b26_p2_demotion_reason
+                       IS DISTINCT FROM NEW.b26_p2_demotion_reason THEN
+                    RAISE EXCEPTION 'b26_p2_authority_transition_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END $$;
 
 
 --
@@ -3445,10 +3739,6 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
 -- Name: b26_p2_enforce_dispatch_provenance(); Type: FUNCTION; Schema: public; Owner: -
 --
 
---
--- Name: b26_p2_enforce_dispatch_provenance(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3456,10 +3746,13 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
         DECLARE
             _prov text;
             _regime text;
+            _reason text;
             _witness text;
+            _family text;
         BEGIN
-            SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime
-              INTO _prov, _regime
+            SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime,
+                   i.b26_p2_demotion_reason
+              INTO _prov, _regime, _reason
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = NEW.webhook_ingress_identity_id
                AND i.tenant_id = NEW.tenant_id;
@@ -3471,6 +3764,16 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
             END IF;
             IF _regime IS DISTINCT FROM 'xvii-sovereign-v1' THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_regime_unverifiable_refused' USING ERRCODE = '42501';
+            END IF;
+            IF _reason IS NOT NULL THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_demotion_active_refused' USING ERRCODE = '42501';
+            END IF;
+            SELECT c.b26_p2_event_family INTO _family
+              FROM public.b26_p2_provider_auth_consequence AS c
+             WHERE c.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
+               AND c.tenant_id = NEW.tenant_id;
+            IF NOT FOUND OR _family IS NULL THEN
+                RAISE EXCEPTION 'b26_p2_dispatch_family_unbound_refused' USING ERRCODE = '42501';
             END IF;
             IF EXISTS (
                 SELECT 1 FROM public.b26_p2_execution_quarantine AS q
@@ -3652,10 +3955,6 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigg
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_ingress_provenance(); Type: FUNCTION; Schema: public; Owner: -
---
 
 --
 -- Name: b26_p2_enforce_ingress_provenance(); Type: FUNCTION; Schema: public; Owner: -
@@ -3890,10 +4189,6 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
 -- Name: b26_p2_enforce_policy_immutability(); Type: FUNCTION; Schema: public; Owner: -
 --
 
---
--- Name: b26_p2_enforce_policy_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3920,7 +4215,28 @@ CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
 
 
 --
+-- Name: b26_p2_enforce_registry_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
 
+CREATE FUNCTION public.b26_p2_enforce_registry_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF session_user IS DISTINCT FROM 'migration_owner'
+               AND session_user IS DISTINCT FROM 'postgres' THEN
+                RAISE EXCEPTION 'b26_p2_registry_mutation_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF TG_OP <> 'INSERT' THEN
+                RAISE EXCEPTION 'b26_p2_registry_history_immutable_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_result_integrity(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3951,10 +4267,6 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
                 USING ERRCODE = '42501';
         END $$;
 
-
---
--- Name: b26_p2_enforce_verdict_temporal_conservation(); Type: FUNCTION; Schema: public; Owner: -
---
 
 --
 -- Name: b26_p2_enforce_verdict_temporal_conservation(); Type: FUNCTION; Schema: public; Owner: -
@@ -4339,6 +4651,122 @@ CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
 
 
 --
+-- Name: b26_p2_guard_verdict_authority_write(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _governed text;
+            _link_tenant uuid;
+            _link_provider text;
+            _link_ref text;
+        BEGIN
+            -- Relink re-derivation (R20): when the verdict's source
+            -- ingress changes (genuine redelivery supersedes a demoted
+            -- precursor via the event-reference conflict target), the
+            -- authority state is re-derived from the NEW source in the
+            -- transition graph itself. One consequence universe: the
+            -- superseded row cannot keep two simultaneous truths.
+            IF NEW.webhook_ingress_identity_id
+                   IS DISTINCT FROM OLD.webhook_ingress_identity_id THEN
+                -- Lineage binding (R7/R18): a relink is a claim that
+                -- THIS verdict's financial lineage is the NEW ingress's
+                -- lineage. Cross-lineage relink (different tenant,
+                -- provider, or provider event reference) is refused:
+                -- otherwise any verdict writer could attach an
+                -- arbitrary-amount verdict to a current ingress and
+                -- mint current authority for money that was never
+                -- authenticated (worker-role laundering). Genuine
+                -- redelivery supersession keeps the event reference
+                -- by construction (conflict target), so lawful relinks
+                -- always pass. Unlinking (NULL) only sheds authority
+                -- and stays permitted; the derivation handles it.
+                IF NEW.webhook_ingress_identity_id IS NOT NULL THEN
+                    SELECT i.tenant_id, i.provider,
+                           i.provider_native_event_reference
+                      INTO _link_tenant, _link_provider, _link_ref
+                      FROM public.webhook_ingress_identities AS i
+                     WHERE i.id = NEW.webhook_ingress_identity_id;
+                    IF NOT FOUND
+                       OR _link_tenant IS DISTINCT FROM NEW.tenant_id
+                       OR _link_provider IS DISTINCT FROM NEW.provider
+                       OR _link_ref IS DISTINCT FROM
+                          NEW.provider_native_event_reference THEN
+                        RAISE EXCEPTION
+                            'b26_p2_verdict_relink_lineage_refused'
+                            USING ERRCODE = '42501';
+                    END IF;
+                END IF;
+                NEW.b26_p2_source_authority_state :=
+                    public.b26_p2_derive_verdict_authority(
+                        NEW.webhook_ingress_identity_id);
+                RETURN NEW;
+            END IF;
+            -- Transition-graph writes (the sovereign atomic's stamp via
+            -- the propagation trigger) carry the governed mark. The
+            -- mark alone confers nothing: runtime roles hold no UPDATE
+            -- privilege on this column (XVIII column REVOKE), so a
+            -- forged mark cannot authorize a write the privilege layer
+            -- already denied.
+            BEGIN
+                _governed := current_setting(
+                    'app.b26_p2_governed_transition', true);
+            EXCEPTION WHEN OTHERS THEN
+                _governed := NULL;
+            END;
+            -- No runtime role may assert consequence authority
+            -- directly; only the transition graph writes this column.
+            IF session_user IS DISTINCT FROM 'migration_owner'
+               AND session_user IS DISTINCT FROM 'postgres'
+               AND COALESCE(_governed, '') IS DISTINCT FROM '1' THEN
+                IF OLD.b26_p2_source_authority_state
+                       IS DISTINCT FROM NEW.b26_p2_source_authority_state THEN
+                    RAISE EXCEPTION 'b26_p2_verdict_authority_write_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_ingress_has_current_authority(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _prov text;
+            _regime text;
+            _reason text;
+        BEGIN
+            SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime,
+                   i.b26_p2_demotion_reason
+              INTO _prov, _regime, _reason
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.id = p_ingress;
+            IF NOT FOUND THEN
+                RETURN FALSE;
+            END IF;
+            IF _prov IS DISTINCT FROM 'authenticated_known' THEN
+                RETURN FALSE;
+            END IF;
+            IF _regime IS DISTINCT FROM 'xvii-sovereign-v1' THEN
+                RETURN FALSE;
+            END IF;
+            IF _reason IS NOT NULL THEN
+                RETURN FALSE;
+            END IF;
+            RETURN TRUE;
+        END $$;
+
+
+--
 -- Name: b26_p2_mark_conducted(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4706,6 +5134,28 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
                                    COALESCE(_prev_guc, ''), true);
                 RAISE;
             END;
+        END $$;
+
+
+--
+-- Name: b26_p2_propagate_verdict_authority(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_propagate_verdict_authority() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            -- Any authority transition on ingress conducts into its
+            -- dependent consequences in the same statement: demotion
+            -- revokes, (re)authentication restores. No stale verified
+            -- consequence can survive its source's demotion.
+            UPDATE public.b23_match_verdicts AS v
+               SET b26_p2_source_authority_state =
+                   public.b26_p2_derive_verdict_authority(NEW.id)
+             WHERE v.webhook_ingress_identity_id = NEW.id
+               AND v.tenant_id = NEW.tenant_id;
+            RETURN NEW;
         END $$;
 
 
@@ -5409,6 +5859,24 @@ CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DE
 
 
 --
+-- Name: b26_p2_stamp_verdict_authority(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_stamp_verdict_authority() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            -- Authority state is never caller-asserted: every INSERT
+            -- is stamped from the central predicate in this transition.
+            NEW.b26_p2_source_authority_state :=
+                public.b26_p2_derive_verdict_authority(
+                    NEW.webhook_ingress_identity_id);
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_state_eligible_for_p3(text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5814,10 +6282,6 @@ CREATE FUNCTION public.b26_p2_xii_topology_check() RETURNS text
 -- Name: b26_p2_xiii_invariant_oracle(); Type: FUNCTION; Schema: public; Owner: -
 --
 
---
--- Name: b26_p2_xiii_invariant_oracle(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_xiii_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5977,6 +6441,8 @@ CREATE FUNCTION public.b26_p2_xiii_topology_check() RETURNS text
             END IF;
             RETURN 'xiii_topology_strict';
         END $$;
+
+
 --
 -- Name: b26_p2_xiv_provision_ingress_topology(); Type: FUNCTION; Schema: public; Owner: -
 --
@@ -6013,6 +6479,7 @@ CREATE FUNCTION public.b26_p2_xiv_provision_ingress_topology() RETURNS text
             REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM app_user;
             RETURN 'xiv_topology_provisioned';
         END $$;
+
 
 --
 -- Name: b26_p2_xiv_topology_check(); Type: FUNCTION; Schema: public; Owner: -
@@ -6063,8 +6530,6 @@ CREATE FUNCTION public.b26_p2_xiv_topology_check() RETURNS text
             END IF;
             RETURN 'xiv_topology_strict';
         END $$;
-
-
 
 
 --
@@ -6144,7 +6609,6 @@ CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(viola
                       i.normalized_commerce_reference_value
             HAVING count(*) > 1;
         END $$;
-
 
 
 --
@@ -9230,6 +9694,7 @@ CREATE TABLE public.b23_match_verdicts (
     discrepancy_amount_minor integer NOT NULL,
     discrepancy_ratio_bps integer NOT NULL,
     discrepancy_band character varying(32) NOT NULL,
+    b26_p2_source_authority_state text DEFAULT 'unknown'::text NOT NULL,
     CONSTRAINT ck_b23_match_verdicts_attributed_amount_non_negative CHECK ((attributed_amount_minor >= 0)),
     CONSTRAINT ck_b23_match_verdicts_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
     CONSTRAINT ck_b23_match_verdicts_captured_amount_non_negative CHECK ((canonical_captured_gross_amount_minor >= 0)),
@@ -9717,6 +10182,7 @@ CREATE TABLE public.b24_worker_process_authority (
 
 ALTER TABLE ONLY public.b24_worker_process_authority FORCE ROW LEVEL SECURITY;
 
+
 --
 -- Name: b26_p2_auth_root_evidence; Type: TABLE; Schema: public; Owner: -
 --
@@ -9742,7 +10208,6 @@ CREATE TABLE public.b26_p2_auth_root_evidence (
 );
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence FORCE ROW LEVEL SECURITY;
-
 
 
 --
@@ -9848,6 +10313,18 @@ ALTER TABLE ONLY public.b26_p2_ingress_auth_witness FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: b26_p2_operational_floor; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_operational_floor (
+    id integer DEFAULT 1 NOT NULL,
+    floor_revision text NOT NULL,
+    policy text DEFAULT 'maintenance-only-downgrade'::text NOT NULL,
+    CONSTRAINT b26_p2_floor_singleton CHECK ((id = 1))
+);
+
+
+--
 -- Name: b26_p2_provenance_evidence; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9878,6 +10355,7 @@ CREATE TABLE public.b26_p2_provider_auth_consequence (
     auth_version text DEFAULT 'v1'::text NOT NULL,
     verified_at timestamp with time zone DEFAULT now() NOT NULL,
     recorded_by name NOT NULL,
+    b26_p2_event_family text,
     CONSTRAINT ck_b26_p2_auth_cons_body_sha_format CHECK ((char_length(body_sha256) = 64)),
     CONSTRAINT ck_b26_p2_auth_cons_event_ref_not_blank CHECK ((char_length(provider_event_reference) > 0)),
     CONSTRAINT ck_b26_p2_auth_cons_method_not_blank CHECK ((char_length(auth_method) > 0)),
@@ -9915,6 +10393,21 @@ CREATE TABLE public.b26_p2_scope_policy_authority (
 );
 
 ALTER TABLE ONLY public.b26_p2_scope_policy_authority FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b26_p2_semantic_regime_registry; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_semantic_regime_registry (
+    regime_id text NOT NULL,
+    contract_version text NOT NULL,
+    contract_digest text NOT NULL,
+    activation_revision text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    registered_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT b26_p2_registry_digest_shape CHECK ((char_length(contract_digest) = 64))
+);
 
 
 --
@@ -14972,6 +15465,14 @@ ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
 
 
 --
+-- Name: b26_p2_operational_floor b26_p2_operational_floor_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_operational_floor
+    ADD CONSTRAINT b26_p2_operational_floor_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: b26_p2_provenance_evidence b26_p2_provenance_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14993,6 +15494,14 @@ ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat
 
 ALTER TABLE ONLY public.b26_p2_scope_policy_authority
     ADD CONSTRAINT b26_p2_scope_policy_authority_pkey PRIMARY KEY (scope_policy_version);
+
+
+--
+-- Name: b26_p2_semantic_regime_registry b26_p2_semantic_regime_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_semantic_regime_registry
+    ADD CONSTRAINT b26_p2_semantic_regime_registry_pkey PRIMARY KEY (regime_id);
 
 
 --
@@ -16012,15 +16521,16 @@ ALTER TABLE ONLY public.auth_user_token_cutoffs
 
 
 --
--- Name: b26_p2_provider_auth_consequence pk_b26_p2_provider_auth_consequence; Type: CONSTRAINT; Schema: public; Owner: -
---
-
---
 -- Name: b26_p2_auth_root_evidence pk_b26_p2_auth_root_evidence; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence
     ADD CONSTRAINT pk_b26_p2_auth_root_evidence PRIMARY KEY (webhook_ingress_identity_id);
+
+
+--
+-- Name: b26_p2_provider_auth_consequence pk_b26_p2_provider_auth_consequence; Type: CONSTRAINT; Schema: public; Owner: -
+--
 
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence
     ADD CONSTRAINT pk_b26_p2_provider_auth_consequence PRIMARY KEY (webhook_ingress_identity_id);
@@ -19344,8 +19854,6 @@ CREATE INDEX idx_webhook_ingress_identities_tenant_provider_created ON public.we
 CREATE INDEX idx_webhook_ingress_identities_tenant_reference ON public.webhook_ingress_identities USING btree (tenant_id, normalized_commerce_reference_kind, normalized_commerce_reference_value);
 
 
-
-
 --
 -- Name: idx_webhook_ingress_identities_tenant_verified_state; Type: INDEX; Schema: public; Owner: -
 --
@@ -19479,10 +19987,6 @@ CREATE INDEX ix_trust_tenant_policy_latest ON public.trust_tenant_policy_events 
 CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
 
 
-
-
-
-
 --
 -- Name: uq_b24_fit_dispatch_outbox_attempt; Type: INDEX; Schema: public; Owner: -
 --
@@ -19490,14 +19994,14 @@ CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_
 CREATE UNIQUE INDEX uq_b24_fit_dispatch_outbox_attempt ON public.b24_fit_dispatch_outbox USING btree (tenant_id, attempt_id);
 
 
+--
 -- Name: uq_b26_p2_xvii_commerce_identity; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_b26_p2_xvii_commerce_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, normalized_commerce_reference_kind, normalized_commerce_reference_value) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
 
 
-
-
+--
 -- Name: uq_b26_p2_xvii_event_identity; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -21422,9 +21926,8 @@ CREATE TRIGGER trg_b26_p2_auth_consequence_immutability BEFORE INSERT OR DELETE 
 CREATE TRIGGER trg_b26_p2_auth_root_evidence_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability();
 
 
--- Name: b23_match_task_dispatches trg_b26_p2_conducted_effect_guard; Type: TRIGGER; Schema: public; Owner: -
 --
-
+-- Name: b23_match_task_dispatches trg_b26_p2_conducted_effect_guard; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_b26_p2_conducted_effect_guard BEFORE UPDATE OF delivery_state ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_conducted_transition();
@@ -21473,6 +21976,13 @@ CREATE TRIGGER trg_b26_p2_dispatch_sovereign_window BEFORE INSERT OR UPDATE OF w
 
 
 --
+-- Name: webhook_ingress_identities trg_b26_p2_ingress_authority_transition; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_ingress_authority_transition BEFORE UPDATE OF b26_p2_provenance_status, b26_p2_semantic_regime, b26_p2_demotion_reason ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authority_transition();
+
+
+--
 -- Name: webhook_ingress_identities trg_b26_p2_ingress_duplicate_adoption; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -21500,6 +22010,7 @@ CREATE TRIGGER trg_b26_p2_ingress_sovereign_custody BEFORE DELETE OR UPDATE OF e
 CREATE TRIGGER trg_b26_p2_ingress_verified_authorship BEFORE INSERT OR UPDATE OF verified_commerce_ingress_state ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_verified_authorship();
 
 
+--
 -- Name: webhook_ingress_identities trg_b26_p2_ingress_xv_meaning_immutability; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -21535,10 +22046,38 @@ CREATE TRIGGER trg_b26_p2_receipt_effect_guard BEFORE INSERT OR UPDATE ON public
 
 
 --
+-- Name: b26_p2_semantic_regime_registry trg_b26_p2_registry_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_registry_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_semantic_regime_registry FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_registry_immutability();
+
+
+--
 -- Name: celery_taskmeta trg_b26_p2_result_integrity; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_b26_p2_result_integrity BEFORE INSERT OR UPDATE OF status ON public.celery_taskmeta FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_result_integrity();
+
+
+--
+-- Name: b23_match_verdicts trg_b26_p2_verdict_authority_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_verdict_authority_guard BEFORE UPDATE OF b26_p2_source_authority_state, webhook_ingress_identity_id ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_verdict_authority_write();
+
+
+--
+-- Name: webhook_ingress_identities trg_b26_p2_verdict_authority_propagate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_verdict_authority_propagate AFTER UPDATE OF b26_p2_provenance_status, b26_p2_semantic_regime, b26_p2_demotion_reason ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_propagate_verdict_authority();
+
+
+--
+-- Name: b23_match_verdicts trg_b26_p2_verdict_authority_stamp; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_verdict_authority_stamp BEFORE INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_stamp_verdict_authority();
 
 
 --
@@ -21805,8 +22344,6 @@ CREATE TRIGGER trg_y_b24_c11_policy_provenance BEFORE INSERT OR UPDATE ON public
 --
 
 CREATE TRIGGER trg_z_b24_policy_bundle_write_authority BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
-
-
 
 
 --
@@ -23719,7 +24256,7 @@ ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 -- Name: dead_events_quarantine quarantine_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
 
 --
@@ -23851,7 +24388,7 @@ CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant
 -- Name: investigation_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --
@@ -24149,14 +24686,15 @@ CREATE POLICY tenant_isolation_policy_b24_source_window_feature_authority ON pub
 
 
 --
--- Name: b26_p2_conduction_receipts tenant_isolation_policy_b26_p2_conduction_receipts; Type: POLICY; Schema: public; Owner: -
---
-
---
 -- Name: b26_p2_auth_root_evidence tenant_isolation_policy_b26_p2_auth_root_evidence; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tenant_isolation_policy_b26_p2_auth_root_evidence ON public.b26_p2_auth_root_evidence USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
+
+
+--
+-- Name: b26_p2_conduction_receipts tenant_isolation_policy_b26_p2_conduction_receipts; Type: POLICY; Schema: public; Owner: -
+--
 
 CREATE POLICY tenant_isolation_policy_b26_p2_conduction_receipts ON public.b26_p2_conduction_receipts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
@@ -24592,14 +25130,14 @@ CREATE POLICY tenant_isolation_policy_webhook_ingress_identities ON public.webho
 -- Name: dead_events_quarantine tenant_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 
 --
 -- Name: dead_events_quarantine tenant_lane_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 
 --
@@ -24712,9 +25250,10 @@ ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
+
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ubShtyEvK8xoV7xGgMlIXygXi9aXgZGdCp7Wzp5LQMdab3Uzyuvz89OJY6BCPAB
+\unrestrict BygeiEm1efCLGKafY2qlEBtLL0usRCbDRtsTIKJi8Q5x28TYh1qyhYi9PuuzwNb
 

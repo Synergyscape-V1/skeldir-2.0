@@ -244,6 +244,65 @@ def _seed_market(conn, tenant_id) -> list[uuid.UUID]:
     return verdicts
 
 
+def _link_c9p_market(conn, tenant_id) -> None:
+    """Authenticate every seeded verdict's ingress and link it (XVIII).
+
+    The producer only answers planners for currently-authoritative
+    evidence. All 400 settlements are lawful (stripe, distinct refs and
+    commerce identities), so each mints its own ingress through the
+    governed transition; the relink trigger re-derives each verdict to
+    current. Fixed digests: benchmark-harness setup (see report §6.7),
+    not provider-authenticity evidence.
+    """
+    conn.execute(
+        text(
+            "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
+            " event_id, provider, provider_native_event_reference,"
+            " provider_native_commerce_reference,"
+            " normalized_commerce_reference_kind,"
+            " normalized_commerce_reference_value, verified_amount_minor,"
+            " verified_amount_currency, event_timestamp, idempotency_key,"
+            " verified_commerce_ingress_state)"
+            " SELECT gen_random_uuid(), v.tenant_id, v.attribution_event_id,"
+            " v.provider, v.provider_native_event_reference,"
+            " v.provider_native_commerce_reference,"
+            " 'stripe_payment_intent_id',"
+            " v.provider_native_commerce_reference, v.verified_amount_minor,"
+            " v.currency_code, v.last_transition_at,"
+            " 'c9p-ingress-' || v.id::text, 'authenticity_verified'"
+            " FROM public.b23_match_verdicts AS v"
+            " WHERE v.tenant_id = :t"
+            " AND v.webhook_ingress_identity_id IS NULL"
+            " AND v.provider_native_event_reference LIKE 'c9p-event-%'"
+        ),
+        {"t": str(tenant_id)},
+    )
+    conn.execute(
+        text(
+            "SELECT public.b26_p2_authenticate_ingress_atomic("
+            " wi.id, wi.provider, wi.provider_native_event_reference,"
+            " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
+            " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
+            " 'hmac-sha256-timestamped-hex', 'v1')"
+            " FROM public.webhook_ingress_identities AS wi"
+            " WHERE wi.tenant_id = :t"
+            " AND wi.idempotency_key LIKE 'c9p-ingress-%'"
+        ),
+        {"t": str(tenant_id)},
+    )
+    conn.execute(
+        text(
+            "UPDATE public.b23_match_verdicts AS v"
+            " SET webhook_ingress_identity_id = wi.id"
+            " FROM public.webhook_ingress_identities AS wi"
+            " WHERE v.tenant_id = :t AND wi.tenant_id = v.tenant_id"
+            " AND wi.idempotency_key = 'c9p-ingress-' || v.id::text"
+            " AND v.webhook_ingress_identity_id IS NULL"
+        ),
+        {"t": str(tenant_id)},
+    )
+
+
 def _seed_caller(conn, tenant_id) -> str:
     client_id = uuid.uuid4()
     # Entropy first: token_prefix is the first eight characters and unique.
@@ -621,6 +680,11 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
             tenant_id = _new_tenant(conn)
             token = _seed_caller(conn, tenant_id)
             verdicts = _seed_market(conn, tenant_id)
+            # XVIII: the producer answers only for currently-authoritative
+            # evidence. Link every lawful settlement to P2-authenticated
+            # ingress (same lineage by construction; the guard trigger
+            # re-derives each verdict to current).
+            _link_c9p_market(conn, tenant_id)
             # Construction evidence is discarded so the only invalidation that
             # can reach the planner is the settlement run below.
             conn.execute(

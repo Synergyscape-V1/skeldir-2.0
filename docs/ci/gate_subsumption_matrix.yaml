@@ -4540,6 +4540,23 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xiv_coverage import XIV_COVERED_SURFACES"
   risk_if_removed: New XIV surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xviii-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xviii_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XVIII registry extends XIV coverage for the central
+    current-authority predicate EXECUTE surfaces.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XVIII coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xviii_coverage import XVIII_COVERED_SURFACES"
+  risk_if_removed: New XVIII surfaces could stay untested silently.
+  decision: keep_utility
 - gate_id: b26-p2-xv-binding
   workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
   job: B2.6-P1 Static Semantic Authority
@@ -4673,6 +4690,116 @@
     relations.
   negative_control_preserved_by: python scripts/ci/test_b26_p2_xvii_negative_controls.py
   local_reproduction_command: python scripts/ci/test_b26_p2_xvii_negative_controls.py --help
+  risk_if_removed: Load-bearing gates that can never fail would certify
+    relations they do not observe.
+  decision: enforce
+- gate_id: b26-p2-xviii-semantic-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xviii_semantic_registry.py
+  owning_phase: B2.6-P2
+  protected_invariant: Published semantic-regime identity denotes exactly one
+    immutable contract law across git history; same-identity co-edit fails.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVIII identity immutability; no
+    predecessor gate binds a published identity to history.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xviii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_semantic_registry.py --help
+  risk_if_removed: Published semantic law would be mutable in place under a
+    constant identity with every pin-correspondence gate green.
+  decision: enforce
+- gate_id: b26-p2-xviii-migration-manifest
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xviii_migration_manifest.py
+  owning_phase: B2.6-P2
+  protected_invariant: Published P2 migration revisions are content-addressed
+    and history-immutable.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVIII migration identity integrity; no
+    predecessor gate content-addresses deployed revisions.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xviii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_migration_manifest.py --help
+  risk_if_removed: Deployed revisions could be edited under the same identity
+    without detection.
+  decision: enforce
+- gate_id: b26-p2-xviii-contract-hierarchy
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py
+  owning_phase: B2.6-P2
+  protected_invariant: Provider, API, and P2 contracts cohere under one
+    governed projection with explicit divergence rules.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVIII hierarchy coherence; no predecessor
+    gate censuses routes against sovereign families.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xviii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py --help
+  risk_if_removed: Routes would claim P2 authority outside sovereign law and
+    contracts would contradict without a governed rule.
+  decision: enforce
+- gate_id: b26-p2-xviii-governance
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xviii_governance.py
+  owning_phase: B2.6-P2
+  protected_invariant: Revocation is transactional DB state, the authority
+    path is inference-free, and authority is database-enforced.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVIII wiring/isolation/conventions; no
+    predecessor gate asserts transactional-only revocation.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xviii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_governance.py --help
+  risk_if_removed: Unwired repair machinery, inference in the authority path,
+    or convention-based authority would pass silently.
+  decision: enforce
+- gate_id: b26-p2-xviii-physics
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xviii_physics.py
+  owning_phase: B2.6-P2
+  protected_invariant: 'Authority conservation at the DB plane: unforgeable
+    transitions, stale-evidence refusal, candidate admission, consequence
+    revocation, coverage honesty, family binding, batch liveness, downgrade
+    safety, 3VL safety.'
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XVIII conservation physics; no
+    predecessor gate observes authority-relation conservation.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xviii_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xviii_physics.py --help
+  risk_if_removed: Demoted history would re-mint authority, conduct revenue,
+    wedge batches, or serve downgraded law.
+  decision: enforce
+- gate_id: b26-p2-xviii-negative-controls
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/test_b26_p2_xviii_negative_controls.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every XVIII relation is non-vacuous with byte-exact
+    restore discipline, including twelve open-world falsifiers.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New battery for XVIII non-vacuity; no predecessor
+    battery attacks authority-conservation relations.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xviii_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_b26_p2_xviii_negative_controls.py --help
   risk_if_removed: Load-bearing gates that can never fail would certify
     relations they do not observe.
   decision: enforce
