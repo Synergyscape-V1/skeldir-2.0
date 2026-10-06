@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 5esOQlVSY5Ox8TlQbHScY6u7L3gHclfgw3ntBdJOcsqHBr2g3Ldz2gbtjnRG6No
+\restrict NvCmDG3gPD6zVP4Y3sNzohFiXSB2D9NCcsdRK6Tvar6vf0uYvYYs2fpJpvNJuuG
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -2514,9 +2514,11 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-            IF session_user NOT IN (
-                'app_ingress', 'migration_owner', 'postgres'
-            ) THEN
+            -- Single ingress-boundary law (dynamic owner): only the
+            -- ingress credential and the table owner may attest.
+            IF session_user IS DISTINCT FROM 'app_ingress'
+               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
+                   'public.webhook_ingress_identities'::regclass) THEN
                 RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -2744,9 +2746,13 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
+            -- The ingress credential alone may invoke the transition;
+            -- the table owner (direct administration, any topology)
+            -- may also invoke it; every other session role is refused
+            -- at the function boundary.
             IF session_user IS DISTINCT FROM 'app_ingress'
-               AND session_user IS DISTINCT FROM 'migration_owner'
-               AND session_user IS DISTINCT FROM 'postgres' THEN
+               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
+                   'public.webhook_ingress_identities'::regclass) THEN
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -3463,15 +3469,15 @@ CREATE FUNCTION public.b26_p2_enforce_authority_transition() RETURNS trigger
         BEGIN
             -- XIX: caller-supplied context (GUCs, headers, arguments)
             -- transports facts; it never constitutes authority. Only
-            -- the sovereign transition (owner execution context) or
-            -- direct administration may write authority state.
+            -- owner execution context may write authority state.
             IF current_setting('transaction_isolation', true)
                IS DISTINCT FROM 'read committed' THEN
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-            IF current_user IS DISTINCT FROM 'migration_owner'
-               AND current_user IS DISTINCT FROM 'postgres' THEN
+            IF public.b26_p2_table_owner(
+                   'public.webhook_ingress_identities'::regclass
+               ) IS DISTINCT FROM current_user THEN
                 IF OLD.b26_p2_provenance_status
                        IS DISTINCT FROM NEW.b26_p2_provenance_status
                    OR OLD.b26_p2_semantic_regime
@@ -3841,8 +3847,9 @@ CREATE FUNCTION public.b26_p2_enforce_history_immutability() RETURNS trigger
     AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                IF current_user IS DISTINCT FROM 'migration_owner'
-                   AND current_user IS DISTINCT FROM 'postgres' THEN
+                IF public.b26_p2_table_owner(
+                       'public.b26_p2_publication_history'::regclass
+                   ) IS DISTINCT FROM current_user THEN
                     RAISE EXCEPTION 'b26_p2_history_insert_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -4077,8 +4084,13 @@ CREATE FUNCTION public.b26_p2_enforce_ledger_immutability() RETURNS trigger
     AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                IF current_user IS DISTINCT FROM 'migration_owner'
-                   AND current_user IS DISTINCT FROM 'postgres' THEN
+                -- Owner execution context only (direct owner
+                -- administration or the sovereign DEFINER trigger that
+                -- appends supersessions), resolved live so every
+                -- deployment topology enforces the same law.
+                IF public.b26_p2_table_owner(
+                       'public.b26_p2_verdict_supersession_ledger'::regclass
+                   ) IS DISTINCT FROM current_user THEN
                     RAISE EXCEPTION 'b26_p2_ledger_insert_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -4199,16 +4211,17 @@ CREATE FUNCTION public.b26_p2_enforce_registry_governance() RETURNS trigger
     AS $$
         BEGIN
             -- XIX: publication law changes only by direct owner
-            -- administration (forward migration). A DEFINER deputy
-            -- (current_user = owner, session_user = caller) cannot
-            -- satisfy both conjuncts.
-            IF current_user IS DISTINCT FROM 'migration_owner'
-               AND current_user IS DISTINCT FROM 'postgres' THEN
+            -- administration (forward migration), resolved live from
+            -- the catalog. A DEFINER deputy (current_user = owner,
+            -- session_user = caller) cannot satisfy both conjuncts;
+            -- runtime roles satisfy neither.
+            IF public.b26_p2_table_owner(
+                   'public.b26_p2_semantic_regime_registry'::regclass
+               ) IS DISTINCT FROM current_user THEN
                 RAISE EXCEPTION 'b26_p2_registry_mutation_refused'
                     USING ERRCODE = '42501';
             END IF;
-            IF session_user IS DISTINCT FROM 'migration_owner'
-               AND session_user IS DISTINCT FROM 'postgres' THEN
+            IF session_user IS DISTINCT FROM current_user THEN
                 RAISE EXCEPTION 'b26_p2_registry_deputy_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -6167,6 +6180,20 @@ CREATE FUNCTION public.b26_p2_strip_provider_token(p_raw text) RETURNS text
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         SELECT lower(public.b26_p2_ascii_strip(p_raw))
+        $$;
+
+
+--
+-- Name: b26_p2_table_owner(regclass); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_table_owner(p_table regclass) RETURNS name
+    LANGUAGE sql STABLE
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+            SELECT pg_get_userbyid(c.relowner)
+              FROM pg_catalog.pg_class AS c
+             WHERE c.oid = p_table
         $$;
 
 
@@ -25500,5 +25527,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 5esOQlVSY5Ox8TlQbHScY6u7L3gHclfgw3ntBdJOcsqHBr2g3Ldz2gbtjnRG6No
+\unrestrict NvCmDG3gPD6zVP4Y3sNzohFiXSB2D9NCcsdRK6Tvar6vf0uYvYYs2fpJpvNJuuG
 

@@ -63,7 +63,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     upgrade = text.split("def downgrade", 1)[0]
     for token in (
         "b26_p2_ingress_has_current_authority",
-        "current_user IS DISTINCT FROM 'migration_owner'",
+        "b26_p2_table_owner",
         "b26_p2_authority_snapshot_not_linearizable",
         "b26_p2_revoke_authority_on_evidence_loss",
         "xix-evidence-revoked:",

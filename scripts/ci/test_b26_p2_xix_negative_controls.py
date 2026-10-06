@@ -203,6 +203,107 @@ def main() -> int:
             checks["nc01_marked_stamp_red"] = True
             reds["NC-01"] = "RED:marked self-stamp refused at privilege layer"
 
+        # NC-01b: wide-grant topology (R3-style load-test lane where the
+        # trigger is the ONLY wall). Demote the probe row, grant table
+        # UPDATE to app_user, re-run the marked self-stamp (must STILL
+        # refuse via the owner-context guard), then revoke to restore
+        # the exact posture. A convention/privilege-only wall would
+        # mint here.
+        sup = psycopg2.connect(
+            admin_dsn.replace(
+                "migration_owner:migration_owner", "postgres:postgres"
+            )
+        )
+        sup.autocommit = True
+        try:
+            with sup.cursor() as scur:
+                for _trg in (
+                    "trg_b26_p2_ingress_authority_transition",
+                    "trg_b26_p2_ingress_provenance",
+                ):
+                    scur.execute(
+                        "ALTER TABLE public.webhook_ingress_identities"
+                        f" DISABLE TRIGGER {_trg}"
+                    )
+            with admin.cursor() as acur:
+                acur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (tenant,),
+                )
+                acur.execute(
+                    "UPDATE public.webhook_ingress_identities SET"
+                    " b26_p2_provenance_status='pending_authentication',"
+                    " b26_p2_semantic_regime='pre-xvii-unverifiable',"
+                    " b26_p2_demotion_reason='xix-nc01b-probe'"
+                    " WHERE id=%s",
+                    (row,),
+                )
+            with sup.cursor() as scur:
+                for _trg in (
+                    "trg_b26_p2_ingress_authority_transition",
+                    "trg_b26_p2_ingress_provenance",
+                ):
+                    scur.execute(
+                        "ALTER TABLE public.webhook_ingress_identities"
+                        f" ENABLE TRIGGER {_trg}"
+                    )
+        finally:
+            sup.close()
+        cur.execute(
+            "GRANT UPDATE ON TABLE public.webhook_ingress_identities"
+            " TO app_user"
+        )
+        try:
+            wide = psycopg2.connect(user_dsn)
+            wide.autocommit = False
+            try:
+                with wide.cursor() as wcur:
+                    wcur.execute(
+                        "SELECT set_config('app.current_tenant_id', %s, false)",
+                        (tenant,),
+                    )
+                    wcur.execute(
+                        "SELECT set_config('app.b26_p2_governed_transition',"
+                        " '1', true)"
+                    )
+                    try:
+                        wcur.execute(
+                            "UPDATE public.webhook_ingress_identities SET"
+                            " b26_p2_provenance_status='authenticated_known',"
+                            " b26_p2_semantic_regime='xvii-sovereign-v1',"
+                            " b26_p2_demotion_reason=NULL WHERE id=%s",
+                            (row,),
+                        )
+                        wide.commit()
+                        violations.append("xix_nc01b_wide_grant_minted")
+                    except Exception as exc:
+                        wide.rollback()
+                        if "b26_p2_authority_transition_refused" not in str(
+                            exc
+                        ):
+                            violations.append(
+                                "xix_nc01b_wide_grant_wrong_layer:"
+                                f"{str(exc).splitlines()[0][:100]}"
+                            )
+            finally:
+                wide.close()
+        finally:
+            cur.execute(
+                "REVOKE UPDATE ON TABLE public.webhook_ingress_identities"
+                " FROM app_user"
+            )
+        cur.execute(
+            "SELECT has_table_privilege('app_user',"
+            " 'webhook_ingress_identities', 'UPDATE')"
+        )
+        if cur.fetchone()[0] is not False:
+            violations.append("xix_nc01b_posture_not_restored")
+        if not [v for v in violations if v.startswith("xix_nc01b_")]:
+            checks["nc01b_wide_grant_red"] = True
+            reds["NC-01b"] = (
+                "RED:marked self-stamp refused at trigger with grants open"
+            )
+
         # NC-02/03: artifact loss demotes (witness + consequence here;
         # evidence/root covered by the physics gate battery).
         for table, cause in (

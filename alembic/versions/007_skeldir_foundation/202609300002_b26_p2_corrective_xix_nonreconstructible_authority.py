@@ -236,17 +236,48 @@ def upgrade() -> None:
 
     # ------------------------------------------------------------------
     # XIX-2. Non-forgeable transition guards (H-XIX-R1/R6/R21).
-    # No guard reads caller-set session/transaction state: authority
-    # requires current_user = migration_owner / postgres, i.e. the
-    # sovereign SECURITY DEFINER transition executing as its owner, or
-    # direct administration. The verdict guard additionally admits only
-    # the value the central derivation computes for the linked source:
-    # asserting a true projection is harmless, asserting anything else
-    # is refused -- so no deputy path can forge consequence authority
-    # regardless of privilege composition. Both guards require READ
-    # COMMITTED so stamps observe the latest committed justification
+    # Authority is anchored to the table owner's execution context,
+    # resolved live from the catalog -- never to a hardcoded role
+    # name and never to caller-set session/transaction state. The
+    # sovereign SECURITY DEFINER transition executes as its owner (the
+    # migrating principal in every topology: migration_owner,
+    # postgres, r3-style CI owners); direct owner administration
+    # matches too. Runtime roles -- under ANY grant composition,
+    # including wide-open load-test lanes where the trigger is the
+    # only wall -- never match. The verdict guard additionally admits
+    # only the value the central derivation computes for the linked
+    # source: asserting a true projection is harmless, asserting
+    # anything else is refused. All guards require READ COMMITTED so
+    # stamps observe the latest committed justification
     # (statement-snapshot linearization, H-XIX-R15).
+    # Deputy surface (runtime-reachable owner-DEFINER writers) is
+    # censused: only the sovereign transition functions, each with
+    # its own caller/floor/demotion/family guards.
     # ------------------------------------------------------------------
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b26_p2_table_owner(
+            p_table regclass
+        )
+        RETURNS name
+        LANGUAGE sql
+        STABLE
+        SET search_path TO 'pg_catalog', 'public'
+        AS $$
+            SELECT pg_get_userbyid(c.relowner)
+              FROM pg_catalog.pg_class AS c
+             WHERE c.oid = p_table
+        $$;
+        """
+    )
+    op.execute(
+        "REVOKE ALL ON FUNCTION public.b26_p2_table_owner(regclass)"
+        " FROM PUBLIC"
+    )
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION public.b26_p2_table_owner(regclass)"
+        " TO PUBLIC"
+    )
     op.execute(
         """
         CREATE OR REPLACE FUNCTION public.b26_p2_enforce_authority_transition()
@@ -257,15 +288,15 @@ def upgrade() -> None:
         BEGIN
             -- XIX: caller-supplied context (GUCs, headers, arguments)
             -- transports facts; it never constitutes authority. Only
-            -- the sovereign transition (owner execution context) or
-            -- direct administration may write authority state.
+            -- owner execution context may write authority state.
             IF current_setting('transaction_isolation', true)
                IS DISTINCT FROM 'read committed' THEN
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-            IF current_user IS DISTINCT FROM 'migration_owner'
-               AND current_user IS DISTINCT FROM 'postgres' THEN
+            IF public.b26_p2_table_owner(
+                   'public.webhook_ingress_identities'::regclass
+               ) IS DISTINCT FROM current_user THEN
                 IF OLD.b26_p2_provenance_status
                        IS DISTINCT FROM NEW.b26_p2_provenance_status
                    OR OLD.b26_p2_semantic_regime
@@ -672,8 +703,13 @@ def upgrade() -> None:
         AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                IF current_user IS DISTINCT FROM 'migration_owner'
-                   AND current_user IS DISTINCT FROM 'postgres' THEN
+                -- Owner execution context only (direct owner
+                -- administration or the sovereign DEFINER trigger that
+                -- appends supersessions), resolved live so every
+                -- deployment topology enforces the same law.
+                IF public.b26_p2_table_owner(
+                       'public.b26_p2_verdict_supersession_ledger'::regclass
+                   ) IS DISTINCT FROM current_user THEN
                     RAISE EXCEPTION 'b26_p2_ledger_insert_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -801,8 +837,9 @@ def upgrade() -> None:
         AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                IF current_user IS DISTINCT FROM 'migration_owner'
-                   AND current_user IS DISTINCT FROM 'postgres' THEN
+                IF public.b26_p2_table_owner(
+                       'public.b26_p2_publication_history'::regclass
+                   ) IS DISTINCT FROM current_user THEN
                     RAISE EXCEPTION 'b26_p2_history_insert_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -839,16 +876,17 @@ def upgrade() -> None:
         AS $$
         BEGIN
             -- XIX: publication law changes only by direct owner
-            -- administration (forward migration). A DEFINER deputy
-            -- (current_user = owner, session_user = caller) cannot
-            -- satisfy both conjuncts.
-            IF current_user IS DISTINCT FROM 'migration_owner'
-               AND current_user IS DISTINCT FROM 'postgres' THEN
+            -- administration (forward migration), resolved live from
+            -- the catalog. A DEFINER deputy (current_user = owner,
+            -- session_user = caller) cannot satisfy both conjuncts;
+            -- runtime roles satisfy neither.
+            IF public.b26_p2_table_owner(
+                   'public.b26_p2_semantic_regime_registry'::regclass
+               ) IS DISTINCT FROM current_user THEN
                 RAISE EXCEPTION 'b26_p2_registry_mutation_refused'
                     USING ERRCODE = '42501';
             END IF;
-            IF session_user IS DISTINCT FROM 'migration_owner'
-               AND session_user IS DISTINCT FROM 'postgres' THEN
+            IF session_user IS DISTINCT FROM current_user THEN
                 RAISE EXCEPTION 'b26_p2_registry_deputy_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -940,9 +978,13 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
+            -- The ingress credential alone may invoke the transition;
+            -- the table owner (direct administration, any topology)
+            -- may also invoke it; every other session role is refused
+            -- at the function boundary.
             IF session_user IS DISTINCT FROM 'app_ingress'
-               AND session_user IS DISTINCT FROM 'migration_owner'
-               AND session_user IS DISTINCT FROM 'postgres' THEN
+               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
+                   'public.webhook_ingress_identities'::regclass) THEN
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -1316,9 +1358,11 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-            IF session_user NOT IN (
-                'app_ingress', 'migration_owner', 'postgres'
-            ) THEN
+            -- Single ingress-boundary law (dynamic owner): only the
+            -- ingress credential and the table owner may attest.
+            IF session_user IS DISTINCT FROM 'app_ingress'
+               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
+                   'public.webhook_ingress_identities'::regclass) THEN
                 RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -1641,6 +1685,9 @@ def downgrade() -> None:
     )
     op.execute(
         "DROP FUNCTION IF EXISTS public.b26_p2_enforce_registry_governance()"
+    )
+    op.execute(
+        "DROP FUNCTION IF EXISTS public.b26_p2_table_owner(regclass)"
     )
     # Re-assert the least-privilege posture (idempotent): a downgrade
     # must never re-arm runtime authority writes.

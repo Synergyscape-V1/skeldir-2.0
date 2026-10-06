@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
   "migration_head": "202609300002",
-  "authority_universe_hash": "18269867327a407c71f7d8dfa6c75ac9db55e3a1d97877fde39ad1f6f7f8ac93",
-  "reviewed_at_git_sha": "d442c644",
+  "authority_universe_hash": "c154eb04b011d865433a073f2a295aacc8c4204e0e04e7b88b17778bf47fde0c",
+  "reviewed_at_git_sha": "66ef5749",
   "meaning_surface_counts": {
-    "routine_meaning": 158,
+    "routine_meaning": 159,
     "trigger_meaning": 27,
     "schema_meaning": 5,
     "rls_meaning": 17,
-    "ownership": 119
+    "ownership": 120
   },
   "review_note": "B2.6-P2 Corrective XIX non-reconstructible current authority reviewed: complete live current-authority conjunction (predicate reads marker columns + active registry + floor + witness/evidence/consequence-with-bound-family/root), non-forgeable transition guards (current_user owner-context, no GUC bearer; verdict guard admits only the derived projection), table-level UPDATE removed from runtime roles with operational column re-grants, artifact content immutable by privilege with transactional demote-on-loss triggers, NULL-family refusal + family-source binding at both minting primitives, append-only verdict-supersession ledger, append-only publication-history ledger with UNIQUE identity law + governed registry lifecycle, dispatch reads the central law, floor 202609300002, READ COMMITTED linearization; live hash from PG15 fresh lane (prepare+alembic head 202609300002)."
 }
