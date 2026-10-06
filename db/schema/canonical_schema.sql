@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jNMFMuefnJgoCkyTZCJmJMfgYwzSP3NWRfyCMaPMBhODiFMizVJgSU6iZhGPb5c
+\restrict gc9hVA9IWtapqnEoJj5n6PgIRRbMDbnwtHxmqzTAkWw6tlus5d2tpl1WUanO3Jq
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -6367,13 +6367,32 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _col text;
         BEGIN
             IF session_user NOT IN ('migration_owner', 'postgres') THEN
                 RAISE EXCEPTION 'b26_p2_xii_provision_refused'
                     USING ERRCODE = '42501';
             END IF;
             GRANT USAGE ON SCHEMA public TO app_ingress;
-            GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
+            GRANT SELECT, INSERT ON TABLE public.webhook_ingress_identities TO app_ingress;
+            REVOKE UPDATE ON TABLE public.webhook_ingress_identities FROM app_ingress;
+            FOR _col IN
+                SELECT column_name
+                  FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'webhook_ingress_identities'
+                   AND column_name NOT IN (
+                       'b26_p2_provenance_status',
+                       'b26_p2_semantic_regime',
+                       'b26_p2_demotion_reason')
+            LOOP
+                EXECUTE format(
+                    'GRANT UPDATE (%I) ON TABLE'
+                    ' public.webhook_ingress_identities'
+                    ' TO app_ingress',
+                    _col);
+            END LOOP;
             GRANT SELECT ON TABLE public.tenants TO app_ingress;
             GRANT SELECT ON TABLE public.attribution_events TO app_ingress;
             GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
@@ -6516,13 +6535,32 @@ CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _col text;
         BEGIN
             IF session_user NOT IN ('migration_owner', 'postgres') THEN
                 RAISE EXCEPTION 'b26_p2_xiii_provision_refused'
                     USING ERRCODE = '42501';
             END IF;
             GRANT USAGE ON SCHEMA public TO app_ingress;
-            GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
+            GRANT SELECT, INSERT ON TABLE public.webhook_ingress_identities TO app_ingress;
+            REVOKE UPDATE ON TABLE public.webhook_ingress_identities FROM app_ingress;
+            FOR _col IN
+                SELECT column_name
+                  FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'webhook_ingress_identities'
+                   AND column_name NOT IN (
+                       'b26_p2_provenance_status',
+                       'b26_p2_semantic_regime',
+                       'b26_p2_demotion_reason')
+            LOOP
+                EXECUTE format(
+                    'GRANT UPDATE (%I) ON TABLE'
+                    ' public.webhook_ingress_identities'
+                    ' TO app_ingress',
+                    _col);
+            END LOOP;
             GRANT SELECT ON TABLE public.tenants TO app_ingress;
             GRANT SELECT ON TABLE public.attribution_events TO app_ingress;
             GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
@@ -6605,13 +6643,32 @@ CREATE FUNCTION public.b26_p2_xiv_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
+        DECLARE
+            _col text;
         BEGIN
             IF session_user NOT IN ('migration_owner', 'postgres') THEN
                 RAISE EXCEPTION 'b26_p2_xiv_provision_refused'
                     USING ERRCODE = '42501';
             END IF;
             GRANT USAGE ON SCHEMA public TO app_ingress;
-            GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
+            GRANT SELECT, INSERT ON TABLE public.webhook_ingress_identities TO app_ingress;
+            REVOKE UPDATE ON TABLE public.webhook_ingress_identities FROM app_ingress;
+            FOR _col IN
+                SELECT column_name
+                  FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'webhook_ingress_identities'
+                   AND column_name NOT IN (
+                       'b26_p2_provenance_status',
+                       'b26_p2_semantic_regime',
+                       'b26_p2_demotion_reason')
+            LOOP
+                EXECUTE format(
+                    'GRANT UPDATE (%I) ON TABLE'
+                    ' public.webhook_ingress_identities'
+                    ' TO app_ingress',
+                    _col);
+            END LOOP;
             GRANT SELECT ON TABLE public.tenants TO app_ingress;
             GRANT SELECT ON TABLE public.attribution_events TO app_ingress;
             GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
@@ -25552,5 +25609,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jNMFMuefnJgoCkyTZCJmJMfgYwzSP3NWRfyCMaPMBhODiFMizVJgSU6iZhGPb5c
+\unrestrict gc9hVA9IWtapqnEoJj5n6PgIRRbMDbnwtHxmqzTAkWw6tlus5d2tpl1WUanO3Jq
 

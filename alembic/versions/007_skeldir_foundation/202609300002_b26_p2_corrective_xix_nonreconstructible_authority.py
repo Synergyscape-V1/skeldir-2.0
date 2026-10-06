@@ -95,6 +95,38 @@ _XIX_RUNTIME_ROLES = (
     "app_dispatch_publisher", "app_trust_issuer", "app_trust_signer",
 )
 
+# Fixture-provision functions whose table-level fixture grant must
+# conform to the XIX-1 posture on the way up and is restored verbatim
+# on the way down. (name, gate exception, return token, auth-root
+# evidence grants present, dispatch-comment lines present, app_user
+# SELECT grants placed before the EXECUTE grants).
+_XIX_PROVISION_FIXTURES = (
+    (
+        "b26_p2_xii_provision_ingress_topology",
+        "b26_p2_xii_provision_refused",
+        "xii_topology_provisioned",
+        False,
+        True,
+        False,
+    ),
+    (
+        "b26_p2_xiii_provision_ingress_topology",
+        "b26_p2_xiii_provision_refused",
+        "xiii_topology_provisioned",
+        False,
+        True,
+        False,
+    ),
+    (
+        "b26_p2_xiv_provision_ingress_topology",
+        "b26_p2_xiv_provision_refused",
+        "xiv_topology_provisioned",
+        True,
+        False,
+        True,
+    ),
+)
+
 _XIX_ALLOWLISTED_FAMILIES = (
     "payment_intent.succeeded", "orders.create",
     "payment.sale.completed", "order.completed",
@@ -1639,6 +1671,127 @@ def upgrade() -> None:
         END $$;
         """
     )
+    # ------------------------------------------------------------------
+    # XIX-12. Fixture-function posture conformity (Static Authority
+    # follow-up: the xii/xiii/xiv fixture-provision functions re-grant
+    # table-level UPDATE on webhook_ingress_identities every time a
+    # validator calls them, re-elevating the fixture caller past the
+    # XIX-1 least-privilege posture and moving every later
+    # posture-sensitive probe from the privilege layer to the trigger
+    # layer -- observed as xiv_temp_wrong_refusal after xii_topology
+    # runs in the same Static Authority lane. Conform the fixture
+    # grants to the XIX-1 posture: SELECT/INSERT table-wide plus
+    # catalog-enumerated UPDATE on operational columns only. A leading
+    # table-level REVOKE converges lanes polluted by an earlier
+    # provision call (table REVOKE also drops column grants, so the
+    # column loop re-grants after it); final posture is identical from
+    # fresh, polluted, or cycled lanes.
+    # ------------------------------------------------------------------
+    for _fn, _exc, _ret, _with_root, _with_comment, _user_first in _XIX_PROVISION_FIXTURES:
+        _root_ingress = (
+            "            GRANT SELECT ON TABLE"
+            " public.b26_p2_auth_root_evidence TO app_ingress;"
+            if _with_root
+            else ""
+        )
+        _root_user = (
+            "            GRANT SELECT ON TABLE"
+            " public.b26_p2_auth_root_evidence TO app_user;"
+            if _with_root
+            else ""
+        )
+        _user_block = (
+            "            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness"
+            " TO app_user;\n"
+            + (_root_user + "\n" if _with_root else "")
+        )
+        _dispatch_comment = (
+            "            -- Dispatch (as app_user) reads the witness for the terminal\n"
+            "            -- law; SELECT confers zero authorship.\n"
+            if _with_comment
+            else ""
+        )
+        op.execute(
+            "CREATE OR REPLACE FUNCTION public." + _fn + "()\n"
+            "        RETURNS text\n"
+            "        LANGUAGE plpgsql\n"
+            "        SECURITY DEFINER\n"
+            "        SET search_path TO 'pg_catalog', 'public'\n"
+            "        AS $function$\n"
+            "        DECLARE\n"
+            "            _col text;\n"
+            "        BEGIN\n"
+            "            IF session_user NOT IN ('migration_owner', 'postgres') THEN\n"
+            "                RAISE EXCEPTION '" + _exc + "'\n"
+            "                    USING ERRCODE = '42501';\n"
+            "            END IF;\n"
+            "            GRANT USAGE ON SCHEMA public TO app_ingress;\n"
+            "            GRANT SELECT, INSERT ON TABLE"
+            " public.webhook_ingress_identities TO app_ingress;\n"
+            "            REVOKE UPDATE ON TABLE"
+            " public.webhook_ingress_identities FROM app_ingress;\n"
+            "            FOR _col IN\n"
+            "                SELECT column_name\n"
+            "                  FROM information_schema.columns\n"
+            "                 WHERE table_schema = 'public'\n"
+            "                   AND table_name = 'webhook_ingress_identities'\n"
+            "                   AND column_name NOT IN (\n"
+            "                       'b26_p2_provenance_status',\n"
+            "                       'b26_p2_semantic_regime',\n"
+            "                       'b26_p2_demotion_reason')\n"
+            "            LOOP\n"
+            "                EXECUTE format(\n"
+            "                    'GRANT UPDATE (%I) ON TABLE'\n"
+            "                    ' public.webhook_ingress_identities'\n"
+            "                    ' TO app_ingress',\n"
+            "                    _col);\n"
+            "            END LOOP;\n"
+            "            GRANT SELECT ON TABLE public.tenants TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.attribution_events"
+            " TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.b23_match_task_dispatches"
+            " TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.b26_p2_provenance_evidence"
+            " TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness"
+            " TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE"
+            " public.b26_p2_provider_auth_consequence TO app_ingress;\n"
+            + (_root_ingress + "\n" if _with_root else "")
+            + (_user_block if _user_first else "")
+            + "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;\n"
+            "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_record_ingress_auth_witness(uuid, text, text, text)"
+            " TO app_ingress;\n"
+            "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_attest_provenance_evidence(uuid, text, text)"
+            " TO app_ingress;\n"
+            "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_record_provider_auth_consequence"
+            "(uuid, text, text, text, text, text, text) TO app_ingress;\n"
+            "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_authenticate_ingress_atomic"
+            "(uuid, text, text, text, text, text, text) TO app_ingress;\n"
+            + _dispatch_comment
+            + ("" if _user_first else _user_block)
+            + "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_record_provider_auth_consequence"
+            "(uuid, text, text, text, text, text, text) FROM app_user;\n"
+            "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_attest_provenance_evidence(uuid, text, text)"
+            " FROM app_user;\n"
+            "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;\n"
+            "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_record_ingress_auth_witness(uuid, text, text, text)"
+            " FROM app_user;\n"
+            "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_authenticate_ingress_atomic"
+            "(uuid, text, text, text, text, text, text) FROM app_user;\n"
+            "            RETURN '" + _ret + "';\n"
+            "        END $function$;"
+        )
 
 
 def downgrade() -> None:
@@ -1753,4 +1906,93 @@ def downgrade() -> None:
             " (b26_p2_source_authority_state)"
             " ON public.b23_match_verdicts FROM %s';"
             " END IF; END $$;" % (_role, _role)
+        )
+    # Restore the pre-XIX fixture-provision bodies on the way down (the
+    # table-level fixture grant they carry is test-fixture law from
+    # XI/XII/XIII/XIV/XV, callable only by migration_owner/postgres; the
+    # live least-privilege posture above is retained regardless).
+    for _fn, _exc, _ret, _with_root, _with_comment, _user_first in _XIX_PROVISION_FIXTURES:
+        _root_ingress = (
+            "            GRANT SELECT ON TABLE"
+            " public.b26_p2_auth_root_evidence TO app_ingress;"
+            if _with_root
+            else ""
+        )
+        _root_user = (
+            "            GRANT SELECT ON TABLE"
+            " public.b26_p2_auth_root_evidence TO app_user;"
+            if _with_root
+            else ""
+        )
+        _user_block = (
+            "            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness"
+            " TO app_user;\n"
+            + (_root_user + "\n" if _with_root else "")
+        )
+        _dispatch_comment = (
+            "            -- Dispatch (as app_user) reads the witness for the terminal\n"
+            "            -- law; SELECT confers zero authorship.\n"
+            if _with_comment
+            else ""
+        )
+        op.execute(
+            "CREATE OR REPLACE FUNCTION public." + _fn + "()\n"
+            "        RETURNS text\n"
+            "        LANGUAGE plpgsql\n"
+            "        SECURITY DEFINER\n"
+            "        SET search_path TO 'pg_catalog', 'public'\n"
+            "        AS $function$\n"
+            "        BEGIN\n"
+            "            IF session_user NOT IN ('migration_owner', 'postgres') THEN\n"
+            "                RAISE EXCEPTION '" + _exc + "'\n"
+            "                    USING ERRCODE = '42501';\n"
+            "            END IF;\n"
+            "            GRANT USAGE ON SCHEMA public TO app_ingress;\n"
+            "            GRANT SELECT, INSERT, UPDATE ON TABLE"
+            " public.webhook_ingress_identities TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.tenants TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.attribution_events"
+            " TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.b23_match_task_dispatches"
+            " TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.b26_p2_provenance_evidence"
+            " TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness"
+            " TO app_ingress;\n"
+            "            GRANT SELECT ON TABLE"
+            " public.b26_p2_provider_auth_consequence TO app_ingress;\n"
+            + (_root_ingress + "\n" if _with_root else "")
+            + (_user_block if _user_first else "")
+            + "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;\n"
+            "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_record_ingress_auth_witness(uuid, text, text, text)"
+            " TO app_ingress;\n"
+            "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_attest_provenance_evidence(uuid, text, text)"
+            " TO app_ingress;\n"
+            "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_record_provider_auth_consequence"
+            "(uuid, text, text, text, text, text, text) TO app_ingress;\n"
+            "            GRANT EXECUTE ON FUNCTION"
+            " public.b26_p2_authenticate_ingress_atomic"
+            "(uuid, text, text, text, text, text, text) TO app_ingress;\n"
+            + _dispatch_comment
+            + ("" if _user_first else _user_block)
+            + "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_record_provider_auth_consequence"
+            "(uuid, text, text, text, text, text, text) FROM app_user;\n"
+            "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_attest_provenance_evidence(uuid, text, text)"
+            " FROM app_user;\n"
+            "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;\n"
+            "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_record_ingress_auth_witness(uuid, text, text, text)"
+            " FROM app_user;\n"
+            "            REVOKE ALL ON FUNCTION"
+            " public.b26_p2_authenticate_ingress_atomic"
+            "(uuid, text, text, text, text, text, text) FROM app_user;\n"
+            "            RETURN '" + _ret + "';\n"
+            "        END $function$;"
         )
