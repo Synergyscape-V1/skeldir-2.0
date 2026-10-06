@@ -692,10 +692,14 @@ def _assert_b26_p2_construction_authority_at_boot() -> None:
     boot; the orchestrator must treat a worker that never becomes ready
     as unroutable. A database that is unreachable at boot leaves the
     check to task-time guards (fail closed per task). Only the revision
-    law is boot-fatal (see main.py guard for the rationale).
+    law is boot-fatal (see main.py guard for the rationale). A mismatch
+    is retried for a bounded window first, since workers may start while
+    a migration is still in flight; a worker that outlasts the window
+    without converging exits instead of consuming.
     """
     import asyncio
     import logging
+    import os
 
     logger = logging.getLogger(__name__)
     try:
@@ -707,27 +711,50 @@ def _assert_b26_p2_construction_authority_at_boot() -> None:
     except Exception as exc:
         logger.warning("construction_authority_worker_check_skipped:%s", exc)
         return
+    try:
+        wait_s = float(
+            os.getenv("SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S", "240")
+        )
+    except ValueError:
+        wait_s = 240.0
 
     async def _check() -> None:
-        async with engine.begin() as conn:
-            assert_production_construction_authority(
-                await read_construction_revisions(conn)
-            )
+        deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
+        while True:
+            observed: object = "unreadable"
+            try:
+                async with engine.begin() as conn:
+                    observed = await read_construction_revisions(conn)
+                    assert_production_construction_authority(observed)
+            except Exception as exc:
+                from app.core.construction_authority import (
+                    ConstructionAuthorityError as _ConstructionAuthorityError,
+                )
+
+                if not isinstance(exc, _ConstructionAuthorityError):
+                    logger.warning(
+                        "construction_authority_worker_deferred:%s", exc
+                    )
+                    return
+                if asyncio.get_event_loop().time() >= deadline:
+                    logger.critical(
+                        "construction_authority_worker_refused:%s", exc
+                    )
+                    raise SystemExit(
+                        f"construction_authority_worker_refused:{exc}"
+                    ) from exc
+                logger.warning(
+                    "construction_authority_worker_waiting:%s", observed
+                )
+                await asyncio.sleep(2.0)
+                continue
+            return
 
     try:
         asyncio.run(_check())
+    except SystemExit:
+        raise
     except Exception as exc:
-        from app.core.construction_authority import (
-            ConstructionAuthorityError as _ConstructionAuthorityError,
-        )
-
-        if isinstance(exc, _ConstructionAuthorityError):
-            logger.critical(
-                "construction_authority_worker_refused:%s", exc
-            )
-            raise SystemExit(
-                f"construction_authority_worker_refused:{exc}"
-            ) from exc
         logger.warning("construction_authority_worker_deferred:%s", exc)
         return
     logger.info("construction_authority_worker_boot_ok")

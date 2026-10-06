@@ -131,9 +131,16 @@ async def _startup_construction_authority_guard() -> None:
     unreachable database defers to readiness (which 503s). Only the
     revision law is boot-fatal: the exact-catalog physical comparison
     stays at readiness (503, non-fatal) and in the P14 CI gates, since
-    minimal topologies legitimately differ in owners/grants.
+    minimal topologies legitimately differ in owners/grants. Because
+    deployments may start processes while a migration is still in
+    flight, a mismatch is retried for a bounded window before it
+    becomes fatal (SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S,
+    default 240s): a process that outlasts the window without
+    converging dies instead of serving stale law.
     """
+    import asyncio
     import logging
+    import os
 
     from app.core.construction_authority import (
         ConstructionAuthorityError,
@@ -144,15 +151,32 @@ async def _startup_construction_authority_guard() -> None:
 
     logger = logging.getLogger(__name__)
     try:
-        async with engine.begin() as conn:
-            revision = await read_construction_revisions(conn)
-            assert_production_construction_authority(revision)
-    except ConstructionAuthorityError:
-        raise
-    except Exception as exc:
-        logger.warning("construction_authority_guard_deferred:%s", exc)
+        wait_s = float(
+            os.getenv("SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S", "240")
+        )
+    except ValueError:
+        wait_s = 240.0
+    deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
+    while True:
+        observed: object = "unreadable"
+        try:
+            async with engine.begin() as conn:
+                observed = await read_construction_revisions(conn)
+                assert_production_construction_authority(observed)
+        except ConstructionAuthorityError:
+            now = asyncio.get_event_loop().time()
+            if now >= deadline:
+                raise
+            logger.warning(
+                "construction_authority_boot_waiting:%s", observed
+            )
+            await asyncio.sleep(2.0)
+            continue
+        except Exception as exc:
+            logger.warning("construction_authority_guard_deferred:%s", exc)
+            return
+        logger.info("construction_authority_boot_ok")
         return
-    logger.info("construction_authority_boot_ok")
 
 
 @app.on_event("startup")
