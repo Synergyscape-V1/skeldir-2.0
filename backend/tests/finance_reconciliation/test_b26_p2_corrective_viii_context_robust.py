@@ -23,6 +23,8 @@ from uuid import UUID
 
 import pytest
 
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
+
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
 DAY_NOON = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
@@ -155,6 +157,7 @@ def _seed_ingress(
             # binding enforced (must equal the ingress provider).
             if state == "authenticity_verified":
                 try:
+                    apply_xix_family_gucs_psycopg2(cur, provider)
                     cur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
                         "%s, %s, %s, %s, %s,"

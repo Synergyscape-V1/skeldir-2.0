@@ -1364,12 +1364,12 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        # XVIII: the head advances to the authority-conservation
-        # revision; the XVII head must remain an ancestor (linear
+        # XIX: the head advances to the non-reconstructible-authority
+        # revision; the XVIII head must remain an ancestor (linear
         # ancestry, no forks).
-        if "202609300001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xviii")
-        details["migration_head"] = "202609300001"
+        if "202609300002" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xix")
+        details["migration_head"] = "202609300002"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -2277,7 +2277,15 @@ def main() -> int:
                 # authenticate the lawful fixture via the atomic
                 # transition (as admin/migration_owner, allowed) before
                 # dispatch. The stray row stays pending (non-dispatchable
-                # by law) for the crash test.
+                # by law) for the crash test. XIX: explicit family claim.
+                setup_cur.execute(
+                    "SELECT set_config('app.b26_p2_event_family',"
+                    " 'payment_intent.succeeded', false)"
+                )
+                setup_cur.execute(
+                    "SELECT set_config('app.b26_p2_event_family_source',"
+                    " 'body-signal:type', false)"
+                )
                 setup_cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, 'stripe', %s, %s, %s,"
@@ -2482,10 +2490,13 @@ def main() -> int:
                 # XIII terminal law fires before the window check for
                 # unauthenticated rows (provenance_unknown/witness_missing);
                 # either layer proves forged dispatch cannot conduct.
+                # XIX: the central current-authority law fires first
+                # (source_not_current) for any non-current source.
                 _msg0 = str(exc).split("\n")[0]
                 if (
                     "b26_p2_dispatch_window_not_sovereign" not in _msg0
                     and "b26_p2_dispatch_provenance_unknown" not in _msg0
+                    and "b26_p2_dispatch_source_not_current" not in _msg0
                     and "b26_p2_dispatch_witness_missing" not in _msg0
                 ):
                     return _fail(

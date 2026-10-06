@@ -79,6 +79,7 @@ from app.finance_reconciliation.tenant_authority import (
     assert_tenant_authority,
 )
 from app.trust.refusal import tenant_hash
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 
 WINDOW_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 WINDOW_END = datetime(2026, 2, 1, tzinfo=timezone.utc)
@@ -209,6 +210,7 @@ def _seed_ratio_tenant(matched: int, connected: int, tag: str) -> UUID:
                 # transition so it holds current P2 authority (verified
                 # revenue measures current truth, not verified-state
                 # shape). Seeding runs as migration admin (lawful).
+                apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     " %s, 'stripe', %s, %s, %s,"

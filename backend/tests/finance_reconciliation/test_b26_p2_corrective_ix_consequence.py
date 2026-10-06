@@ -26,6 +26,8 @@ from uuid import UUID
 
 import pytest
 
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
+
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
 DAY_NOON = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
@@ -153,6 +155,7 @@ def _seed_ingress(
             # admin, allowed) so provenance reads known.
             if state == "authenticity_verified":
                 try:
+                    apply_xix_family_gucs_psycopg2(cur, provider)
                     cur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
                         "%s, %s, %s, %s, %s,"
@@ -514,8 +517,10 @@ def test_pe9_same_version_rewrite_refused():
 def test_hc9_unknown_provenance_dispatch_refused():
     """HC9: verified ingress created via migration_owner is known
     (pristine GREEN, dispatch admitted); the same ingress forced to
-    unknown_legacy via superuser replica bypass refuses new dispatch
-    with provenance_unknown."""
+    unknown_legacy via superuser replica bypass refuses new dispatch.
+    XIX: the central current-authority law fires first
+    (dispatch_source_not_current), which implies the legacy
+    provenance_unknown refusal for the same non-current source."""
     import psycopg2
 
     ctl = _seed_ingress("hc9ctl")
@@ -537,7 +542,9 @@ def test_hc9_unknown_provenance_dispatch_refused():
     finally:
         sup.close()
     assert _provenance_of(ids["tenant_id"], ids["ingress_id"]) == "unknown_legacy"
-    with pytest.raises(Exception, match="provenance_unknown"):
+    with pytest.raises(
+        Exception, match="provenance_unknown|source_not_current"
+    ):
         _seed_dispatch(
             ids["tenant_id"], ids["ingress_id"], f"hc9unk-{uuid.uuid4().hex[:8]}"
         )

@@ -145,6 +145,9 @@ async def test_shopify_success_and_rls_isolation():
             content=body,
                 headers={
                     "X-Shopify-Hmac-Sha256": signature,
+                    # XIX: shopify family is proven by the
+                    # provider-transported topic, never by the body alone.
+                    "X-Shopify-Topic": "orders/create",
                     "X-Skeldir-Tenant-Key": api_key_a,
                     "Content-Type": "application/json",
                 },
@@ -427,6 +430,9 @@ async def test_paypal_success():
     body = json.dumps(
         {
             "id": f"txn_{uuid4().hex[:8]}",
+            # XIX: paypal family is proven by the body-native event_type
+            # signal; familyless shapes are non-authoritative.
+            "event_type": "payment.sale.completed",
             "amount": {"total": "20.00", "currency": "USD"},
             "create_time": datetime.now(timezone.utc).isoformat(),
         }

@@ -36,6 +36,7 @@ from app.finance_reconciliation.candidate_conduction import (
     describe_scope_summary,
 )
 from app.finance_reconciliation.scope_authority import B26_P2_SCOPE_POLICY_VERSION
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 
 WINDOW_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 WINDOW_END = datetime(2026, 2, 1, tzinfo=timezone.utc)
@@ -165,6 +166,7 @@ def _seed_conduction_universe(tag: str) -> dict[str, Any]:
                 # admin, allowed) in the same cursor/session so
                 # provenance reads known for derivation/dispatch.
                 try:
+                    apply_xix_family_gucs_psycopg2(cur, provider)
                     cur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
                         "%s, %s, %s, %s, %s,"
@@ -714,6 +716,7 @@ async def test_p2ca1_scope_identity_binds_exact_producer_set() -> None:
             _clone_auth = cur.fetchone()
             assert _clone_auth is not None, "seed clone missing for auth"
             try:
+                apply_xix_family_gucs_psycopg2(cur, _clone_auth[0])
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"

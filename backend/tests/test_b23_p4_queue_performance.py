@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2, apply_xix_family_gucs_sqlalchemy
 from sqlalchemy import event, text
 
 from app.celery_app import celery_app
@@ -295,6 +296,7 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
                 _p4_auth_sql_sync = _p4_auth_sql_async.replace(
                     ":tenant_id", "%s"
                 ).replace("'-%'", "'-%%'")
+                apply_xix_family_gucs_psycopg2(_p4_cur, "stripe")
                 _p4_cur.execute(
                     _p4_auth_sql_sync,
                     (str(tenant_id), str(tenant_id)),
@@ -310,6 +312,7 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
                 ),
                 {"tenant_id": str(tenant_id)},
             )
+            await apply_xix_family_gucs_sqlalchemy(_p4_auth_issuer, "stripe")
             await _p4_auth_issuer.execute(
                 text(_p4_auth_sql_async), {"tenant_id": str(tenant_id)}
             )

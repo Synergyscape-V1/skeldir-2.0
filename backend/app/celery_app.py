@@ -677,10 +677,56 @@ def _log_registered_tasks() -> None:
 @signals.worker_ready.connect
 def _on_worker_ready(sender=None, **kwargs):
     _ensure_celery_configured()
+    _assert_b26_p2_construction_authority_at_boot()
     _log_registered_tasks()
     _start_kombu_visibility_recovery_thread()
     if sender is not None:
         _start_multiproc_sweeper_thread(worker=sender)
+
+
+def _assert_b26_p2_construction_authority_at_boot() -> None:
+    """B2.6-P2 Corrective XIX: a worker must not become ready against an
+    incompatible schema revision. An old binary against a new database
+    (or the reverse) would otherwise emit authoritative-looking results
+    under a law it does not implement. Refusal here is fail-closed at
+    boot; the orchestrator must treat a worker that never becomes ready
+    as unroutable. A database that is unreachable at boot leaves the
+    check to task-time guards (fail closed per task).
+    """
+    import asyncio
+    import logging
+
+    logger = logging.getLogger(__name__)
+    try:
+        from app.core.construction_authority import (
+            assert_database_construction_authority,
+        )
+        from app.db.session import engine
+    except Exception as exc:
+        logger.warning("construction_authority_worker_check_skipped:%s", exc)
+        return
+
+    async def _check() -> str:
+        async with engine.begin() as conn:
+            return await assert_database_construction_authority(conn)
+
+    try:
+        revision = asyncio.run(_check())
+    except Exception as exc:
+        from app.core.construction_authority import (
+            ConstructionAuthorityError as _ConstructionAuthorityError,
+        )
+
+        if isinstance(exc, _ConstructionAuthorityError):
+            logger.critical(
+                "construction_authority_worker_refused:%s", exc
+            )
+            raise SystemExit(
+                f"construction_authority_worker_refused:{exc}"
+            ) from exc
+        logger.warning("construction_authority_worker_deferred:%s", exc)
+        return
+    logger.info("construction_authority_worker_boot_ok:%s", revision)
 
 
 def _queue_name_for_task(task) -> str:

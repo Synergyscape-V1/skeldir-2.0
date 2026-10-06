@@ -222,6 +222,18 @@ def _link_c9s_settlements(conn, tenant_id) -> None:
     )
     conn.execute(
         text(
+            "SELECT set_config('app.b26_p2_event_family',"
+            " 'payment_intent.succeeded', false)"
+        ),
+    )
+    conn.execute(
+        text(
+            "SELECT set_config('app.b26_p2_event_family_source',"
+            " 'body-signal:type', false)"
+        ),
+    )
+    conn.execute(
+        text(
             "SELECT public.b26_p2_authenticate_ingress_atomic("
             " wi.id, wi.provider, wi.provider_native_event_reference,"
             " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"

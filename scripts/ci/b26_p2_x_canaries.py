@@ -80,6 +80,20 @@ def _seed_ingress(cur, tenant: str, tag: str,
     )
     # XIII: dispatch requires terminal authentication. Fully authenticate
     # lawful canary fixtures via the atomic transition (as admin, allowed).
+    # XIX: explicit authenticated family claim per provider.
+    _family, _source = {
+        "stripe": ("payment_intent.succeeded", "body-signal:type"),
+        "shopify": ("orders.create", "transport-topic:x-shopify-topic"),
+        "paypal": ("payment.sale.completed", "body-signal:event_type"),
+        "woocommerce": ("order.completed", "body-signal:status"),
+    }[provider]
+    cur.execute(
+        "SELECT set_config('app.b26_p2_event_family', %s, false)", (_family,)
+    )
+    cur.execute(
+        "SELECT set_config('app.b26_p2_event_family_source', %s, false)",
+        (_source,),
+    )
     cur.execute(
         "SELECT public.b26_p2_authenticate_ingress_atomic("
         "%s, %s, %s, %s, %s,"
@@ -412,6 +426,15 @@ def run_canaries(admin_dsn: str, violations: list[str],
                     "SELECT public.b26_p2_record_ingress_auth_witness"
                     "(%s, 'stripe', %s, %s)",
                     (ingress8, "evt-c8", "a" * 64),
+                )
+                # XIX: the attester requires an explicit family claim.
+                icur.execute(
+                    "SELECT set_config('app.b26_p2_event_family',"
+                    " 'payment_intent.succeeded', false)"
+                )
+                icur.execute(
+                    "SELECT set_config('app.b26_p2_event_family_source',"
+                    " 'body-signal:type', false)"
                 )
                 restored = _attempt(
                     icur,

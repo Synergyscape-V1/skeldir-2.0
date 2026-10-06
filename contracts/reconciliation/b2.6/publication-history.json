@@ -1,0 +1,56 @@
+{
+  "history_id": "b26-p2-publication-history",
+  "governing_note": "B2.6-P2 Corrective XIX (H-XIX-R5/R6): the file mirror of the b26_p2_publication_history ledger. Entry hashes chain as sha256(law_kind|law_id|law_version|law_digest|activation_revision|prev_entry_hash) with an empty prev for genesis. The database ledger is the topology-independent anchor (append-only by trigger, single-valued per law identity by UNIQUE constraint); this file lets static CI verify the same chain without a database. A same-identity meaning change breaks the chain match in EVERY topology (PR, merge queue, exact-main push, detached, shallow) because no mutable branch ref is consulted. Lawful evolution appends a new version entry -- never rewrites one.",
+  "entries": [
+    {
+      "law_kind": "semantic-regime",
+      "law_id": "xvii-sovereign-v1",
+      "law_version": "v1",
+      "law_digest": "c0f7e3b580dcaf91c7221aa522bf3ca968de7dcc8aa2bf0d5f22b6440ba8e924",
+      "law_artifact": "contracts/reconciliation/b2.6/provider-semantic-contract.v1.json",
+      "activation_revision": "202609300001",
+      "prev_entry_hash": null,
+      "entry_hash": "2ac2b6bf88829f5c3a4ce72d0bfb4b481419779a31651ec94c5ba21f82fb131c"
+    },
+    {
+      "law_kind": "event-family-law",
+      "law_id": "b26-p2-event-family-law",
+      "law_version": "v1",
+      "law_digest": "a06e0001a22dbc1620e0f468857828817400aa5a1416dab21d337e75321cac18",
+      "law_artifact": "contracts/reconciliation/b2.6/event-family-law.v1.json",
+      "activation_revision": "202609300001",
+      "prev_entry_hash": "2ac2b6bf88829f5c3a4ce72d0bfb4b481419779a31651ec94c5ba21f82fb131c",
+      "entry_hash": "39d7b8b9340b22ae4c690af28503107d0676657e21f30a048d30827fec6ed2e3"
+    },
+    {
+      "law_kind": "contract-hierarchy",
+      "law_id": "b26-p2-contract-hierarchy",
+      "law_version": "v1",
+      "law_digest": "5015beea4be1b91095147a792e90e4ca90ce9cc34e535407e419abbee9366b24",
+      "law_artifact": "contracts/reconciliation/b2.6/contract-hierarchy.v1.json",
+      "activation_revision": "202609300001",
+      "prev_entry_hash": "39d7b8b9340b22ae4c690af28503107d0676657e21f30a048d30827fec6ed2e3",
+      "entry_hash": "73de49425c20e322cede432eb349c2bcd2d05a76c7b13322eb1e12b5baab5e15"
+    },
+    {
+      "law_kind": "event-family-law",
+      "law_id": "b26-p2-event-family-law",
+      "law_version": "v2",
+      "law_digest": "8ad0cbb85ac3747a119f261f4db68d14029e0ddee5effddc3f423010c5f76d01",
+      "law_artifact": "contracts/reconciliation/b2.6/event-family-law.v2.json",
+      "activation_revision": "202609300002",
+      "prev_entry_hash": "73de49425c20e322cede432eb349c2bcd2d05a76c7b13322eb1e12b5baab5e15",
+      "entry_hash": "069d1df4d397f10cc73df8b63c06aa7ca2d5add7b6e23fefe5b17a756a08299d"
+    },
+    {
+      "law_kind": "contract-hierarchy",
+      "law_id": "b26-p2-contract-hierarchy",
+      "law_version": "v2",
+      "law_digest": "779a39fc1b2b61b77e5c34da125aeec05a460a0fd287186d9d6e73ac41a1a4a8",
+      "law_artifact": "contracts/reconciliation/b2.6/contract-hierarchy.v2.json",
+      "activation_revision": "202609300002",
+      "prev_entry_hash": "069d1df4d397f10cc73df8b63c06aa7ca2d5add7b6e23fefe5b17a756a08299d",
+      "entry_hash": "d1696cde33d46304e2a62794b2edd58b168e0af157050754634a9ef34f3c3097"
+    }
+  ]
+}

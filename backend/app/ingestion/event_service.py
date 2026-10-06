@@ -790,7 +790,7 @@ def _assert_sovereign_finalization_binding(
     finalization: Mapping[str, Any],
     *,
     context: str,
-) -> str:
+) -> tuple[str, str]:
     """Enforce bytes->meaning binding on a verified arrival (XVI, H-XVI-R11).
 
     Single law shared by the HTTP-relay path and the direct (credential-
@@ -810,6 +810,7 @@ def _assert_sovereign_finalization_binding(
         binding_mismatches as _binding_mismatches,
         derive_commerce as _binding_derive,
         derive_event_family as _binding_family,
+        derive_event_family_source as _binding_family_source,
     )
 
     envelope = finalization.get("relay_envelope")
@@ -872,11 +873,25 @@ def _assert_sovereign_finalization_binding(
                 "b26_p2_unsupported_currency_refused:"
                 f"{_derived.verified_amount_currency}"
             )
-        # XVIII (H-XVIII-R11/R12): sovereign family from the same
-        # verified bytes. An unsupported family fails closed here,
-        # before any persistence, on both relay and direct paths.
+        # XVIII (H-XVIII-R11/R12) + XIX (H-XIX-R7): sovereign family
+        # from the same verified bytes (plus the provider-transported
+        # topic carried in the consequence for protocols that convey
+        # family outside the signed body). An unsupported or familyless
+        # shape fails closed here, before any persistence, on both relay
+        # and direct paths. Returns (family, evidence source).
         try:
-            _family = _binding_family(_provider, _raw)
+            _consequence_for_family = finalization.get("auth_consequence")
+            _topic = None
+            if isinstance(_consequence_for_family, Mapping):
+                _topic = _consequence_for_family.get("provider_topic")
+            if _topic is None:
+                _envelope_for_family = finalization.get("relay_envelope")
+                if isinstance(_envelope_for_family, Mapping):
+                    _topic = _envelope_for_family.get("provider_topic")
+            _family = _binding_family(_provider, _raw, topic=_topic)
+            _family_source = _binding_family_source(
+                _provider, _raw, topic=_topic
+            )
         except _BindingDerivationError as exc:
             raise ValidationError(
                 f"b26_p2_unsupported_event_family_refused:{context}:{exc}"
@@ -891,7 +906,7 @@ def _assert_sovereign_finalization_binding(
         raise ValidationError(
             f"b26_p2_handoff_binding_refused:{context}_check_failed:{type(exc).__name__}"
         ) from exc
-    return _family
+    return _family, _family_source
 
 
 async def _relay_verified_ingress_to_auth_root(
@@ -932,6 +947,9 @@ async def _relay_verified_ingress_to_auth_root(
     # never false authority; the root re-enforces the same law
     # authoritatively.
     _assert_sovereign_finalization_binding(finalization, context="relay")
+    _relay_topic = consequence.get("provider_topic")
+    if _relay_topic is None and isinstance(envelope, Mapping):
+        _relay_topic = envelope.get("provider_topic")
     payload = {
         "api_key": str(envelope.get("api_key") or ""),
         "provider": str(finalization.get("provider") or ""),
@@ -960,6 +978,12 @@ async def _relay_verified_ingress_to_auth_root(
             finalization.get("event_timestamp").isoformat()
             if hasattr(finalization.get("event_timestamp"), "isoformat")
             else str(finalization.get("event_timestamp") or "")
+        ),
+        # XIX: the provider-transported topic travels in memory to the
+        # root (never persisted here); the root derives the family and
+        # binds the evidence source.
+        "provider_topic": (
+            str(_relay_topic) if _relay_topic is not None else None
         ),
     }
     try:
@@ -1029,8 +1053,8 @@ async def _finalize_verified_ingress_post_commit(
     # meaning from the exact relayed bytes, refuse any divergence, and
     # refuse non-USD persistence. Without the raw bytes there is no
     # dominance to prove -- fail closed.
-    _direct_family = _assert_sovereign_finalization_binding(
-        finalization, context="direct"
+    _direct_family, _direct_family_source = (
+        _assert_sovereign_finalization_binding(finalization, context="direct")
     )
 
     tenant_id = finalization.get("tenant_id")
@@ -1162,13 +1186,21 @@ async def _finalize_verified_ingress_post_commit(
             # XVIII: sovereign family claim, transaction-local
             # (set_config is_local: cleared at commit/rollback, never
             # leaks across pooled checkouts; a function call, so the
-            # claim stays a bound parameter).
+            # claim stays a bound parameter). XIX: the evidence source
+            # travels alongside and is bound into the consequence row.
             await session.execute(
                 text(
                     "SELECT set_config('app.b26_p2_event_family',"
                     " :family, true)"
                 ),
                 {"family": _direct_family},
+            )
+            await session.execute(
+                text(
+                    "SELECT set_config('app.b26_p2_event_family_source',"
+                    " :source, true)"
+                ),
+                {"source": _direct_family_source},
             )
             await session.execute(
                 text(

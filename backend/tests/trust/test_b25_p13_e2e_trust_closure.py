@@ -44,6 +44,7 @@ from uuid import UUID, uuid4
 from pathlib import Path
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_sqlalchemy
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, text
@@ -461,6 +462,7 @@ async def _link_p13_verdicts(link_infos: list[dict]) -> None:
                         "idem": f"p13-ingress-{reference}",
                     },
                 )
+                await apply_xix_family_gucs_sqlalchemy(owner, "stripe")
                 await owner.execute(
                     text(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("

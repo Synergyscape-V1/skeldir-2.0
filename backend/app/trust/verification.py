@@ -42,7 +42,18 @@ _V2_TEMPORAL_FIELDS = frozenset({"data_freshness_bound", "evidence_age_status"})
 
 @dataclass(frozen=True)
 class TrustEnvelopeVerificationResult:
-    """Typed verification result with no partial-trust success state."""
+    """Typed verification result with no partial-trust success state.
+
+    XIX (H-XIX-R16): a ``verified`` envelope is explicitly a
+    truth-at-issuance attestation -- the signature, key validity, and
+    temporal horizon checked out -- never a claim that the enveloped
+    financial fact is still current. Machine callers MUST join a live
+    currentness read (coverage/Trust source ``ingress_has_current_
+    authority`` / verdict ``source_authority_state``) before treating
+    an old envelope as present truth. ``temporal_scope`` carries that
+    contract in-band so a valid old envelope cannot be mistaken for
+    current truth.
+    """
 
     verification_status: VerificationStatus
     reason_code: str | None
@@ -52,6 +63,7 @@ class TrustEnvelopeVerificationResult:
     signing_algorithm: str | None
     signature_hash: str | None
     semantic_truth_hash: str | None
+    temporal_scope: str = "truth-at-issuance"
 
     def external_projection(self) -> dict[str, object | None]:
         return asdict(self)

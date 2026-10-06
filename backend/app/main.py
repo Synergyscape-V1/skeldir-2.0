@@ -120,6 +120,37 @@ app.include_router(budget.router, tags=["Budget"])
 # - /health/worker: Worker capability (data-plane probe)
 
 @app.on_event("startup")
+async def _startup_construction_authority_guard() -> None:
+    """B2.6-P2 Corrective XIX: refuse to serve against an incompatible schema.
+
+    Readiness alone cannot keep a live-but-unready process from executing
+    a stale money read if it stays routable: this process must not boot
+    against a database whose construction revision differs from the one
+    this build's authority physics requires. A mismatch raises (the
+    process fails and the orchestrator must not route to it); an
+    unreachable database defers to readiness (which 503s).
+    """
+    import logging
+
+    from app.core.construction_authority import (
+        ConstructionAuthorityError,
+        assert_database_construction_authority,
+    )
+    from app.db.session import engine
+
+    logger = logging.getLogger(__name__)
+    try:
+        async with engine.begin() as conn:
+            revision = await assert_database_construction_authority(conn)
+    except ConstructionAuthorityError:
+        raise
+    except Exception as exc:
+        logger.warning("construction_authority_guard_deferred:%s", exc)
+        return
+    logger.info("construction_authority_boot_ok:%s", revision)
+
+
+@app.on_event("startup")
 async def _startup_secret_contract_guard() -> None:
     """Fail closed at boot when required security secrets are unavailable."""
     assert_runtime_secret_contract("api")

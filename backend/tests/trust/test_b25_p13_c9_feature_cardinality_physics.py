@@ -265,19 +265,44 @@ def _link_c9_current_providers(conn, tenant_id) -> None:
         ),
         {"t": str(tenant_id)},
     )
-    conn.execute(
-        text(
-            "SELECT public.b26_p2_authenticate_ingress_atomic("
-            " wi.id, wi.provider, wi.provider_native_event_reference,"
-            " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
-            " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
-            " 'hmac-sha256-timestamped-hex', 'v1')"
-            " FROM public.webhook_ingress_identities AS wi"
-            " WHERE wi.tenant_id = :t"
-            " AND wi.idempotency_key LIKE 'c9-link-%'"
-        ),
-        {"t": str(tenant_id)},
-    )
+    # XIX: the family claim GUC is session-scoped (one claim at a time),
+    # so authenticate each lawful provider's rows under its own explicit
+    # claim. Every supported provider's rows must hold current authority
+    # for the verdict-derived widths to read them.
+    for _xix_provider, _xix_family, _xix_source in (
+        ("stripe", "payment_intent.succeeded", "body-signal:type"),
+        ("shopify", "orders.create", "transport-topic:x-shopify-topic"),
+        ("paypal", "payment.sale.completed", "body-signal:event_type"),
+        ("woocommerce", "order.completed", "body-signal:status"),
+    ):
+        conn.execute(
+            text(
+                "SELECT set_config('app.b26_p2_event_family',"
+                " :family, false)"
+            ),
+            {"family": _xix_family},
+        )
+        conn.execute(
+            text(
+                "SELECT set_config('app.b26_p2_event_family_source',"
+                " :source, false)"
+            ),
+            {"source": _xix_source},
+        )
+        conn.execute(
+            text(
+                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                " wi.id, wi.provider, wi.provider_native_event_reference,"
+                " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
+                " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
+                " 'hmac-sha256-timestamped-hex', 'v1')"
+                " FROM public.webhook_ingress_identities AS wi"
+                " WHERE wi.tenant_id = :t"
+                " AND wi.idempotency_key LIKE 'c9-link-%'"
+                " AND wi.provider = :provider"
+            ),
+            {"t": str(tenant_id), "provider": _xix_provider},
+        )
     conn.execute(
         text(
             "UPDATE public.b23_match_verdicts AS v"

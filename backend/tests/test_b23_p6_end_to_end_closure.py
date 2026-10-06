@@ -13,6 +13,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_sqlalchemy
 from celery.contrib.testing.worker import start_worker
 from celery.exceptions import TimeoutError as CeleryTimeoutError
 from httpx import ASGITransport, AsyncClient
@@ -1277,6 +1278,7 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
                         )
                     ).scalar_one()
                     try:
+                        await apply_xix_family_gucs_sqlalchemy(issuer, provider)
                         await issuer.execute(
                             text(
                                 "SELECT public.b26_p2_authenticate_ingress_atomic("

@@ -144,6 +144,9 @@ try:
     icb.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
     icb.execute("SELECT public.b26_p2_record_provider_auth_consequence(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1')", (ing, "evt-" + tag, "c" * 64, "d" * 64))
     icb.execute("SELECT public.b26_p2_record_ingress_auth_witness(%s, 'stripe', %s, %s)", (ing, "evt-" + tag, "c" * 64))
+    # XIX: the attester requires an explicit authenticated family claim.
+    icb.execute("SELECT set_config('app.b26_p2_event_family', 'payment_intent.succeeded', false)")
+    icb.execute("SELECT set_config('app.b26_p2_event_family_source', 'body-signal:type', false)")
     icb.execute("SELECT public.b26_p2_attest_provenance_evidence(%s, 'signed_provider_reingestion', %s)", (ing, idem))
     legacy_outcome = str(icb.fetchone()[0])
 except Exception as exc:
@@ -188,6 +191,9 @@ else:
     ingress.autocommit = True
     ic = ingress.cursor()
     ic.execute("SELECT set_config('app.current_tenant_id', %s, false)", (t,))
+    # XIX: the atomic requires an explicit authenticated family claim.
+    ic.execute("SELECT set_config('app.b26_p2_event_family', 'payment_intent.succeeded', false)")
+    ic.execute("SELECT set_config('app.b26_p2_event_family_source', 'body-signal:type', false)")
     ic.execute("SELECT public.b26_p2_authenticate_ingress_atomic(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1')", (ing, "evt-" + tag, "c" * 64, "d" * 64))
     restored = str(ic.fetchone()[0])
     ingress.close()
@@ -326,7 +332,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 image, "python", "/proof/assert_b26_p2_authority_universe.py",
                 "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609300001",
+                "--migration-head", "202609300002",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -633,9 +639,9 @@ def main() -> int:
         proc = run_img(
             args.image_tag,
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
-             f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
-               "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609300001",
+              f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
+                "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
+                 "--migration-head", "202609300002",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

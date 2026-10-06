@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
@@ -592,6 +593,7 @@ async def _seed_p12_ca1_representative_source_rows(
                     f"p12ca1-ingress:{suffix}:{index:04d}",
                 ),
                 )
+                apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     " %s, 'stripe', %s, %s, %s,"

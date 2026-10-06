@@ -434,6 +434,43 @@ jobs:
           # byte-exact; any residue fails the job.
           git diff --exit-code -- scripts/ci/validate_b26_p2_xvi_semantic_oracle.py backend/app/webhooks/commerce_derivation.py contracts/reconciliation/b2.6/provider-semantic-contract.v1.json contracts-internal/governance/b26_p2_xvii_semantic_contract.pin.json alembic/versions/007_skeldir_foundation/202609280002_b26_p2_corrective_xvi_sovereign_closure.py backend/app/api/webhooks.py
 
+      # B2.6-P2 Corrective XIX: non-reconstructible current authority.
+      # The publication gate proves published semantic/family/hierarchy
+      # law cannot change meaning under the same identity in ANY CI
+      # topology (hash-chained history, no mutable branch ref); the
+      # physics gate proves the complete live conjunction, the
+      # non-forgeable transition, continuous evidence conservation,
+      # explicit family, ledger/history immutability, and statement
+      # linearization on the live lane; the battery proves every
+      # falsifier REDs on a genuine class member and restores
+      # byte-exact GREEN (including the downgrade round-trip lane).
+      - name: Prove B2.6-P2 Corrective-XIX publication immutability
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xix_publication_immutability.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xix-publication.json
+
+      - name: Prove B2.6-P2 Corrective-XIX authority physics closure (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xix_physics.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xix-physics.json
+
+      - name: Prove B2.6-P2 Corrective-XIX relations non-vacuous (live)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/test_b26_p2_xix_negative_controls.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xix-negative-controls.json
+          # The battery mutates tracked files and must restore them
+          # byte-exact; any residue fails the job.
+          git diff --exit-code -- contracts/reconciliation/b2.6/provider-semantic-contract.v1.json contracts/reconciliation/b2.6/event-family-law.v2.json backend/app/webhooks/commerce_derivation.py
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence

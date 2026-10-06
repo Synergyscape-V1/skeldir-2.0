@@ -45,6 +45,7 @@ from app.finance_reconciliation.scope_authority import (
     scope_policy_identity,
     validate_window,
 )
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 
 WINDOW_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 WINDOW_END = datetime(2026, 2, 1, tzinfo=timezone.utc)
@@ -587,6 +588,7 @@ def _seed_p2_universe(tag: str) -> dict[str, Any]:
                 # non-authoritative by law; scope still excludes them
                 # explicitly.
                 try:
+                    apply_xix_family_gucs_psycopg2(cur, provider)
                     cur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
                         " %s, %s, %s, %s, %s,"

@@ -45,6 +45,10 @@
     "202609300001": {
       "file": "202609300001_b26_p2_corrective_xviii_authority_conservation.py",
       "sha256": "0fbfcd4bd990c99a9065bc9114e9da63cda05d0fcb1612e9474a3da7bba65699"
+    },
+    "202609300002": {
+      "file": "202609300002_b26_p2_corrective_xix_nonreconstructible_authority.py",
+      "sha256": "6b61f8ccd410634a07c4bbfd639a951470c85932087e81dfc454f17c84e67cc7"
     }
   }
 }

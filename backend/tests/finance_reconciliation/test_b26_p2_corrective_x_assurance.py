@@ -26,6 +26,8 @@ from uuid import UUID
 
 import pytest
 
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
+
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
 DAY_NOON = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
@@ -131,6 +133,7 @@ def _seed_ids(tag: str, *, provider: str = "stripe") -> dict:
             # immutable conflict). Negative tests force unknown /
             # delete evidence explicitly.
             try:
+                apply_xix_family_gucs_psycopg2(cur, provider)
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -553,6 +556,8 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
             # Corrective XI: caller assertions promote nothing. The
             # ordinary application principal cannot execute the
             # attester at all (permission denied at the grant plane).
+            # XIX: explicit family claim set (earlier guard still fires first).
+            apply_xix_family_gucs_psycopg2(cur, "stripe")
             denied = _refused(
                 lambda: cur.execute(
                     "SELECT public.b26_p2_attest_provenance_evidence"
@@ -614,6 +619,35 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
                 "(%s, 'stripe', %s, %s)",
                 (str(ids["ingress_id"]), evt_ref, "c" * 64),
             )
+    finally:
+        ingress.close()
+    # XIX: the admin evidence deletions above transactionally demoted
+    # the row (continuous conservation). Governed repair clears the
+    # demotion after evidence is re-recorded, before attestation.
+    repair = psycopg2.connect(_admin_dsn())
+    repair.autocommit = True
+    try:
+        with repair.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            cur.execute(
+                "UPDATE public.webhook_ingress_identities"
+                " SET b26_p2_demotion_reason = NULL WHERE id = %s",
+                (str(ids["ingress_id"]),),
+            )
+    finally:
+        repair.close()
+    ingress = psycopg2.connect(_role_dsn("app_ingress"))
+    ingress.autocommit = True
+    try:
+        with ingress.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(ids["tenant_id"]),),
+            )
+            apply_xix_family_gucs_psycopg2(cur, "stripe")
             cur.execute(
                 "SELECT public.b26_p2_attest_provenance_evidence"
                 "(%s, 'signed_provider_reingestion', %s)",

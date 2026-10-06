@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
@@ -156,6 +157,7 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
             # allowed) in the same cursor/session so provenance reads
             # known.
             try:
+                apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -238,6 +240,7 @@ def _seed_extra_ingress(tenant_id: UUID, tag: str) -> UUID:
             # allowed) in the same cursor/session so provenance reads
             # known.
             try:
+                apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -687,6 +690,7 @@ def test_vi_r6_11_task_kind_locked_by_check() -> None:
                 _auth_row = cur.fetchone()
                 assert _auth_row is not None
                 try:
+                    apply_xix_family_gucs_psycopg2(cur, _auth_row[0])
                     cur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
                         "%s, %s, %s, %s, %s,"
@@ -1094,6 +1098,7 @@ def test_vi_anchor_preset_stripped_and_stamped() -> None:
             _auth_row = _acur.fetchone()
             assert _auth_row is not None
             try:
+                apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -1189,6 +1194,7 @@ def test_vi_anchor_takes_precedence_over_dispatched_fallback() -> None:
             _auth_row = _acur.fetchone()
             assert _auth_row is not None
             try:
+                apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -1315,6 +1321,7 @@ def test_vi_outbox_issuance_and_retry_bound() -> None:
                     _auth_row = _acur.fetchone()
                     assert _auth_row is not None
                     try:
+                        apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                         _acur.execute(
                             "SELECT public.b26_p2_authenticate_ingress_atomic("
                             "%s, %s, %s, %s, %s,"
@@ -1467,6 +1474,7 @@ def test_vi_dispatch_preexisting_failure_refuses() -> None:
             _auth_row = _acur.fetchone()
             assert _auth_row is not None
             try:
+                apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -1611,6 +1619,7 @@ def test_vi_worker_ingress_cannot_become_execution() -> None:
             _auth_row = _acur.fetchone()
             assert _auth_row is not None
             try:
+                apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"

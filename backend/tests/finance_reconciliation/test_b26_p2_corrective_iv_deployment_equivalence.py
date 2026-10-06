@@ -22,6 +22,8 @@ from uuid import UUID
 
 import pytest
 
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
+
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 # Corrective VIII policy-meaning binding: every conduction receipt
 # carries the caller-observed policy semantic SHA.
@@ -123,6 +125,7 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
             # allowed) in the same cursor/session so provenance reads
             # known.
             try:
+                apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -386,6 +389,7 @@ def test_iv_outbox_fk_refuses_cross_tenant_ingress() -> None:
             assert _row is not None, "seed ingress missing for dispatch"
             _provider, _event_ref = _row[0], _row[1]
             try:
+                apply_xix_family_gucs_psycopg2(cur, _provider)
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -479,6 +483,7 @@ def test_iv_split_brain_second_task_for_same_ingress_refused() -> None:
                 assert _row is not None, "seed ingress missing for dispatch"
                 _provider, _event_ref = _row[0], _row[1]
                 try:
+                    apply_xix_family_gucs_psycopg2(cur, _provider)
                     cur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
                         "%s, %s, %s, %s, %s,"
@@ -1061,6 +1066,7 @@ def test_iv_duplicate_seed_reuses_winner_task() -> None:
             assert _row is not None, "seed ingress missing for dispatch"
             _provider, _event_ref = _row[0], _row[1]
             try:
+                apply_xix_family_gucs_psycopg2(cur, _provider)
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"

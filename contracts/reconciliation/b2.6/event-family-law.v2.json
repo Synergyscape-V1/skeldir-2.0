@@ -1,0 +1,49 @@
+{
+  "contract_id": "b26-p2-event-family-law",
+  "contract_version": "v2",
+  "semantic_regime": "xvii-sovereign-v1",
+  "supersedes": {
+    "contract_version": "v1",
+    "disposition": "superseded_retained_for_history",
+    "migration_law": "rows minted before revision 202609300002 under the v1 family-implicit disposition keep their bound family value tagged xix-backfill:pre-xix-mint (grandfathered, auditable); every mint at or above 202609300002 requires an explicit authenticated family under this v2 law"
+  },
+  "governing_note": "B2.6-P2 Corrective XIX (H-XIX-R7): the sovereign supported-event-family law. The ONLY authority for 'this payload denotes a financial family' is an explicitly authenticated event fact established by derive_event_family() over verified provider bytes (backend/app/webhooks/commerce_derivation.py) -- a body-native signal key, or the provider-transported topic for protocols that convey family outside the signed body -- bound into b26_p2_provider_auth_consequence.b26_p2_event_family with its evidence source in b26_p2_family_source inside the sovereign atomic under the per-provider allowlist below. Relay route selection is advisory/defense-in-depth only and can never confer family. Provider name alone can never confer family. Signal-less (familyless) shapes are REFUSED -- never defaulted: a valid signature plus parseable money plus no authenticated family fact yields NO financial authority. This artifact is versioned: a family-law meaning change requires a new contract_version (never an in-place edit), recorded in the publication-history chain and the b26_p2_publication_history ledger.",
+  "families": {
+    "stripe": {
+      "canonical_family": "payment_intent.succeeded",
+      "accepted_aliases": ["payment_intent.succeeded", "payment_intent_succeeded"],
+      "native_signal_keys": ["type", "event_type", "status"],
+      "required_evidence": "body-signal:type or body-signal:event_type aliasing the canonical family, or body-signal:status with value succeeded. A present-but-unsupported signal is REFUSED (e.g. charge.refunded, payment_intent.payment_failed). A shape carrying none of these signals is familyless and REFUSED even when the body parses and the money is well-formed.",
+      "topic_binding": null
+    },
+    "shopify": {
+      "canonical_family": "orders.create",
+      "accepted_aliases": ["orders.create", "order_create", "orders/create"],
+      "native_signal_keys": [],
+      "required_evidence": "transport-topic:x-shopify-topic aliasing the canonical family. The contracted order JSON carries no provider family signal and the HMAC covers the body only; the body alone therefore NEVER suffices for shopify. A missing topic is REFUSED (familyless). A present-but-unsupported topic is REFUSED (e.g. orders/updated, refunds/create). The topic travels the in-memory relay envelope only and is never persisted; the derived family plus transport-topic:x-shopify-topic source persist on the consequence row.",
+      "topic_binding": {
+        "header": "X-Shopify-Topic",
+        "residual": "the topic is conveyed outside the HMAC'd body, so header/body binding relies on transport integrity (TLS) plus the body HMAC. An in-flight header swap cannot forge money without a valid body MAC for swapped content, and a swapped topic for the same signed body is refused unless it aliases the canonical family. Distinct lifecycle topics for the same order carry no new financial fact within P2 scope (commerce-identity conservation) and are excluded at ingestion scope."
+      }
+    },
+    "paypal": {
+      "canonical_family": "payment.sale.completed",
+      "accepted_aliases": ["payment.sale.completed", "sale_completed", "payment.sale_completed"],
+      "native_signal_keys": ["event_type"],
+      "required_evidence": "body-signal:event_type aliasing the canonical family. A present-but-unsupported event_type is REFUSED (e.g. PAYMENT.SALE.DENIED). A shape carrying no event_type is familyless and REFUSED.",
+      "topic_binding": null
+    },
+    "woocommerce": {
+      "canonical_family": "order.completed",
+      "accepted_aliases": ["order.completed", "order_completed"],
+      "native_signal_keys": ["status"],
+      "required_evidence": "body-signal:status with value completed, or (when the body states no status) transport-topic:x-wc-webhook-topic aliasing the canonical family. Any other present status is REFUSED (e.g. refunded). A shape with neither is familyless and REFUSED.",
+      "topic_binding": {
+        "header": "X-Wc-Webhook-Topic",
+        "role": "fallback only: the body status is primary evidence; the transported topic is accepted only when the body states no status. Same transport-integrity residual as shopify."
+      }
+    }
+  },
+  "family_source_vocabulary": ["body-signal:type", "body-signal:event_type", "body-signal:status", "transport-topic:x-shopify-topic", "transport-topic:x-wc-webhook-topic", "xix-backfill:pre-xix-mint"],
+  "conservation": "CURRENT TRUST = AUTHENTICATED BYTES + AUTHENTICATED FAMILY FACT + CURRENT REGIME. Break any term and no financial authority exists."
+}

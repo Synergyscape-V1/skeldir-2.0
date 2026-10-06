@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
-  "migration_head": "202609300001",
-  "authority_universe_hash": "102c7ff74a140448b85bcfaa90377cd2dc0d43c6103a5a7cc9a1796782e16d61",
-  "reviewed_at_git_sha": "b23b17da",
+  "migration_head": "202609300002",
+  "authority_universe_hash": "0a583b88725ae647daff7f53332a2337d4b4dc553a7cb676fc816c037754cdf5",
+  "reviewed_at_git_sha": "PENDING_MERGE_TIP",
   "meaning_surface_counts": {
-    "routine_meaning": 153,
-    "trigger_meaning": 26,
+    "routine_meaning": 158,
+    "trigger_meaning": 27,
     "schema_meaning": 5,
     "rls_meaning": 17,
-    "ownership": 114
+    "ownership": 119
   },
-  "review_note": "B2.6-P2 Corrective XVIII authority-relation conservation reviewed: immutable regime registry (+1 table/trigger), central authority predicate (+1 routine), unforgeable trust-transition trigger + column privilege revocation, demoted-ingress refusal + floor + family allowlist in the atomic (signature byte-stable), hardened legacy attester under one promotion law, verdict authority state with stamp/propagate/guard triggers (+3), dispatch demotion/family gates, operational floor, consequence family binding; live hash from PG15 fresh lane (prepare+alembic head 202609300001)."
+  "review_note": "B2.6-P2 Corrective XIX non-reconstructible current authority reviewed: complete live current-authority conjunction (predicate reads marker columns + active registry + floor + witness/evidence/consequence-with-bound-family/root), non-forgeable transition guards (current_user owner-context, no GUC bearer; verdict guard admits only the derived projection), table-level UPDATE removed from runtime roles with operational column re-grants, artifact content immutable by privilege with transactional demote-on-loss triggers, NULL-family refusal + family-source binding at both minting primitives, append-only verdict-supersession ledger, append-only publication-history ledger with UNIQUE identity law + governed registry lifecycle, dispatch reads the central law, floor 202609300002, READ COMMITTED linearization; live hash from PG15 fresh lane (prepare+alembic head 202609300002)."
 }

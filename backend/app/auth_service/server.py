@@ -63,6 +63,16 @@ class AuthenticateRequest(BaseModel):
     provider_native_commerce_reference: str = Field(
         description="Provider-native commerce reference (order/payment id)"
     )
+    provider_topic: str | None = Field(
+        default=None,
+        description=(
+            "Provider-transported event topic (e.g. X-Shopify-Topic), "
+            "forwarded in memory by the relay for providers whose "
+            "protocol conveys event family outside the signed body. "
+            "Never persisted; only the derived family and its evidence "
+            "source persist."
+        ),
+    )
     normalized_commerce_reference_kind: str = Field(
         description="Canonical commerce reference kind"
     )
@@ -176,6 +186,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         binding_mismatches,
         derive_commerce,
         derive_event_family,
+        derive_event_family_source,
     )
 
     try:
@@ -235,13 +246,22 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             status_code=400,
             detail="b26_p2_handoff_binding_refused:" + ",".join(sorted(mismatched)),
         )
-    # XVIII (H-XVIII-R11/R12): sovereign event-family binding. The
-    # family is established HERE, from authenticated bytes, by the
-    # component that creates financial authority -- never from the
-    # relay route. An unsupported family (valid signature, parseable
-    # money, wrong family) yields no authority at all.
+    # XVIII (H-XVIII-R11/R12) + XIX (H-XIX-R7): sovereign event-family
+    # binding. The family is established HERE, from authenticated bytes
+    # (plus the provider-transported topic for protocols that convey
+    # family outside the signed body), by the component that creates
+    # financial authority -- never from the relay route, and never from
+    # the provider name alone. An unsupported or familyless shape (valid
+    # signature, parseable money, no authenticated family fact) yields no
+    # authority at all. The evidence source is bound into the
+    # consequence row alongside the family.
     try:
-        event_family = derive_event_family(provider, raw_body)
+        event_family = derive_event_family(
+            provider, raw_body, topic=body.provider_topic
+        )
+        event_family_source = derive_event_family_source(
+            provider, raw_body, topic=body.provider_topic
+        )
     except CommerceDerivationError as exc:
         raise HTTPException(
             status_code=400,
@@ -498,7 +518,9 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         # (set_config is_local: auto-cleared at commit, never leaks
         # across pooled checkouts; a function call, so the claim stays
         # a bound parameter -- SET LOCAL cannot take bind parameters
-        # on some drivers); the atomic allowlists and binds it.
+        # on some drivers); the atomic allowlists and binds it. XIX:
+        # the claim's evidence source travels alongside and is bound
+        # into the consequence row.
         try:
             await session.execute(
                 text(
@@ -506,6 +528,13 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                     " :family, true)"
                 ),
                 {"family": event_family},
+            )
+            await session.execute(
+                text(
+                    "SELECT set_config('app.b26_p2_event_family_source',"
+                    " :source, true)"
+                ),
+                {"source": event_family_source},
             )
             await session.execute(
                 text(

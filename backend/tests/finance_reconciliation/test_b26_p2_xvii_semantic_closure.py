@@ -105,8 +105,11 @@ def test_xvii_timestamp_day_boundary_vectors() -> None:
 
 
 def _lawful_stripe_finalization():
+    # XIX: the lawful baseline carries an explicit authenticated family
+    # fact (body-signal:type); familyless shapes are non-authoritative.
     raw = (
-        b'{"id":"evt_9","created":1700000060,"data":{"object":{'
+        b'{"id":"evt_9","type":"payment_intent.succeeded",'
+        b'"created":1700000060,"data":{"object":{'
         b'"id":"pi_77","amount":100,"currency":"usd",'
         b'"created":1700000000}}}'
     )

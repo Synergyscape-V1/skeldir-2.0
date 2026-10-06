@@ -322,6 +322,7 @@ def main() -> int:
                                 "202609280002",
                                 "202609290001",
                                 "202609300001",
+                                "202609300002",
                             ):
                                 violations.append(
                                     f"x_oracle_unexpected_migration_head:{head}"
