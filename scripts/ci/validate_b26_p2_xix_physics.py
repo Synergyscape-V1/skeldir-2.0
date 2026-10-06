@@ -71,7 +71,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "b26_p2_ledger_history_immutable_refused",
         "b26_p2_publication_history",
         "b26_p2_publication_identity_single_valued",
-        "b26_p2_registry_deputy_refused",
+        "b26_p2_sovereign_writer",
         "b26_p2_atomic_family_unbound_refused",
         "b26_p2_atomic_family_source_refused",
         "b26_p2_family_source",

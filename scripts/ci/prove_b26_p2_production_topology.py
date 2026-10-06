@@ -956,6 +956,9 @@ def _post_paypal_once(
     body = json.dumps(
         {
             "id": txn_id,
+            # XIX: the sale body carries its provider-native family
+            # signal; familyless shapes are non-authoritative.
+            "event_type": "payment.sale.completed",
             "amount": {"total": total, "currency": "USD"},
             "create_time": create_iso or datetime.now(timezone.utc).isoformat(),
         },

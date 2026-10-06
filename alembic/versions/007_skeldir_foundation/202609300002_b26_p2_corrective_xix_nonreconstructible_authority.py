@@ -286,6 +286,40 @@ def upgrade() -> None:
     )
     op.execute(
         """
+        CREATE OR REPLACE FUNCTION public.b26_p2_sovereign_writer(
+            p_table regclass
+        )
+        RETURNS boolean
+        LANGUAGE sql
+        STABLE
+        SET search_path TO 'pg_catalog', 'public'
+        AS $$
+            SELECT pg_get_userbyid(c.relowner) = current_user
+                   OR (current_user = session_user
+                       AND session_user = 'postgres')
+              FROM pg_catalog.pg_class AS c
+             WHERE c.oid = p_table
+        $$;
+        """
+    )
+    op.execute(
+        "REVOKE ALL ON FUNCTION public.b26_p2_sovereign_writer(regclass)"
+        " FROM PUBLIC"
+    )
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION public.b26_p2_sovereign_writer(regclass)"
+        " TO PUBLIC"
+    )
+    # NOTE on the postgres disjunct: the cluster superuser already owns
+    # every bypass (trigger surgery, role assumption, ownership moves),
+    # so admitting its direct writes changes nothing about runtime-role
+    # guarantees -- while refusing them would break superuser
+    # maintenance that the predecessor law admitted. The deputy surface
+    # (runtime-reachable owner-DEFINER writers) is censused: only the
+    # sovereign transition functions, each with its own caller/floor/
+    # demotion/family guards.
+    op.execute(
+        """
         CREATE OR REPLACE FUNCTION public.b26_p2_enforce_authority_transition()
         RETURNS trigger
         LANGUAGE plpgsql
@@ -300,9 +334,9 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-            IF public.b26_p2_table_owner(
+            IF NOT public.b26_p2_sovereign_writer(
                    'public.webhook_ingress_identities'::regclass
-               ) IS DISTINCT FROM current_user THEN
+               ) THEN
                 IF OLD.b26_p2_provenance_status
                        IS DISTINCT FROM NEW.b26_p2_provenance_status
                    OR OLD.b26_p2_semantic_regime
@@ -713,9 +747,9 @@ def upgrade() -> None:
                 -- administration or the sovereign DEFINER trigger that
                 -- appends supersessions), resolved live so every
                 -- deployment topology enforces the same law.
-                IF public.b26_p2_table_owner(
+                IF NOT public.b26_p2_sovereign_writer(
                        'public.b26_p2_verdict_supersession_ledger'::regclass
-                   ) IS DISTINCT FROM current_user THEN
+                   ) THEN
                     RAISE EXCEPTION 'b26_p2_ledger_insert_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -843,9 +877,9 @@ def upgrade() -> None:
         AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                IF public.b26_p2_table_owner(
+                IF NOT public.b26_p2_sovereign_writer(
                        'public.b26_p2_publication_history'::regclass
-                   ) IS DISTINCT FROM current_user THEN
+                   ) THEN
                     RAISE EXCEPTION 'b26_p2_history_insert_refused'
                         USING ERRCODE = '42501';
                 END IF;
@@ -882,18 +916,24 @@ def upgrade() -> None:
         AS $$
         BEGIN
             -- XIX: publication law changes only by direct owner
-            -- administration (forward migration), resolved live from
-            -- the catalog. A DEFINER deputy (current_user = owner,
-            -- session_user = caller) cannot satisfy both conjuncts;
-            -- runtime roles satisfy neither.
-            IF public.b26_p2_table_owner(
-                   'public.b26_p2_semantic_regime_registry'::regclass
-               ) IS DISTINCT FROM current_user THEN
+            -- administration (forward migration) or the cluster
+            -- superuser, resolved live from the catalog. A DEFINER
+            -- deputy (current_user = owner, session_user = caller)
+            -- satisfies neither disjunct; runtime roles satisfy
+            -- neither either.
+            IF NOT (
+                (
+                    public.b26_p2_table_owner(
+                        'public.b26_p2_semantic_regime_registry'::regclass
+                    ) = current_user
+                    AND current_user = session_user
+                )
+                OR (
+                    current_user = session_user
+                    AND session_user = 'postgres'
+                )
+            ) THEN
                 RAISE EXCEPTION 'b26_p2_registry_mutation_refused'
-                    USING ERRCODE = '42501';
-            END IF;
-            IF session_user IS DISTINCT FROM current_user THEN
-                RAISE EXCEPTION 'b26_p2_registry_deputy_refused'
                     USING ERRCODE = '42501';
             END IF;
             RETURN COALESCE(NEW, OLD);
@@ -986,11 +1026,12 @@ def upgrade() -> None:
             END IF;
             -- The ingress credential alone may invoke the transition;
             -- the table owner (direct administration, any topology)
-            -- may also invoke it; every other session role is refused
-            -- at the function boundary.
+            -- and the cluster superuser may also invoke it; every
+            -- other session role is refused at the function boundary.
             IF session_user IS DISTINCT FROM 'app_ingress'
                AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
-                   'public.webhook_ingress_identities'::regclass) THEN
+                   'public.webhook_ingress_identities'::regclass)
+               AND session_user IS DISTINCT FROM 'postgres' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -1365,10 +1406,12 @@ def upgrade() -> None:
                     USING ERRCODE = '42501';
             END IF;
             -- Single ingress-boundary law (dynamic owner): only the
-            -- ingress credential and the table owner may attest.
+            -- ingress credential, the table owner, and the cluster
+            -- superuser may attest.
             IF session_user IS DISTINCT FROM 'app_ingress'
                AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
-                   'public.webhook_ingress_identities'::regclass) THEN
+                   'public.webhook_ingress_identities'::regclass)
+               AND session_user IS DISTINCT FROM 'postgres' THEN
                 RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -1691,6 +1734,9 @@ def downgrade() -> None:
     )
     op.execute(
         "DROP FUNCTION IF EXISTS public.b26_p2_enforce_registry_governance()"
+    )
+    op.execute(
+        "DROP FUNCTION IF EXISTS public.b26_p2_sovereign_writer(regclass)"
     )
     op.execute(
         "DROP FUNCTION IF EXISTS public.b26_p2_table_owner(regclass)"
