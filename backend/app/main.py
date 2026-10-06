@@ -128,26 +128,31 @@ async def _startup_construction_authority_guard() -> None:
     against a database whose construction revision differs from the one
     this build's authority physics requires. A mismatch raises (the
     process fails and the orchestrator must not route to it); an
-    unreachable database defers to readiness (which 503s).
+    unreachable database defers to readiness (which 503s). Only the
+    revision law is boot-fatal: the exact-catalog physical comparison
+    stays at readiness (503, non-fatal) and in the P14 CI gates, since
+    minimal topologies legitimately differ in owners/grants.
     """
     import logging
 
     from app.core.construction_authority import (
         ConstructionAuthorityError,
-        assert_database_construction_authority,
+        assert_production_construction_authority,
+        read_construction_revisions,
     )
     from app.db.session import engine
 
     logger = logging.getLogger(__name__)
     try:
         async with engine.begin() as conn:
-            revision = await assert_database_construction_authority(conn)
+            revision = await read_construction_revisions(conn)
+            assert_production_construction_authority(revision)
     except ConstructionAuthorityError:
         raise
     except Exception as exc:
         logger.warning("construction_authority_guard_deferred:%s", exc)
         return
-    logger.info("construction_authority_boot_ok:%s", revision)
+    logger.info("construction_authority_boot_ok")
 
 
 @app.on_event("startup")

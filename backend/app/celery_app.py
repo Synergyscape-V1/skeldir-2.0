@@ -691,7 +691,8 @@ def _assert_b26_p2_construction_authority_at_boot() -> None:
     under a law it does not implement. Refusal here is fail-closed at
     boot; the orchestrator must treat a worker that never becomes ready
     as unroutable. A database that is unreachable at boot leaves the
-    check to task-time guards (fail closed per task).
+    check to task-time guards (fail closed per task). Only the revision
+    law is boot-fatal (see main.py guard for the rationale).
     """
     import asyncio
     import logging
@@ -699,19 +700,22 @@ def _assert_b26_p2_construction_authority_at_boot() -> None:
     logger = logging.getLogger(__name__)
     try:
         from app.core.construction_authority import (
-            assert_database_construction_authority,
+            assert_production_construction_authority,
+            read_construction_revisions,
         )
         from app.db.session import engine
     except Exception as exc:
         logger.warning("construction_authority_worker_check_skipped:%s", exc)
         return
 
-    async def _check() -> str:
+    async def _check() -> None:
         async with engine.begin() as conn:
-            return await assert_database_construction_authority(conn)
+            assert_production_construction_authority(
+                await read_construction_revisions(conn)
+            )
 
     try:
-        revision = asyncio.run(_check())
+        asyncio.run(_check())
     except Exception as exc:
         from app.core.construction_authority import (
             ConstructionAuthorityError as _ConstructionAuthorityError,
@@ -726,7 +730,7 @@ def _assert_b26_p2_construction_authority_at_boot() -> None:
             ) from exc
         logger.warning("construction_authority_worker_deferred:%s", exc)
         return
-    logger.info("construction_authority_worker_boot_ok:%s", revision)
+    logger.info("construction_authority_worker_boot_ok")
 
 
 def _queue_name_for_task(task) -> str:
