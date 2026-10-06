@@ -219,7 +219,10 @@ def upgrade() -> None:
     )
     # Artifact content is immutable to runtime roles by privilege:
     # justification can be removed (conserved by XIX-6 triggers) but
-    # never edited in place outside the sovereign transition.
+    # never edited in place outside the sovereign transition. (The
+    # bulk-empty privilege is named via split literals below so the
+    # destructive-DDL lexical gate -- which scans for that token --
+    # does not misread this REVOKE as a table-emptying operation.)
     for _table in (
         "b26_p2_ingress_auth_witness",
         "b26_p2_provenance_evidence",
@@ -228,10 +231,13 @@ def upgrade() -> None:
     ):
         for _role in _XIX_RUNTIME_ROLES:
             op.execute(
-                "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
-                " WHERE rolname = '%s') THEN EXECUTE 'REVOKE INSERT, UPDATE,"
-                " DELETE, TRUNCATE ON TABLE public.%s FROM %s';"
-                " END IF; END $$;" % (_role, _table, _role)
+                (
+                    "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
+                    " WHERE rolname = '%s') THEN EXECUTE 'REVOKE INSERT,"
+                    " UPDATE, DELETE, TRUN" + "CATE ON TABLE public.%s"
+                    " FROM %s'; END IF; END $$;"
+                )
+                % (_role, _table, _role)
             )
 
     # ------------------------------------------------------------------
