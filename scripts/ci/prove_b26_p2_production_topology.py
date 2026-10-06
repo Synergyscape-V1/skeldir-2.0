@@ -1764,6 +1764,9 @@ def main() -> int:
         eur_body = json.dumps(
             {
                 "id": eur_intent,
+                # XIX: lawful family signal isolates the currency
+                # dimension under test (family-ignored would mask it).
+                "type": "payment_intent.succeeded",
                 "amount": 5000,
                 "currency": "eur",
                 "created": int(time.time()),
