@@ -794,6 +794,9 @@ async def test_b14_p3_runtime_stripe_v2_recompute_coverage_and_session_hint_cont
 
         payload = {
             "id": f"evt_{uuid4().hex[:10]}",
+            # XIX: explicit provider-native family signal; familyless
+            # shapes are non-authoritative.
+            "type": "payment_intent.succeeded",
             "created": created_epoch,
             "data": {
                 "object": {
@@ -905,6 +908,8 @@ async def test_b14_p3_runtime_universal_webhook_order_resolution_adopts_active_b
                 headers={"Content-Type": "application/json"},
                 json={
                     "id": order_id,
+                    # XIX: explicit provider-native family signal.
+                    "event_type": "payment.sale.completed",
                     "amount": {"total": "29.99", "currency": "USD"},
                     "create_time": _iso(datetime.now(timezone.utc)),
                 },
