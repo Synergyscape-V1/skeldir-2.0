@@ -165,12 +165,20 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
         if "pending_authentication" not in body:
             violations.append("xiii_auth_no_pending_state")
         # Dispatch trigger must require terminal + witness, NULL-safe.
+        # XIX: the marker conjunction lives in the central predicate
+        # (single law, no drift); dispatch calls it. Assert NULL-safety
+        # where it is enforced.
         cur.execute(
             "SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname = 'b26_p2_enforce_dispatch_provenance'"
         )
         row = cur.fetchone()
         dbody = row[0] if row else ""
-        if "IS DISTINCT FROM 'authenticated_known'" not in dbody:
+        cur.execute(
+            "SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname = 'b26_p2_ingress_has_current_authority'"
+        )
+        prow = cur.fetchone()
+        pbody = prow[0] if prow else ""
+        if "IS DISTINCT FROM 'authenticated_known'" not in dbody and "IS DISTINCT FROM 'authenticated_known'" not in pbody:
             violations.append("xiii_auth_dispatch_not_nullsafe_terminal")
         if "b26_p2_ingress_auth_witness" not in dbody:
             violations.append("xiii_auth_dispatch_no_witness")
