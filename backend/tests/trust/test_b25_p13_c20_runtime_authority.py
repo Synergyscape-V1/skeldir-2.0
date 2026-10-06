@@ -52,11 +52,16 @@ pytestmark = pytest.mark.skipif(
 # any of these fails here rather than in an audit.
 AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
     # B2.3 deterministic verdict truth: authored by the B2.3 worker alone.
+    # B2.6-P2 Corrective XIX: verdict authority state is trigger-held, so
+    # no runtime role holds table-level UPDATE anymore. The worker's
+    # operational writes (linkage, amounts, lifecycle) are column-scoped
+    # (see VERDICT_UPDATE_COLUMN_CONTRACT); authority state changes only
+    # through the transition graph.
     "b23_match_verdicts": {
         "app_user": {"SELECT"},
         "app_ro": {"SELECT"},
         "app_rw": set(),
-        "app_worker": {"SELECT", "INSERT", "UPDATE"},
+        "app_worker": {"SELECT", "INSERT"},
     },
     # B2.4 fit truth: authored by the Bayesian worker alone; the API reads it.
     "bayesian_model_fits": {
@@ -186,6 +191,66 @@ AUTHORITY_CONTRACT: dict[str, dict[str, set[str]]] = {
         "app_b28_solver": {"SELECT", "INSERT"},
     },
 }
+
+# B2.6-P2 Corrective XIX column-scoped verdict UPDATE contract.
+# principal -> set of verdict columns the principal may UPDATE, or None
+# meaning the principal must hold UPDATE on no verdict column at all.
+# The worker needs every operational column (conflict-target relinks,
+# amount/lifecycle maintenance); the authority-state column belongs to
+# the transition graph alone. Asserted as an equality per column via
+# has_column_privilege (table-level grants do not satisfy it).
+VERDICT_UPDATE_COLUMN_CONTRACT: dict[str, set[str] | None] = {  # noqa: E501
+    "app_worker": "OPERATIONAL",
+    "app_user": None,
+    "app_rw": None,
+    "app_ro": None,
+    "app_dispatch_publisher": None,
+    "app_celery_transport": None,
+    "app_trust_issuer": None,
+    "app_trust_signer": None,
+    "app_b28_requester": None,
+    "app_b28_solver": None,
+}
+
+VERDICT_AUTHORITY_STATE_COLUMN = "b26_p2_source_authority_state"
+
+
+def _verdict_column_violations(cursor) -> list[str]:
+    """Assert the XIX column-scoped verdict UPDATE contract as an equality."""
+    violations: list[str] = []
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns"
+        " WHERE table_schema = 'public' AND table_name = 'b23_match_verdicts'"
+    )
+    columns = [row[0] for row in cursor.fetchall()]
+    for principal, allowed in VERDICT_UPDATE_COLUMN_CONTRACT.items():
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (principal,))
+        if cursor.fetchone() is None:
+            continue
+        for column in columns:
+            cursor.execute(
+                "SELECT has_column_privilege(%s, %s, %s, 'UPDATE')",
+                (principal, "public.b23_match_verdicts", column),
+            )
+            held = bool(cursor.fetchone()[0])
+            if allowed is None:
+                want = False
+            elif allowed == "OPERATIONAL":
+                want = column != VERDICT_AUTHORITY_STATE_COLUMN
+            else:
+                want = column in allowed
+            if held and not want:
+                violations.append(
+                    f"{principal} holds UPDATE({column}) on"
+                    " b23_match_verdicts (column contract forbids it)"
+                )
+            if want and not held:
+                violations.append(
+                    f"{principal} is missing UPDATE({column}) on"
+                    " b23_match_verdicts"
+                )
+    return violations
+
 
 # Principals enumerated for every relation in the contract. A principal that
 # appears here but not in a relation's map must hold nothing on that relation.
@@ -440,6 +505,7 @@ def _contract_violations(cursor) -> list[str]:
                 violations.append(
                     f"{principal} is missing {sorted(missing)} on {relation}"
                 )
+    violations.extend(_verdict_column_violations(cursor))
     return violations
 
 
