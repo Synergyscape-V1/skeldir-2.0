@@ -719,36 +719,49 @@ def _assert_b26_p2_construction_authority_at_boot() -> None:
         wait_s = 240.0
 
     async def _check() -> None:
-        deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
-        while True:
-            observed: object = "unreadable"
-            try:
-                async with engine.begin() as conn:
-                    observed = await read_construction_revisions(conn)
-                    assert_production_construction_authority(observed)
-            except Exception as exc:
-                from app.core.construction_authority import (
-                    ConstructionAuthorityError as _ConstructionAuthorityError,
-                )
+        # The check runs inside a transient asyncio.run() loop. It must
+        # never touch the shared module-level engine: its pool would bind
+        # connections to this short-lived loop, and every later task using
+        # the shared engine would fail with cross-loop errors (which then
+        # surface as task failures). A dedicated NullPool engine created
+        # and disposed inside this loop leaves zero shared state behind.
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import NullPool
 
-                if not isinstance(exc, _ConstructionAuthorityError):
+        check_engine = create_async_engine(engine.url, poolclass=NullPool)
+        try:
+            deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
+            while True:
+                observed: object = "unreadable"
+                try:
+                    async with check_engine.begin() as conn:
+                        observed = await read_construction_revisions(conn)
+                        assert_production_construction_authority(observed)
+                except Exception as exc:
+                    from app.core.construction_authority import (
+                        ConstructionAuthorityError as _ConstructionAuthorityError,
+                    )
+
+                    if not isinstance(exc, _ConstructionAuthorityError):
+                        logger.warning(
+                            "construction_authority_worker_deferred:%s", exc
+                        )
+                        return
+                    if asyncio.get_event_loop().time() >= deadline:
+                        logger.critical(
+                            "construction_authority_worker_refused:%s", exc
+                        )
+                        raise SystemExit(
+                            f"construction_authority_worker_refused:{exc}"
+                        ) from exc
                     logger.warning(
-                        "construction_authority_worker_deferred:%s", exc
+                        "construction_authority_worker_waiting:%s", observed
                     )
-                    return
-                if asyncio.get_event_loop().time() >= deadline:
-                    logger.critical(
-                        "construction_authority_worker_refused:%s", exc
-                    )
-                    raise SystemExit(
-                        f"construction_authority_worker_refused:{exc}"
-                    ) from exc
-                logger.warning(
-                    "construction_authority_worker_waiting:%s", observed
-                )
-                await asyncio.sleep(2.0)
-                continue
-            return
+                    await asyncio.sleep(2.0)
+                    continue
+                return
+        finally:
+            await check_engine.dispose()
 
     try:
         asyncio.run(_check())
