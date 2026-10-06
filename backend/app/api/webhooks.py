@@ -1777,11 +1777,16 @@ async def stripe_payment_intent_succeeded_v2(
             )
         )
 
-    unsupported_reason = _unsupported_event_family_reason(
-        provider="stripe",
-        payload=identity_payload or payload,
-        request_headers=request_headers,
-    )
+    unsupported_reason = None
+    if payload_parse_error is None:
+        # XIX: parseable but familyless shapes are refused here with an
+        # explicit DLQ disposition (unparseable bodies are handled as
+        # malformed below, preserving request-key accounting).
+        unsupported_reason = _unsupported_event_family_reason(
+            provider="stripe",
+            payload=identity_payload or payload,
+            request_headers=request_headers,
+        )
     if unsupported_reason is not None:
         return await _route_unsupported_event_family(
             source="stripe",
