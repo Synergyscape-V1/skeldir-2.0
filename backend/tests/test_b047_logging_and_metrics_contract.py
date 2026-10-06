@@ -83,6 +83,8 @@ async def test_logging_contract_success_and_dlq(caplog, capsys, tenant_with_secr
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": sig,
+                # XIX: shopify family is proven by the provider-transported topic.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -112,6 +114,8 @@ async def test_logging_contract_success_and_dlq(caplog, capsys, tenant_with_secr
             content=bad_body,
             headers={
                 "X-Shopify-Hmac-Sha256": bad_sig,
+                # XIX: lawful family so the malformed amount reaches validation DLQ.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -149,6 +153,8 @@ async def test_metrics_labels_and_parseability(tenant_with_secret):
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": sig,
+                # XIX: shopify family is proven by the provider-transported topic.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -159,6 +165,8 @@ async def test_metrics_labels_and_parseability(tenant_with_secret):
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": sig,
+                # XIX: shopify family is proven by the provider-transported topic.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -178,6 +186,8 @@ async def test_metrics_labels_and_parseability(tenant_with_secret):
             content=bad_body,
             headers={
                 "X-Shopify-Hmac-Sha256": bad_sig,
+                # XIX: lawful family so the malformed amount reaches validation DLQ.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },

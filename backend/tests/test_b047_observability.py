@@ -100,6 +100,8 @@ async def test_metrics_exposed_and_counters_increment(tenant_with_secret):
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                # XIX: shopify family is proven by the provider-transported topic.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -135,6 +137,8 @@ async def test_correlation_header_present(tenant_with_secret):
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                # XIX: shopify family is proven by the provider-transported topic.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },

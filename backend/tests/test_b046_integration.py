@@ -228,6 +228,8 @@ async def test_qg61_shopify_end_to_end(test_tenant_with_secrets):
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                # XIX: shopify family is proven by the provider-transported topic.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": tenant_info["api_key"],
                 "Content-Type": "application/json",
             },
@@ -300,6 +302,8 @@ async def test_qg61_paypal_end_to_end(test_tenant_with_secrets):
     txn_id = f"txn_{uuid4().hex[:10]}"
     body = json.dumps({
         "id": txn_id,
+        # XIX: paypal family is proven by the body-native event_type signal.
+        "event_type": "payment.sale.completed",
         "amount": {"total": "75.50", "currency": "USD"},
         "create_time": datetime.now(timezone.utc).isoformat(),
     }).encode()
@@ -394,6 +398,8 @@ async def test_qg62_idempotency_enforcement(test_tenant_with_secrets):
     signature = sign_shopify(body, tenant_info["secrets"]["shopify"])
     headers = {
         "X-Shopify-Hmac-Sha256": signature,
+        # XIX: shopify family is proven by the provider-transported topic.
+        "X-Shopify-Topic": "orders/create",
         "X-Skeldir-Tenant-Key": tenant_info["api_key"],
         "Content-Type": "application/json",
     }
@@ -456,6 +462,8 @@ async def test_qg63_dlq_routing_malformed_payload(test_tenant_with_secrets):
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                # XIX: lawful family so the malformed amount reaches validation DLQ.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": tenant_info["api_key"],
                 "Content-Type": "application/json",
             },
@@ -516,6 +524,8 @@ async def test_qg64_cross_tenant_isolation_mandatory(test_tenant_pair):
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                # XIX: shopify family is proven by the provider-transported topic.
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": tenant_a["api_key"],
                 "Content-Type": "application/json",
             },
@@ -582,6 +592,8 @@ async def test_qg65_performance_baseline_1000_events(test_tenant_with_secrets):
                 content=body,
                 headers={
                     "X-Shopify-Hmac-Sha256": signature,
+                    # XIX: shopify family is proven by the provider-transported topic.
+                    "X-Shopify-Topic": "orders/create",
                     "X-Skeldir-Tenant-Key": tenant_info["api_key"],
                     "Content-Type": "application/json",
                 },
@@ -624,6 +636,8 @@ async def test_qg65_performance_baseline_1000_events(test_tenant_with_secrets):
             txn_id = f"txn_{uuid4().hex[:10]}"
             body = json.dumps({
                 "id": txn_id,
+                # XIX: paypal family is proven by the body-native event_type signal.
+                "event_type": "payment.sale.completed",
                 "amount": {"total": f"{(i % 100) + 10}.00", "currency": "USD"},
                 "create_time": datetime.now(timezone.utc).isoformat(),
             }).encode()
