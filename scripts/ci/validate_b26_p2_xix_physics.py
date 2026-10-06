@@ -101,6 +101,31 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         violations.append("xix_phys_table_revoke_missing:verdicts")
     else:
         checks["privilege_table_revoke_verdicts"] = True
+    # H-XIX-R17: the unverifiable historical context field must never
+    # enter verified arithmetic. Census every reader: the only lawful
+    # readers are the aggregate definition/projection itself (which
+    # carries it as explicit non-authoritative context) and tests.
+    # Any denominator/ratio/total/benchmark consumer is a violation.
+    allowed_readers = (
+        "backend/app/revenue_verification/verification_coverage.py",
+    )
+    for path in sorted((REPO_ROOT / "backend").rglob("*.py")):
+        rel = path.as_posix()
+        if "backend/tests/" in rel or "/tests/" in rel:
+            continue
+        if rel.endswith("/backend/app/revenue_verification/verification_coverage.py"):
+            continue
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "unverifiable_historical_revenue_minor" in body:
+            violations.append(
+                "xix_phys_unverifiable_consumed:"
+                f"{path.relative_to(REPO_ROOT).as_posix()}"
+            )
+    if not [v for v in violations if "xix_phys_unverifiable_consumed" in v]:
+        checks["unverifiable_context_unconsumed"] = True
 
 
 def _live_checks(
