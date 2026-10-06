@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict JjbgRE612mDjf110J0NZF4MWavuc1gWyBSIO1YU18EUuOTWAdcdSE8A3ki3N0bO
+\restrict 5esOQlVSY5Ox8TlQbHScY6u7L3gHclfgw3ntBdJOcsqHBr2g3Ldz2gbtjnRG6No
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -22273,35 +22273,56 @@ CREATE TRIGGER trg_b26_p2_xix_ledger_immutable BEFORE INSERT OR DELETE OR UPDATE
 -- Name: b26_p2_provider_auth_consequence trg_b26_p2_xix_revoke_on_consequence_loss; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_b26_p2_xix_revoke_on_consequence_loss AFTER DELETE OR UPDATE ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('consequence-loss');
+CREATE TRIGGER trg_b26_p2_xix_revoke_on_consequence_loss AFTER DELETE ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('consequence-loss');
 
 
 --
--- Name: b26_p2_provider_auth_consequence trg_b26_p2_xix_revoke_on_family_unbound; Type: TRIGGER; Schema: public; Owner: -
+-- Name: b26_p2_provider_auth_consequence trg_b26_p2_xix_revoke_on_consequence_loss_update; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_b26_p2_xix_revoke_on_family_unbound AFTER UPDATE OF b26_p2_event_family ON public.b26_p2_provider_auth_consequence FOR EACH ROW WHEN ((new.b26_p2_event_family IS NULL)) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('family-unbound');
+CREATE TRIGGER trg_b26_p2_xix_revoke_on_consequence_loss_update AFTER UPDATE ON public.b26_p2_provider_auth_consequence FOR EACH ROW WHEN (((old.b26_p2_event_family IS DISTINCT FROM new.b26_p2_event_family) AND (new.b26_p2_event_family IS NULL))) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('consequence-loss');
 
 
 --
 -- Name: b26_p2_provenance_evidence trg_b26_p2_xix_revoke_on_provenance_loss; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_b26_p2_xix_revoke_on_provenance_loss AFTER DELETE OR UPDATE ON public.b26_p2_provenance_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('provenance-loss');
+CREATE TRIGGER trg_b26_p2_xix_revoke_on_provenance_loss AFTER DELETE ON public.b26_p2_provenance_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('provenance-loss');
+
+
+--
+-- Name: b26_p2_provenance_evidence trg_b26_p2_xix_revoke_on_provenance_loss_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_xix_revoke_on_provenance_loss_update AFTER UPDATE ON public.b26_p2_provenance_evidence FOR EACH ROW WHEN ((old.evidence_witness_hash IS DISTINCT FROM new.evidence_witness_hash)) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('provenance-loss');
 
 
 --
 -- Name: b26_p2_auth_root_evidence trg_b26_p2_xix_revoke_on_root_loss; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_b26_p2_xix_revoke_on_root_loss AFTER DELETE OR UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('root-loss');
+CREATE TRIGGER trg_b26_p2_xix_revoke_on_root_loss AFTER DELETE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('root-loss');
+
+
+--
+-- Name: b26_p2_auth_root_evidence trg_b26_p2_xix_revoke_on_root_loss_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_xix_revoke_on_root_loss_update AFTER UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW WHEN (((old.body_sha256 IS DISTINCT FROM new.body_sha256) OR (old.signature_envelope_sha256 IS DISTINCT FROM new.signature_envelope_sha256))) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('root-loss');
 
 
 --
 -- Name: b26_p2_ingress_auth_witness trg_b26_p2_xix_revoke_on_witness_loss; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_b26_p2_xix_revoke_on_witness_loss AFTER DELETE OR UPDATE ON public.b26_p2_ingress_auth_witness FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('witness-loss');
+CREATE TRIGGER trg_b26_p2_xix_revoke_on_witness_loss AFTER DELETE ON public.b26_p2_ingress_auth_witness FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('witness-loss');
+
+
+--
+-- Name: b26_p2_ingress_auth_witness trg_b26_p2_xix_revoke_on_witness_loss_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_xix_revoke_on_witness_loss_update AFTER UPDATE ON public.b26_p2_ingress_auth_witness FOR EACH ROW WHEN ((old.witness_hash IS DISTINCT FROM new.witness_hash)) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('witness-loss');
 
 
 --
@@ -25479,5 +25500,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict JjbgRE612mDjf110J0NZF4MWavuc1gWyBSIO1YU18EUuOTWAdcdSE8A3ki3N0bO
+\unrestrict 5esOQlVSY5Ox8TlQbHScY6u7L3gHclfgw3ntBdJOcsqHBr2g3Ldz2gbtjnRG6No
 

@@ -487,6 +487,10 @@ def upgrade() -> None:
     # provenance downgrade bar is not tripped; the propagation graph
     # then re-derives every dependent verdict). Runs as DEFINER owner
     # so the revocation cannot be fenced by caller privilege.
+    # DELETE always demotes. UPDATE demotes only when a justifying
+    # value is lost (witness/evidence digests, consequence family
+    # nullification, root digests): operational backfills that touch
+    # only metadata (family source tags, attested_at) never demote.
     # ------------------------------------------------------------------
     op.execute(
         """
@@ -523,42 +527,45 @@ def upgrade() -> None:
         " FROM PUBLIC"
     )
     for _spec in (
-        ("b26_p2_ingress_auth_witness", "witness-loss"),
-        ("b26_p2_provenance_evidence", "provenance-loss"),
-        ("b26_p2_provider_auth_consequence", "consequence-loss"),
-        ("b26_p2_auth_root_evidence", "root-loss"),
+        ("b26_p2_ingress_auth_witness", "witness-loss",
+         "OLD.witness_hash IS DISTINCT FROM NEW.witness_hash"),
+        ("b26_p2_provenance_evidence", "provenance-loss",
+         "OLD.evidence_witness_hash IS DISTINCT FROM"
+         " NEW.evidence_witness_hash"),
+        ("b26_p2_provider_auth_consequence", "consequence-loss",
+         "(OLD.b26_p2_event_family IS DISTINCT FROM NEW.b26_p2_event_family"
+         " AND NEW.b26_p2_event_family IS NULL)"),
+        ("b26_p2_auth_root_evidence", "root-loss",
+         "(OLD.body_sha256 IS DISTINCT FROM NEW.body_sha256"
+         " OR OLD.signature_envelope_sha256 IS DISTINCT FROM"
+         " NEW.signature_envelope_sha256)"),
     ):
-        _table, _cause = _spec
+        _table, _cause, _when = _spec
+        _tname = _cause.replace("-", "_")
         op.execute(
             "DROP TRIGGER IF EXISTS trg_b26_p2_xix_revoke_on_%s"
-            " ON public.%s" % (_cause.replace("-", "_"), _table)
+            " ON public.%s" % (_tname, _table)
         )
         op.execute(
             """
             CREATE TRIGGER trg_b26_p2_xix_revoke_on_%s
-            AFTER DELETE OR UPDATE ON public.%s
+            AFTER DELETE ON public.%s
             FOR EACH ROW EXECUTE FUNCTION
             public.b26_p2_revoke_authority_on_evidence_loss('%s')
-            """ % (_cause.replace("-", "_"), _table, _cause)
+            """ % (_tname, _table, _cause)
         )
-    # Family nullification is justification loss even when the row
-    # survives: a consequence row without a bound family cannot justify
-    # currentness (the predicate requires a bound allowlisted family).
-    op.execute(
-        "DROP TRIGGER IF EXISTS trg_b26_p2_xix_revoke_on_family_unbound"
-        " ON public.b26_p2_provider_auth_consequence"
-    )
-    op.execute(
-        """
-        CREATE TRIGGER trg_b26_p2_xix_revoke_on_family_unbound
-        AFTER UPDATE OF b26_p2_event_family
-        ON public.b26_p2_provider_auth_consequence
-        FOR EACH ROW
-        WHEN (NEW.b26_p2_event_family IS NULL)
-        EXECUTE FUNCTION
-        public.b26_p2_revoke_authority_on_evidence_loss('family-unbound')
-        """
-    )
+        op.execute(
+            "DROP TRIGGER IF EXISTS trg_b26_p2_xix_revoke_on_%s_update"
+            " ON public.%s" % (_tname, _table)
+        )
+        op.execute(
+            """
+            CREATE TRIGGER trg_b26_p2_xix_revoke_on_%s_update
+            AFTER UPDATE ON public.%s
+            FOR EACH ROW WHEN (%s) EXECUTE FUNCTION
+            public.b26_p2_revoke_authority_on_evidence_loss('%s')
+            """ % (_tname, _table, _when, _cause)
+        )
 
     # ------------------------------------------------------------------
     # XIX-7. Immutable supersession ledger (H-XIX-R11).
@@ -742,6 +749,49 @@ def upgrade() -> None:
             " public.b26_p2_publication_history TO %s';"
             " END IF; END $$;" % (_role, _role)
         )
+    # Genesis chain (prev-linked; literals computed under the documented
+    # preimage law_kind|law_id|law_version|law_digest|activation|prev):
+    # semantic regime R1, family-law v1, hierarchy v1 (activated by
+    # XVIII/300001), then family-law v2, hierarchy v2 (activated here).
+    # Seeded BEFORE the guard trigger exists (XVIII pattern): the seed
+    # is migration content, and non-owner migration principals (r3-style
+    # CI lanes) must also migrate cleanly; the guard governs every
+    # later write.
+    op.execute(
+        """
+        INSERT INTO public.b26_p2_publication_history AS h (
+            law_kind, law_id, law_version, law_digest,
+            activation_revision, prev_entry_hash, entry_hash
+        )
+        VALUES
+        ('semantic-regime', 'xvii-sovereign-v1', 'v1',
+         'c0f7e3b580dcaf91c7221aa522bf3ca968de7dcc8aa2bf0d5f22b6440ba8e924',
+         '202609300001', NULL,
+         '2ac2b6bf88829f5c3a4ce72d0bfb4b481419779a31651ec94c5ba21f82fb131c'),
+        ('event-family-law', 'b26-p2-event-family-law', 'v1',
+         'a06e0001a22dbc1620e0f468857828817400aa5a1416dab21d337e75321cac18',
+         '202609300001',
+         '2ac2b6bf88829f5c3a4ce72d0bfb4b481419779a31651ec94c5ba21f82fb131c',
+         '39d7b8b9340b22ae4c690af28503107d0676657e21f30a048d30827fec6ed2e3'),
+        ('contract-hierarchy', 'b26-p2-contract-hierarchy', 'v1',
+         '5015beea4be1b91095147a792e90e4ca90ce9cc34e535407e419abbee9366b24',
+         '202609300001',
+         '39d7b8b9340b22ae4c690af28503107d0676657e21f30a048d30827fec6ed2e3',
+         '73de49425c20e322cede432eb349c2bcd2d05a76c7b13322eb1e12b5baab5e15'),
+        ('event-family-law', 'b26-p2-event-family-law', 'v2',
+         '8ad0cbb85ac3747a119f261f4db68d14029e0ddee5effddc3f423010c5f76d01',
+         '202609300002',
+         '73de49425c20e322cede432eb349c2bcd2d05a76c7b13322eb1e12b5baab5e15',
+         '069d1df4d397f10cc73df8b63c06aa7ca2d5add7b6e23fefe5b17a756a08299d'),
+        ('contract-hierarchy', 'b26-p2-contract-hierarchy', 'v2',
+         '779a39fc1b2b61b77e5c34da125aeec05a460a0fd287186d9d6e73ac41a1a4a8',
+         '202609300002',
+         '069d1df4d397f10cc73df8b63c06aa7ca2d5add7b6e23fefe5b17a756a08299d',
+         'd1696cde33d46304e2a62794b2edd58b168e0af157050754634a9ef34f3c3097')
+        ON CONFLICT ON CONSTRAINT b26_p2_publication_identity_single_valued
+        DO NOTHING
+        """
+    )
     op.execute(
         """
         CREATE OR REPLACE FUNCTION public.b26_p2_enforce_history_immutability()
@@ -778,45 +828,6 @@ def upgrade() -> None:
         ON public.b26_p2_publication_history
         FOR EACH ROW EXECUTE FUNCTION
         public.b26_p2_enforce_history_immutability()
-        """
-    )
-    # Genesis chain (prev-linked; literals computed under the documented
-    # preimage law_kind|law_id|law_version|law_digest|activation|prev):
-    # semantic regime R1, family-law v1, hierarchy v1 (activated by
-    # XVIII/300001), then family-law v2, hierarchy v2 (activated here).
-    op.execute(
-        """
-        INSERT INTO public.b26_p2_publication_history AS h (
-            law_kind, law_id, law_version, law_digest,
-            activation_revision, prev_entry_hash, entry_hash
-        )
-        VALUES
-        ('semantic-regime', 'xvii-sovereign-v1', 'v1',
-         'c0f7e3b580dcaf91c7221aa522bf3ca968de7dcc8aa2bf0d5f22b6440ba8e924',
-         '202609300001', NULL,
-         '2ac2b6bf88829f5c3a4ce72d0bfb4b481419779a31651ec94c5ba21f82fb131c'),
-        ('event-family-law', 'b26-p2-event-family-law', 'v1',
-         'a06e0001a22dbc1620e0f468857828817400aa5a1416dab21d337e75321cac18',
-         '202609300001',
-         '2ac2b6bf88829f5c3a4ce72d0bfb4b481419779a31651ec94c5ba21f82fb131c',
-         '39d7b8b9340b22ae4c690af28503107d0676657e21f30a048d30827fec6ed2e3'),
-        ('contract-hierarchy', 'b26-p2-contract-hierarchy', 'v1',
-         '5015beea4be1b91095147a792e90e4ca90ce9cc34e535407e419abbee9366b24',
-         '202609300001',
-         '39d7b8b9340b22ae4c690af28503107d0676657e21f30a048d30827fec6ed2e3',
-         '73de49425c20e322cede432eb349c2bcd2d05a76c7b13322eb1e12b5baab5e15'),
-        ('event-family-law', 'b26-p2-event-family-law', 'v2',
-         '8ad0cbb85ac3747a119f261f4db68d14029e0ddee5effddc3f423010c5f76d01',
-         '202609300002',
-         '73de49425c20e322cede432eb349c2bcd2d05a76c7b13322eb1e12b5baab5e15',
-         '069d1df4d397f10cc73df8b63c06aa7ca2d5add7b6e23fefe5b17a756a08299d'),
-        ('contract-hierarchy', 'b26-p2-contract-hierarchy', 'v2',
-         '779a39fc1b2b61b77e5c34da125aeec05a460a0fd287186d9d6e73ac41a1a4a8',
-         '202609300002',
-         '069d1df4d397f10cc73df8b63c06aa7ca2d5add7b6e23fefe5b17a756a08299d',
-         'd1696cde33d46304e2a62794b2edd58b168e0af157050754634a9ef34f3c3097')
-        ON CONFLICT ON CONSTRAINT b26_p2_publication_identity_single_valued
-        DO NOTHING
         """
     )
     op.execute(
@@ -1561,12 +1572,12 @@ def downgrade() -> None:
     ):
         op.execute(
             "DROP TRIGGER IF EXISTS trg_b26_p2_xix_revoke_on_%s"
-            " ON public.%s" % (_cause.replace("-", "_"), _table)
+            " ON public.%s" % (_cause, _table)
         )
-    op.execute(
-        "DROP TRIGGER IF EXISTS trg_b26_p2_xix_revoke_on_family_unbound"
-        " ON public.b26_p2_provider_auth_consequence"
-    )
+        op.execute(
+            "DROP TRIGGER IF EXISTS trg_b26_p2_xix_revoke_on_%s_update"
+            " ON public.%s" % (_cause, _table)
+        )
     op.execute(
         "DROP FUNCTION IF EXISTS public.b26_p2_revoke_authority_on_evidence_loss()"
     )
