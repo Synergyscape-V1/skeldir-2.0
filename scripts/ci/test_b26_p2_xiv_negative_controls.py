@@ -115,6 +115,15 @@ def _control_auth_legacy(admin_dsn, violations, checks):
                         (ing, "a" * 64),
                     )
                     try:
+                        # XIX: explicit authenticated family claim + source.
+                        icur.execute(
+                            "SELECT set_config('app.b26_p2_event_family',"
+                            " 'payment_intent.succeeded', false)"
+                        )
+                        icur.execute(
+                            "SELECT set_config('app.b26_p2_event_family_source',"
+                            " 'body-signal:type', false)"
+                        )
                         icur.execute(
                             "SELECT public.b26_p2_attest_provenance_evidence(%s,"
                             "'signed_provider_reingestion','xiv-nc-1')",
@@ -129,6 +138,15 @@ def _control_auth_legacy(admin_dsn, violations, checks):
                         else:
                             checks["auth_legacy_red"] = True
                     # Atomic on the same ingress still authorizes (restore GREEN).
+                    # XIX: explicit authenticated family claim + source.
+                    icur.execute(
+                        "SELECT set_config('app.b26_p2_event_family',"
+                        " 'payment_intent.succeeded', false)"
+                    )
+                    icur.execute(
+                        "SELECT set_config('app.b26_p2_event_family_source',"
+                        " 'body-signal:type', false)"
+                    )
                     icur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe','e1',%s,%s,"
                         "'hmac-sha256-timestamped-hex','v1')",

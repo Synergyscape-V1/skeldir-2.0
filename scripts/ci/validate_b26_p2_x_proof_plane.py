@@ -221,6 +221,15 @@ def _seed_no_verdict_task(admin_dsn: str) -> tuple[str, str, str]:
             # XIII: dispatch requires terminal authentication. Fully
             # authenticate the proof-plane fixture via the atomic
             # transition (as admin, allowed) before dispatch/conduction.
+            # XIX: explicit authenticated family claim + source.
+            cur.execute(
+                "SELECT set_config('app.b26_p2_event_family',"
+                " 'payment_intent.succeeded', false)"
+            )
+            cur.execute(
+                "SELECT set_config('app.b26_p2_event_family_source',"
+                " 'body-signal:type', false)"
+            )
             cur.execute(
                 "SELECT public.b26_p2_authenticate_ingress_atomic("
                 "%s, 'stripe', 'e', %s, %s,"

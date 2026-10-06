@@ -212,6 +212,15 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     (ing1, "a" * 64),
                 )
                 try:
+                    # XIX: explicit authenticated family claim + source.
+                    icur.execute(
+                        "SELECT set_config('app.b26_p2_event_family',"
+                        " 'payment_intent.succeeded', false)"
+                    )
+                    icur.execute(
+                        "SELECT set_config('app.b26_p2_event_family_source',"
+                        " 'body-signal:type', false)"
+                    )
                     icur.execute(
                         "SELECT public.b26_p2_attest_provenance_evidence(%s,"
                         "'signed_provider_reingestion','xiv-cond-1')",
@@ -239,6 +248,15 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 except Exception:
                     checks["direct_evidence_refused"] = True
                 # Atomic: single authority promotes with evidence.
+                # XIX: explicit authenticated family claim + source.
+                icur.execute(
+                    "SELECT set_config('app.b26_p2_event_family',"
+                    " 'payment_intent.succeeded', false)"
+                )
+                icur.execute(
+                    "SELECT set_config('app.b26_p2_event_family_source',"
+                    " 'body-signal:type', false)"
+                )
                 icur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe','e1',%s,%s,"
                     "'hmac-sha256-timestamped-hex','v1')",

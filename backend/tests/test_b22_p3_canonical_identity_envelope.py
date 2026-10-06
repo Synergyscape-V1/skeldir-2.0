@@ -175,6 +175,7 @@ async def test_b22_p3_all_supported_providers_persist_canonical_identity_envelop
     stripe_body = json.dumps(
         {
             "id": stripe_event_id,
+            "type": "payment_intent.succeeded",
             "created": int(datetime.now(timezone.utc).timestamp()),
             "data": {
                 "object": {
@@ -187,7 +188,12 @@ async def test_b22_p3_all_supported_providers_persist_canonical_identity_envelop
         }
     ).encode()
     paypal_body = json.dumps(
-        {"id": paypal_txn_id, "amount": {"total": "75.50", "currency": "USD"}, "create_time": now_iso}
+        {
+            "id": paypal_txn_id,
+            "event_type": "payment.sale.completed",
+            "amount": {"total": "75.50", "currency": "USD"},
+            "create_time": now_iso,
+        }
     ).encode()
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
@@ -198,6 +204,7 @@ async def test_b22_p3_all_supported_providers_persist_canonical_identity_envelop
                 content=shopify_body,
                 headers={
                     "X-Shopify-Hmac-Sha256": sign_shopify(shopify_body, secrets["shopify_webhook_secret"]),
+                    "X-Shopify-Topic": "orders/create",
                     "X-Skeldir-Tenant-Key": api_key,
                     "Content-Type": "application/json",
                 },
@@ -272,6 +279,7 @@ async def test_b22_p3_verified_state_is_first_class_queryable():
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": sign_shopify(body, secrets["shopify_webhook_secret"]),
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -328,6 +336,7 @@ async def test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailabl
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": sign_shopify(body, secrets["shopify_webhook_secret"]),
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -365,6 +374,7 @@ async def test_b22_p3_authoritative_path_avoids_request_time_schema_introspectio
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": sign_shopify(body, secrets["shopify_webhook_secret"]),
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },

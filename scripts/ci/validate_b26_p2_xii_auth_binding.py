@@ -248,6 +248,15 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                  (ingress_a, idem_a), "b26_p2_evidence_witness_missing"),
             ]:
                 try:
+                    # XIX: explicit authenticated family claim + source.
+                    cur.execute(
+                        "SELECT set_config('app.b26_p2_event_family',"
+                        " 'payment_intent.succeeded', false)"
+                    )
+                    cur.execute(
+                        "SELECT set_config('app.b26_p2_event_family_source',"
+                        " 'body-signal:type', false)"
+                    )
                     cur.execute(sql, args)
                     violations.append("xii_auth_live_minted:%s" % label)
                 except Exception as exc:
@@ -280,6 +289,15 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (tenant_a,),
             )
+            # XIX: explicit authenticated family claim + source.
+            cur.execute(
+                "SELECT set_config('app.b26_p2_event_family',"
+                " 'payment_intent.succeeded', false)"
+            )
+            cur.execute(
+                "SELECT set_config('app.b26_p2_event_family_source',"
+                " 'body-signal:type', false)"
+            )
             cur.execute(
                 "SELECT public.b26_p2_authenticate_ingress_atomic("
                 "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
@@ -292,6 +310,15 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
             # AUTH-4: tampered body fails binding (digest drift on the
             # bound consequence is refused as immutable).
             try:
+                # XIX: explicit authenticated family claim + source.
+                cur.execute(
+                    "SELECT set_config('app.b26_p2_event_family',"
+                    " 'payment_intent.succeeded', false)"
+                )
+                cur.execute(
+                    "SELECT set_config('app.b26_p2_event_family_source',"
+                    " 'body-signal:type', false)"
+                )
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",

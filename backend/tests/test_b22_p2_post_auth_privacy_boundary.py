@@ -141,6 +141,7 @@ async def test_b22_p2_webhook_success_persists_minimized_raw_event_substrate_onl
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "User-Agent": "B22P2-Test-Agent/1.0",
                 "X-Forwarded-For": "203.0.113.77",
@@ -243,6 +244,7 @@ async def test_b22_p2_duplicate_webhook_does_not_reenqueue_downstream_side_effec
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -252,6 +254,7 @@ async def test_b22_p2_duplicate_webhook_does_not_reenqueue_downstream_side_effec
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
