@@ -87,13 +87,15 @@ CANONICAL_EVENT_FAMILY_BY_PROVIDER = MappingProxyType(
 
 # Provider-native family signals: payload keys whose presence asserts a
 # family. A present-but-unsupported signal is REFUSED (never coerced).
-# A signal-less shape is accepted ONLY as the governed family-implicit
-# canonical family above (explicit contract disposition for flat
-# provider shapes that carry no family indicator: the shape itself --
-# e.g. a bare payment_intent object, a bare order JSON -- is the
-# provider's canonical representation of the supported family, and
-# every other family of that provider arrives in a distinct,
-# refused-or-typed shape).
+# XIX (H-XIX-R7): a signal-less shape is REFUSED (never defaulted). Every
+# positive family assertion must derive from an authenticated event fact:
+# a body-native signal key for stripe/paypal/woocommerce, or the
+# provider-transported topic for shopify (whose protocol conveys family
+# in the X-Shopify-Topic header outside the HMAC'd body) and as a
+# fallback for woocommerce (X-Wc-Webhook-Topic). The topic travels the
+# in-memory relay envelope only; the derived canonical family plus its
+# evidence source are what persist. Provider name or relay route alone
+# never constitutes family authority.
 _NATIVE_FAMILY_SIGNAL_KEYS_BY_PROVIDER = MappingProxyType(
     {
         "stripe": ("type", "event_type", "status"),
@@ -504,18 +506,16 @@ def _normalize_family_token(value: Any) -> str | None:
     return token or None
 
 
-def derive_event_family(provider: str, raw_body: bytes) -> str:
-    """Sovereignly establish the supported event family from verified bytes.
+def _derive_family_and_source(
+    provider: str, raw_body: bytes, topic: Any = None
+) -> tuple[str, str]:
+    """Establish (canonical family, evidence source) from verified bytes.
 
-    Returns the canonical family for the provider. Raises
-    CommerceDerivationError when the bytes carry a native family signal
-    outside the supported family (valid signature + parseable money +
-    unsupported family yields NO financial authority).
-
-    Shapes carrying no native signal are attested as the governed
-    family-implicit canonical family (see module law above): the
-    authority for that disposition is this function over bytes plus the
-    governed family-law contract -- never the relay route selected.
+    Returns the canonical family plus which authenticated fact proved it:
+    ``body-signal:<key>`` for a body-native signal, or
+    ``transport-topic:<header>`` for a provider-transported topic.
+    Raises CommerceDerivationError when no authenticated family fact
+    exists (familyless shapes are non-authoritative for P2).
     """
     normalized = (provider or "").strip().lower()
     if normalized not in SUPPORTED_PROVIDERS:
@@ -524,20 +524,84 @@ def derive_event_family(provider: str, raw_body: bytes) -> str:
         raise CommerceDerivationError("raw provider body is required")
     payload = _parse_json_object(bytes(raw_body))
     canonical = CANONICAL_EVENT_FAMILY_BY_PROVIDER[normalized]
+    aliases = _FAMILY_ALIASES_BY_PROVIDER[normalized]
+    if normalized == "shopify":
+        observed = _normalize_family_token(topic)
+        if observed is None:
+            raise CommerceDerivationError(
+                "shopify family requires the provider-transported topic"
+            )
+        if observed in aliases:
+            return canonical, "transport-topic:x-shopify-topic"
+        raise CommerceDerivationError(
+            f"unsupported event family for shopify: topic={observed!r}"
+        )
+    observed_any = False
     for key in _NATIVE_FAMILY_SIGNAL_KEYS_BY_PROVIDER[normalized]:
         observed = _normalize_family_token(payload.get(key))
         if observed is None:
             continue
+        observed_any = True
         if normalized == "woocommerce" and observed == "completed":
-            return canonical
+            return canonical, "body-signal:status"
         if normalized == "stripe" and observed == "succeeded":
-            return canonical
-        if observed in _FAMILY_ALIASES_BY_PROVIDER[normalized]:
-            return canonical
+            return canonical, "body-signal:status"
+        if observed in aliases:
+            return canonical, f"body-signal:{key}"
         raise CommerceDerivationError(
             f"unsupported event family for {normalized}: {key}={observed!r}"
         )
-    return canonical
+    if normalized == "woocommerce" and not observed_any:
+        observed = _normalize_family_token(topic)
+        if observed is None:
+            raise CommerceDerivationError(
+                "woocommerce family requires a body status signal or the "
+                "provider-transported topic"
+            )
+        if observed in aliases:
+            return canonical, "transport-topic:x-wc-webhook-topic"
+        raise CommerceDerivationError(
+            f"unsupported event family for woocommerce: topic={observed!r}"
+        )
+    raise CommerceDerivationError(
+        f"no authenticated event-family fact for {normalized}: "
+        "familyless shapes are non-authoritative"
+    )
+
+
+def derive_event_family(
+    provider: str, raw_body: bytes, topic: Any = None
+) -> str:
+    """Sovereignly establish the supported event family from verified bytes.
+
+    Returns the canonical family for the provider. Raises
+    CommerceDerivationError when the bytes carry a native family signal
+    outside the supported family (valid signature + parseable money +
+    unsupported family yields NO financial authority), and when no
+    authenticated family fact exists at all (familyless shapes yield NO
+    financial authority -- provider name and relay route never supply
+    family meaning).
+
+    For shopify the family fact is the provider-transported
+    ``X-Shopify-Topic`` value (``topic``); the HMAC'd body alone never
+    suffices for shopify. For woocommerce ``topic`` is an accepted
+    fallback when the body carries no status signal.
+    """
+    family, _source = _derive_family_and_source(provider, raw_body, topic)
+    return family
+
+
+def derive_event_family_source(
+    provider: str, raw_body: bytes, topic: Any = None
+) -> str:
+    """Return which authenticated evidence established the event family.
+
+    One of ``body-signal:<key>`` or ``transport-topic:<header>``.
+    Raises CommerceDerivationError exactly when derive_event_family
+    raises (same law, same inputs).
+    """
+    _family, source = _derive_family_and_source(provider, raw_body, topic)
+    return source
 
 
 def derive_commerce(provider: str, raw_body: bytes) -> SovereignCommerce:

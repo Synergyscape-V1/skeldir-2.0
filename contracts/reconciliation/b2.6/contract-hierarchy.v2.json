@@ -1,0 +1,121 @@
+{
+  "contract_id": "b26-p2-contract-hierarchy",
+  "contract_version": "v2",
+  "semantic_regime": "xvii-sovereign-v1",
+  "supersedes": {
+    "contract_version": "v1",
+    "disposition": "superseded_retained_for_history",
+    "change": "rank-2 event-family law advances v1 (family-implicit disposition) to v2 (explicit authenticated-family-fact law with provider-transported topic binding); no route, divergence, or precedence change"
+  },
+  "governing_note": "B2.6-P2 Corrective XIX (H-XIX-R6): the explicit machine-readable authority hierarchy for provider contracts. A payload must never be simultaneously 'valid per the public provider contract' and 'semantically invalid per the sovereign reconciliation law' without a governed scope rule below explaining the difference. Precedence is top-down: (1) sovereign reconciliation law, (2) sovereign event-family law v2 (explicit authenticated family facts; familyless shapes refused), (3) public ingestion API surface (transport only), (4) legacy provider shape law (superseded where divergent). This artifact is versioned: hierarchy changes that alter P2 authority require a new contract_version (never an in-place edit), recorded in the publication-history chain and the b26_p2_publication_history ledger.",
+  "precedence": [
+    {
+      "rank": 1,
+      "artifact": "contracts/reconciliation/b2.6/provider-semantic-contract.v1.json",
+      "role": "sovereign reconciliation law: what counts as P2 financial truth (shapes, money, identity, goldens, refusals)"
+    },
+    {
+      "rank": 2,
+      "artifact": "contracts/reconciliation/b2.6/event-family-law.v2.json",
+      "role": "sovereign event-family law: which provider event families may found financial authority, and which authenticated fact proves each family"
+    },
+    {
+      "rank": 3,
+      "artifact": "api-contracts/openapi/v1/webhooks/*",
+      "role": "public ingestion API surface: transport/shape advertisement only. Non-authoritative for meaning; any shape it advertises outside rank-1/2 support is ingestion-rejected (DLQ), never coerced."
+    },
+    {
+      "rank": 4,
+      "artifact": "contracts/webhooks/v1/*",
+      "role": "legacy provider shape law: SUPERSEDED wherever it diverges from rank 1. Retained for history; divergent entries are classified superseded_legacy below and are not served."
+    }
+  ],
+  "p2_supported_routes": [
+    {
+      "route": "/webhooks/shopify/order_create",
+      "provider": "shopify",
+      "p2_event_family": "orders.create",
+      "family_evidence": "transport-topic:x-shopify-topic",
+      "status": "supported"
+    },
+    {
+      "route": "/webhooks/stripe/payment_intent_succeeded",
+      "provider": "stripe",
+      "p2_event_family": "payment_intent.succeeded",
+      "family_evidence": "body-signal:type",
+      "status": "supported"
+    },
+    {
+      "route": "/webhooks/stripe/payment_intent/succeeded",
+      "provider": "stripe",
+      "p2_event_family": "payment_intent.succeeded",
+      "family_evidence": "body-signal:type",
+      "status": "supported"
+    },
+    {
+      "route": "/webhooks/paypal/sale_completed",
+      "provider": "paypal",
+      "p2_event_family": "payment.sale.completed",
+      "family_evidence": "body-signal:event_type",
+      "status": "supported"
+    },
+    {
+      "route": "/webhooks/woocommerce/order_completed",
+      "provider": "woocommerce",
+      "p2_event_family": "order.completed",
+      "family_evidence": "body-signal:status",
+      "status": "supported"
+    }
+  ],
+  "superseded_legacy_entries": [
+    {
+      "artifact": "contracts/webhooks/v1/stripe.yaml",
+      "path": "/webhooks/stripe/charge/succeeded",
+      "status": "superseded_legacy",
+      "rationale": "charge.succeeded is outside the sovereign supported families (rank 1 supports payment_intent.succeeded only); no implemented route serves it; ranked lower than the sovereign law per precedence."
+    },
+    {
+      "artifact": "contracts/webhooks/v1/paypal.yaml",
+      "path": "/webhooks/paypal/payment/sale/completed",
+      "status": "superseded_legacy",
+      "rationale": "legacy path naming diverges from the served route /webhooks/paypal/sale_completed; the served route and the sovereign flat-sale shape govern. Rank-1/2 win on any divergence."
+    },
+    {
+      "artifact": "contracts/webhooks/v1/woocommerce.yaml",
+      "path": "/webhooks/woocommerce/order/created",
+      "status": "superseded_legacy",
+      "rationale": "order/created is outside the sovereign supported families (rank 1 supports order.completed only); only order_completed is served."
+    },
+    {
+      "artifact": "contracts/webhooks/v1/shopify.yaml",
+      "path": "/webhooks/shopify/orders/create",
+      "status": "superseded_legacy",
+      "rationale": "legacy path naming diverges from the served route /webhooks/shopify/order_create; same sovereign family (orders.create). The served route governs."
+    },
+    {
+      "artifact": "api-contracts/openapi/v1/webhooks/paypal.yaml",
+      "path": "PayPalResource",
+      "status": "ingestion_rejected_by_sovereign_law",
+      "rationale": "the public schema advertises a resource envelope the sovereign law refuses (refusal vector paypal-resource-envelope). Rank 1 wins: such payloads are DLQ-routed, never coerced. The divergence is declared here, not hidden."
+    },
+    {
+      "artifact": "api-contracts/openapi/v1/webhooks/stripe.yaml",
+      "path": "payment_intent.payment_failed",
+      "status": "ingestion_rejected_by_sovereign_law",
+      "rationale": "the public schema enumerates families outside sovereign support; only payment_intent.succeeded (and its underscored relay variant) founds authority. Non-sovereign families are DLQ-routed at the relay and refused at the root."
+    }
+  ],
+  "superseded_law_versions": [
+    {
+      "artifact": "contracts/reconciliation/b2.6/event-family-law.v1.json",
+      "status": "superseded_retained_for_history",
+      "rationale": "v1 permitted family-implicit authority for signal-less shapes; v2 requires an explicit authenticated family fact. Pre-XIX mints keep their bound value tagged xix-backfill:pre-xix-mint per the v2 migration law."
+    },
+    {
+      "artifact": "contracts/reconciliation/b2.6/contract-hierarchy.v1.json",
+      "status": "superseded_retained_for_history",
+      "rationale": "v1 ranked the v1 family law; v2 ranks the v2 family law. No route or divergence change."
+    }
+  ],
+  "projection_rule": "provider ingestion contract DOWN-PROJECTS to the P2 reconciliation subset: P2-supported = implemented route AND authenticated family fact AND sovereign shape. Anything else is ingestion-only (DLQ/ignore) or superseded. No route existence implies P2 authority; no provider name implies family."
+}

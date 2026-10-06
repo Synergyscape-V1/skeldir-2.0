@@ -956,6 +956,9 @@ def _post_paypal_once(
     body = json.dumps(
         {
             "id": txn_id,
+            # XIX: the sale body carries its provider-native family
+            # signal; familyless shapes are non-authoritative.
+            "event_type": "payment.sale.completed",
             "amount": {"total": total, "currency": "USD"},
             "create_time": create_iso or datetime.now(timezone.utc).isoformat(),
         },
@@ -1364,12 +1367,12 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        # XVIII: the head advances to the authority-conservation
-        # revision; the XVII head must remain an ancestor (linear
+        # XIX: the head advances to the non-reconstructible-authority
+        # revision; the XVIII head must remain an ancestor (linear
         # ancestry, no forks).
-        if "202609300001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xviii")
-        details["migration_head"] = "202609300001"
+        if "202609300002" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xix")
+        details["migration_head"] = "202609300002"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -1761,6 +1764,9 @@ def main() -> int:
         eur_body = json.dumps(
             {
                 "id": eur_intent,
+                # XIX: lawful family signal isolates the currency
+                # dimension under test (family-ignored would mask it).
+                "type": "payment_intent.succeeded",
                 "amount": 5000,
                 "currency": "eur",
                 "created": int(time.time()),
@@ -1868,6 +1874,11 @@ def main() -> int:
         outage_body = json.dumps(
             {
                 "id": outage_intent,
+                # XIX: lawful family signal so the arrival takes the
+                # relay path (which fails with the root down, leaving
+                # a pending precursor); familyless arrivals DLQ-ignore
+                # before relay and cannot evidence the outage path.
+                "type": "payment_intent.succeeded",
                 "amount": 7700,
                 "currency": "usd",
                 "created": int(time.time()),
@@ -1886,9 +1897,15 @@ def main() -> int:
         try:
             with urllib.request.urlopen(outage_req, timeout=60) as outage_resp:
                 outage_status = outage_resp.status
+                outage_text = outage_resp.read().decode()
         except urllib.error.HTTPError as exc:
             outage_status = exc.code
-        if outage_status == 200:
+            outage_text = exc.read().decode()
+        # XIX: a familyless arrival is DLQ-ignored (HTTP 200 with an
+        # explicit non-success disposition) rather than relayed. Either
+        # way, no success without the root: fail only on an actual
+        # success claim.
+        if '"status":"success"' in outage_text.replace(" ", ""):
             return _fail(f"root_down_false_success:{outage_status}")
         outage_idem = str(
             _stage_uuid.uuid5(
@@ -2277,7 +2294,15 @@ def main() -> int:
                 # authenticate the lawful fixture via the atomic
                 # transition (as admin/migration_owner, allowed) before
                 # dispatch. The stray row stays pending (non-dispatchable
-                # by law) for the crash test.
+                # by law) for the crash test. XIX: explicit family claim.
+                setup_cur.execute(
+                    "SELECT set_config('app.b26_p2_event_family',"
+                    " 'payment_intent.succeeded', false)"
+                )
+                setup_cur.execute(
+                    "SELECT set_config('app.b26_p2_event_family_source',"
+                    " 'body-signal:type', false)"
+                )
                 setup_cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, 'stripe', %s, %s, %s,"
@@ -2482,10 +2507,13 @@ def main() -> int:
                 # XIII terminal law fires before the window check for
                 # unauthenticated rows (provenance_unknown/witness_missing);
                 # either layer proves forged dispatch cannot conduct.
+                # XIX: the central current-authority law fires first
+                # (source_not_current) for any non-current source.
                 _msg0 = str(exc).split("\n")[0]
                 if (
                     "b26_p2_dispatch_window_not_sovereign" not in _msg0
                     and "b26_p2_dispatch_provenance_unknown" not in _msg0
+                    and "b26_p2_dispatch_source_not_current" not in _msg0
                     and "b26_p2_dispatch_witness_missing" not in _msg0
                 ):
                     return _fail(

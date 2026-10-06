@@ -174,12 +174,18 @@ async def test_b22_p4_duplicate_replay_suppresses_downstream_tasks_for_all_suppo
     stripe_v2_body = json.dumps(
         {
             "id": stripe_event_id,
+            "type": "payment_intent.succeeded",
             "created": int(datetime.now(timezone.utc).timestamp()),
             "data": {"object": {"id": stripe_alias_pi_id, "amount": 5500, "currency": "usd"}},
         }
     ).encode()
     paypal_body = json.dumps(
-        {"id": paypal_txn_id, "amount": {"total": "15.00", "currency": "USD"}, "create_time": now_iso}
+        {
+            "id": paypal_txn_id,
+            "event_type": "payment.sale.completed",
+            "amount": {"total": "15.00", "currency": "USD"},
+            "create_time": now_iso,
+        }
     ).encode()
 
     observed_calls: list[str] = []
@@ -193,7 +199,10 @@ async def test_b22_p4_duplicate_replay_suppresses_downstream_tasks_for_all_suppo
         (
             "/api/webhooks/shopify/order_create",
             shopify_body,
-            {"X-Shopify-Hmac-Sha256": sign_shopify(shopify_body, secrets["shopify_webhook_secret"])},
+            {
+                "X-Shopify-Hmac-Sha256": sign_shopify(shopify_body, secrets["shopify_webhook_secret"]),
+                "X-Shopify-Topic": "orders/create",
+            },
         ),
         (
             "/api/webhooks/woocommerce/order_completed",
@@ -273,6 +282,7 @@ async def test_b22_p4_duplicate_replay_preserves_single_durable_event_row():
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -282,6 +292,7 @@ async def test_b22_p4_duplicate_replay_preserves_single_durable_event_row():
             content=body,
             headers={
                 "X-Shopify-Hmac-Sha256": signature,
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -360,6 +371,7 @@ async def test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malforme
             content=valid_body,
             headers={
                 "X-Shopify-Hmac-Sha256": valid_signature,
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -369,6 +381,7 @@ async def test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malforme
             content=valid_body,
             headers={
                 "X-Shopify-Hmac-Sha256": valid_signature,
+                "X-Shopify-Topic": "orders/create",
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -515,6 +528,7 @@ async def test_b22_p4_stripe_alias_and_canonical_routes_share_ack_semantics():
     alias_body = json.dumps(
         {
             "id": f"evt_{uuid4().hex[:12]}",
+            "type": "payment_intent.succeeded",
             "created": now_ts,
             "data": {"object": {"id": pi_id, "amount": 6100, "currency": "usd"}},
         }

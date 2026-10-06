@@ -120,6 +120,66 @@ app.include_router(budget.router, tags=["Budget"])
 # - /health/worker: Worker capability (data-plane probe)
 
 @app.on_event("startup")
+async def _startup_construction_authority_guard() -> None:
+    """B2.6-P2 Corrective XIX: refuse to serve against an incompatible schema.
+
+    Readiness alone cannot keep a live-but-unready process from executing
+    a stale money read if it stays routable: this process must not boot
+    against a database whose construction revision differs from the one
+    this build's authority physics requires. A mismatch raises (the
+    process fails and the orchestrator must not route to it); an
+    unreachable database defers to readiness (which 503s). Only the
+    revision law is boot-fatal: the exact-catalog physical comparison
+    stays at readiness (503, non-fatal) and in the P14 CI gates, since
+    minimal topologies legitimately differ in owners/grants. Because
+    deployments may start processes while a migration is still in
+    flight, a mismatch is retried for a bounded window before it
+    becomes fatal (SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S,
+    default 240s): a process that outlasts the window without
+    converging dies instead of serving stale law.
+    """
+    import asyncio
+    import logging
+    import os
+
+    from app.core.construction_authority import (
+        ConstructionAuthorityError,
+        assert_production_construction_authority,
+        read_construction_revisions,
+    )
+    from app.db.session import engine
+
+    logger = logging.getLogger(__name__)
+    try:
+        wait_s = float(
+            os.getenv("SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S", "240")
+        )
+    except ValueError:
+        wait_s = 240.0
+    deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
+    while True:
+        observed: object = "unreadable"
+        try:
+            async with engine.begin() as conn:
+                observed = await read_construction_revisions(conn)
+                assert_production_construction_authority(observed)
+        except ConstructionAuthorityError:
+            now = asyncio.get_event_loop().time()
+            if now >= deadline:
+                raise
+            logger.warning(
+                "construction_authority_boot_waiting:%s", observed
+            )
+            await asyncio.sleep(2.0)
+            continue
+        except Exception as exc:
+            logger.warning("construction_authority_guard_deferred:%s", exc)
+            return
+        logger.info("construction_authority_boot_ok")
+        return
+
+
+@app.on_event("startup")
 async def _startup_secret_contract_guard() -> None:
     """Fail closed at boot when required security secrets are unavailable."""
     assert_runtime_secret_contract("api")

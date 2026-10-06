@@ -336,7 +336,12 @@ def _live_historical(admin_dsn, violations, checks) -> None:
             violations.append("xvii_nc_survivor_oracle_blind")
         else:
             checks["historical_red"] = True
-        # ...dispatch refuses it with the regime token...
+        # ...dispatch refuses it with the single-law token (XIX: the
+        # complete current-authority predicate screens every
+        # non-current row first, so a regime-unverifiable survivor is
+        # refused as not-current -- the same adaptation XVIII L9
+        # already carries for demoted rows; refusal itself is the
+        # property under test).
         try:
             cur.execute(
                 "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
@@ -357,7 +362,7 @@ def _live_historical(admin_dsn, violations, checks) -> None:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)", (tenant,)
             )
-            if "b26_p2_dispatch_regime_unverifiable_refused" not in str(exc):
+            if "b26_p2_dispatch_source_not_current" not in str(exc):
                 violations.append(
                     f"xvii_nc_dispatch_wrong_refusal:{str(exc).splitlines()[0][:120]}"
                 )

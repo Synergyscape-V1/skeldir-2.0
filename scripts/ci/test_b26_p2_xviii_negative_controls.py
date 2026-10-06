@@ -351,6 +351,17 @@ def _live_controls(
                         "SELECT set_config('app.current_tenant_id', %s, false)",
                         (tenant,),
                     )
+                    # XIX: the sovereign transition requires an explicit
+                    # authenticated family claim plus its evidence
+                    # source; session scope survives autocommit here.
+                    icur.execute(
+                        "SELECT set_config('app.b26_p2_event_family',"
+                        " 'payment_intent.succeeded', false)"
+                    )
+                    icur.execute(
+                        "SELECT set_config('app.b26_p2_event_family_source',"
+                        " 'body-signal:type', false)"
+                    )
                     icur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
                         "%s,'stripe',%s,%s,%s,"

@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 from sqlalchemy import create_engine, text
 
 from app.bayesian.inference_profile import (
@@ -549,6 +550,7 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                     f"p6-ingress:{suffix}:{index:02d}",
                 ),
             )
+            apply_xix_family_gucs_psycopg2(cur, "stripe")
             cur.execute(
                 "SELECT public.b26_p2_authenticate_ingress_atomic("
                 " %s, 'stripe', %s, %s, %s,"

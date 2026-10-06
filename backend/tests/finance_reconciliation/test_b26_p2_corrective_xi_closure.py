@@ -30,6 +30,8 @@ from uuid import UUID
 
 import pytest
 
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
+
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
 DAY_NOON = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
@@ -278,6 +280,8 @@ def _witness_and_attest(
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
+            apply_xix_family_gucs_psycopg2(
+                cur, ids.get("provider", "stripe"))
             cur.execute(
                 "SELECT public.b26_p2_authenticate_ingress_atomic"
                 "(%s, %s, %s, %s, %s, %s, 'v1')",
@@ -404,6 +408,9 @@ def test_xa1_assertion_promotes_nothing() -> None:
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
+            # XIX: explicit family claim set (earlier guard still fires first).
+            apply_xix_family_gucs_psycopg2(
+                cur, ids.get("provider", "stripe"))
             denied = _refused(
                 lambda: cur.execute(
                     "SELECT public.b26_p2_attest_provenance_evidence"
@@ -451,6 +458,9 @@ def test_xa1_assertion_promotes_nothing() -> None:
                 "SELECT set_config('app.current_tenant_id', %s, false)",
                 (str(ids["tenant_id"]),),
             )
+            # XIX: explicit family claim set (earlier guard still fires first).
+            apply_xix_family_gucs_psycopg2(
+                cur, ids.get("provider", "stripe"))
             reason = _refused(
                 lambda: cur.execute(
                     "SELECT public.b26_p2_attest_provenance_evidence"
@@ -459,6 +469,9 @@ def test_xa1_assertion_promotes_nothing() -> None:
                 )
             )
             assert "b26_p2_evidence_witness_missing" in reason
+            # XIX: explicit family claim set (earlier guard still fires first).
+            apply_xix_family_gucs_psycopg2(
+                cur, ids.get("provider", "stripe"))
             reason = _refused(
                 lambda: cur.execute(
                     "SELECT public.b26_p2_attest_provenance_evidence"
@@ -589,6 +602,8 @@ def test_xb1_generic_runtimes_hold_no_ingress_capability() -> None:
                     )
                 )
                 assert "permission denied" in denied.lower(), (role, denied)
+                # XIX: explicit family claim set (grant plane still fires first).
+                apply_xix_family_gucs_psycopg2(cur, "stripe")
                 denied = _refused(
                     lambda: cur.execute(
                         "SELECT public.b26_p2_attest_provenance_evidence"
@@ -1096,11 +1111,13 @@ async def test_xe_p3_eligibility_matrix() -> None:
     task = f"xi-xe1-{uuid.uuid4().hex[:8]}"
     # XIII: witnessless rows cannot dispatch (terminal law refuses at
     # the dispatch gate, not at P3). Verify the refusal first.
+    # XIX: the central current-authority law fires first
+    # (source_not_current), which implies the legacy refusals.
     with_ingress_dispatch_refused = False
     try:
         _seed_dispatch(ids, task)
     except Exception as exc:
-        if "provenance_unknown" in str(exc).lower() or "witness_missing" in str(exc).lower():
+        if "provenance_unknown" in str(exc).lower() or "witness_missing" in str(exc).lower() or "source_not_current" in str(exc).lower():
             with_ingress_dispatch_refused = True
         else:
             raise

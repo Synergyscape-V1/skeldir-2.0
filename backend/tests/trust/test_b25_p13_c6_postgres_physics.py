@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 from celery import signals
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -552,6 +553,7 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
                 " AND v.provider_native_event_reference LIKE 'c6-event-%%'",
                 (str(tenant_id),),
             )
+            apply_xix_family_gucs_psycopg2(cur, "stripe")
             cur.execute(
                 "SELECT public.b26_p2_authenticate_ingress_atomic("
                 " wi.id, wi.provider, wi.provider_native_event_reference,"

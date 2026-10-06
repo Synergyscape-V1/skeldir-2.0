@@ -215,7 +215,13 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
             )
             return ing, ev
 
-        def _auth(ing: str, eref: str, sha: str, family: str | None = None) -> str:
+        def _auth(
+            ing: str,
+            eref: str,
+            sha: str,
+            family: str | None = "payment_intent.succeeded",
+            family_source: str | None = "body-signal:type",
+        ) -> str:
             igr = psycopg2.connect(ingress_dsn)
             igr.autocommit = True
             try:
@@ -228,6 +234,11 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                         icur.execute(
                             "SELECT set_config('app.b26_p2_event_family', %s, false)",
                             (family,),
+                        )
+                    if family_source is not None:
+                        icur.execute(
+                            "SELECT set_config('app.b26_p2_event_family_source', %s, false)",
+                            (family_source,),
                         )
                     icur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
@@ -461,8 +472,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 checks["downgrade_serving_blocked"] = True
         cur.execute(
             "INSERT INTO public.b26_p2_operational_floor (id, floor_revision)"
-            " VALUES (1,'202609300001') ON CONFLICT (id) DO UPDATE SET"
-            " floor_revision='202609300001'"
+            " VALUES (1,'202609300002') ON CONFLICT (id) DO UPDATE SET"
+            " floor_revision='202609300002'"
         )
         assert _auth(row7, "xviii-e7", "e" * 64) == "authenticated_known"
         checks["floor_restore_reenables"] = True
@@ -543,7 +554,7 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
             cur.execute(
                 "SELECT set_config('app.current_tenant_id', %s, false)", (tenant,)
             )
-            if "b26_p2_dispatch_provenance_unknown" not in str(exc):
+            if "b26_p2_dispatch_source_not_current" not in str(exc):
                 violations.append(
                     "xviii_phys_dispatch_wrong_refusal:"
                     f"{str(exc).splitlines()[0][:120]}"

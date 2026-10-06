@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
@@ -159,6 +160,7 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
             # allowed) in the same cursor/session so provenance reads
             # known.
             try:
+                apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -305,6 +307,7 @@ def _seed_extra_ingress(tenant_id: UUID, tag: str) -> UUID:
             # ingresses, so authenticate here (as admin, allowed) in the
             # same cursor/session so provenance reads known.
             try:
+                apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -800,6 +803,7 @@ def test_v_null_dispatch_window_refused_at_issuance() -> None:
                 _auth_row = cur.fetchone()
                 assert _auth_row is not None
                 try:
+                    apply_xix_family_gucs_psycopg2(cur, _auth_row[0])
                     cur.execute(
                         "SELECT public.b26_p2_authenticate_ingress_atomic("
                         "%s, %s, %s, %s, %s,"
@@ -1338,6 +1342,7 @@ def test_v_relay_cannot_mint_execution_authority() -> None:
             _auth_row = _acur.fetchone()
             assert _auth_row is not None
             try:
+                apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"

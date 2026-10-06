@@ -220,11 +220,31 @@ def _provider_auth_method(provider: str) -> str:
     return _PROVIDER_AUTH_METHOD.get(provider.strip().lower(), "unknown")
 
 
+def _provider_topic_for_family(
+    *, provider: str, request_headers: Mapping[str, str] | None
+) -> str | None:
+    """Extract the provider-transported family topic (XIX, H-XIX-R7).
+
+    In-memory only: the topic is carried through the relay envelope to
+    the authentication root, which derives the family from it for
+    providers whose protocol conveys family outside the signed body
+    (shopify; fallback for woocommerce). The topic itself is never
+    persisted -- only the derived family and its evidence source are.
+    """
+    headers = request_headers or {}
+    if provider == "shopify":
+        return _normalize_event_family_hint(headers.get("x-shopify-topic"))
+    if provider == "woocommerce":
+        return _normalize_event_family_hint(headers.get("x-wc-webhook-topic"))
+    return None
+
+
 def _build_provider_auth_consequence(
     *,
     tenant_info: Mapping[str, Any],
     provider: str,
     provider_event_reference: str,
+    provider_topic: str | None = None,
 ) -> dict[str, Any]:
     """Snapshot predecessor event P for the post-commit finalizer.
 
@@ -232,6 +252,8 @@ def _build_provider_auth_consequence(
     provider-signature verification in this task. Binds the raw-body
     digest, a digest of the presented signature envelope (never the
     secret), the provider/event identities, and the method/version.
+    XIX: carries the provider-transported family topic (in memory) for
+    protocols that convey family outside the signed body.
     """
     auth_snapshot = tenant_info.get("provider_auth_snapshot") or {}
     event_ref = (provider_event_reference or "").strip()
@@ -248,6 +270,9 @@ def _build_provider_auth_consequence(
             auth_snapshot.get("auth_method") or _provider_auth_method(provider)
         ),
         "auth_version": "v1",
+        # XIX: provider-transported family topic (in memory only; the
+        # root derives the family from it, never from the route).
+        "provider_topic": provider_topic,
     }
     # XIV relay: carry the in-memory relay envelope (raw bytes + sig +
     # routing key) alongside the digest consequence. Transient only.
@@ -420,6 +445,15 @@ def _unsupported_event_family_reason(
     payload: Mapping[str, Any],
     request_headers: Mapping[str, str],
 ) -> str | None:
+    """Relay-side family hint check (defense in depth, never authority).
+
+    Returns a refusal reason when the arrival observably carries an
+    unsupported family OR no usable family fact at all (XIX:
+    familyless shapes are DLQ-routed here with an explicit reason
+    instead of dying later with an unclassified 500). The sovereign
+    decision stays downstream (root derivation, transition allowlist):
+    this hint can only refuse, never confer.
+    """
     supported_hints = _SUPPORTED_EVENT_FAMILY_HINTS[provider]
 
     if provider == "shopify":
@@ -428,6 +462,8 @@ def _unsupported_event_family_reason(
         )
         if observed_topic is not None and observed_topic not in supported_hints:
             return f"x-shopify-topic={observed_topic}"
+        if observed_topic is None:
+            return "familyless:no-provider-topic"
         return None
 
     if provider == "woocommerce":
@@ -439,12 +475,16 @@ def _unsupported_event_family_reason(
         observed_status = _normalize_event_family_hint(payload.get("status"))
         if observed_status is not None and observed_status != "completed":
             return f"status={observed_status}"
+        if observed_status is None and observed_topic is None:
+            return "familyless:no-status-or-topic"
         return None
 
     if provider == "paypal":
         observed_type = _normalize_event_family_hint(payload.get("event_type"))
         if observed_type is not None and observed_type not in supported_hints:
             return f"event_type={observed_type}"
+        if observed_type is None:
+            return "familyless:no-event-type"
         return None
 
     if provider == "stripe":
@@ -452,9 +492,13 @@ def _unsupported_event_family_reason(
             observed_type = _normalize_event_family_hint(payload.get(key))
             if observed_type is not None and observed_type not in supported_hints:
                 return f"{key}={observed_type}"
+            if observed_type is not None:
+                return None
         observed_status = _normalize_event_family_hint(payload.get("status"))
         if observed_status is not None and observed_status != "succeeded":
             return f"status={observed_status}"
+        if observed_status is None:
+            return "familyless:no-type-or-status"
         return None
 
     return None
@@ -1436,6 +1480,9 @@ async def shopify_order_create(
             tenant_info=tenant_info,
             provider="shopify",
             provider_event_reference=str(payload.id),
+            provider_topic=_provider_topic_for_family(
+                provider="shopify", request_headers=request_headers
+            ),
         ),
     )
 
@@ -1599,6 +1646,7 @@ async def stripe_payment_intent_succeeded(
             tenant_info=tenant_info,
             provider="stripe",
             provider_event_reference=str(payload.id),
+            provider_topic=None,
         ),
     )
 
@@ -1729,11 +1777,16 @@ async def stripe_payment_intent_succeeded_v2(
             )
         )
 
-    unsupported_reason = _unsupported_event_family_reason(
-        provider="stripe",
-        payload=identity_payload or payload,
-        request_headers=request_headers,
-    )
+    unsupported_reason = None
+    if payload_parse_error is None:
+        # XIX: parseable but familyless shapes are refused here with an
+        # explicit DLQ disposition (unparseable bodies are handled as
+        # malformed below, preserving request-key accounting).
+        unsupported_reason = _unsupported_event_family_reason(
+            provider="stripe",
+            payload=identity_payload or payload,
+            request_headers=request_headers,
+        )
     if unsupported_reason is not None:
         return await _route_unsupported_event_family(
             source="stripe",
@@ -1865,6 +1918,7 @@ async def stripe_payment_intent_succeeded_v2(
             tenant_info=tenant_info,
             provider="stripe",
             provider_event_reference=str(provider_event_reference),
+            provider_topic=None,
         ),
     )
 
@@ -2074,6 +2128,7 @@ async def paypal_sale_completed(
             tenant_info=tenant_info,
             provider="paypal",
             provider_event_reference=str(payload.id),
+            provider_topic=None,
         ),
     )
 
@@ -2233,5 +2288,8 @@ async def woocommerce_order_completed(
             tenant_info=tenant_info,
             provider="woocommerce",
             provider_event_reference=str(payload.id),
+            provider_topic=_provider_topic_for_family(
+                provider="woocommerce", request_headers=request_headers
+            ),
         ),
     )

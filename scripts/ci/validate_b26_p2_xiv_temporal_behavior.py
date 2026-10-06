@@ -123,6 +123,14 @@ def _seed(admin_dsn: str, tag: str) -> dict:
                 ),
             )
             cur.execute(
+                "SELECT set_config('app.b26_p2_event_family',"
+                " 'payment_intent.succeeded', false)"
+            )
+            cur.execute(
+                "SELECT set_config('app.b26_p2_event_family_source',"
+                " 'body-signal:type', false)"
+            )
+            cur.execute(
                 "SELECT public.b26_p2_authenticate_ingress_atomic("
                 "%s, 'stripe', %s, %s, %s,"
                 " 'hmac-sha256-timestamped-hex', 'v1')",
@@ -486,13 +494,16 @@ def _behavioral_probes(admin_dsn, violations, checks):
     )
     # XVIII: the unforgeable trust-transition trigger refuses first for
     # the same class (direct authority demotion by a runtime role).
+    # XIX: the privilege layer denies it even earlier (no runtime role
+    # holds UPDATE on authority-bearing columns); either layer proves
+    # the same property -- runtime demotion mints nothing.
     refused(
         "ingress_state_downgrade_refused",
         ingress_dsn,
         tenant,
         "UPDATE public.webhook_ingress_identities SET b26_p2_provenance_status='pending_authentication' WHERE id=%s",
         (ingress_id,),
-        "b26_p2_authority_transition_refused",
+        "permission denied",
     )
     # Ingress INSERT qualifying: same idempotency cannot create a second row.
     status, detail = _attempt(
@@ -882,7 +893,10 @@ def _kill_switches(admin_dsn, violations, checks):
                     DAY_END,
                 ),
             )
-            if status != "refused" or "provenance_unknown" not in (detail or ""):
+            if status != "refused" or (
+                "provenance_unknown" not in (detail or "")
+                and "source_not_current" not in (detail or "")
+            ):
                 violations.append(
                     f"xiv_temp_restore_not_green:dispatch_provenance:{detail}"
                 )

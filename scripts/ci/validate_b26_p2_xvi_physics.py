@@ -210,6 +210,14 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
 
         def _auth(icur, ing: str, sha: str, sig: str = "b" * 64):
             icur.execute(
+                "SELECT set_config('app.b26_p2_event_family',"
+                " 'payment_intent.succeeded', false)"
+            )
+            icur.execute(
+                "SELECT set_config('app.b26_p2_event_family_source',"
+                " 'body-signal:type', false)"
+            )
+            icur.execute(
                 "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe','e1',%s,%s,"
                 "'hmac-sha256-timestamped-hex','v1')",
                 (ing, sha, sig),
@@ -219,6 +227,14 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
         def _auth_ref(icur, ing: str, eref: str, sha: str, sig: str = "b" * 64):
             # XVII: the atomic binds the caller's event reference; a
             # genuinely distinct provider event carries its own reference.
+            icur.execute(
+                "SELECT set_config('app.b26_p2_event_family',"
+                " 'payment_intent.succeeded', false)"
+            )
+            icur.execute(
+                "SELECT set_config('app.b26_p2_event_family_source',"
+                " 'body-signal:type', false)"
+            )
             icur.execute(
                 "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe',%s,%s,%s,"
                 "'hmac-sha256-timestamped-hex','v1')",

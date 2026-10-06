@@ -745,6 +745,8 @@ def test_b057_p5_full_chain_webhook_to_matview():
                 "Content-Type": "application/json",
                 "X-Skeldir-Tenant-Key": tenant_a.tenant_key,
                 "X-Shopify-Hmac-Sha256": signature,
+                # XIX: shopify family is proven by the provider-transported topic.
+                "X-Shopify-Topic": "orders/create",
             },
             content=body,
             timeout=10.0,

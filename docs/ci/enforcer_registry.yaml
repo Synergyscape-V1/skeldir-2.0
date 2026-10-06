@@ -6621,3 +6621,110 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+- id: b26-p2-xix-publication-immutability
+  path: scripts/ci/validate_b26_p2_xix_publication_immutability.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Published semantic, family, and hierarchy law cannot
+    change meaning under the same published identity in any CI topology:
+    the hash-chained publication history (no mutable branch ref) binds
+    live bytes, parser map, migration allowlist, pin, registry, and the
+    append-only database ledger. Same-identity co-edits fail.'
+  command: python scripts/ci/validate_b26_p2_xix_publication_immutability.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xix_publication_immutability.py --help
+  expected_failure_meaning: Published law is mutable in place while every
+    correspondence gate stays green.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xix_publication_immutability.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xix-physics
+  path: scripts/ci/validate_b26_p2_xix_physics.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Current financial authority is a live conjunction
+    over evidence, authenticated family, active registry, floor, and
+    governed transition; no runtime principal reconstructs it; artifact
+    loss revokes it transactionally; family claims are explicit;
+    supersession and publication history are append-only.'
+  command: python scripts/ci/validate_b26_p2_xix_physics.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xix_physics.py --help
+  expected_failure_meaning: Currentness decouples from justification while
+    the proof plane stays green.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xix_physics.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xix-negative-controls
+  path: scripts/ci/test_b26_p2_xix_negative_controls.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Every XIX relation is non-vacuous: all fourteen
+    directive falsifiers (plus the wide-grant topology) turn a mandatory
+    gate red on a genuine class member and restore byte-exact green.'
+  command: python scripts/ci/test_b26_p2_xix_negative_controls.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/test_b26_p2_xix_negative_controls.py --help
+  expected_failure_meaning: A load-bearing gate that can never fail
+    certifies relations it does not observe.
+  first_diagnostic_command: python scripts/ci/test_b26_p2_xix_negative_controls.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xix-worker-pool-hygiene
+  path: scripts/ci/test_b26_p2_xix_worker_pool_hygiene.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'The worker boot construction-authority gate runs
+    inside a transient loop and must not disturb the shared engine pool:
+    after the gate runs, shared-engine queries on the worker loop
+    succeed twice (first use plus pool reuse). A poisoned pool turns
+    tasks into FAILURE results that kill C19 workers via the
+    result-integrity trigger.'
+  command: python scripts/ci/test_b26_p2_xix_worker_pool_hygiene.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/test_b26_p2_xix_worker_pool_hygiene.py --help
+  expected_failure_meaning: A boot gate that binds pool connections to a
+    dead loop poisons every later task while the gate itself reports ok.
+  first_diagnostic_command: python scripts/ci/test_b26_p2_xix_worker_pool_hygiene.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce

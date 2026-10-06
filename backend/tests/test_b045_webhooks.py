@@ -145,6 +145,9 @@ async def test_shopify_success_and_rls_isolation():
             content=body,
                 headers={
                     "X-Shopify-Hmac-Sha256": signature,
+                    # XIX: shopify family is proven by the
+                    # provider-transported topic, never by the body alone.
+                    "X-Shopify-Topic": "orders/create",
                     "X-Skeldir-Tenant-Key": api_key_a,
                     "Content-Type": "application/json",
                 },
@@ -371,13 +374,19 @@ async def test_dlq_routed_on_validation_error():
         )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "dlq_routed"
+    # XIX: the shape carries no provider topic, so the family hint fires
+    # first (unsupported_event_family_ignored) ahead of amount parsing.
+    # Either DLQ-class disposition proves the property: invalid shapes
+    # never become canonical.
+    assert data["status"] in {"dlq_routed", "unsupported_event_family_ignored"}
 
     async with get_session(tenant_id) as session:
         res = await session.execute(select(DeadEvent).order_by(DeadEvent.ingested_at.desc()))
         dead_event = res.scalars().first()
         assert dead_event is not None
-        assert dead_event.error_type in {"schema_validation", "unknown"}
+        # XIX: familyless shapes DLQ via the family hint
+        # (validation_error); unparseable shapes via schema validation.
+        assert dead_event.error_type in {"schema_validation", "unknown", "validation_error"}
 
 
 @pytest.mark.asyncio
@@ -427,6 +436,9 @@ async def test_paypal_success():
     body = json.dumps(
         {
             "id": f"txn_{uuid4().hex[:8]}",
+            # XIX: paypal family is proven by the body-native event_type
+            # signal; familyless shapes are non-authoritative.
+            "event_type": "payment.sale.completed",
             "amount": {"total": "20.00", "currency": "USD"},
             "create_time": datetime.now(timezone.utc).isoformat(),
         }

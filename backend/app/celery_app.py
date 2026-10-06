@@ -677,10 +677,100 @@ def _log_registered_tasks() -> None:
 @signals.worker_ready.connect
 def _on_worker_ready(sender=None, **kwargs):
     _ensure_celery_configured()
+    _assert_b26_p2_construction_authority_at_boot()
     _log_registered_tasks()
     _start_kombu_visibility_recovery_thread()
     if sender is not None:
         _start_multiproc_sweeper_thread(worker=sender)
+
+
+def _assert_b26_p2_construction_authority_at_boot() -> None:
+    """B2.6-P2 Corrective XIX: a worker must not become ready against an
+    incompatible schema revision. An old binary against a new database
+    (or the reverse) would otherwise emit authoritative-looking results
+    under a law it does not implement. Refusal here is fail-closed at
+    boot; the orchestrator must treat a worker that never becomes ready
+    as unroutable. A database that is unreachable at boot leaves the
+    check to task-time guards (fail closed per task). Only the revision
+    law is boot-fatal (see main.py guard for the rationale). A mismatch
+    is retried for a bounded window first, since workers may start while
+    a migration is still in flight; a worker that outlasts the window
+    without converging exits instead of consuming.
+    """
+    import asyncio
+    import logging
+    import os
+
+    logger = logging.getLogger(__name__)
+    try:
+        from app.core.construction_authority import (
+            assert_production_construction_authority,
+            read_construction_revisions,
+        )
+        from app.db.session import engine
+    except Exception as exc:
+        logger.warning("construction_authority_worker_check_skipped:%s", exc)
+        return
+    try:
+        wait_s = float(
+            os.getenv("SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S", "240")
+        )
+    except ValueError:
+        wait_s = 240.0
+
+    async def _check() -> None:
+        # The check runs inside a transient asyncio.run() loop. It must
+        # never touch the shared module-level engine: its pool would bind
+        # connections to this short-lived loop, and every later task using
+        # the shared engine would fail with cross-loop errors (which then
+        # surface as task failures). A dedicated NullPool engine created
+        # and disposed inside this loop leaves zero shared state behind.
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import NullPool
+
+        check_engine = create_async_engine(engine.url, poolclass=NullPool)
+        try:
+            deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
+            while True:
+                observed: object = "unreadable"
+                try:
+                    async with check_engine.begin() as conn:
+                        observed = await read_construction_revisions(conn)
+                        assert_production_construction_authority(observed)
+                except Exception as exc:
+                    from app.core.construction_authority import (
+                        ConstructionAuthorityError as _ConstructionAuthorityError,
+                    )
+
+                    if not isinstance(exc, _ConstructionAuthorityError):
+                        logger.warning(
+                            "construction_authority_worker_deferred:%s", exc
+                        )
+                        return
+                    if asyncio.get_event_loop().time() >= deadline:
+                        logger.critical(
+                            "construction_authority_worker_refused:%s", exc
+                        )
+                        raise SystemExit(
+                            f"construction_authority_worker_refused:{exc}"
+                        ) from exc
+                    logger.warning(
+                        "construction_authority_worker_waiting:%s", observed
+                    )
+                    await asyncio.sleep(2.0)
+                    continue
+                return
+        finally:
+            await check_engine.dispose()
+
+    try:
+        asyncio.run(_check())
+    except SystemExit:
+        raise
+    except Exception as exc:
+        logger.warning("construction_authority_worker_deferred:%s", exc)
+        return
+    logger.info("construction_authority_worker_boot_ok")
 
 
 def _queue_name_for_task(task) -> str:

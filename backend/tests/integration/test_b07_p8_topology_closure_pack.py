@@ -369,6 +369,8 @@ def test_b07_p8_three_topologies_contract_fidelity_and_non_vacuous_controls() ->
     created = int(time.time())
     order_external_id = f"pi_b07_p8_{uuid4().hex[:10]}"
     webhook_payload = {
+        # XIX: stripe family is proven by the body-native type signal.
+        "type": "payment_intent.succeeded",
         "id": f"evt_b07_p8_{uuid4().hex[:8]}",
         "created": created,
         "data": {

@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 
 DAY_START = datetime(2026, 1, 15, 0, 0, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
@@ -131,6 +132,7 @@ def _seed_ingress(tag: str, *, provider: str = "stripe", currency: str = "USD") 
             # known. Provider binding enforced (must equal ingress
             # provider).
             try:
+                apply_xix_family_gucs_psycopg2(cur, provider)
                 cur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -366,6 +368,7 @@ def test_r7_worker_cannot_mint_verified_ingress():
                             _auth_row = _acur.fetchone()
                             assert _auth_row is not None
                             try:
+                                apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                                 _acur.execute(
                                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                                     "%s, %s, %s, %s, %s,"
@@ -441,6 +444,7 @@ def _barrier_race(*, reverse: bool = False, field: str = "clock") -> dict:
             _auth_row = _acur.fetchone()
             assert _auth_row is not None
             try:
+                apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
@@ -688,6 +692,7 @@ def test_c7_blank_provider_gate_refuses():
             _auth_row = _acur.fetchone()
             assert _auth_row is not None
             try:
+                apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
                     "SELECT public.b26_p2_authenticate_ingress_atomic("
                     "%s, %s, %s, %s, %s,"
