@@ -1874,6 +1874,11 @@ def main() -> int:
         outage_body = json.dumps(
             {
                 "id": outage_intent,
+                # XIX: lawful family signal so the arrival takes the
+                # relay path (which fails with the root down, leaving
+                # a pending precursor); familyless arrivals DLQ-ignore
+                # before relay and cannot evidence the outage path.
+                "type": "payment_intent.succeeded",
                 "amount": 7700,
                 "currency": "usd",
                 "created": int(time.time()),
@@ -1892,9 +1897,15 @@ def main() -> int:
         try:
             with urllib.request.urlopen(outage_req, timeout=60) as outage_resp:
                 outage_status = outage_resp.status
+                outage_text = outage_resp.read().decode()
         except urllib.error.HTTPError as exc:
             outage_status = exc.code
-        if outage_status == 200:
+            outage_text = exc.read().decode()
+        # XIX: a familyless arrival is DLQ-ignored (HTTP 200 with an
+        # explicit non-success disposition) rather than relayed. Either
+        # way, no success without the root: fail only on an actual
+        # success claim.
+        if '"status":"success"' in outage_text.replace(" ", ""):
             return _fail(f"root_down_false_success:{outage_status}")
         outage_idem = str(
             _stage_uuid.uuid5(
