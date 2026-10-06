@@ -6700,3 +6700,31 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+- id: b26-p2-xix-worker-pool-hygiene
+  path: scripts/ci/test_b26_p2_xix_worker_pool_hygiene.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'The worker boot construction-authority gate runs
+    inside a transient loop and must not disturb the shared engine pool:
+    after the gate runs, shared-engine queries on the worker loop
+    succeed twice (first use plus pool reuse). A poisoned pool turns
+    tasks into FAILURE results that kill C19 workers via the
+    result-integrity trigger.'
+  command: python scripts/ci/test_b26_p2_xix_worker_pool_hygiene.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/test_b26_p2_xix_worker_pool_hygiene.py --help
+  expected_failure_meaning: A boot gate that binds pool connections to a
+    dead loop poisons every later task while the gate itself reports ok.
+  first_diagnostic_command: python scripts/ci/test_b26_p2_xix_worker_pool_hygiene.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
