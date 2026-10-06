@@ -427,6 +427,34 @@ def run_canaries(admin_dsn: str, violations: list[str],
                     "(%s, 'stripe', %s, %s)",
                     (ingress8, "evt-c8", "a" * 64),
                 )
+        finally:
+            ingress.close()
+        # XIX: the admin evidence deletions above transactionally demoted
+        # the row (continuous conservation). Governed repair clears the
+        # demotion after evidence is re-recorded, before attestation.
+        repair = psycopg2.connect(admin_dsn)
+        repair.autocommit = True
+        try:
+            with repair.cursor() as rcur:
+                rcur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (tenant8,),
+                )
+                rcur.execute(
+                    "UPDATE public.webhook_ingress_identities"
+                    " SET b26_p2_demotion_reason = NULL WHERE id = %s",
+                    (ingress8,),
+                )
+        finally:
+            repair.close()
+        ingress = psycopg2.connect(ingress_dsn)
+        ingress.autocommit = True
+        try:
+            with ingress.cursor() as icur:
+                icur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (tenant8,),
+                )
                 # XIX: the attester requires an explicit family claim.
                 icur.execute(
                     "SELECT set_config('app.b26_p2_event_family',"

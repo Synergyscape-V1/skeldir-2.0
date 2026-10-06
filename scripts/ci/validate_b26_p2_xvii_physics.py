@@ -136,6 +136,14 @@ def _mkrow(cur, tenant, evref, cref, amount):
 
 def _auth(icur, ing, eref, sha, sig="b" * 64):
     icur.execute(
+        "SELECT set_config('app.b26_p2_event_family',"
+        " 'payment_intent.succeeded', false)"
+    )
+    icur.execute(
+        "SELECT set_config('app.b26_p2_event_family_source',"
+        " 'body-signal:type', false)"
+    )
+    icur.execute(
         "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe',%s,%s,%s,"
         "'hmac-sha256-timestamped-hex','v1')",
         (ing, eref, sha, sig),
@@ -255,6 +263,15 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     violations.append("xvii_phys_oracle_dirty_on_lawful")
                 else:
                     checks["binding_oracle_clean"] = True
+                # Capture the true witness before tampering so governed
+                # repair can restore it byte-exact below.
+                cur.execute(
+                    "SELECT witness_hash FROM"
+                    " public.b26_p2_ingress_auth_witness"
+                    " WHERE webhook_ingress_identity_id = %s",
+                    (row1,),
+                )
+                true_witness = cur.fetchone()[0]
                 # Tuple detachment visible: tamper witness as admin...
                 cur.execute(
                     "UPDATE public.b26_p2_ingress_auth_witness SET witness_hash='0'"
@@ -271,6 +288,21 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 else:
                     checks["tuple_detach_visible"] = True
                 # ...and deterministic re-binding on re-authentication.
+                # XIX: the tamper transactionally demoted the row
+                # (corrupted justification). Governed repair restores
+                # the true witness and clears the demotion; re-auth
+                # then re-binds deterministically.
+                cur.execute(
+                    "UPDATE public.b26_p2_ingress_auth_witness"
+                    " SET witness_hash = %s"
+                    " WHERE webhook_ingress_identity_id = %s",
+                    (true_witness, row1,),
+                )
+                cur.execute(
+                    "UPDATE public.webhook_ingress_identities"
+                    " SET b26_p2_demotion_reason = NULL WHERE id = %s",
+                    (row1,),
+                )
                 assert _auth(icur, row1, "xvii-e1", sha_a) == "authenticated_known"
                 cur.execute(
                     "SELECT count(*) FROM public.b26_p2_xvii_semantic_binding_oracle()"
@@ -296,7 +328,9 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     violations.append("xvii_phys_regime_drift_invisible")
                 else:
                     checks["regime_drift_visible"] = True
-                # Dispatch refuses the drifted row with the regime token.
+                # Dispatch refuses the drifted row. XIX: the central
+                # current-authority law fires first (source_not_current),
+                # which implies the legacy regime refusal.
                 try:
                     cur.execute(
                         "INSERT INTO public.b23_match_task_dispatches (tenant_id,"
@@ -317,7 +351,7 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                         "SELECT set_config('app.current_tenant_id', %s, false)",
                         (tenant,),
                     )
-                    if "b26_p2_dispatch_regime_unverifiable_refused" not in str(exc):
+                    if "b26_p2_dispatch_regime_unverifiable_refused" not in str(exc) and "b26_p2_dispatch_source_not_current" not in str(exc):
                         violations.append(
                             "xvii_phys_dispatch_wrong_refusal:"
                             f"{str(exc).splitlines()[0][:120]}"
