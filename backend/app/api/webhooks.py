@@ -445,6 +445,15 @@ def _unsupported_event_family_reason(
     payload: Mapping[str, Any],
     request_headers: Mapping[str, str],
 ) -> str | None:
+    """Relay-side family hint check (defense in depth, never authority).
+
+    Returns a refusal reason when the arrival observably carries an
+    unsupported family OR no usable family fact at all (XIX:
+    familyless shapes are DLQ-routed here with an explicit reason
+    instead of dying later with an unclassified 500). The sovereign
+    decision stays downstream (root derivation, transition allowlist):
+    this hint can only refuse, never confer.
+    """
     supported_hints = _SUPPORTED_EVENT_FAMILY_HINTS[provider]
 
     if provider == "shopify":
@@ -453,6 +462,8 @@ def _unsupported_event_family_reason(
         )
         if observed_topic is not None and observed_topic not in supported_hints:
             return f"x-shopify-topic={observed_topic}"
+        if observed_topic is None:
+            return "familyless:no-provider-topic"
         return None
 
     if provider == "woocommerce":
@@ -464,12 +475,16 @@ def _unsupported_event_family_reason(
         observed_status = _normalize_event_family_hint(payload.get("status"))
         if observed_status is not None and observed_status != "completed":
             return f"status={observed_status}"
+        if observed_status is None and observed_topic is None:
+            return "familyless:no-status-or-topic"
         return None
 
     if provider == "paypal":
         observed_type = _normalize_event_family_hint(payload.get("event_type"))
         if observed_type is not None and observed_type not in supported_hints:
             return f"event_type={observed_type}"
+        if observed_type is None:
+            return "familyless:no-event-type"
         return None
 
     if provider == "stripe":
@@ -477,9 +492,13 @@ def _unsupported_event_family_reason(
             observed_type = _normalize_event_family_hint(payload.get(key))
             if observed_type is not None and observed_type not in supported_hints:
                 return f"{key}={observed_type}"
+            if observed_type is not None:
+                return None
         observed_status = _normalize_event_family_hint(payload.get("status"))
         if observed_status is not None and observed_status != "succeeded":
             return f"status={observed_status}"
+        if observed_status is None:
+            return "familyless:no-type-or-status"
         return None
 
     return None

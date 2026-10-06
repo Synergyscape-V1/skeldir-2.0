@@ -200,6 +200,9 @@ def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
     created = int(time.time())
     payload = {
         "id": "evt_b057_p3",
+        # XIX: the envelope carries the provider-native family signal;
+        # familyless shapes are non-authoritative for P2.
+        "type": "payment_intent.succeeded",
         "created": created,
         "data": {"object": {"id": "pi_b057_p3", "amount": 1234, "currency": "usd"}},
     }
@@ -331,6 +334,7 @@ def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
     pii_key = f"b057_p3_pii_{uuid4().hex[:12]}"
     pii_payload = {
         "id": "evt_b057_p3_pii",
+        "type": "payment_intent.succeeded",
         "created": created,
         "email": "pii_user@test.invalid",
         "ip_address": "203.0.113.99",

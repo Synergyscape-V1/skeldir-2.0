@@ -4803,3 +4803,59 @@
   risk_if_removed: Load-bearing gates that can never fail would certify
     relations they do not observe.
   decision: enforce
+- gate_id: b26-p2-xix-publication-immutability
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xix_publication_immutability.py
+  owning_phase: B2.6-P2
+  protected_invariant: Published semantic, family, and hierarchy law cannot
+    change meaning under the same identity in any CI topology
+    (hash-chained history, no mutable branch ref).
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XIX topology-independent publication
+    law; the XVIII registry history arm is topology-dependent.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xix_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xix_publication_immutability.py --help
+  risk_if_removed: Published law would be mutable in place at exact-main
+    topology with every correspondence gate green.
+  decision: enforce
+- gate_id: b26-p2-xix-physics
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xix_physics.py
+  owning_phase: B2.6-P2
+  protected_invariant: Current authority is a live conjunction over
+    evidence, authenticated family, active registry, floor, and governed
+    transition; artifact loss revokes it transactionally.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XIX non-reconstructible authority;
+    no predecessor gate observes the complete conjunction.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xix_negative_controls.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xix_physics.py --help
+  risk_if_removed: Currentness would decouple from justification while
+    the proof plane stays green.
+  decision: enforce
+- gate_id: b26-p2-xix-negative-controls
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/test_b26_p2_xix_negative_controls.py
+  owning_phase: B2.6-P2
+  protected_invariant: Every XIX relation is non-vacuous with byte-exact
+    restore discipline, including the wide-grant topology falsifier.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New battery for XIX non-vacuity; no predecessor
+    battery attacks non-reconstructible-authority relations.
+  negative_control_preserved_by: python scripts/ci/test_b26_p2_xix_negative_controls.py
+  local_reproduction_command: python scripts/ci/test_b26_p2_xix_negative_controls.py --help
+  risk_if_removed: Load-bearing gates that can never fail would certify
+    relations they do not observe.
+  decision: enforce
