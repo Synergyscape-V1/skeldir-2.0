@@ -668,13 +668,10 @@ def upgrade() -> None:
     op.execute(
         "REVOKE ALL ON TABLE public.b26_p2_verdict_supersession_ledger FROM PUBLIC"
     )
-    for _role in _XIX_RUNTIME_ROLES:
-        op.execute(
-            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
-            " WHERE rolname = '%s') THEN EXECUTE 'GRANT SELECT ON TABLE"
-            " public.b26_p2_verdict_supersession_ledger TO %s';"
-            " END IF; END $$;" % (_role, _role)
-        )
+    # No runtime SELECT grants: the ledger is owner-audited. Runtime
+    # readers never need it (verdict state itself carries currentness),
+    # and any runtime grant would trip the ingress-isolation gates
+    # (least privilege is asserted as an equality downstream).
     op.execute(
         """
         CREATE OR REPLACE FUNCTION public.b26_p2_record_verdict_supersession()
@@ -818,13 +815,8 @@ def upgrade() -> None:
     op.execute(
         "REVOKE ALL ON TABLE public.b26_p2_publication_history FROM PUBLIC"
     )
-    for _role in _XIX_RUNTIME_ROLES:
-        op.execute(
-            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles"
-            " WHERE rolname = '%s') THEN EXECUTE 'GRANT SELECT ON TABLE"
-            " public.b26_p2_publication_history TO %s';"
-            " END IF; END $$;" % (_role, _role)
-        )
+    # No runtime SELECT grants (see the ledger note above): publication
+    # history is read by owner-context validators and migrations.
     # Genesis chain (prev-linked; literals computed under the documented
     # preimage law_kind|law_id|law_version|law_digest|activation|prev):
     # semantic regime R1, family-law v1, hierarchy v1 (activated by

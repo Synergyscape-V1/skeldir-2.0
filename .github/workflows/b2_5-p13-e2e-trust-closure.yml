@@ -2603,13 +2603,9 @@ jobs:
           # gone (it was the self-certification surface audit 67 and the P14
           # successor falsified); the equality below is the full least-privilege
           # contract under the corrected authority.
-          # B2.6-P2 Corrective XIX: the issuer additionally holds SELECT on
-          # the two append-only P2 audit ledgers (verdict supersession +
-          # publication history). Read-only audit visibility; the issuer
-          # cannot write either ledger (trigger-refused for all).
           granted=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT string_agg(table_name || ':' || privilege_type, ',' ORDER BY table_name, privilege_type) FROM information_schema.table_privileges WHERE grantee = 'app_trust_issuer'")
-          test "$granted" = "b26_p2_publication_history:SELECT,b26_p2_verdict_supersession_ledger:SELECT,trust_access_log:SELECT,trust_access_log:UPDATE,trust_envelope_issuance_log:INSERT,trust_envelope_issuance_log:SELECT,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_final_issuance_identity:SELECT,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
+          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE,trust_envelope_issuance_log:INSERT,trust_envelope_issuance_log:SELECT,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_final_issuance_identity:SELECT,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
           guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.trust_access_log'::regclass AND tgname = 'trg_trust_access_log_issuance_authority_guard'")
           test "$guard" = "1"
