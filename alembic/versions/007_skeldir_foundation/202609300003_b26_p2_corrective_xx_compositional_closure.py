@@ -1126,6 +1126,11 @@ def upgrade() -> None:
                    AND v.tenant_id = i.tenant_id
                    AND v.tenant_id = _t;
             END LOOP;
+            -- Leave the XIX-backfill convention (''): this revision is
+            -- the head so the session ends here, and '' fails loud
+            -- (''::uuid ERRORS) where a leftover valid tenant would
+            -- silently filter a future revision's data steps.
+            PERFORM set_config('app.current_tenant_id', '', true);
         END $$;
         """
     )
