@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict gc9hVA9IWtapqnEoJj5n6PgIRRbMDbnwtHxmqzTAkWw6tlus5d2tpl1WUanO3Jq
+\restrict hTncYhfVHuJZIEGOfclbV7dQJYp62lYmfdCeTP0ymJlbwrCJW1zgpJRKTKR2Bbs
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -2536,7 +2536,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             END IF;
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
-                 WHERE f.id = 1 AND f.floor_revision = '202609300002';
+                 WHERE f.id = 1 AND f.floor_revision >= '202609300002';
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
                         USING ERRCODE = '42501';
@@ -2763,7 +2763,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
             -- behind) cannot mint authority.
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
-                 WHERE f.id = 1 AND f.floor_revision = '202609300002';
+                 WHERE f.id = 1 AND f.floor_revision >= '202609300002';
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
                         USING ERRCODE = '42501';
@@ -3220,6 +3220,40 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
 
 
 --
+-- Name: b26_p2_chain_verdict_supersession(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_chain_verdict_supersession() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _prev text;
+            _preimage text;
+        BEGIN
+            -- Serialize chain appends within the transaction scope so
+            -- concurrent corrections cannot fork the chain.
+            PERFORM pg_advisory_xact_lock(82173645, 300003);
+            SELECT l.entry_hash INTO _prev
+              FROM public.b26_p2_verdict_supersession_ledger AS l
+             ORDER BY l.recorded_at DESC, l.id DESC
+             LIMIT 1;
+            NEW.prev_entry_hash := _prev;
+            _preimage := COALESCE(NEW.verdict_id::text, '')
+                || '|' || COALESCE(NEW.prior_attributed_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.new_attributed_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.prior_verified_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.new_verified_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.prior_authority_state, 'NULL')
+                || '|' || COALESCE(NEW.new_authority_state, 'NULL')
+                || '|' || COALESCE(_prev, '');
+            NEW.entry_hash :=
+                encode(digest(_preimage, 'sha256'), 'hex');
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_classify_candidate(uuid, text, text, timestamp with time zone, timestamp with time zone, timestamp with time zone, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3490,6 +3524,30 @@ CREATE FUNCTION public.b26_p2_enforce_authority_transition() RETURNS trigger
                     RAISE EXCEPTION 'b26_p2_authority_transition_refused'
                         USING ERRCODE = '42501';
                 END IF;
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_enforce_consequence_family_coherence(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_consequence_family_coherence() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF NEW.provider IS DISTINCT FROM 'woocommerce'
+               AND NEW.provider IS DISTINCT FROM 'shopify'
+               AND NEW.provider IS DISTINCT FROM 'stripe'
+               AND NEW.provider IS DISTINCT FROM 'paypal' THEN
+                RETURN NEW;
+            END IF;
+            IF NEW.provider = 'woocommerce'
+               AND NEW.b26_p2_family_source = 'transport-topic:x-wc-webhook-topic' THEN
+                RAISE EXCEPTION 'b26_p2_woocommerce_transport_family_refused'
+                    USING ERRCODE = '42501';
             END IF;
             RETURN NEW;
         END $$;
@@ -4765,7 +4823,7 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             IF _reason IS NOT NULL THEN
                 RETURN FALSE;
             END IF;
-            -- XIX: the bound regime must be live in the registry
+            -- XX: the bound regime must be live in the registry
             -- (retirement ends currentness transactionally).
             IF NOT EXISTS (
                 SELECT 1 FROM public.b26_p2_semantic_regime_registry AS r
@@ -4774,18 +4832,18 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             ) THEN
                 RETURN FALSE;
             END IF;
-            -- XIX: the operational floor must hold at this revision
+            -- XX: the operational floor must hold at this revision
             -- (downgrade ends current readability fail-closed).
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
-                 WHERE f.id = 1 AND f.floor_revision = '202609300002';
+                 WHERE f.id = 1 AND f.floor_revision = '202609300003';
                 IF NOT FOUND THEN
                     RETURN FALSE;
                 END IF;
             EXCEPTION WHEN undefined_table THEN
                 RETURN FALSE;
             END;
-            -- XIX: every load-bearing justification must still exist.
+            -- XX: every load-bearing justification must still exist.
             IF NOT EXISTS (
                 SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = p_ingress
@@ -4798,12 +4856,22 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             ) THEN
                 RETURN FALSE;
             END IF;
+            -- XX (H-XX-C): the bound family must rest on explicit
+            -- authenticated evidence. Grandfathered pre-XIX backfill rows
+            -- (xix-backfill:pre-xix-mint) keep their audit record but no
+            -- longer satisfy currentness: the migration assigned that
+            -- label, no provider evidence established the family.
             IF NOT EXISTS (
                 SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
                  WHERE c.webhook_ingress_identity_id = p_ingress
                    AND c.b26_p2_event_family IN (
                        'payment_intent.succeeded', 'orders.create',
                        'payment.sale.completed', 'order.completed')
+                   AND c.b26_p2_family_source IN (
+                       'body-signal:type', 'body-signal:event_type',
+                       'body-signal:status',
+                       'transport-topic:x-shopify-topic',
+                       'transport-topic:x-wc-webhook-topic')
             ) THEN
                 RETURN FALSE;
             END IF;
@@ -5206,6 +5274,85 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority() RETURNS trigger
                    public.b26_p2_derive_verdict_authority(NEW.id)
              WHERE v.webhook_ingress_identity_id = NEW.id
                AND v.tenant_id = NEW.tenant_id;
+            RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_propagate_verdict_authority_on_floor_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_floor_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _t uuid;
+            _prev_guc text;
+        BEGIN
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            -- Driver is the tenant registry (no RLS); see the regime
+            -- propagation function for why ingress cannot drive this.
+            FOR _t IN SELECT t.id FROM public.tenants AS t
+            LOOP
+                PERFORM set_config('app.current_tenant_id', _t::text, true);
+                UPDATE public.b23_match_verdicts AS v
+                   SET b26_p2_source_authority_state =
+                       public.b26_p2_derive_verdict_authority(v.webhook_ingress_identity_id)
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE v.webhook_ingress_identity_id = i.id
+                   AND v.tenant_id = i.tenant_id
+                   AND v.tenant_id = _t;
+            END LOOP;
+            PERFORM set_config(
+                'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+            );
+            RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_propagate_verdict_authority_on_regime_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _t uuid;
+            _prev_guc text;
+        BEGIN
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            -- Driver is the tenant registry (no RLS): the ingress and
+            -- verdict tables enforce FORCE RLS, so listing affected
+            -- tenants from them would fail or silently empty under
+            -- owner administration without tenant context. Walk every
+            -- tenant with explicit transaction-local context; tenants
+            -- without affected rows update zero rows.
+            FOR _t IN SELECT t.id FROM public.tenants AS t
+            LOOP
+                PERFORM set_config('app.current_tenant_id', _t::text, true);
+                UPDATE public.b23_match_verdicts AS v
+                   SET b26_p2_source_authority_state =
+                       public.b26_p2_derive_verdict_authority(v.webhook_ingress_identity_id)
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE i.b26_p2_semantic_regime = NEW.regime_id
+                   AND v.webhook_ingress_identity_id = i.id
+                   AND v.tenant_id = i.tenant_id
+                   AND v.tenant_id = _t;
+            END LOOP;
+            PERFORM set_config(
+                'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+            );
             RETURN NEW;
         END $$;
 
@@ -6095,6 +6242,16 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 );
                 RETURN FALSE;
             END IF;
+            -- XX (H-XX-A): the bound source must satisfy the complete
+            -- canonical currentness law -- demotion, family-source,
+            -- quarantine-adjacent evidence, registry, and floor -- not
+            -- just the three clauses above.
+            IF NOT public.b26_p2_ingress_has_current_authority(_ingress) THEN
+                PERFORM set_config(
+                    'app.current_tenant_id', COALESCE(_prev_guc, ''), true
+                );
+                RETURN FALSE;
+            END IF;
             -- Tenant identity valid.
             IF _tenant IS NULL
                OR NOT EXISTS (
@@ -6220,6 +6377,154 @@ CREATE FUNCTION public.b26_p2_table_owner(p_table regclass) RETURNS name
               FROM pg_catalog.pg_class AS c
              WHERE c.oid = p_table
         $$;
+
+
+--
+-- Name: b26_p2_verify_history_protection(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violation text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $_$
+        DECLARE
+            _role text;
+            _missing text;
+        BEGIN
+            -- 6a. Protection triggers must exist and be enabled. A
+            -- non-superuser owner disabling one is the exact F-D vector;
+            -- the disable itself is catalog-visible here.
+            FOR _missing IN SELECT unnest(ARRAY[
+                'trg_b26_p2_xix_supersession_ledger|b23_match_verdicts',
+                'trg_b26_p2_xix_ledger_immutable|b26_p2_verdict_supersession_ledger',
+                'trg_b26_p2_xix_history_immutable|b26_p2_publication_history',
+                'trg_b26_p2_registry_immutable|b26_p2_semantic_regime_registry',
+                'trg_b26_p2_xx_supersession_chain|b26_p2_verdict_supersession_ledger',
+                'trg_b26_p2_xx_propagate_on_regime_change|b26_p2_semantic_regime_registry',
+                'trg_b26_p2_xx_propagate_on_floor_change|b26_p2_operational_floor',
+                'trg_b26_p2_xx_consequence_family_coherence|b26_p2_provider_auth_consequence',
+                'trg_b26_p2_xix_revoke_on_witness_loss|b26_p2_ingress_auth_witness',
+                'trg_b26_p2_xix_revoke_on_witness_loss_update|b26_p2_ingress_auth_witness',
+                'trg_b26_p2_xix_revoke_on_provenance_loss|b26_p2_provenance_evidence',
+                'trg_b26_p2_xix_revoke_on_provenance_loss_update|b26_p2_provenance_evidence',
+                'trg_b26_p2_xix_revoke_on_consequence_loss|b26_p2_provider_auth_consequence',
+                'trg_b26_p2_xix_revoke_on_consequence_loss_update|b26_p2_provider_auth_consequence',
+                'trg_b26_p2_xix_revoke_on_root_loss|b26_p2_auth_root_evidence',
+                'trg_b26_p2_xix_revoke_on_root_loss_update|b26_p2_auth_root_evidence',
+                'trg_b26_p2_verdict_authority_stamp|b23_match_verdicts',
+                'trg_b26_p2_verdict_authority_propagate|webhook_ingress_identities',
+                'trg_b26_p2_verdict_authority_guard|b23_match_verdicts'
+            ]) LOOP
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_trigger AS t
+                    JOIN pg_class AS c ON c.oid = t.tgrelid
+                    JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                   WHERE n.nspname = 'public'
+                     AND t.tgname = split_part(_missing, '|', 1)
+                     AND c.relname = split_part(_missing, '|', 2)
+                     AND t.tgenabled = 'O'
+                ) THEN
+                    violation := 'history_protection_trigger_not_enabled:' || _missing;
+                    RETURN NEXT;
+                END IF;
+            END LOOP;
+            -- 6b. No runtime principal may hold mutating privilege on
+            -- either ledger or the publication history.
+            FOREACH _role IN ARRAY ARRAY[
+                'app_user', 'app_ingress', 'app_worker', 'app_relay',
+                'app_beat', 'app_dispatch_publisher', 'app_trust_issuer',
+                'app_trust_signer'
+            ] LOOP
+                IF EXISTS (
+                    SELECT 1 FROM pg_roles WHERE rolname = _role
+                ) AND (
+                    has_table_privilege(_role,
+                        'public.b26_p2_verdict_supersession_ledger', 'INSERT')
+                    OR has_table_privilege(_role,
+                        'public.b26_p2_verdict_supersession_ledger', 'UPDATE')
+                    OR has_table_privilege(_role,
+                        'public.b26_p2_verdict_supersession_ledger', 'DELETE')
+                    OR has_table_privilege(_role,
+                        'public.b26_p2_verdict_supersession_ledger', 'TRUNCATE')
+                    OR has_table_privilege(_role,
+                        'public.b26_p2_publication_history', 'INSERT')
+                    OR has_table_privilege(_role,
+                        'public.b26_p2_publication_history', 'UPDATE')
+                    OR has_table_privilege(_role,
+                        'public.b26_p2_publication_history', 'DELETE')
+                    OR has_table_privilege(_role,
+                        'public.b26_p2_publication_history', 'TRUNCATE')
+                ) THEN
+                    violation := 'history_ledger_runtime_privilege:' || _role;
+                    RETURN NEXT;
+                END IF;
+            END LOOP;
+            -- 6c. Publication-chain linkage: genesis anchors at NULL
+            -- prev; every other row's prev must equal a strictly older
+            -- row's entry hash; entry hashes must be 64-hex shaped.
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_publication_history AS h
+                 WHERE h.entry_hash IS NULL
+                    OR h.entry_hash !~ '^[0-9a-f]{64}$'
+            ) THEN
+                violation := 'publication_chain_hash_misshapen';
+                RETURN NEXT;
+            END IF;
+            IF (SELECT count(*) FROM public.b26_p2_publication_history
+                 WHERE prev_entry_hash IS NULL) != 1 THEN
+                violation := 'publication_chain_genesis_not_single';
+                RETURN NEXT;
+            END IF;
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_publication_history AS h
+                 WHERE h.prev_entry_hash IS NOT NULL
+                   AND NOT EXISTS (
+                       SELECT 1 FROM public.b26_p2_publication_history AS p
+                        WHERE p.entry_hash = h.prev_entry_hash
+                   )
+            ) THEN
+                violation := 'publication_chain_linkage_broken';
+                RETURN NEXT;
+            END IF;
+            -- 6d. Supersession-chain recomputation: every chained row
+            -- must equal the documented preimage digest.
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                 WHERE l.entry_hash IS NULL
+            ) THEN
+                violation := 'supersession_chain_unchained_row';
+                RETURN NEXT;
+            END IF;
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                 WHERE l.entry_hash IS DISTINCT FROM encode(digest(
+                       COALESCE(l.verdict_id::text, '')
+                       || '|' || COALESCE(l.prior_attributed_amount_minor::text, 'NULL')
+                       || '|' || COALESCE(l.new_attributed_amount_minor::text, 'NULL')
+                       || '|' || COALESCE(l.prior_verified_amount_minor::text, 'NULL')
+                       || '|' || COALESCE(l.new_verified_amount_minor::text, 'NULL')
+                       || '|' || COALESCE(l.prior_authority_state, 'NULL')
+                       || '|' || COALESCE(l.new_authority_state, 'NULL')
+                       || '|' || COALESCE(l.prev_entry_hash, ''),
+                       'sha256'), 'hex')
+            ) THEN
+                violation := 'supersession_chain_digest_mismatch';
+                RETURN NEXT;
+            END IF;
+            -- 6e. Supersession linkage: non-genesis prev must resolve.
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                 WHERE l.prev_entry_hash IS NOT NULL
+                   AND NOT EXISTS (
+                       SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS p
+                        WHERE p.entry_hash = l.prev_entry_hash
+                   )
+            ) THEN
+                violation := 'supersession_chain_linkage_broken';
+                RETURN NEXT;
+            END IF;
+            RETURN;
+        END $_$;
 
 
 --
@@ -10674,7 +10979,9 @@ CREATE TABLE public.b26_p2_verdict_supersession_ledger (
     prior_source_ingress uuid,
     new_source_ingress uuid,
     semantic_regime text DEFAULT 'xvii-sovereign-v1'::text NOT NULL,
-    recorded_at timestamp with time zone DEFAULT now() NOT NULL
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    prev_entry_hash text,
+    entry_hash text
 );
 
 
@@ -22442,6 +22749,34 @@ CREATE TRIGGER trg_b26_p2_xix_supersession_ledger AFTER UPDATE ON public.b23_mat
 
 
 --
+-- Name: b26_p2_provider_auth_consequence trg_b26_p2_xx_consequence_family_coherence; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_xx_consequence_family_coherence BEFORE INSERT OR UPDATE OF b26_p2_event_family, b26_p2_family_source ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_consequence_family_coherence();
+
+
+--
+-- Name: b26_p2_operational_floor trg_b26_p2_xx_propagate_on_floor_change; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_xx_propagate_on_floor_change AFTER UPDATE ON public.b26_p2_operational_floor FOR EACH ROW EXECUTE FUNCTION public.b26_p2_propagate_verdict_authority_on_floor_change();
+
+
+--
+-- Name: b26_p2_semantic_regime_registry trg_b26_p2_xx_propagate_on_regime_change; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_xx_propagate_on_regime_change AFTER UPDATE OF status ON public.b26_p2_semantic_regime_registry FOR EACH ROW EXECUTE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change();
+
+
+--
+-- Name: b26_p2_verdict_supersession_ledger trg_b26_p2_xx_supersession_chain; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_xx_supersession_chain BEFORE INSERT ON public.b26_p2_verdict_supersession_ledger FOR EACH ROW EXECUTE FUNCTION public.b26_p2_chain_verdict_supersession();
+
+
+--
 -- Name: b27_explanation_materializations trg_b27_explanation_consequence; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -25609,5 +25944,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict gc9hVA9IWtapqnEoJj5n6PgIRRbMDbnwtHxmqzTAkWw6tlus5d2tpl1WUanO3Jq
+\unrestrict hTncYhfVHuJZIEGOfclbV7dQJYp62lYmfdCeTP0ymJlbwrCJW1zgpJRKTKR2Bbs
 

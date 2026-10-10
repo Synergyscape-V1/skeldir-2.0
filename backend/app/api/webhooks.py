@@ -475,8 +475,12 @@ def _unsupported_event_family_reason(
         observed_status = _normalize_event_family_hint(payload.get("status"))
         if observed_status is not None and observed_status != "completed":
             return f"status={observed_status}"
-        if observed_status is None and observed_topic is None:
-            return "familyless:no-status-or-topic"
+        # XX (H-XX-B): the transported topic is routing information,
+        # never a family fact. A status-less body is familyless even
+        # when a topic header is present; the sovereign root refuses
+        # it and this hint routes it to DLQ here.
+        if observed_status is None:
+            return "familyless:no-body-status"
         return None
 
     if provider == "paypal":
