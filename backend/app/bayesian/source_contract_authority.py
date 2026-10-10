@@ -355,6 +355,8 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
             -- XVIII (H-XVIII-R7/R9): conducted-then-demoted verdicts
             -- leave the snapshot via their own authority state
             -- (transactionally maintained; no identity-table read).
+            -- XX (H-XX-A): plus the canonical predicate, so
+            -- law-level revocation is observed here too.
             WHERE v.tenant_id = :tenant_id
               AND e.occurred_at >= :window_start
               AND e.occurred_at < :window_end
@@ -362,6 +364,9 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
               AND e.event_type IN :conversion_event_types
               AND v.status IN :match_verdict_statuses
               AND v.b26_p2_source_authority_state = 'current'
+              AND public.b26_p2_ingress_has_current_authority(
+                      v.webhook_ingress_identity_id
+                  )
             ORDER BY v.tenant_id ASC, e.occurred_at ASC NULLS LAST, v.id ASC
             
                 """
@@ -444,6 +449,7 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
             FROM public.b23_revenue_events
             -- XVIII: revenue events conduct only through currently
             -- authoritative verdicts (verdict-local state).
+            -- XX (H-XX-A): plus the canonical predicate.
             WHERE tenant_id = :tenant_id
               AND event_occurred_at >= :window_start
               AND event_occurred_at < :window_end
@@ -453,6 +459,9 @@ SOURCE_CONTRACT_AUTHORITY: MappingProxyType = MappingProxyType(
                      WHERE v.tenant_id = b23_revenue_events.tenant_id
                        AND v.id = b23_revenue_events.match_verdict_id
                        AND v.b26_p2_source_authority_state = 'current'
+                       AND public.b26_p2_ingress_has_current_authority(
+                               v.webhook_ingress_identity_id
+                           )
               )
             ORDER BY tenant_id ASC, event_occurred_at ASC NULLS LAST, id ASC
                 """

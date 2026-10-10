@@ -432,10 +432,15 @@ async def _require_current_verdict_authority(
     and to never-linked bookkeeping rows (unresolved: no source to be
     stale); demoted history must first be superseded by genuine
     redelivery (R20), never extended. Unknown states fail closed.
+    XX (H-XX-A): a 'current' verdict-local state additionally
+    requires the canonical predicate over its backing ingress, so a
+    law-level revocation (registry/floor/family-source) that has not
+    yet rewritten the cache cannot be extended.
     """
     row = await session.execute(
         text(
-            "SELECT b26_p2_source_authority_state"
+            "SELECT b26_p2_source_authority_state,"
+            " webhook_ingress_identity_id"
             " FROM b23_match_verdicts"
             " WHERE tenant_id = :tenant_id AND id = :match_verdict_id"
         ),
@@ -444,11 +449,24 @@ async def _require_current_verdict_authority(
             "match_verdict_id": str(match_verdict_id),
         },
     )
-    state = row.scalar_one_or_none()
+    fetched = row.mappings().first()
+    state = fetched["b26_p2_source_authority_state"] if fetched else None
     if state not in ("current", "unresolved"):
         raise ValueError(
             f"b23_match_verdict_authority_not_current:{match_verdict_id}"
         )
+    if state == "current":
+        ingress_id = fetched["webhook_ingress_identity_id"]
+        authorized = await session.execute(
+            text(
+                "SELECT public.b26_p2_ingress_has_current_authority(:ingress_id)"
+            ),
+            {"ingress_id": str(ingress_id)},
+        )
+        if authorized.scalar_one_or_none() is not True:
+            raise ValueError(
+                f"b23_match_verdict_authority_not_current:{match_verdict_id}"
+            )
 
 
 async def _acquire_match_lock(

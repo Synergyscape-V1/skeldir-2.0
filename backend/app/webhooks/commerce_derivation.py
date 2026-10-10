@@ -91,11 +91,13 @@ CANONICAL_EVENT_FAMILY_BY_PROVIDER = MappingProxyType(
 # positive family assertion must derive from an authenticated event fact:
 # a body-native signal key for stripe/paypal/woocommerce, or the
 # provider-transported topic for shopify (whose protocol conveys family
-# in the X-Shopify-Topic header outside the HMAC'd body) and as a
-# fallback for woocommerce (X-Wc-Webhook-Topic). The topic travels the
-# in-memory relay envelope only; the derived canonical family plus its
-# evidence source are what persist. Provider name or relay route alone
-# never constitutes family authority.
+# in the X-Shopify-Topic header outside the HMAC'd body). XX (H-XX-B):
+# the woocommerce transported-topic fallback is removed -- a body
+# without a status signal is ambiguous and therefore non-authoritative;
+# every honest woocommerce order payload carries its status natively.
+# The topic travels the in-memory relay envelope only; the derived
+# canonical family plus its evidence source are what persist. Provider
+# name or relay route alone never constitutes family authority.
 _NATIVE_FAMILY_SIGNAL_KEYS_BY_PROVIDER = MappingProxyType(
     {
         "stripe": ("type", "event_type", "status"),
@@ -382,6 +384,43 @@ def _derive_stripe(payload: Mapping[str, Any]) -> SovereignCommerce:
 
 
 def _derive_shopify(payload: Mapping[str, Any]) -> SovereignCommerce:
+    # XX (H-XX-B): body-lifecycle consistency. The family for shopify
+    # arrives via the unsigned X-Shopify-Topic header, so a cancelled,
+    # voided, or refunded order body redelivered under an
+    # orders/create topic would otherwise book as settled revenue.
+    # A body describing terminal lifecycle is not an orders.create
+    # financial fact: refuse it as non-authoritative (unavailable for
+    # the create classification) rather than booking it or coercing
+    # it to zero. Honest creation traffic never carries these
+    # markers (cancelled_at/cancel_reason are null, financial_status
+    # is pending/authorized/paid/partially_paid, refunds is empty at
+    # creation), so the guard is fail-closed without honest cost.
+    # closed_at/fulfilled states are valid sales and are NOT refused.
+    if payload.get("cancelled_at") not in (None, ""):
+        raise CommerceDerivationError(
+            "shopify cancelled order is not an orders.create fact"
+        )
+    if payload.get("cancel_reason") not in (None, ""):
+        raise CommerceDerivationError(
+            "shopify cancelled order is not an orders.create fact"
+        )
+    _terminal_financial_status = _normalize_family_token(
+        payload.get("financial_status")
+    )
+    if _terminal_financial_status in (
+        "voided",
+        "refunded",
+        "partially_refunded",
+    ):
+        raise CommerceDerivationError(
+            "shopify terminal financial status"
+            f" {_terminal_financial_status!r} is not an orders.create fact"
+        )
+    _refunds = payload.get("refunds")
+    if isinstance(_refunds, list) and len(_refunds) > 0:
+        raise CommerceDerivationError(
+            "shopify refunded order is not an orders.create fact"
+        )
     order_id = payload.get("id")
     commerce_ref = _require_nonblank(order_id, field="shopify order id")
     currency = _require_nonblank(
@@ -552,16 +591,13 @@ def _derive_family_and_source(
             f"unsupported event family for {normalized}: {key}={observed!r}"
         )
     if normalized == "woocommerce" and not observed_any:
-        observed = _normalize_family_token(topic)
-        if observed is None:
-            raise CommerceDerivationError(
-                "woocommerce family requires a body status signal or the "
-                "provider-transported topic"
-            )
-        if observed in aliases:
-            return canonical, "transport-topic:x-wc-webhook-topic"
+        # XX (H-XX-B): no transported-topic fallback. A status-less
+        # woocommerce body cannot justify the order.completed family:
+        # the unsigned header is routing information, not an
+        # authenticated event fact.
         raise CommerceDerivationError(
-            f"unsupported event family for woocommerce: topic={observed!r}"
+            "woocommerce family requires a body status signal: "
+            "status-less shapes are non-authoritative"
         )
     raise CommerceDerivationError(
         f"no authenticated event-family fact for {normalized}: "
@@ -584,8 +620,12 @@ def derive_event_family(
 
     For shopify the family fact is the provider-transported
     ``X-Shopify-Topic`` value (``topic``); the HMAC'd body alone never
-    suffices for shopify. For woocommerce ``topic`` is an accepted
-    fallback when the body carries no status signal.
+    suffices for shopify. The transported topic is necessary but never
+    sufficient for financial authority: the body must additionally be
+    lifecycle-consistent with a creation (terminal cancelled/voided/
+    refunded bodies are refused by the commerce derivation even under
+    an orders/create topic). For woocommerce the family fact is the
+    body-native status signal alone (XX: no topic fallback).
     """
     family, _source = _derive_family_and_source(provider, raw_body, topic)
     return family

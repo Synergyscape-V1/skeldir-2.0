@@ -49,6 +49,10 @@
     "202609300002": {
       "file": "202609300002_b26_p2_corrective_xix_nonreconstructible_authority.py",
       "sha256": "85d9bbd6de8ee64e9c07fce7ad29986d3027af5e7e1b991ed95addab4f59bc8f"
+    },
+    "202609300003": {
+      "file": "202609300003_b26_p2_corrective_xx_compositional_closure.py",
+      "sha256": "8c2264789a32c484526cfa3b8f17f5f48fccdaddaf4d3a1ee7e4f0dbe96b2298"
     }
   }
 }

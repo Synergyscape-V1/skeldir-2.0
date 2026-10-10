@@ -457,6 +457,13 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 checks["hostile_family_refused"] = True
 
         # L7 (NC-10): floor absence blocks minting; restore re-enables.
+        # XX: restore the lane's own floor revision (the gate runs on
+        # newer heads whose floor differs from XVIII's); the intent --
+        # absence refuses, restore re-enables -- is head-independent.
+        cur.execute("SELECT floor_revision FROM public.b26_p2_operational_floor"
+                    " WHERE id=1")
+        _floor_row = cur.fetchone()
+        _lane_floor = _floor_row[0] if _floor_row else "202609300002"
         cur.execute("DELETE FROM public.b26_p2_operational_floor")
         row7, _ = _mkrow("xviii-e7", "xviii-c7", 700)
         try:
@@ -472,8 +479,9 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 checks["downgrade_serving_blocked"] = True
         cur.execute(
             "INSERT INTO public.b26_p2_operational_floor (id, floor_revision)"
-            " VALUES (1,'202609300002') ON CONFLICT (id) DO UPDATE SET"
-            " floor_revision='202609300002'"
+            " VALUES (1,%s) ON CONFLICT (id) DO UPDATE SET"
+            " floor_revision=EXCLUDED.floor_revision",
+            (_lane_floor,),
         )
         assert _auth(row7, "xviii-e7", "e" * 64) == "authenticated_known"
         checks["floor_restore_reenables"] = True

@@ -268,7 +268,9 @@ def validate_corrective_controls(sources: dict[Path, str]) -> int:
     for token in (
         "updated_at >= :updated_at_after",
         "updated_at <= :updated_at_before",
-        "ORDER BY updated_at ASC, id ASC",
+        # XX: verdict alias qualified (the ingress JOIN makes bare ID
+        # ambiguous); persisted-chronology ordering is unchanged.
+        "ORDER BY v.updated_at ASC, v.id ASC",
     ):
         _require(
             token in query_adapter, f"persisted_chronology_control_missing:{token}"
@@ -746,8 +748,8 @@ def validate_negative_controls(sources: dict[Path, str]) -> int:
         (
             mutation(
                 ADAPTER_PATH,
-                "ORDER BY updated_at ASC, id ASC",
-                "ORDER BY updated_at ASC, id ASC OFFSET :offset",
+                "ORDER BY v.updated_at ASC, v.id ASC",
+                "ORDER BY v.updated_at ASC, v.id ASC OFFSET :offset",
             ),
             "NC-P10-06",
         ),

@@ -524,7 +524,18 @@ async def read_match_verdict_source(
     tenant_id: UUID,
     subject_ref: str,
 ) -> MatchVerdictSource | None:
-    """Read a B2.3 match verdict by tenant and subject without writes or side effects."""
+    """Read a B2.3 match verdict by tenant and subject without writes or side effects.
+
+    XX (H-XX-A): currentness is the canonical predicate, never the
+    verdict-local cache. The verdict-local column is still projected
+    as display state, but ``ingress_has_current_authority`` is
+    computed live from ``b26_p2_ingress_has_current_authority`` over
+    the tenant-coherent backing ingress (identity substitution --
+    a verdict pointing at another tenant's ingress -- reads
+    non-current). Every authoritative consumer of this adapter
+    therefore agrees with coverage, batch, dispatch, P3, and Bayesian
+    readers observing the same committed state.
+    """
     verdict_id = parse_match_verdict_subject_ref(subject_ref)
     if verdict_id is None:
         return None
@@ -532,29 +543,36 @@ async def read_match_verdict_source(
         text(
             """
             SELECT
-                id,
-                tenant_id,
-                webhook_ingress_identity_id,
-                provider,
-                canonical_commerce_reference,
-                provider_native_event_reference,
-                provider_native_commerce_reference,
-                status,
-                match_quality,
-                canonical_net_verified_amount_minor,
-                currency_code,
-                last_transition_at,
-                created_at,
-                updated_at,
-                -- XVIII: current P2 authority of the backing ingress,
-                -- observed at read time (verdict-local state; the
-                -- builder degrades non-authoritative sources).
-                b26_p2_source_authority_state = 'current'
-                    AS ingress_has_current_authority,
-                b26_p2_source_authority_state AS ingress_authority_state
-            FROM public.b23_match_verdicts
-            WHERE tenant_id = :tenant_id
-              AND id = :verdict_id
+                v.id,
+                v.tenant_id,
+                v.webhook_ingress_identity_id,
+                v.provider,
+                v.canonical_commerce_reference,
+                v.provider_native_event_reference,
+                v.provider_native_commerce_reference,
+                v.status,
+                v.match_quality,
+                v.canonical_net_verified_amount_minor,
+                v.currency_code,
+                v.last_transition_at,
+                v.created_at,
+                v.updated_at,
+                -- XX: single currentness law. The backing ingress must
+                -- belong to the same tenant (identity coherence) AND
+                -- satisfy the canonical predicate at this snapshot.
+                -- The verdict-local column is display only.
+                (
+                    i.tenant_id = v.tenant_id
+                    AND public.b26_p2_ingress_has_current_authority(
+                        v.webhook_ingress_identity_id
+                    )
+                ) AS ingress_has_current_authority,
+                v.b26_p2_source_authority_state AS ingress_authority_state
+            FROM public.b23_match_verdicts AS v
+            LEFT JOIN public.webhook_ingress_identities AS i
+              ON i.id = v.webhook_ingress_identity_id
+            WHERE v.tenant_id = :tenant_id
+              AND v.id = :verdict_id
             """
         ),
         {"tenant_id": str(tenant_id), "verdict_id": str(verdict_id)},
@@ -626,42 +644,51 @@ async def query_match_verdict_sources(
     if not verdict_ids:
         return ()
 
-    predicates = ["tenant_id = :tenant_id", "id = ANY(:verdict_ids)"]
+    predicates = ["v.tenant_id = :tenant_id", "v.id = ANY(:verdict_ids)"]
     params: dict[str, object] = {
         "tenant_id": str(tenant_id),
         "verdict_ids": verdict_ids,
         "row_limit": row_limit,
     }
     if updated_at_after is not None:
-        predicates.append("updated_at >= :updated_at_after")
+        predicates.append("v.updated_at >= :updated_at_after")
         params["updated_at_after"] = updated_at_after.astimezone(timezone.utc)
     if updated_at_before is not None:
-        predicates.append("updated_at <= :updated_at_before")
+        predicates.append("v.updated_at <= :updated_at_before")
         params["updated_at_before"] = updated_at_before.astimezone(timezone.utc)
 
     statement = text(
         f"""
         SELECT
-            id,
-            tenant_id,
-            webhook_ingress_identity_id,
-            provider,
-            canonical_commerce_reference,
-            provider_native_event_reference,
-            provider_native_commerce_reference,
-            status,
-            match_quality,
-            canonical_net_verified_amount_minor,
-            currency_code,
-            last_transition_at,
-            created_at,
-            updated_at,
-            b26_p2_source_authority_state = 'current'
-                AS ingress_has_current_authority,
-            b26_p2_source_authority_state AS ingress_authority_state
-        FROM public.b23_match_verdicts
+            v.id,
+            v.tenant_id,
+            v.webhook_ingress_identity_id,
+            v.provider,
+            v.canonical_commerce_reference,
+            v.provider_native_event_reference,
+            v.provider_native_commerce_reference,
+            v.status,
+            v.match_quality,
+            v.canonical_net_verified_amount_minor,
+            v.currency_code,
+            v.last_transition_at,
+            v.created_at,
+            v.updated_at,
+            -- XX (H-XX-A): single currentness law -- canonical
+            -- predicate over the tenant-coherent backing ingress;
+            -- the verdict-local column is display only.
+            (
+                i.tenant_id = v.tenant_id
+                AND public.b26_p2_ingress_has_current_authority(
+                    v.webhook_ingress_identity_id
+                )
+            ) AS ingress_has_current_authority,
+            v.b26_p2_source_authority_state AS ingress_authority_state
+        FROM public.b23_match_verdicts AS v
+        LEFT JOIN public.webhook_ingress_identities AS i
+          ON i.id = v.webhook_ingress_identity_id
         WHERE {' AND '.join(predicates)}
-        ORDER BY updated_at ASC, id ASC
+        ORDER BY v.updated_at ASC, v.id ASC
         LIMIT :row_limit
         """
     ).bindparams(

@@ -161,6 +161,13 @@ _PREFLIGHT_SQL = (
             WHERE v.tenant_id = :tenant_id
               AND v.status IN :match_verdict_statuses
               AND v.b26_p2_source_authority_state = 'current'
+              -- XX (H-XX-A): single currentness law -- verdict-local
+              -- state plus the canonical predicate over the backing
+              -- ingress, so law-level revocation (registry/floor/
+              -- family-source) is observed here too.
+              AND public.b26_p2_ingress_has_current_authority(
+                      v.webhook_ingress_identity_id
+                  )
         ),
         excluded_match_verdicts AS (
             SELECT v.status, count(*)::bigint AS count
@@ -191,6 +198,10 @@ _PREFLIGHT_SQL = (
                      WHERE v.tenant_id = re.tenant_id
                        AND v.id = re.match_verdict_id
                        AND v.b26_p2_source_authority_state = 'current'
+                       -- XX (H-XX-A): single currentness law.
+                       AND public.b26_p2_ingress_has_current_authority(
+                               v.webhook_ingress_identity_id
+                           )
               )
         ),
         excluded_revenue_events AS (
