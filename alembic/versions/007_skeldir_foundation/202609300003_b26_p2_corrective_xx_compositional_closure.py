@@ -19,9 +19,13 @@ Conservation laws established here (physical identities, not conventions):
         untouched -- but downstream authority expresses the uncertainty
         honestly: backfill rows read non-current until genuine
         redelivery establishes explicit family evidence. Registry-status
-        and floor transitions additionally propagate into dependent
-        verdicts in the same transaction, so verdict-local caches cannot
-        disagree with the predicate after a lawful retirement.)
+        transitions additionally propagate into dependent verdicts in
+        the same transaction, so verdict-local caches cannot disagree
+        with the predicate after a lawful retirement. Floor transitions
+        are migration-only by construction and carry no trigger (a
+        trigger there would poison the migration cascade with
+        un-restorable session state); data-carrying upgrade re-derives
+        verdicts explicitly instead.)
 
     P3 FOLLOWS THE SAME LAW
         (b26_p2_state_eligible_for_p3() previously checked provenance,
@@ -697,25 +701,34 @@ def upgrade() -> None:
         public.b26_p2_enforce_consequence_family_coherence()
         """
     )
-    # floor transitions previously left verdict-local caches positive
-    # until an ingress row itself was written. Re-derive dependent
-    # verdicts in the same transaction as the law change, reusing the
-    # exact XIX propagation pattern (DEFINER, explicit tenant
-    # predicate, derive function -- no new privilege).
     # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    # XX-4. Law-change propagation (H-XX-A). Registry retirement and
-    # floor transitions previously left verdict-local caches positive
-    # until an ingress row itself was written. Re-derive dependent
-    # verdicts in the same transaction as the law change, reusing the
-    # exact XIX propagation pattern (DEFINER, explicit tenant
-    # predicate, derive function -- no new privilege) with one
-    # addition the XIX pattern never needed: the law change carries
-    # no tenant context (owner administration sets no GUC), while the
-    # verdict table enforces FORCE RLS. The function therefore walks
-    # the tenant registry explicitly, setting transaction-local tenant
-    # context per tenant (saving and restoring the caller's value),
-    # so propagation is effective rather than silently empty.
+    # XX-4. Retirement propagation (H-XX-A). Registry retirement
+    # previously left verdict-local caches positive until an ingress
+    # row itself was written. Re-derive dependent verdicts in the same
+    # transaction as the retirement (DEFINER, no new privilege).
+    #
+    # State-hygiene law (learned live, P13 cascade): propagation that
+    # runs inside a migration-cascade transaction must not write
+    # session tenant context. A written GUC can never return to NULL
+    # (it reads '' for the rest of the session, and ''::uuid ERRORS
+    # where NULL quietly matches no rows), so a tenant loop inside a
+    # cascade poisons frozen GUC-sensitive steps running later in the
+    # same transaction (proven: the C9 downgrade's bare b24 sweep).
+    # Therefore:
+    #  - the REGIME trigger below fires only on governed admin
+    #    retirement/restoration, which never runs inside a migration
+    #    transaction (migrations seed the registry via INSERT, which
+    #    does not fire an UPDATE trigger). Its tenant loop is safe
+    #    there and proven live.
+    #  - there is deliberately NO floor-change trigger: the floor only
+    #    ever changes inside migrations, where firing would poison the
+    #    cascade. Data-carrying upgrade re-derivation is performed
+    #    explicitly in the upgrade body below (the revision is always
+    #    the head, so the overwritten session state dies with the
+    #    migration session and poisons nothing).
+    # The trigger is unreachable to runtime roles (no UPDATE privilege
+    # on the registry), so the loop is only ever exercised in owner
+    # sessions.
     # ------------------------------------------------------------------
     op.execute(
         """
@@ -776,59 +789,15 @@ def upgrade() -> None:
         public.b26_p2_propagate_verdict_authority_on_regime_change()
         """
     )
-    op.execute(
-        """
-        CREATE OR REPLACE FUNCTION public.b26_p2_propagate_verdict_authority_on_floor_change()
-        RETURNS trigger
-        LANGUAGE plpgsql
-        SECURITY DEFINER
-        SET search_path TO 'pg_catalog', 'public'
-        AS $$
-        DECLARE
-            _t uuid;
-            _prev_guc text;
-        BEGIN
-            BEGIN
-                _prev_guc := current_setting('app.current_tenant_id', true);
-            EXCEPTION WHEN OTHERS THEN
-                _prev_guc := NULL;
-            END;
-            -- Driver is the tenant registry (no RLS); see the regime
-            -- propagation function for why ingress cannot drive this.
-            FOR _t IN SELECT t.id FROM public.tenants AS t
-            LOOP
-                PERFORM set_config('app.current_tenant_id', _t::text, true);
-                UPDATE public.b23_match_verdicts AS v
-                   SET b26_p2_source_authority_state =
-                       public.b26_p2_derive_verdict_authority(v.webhook_ingress_identity_id)
-                  FROM public.webhook_ingress_identities AS i
-                 WHERE v.webhook_ingress_identity_id = i.id
-                   AND v.tenant_id = i.tenant_id
-                   AND v.tenant_id = _t;
-            END LOOP;
-            PERFORM set_config(
-                'app.current_tenant_id', COALESCE(_prev_guc, ''), true
-            );
-            RETURN NEW;
-        END $$;
-        """
-    )
-    op.execute(
-        "REVOKE ALL ON FUNCTION"
-        " public.b26_p2_propagate_verdict_authority_on_floor_change()"
-        " FROM PUBLIC"
-    )
+    # The floor-change propagator is deliberately absent (see above).
+    # Remove it idempotently in case a predecessor XX draft installed it.
     op.execute(
         "DROP TRIGGER IF EXISTS trg_b26_p2_xx_propagate_on_floor_change"
         " ON public.b26_p2_operational_floor"
     )
     op.execute(
-        """
-        CREATE TRIGGER trg_b26_p2_xx_propagate_on_floor_change
-        AFTER UPDATE ON public.b26_p2_operational_floor
-        FOR EACH ROW EXECUTE FUNCTION
-        public.b26_p2_propagate_verdict_authority_on_floor_change()
-        """
+        "DROP FUNCTION IF EXISTS"
+        " public.b26_p2_propagate_verdict_authority_on_floor_change()"
     )
 
     # ------------------------------------------------------------------
@@ -982,7 +951,6 @@ def upgrade() -> None:
                 'trg_b26_p2_registry_immutable|b26_p2_semantic_regime_registry',
                 'trg_b26_p2_xx_supersession_chain|b26_p2_verdict_supersession_ledger',
                 'trg_b26_p2_xx_propagate_on_regime_change|b26_p2_semantic_regime_registry',
-                'trg_b26_p2_xx_propagate_on_floor_change|b26_p2_operational_floor',
                 'trg_b26_p2_xx_consequence_family_coherence|b26_p2_provider_auth_consequence',
                 'trg_b26_p2_xix_revoke_on_witness_loss|b26_p2_ingress_auth_witness',
                 'trg_b26_p2_xix_revoke_on_witness_loss_update|b26_p2_ingress_auth_witness',
@@ -1112,26 +1080,52 @@ def upgrade() -> None:
         "REVOKE ALL ON FUNCTION public.b26_p2_verify_history_protection()"
         " FROM PUBLIC"
     )
-    for _role in _XX_RUNTIME_ROLES:
-        op.execute(
-            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%s')"
-            " THEN EXECUTE 'GRANT EXECUTE ON FUNCTION"
-            " public.b26_p2_verify_history_protection() TO %s';"
-            " END IF; END $$;" % (_role, _role)
-        )
+    # No runtime EXECUTE grants: the observer is owner-audited, like the
+    # ledgers it watches. Validators and hostile readers invoke it as
+    # migration_owner/postgres; granting it to runtime roles would mint
+    # new authority surfaces for no production consumer.
 
     # ------------------------------------------------------------------
     # XX-7. Operational floor at this revision (H-XIX-R12 carried
-    # forward). The floor stays ahead of predecessor law so the frozen
-    # predecessor minting paths fail closed; law-change propagation
-    # re-derives dependents in the same transaction.
+    # forward) + explicit data-carrying re-derivation. The floor stays
+    # ahead of predecessor law so the frozen predecessor minting paths
+    # fail closed. The floor write uses DELETE + INSERT (fires no
+    # trigger by construction). Verdicts carried from predecessor law
+    # are then re-derived under the XX predicate explicitly, tenant by
+    # tenant: backfill rows flip to honestly non-current at upgrade
+    # time. This revision is always the head, so the overwritten
+    # session tenant state dies with the migration session and poisons
+    # nothing (see XX-4 for why the same loop is forbidden in the
+    # downgrade path).
     # ------------------------------------------------------------------
+    op.execute(
+        "DELETE FROM public.b26_p2_operational_floor WHERE id = 1"
+    )
     op.execute(
         """
         INSERT INTO public.b26_p2_operational_floor AS f (id, floor_revision)
         VALUES (1, '%s')
-        ON CONFLICT (id) DO UPDATE SET floor_revision = EXCLUDED.floor_revision
         """ % _XX_FLOOR
+    )
+    op.execute(
+        """
+        DO $$
+        DECLARE
+            _t uuid;
+        BEGIN
+            FOR _t IN SELECT t.id FROM public.tenants AS t
+            LOOP
+                PERFORM set_config('app.current_tenant_id', _t::text, true);
+                UPDATE public.b23_match_verdicts AS v
+                   SET b26_p2_source_authority_state =
+                       public.b26_p2_derive_verdict_authority(v.webhook_ingress_identity_id)
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE v.webhook_ingress_identity_id = i.id
+                   AND v.tenant_id = i.tenant_id
+                   AND v.tenant_id = _t;
+            END LOOP;
+        END $$;
+        """
     )
 
 
@@ -1140,18 +1134,41 @@ def downgrade() -> None:
     # XIX predicate body (family-source condition removed, floor
     # 300002) and the 300002 floor. Every other XX object is retained:
     # the strengthened P3 still resolves against the restored
-    # predicate; the law-change propagation triggers still resolve
+    # predicate; the retirement propagation trigger still resolves
     # against the retained derive function; the chain columns and
     # verify function are inert audit/observer surface; the revokes are
     # strictly stronger than XIX. No GRANT restores runtime authority
     # writes. Deeper rollback is restore-from-backup territory (boot
     # gate refuses to serve it).
+    #
+    # Downgrade writes NO session tenant context, ever. Session GUC
+    # state cannot be restored to NULL once written (a written GUC
+    # reads '' for the rest of the session, and ''::uuid ERRORS where
+    # NULL quietly matches no rows) -- so a tenant-loop re-derivation
+    # here would poison frozen GUC-sensitive steps running later in
+    # the same migration-cascade transaction (proven live: the C9
+    # downgrade's bare b24 sweep). The floor restore therefore uses
+    # DELETE + INSERT, which fires no UPDATE trigger (and no floor
+    # trigger exists by design). Consequence for verdict-local caches:
+    # rows whose XX-derived state differs from the XIX-derived state
+    # (exactly the pre-XIX backfill set) keep their XX stamp after
+    # rollback. That staleness is fail-closed only: every authoritative
+    # XIX reader either joins the restored predicate (coverage, batch,
+    # dispatch -- backfill reads current per XIX law, as on a lane that
+    # never ran XX) or degrades on the cache (Trust, Bayesian --
+    # backfill excluded, understated, never overstated). No reader
+    # asserts false current authority; no runtime principal gains any
+    # write; P3 (XIX body) never reads the cache. Re-upgrade
+    # re-derives everything under XX law via the explicit upgrade
+    # re-derivation below.
     op.execute(_XX_PREDICATE_XIX_RESTORE)
+    op.execute(
+        "DELETE FROM public.b26_p2_operational_floor WHERE id = 1"
+    )
     op.execute(
         """
         INSERT INTO public.b26_p2_operational_floor AS f (id, floor_revision)
         VALUES (1, '%s')
-        ON CONFLICT (id) DO UPDATE SET floor_revision = EXCLUDED.floor_revision
         """ % _XX_PREDECESSOR_FLOOR
     )
     for _role in _XX_RUNTIME_ROLES:

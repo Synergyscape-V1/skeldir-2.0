@@ -862,7 +862,12 @@ def _post_woocommerce_once(
     total: str,
     completed_iso: str | None = None,
 ) -> tuple[int, str, bytes]:
-    """XVI provider parity: real HMAC-signed woocommerce order via the API."""
+    """XVI provider parity: real HMAC-signed woocommerce order via the API.
+
+    XX: the body carries the native status signal (as genuine
+    woocommerce order payloads do); family is never taken from the
+    unsigned topic header alone.
+    """
     import base64 as _b64
 
     body = json.dumps(
@@ -870,6 +875,7 @@ def _post_woocommerce_once(
             "id": order_id,
             "total": total,
             "currency": "USD",
+            "status": "completed",
             "date_completed": completed_iso or datetime.now(timezone.utc).isoformat(),
         },
         separators=(",", ":"),

@@ -69,7 +69,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "b26_p2_state_eligible_for_p3",
         "b26_p2_ingress_has_current_authority(_ingress)",
         "b26_p2_propagate_verdict_authority_on_regime_change",
-        "b26_p2_propagate_verdict_authority_on_floor_change",
+        "trg_b26_p2_xx_propagate_on_regime_change",
         "b26_p2_chain_verdict_supersession",
         "b26_p2_verify_history_protection",
         "b26_p2_enforce_consequence_family_coherence",
@@ -80,6 +80,20 @@ def _static_checks(violations: list[str], checks: dict) -> None:
             violations.append(f"xx_comp_law_missing:{token}")
     if not [v for v in violations if "xx_comp_law_missing" in v]:
         checks["xx_law_present"] = True
+    # Hygiene law: no floor-change trigger may be CREATED (the floor
+    # only changes inside migrations; firing there would poison the
+    # cascade with un-restorable session state). Idempotent DROP
+    # cleanup of predecessor drafts is allowed. Upgrade re-derivation
+    # must be explicit instead.
+    if ("CREATE TRIGGER trg_b26_p2_xx_propagate_on_floor_change" in upgrade
+            or "CREATE OR REPLACE FUNCTION"
+            " public.b26_p2_propagate_verdict_authority_on_floor_change"
+            in upgrade):
+        violations.append("xx_comp_floor_trigger_present")
+    elif "FOR _t IN SELECT t.id FROM public.tenants AS t" not in upgrade:
+        violations.append("xx_comp_upgrade_rederivation_missing")
+    else:
+        checks["cascade_hygiene"] = True
     # Backfill must NOT satisfy the predicate: the allowlisted
     # explicit-source set in the predicate must exclude the backfill tag.
     if "xix-backfill" in upgrade.split(

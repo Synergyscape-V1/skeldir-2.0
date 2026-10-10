@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict hTncYhfVHuJZIEGOfclbV7dQJYp62lYmfdCeTP0ymJlbwrCJW1zgpJRKTKR2Bbs
+\restrict WdK5dnrsegAke2bfrBaSvDZxpURFCkfdrjFu14wUVx4BqRKUIaR1NyVDAwRKhqo
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -5279,43 +5279,6 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority() RETURNS trigger
 
 
 --
--- Name: b26_p2_propagate_verdict_authority_on_floor_change(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_floor_change() RETURNS trigger
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'pg_catalog', 'public'
-    AS $$
-        DECLARE
-            _t uuid;
-            _prev_guc text;
-        BEGIN
-            BEGIN
-                _prev_guc := current_setting('app.current_tenant_id', true);
-            EXCEPTION WHEN OTHERS THEN
-                _prev_guc := NULL;
-            END;
-            -- Driver is the tenant registry (no RLS); see the regime
-            -- propagation function for why ingress cannot drive this.
-            FOR _t IN SELECT t.id FROM public.tenants AS t
-            LOOP
-                PERFORM set_config('app.current_tenant_id', _t::text, true);
-                UPDATE public.b23_match_verdicts AS v
-                   SET b26_p2_source_authority_state =
-                       public.b26_p2_derive_verdict_authority(v.webhook_ingress_identity_id)
-                  FROM public.webhook_ingress_identities AS i
-                 WHERE v.webhook_ingress_identity_id = i.id
-                   AND v.tenant_id = i.tenant_id
-                   AND v.tenant_id = _t;
-            END LOOP;
-            PERFORM set_config(
-                'app.current_tenant_id', COALESCE(_prev_guc, ''), true
-            );
-            RETURN NEW;
-        END $$;
-
-
---
 -- Name: b26_p2_propagate_verdict_authority_on_regime_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6401,7 +6364,6 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                 'trg_b26_p2_registry_immutable|b26_p2_semantic_regime_registry',
                 'trg_b26_p2_xx_supersession_chain|b26_p2_verdict_supersession_ledger',
                 'trg_b26_p2_xx_propagate_on_regime_change|b26_p2_semantic_regime_registry',
-                'trg_b26_p2_xx_propagate_on_floor_change|b26_p2_operational_floor',
                 'trg_b26_p2_xx_consequence_family_coherence|b26_p2_provider_auth_consequence',
                 'trg_b26_p2_xix_revoke_on_witness_loss|b26_p2_ingress_auth_witness',
                 'trg_b26_p2_xix_revoke_on_witness_loss_update|b26_p2_ingress_auth_witness',
@@ -22756,13 +22718,6 @@ CREATE TRIGGER trg_b26_p2_xx_consequence_family_coherence BEFORE INSERT OR UPDAT
 
 
 --
--- Name: b26_p2_operational_floor trg_b26_p2_xx_propagate_on_floor_change; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_b26_p2_xx_propagate_on_floor_change AFTER UPDATE ON public.b26_p2_operational_floor FOR EACH ROW EXECUTE FUNCTION public.b26_p2_propagate_verdict_authority_on_floor_change();
-
-
---
 -- Name: b26_p2_semantic_regime_registry trg_b26_p2_xx_propagate_on_regime_change; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -25944,5 +25899,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict hTncYhfVHuJZIEGOfclbV7dQJYp62lYmfdCeTP0ymJlbwrCJW1zgpJRKTKR2Bbs
+\unrestrict WdK5dnrsegAke2bfrBaSvDZxpURFCkfdrjFu14wUVx4BqRKUIaR1NyVDAwRKhqo
 

@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
   "migration_head": "202609300003",
-  "authority_universe_hash": "2a4d93a727be307430331c4f3930d19bfa7fa4c9e089f00bacca3477a87e7d22",
+  "authority_universe_hash": "dc1801e25f5a500b534d7bd6ff77b2109eacaa273d8157f1556d40ba28c0f3f0",
   "reviewed_at_git_sha": "8f045a3b",
   "meaning_surface_counts": {
-    "routine_meaning": 165,
+    "routine_meaning": 164,
     "trigger_meaning": 27,
     "schema_meaning": 5,
     "rls_meaning": 17,
-    "ownership": 126
+    "ownership": 125
   },
   "review_note": "B2.6-P2 Corrective XX compositional authority closure reviewed: single currentness law (predicate v2 with explicit-family-source condition excluding xix-backfill, P3 delegates to the predicate, Trust adapter + Bayesian + kernel read the predicate, law-change propagation re-derives verdicts same-transaction under explicit tenant context), woocommerce transport-topic fallback removed at derivation + persistence seam, shopify terminal-lifecycle refusal, tamper-evident supersession chain + history-protection observer with runtime privilege census, explicit per-role ledger revokes, minting paths on minimum-serving floor law (>= 202609300002), supported downgrade XX -> 300002 retaining conservation; live hash from PG15 fresh lane (prepare+alembic head 202609300003)."
 }
