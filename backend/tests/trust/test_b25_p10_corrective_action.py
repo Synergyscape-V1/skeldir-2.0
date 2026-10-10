@@ -424,7 +424,9 @@ async def test_bounded_source_sql_uses_persisted_chronology_and_no_offset() -> N
     sql = statements[0].upper()
     assert len(rows) == 1
     assert "UPDATED_AT >=" in sql and "UPDATED_AT <=" in sql
-    assert "ORDER BY UPDATED_AT ASC, ID ASC" in sql
+    # XX: verdict alias qualified (the ingress JOIN makes bare ID
+    # ambiguous); persisted-chronology ordering is unchanged.
+    assert "ORDER BY V.UPDATED_AT ASC, V.ID ASC" in sql
     assert "LIMIT" in sql and "OFFSET" not in sql
     assert params_seen[0]["row_limit"] == 50
     assert params_seen[0]["updated_at_after"] == after
