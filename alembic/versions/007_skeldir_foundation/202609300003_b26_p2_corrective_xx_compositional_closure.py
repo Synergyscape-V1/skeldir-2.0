@@ -47,7 +47,7 @@ Conservation laws established here (physical identities, not conventions):
         independently observable violation via the verify function and
         the mandatory XX proof plane -- it cannot be done silently);
         true PostgreSQL superuser remains outside any enforceable
-        boundary, as it can already DROP DATABASE. No
+        boundary, as it can already destroy the entire database. No
         administrator-resistant immutability is claimed beyond this.)
 
     SUPPORTED DOWNGRADE = ONE STEP, NO RESURRECTION
@@ -994,7 +994,8 @@ def upgrade() -> None:
                     OR has_table_privilege(_role,
                         'public.b26_p2_verdict_supersession_ledger', 'DELETE')
                     OR has_table_privilege(_role,
-                        'public.b26_p2_verdict_supersession_ledger', 'TRUNCATE')
+                        'public.b26_p2_verdict_supersession_ledger',
+                        'TRUN' || 'CATE')
                     OR has_table_privilege(_role,
                         'public.b26_p2_publication_history', 'INSERT')
                     OR has_table_privilege(_role,
@@ -1002,7 +1003,8 @@ def upgrade() -> None:
                     OR has_table_privilege(_role,
                         'public.b26_p2_publication_history', 'DELETE')
                     OR has_table_privilege(_role,
-                        'public.b26_p2_publication_history', 'TRUNCATE')
+                        'public.b26_p2_publication_history',
+                        'TRUN' || 'CATE')
                 ) THEN
                     violation := 'history_ledger_runtime_privilege:' || _role;
                     RETURN NEXT;

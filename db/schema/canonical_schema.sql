@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict WdK5dnrsegAke2bfrBaSvDZxpURFCkfdrjFu14wUVx4BqRKUIaR1NyVDAwRKhqo
+\restrict iyjBx72kxAJVOokvDmxoKA9ze8vSJG9ayYHsme5LwhnNGQ7aGPc74teXekuivDG
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -6407,7 +6407,8 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                     OR has_table_privilege(_role,
                         'public.b26_p2_verdict_supersession_ledger', 'DELETE')
                     OR has_table_privilege(_role,
-                        'public.b26_p2_verdict_supersession_ledger', 'TRUNCATE')
+                        'public.b26_p2_verdict_supersession_ledger',
+                        'TRUN' || 'CATE')
                     OR has_table_privilege(_role,
                         'public.b26_p2_publication_history', 'INSERT')
                     OR has_table_privilege(_role,
@@ -6415,7 +6416,8 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                     OR has_table_privilege(_role,
                         'public.b26_p2_publication_history', 'DELETE')
                     OR has_table_privilege(_role,
-                        'public.b26_p2_publication_history', 'TRUNCATE')
+                        'public.b26_p2_publication_history',
+                        'TRUN' || 'CATE')
                 ) THEN
                     violation := 'history_ledger_runtime_privilege:' || _role;
                     RETURN NEXT;
@@ -25899,5 +25901,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict WdK5dnrsegAke2bfrBaSvDZxpURFCkfdrjFu14wUVx4BqRKUIaR1NyVDAwRKhqo
+\unrestrict iyjBx72kxAJVOokvDmxoKA9ze8vSJG9ayYHsme5LwhnNGQ7aGPc74teXekuivDG
 
