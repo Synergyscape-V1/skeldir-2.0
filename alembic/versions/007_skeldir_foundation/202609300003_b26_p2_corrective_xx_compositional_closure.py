@@ -411,45 +411,616 @@ def upgrade() -> None:
     # XX-2b. Minimum-serving floor law for the minting paths (H-XX-E).
     # The frozen XIX atomic and attester require floor = 202609300002,
     # which the XX floor advance would turn into a self-denial of
-    # service. Retarget the two comparisons to a minimum-serving law
-    # (floor >= 202609300002) by rewriting the frozen bodies in place
-    # via pg_get_functiondef -- no frozen text is copied or edited by
-    # hand, so the rewrite tracks the published bodies exactly. The
-    # fail-closed properties are preserved: a dropped floor (deeper
-    # downgrade) still refuses via undefined_table/NOT FOUND, an old
-    # binary against this floor still refuses via its own equality,
-    # and the retained bodies keep minting after the supported
-    # XX -> 300002 rollback (no downgrade restoration needed, hence
-    # no repeat of the XIX missing-helper failure mode).
+    # service. Their bodies are restated here verbatim (as the live
+    # catalog holds them) with the single comparison retargeted to a
+    # minimum-serving law (floor >= 202609300002). Literal restatement
+    # keeps the X-authority latest-wins equivalence whole: the live
+    # body always equals a file-defined source. CREATE OR REPLACE
+    # preserves ownership and EXECUTE grants. The fail-closed
+    # properties are preserved: a dropped floor (deeper downgrade)
+    # still refuses via undefined_table/NOT FOUND, an old binary
+    # against this floor still refuses via its own equality, and the
+    # retained bodies keep minting after the supported XX -> 300002
+    # rollback (no downgrade restoration needed, hence no repeat of
+    # the XIX missing-helper failure mode).
     # ------------------------------------------------------------------
-    for _fn in (
-        "public.b26_p2_authenticate_ingress_atomic(uuid,text,text,text,"
-        "text,text,text)",
-        "public.b26_p2_attest_provenance_evidence(uuid,text,text)",
-    ):
-        op.execute(
-            """
-            DO $$
-            DECLARE
-                _def text;
+    op.execute(
+        """
+CREATE OR REPLACE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text, p_sig_envelope_sha256 text, p_method text, p_version text DEFAULT 'v1'::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $$
+        DECLARE
+            _tenant uuid;
+            _idem text;
+            _state text;
+            _row_provider text;
+            _prov text;
+            _t_kind text;
+            _t_value text;
+            _t_cref text;
+            _t_amount integer;
+            _t_ccy text;
+            _t_scale integer;
+            _t_ts timestamptz;
+            _t_ts_canon text;
+            _sem_regime text;
+            _demotion text;
+            _family text;
+            _family_source text;
+            _fam_provider text;
+            _c_provider text;
+            _c_event text;
+            _c_body text;
+            _c_sig text;
+            _c_method text;
+            _c_version text;
+            _witness text;
+            _expected text;
+            _prev_guc text;
+            _dup_id uuid;
+            _conflict_id uuid;
+        BEGIN
+            IF current_setting('transaction_isolation', true)
+               IS DISTINCT FROM 'read committed' THEN
+                RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- The ingress credential alone may invoke the transition;
+            -- the table owner (direct administration, any topology)
+            -- and the cluster superuser may also invoke it; every
+            -- other session role is refused at the function boundary.
+            IF session_user IS DISTINCT FROM 'app_ingress'
+               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
+                   'public.webhook_ingress_identities'::regclass)
+               AND session_user IS DISTINCT FROM 'postgres' THEN
+                RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XIX floor: a downgraded schema (floor row/table absent or
+            -- behind) cannot mint authority.
             BEGIN
-                SELECT pg_get_functiondef('%s'::regprocedure) INTO _def;
-                IF position('202609300002' IN _def) = 0 THEN
-                    RAISE EXCEPTION 'b26_p2_xx_floor_retarget_missing';
+                PERFORM 1 FROM public.b26_p2_operational_floor AS f
+                 WHERE f.id = 1 AND f.floor_revision >= '202609300002';
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
+                        USING ERRCODE = '42501';
                 END IF;
-                -- Idempotent: the minimum-serving form contains '>=';
-                -- rewrite only the strict-equality form once.
-                IF position('f.floor_revision >= ''202609300002''' IN _def) = 0 THEN
-                    _def := replace(
-                        _def,
-                        'f.floor_revision = ''202609300002''',
-                        'f.floor_revision >= ''202609300002'''
-                    );
-                    EXECUTE _def;
+            EXCEPTION WHEN undefined_table THEN
+                RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
+                    USING ERRCODE = '42501';
+            END;
+            SELECT i.tenant_id, i.idempotency_key,
+                   i.verified_commerce_ingress_state, i.provider,
+                   i.b26_p2_provenance_status,
+                   i.normalized_commerce_reference_kind,
+                   i.normalized_commerce_reference_value,
+                   i.provider_native_commerce_reference,
+                   i.verified_amount_minor,
+                   i.verified_amount_currency,
+                   i.verified_amount_scale,
+                   i.event_timestamp,
+                   i.b26_p2_semantic_regime,
+                   i.b26_p2_demotion_reason
+              INTO _tenant, _idem, _state, _row_provider, _prov,
+                   _t_kind, _t_value, _t_cref, _t_amount, _t_ccy, _t_scale,
+                   _t_ts, _sem_regime, _demotion
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.id = p_ingress
+             FOR UPDATE;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_ingress_missing'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF _state IS DISTINCT FROM 'authenticity_verified' THEN
+                RAISE EXCEPTION 'b26_p2_atomic_ingress_unverified'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF _demotion IS NOT NULL THEN
+                RAISE EXCEPTION 'b26_p2_atomic_demoted_ingress_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF p_provider IS DISTINCT FROM _row_provider THEN
+                RAISE EXCEPTION 'b26_p2_atomic_provider_mismatch'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF COALESCE(char_length(p_body_sha256), 0) <> 64
+               OR COALESCE(char_length(p_sig_envelope_sha256), 0) <> 64 THEN
+                RAISE EXCEPTION 'b26_p2_atomic_sha_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF public.b26_p2_ascii_strip(COALESCE(p_event_ref, '')) = ''
+               OR public.b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
+                RAISE EXCEPTION 'b26_p2_atomic_blank_shape_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XIX: sovereign event-family allowlist. The family's only
+            -- authority is this transition over provider + the
+            -- root-supplied explicit claim (transaction-local GUCs
+            -- app.b26_p2_event_family / app.b26_p2_event_family_source,
+            -- derived by the root from authenticated bytes or the
+            -- provider-transported topic): relay route selection cannot
+            -- confer it, and provider name alone cannot confer it. An
+            -- absent claim is REFUSED -- never defaulted.
+            BEGIN
+                _family := current_setting(
+                    'app.b26_p2_event_family', true);
+            EXCEPTION WHEN OTHERS THEN
+                _family := NULL;
+            END;
+            IF _family IS NULL
+               OR public.b26_p2_ascii_strip(_family) = '' THEN
+                RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            BEGIN
+                _family_source := current_setting(
+                    'app.b26_p2_event_family_source', true);
+            EXCEPTION WHEN OTHERS THEN
+                _family_source := NULL;
+            END;
+            IF _family_source IS NULL
+               OR NOT (
+                   _family_source = 'body-signal:type'
+                   OR _family_source = 'body-signal:event_type'
+                   OR _family_source = 'body-signal:status'
+                   OR _family_source
+                      = 'transport-topic:x-shopify-topic'
+                   OR _family_source
+                      = 'transport-topic:x-wc-webhook-topic') THEN
+                RAISE EXCEPTION 'b26_p2_atomic_family_source_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            _fam_provider := lower(
+                public.b26_p2_ascii_strip(COALESCE(p_provider, '')));
+            IF _fam_provider = 'stripe' THEN
+                IF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('payment_intent.succeeded',
+                          'payment_intent_succeeded') THEN
+                    _family := 'payment_intent.succeeded';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
                 END IF;
-            END $$;
-            """ % _fn
-        )
+            ELSIF _fam_provider = 'shopify' THEN
+                IF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('orders.create', 'order_create',
+                          'orders/create') THEN
+                    _family := 'orders.create';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'paypal' THEN
+                IF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('payment.sale.completed', 'sale_completed',
+                          'payment.sale_completed') THEN
+                    _family := 'payment.sale.completed';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'woocommerce' THEN
+                IF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('order.completed', 'order_completed') THEN
+                    _family := 'order.completed';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Serialize authentications of identical bytes.
+            PERFORM pg_advisory_xact_lock(
+                hashtext('b26_p2_sovereign_bytes:' || _tenant::text),
+                hashtext(lower(p_body_sha256))
+            );
+            -- Serialize authentications of the same provider event and
+            -- the same commerce identity, so concurrent conflicting
+            -- first-authentications cannot both pass the checks below.
+            PERFORM pg_advisory_xact_lock(
+                hashtext('b26_p2_sovereign_event:' || _tenant::text
+                         || '|' || COALESCE(p_provider, '')),
+                hashtext(COALESCE(p_event_ref, ''))
+            );
+            PERFORM pg_advisory_xact_lock(
+                hashtext('b26_p2_sovereign_commerce:' || _tenant::text
+                         || '|' || COALESCE(p_provider, '')),
+                hashtext(COALESCE(_t_kind, '')
+                         || '|' || COALESCE(_t_value, ''))
+            );
+            SELECT i.id INTO _dup_id
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_provider_auth_consequence AS c
+                ON c.webhook_ingress_identity_id = i.id
+               AND c.tenant_id = i.tenant_id
+             WHERE i.tenant_id = _tenant
+               AND lower(c.body_sha256) IS NOT DISTINCT FROM lower(p_body_sha256)
+               AND c.provider_event_reference IS NOT DISTINCT FROM p_event_ref
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.id IS DISTINCT FROM p_ingress
+             LIMIT 1;
+            IF FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_sovereign_duplicate_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            SELECT i.id INTO _conflict_id
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_provider_auth_consequence AS c
+                ON c.webhook_ingress_identity_id = i.id
+               AND c.tenant_id = i.tenant_id
+             WHERE i.tenant_id = _tenant
+               AND i.provider IS NOT DISTINCT FROM p_provider
+               AND i.provider_native_event_reference IS NOT DISTINCT FROM p_event_ref
+               AND lower(c.body_sha256) IS DISTINCT FROM lower(p_body_sha256)
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.id IS DISTINCT FROM p_ingress
+             LIMIT 1;
+            IF FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_event_identity_conflict_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            SELECT i.id INTO _conflict_id
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.tenant_id = _tenant
+               AND i.provider IS NOT DISTINCT FROM p_provider
+               AND i.normalized_commerce_reference_kind IS NOT DISTINCT FROM _t_kind
+               AND i.normalized_commerce_reference_value IS NOT DISTINCT FROM _t_value
+               AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
+               AND i.id IS DISTINCT FROM p_ingress
+             LIMIT 1;
+            IF FOUND THEN
+                RAISE EXCEPTION 'b26_p2_atomic_commerce_identity_conflict_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            PERFORM set_config('app.current_tenant_id', _tenant::text, true);
+            BEGIN
+                SELECT c.provider, c.provider_event_reference, c.body_sha256,
+                       c.signature_envelope_sha256, c.auth_method, c.auth_version
+                  INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
+                  FROM public.b26_p2_provider_auth_consequence AS c
+                 WHERE c.webhook_ingress_identity_id = p_ingress;
+                IF NOT FOUND THEN
+                    INSERT INTO public.b26_p2_provider_auth_consequence AS c (
+                        webhook_ingress_identity_id, tenant_id, provider,
+                        provider_event_reference, body_sha256,
+                        signature_envelope_sha256, auth_method, auth_version,
+                        b26_p2_event_family, b26_p2_family_source, recorded_by
+                    )
+                    VALUES (p_ingress, _tenant, p_provider, p_event_ref,
+                            lower(p_body_sha256), lower(p_sig_envelope_sha256),
+                            p_method, COALESCE(p_version, 'v1'), _family,
+                            _family_source, session_user)
+                    ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
+                    SELECT c.provider, c.provider_event_reference, c.body_sha256,
+                           c.signature_envelope_sha256, c.auth_method, c.auth_version
+                      INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
+                      FROM public.b26_p2_provider_auth_consequence AS c
+                     WHERE c.webhook_ingress_identity_id = p_ingress;
+                ELSE
+                    IF _c_provider IS DISTINCT FROM p_provider
+                       OR _c_event IS DISTINCT FROM p_event_ref
+                       OR lower(_c_body) IS DISTINCT FROM lower(p_body_sha256)
+                       OR lower(_c_sig) IS DISTINCT FROM lower(p_sig_envelope_sha256)
+                       OR _c_method IS DISTINCT FROM p_method
+                       OR COALESCE(_c_version, 'v1') IS DISTINCT FROM COALESCE(p_version, 'v1') THEN
+                        RAISE EXCEPTION 'b26_p2_atomic_cons_immutable_refused'
+                            USING ERRCODE = '42501';
+                    END IF;
+                    UPDATE public.b26_p2_provider_auth_consequence AS c
+                       SET b26_p2_event_family = _family,
+                           b26_p2_family_source = _family_source
+                     WHERE c.webhook_ingress_identity_id = p_ingress
+                       AND c.b26_p2_event_family IS NULL;
+                END IF;
+                _t_ts_canon := to_char(_t_ts AT TIME ZONE 'UTC',
+                                       'YYYY-MM-DD HH24:MI:SS.US');
+                SELECT w.witness_hash INTO _witness
+                  FROM public.b26_p2_ingress_auth_witness AS w
+                 WHERE w.webhook_ingress_identity_id = p_ingress;
+                _expected := encode(digest(
+                        _tenant::text || '|' || p_ingress::text || '|'
+                        || _c_provider || '|' || _c_event || '|'
+                        || lower(_c_body) || '|' || lower(_c_sig) || '|'
+                        || _c_method || '|' || COALESCE(_c_version, 'v1') || '|'
+                        || COALESCE(_t_kind, '') || '|'
+                        || COALESCE(_t_value, '') || '|'
+                        || COALESCE(_t_amount::text, '') || '|'
+                        || COALESCE(_t_ccy, '') || '|'
+                        || COALESCE(_t_scale::text, '') || '|'
+                        || COALESCE(_t_ts_canon, ''),
+                        'sha256'), 'hex');
+                IF NOT FOUND THEN
+                    INSERT INTO public.b26_p2_ingress_auth_witness AS w (
+                        webhook_ingress_identity_id, tenant_id,
+                        witness_hash, witnessed_by
+                    )
+                    VALUES (p_ingress, _tenant, _expected, session_user)
+                    ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
+                    SELECT w.witness_hash INTO _witness
+                      FROM public.b26_p2_ingress_auth_witness AS w
+                     WHERE w.webhook_ingress_identity_id = p_ingress;
+                ELSIF _witness IS DISTINCT FROM _expected THEN
+                    UPDATE public.b26_p2_ingress_auth_witness AS w
+                       SET witness_hash = _expected,
+                           witnessed_by = session_user
+                     WHERE w.webhook_ingress_identity_id = p_ingress;
+                    _witness := _expected;
+                END IF;
+                INSERT INTO public.b26_p2_provenance_evidence AS e (
+                    webhook_ingress_identity_id, tenant_id,
+                    evidence_kind, evidence_ref, evidence_witness_hash
+                )
+                VALUES (p_ingress, _tenant, 'signed_provider_reingestion', _idem, _witness)
+                ON CONFLICT (webhook_ingress_identity_id) DO UPDATE SET
+                    evidence_kind = EXCLUDED.evidence_kind,
+                    evidence_ref = EXCLUDED.evidence_ref,
+                    evidence_witness_hash = EXCLUDED.evidence_witness_hash,
+                    attested_at = now();
+                INSERT INTO public.b26_p2_auth_root_evidence AS r (
+                    tenant_id, webhook_ingress_identity_id, idempotency_key,
+                    provider, provider_native_event_reference,
+                    body_sha256, signature_envelope_sha256,
+                    auth_method, auth_version
+                )
+                VALUES (_tenant, p_ingress, _idem,
+                        _c_provider, _c_event,
+                        lower(_c_body), lower(_c_sig),
+                        _c_method, COALESCE(_c_version, 'v1'))
+                ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
+                -- XIX: stamp the governed semantic regime and clear any
+                -- historical demotion reason. No bearer mark is set or
+                -- needed: this DEFINER transition executes as the owner,
+                -- which is exactly the context the guard admits.
+                -- (Reachable only for non-demoted rows: demoted rows
+                -- were refused above, so this stamp can never bless
+                -- stale money.)
+                UPDATE public.webhook_ingress_identities AS i
+                   SET b26_p2_provenance_status = 'authenticated_known',
+                       b26_p2_semantic_regime = 'xvii-sovereign-v1',
+                       b26_p2_demotion_reason = NULL
+                 WHERE i.id = p_ingress;
+                PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
+                RETURN 'authenticated_known';
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
+                RAISE;
+            END;
+        END $$
+        """
+    )
+    op.execute(
+        """
+CREATE OR REPLACE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind text, p_ref text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $$
+        DECLARE
+            _tenant uuid;
+            _idem text;
+            _state text;
+            _prov_status text;
+            _demotion text;
+            _row_provider text;
+            _family text;
+            _family_source text;
+            _fam_provider text;
+            _witness text;
+            _c_provider text;
+            _c_event text;
+            _c_body text;
+            _c_sig text;
+            _c_method text;
+            _c_version text;
+            _expected text;
+            _prev_guc text;
+        BEGIN
+            IF current_setting('transaction_isolation', true)
+               IS DISTINCT FROM 'read committed' THEN
+                RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- Single ingress-boundary law (dynamic owner): only the
+            -- ingress credential, the table owner, and the cluster
+            -- superuser may attest.
+            IF session_user IS DISTINCT FROM 'app_ingress'
+               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
+                   'public.webhook_ingress_identities'::regclass)
+               AND session_user IS DISTINCT FROM 'postgres' THEN
+                RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF p_kind IS DISTINCT FROM 'signed_provider_reingestion'
+               AND p_kind IS DISTINCT FROM 'governed_attestation' THEN
+                RAISE EXCEPTION 'b26_p2_evidence_kind_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF p_kind = 'governed_attestation'
+               AND session_user = 'app_ingress' THEN
+                RAISE EXCEPTION 'b26_p2_evidence_governed_admin_only'
+                    USING ERRCODE = '42501';
+            END IF;
+            BEGIN
+                PERFORM 1 FROM public.b26_p2_operational_floor AS f
+                 WHERE f.id = 1 AND f.floor_revision >= '202609300002';
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            EXCEPTION WHEN undefined_table THEN
+                RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
+                    USING ERRCODE = '42501';
+            END;
+            SELECT i.tenant_id, i.idempotency_key,
+                   i.verified_commerce_ingress_state, i.b26_p2_provenance_status,
+                   i.b26_p2_demotion_reason, i.provider
+              INTO _tenant, _idem, _state, _prov_status, _demotion, _row_provider
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.id = p_ingress;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_evidence_ingress_missing'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF _state IS DISTINCT FROM 'authenticity_verified' THEN
+                RAISE EXCEPTION 'b26_p2_evidence_ingress_unverified'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF _demotion IS NOT NULL THEN
+                RAISE EXCEPTION 'b26_p2_evidence_demoted_ingress_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF public.b26_p2_ascii_strip(COALESCE(p_ref, '')) = ''
+               OR p_ref IS DISTINCT FROM _idem THEN
+                RAISE EXCEPTION 'b26_p2_evidence_ref_not_bound'
+                    USING ERRCODE = '42501';
+            END IF;
+            SELECT w.witness_hash INTO _witness
+              FROM public.b26_p2_ingress_auth_witness AS w
+             WHERE w.webhook_ingress_identity_id = p_ingress;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_evidence_witness_missing'
+                    USING ERRCODE = '42501';
+            END IF;
+            SELECT c.provider, c.provider_event_reference, c.body_sha256,
+                   c.signature_envelope_sha256, c.auth_method, c.auth_version
+              INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
+              FROM public.b26_p2_provider_auth_consequence AS c
+             WHERE c.webhook_ingress_identity_id = p_ingress
+               AND c.tenant_id = _tenant;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'b26_p2_evidence_no_auth_consequence'
+                    USING ERRCODE = '42501';
+            END IF;
+            _expected := encode(digest(
+                _tenant::text || '|' || p_ingress::text || '|'
+                || _c_provider || '|' || _c_event || '|'
+                || lower(_c_body) || '|' || lower(_c_sig) || '|'
+                || _c_method || '|' || COALESCE(_c_version, 'v1'),
+                'sha256'), 'hex');
+            IF _witness IS DISTINCT FROM _expected THEN
+                RAISE EXCEPTION 'b26_p2_evidence_witness_not_bound'
+                    USING ERRCODE = '42501';
+            END IF;
+            -- XIX family: an explicit allowlisted claim is required and
+            -- bound into the consequence row; absent claims are refused.
+            BEGIN
+                _family := current_setting(
+                    'app.b26_p2_event_family', true);
+            EXCEPTION WHEN OTHERS THEN
+                _family := NULL;
+            END;
+            IF _family IS NULL
+               OR public.b26_p2_ascii_strip(_family) = '' THEN
+                RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            BEGIN
+                _family_source := current_setting(
+                    'app.b26_p2_event_family_source', true);
+            EXCEPTION WHEN OTHERS THEN
+                _family_source := NULL;
+            END;
+            IF _family_source IS NULL
+               OR NOT (
+                   _family_source = 'body-signal:type'
+                   OR _family_source = 'body-signal:event_type'
+                   OR _family_source = 'body-signal:status'
+                   OR _family_source
+                      = 'transport-topic:x-shopify-topic'
+                   OR _family_source
+                      = 'transport-topic:x-wc-webhook-topic') THEN
+                RAISE EXCEPTION 'b26_p2_atomic_family_source_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            _fam_provider := lower(
+                public.b26_p2_ascii_strip(COALESCE(_row_provider, '')));
+            IF _fam_provider = 'stripe' THEN
+                IF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('payment_intent.succeeded',
+                          'payment_intent_succeeded') THEN
+                    _family := 'payment_intent.succeeded';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'shopify' THEN
+                IF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('orders.create', 'order_create',
+                          'orders/create') THEN
+                    _family := 'orders.create';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'paypal' THEN
+                IF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('payment.sale.completed', 'sale_completed',
+                          'payment.sale_completed') THEN
+                    _family := 'payment.sale.completed';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSIF _fam_provider = 'woocommerce' THEN
+                IF lower(public.b26_p2_ascii_strip(_family))
+                      IN ('order.completed', 'order_completed') THEN
+                    _family := 'order.completed';
+                ELSE
+                    RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                        USING ERRCODE = '42501';
+                END IF;
+            ELSE
+                RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            BEGIN
+                _prev_guc := current_setting('app.current_tenant_id', true);
+            EXCEPTION WHEN OTHERS THEN
+                _prev_guc := NULL;
+            END;
+            PERFORM set_config('app.current_tenant_id', _tenant::text, true);
+            BEGIN
+                UPDATE public.b26_p2_provider_auth_consequence AS c
+                   SET b26_p2_event_family = _family,
+                       b26_p2_family_source = _family_source
+                 WHERE c.webhook_ingress_identity_id = p_ingress
+                   AND c.b26_p2_event_family IS NULL;
+                INSERT INTO public.b26_p2_provenance_evidence AS e (
+                    webhook_ingress_identity_id, tenant_id,
+                    evidence_kind, evidence_ref, evidence_witness_hash
+                )
+                VALUES (p_ingress, _tenant, p_kind, p_ref, _witness)
+                ON CONFLICT (webhook_ingress_identity_id) DO UPDATE SET
+                    evidence_kind = EXCLUDED.evidence_kind,
+                    evidence_ref = EXCLUDED.evidence_ref,
+                    evidence_witness_hash = EXCLUDED.evidence_witness_hash,
+                    attested_at = now();
+                -- XIX: the stamp carries no bearer mark (see atomic).
+                UPDATE public.webhook_ingress_identities AS i
+                   SET b26_p2_provenance_status = 'authenticated_known',
+                       b26_p2_semantic_regime = 'xvii-sovereign-v1',
+                       b26_p2_demotion_reason = NULL
+                 WHERE i.id = p_ingress;
+                PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
+                RETURN 'authenticated_known';
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc, ''), true);
+                RAISE;
+            END;
+        END $$
+        """
+    )
     # pre-XX body checked provenance, regime, and witness only; a
     # demoted, familyless-backfill, quarantined, retired-regime, or
     # below-floor source could remain P3-eligible while every other
