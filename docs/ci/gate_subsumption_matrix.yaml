@@ -4878,3 +4878,26 @@
   risk_if_removed: Cross-loop pool poisoning would turn tasks into
     FAILURE results and kill workers while the gate reports ok.
   decision: enforce
+- gate_id: b26-p2-xx-composition
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xx_composition.py
+  owning_phase: B2.6-P2
+  protected_invariant: Single currentness law across all authoritative
+    readers; contradictory event meaning refused; honest historical
+    cutover; independently observable history protection; safe
+    supported downgrade.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XX compositional closure; no
+    predecessor gate observes cross-reader agreement, contradictory
+    body/topic refusal, backfill non-currentness, or observer-visible
+    ledger integrity.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_xx_composition.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xx_composition.py --help
+  risk_if_removed: A lawful revocation would leave Trust/coverage/P3
+    disagreeing, forged transport meaning would book revenue, backfill
+    history would read current, and ledger rewrites would stay silent.
+  decision: enforce

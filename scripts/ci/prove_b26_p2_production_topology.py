@@ -862,7 +862,12 @@ def _post_woocommerce_once(
     total: str,
     completed_iso: str | None = None,
 ) -> tuple[int, str, bytes]:
-    """XVI provider parity: real HMAC-signed woocommerce order via the API."""
+    """XVI provider parity: real HMAC-signed woocommerce order via the API.
+
+    XX: the body carries the native status signal (as genuine
+    woocommerce order payloads do); family is never taken from the
+    unsigned topic header alone.
+    """
     import base64 as _b64
 
     body = json.dumps(
@@ -870,6 +875,7 @@ def _post_woocommerce_once(
             "id": order_id,
             "total": total,
             "currency": "USD",
+            "status": "completed",
             "date_completed": completed_iso or datetime.now(timezone.utc).isoformat(),
         },
         separators=(",", ":"),
@@ -1367,12 +1373,12 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        # XIX: the head advances to the non-reconstructible-authority
-        # revision; the XVIII head must remain an ancestor (linear
+        # XX: the head advances to the compositional-closure
+        # revision; the XIX head must remain an ancestor (linear
         # ancestry, no forks).
-        if "202609300002" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xix")
-        details["migration_head"] = "202609300002"
+        if "202609300003" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xx")
+        details["migration_head"] = "202609300003"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",

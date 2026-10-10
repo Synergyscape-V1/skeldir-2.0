@@ -769,7 +769,8 @@ def main() -> int:
                                     "202609280002",
                                     "202609290001",
                                     "202609300001",
-                                    "202609300002"):
+                                    "202609300002",
+                                    "202609300003"):
                         violations.append(
                             f"x_proof_plane_unexpected_head:{head}"
                         )
@@ -783,7 +784,8 @@ def main() -> int:
                           "202609280002",
                           "202609290001",
                           "202609300001",
-                          "202609300002"):
+                          "202609300002",
+                          "202609300003"):
                 battery: list[tuple[str, object]] = [
                     ("PF-X-01", lambda: _pf01_protected_adjudication(args.dsn)),
                     ("PF-X-02", _pf02_history_fail_closed),

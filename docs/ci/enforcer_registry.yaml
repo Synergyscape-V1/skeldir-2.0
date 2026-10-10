@@ -6728,3 +6728,34 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+- id: b26-p2-xx-composition
+  path: scripts/ci/validate_b26_p2_xx_composition.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'One subsystem invalidating a source while another
+    independently maintained representation stays positive must never
+    yield an authoritative financial statement: the central predicate,
+    the Trust adapter, coverage, P3, Bayesian readers, and verdict
+    propagation agree in every committed state; contradictory
+    body/topic meaning is refused at derivation and seam; backfill
+    history stays non-current; ledger tampering is observer-visible;
+    downgrade retains revokes.'
+  command: python scripts/ci/validate_b26_p2_xx_composition.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xx_composition.py --help
+  expected_failure_meaning: Compositional divergence (reader disagreement,
+    forged family meaning, overpromoted history, silent ledger rewrite)
+    while every component proof stays green.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xx_composition.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
