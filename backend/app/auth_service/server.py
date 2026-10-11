@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 from uuid import UUID, uuid4
 
@@ -37,6 +38,73 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 
 app = FastAPI(title="Skeldir B2.6-P2 Authentication Trust Root (XIII)")
+
+
+@app.on_event("startup")
+async def _startup_construction_authority_guard() -> None:
+    """B2.6-P2 Corrective XXI: refuse to boot against an incompatible schema.
+
+    This process is the sole runtime minter of authenticated financial
+    authority. A stale binary running against a newer database must not
+    serve: the minting ABI it was built against no longer exists there
+    (the database refuses unknown signatures), and this gate additionally
+    refuses boot when the live construction revision differs from the
+    one this build requires. Mismatch is retried for a bounded window
+    (migration in flight) then fatal; an unreachable database or a
+    missing ingress credential defers to readiness/per-request
+    fail-closed handling.
+    """
+    import asyncio
+    import logging
+
+    from app.core.construction_authority import (
+        ConstructionAuthorityError,
+        assert_production_construction_authority,
+        read_construction_revisions,
+    )
+
+    logger = logging.getLogger(__name__)
+    try:
+        wait_s = float(
+            os.getenv("SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S", "240")
+        )
+    except ValueError:
+        wait_s = 240.0
+    try:
+        from app.db.session import (  # noqa: PLC0415
+            IngressAsyncSessionLocal,
+            _ingress_boundary,
+        )
+    except Exception as exc:
+        logger.warning("construction_authority_guard_deferred:%s", exc)
+        return
+    if os.getenv("SKELDIR_PROCESS_ROLE", "").strip() != "auth_ingress":
+        return
+    if IngressAsyncSessionLocal is None:
+        logger.warning("construction_authority_guard_deferred:no_credential")
+        return
+    deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
+    while True:
+        observed: object = "unreadable"
+        try:
+            async with _ingress_boundary():
+                async with IngressAsyncSessionLocal() as session:
+                    observed = await read_construction_revisions(session)
+                    assert_production_construction_authority(observed)
+        except ConstructionAuthorityError:
+            now = asyncio.get_event_loop().time()
+            if now >= deadline:
+                raise
+            logger.warning(
+                "construction_authority_boot_waiting:%s", observed
+            )
+            await asyncio.sleep(2.0)
+            continue
+        except Exception as exc:
+            logger.warning("construction_authority_guard_deferred:%s", exc)
+            return
+        logger.info("construction_authority_boot_ok")
+        return
 
 
 class AuthenticateRequest(BaseModel):
@@ -267,6 +335,34 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             status_code=400,
             detail=f"b26_p2_unsupported_event_family_refused:{exc}",
         ) from exc
+    # XXI (H-XXI-03): lifecycle attestation for the minting seam. The
+    # database enforces the positive creation law itself (atomic v2);
+    # the root supplies the body-derived lifecycle facts it already
+    # established during sovereign derivation. Non-shopify providers
+    # carry no lifecycle surface: null/absent markers.
+    from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+        derive_shopify_lifecycle,
+    )
+
+    lifecycle_status = None
+    lifecycle_cancelled_at = None
+    lifecycle_refunds_present = False
+    lifecycle_created_at = None
+    lifecycle_updated_at = None
+    if provider == "shopify":
+        try:
+            shop_lifecycle = derive_shopify_lifecycle(
+                json.loads(raw_body.decode("utf-8"))
+                if isinstance(raw_body, (bytes, bytearray)) else {}
+            )
+        except CommerceDerivationError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"b26_p2_lifecycle_not_creation:{exc}",
+            ) from exc
+        lifecycle_status = shop_lifecycle.financial_status
+        lifecycle_created_at = shop_lifecycle.created_at
+        lifecycle_updated_at = shop_lifecycle.updated_at
     # XVI (H-XVI-R13): canonical persistence is USD-only. The sovereign
     # scope currency universe is {"USD"}; a non-USD event is
     # EXPLICITLY_EXCLUDED from canonical reconciliation truth by scope
@@ -538,9 +634,12 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             )
             await session.execute(
                 text(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     " :ingress, :provider, :event_ref,"
-                    " :body_sha, :sig_sha, :method, :version)"
+                    " :body_sha, :sig_sha, :method, :version,"
+                    " :lifecycle_status, :lifecycle_cancelled_at,"
+                    " :lifecycle_refunds_present,"
+                    " :lifecycle_created_at, :lifecycle_updated_at)"
                 ),
                 {
                     "ingress": canonical_id,
@@ -550,6 +649,11 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                     "sig_sha": sig_sha,
                     "method": method,
                     "version": body.auth_version or "v1",
+                    "lifecycle_status": lifecycle_status,
+                    "lifecycle_cancelled_at": lifecycle_cancelled_at,
+                    "lifecycle_refunds_present": lifecycle_refunds_present,
+                    "lifecycle_created_at": lifecycle_created_at,
+                    "lifecycle_updated_at": lifecycle_updated_at,
                 },
             )
         except Exception as atomic_exc:

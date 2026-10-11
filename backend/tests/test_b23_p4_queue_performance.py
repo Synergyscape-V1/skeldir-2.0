@@ -261,11 +261,11 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
     # seeder), else reuse the ingress issuer when it already carries
     # a lawful caller.
     _p4_auth_sql_async = (
-        "SELECT public.b26_p2_authenticate_ingress_atomic("
+        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
         " wi.id, wi.provider, wi.provider_native_event_reference,"
         " 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',"
         " 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',"
-        " 'hmac-sha256-timestamped-hex', 'v1')"
+        " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)"
         " FROM public.webhook_ingress_identities AS wi"
         " WHERE wi.tenant_id = CAST(:tenant_id AS uuid)"
         " AND wi.idempotency_key LIKE"

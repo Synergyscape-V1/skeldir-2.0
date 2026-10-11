@@ -91,7 +91,7 @@ def _production_atomic_callers() -> dict[str, str]:
     callers = {}
     for path in sorted((APP_ROOT).rglob("*.py")):
         text = path.read_text(encoding="utf-8")
-        if "b26_p2_authenticate_ingress_atomic(" in text:
+        if "b26_p2_authenticate_ingress_atomic_v2(" in text:
             callers[path.relative_to(REPO_ROOT).as_posix()] = text
     return callers
 

@@ -222,8 +222,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                         " 'body-signal:type', false)"
                     )
                     icur.execute(
-                        "SELECT public.b26_p2_attest_provenance_evidence(%s,"
-                        "'signed_provider_reingestion','xiv-cond-1')",
+                        "SELECT public.b26_p2_attest_provenance_evidence_v2(%s,"
+                        "'signed_provider_reingestion','xiv-cond-1', NULL, NULL, FALSE, NULL, NULL)",
                         (ing1,),
                     )
                     violations.append("xiv_cond_legacy_promotes")
@@ -258,8 +258,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     " 'body-signal:type', false)"
                 )
                 icur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe','e1',%s,%s,"
-                    "'hmac-sha256-timestamped-hex','v1')",
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2(%s,'stripe','e1',%s,%s,"
+                    "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                     (ing1, "a" * 64, "b" * 64),
                 )
                 if str(icur.fetchone()[0]) != "authenticated_known":

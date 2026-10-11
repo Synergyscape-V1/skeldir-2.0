@@ -24,6 +24,10 @@ def _shopify_body(**overrides: object) -> bytes:
         "total_price": "10.00",
         "currency": "USD",
         "created_at": "2026-09-01T00:00:00Z",
+        # XXI v3 positive creation law: honest creation bodies carry
+        # a creation status and coincident update instant.
+        "financial_status": "paid",
+        "updated_at": "2026-09-01T00:00:00Z",
     }
     base.update(overrides)
     return json.dumps(base).encode()
@@ -52,6 +56,12 @@ def test_xx_honest_shopify_create_conducts() -> None:
         {"financial_status": "partially_refunded", "refunds": [{"id": 2}]},
         {"cancel_reason": "fraud", "financial_status": "voided"},
         {"refunds": [{"id": 3}]},
+        # XXI: absence of positive creation evidence also refuses --
+        # no status, no update instant, or a non-creation moment.
+        {"financial_status": None},
+        {"updated_at": None},
+        {"updated_at": "2026-09-05T00:00:00Z"},
+        {"financial_status": "pending", "updated_at": "2026-09-05T00:00:00Z"},
     ),
 )
 def test_xx_terminal_shopify_body_refused_as_create(
@@ -59,6 +69,10 @@ def test_xx_terminal_shopify_body_refused_as_create(
 ) -> None:
     with pytest.raises(CommerceDerivationError):
         derive_commerce("shopify", _shopify_body(**overrides))
+    with pytest.raises(CommerceDerivationError):
+        derive_event_family(
+            "shopify", _shopify_body(**overrides), topic="orders/create"
+        )
 
 
 def test_xx_fulfilled_shopify_order_still_conducts() -> None:

@@ -95,9 +95,9 @@ def _seed_ingress(cur, tenant: str, tag: str,
         (_source,),
     )
     cur.execute(
-        "SELECT public.b26_p2_authenticate_ingress_atomic("
+        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
         "%s, %s, %s, %s, %s,"
-        " 'hmac-sha256-timestamped-hex', 'v1')",
+        " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
         (ingress_id, provider, f"evt-{tag}", "a" * 64, "b" * 64),
     )
     return ingress_id, event_id
@@ -384,8 +384,9 @@ def run_canaries(admin_dsn: str, violations: list[str],
                 # requires the ingress witness consequence.
                 refused = _attempt(
                     acur,
-                    "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s, 'governed_attestation', %s)",
+                    "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                    "(%s, 'governed_attestation', %s,"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (ingress8, idem8),
                 )
                 results["assertion_promotes_nothing"] = (
@@ -466,8 +467,9 @@ def run_canaries(admin_dsn: str, violations: list[str],
                 )
                 restored = _attempt(
                     icur,
-                    "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s, 'signed_provider_reingestion', %s)",
+                    "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                    "(%s, 'signed_provider_reingestion', %s,"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (ingress8, idem8),
                 )
                 results["attester_restores"] = (

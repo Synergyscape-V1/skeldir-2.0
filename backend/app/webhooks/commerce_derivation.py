@@ -214,6 +214,94 @@ class SovereignCommerce:
     event_timestamp: datetime
 
 
+# XXI (H-XXI-03): positive Shopify creation law. The transported topic
+# asserts creation; only a body that positively reads as a creation
+# earns the orders.create family. Creation-shaped means: a creation
+# financial status, no terminal lifecycle markers, an empty refunds
+# list, and both creation/update instants present within skew of each
+# other (a later update restates an existing obligation; it is not a
+# new creation fact). This bound mirrors the database lifecycle
+# admission (b26_p2_enforce_lifecycle_admission); both cite contract
+# event-family-law.v3.json.
+SHOPIFY_CREATION_SKEW_SECONDS = 300
+SHOPIFY_CREATION_FINANCIAL_STATUSES = frozenset(
+    {"pending", "authorized", "paid", "partially_paid"}
+)
+
+
+@dataclass(frozen=True)
+class ShopifyLifecycle:
+    """Body-native lifecycle evidence for a Shopify order payload."""
+
+    financial_status: str
+    cancelled_at: Any
+    refunds_present: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+def derive_shopify_lifecycle(payload: Mapping[str, Any]) -> ShopifyLifecycle:
+    """Establish positive creation lifecycle from a Shopify order body.
+
+    Raises CommerceDerivationError when the body does not positively
+    read as a creation: unknown/absent financial status, any terminal
+    marker (cancelled_at, cancel_reason, terminal status, non-empty
+    refunds), missing creation/update instants, or an update instant
+    beyond skew of creation. closed_at/fulfilled states are valid
+    sales and are NOT refused.
+    """
+    status = _normalize_family_token(payload.get("financial_status"))
+    if status is None or status not in SHOPIFY_CREATION_FINANCIAL_STATUSES:
+        raise CommerceDerivationError(
+            "shopify creation requires a creation financial status:"
+            f" {payload.get('financial_status')!r}"
+        )
+    if payload.get("cancelled_at") not in (None, ""):
+        raise CommerceDerivationError(
+            "shopify cancelled order is not an orders.create fact"
+        )
+    if payload.get("cancel_reason") not in (None, ""):
+        raise CommerceDerivationError(
+            "shopify cancelled order is not an orders.create fact"
+        )
+    refunds = payload.get("refunds")
+    # Contract event-family-law v3: refunds must be empty or absent.
+    # Any present non-empty container (list, dict, string, ...) is a
+    # terminal lifecycle signal; checking only `list` would let a
+    # non-list container inherit creation authority it never earned.
+    if refunds is not None and refunds != [] and refunds != {} and refunds != "":
+        raise CommerceDerivationError(
+            "shopify refunded order is not an orders.create fact"
+        )
+    created_raw = payload.get("created_at")
+    if created_raw is None:
+        raise CommerceDerivationError("shopify created_at is required")
+    updated_raw = payload.get("updated_at")
+    if updated_raw is None:
+        raise CommerceDerivationError(
+            "shopify updated_at is required for creation evidence"
+        )
+    created_at = _coerce_utc_instant(created_raw, field="shopify created_at")
+    updated_at = _coerce_utc_instant(updated_raw, field="shopify updated_at")
+    skew = abs((updated_at - created_at).total_seconds())
+    if skew > SHOPIFY_CREATION_SKEW_SECONDS:
+        raise CommerceDerivationError(
+            "shopify body is not a creation moment:"
+            f" updated_at skew {skew:.0f}s exceeds"
+            f" {SHOPIFY_CREATION_SKEW_SECONDS}s"
+        )
+    return ShopifyLifecycle(
+        financial_status=status,
+        cancelled_at=payload.get("cancelled_at"),
+        refunds_present=(
+            refunds is not None and refunds != [] and refunds != {}
+            and refunds != ""
+        ),
+        created_at=created_at,
+        updated_at=updated_at,
+    )
+
+
 def canonical_money_scale(currency: str | None) -> int:
     normalized = (currency or "").strip().upper()
     if not normalized:
@@ -384,43 +472,12 @@ def _derive_stripe(payload: Mapping[str, Any]) -> SovereignCommerce:
 
 
 def _derive_shopify(payload: Mapping[str, Any]) -> SovereignCommerce:
-    # XX (H-XX-B): body-lifecycle consistency. The family for shopify
-    # arrives via the unsigned X-Shopify-Topic header, so a cancelled,
-    # voided, or refunded order body redelivered under an
-    # orders/create topic would otherwise book as settled revenue.
-    # A body describing terminal lifecycle is not an orders.create
-    # financial fact: refuse it as non-authoritative (unavailable for
-    # the create classification) rather than booking it or coercing
-    # it to zero. Honest creation traffic never carries these
-    # markers (cancelled_at/cancel_reason are null, financial_status
-    # is pending/authorized/paid/partially_paid, refunds is empty at
-    # creation), so the guard is fail-closed without honest cost.
-    # closed_at/fulfilled states are valid sales and are NOT refused.
-    if payload.get("cancelled_at") not in (None, ""):
-        raise CommerceDerivationError(
-            "shopify cancelled order is not an orders.create fact"
-        )
-    if payload.get("cancel_reason") not in (None, ""):
-        raise CommerceDerivationError(
-            "shopify cancelled order is not an orders.create fact"
-        )
-    _terminal_financial_status = _normalize_family_token(
-        payload.get("financial_status")
-    )
-    if _terminal_financial_status in (
-        "voided",
-        "refunded",
-        "partially_refunded",
-    ):
-        raise CommerceDerivationError(
-            "shopify terminal financial status"
-            f" {_terminal_financial_status!r} is not an orders.create fact"
-        )
-    _refunds = payload.get("refunds")
-    if isinstance(_refunds, list) and len(_refunds) > 0:
-        raise CommerceDerivationError(
-            "shopify refunded order is not an orders.create fact"
-        )
+    # XXI positive creation law (H-XXI-03, supersedes the XX negative
+    # blacklist): the body must positively read as a creation, not
+    # merely lack known-terminal markers. derive_shopify_lifecycle
+    # refuses cancelled/voided/refunded shapes, unknown statuses, and
+    # non-creation moments (updated_at beyond skew of created_at).
+    lifecycle = derive_shopify_lifecycle(payload)
     order_id = payload.get("id")
     commerce_ref = _require_nonblank(order_id, field="shopify order id")
     currency = _require_nonblank(
@@ -437,10 +494,7 @@ def _derive_shopify(payload: Mapping[str, Any]) -> SovereignCommerce:
     amount_minor = decimal_to_minor_units(raw_total, scale=scale)
     if amount_minor <= 0:
         raise CommerceDerivationError("shopify total_price must be positive")
-    created_at = payload.get("created_at")
-    if created_at is None:
-        raise CommerceDerivationError("shopify created_at is required")
-    event_ts = _coerce_utc_instant(created_at, field="shopify created_at")
+    event_ts = lifecycle.created_at
     return SovereignCommerce(
         provider="shopify",
         provider_native_event_reference=commerce_ref,
@@ -570,11 +624,18 @@ def _derive_family_and_source(
             raise CommerceDerivationError(
                 "shopify family requires the provider-transported topic"
             )
-        if observed in aliases:
-            return canonical, "transport-topic:x-shopify-topic"
-        raise CommerceDerivationError(
-            f"unsupported event family for shopify: topic={observed!r}"
-        )
+        if observed not in aliases:
+            raise CommerceDerivationError(
+                f"unsupported event family for shopify: topic={observed!r}"
+            )
+        # XXI positive creation law (H-XXI-03): the transported topic
+        # is necessary but never sufficient. The same body must
+        # positively read as a creation (creation status, no terminal
+        # markers, update instant within skew of creation); otherwise
+        # the topic alone cannot confer the orders.create family and
+        # the shape is non-authoritative.
+        derive_shopify_lifecycle(payload)
+        return canonical, "transport-topic:x-shopify-topic"
     observed_any = False
     for key in _NATIVE_FAMILY_SIGNAL_KEYS_BY_PROVIDER[normalized]:
         observed = _normalize_family_token(payload.get(key))
@@ -618,14 +679,14 @@ def derive_event_family(
     financial authority -- provider name and relay route never supply
     family meaning).
 
-    For shopify the family fact is the provider-transported
-    ``X-Shopify-Topic`` value (``topic``); the HMAC'd body alone never
-    suffices for shopify. The transported topic is necessary but never
-    sufficient for financial authority: the body must additionally be
-    lifecycle-consistent with a creation (terminal cancelled/voided/
-    refunded bodies are refused by the commerce derivation even under
-    an orders/create topic). For woocommerce the family fact is the
-    body-native status signal alone (XX: no topic fallback).
+    For shopify the transported ``X-Shopify-Topic`` value (``topic``)
+    is necessary but never sufficient for financial authority: the
+    body must additionally and positively read as a creation under
+    the v3 creation law (creation financial status, no terminal
+    markers, update instant within skew of creation). A non-creation
+    body under an orders/create topic yields NO family at all.
+    For woocommerce the family fact is the body-native status signal
+    alone (XX: no topic fallback).
     """
     family, _source = _derive_family_and_source(provider, raw_body, topic)
     return family

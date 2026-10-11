@@ -261,9 +261,10 @@ def main() -> None:
                     " 'body-signal:type', false)"
                 )
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (
                         webhook_ingress_identity_id,
                         "stripe",

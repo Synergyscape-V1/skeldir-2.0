@@ -465,10 +465,10 @@ async def _link_p13_verdicts(link_infos: list[dict]) -> None:
                 await apply_xix_family_gucs_sqlalchemy(owner, "stripe")
                 await owner.execute(
                     text(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         " :ingress_id, 'stripe', :event_ref,"
                         " :body_sha256, :sig_sha256,"
-                        " 'hmac-sha256-timestamped-hex', 'v1')"
+                        " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)"
                     ),
                     {
                         "ingress_id": str(ingress_id),

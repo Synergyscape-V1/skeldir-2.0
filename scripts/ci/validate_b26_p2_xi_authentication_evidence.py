@@ -35,6 +35,10 @@ XI_MIGRATION = (
 )
 
 ATTESTER = "b26_p2_attest_provenance_evidence"
+# Live ABI tracks the release-bound v2 attester (XXI retired v1);
+# the static section above keeps auditing the frozen XI migration.
+ATTESTER_LIVE = "b26_p2_attest_provenance_evidence_v2"
+ATTESTER_LIVE_ARGS = "NULL, NULL, FALSE, NULL, NULL"
 WITNESS_FN = "b26_p2_record_ingress_auth_witness"
 WITNESS_TABLE = "b26_p2_ingress_auth_witness"
 FORBIDDEN_CALLERS = ("app_user", "app_worker", "app_relay", "app_beat")
@@ -121,7 +125,7 @@ def _live_checks(
             "SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n"
             " ON n.oid = p.pronamespace"
             " WHERE n.nspname = 'public' AND p.proname = %s",
-            (ATTESTER,),
+            (ATTESTER_LIVE,),
         )
         row = cur.fetchone()
         if row is None:
@@ -144,7 +148,7 @@ def _live_checks(
             JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = 'public'
               AND p.proname IN (
-                  'b26_p2_attest_provenance_evidence',
+                  'b26_p2_attest_provenance_evidence_v2',
                   'b26_p2_record_ingress_auth_witness'
               )
               AND r.rolname IN (
@@ -160,7 +164,7 @@ def _live_checks(
         checks["execute_matrix"] = {
             f"{func}:{role}": grants.get((func, role))
             for func in (
-                "b26_p2_attest_provenance_evidence",
+                "b26_p2_attest_provenance_evidence_v2",
                 "b26_p2_record_ingress_auth_witness",
             )
             for role in (
@@ -169,7 +173,7 @@ def _live_checks(
             )
         }
         if not grants.get(
-            ("b26_p2_attest_provenance_evidence", "app_ingress"), False
+            ("b26_p2_attest_provenance_evidence_v2", "app_ingress"), False
         ):
             violations.append("xi_auth_live_ingress_cannot_attest")
         if not grants.get(
@@ -178,7 +182,7 @@ def _live_checks(
             violations.append("xi_auth_live_ingress_cannot_witness")
         for role in FORBIDDEN_CALLERS:
             if grants.get(
-                ("b26_p2_attest_provenance_evidence", role), False
+                ("b26_p2_attest_provenance_evidence_v2", role), False
             ):
                 violations.append(
                     f"xi_auth_live_forbidden_attest:{role}"
@@ -310,8 +314,9 @@ def _behavioral_probes(
                 )
                 try:
                     cur.execute(
-                        "SELECT public.b26_p2_attest_provenance_evidence"
-                        "(%s, 'governed_attestation', %s)",
+                        "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                        "(%s, 'governed_attestation', %s,"
+                        " NULL, NULL, FALSE, NULL, NULL)",
                         (ingress_id, idem),
                     )
                     violations.append(
@@ -346,8 +351,9 @@ def _behavioral_probes(
                 # migration/admin custody only (Corrective XII).
                 try:
                     cur.execute(
-                        "SELECT public.b26_p2_attest_provenance_evidence"
-                        "(%s, 'signed_provider_reingestion', %s)",
+                        "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                        "(%s, 'signed_provider_reingestion', %s,"
+                        " NULL, NULL, FALSE, NULL, NULL)",
                         (ingress_id, idem),
                     )
                     violations.append(
@@ -361,8 +367,9 @@ def _behavioral_probes(
                         )
                 try:
                     cur.execute(
-                        "SELECT public.b26_p2_attest_provenance_evidence"
-                        "(%s, 'governed_attestation', %s)",
+                        "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                        "(%s, 'governed_attestation', %s,"
+                        " NULL, NULL, FALSE, NULL, NULL)",
                         (ingress_id, idem),
                     )
                     violations.append(
@@ -395,9 +402,9 @@ def _behavioral_probes(
                         " 'body-signal:type', false)"
                     )
                     cur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s, 'stripe', %s, %s, %s,"
-                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                         (
                             ingress_id,
                             f"evt-{idem}",

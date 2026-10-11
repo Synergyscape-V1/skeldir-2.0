@@ -121,7 +121,7 @@ try:
 except Exception as exc:
     p_outcome = "REFUSED:" + str(exc).split("\\n")[0][:120]
 try:
-    uc.execute("SELECT public.b26_p2_attest_provenance_evidence(%s, 'governed_attestation', %s)", (ing, idem))
+    uc.execute("SELECT public.b26_p2_attest_provenance_evidence_v2(%s, 'governed_attestation', %s, NULL, NULL, FALSE, NULL, NULL)", (ing, idem))
     outcome = str(uc.fetchone()[0])
 except Exception as exc:
     outcome = "REFUSED:" + str(exc).split("\\n")[0][:120]
@@ -147,7 +147,7 @@ try:
     # XIX: the attester requires an explicit authenticated family claim.
     icb.execute("SELECT set_config('app.b26_p2_event_family', 'payment_intent.succeeded', false)")
     icb.execute("SELECT set_config('app.b26_p2_event_family_source', 'body-signal:type', false)")
-    icb.execute("SELECT public.b26_p2_attest_provenance_evidence(%s, 'signed_provider_reingestion', %s)", (ing, idem))
+    icb.execute("SELECT public.b26_p2_attest_provenance_evidence_v2(%s, 'signed_provider_reingestion', %s, NULL, NULL, FALSE, NULL, NULL)", (ing, idem))
     legacy_outcome = str(icb.fetchone()[0])
 except Exception as exc:
     legacy_outcome = "REFUSED:" + str(exc).split("\\n")[0][:120]
@@ -194,7 +194,7 @@ else:
     # XIX: the atomic requires an explicit authenticated family claim.
     ic.execute("SELECT set_config('app.b26_p2_event_family', 'payment_intent.succeeded', false)")
     ic.execute("SELECT set_config('app.b26_p2_event_family_source', 'body-signal:type', false)")
-    ic.execute("SELECT public.b26_p2_authenticate_ingress_atomic(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1')", (ing, "evt-" + tag, "c" * 64, "d" * 64))
+    ic.execute("SELECT public.b26_p2_authenticate_ingress_atomic_v2(%s, 'stripe', %s, %s, %s, 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)", (ing, "evt-" + tag, "c" * 64, "d" * 64))
     restored = str(ic.fetchone()[0])
     ingress.close()
     if restored == "authenticated_known":
@@ -604,12 +604,13 @@ def main() -> int:
         details["in_image_equivalence"] = "PASS"
 
         # 5. Authority-universe assertion with image bytes.
-        # Prefer the newest (XIV) coverage law; fall back through
+        # Prefer the newest (XXI) coverage law; fall back through
         # predecessors for older lanes.
         import importlib.util as _ilu
 
         covered = None
         for _modname, _fname, _attr in (
+            ("b26_p2_xxi_coverage", "b26_p2_xxi_coverage.py", "XXI_COVERED_SURFACES"),
             ("b26_p2_xviii_coverage", "b26_p2_xviii_coverage.py", "XVIII_COVERED_SURFACES"),
             ("b26_p2_xiv_coverage", "b26_p2_xiv_coverage.py", "XIV_COVERED_SURFACES"),
             ("b26_p2_xiii_coverage", "b26_p2_xiii_coverage.py", "XIII_COVERED_SURFACES"),
@@ -641,7 +642,7 @@ def main() -> int:
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
               f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                 "--migration-head", "202609300003",
+                 "--migration-head", "202609300004",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

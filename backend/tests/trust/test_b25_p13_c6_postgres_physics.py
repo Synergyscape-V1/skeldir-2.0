@@ -555,11 +555,11 @@ async def _seed_real_financial_source_change(tenant_id: UUID, suffix: str) -> No
             )
             apply_xix_family_gucs_psycopg2(cur, "stripe")
             cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                 " wi.id, wi.provider, wi.provider_native_event_reference,"
                 " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
                 " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
-                " 'hmac-sha256-timestamped-hex', 'v1')"
+                " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)"
                 " FROM public.webhook_ingress_identities AS wi"
                 " WHERE wi.tenant_id = %s"
                 " AND wi.idempotency_key LIKE 'c6-ingress-%%'",

@@ -127,9 +127,10 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
             try:
                 apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ingress_id), "stripe", f"evt-{tag}",
                      "a" * 64, "b" * 64),
                 )
@@ -391,9 +392,10 @@ def test_iv_outbox_fk_refuses_cross_tenant_ingress() -> None:
             try:
                 apply_xix_family_gucs_psycopg2(cur, _provider)
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (
                         str(second["ingress_id"]),
                         _provider,
@@ -485,9 +487,9 @@ def test_iv_split_brain_second_task_for_same_ingress_refused() -> None:
                 try:
                     apply_xix_family_gucs_psycopg2(cur, _provider)
                     cur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s, %s, %s, %s, %s,"
-                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                         (
                             str(ids["ingress_id"]),
                             _provider,
@@ -1068,9 +1070,10 @@ def test_iv_duplicate_seed_reuses_winner_task() -> None:
             try:
                 apply_xix_family_gucs_psycopg2(cur, _provider)
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (
                         str(ids["ingress_id"]),
                         _provider,

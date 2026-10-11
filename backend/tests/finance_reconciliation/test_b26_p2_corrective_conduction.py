@@ -168,9 +168,9 @@ def _seed_conduction_universe(tag: str) -> dict[str, Any]:
                 try:
                     apply_xix_family_gucs_psycopg2(cur, provider)
                     cur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s, %s, %s, %s, %s,"
-                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                         (
                             str(identity_id),
                             provider,
@@ -718,9 +718,10 @@ async def test_p2ca1_scope_identity_binds_exact_producer_set() -> None:
             try:
                 apply_xix_family_gucs_psycopg2(cur, _clone_auth[0])
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (
                         str(clone_ingress_id),
                         _clone_auth[0],

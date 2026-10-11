@@ -56,6 +56,8 @@ PROTECTED_TABLES = (
 # Governed routines whose live meaning must equal the migration chunk.
 # Corrective XI extends the set to the rewritten/new load-bearing
 # routines (latest upgrade chunk wins; historical law is immutable).
+# Corrective XXI retires the v1 attester for the release-bound v2
+# (Law A ABI retirement); the governed set tracks the live law.
 GOVERNED_ROUTINES = (
     "b26_p2_ascii_strip",
     "b26_p2_strip_provider_token",
@@ -69,7 +71,7 @@ GOVERNED_ROUTINES = (
     "b26_p2_enforce_verdict_temporal_conservation",
     "b26_p2_enforce_ingress_provenance",
     "b26_p2_enforce_dispatch_provenance",
-    "b26_p2_attest_provenance_evidence",
+    "b26_p2_attest_provenance_evidence_v2",
     "b26_p2_guard_conducted_transition",
     "b26_p2_guard_conduction_receipt",
     "b26_p2_record_scheduler_heartbeat",
@@ -497,7 +499,8 @@ def main() -> int:
                                         "202609290001",
                                         "202609300001",
                                         "202609300002",
-                                        "202609300003"):
+                                        "202609300003",
+                                        "202609300004"):
                             violations.append(
                                 "x_authority_unexpected_migration_head:"
                                 f"{head}"

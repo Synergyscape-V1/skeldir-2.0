@@ -363,9 +363,9 @@ def _live_controls(
                         " 'body-signal:type', false)"
                     )
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s,'stripe',%s,%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (ing, eref, sha, "b" * 64),
                     )
                     return str(icur.fetchone()[0])
@@ -663,9 +663,9 @@ def _live_controls(
                 )
                 try:
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s,'stripe','nc-e1',%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (row, "a" * 64, "b" * 64),
                     )
                     violations.append("xviii_ow11_stale_promoted")

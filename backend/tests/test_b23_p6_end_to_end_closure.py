@@ -1281,10 +1281,10 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
                         await apply_xix_family_gucs_sqlalchemy(issuer, provider)
                         await issuer.execute(
                             text(
-                                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                                 " :ingress_id, :provider, :event_reference,"
                                 " :body_sha256, :sig_sha256,"
-                                " 'hmac-sha256-timestamped-hex', 'v1')"
+                                " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)"
                             ),
                             {
                                 "ingress_id": str(ingress_id),

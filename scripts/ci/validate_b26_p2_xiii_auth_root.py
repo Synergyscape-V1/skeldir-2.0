@@ -144,7 +144,7 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
             """
             SELECT has_function_privilege(
                 'app_ingress',
-                'public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text)',
+                'public.b26_p2_authenticate_ingress_atomic_v2(uuid, text, text, text, text, text, text, text, timestamptz, boolean, timestamptz, timestamptz)',
                 'EXECUTE')
             """
         )

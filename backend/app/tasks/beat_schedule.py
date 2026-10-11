@@ -11,7 +11,7 @@ from typing import Dict, Any
 
 from celery.schedules import crontab
 
-from app.core.queues import QUEUE_B26_P2_RELAY, QUEUE_BAYESIAN, QUEUE_BAYESIAN_PUBLISHER
+from app.core.queues import QUEUE_B26_P2_RELAY, QUEUE_BAYESIAN, QUEUE_BAYESIAN_PUBLISHER, QUEUE_B23_MATCH_ENGINE
 
 
 def _refresh_interval_seconds() -> float:
@@ -187,6 +187,22 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
                 "expires": max(int(scheduler_interval), 1) * 2,
             },
         }
+    # Corrective XXI history-integrity observation: the beat executor
+    # (B2.3 worker credential) periodically records ledger count/tip
+    # plus observer violations with unforgeable authorship. Trust
+    # issuance degrades unless a fresh beat-authored clean observation
+    # agrees with live state (bounded runtime recency); CI gates
+    # deployment-time continuity against the committed anchor file.
+    # Executes on the B2.3 match-engine queue (proven operational).
+    schedule["b26-p2-history-observation"] = {
+        "task": "app.tasks.b26_p2_history.observe_history_integrity",
+        "schedule": 300.0,
+        "options": {
+            "expires": 600,
+            "queue": QUEUE_B23_MATCH_ENGINE,
+            "routing_key": f"{QUEUE_B23_MATCH_ENGINE}.task",
+        },
+    }
     if os.getenv("SKELDIR_B25_DISABLE_TRUST_ISSUANCE_RECONCILER_JOB") != "1":
         trust_interval = _positive_int_env(
             "B25_TRUST_ISSUANCE_RECONCILE_INTERVAL_SECONDS", 60

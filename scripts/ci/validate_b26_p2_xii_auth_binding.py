@@ -239,12 +239,14 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                  (ingress_a, "evt-%s" % idem_a, "c" * 64),
                  "b26_p2_witness_no_auth_consequence"),
                 ("governed attest as ingress",
-                 "SELECT public.b26_p2_attest_provenance_evidence"
-                 "(%s,'governed_attestation',%s)",
+                 "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                 "(%s,'governed_attestation',%s,"
+                 " NULL, NULL, FALSE, NULL, NULL)",
                  (ingress_a, idem_a), "b26_p2_evidence_governed_admin_only"),
                 ("signed attest w/o witness",
-                 "SELECT public.b26_p2_attest_provenance_evidence"
-                 "(%s,'signed_provider_reingestion',%s)",
+                 "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                 "(%s,'signed_provider_reingestion',%s,"
+                 " NULL, NULL, FALSE, NULL, NULL)",
                  (ingress_a, idem_a), "b26_p2_evidence_witness_missing"),
             ]:
                 try:
@@ -299,8 +301,8 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                 " 'body-signal:type', false)"
             )
             cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
-                "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+                "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                 (ingress_a, "evt-%s" % idem_a, "c" * 64, "d" * 64),
             )
             if str(cur.fetchone()[0]) != "authenticated_known":
@@ -320,8 +322,8 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                     " 'body-signal:type', false)"
                 )
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
-                    "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+                    "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                     (ingress_a, "evt-%s" % idem_a, "e" * 64, "e" * 64),
                 )
                 violations.append("xii_auth_live_tamper_minted")

@@ -411,11 +411,11 @@ REVOKE ALL ON FUNCTION public.b26_p2_guard_conduction_receipt() FROM PUBLIC;
 -- no runtime principal holds direct table authority. The attester is
 -- the sole promotion path from unknown_legacy.
 REVOKE ALL ON TABLE public.b26_p2_provenance_evidence FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM PUBLIC;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-        GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_user;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_user;
     END IF;
 END $$;
 
@@ -449,7 +449,7 @@ BEGIN
     -- attestation semantics bit-for-bit.
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-            REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
+            REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM app_user;
         END IF;
         GRANT USAGE ON SCHEMA public TO app_ingress;
         GRANT SELECT, INSERT, UPDATE ON TABLE public.webhook_ingress_identities TO app_ingress;
@@ -458,10 +458,10 @@ BEGIN
         GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
         GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress;
         GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
-        GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+        GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_ingress;
     ELSE
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-            GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_user;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_user;
         END IF;
     END IF;
 END $$;
@@ -563,20 +563,20 @@ BEGIN
         REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
     END IF;
 END $$;
-REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
+REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(uuid, text, text, text, text, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(uuid, text, text, text, text, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_ingress;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-        REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM app_user;
+        REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(uuid, text, text, text, text, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM app_user;
     END IF;
 END $$;
 REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
 REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress;
-REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_ingress;
 REVOKE ALL ON FUNCTION public.b26_p2_xii_topology_check() FROM PUBLIC;
 DO $$
 DECLARE _r text;
@@ -622,7 +622,7 @@ REVOKE ALL ON FUNCTION public.b26_p2_xiii_invariant_oracle() FROM PUBLIC;
 -- (but not its grants) arrives via canonical_schema.sql. No runtime
 -- principal holds direct INSERT/UPDATE/DELETE. INSERT occurs only inside
 -- the single sovereign transition
--- (b26_p2_authenticate_ingress_atomic, proven by the anchored
+-- (b26_p2_authenticate_ingress_atomic_v2, proven by the anchored
 -- exact-signature frame match in the trigger, not by DEFINER context
 -- class): any other SECURITY DEFINER routine is refused with
 -- b26_p2_auth_root_evidence_transition_refused; the SELECT grants below
@@ -672,3 +672,25 @@ END $$;
 REVOKE ALL ON FUNCTION public.b26_p2_xiv_provision_ingress_topology() FROM PUBLIC;
 -- B2.6-P2 Corrective XVII semantic-binding oracle (observable only).
 REVOKE ALL ON FUNCTION public.b26_p2_xvii_semantic_binding_oracle() FROM PUBLIC;
+
+-- === 202609300004 Corrective XXI: release-bound minting ABI ===
+-- Source of truth is the 202609300004 migration. The v1 atomic/attester
+-- signatures no longer exist at this head: any executable built against
+-- them fails with undefined-function before any state changes (no
+-- version string to forge). The v2 signatures carry body-derived
+-- lifecycle attestation the database enforces itself
+-- (b26_p2_enforce_lifecycle_admission); EXECUTE belongs to app_ingress
+-- alone. The root-evidence trigger admits only the exact v2 minting
+-- frame. Lifecycle helper is observable only (REVOKE below).
+REVOKE ALL ON FUNCTION public.b26_p2_enforce_lifecycle_admission(text, text, text, timestamptz, boolean, timestamptz, timestamptz, boolean) FROM PUBLIC;
+-- === 202609300004 Corrective XXI: history-integrity beat observations ===
+-- Append-only observations with session_user authorship. All writes go
+-- through the owner-context b26_p2_observe_history_integrity() entry
+-- point (EXECUTE to the B2.3 worker executor, app_worker): no direct
+-- INSERT grant exists for any role, so a forged clean observation
+-- cannot be filed around the observer. API/worker readers SELECT for
+-- the Trust builder check. No other grants exist.
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN EXECUTE 'GRANT SELECT ON TABLE public.b26_p2_history_integrity_observations TO app_worker'; END IF; END $$;
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN EXECUTE 'GRANT SELECT ON TABLE public.b26_p2_history_integrity_observations TO app_user'; END IF; END $$;
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN EXECUTE 'GRANT EXECUTE ON FUNCTION public.b26_p2_read_history_continuity() TO app_worker'; END IF; END $$;
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN EXECUTE 'GRANT EXECUTE ON FUNCTION public.b26_p2_read_history_continuity() TO app_user'; END IF; END $$;

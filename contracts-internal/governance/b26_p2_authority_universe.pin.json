@@ -1,14 +1,14 @@
 {
   "producer": "b26_p2_capability_surface",
-  "migration_head": "202609300003",
-  "authority_universe_hash": "2f36ba4db1448f70b02d45db30b44473781b8636497a278a4019296070a88b6d",
-  "reviewed_at_git_sha": "8f045a3b",
+  "migration_head": "202609300004",
+  "authority_universe_hash": "33a66cdaa62d23861a66911c735068a15f3a03202e98c3a1ff46676c3f73f629",
+  "reviewed_at_git_sha": "PENDING_XXI_MERGE_HEAD",
   "meaning_surface_counts": {
-    "routine_meaning": 164,
+    "routine_meaning": 168,
     "trigger_meaning": 27,
     "schema_meaning": 5,
     "rls_meaning": 17,
-    "ownership": 125
+    "ownership": 129
   },
-  "review_note": "B2.6-P2 Corrective XX compositional authority closure reviewed: single currentness law (predicate v2 with explicit-family-source condition excluding xix-backfill, P3 delegates to the predicate, Trust adapter + Bayesian + kernel read the predicate, law-change propagation re-derives verdicts same-transaction under explicit tenant context), woocommerce transport-topic fallback removed at derivation + persistence seam, shopify terminal-lifecycle refusal, tamper-evident supersession chain + history-protection observer with runtime privilege census, explicit per-role ledger revokes, minting paths on minimum-serving floor law (>= 202609300002), supported downgrade XX -> 300002 retaining conservation; live hash from PG15 fresh lane (prepare+alembic head 202609300003)."
+  "review_note": "B2.6-P2 Corrective XXI sovereign release continuity reviewed: release-bound minting ABI (v1 atomic/attester dropped; v2 carries DB-enforced lifecycle attestation; auth-root refuses incompatible schema), positive Shopify creation law (derivation + family choke + DB seam; non-list refunds refused), monotonic disqualification as persisted demotion data surviving supported rollback, seq-anchored observable history (continuity observer + beat observations + Trust degradation on stale/violated/divergent), single currentness retained + rollback reader unity, XII/XIII/XIV topology adjudicators track the v2 ABI in both directions (upgrade + downgrade restore), effect-level proof via real Trust adapter and real P3 logic; live hash from PG15 fresh lane xxi_lane_f (prepare+alembic head 202609300004). reviewed_at_git_sha set to the XXI merge SHA on landing."
 }

@@ -790,7 +790,7 @@ def _assert_sovereign_finalization_binding(
     finalization: Mapping[str, Any],
     *,
     context: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, tuple[object, object, object, object, object]]:
     """Enforce bytes->meaning binding on a verified arrival (XVI, H-XVI-R11).
 
     Single law shared by the HTTP-relay path and the direct (credential-
@@ -802,6 +802,14 @@ def _assert_sovereign_finalization_binding(
     Raises ValidationError (fail closed, never silently downgrade).
     The ``context`` selects the refusal token namespace (relay vs direct)
     so operators can distinguish the two dominance paths.
+
+    Returns (family, evidence source, lifecycle attestation) where the
+    lifecycle tuple is (financial_status, cancelled_at, refunds_present,
+    created_at, updated_at) for the v2 minting seam -- Nones/False for
+    providers without a lifecycle surface. XXI: shopify lifecycle is
+    derived here from the same verified bytes (positive creation law);
+    the direct path passes it to the v2 atomic, the relay path lets the
+    root re-derive it from the forwarded bytes.
     """
     import base64 as _binding_b64  # noqa: PLC0415
 
@@ -811,6 +819,7 @@ def _assert_sovereign_finalization_binding(
         derive_commerce as _binding_derive,
         derive_event_family as _binding_family,
         derive_event_family_source as _binding_family_source,
+        derive_shopify_lifecycle as _binding_lifecycle,
     )
 
     envelope = finalization.get("relay_envelope")
@@ -892,6 +901,26 @@ def _assert_sovereign_finalization_binding(
             _family_source = _binding_family_source(
                 _provider, _raw, topic=_topic
             )
+            # XXI (H-XXI-03): lifecycle attestation travels with the
+            # family claim to the v2 minting seam. Non-shopify
+            # providers carry no lifecycle surface (nulls/False).
+            _lifecycle: tuple[object, object, object, object, object] = (
+                None, None, False, None, None,
+            )
+            if _provider == "shopify":
+                import json as _binding_json  # noqa: PLC0415
+
+                _shop_lc = _binding_lifecycle(
+                    _binding_json.loads(_raw.decode("utf-8"))
+                    if isinstance(_raw, (bytes, bytearray)) else {}
+                )
+                _lifecycle = (
+                    _shop_lc.financial_status,
+                    None,
+                    False,
+                    _shop_lc.created_at,
+                    _shop_lc.updated_at,
+                )
         except _BindingDerivationError as exc:
             raise ValidationError(
                 f"b26_p2_unsupported_event_family_refused:{context}:{exc}"
@@ -906,7 +935,7 @@ def _assert_sovereign_finalization_binding(
         raise ValidationError(
             f"b26_p2_handoff_binding_refused:{context}_check_failed:{type(exc).__name__}"
         ) from exc
-    return _family, _family_source
+    return _family, _family_source, _lifecycle
 
 
 async def _relay_verified_ingress_to_auth_root(
@@ -1053,7 +1082,7 @@ async def _finalize_verified_ingress_post_commit(
     # meaning from the exact relayed bytes, refuse any divergence, and
     # refuse non-USD persistence. Without the raw bytes there is no
     # dominance to prove -- fail closed.
-    _direct_family, _direct_family_source = (
+    _direct_family, _direct_family_source, _direct_lifecycle = (
         _assert_sovereign_finalization_binding(finalization, context="direct")
     )
 
@@ -1204,9 +1233,12 @@ async def _finalize_verified_ingress_post_commit(
             )
             await session.execute(
                 text(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     " :ingress_id, :provider, :event_ref,"
-                    " :body_sha256, :sig_sha256, :method, :version)"
+                    " :body_sha256, :sig_sha256, :method, :version,"
+                    " :lifecycle_status, :lifecycle_cancelled_at,"
+                    " :lifecycle_refunds_present,"
+                    " :lifecycle_created_at, :lifecycle_updated_at)"
                 ),
                 {
                     "ingress_id": ingress_uuid,
@@ -1218,6 +1250,11 @@ async def _finalize_verified_ingress_post_commit(
                     ).lower(),
                     "method": str(consequence_summary.get("auth_method")),
                     "version": str(consequence_summary.get("auth_version") or "v1"),
+                    "lifecycle_status": _direct_lifecycle[0],
+                    "lifecycle_cancelled_at": _direct_lifecycle[1],
+                    "lifecycle_refunds_present": _direct_lifecycle[2],
+                    "lifecycle_created_at": _direct_lifecycle[3],
+                    "lifecycle_updated_at": _direct_lifecycle[4],
                 },
             )
         except Exception as direct_atomic_exc:
@@ -1318,11 +1355,14 @@ async def _attest_reingestion_as_ingress(
     # None). All attestation flows through the caller session, which
     # must be the trust-root ingress session; app_user is refused by
     # database law.
+    # XXI: re-attestation carries null lifecycle (no raw body at this
+    # path); the v2 attester enforces contradiction-only checks here
+    # (positive creation was established at the original mint).
     await session.execute(
         text(
-            "SELECT public.b26_p2_attest_provenance_evidence("
+            "SELECT public.b26_p2_attest_provenance_evidence_v2("
             " :ingress_id, 'signed_provider_reingestion',"
-            " :evidence_ref)"
+            " :evidence_ref, NULL, NULL, FALSE, NULL, NULL)"
         ),
         {
             "ingress_id": ingress_id,

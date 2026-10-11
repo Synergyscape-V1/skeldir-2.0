@@ -776,6 +776,21 @@ KNOWN_P2_DEFINERS = frozenset(
         # (b26_p2_xviii_coverage) and falsified by the XVIII battery
         # (NC/OW cells) plus the XVIII live physics role matrix.
         "b26_p2_ingress_has_current_authority",
+        # Corrective XXI: the release-bound v2 minting ABI (v1
+        # signatures retired; EXECUTE app_ingress alone; lifecycle
+        # attestation enforced at the seam) and the owner-context
+        # history continuity surface (read-only STABLE DEFINER read
+        # for issuance readers; beat observation entry for the B2.3
+        # worker executor; no direct table rights anywhere). All are
+        # P2-covered (b26_p2_xxi_coverage) and falsified by the XXI
+        # battery (V1/V2/V4/V8/V9 cells) plus the XXI live composition
+        # gate. (The lifecycle helper grants no runtime EXECUTE:
+        # tracked by the XXI seam validator, never by the grant
+        # census.)
+        "b26_p2_authenticate_ingress_atomic_v2",
+        "b26_p2_attest_provenance_evidence_v2",
+        "b26_p2_read_history_continuity",
+        "b26_p2_observe_history_integrity",
     }
 )
 

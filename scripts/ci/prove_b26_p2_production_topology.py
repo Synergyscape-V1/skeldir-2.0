@@ -818,18 +818,25 @@ def _post_shopify_once(
 ) -> tuple[int, str, bytes]:
     """XVI provider parity: real HMAC-signed shopify order through the API.
 
+    XXI: the body carries positive creation evidence (creation status
+    plus coincident update instant), as genuine provider payloads do;
+    family is never taken from the topic header alone.
+
     Returns (http_status, body_text, exact_sent_bytes) so the proof can
     compare persisted meaning against the independent oracle on the
     identical bytes the provider signed.
     """
     import base64 as _b64
 
+    created = created_iso or datetime.now(timezone.utc).isoformat()
     body = json.dumps(
         {
             "id": order_id,
             "total_price": total,
             "currency": "USD",
-            "created_at": created_iso or datetime.now(timezone.utc).isoformat(),
+            "financial_status": "paid",
+            "created_at": created,
+            "updated_at": created,
         },
         separators=(",", ":"),
     ).encode()
@@ -2310,9 +2317,9 @@ def main() -> int:
                     " 'body-signal:type', false)"
                 )
                 setup_cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, 'stripe', %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                     (
                         free_ingress,
                         f"e-proof-{free_ingress[:8]}",
@@ -2875,10 +2882,11 @@ def main() -> int:
             build_manifest as _build_manifest,
         )
 
-        # Coverage registry: prefer the newest (XVIII) law; fall back
+        # Coverage registry: prefer the newest (XXI) law; fall back
         # through predecessors for older lanes.
         _covered = None
         for _mod, _attr in (
+            ("scripts.ci.b26_p2_xxi_coverage", "XXI_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xviii_coverage", "XVIII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xiv_coverage", "XIV_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xiii_coverage", "XIII_COVERED_SURFACES"),

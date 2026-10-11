@@ -131,9 +131,9 @@ def _seed(admin_dsn: str, tag: str) -> dict:
                 " 'body-signal:type', false)"
             )
             cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                 "%s, 'stripe', %s, %s, %s,"
-                " 'hmac-sha256-timestamped-hex', 'v1')",
+                " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                 (ingress_id, evt_ref, "c" * 64, "d" * 64),
             )
             cur.execute(

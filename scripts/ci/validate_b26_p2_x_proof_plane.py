@@ -231,9 +231,9 @@ def _seed_no_verdict_task(admin_dsn: str) -> tuple[str, str, str]:
                 " 'body-signal:type', false)"
             )
             cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                 "%s, 'stripe', 'e', %s, %s,"
-                " 'hmac-sha256-timestamped-hex', 'v1')",
+                " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                 (iid, "a" * 64, "b" * 64),
             )
             task = f"x-pf-{uuid.uuid4().hex[:8]}"
@@ -770,7 +770,8 @@ def main() -> int:
                                     "202609290001",
                                     "202609300001",
                                     "202609300002",
-                                    "202609300003"):
+                                    "202609300003",
+                                    "202609300004"):
                         violations.append(
                             f"x_proof_plane_unexpected_head:{head}"
                         )
@@ -785,7 +786,8 @@ def main() -> int:
                           "202609290001",
                           "202609300001",
                           "202609300002",
-                          "202609300003"):
+                          "202609300003",
+                          "202609300004"):
                 battery: list[tuple[str, object]] = [
                     ("PF-X-01", lambda: _pf01_protected_adjudication(args.dsn)),
                     ("PF-X-02", _pf02_history_fail_closed),
