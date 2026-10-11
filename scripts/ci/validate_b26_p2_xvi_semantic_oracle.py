@@ -335,7 +335,7 @@ GOLDEN_VECTORS = [
     {
         "id": "shopify-order-usd",
         "provider": "shopify",
-        "raw": b'{"id":12345,"total_price":"76.00","currency":"USD","created_at":"2024-01-15T10:00:00Z"}',
+        "raw": b'{"id":12345,"total_price":"76.00","currency":"USD","created_at":"2024-01-15T10:00:00Z","financial_status":"paid","updated_at":"2024-01-15T10:00:00Z"}',
         "expected": {
             "provider": "shopify",
             "provider_native_event_reference": "12345",
@@ -351,7 +351,7 @@ GOLDEN_VECTORS = [
     {
         "id": "shopify-order-bhd",
         "provider": "shopify",
-        "raw": b'{"id":777,"total_price":"10.000","currency":"BHD","created_at":"2024-01-15T10:00:00Z"}',
+        "raw": b'{"id":777,"total_price":"10.000","currency":"BHD","created_at":"2024-01-15T10:00:00Z","financial_status":"paid","updated_at":"2024-01-15T10:00:00Z"}',
         "expected": {
             "provider": "shopify",
             "provider_native_event_reference": "777",

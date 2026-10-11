@@ -561,8 +561,9 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
             apply_xix_family_gucs_psycopg2(cur, "stripe")
             denied = _refused(
                 lambda: cur.execute(
-                    "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s, 'governed_attestation', %s)",
+                    "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                    "(%s, 'governed_attestation', %s,"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ids["ingress_id"]), idem),
                 )
             )
@@ -650,8 +651,9 @@ async def test_xh_bare_promotion_refused_attester_restores() -> None:
             )
             apply_xix_family_gucs_psycopg2(cur, "stripe")
             cur.execute(
-                "SELECT public.b26_p2_attest_provenance_evidence"
-                "(%s, 'signed_provider_reingestion', %s)",
+                "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                "(%s, 'signed_provider_reingestion', %s,"
+                " NULL, NULL, FALSE, NULL, NULL)",
                 (str(ids["ingress_id"]), idem),
             )
             assert str(cur.fetchone()[0]) == "authenticated_known"
