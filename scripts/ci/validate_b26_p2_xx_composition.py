@@ -149,7 +149,10 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     ).read_text(encoding="utf-8")
     for token in (
         "is not an orders.create fact",
-        "terminal financial status",
+        # XXI restates the terminal refusal as a positive creation
+        # requirement (creation status + no terminal markers +
+        # coincident instants); the refusal behavior is unchanged.
+        "requires a creation financial status",
         "no transported-topic fallback",
     ):
         if token not in commerce:
@@ -166,11 +169,13 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     else:
         checks["relay_hint_hardened"] = True
 
-    # Construction contract equals the migration head.
+    # Construction contract equals the migration head (advanced by
+    # XXI to 202609300004; the XX closure properties below hold at
+    # the current head).
     contract = (
         REPO_ROOT / "backend" / "app" / "core" / "construction_authority.py"
     ).read_text(encoding="utf-8")
-    if 'REQUIRED_SCHEMA_REVISION = "202609300003"' not in contract:
+    if 'REQUIRED_SCHEMA_REVISION = "202609300004"' not in contract:
         violations.append("xx_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xx"] = True
@@ -258,9 +263,9 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                         " 'body-signal:type', true)"
                     )
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s,'stripe',%s,%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (ing, eref, sha, "b" * 64),
                     )
                     out = str(icur.fetchone()[0])
@@ -390,6 +395,12 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 "total_price": "10.00",
                 "currency": "USD",
                 "created_at": "2026-09-01T00:00:00Z",
+                # XXI v3 positive creation law: the honest fixture
+                # carries creation status plus a coincident update
+                # instant, as genuine provider payloads do. Terminal
+                # variants below override these fields.
+                "financial_status": "paid",
+                "updated_at": "2026-09-01T00:00:00Z",
             }
             base.update(overrides)
             return _json.dumps(base).encode()
@@ -458,9 +469,9 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     " 'body-signal:status', true)"
                 )
                 icur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s,'woocommerce',%s,%s,%s,"
-                    "'hmac-sha256-base64','v1')",
+                    "'hmac-sha256-base64','v1', NULL, NULL, FALSE, NULL, NULL)",
                     (woo, "xx-woo", "f" * 64, "b" * 64),
                 )
                 igr.commit()
@@ -607,7 +618,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
         cur.execute(
             "SELECT floor_revision FROM public.b26_p2_operational_floor WHERE id=1"
         )
-        if cur.fetchone()[0] != "202609300003":
+        # Floor advances with the head (XXI: 202609300004).
+        if cur.fetchone()[0] != "202609300004":
             violations.append("xx_comp_floor_not_advanced")
         else:
             checks["floor_at_xx"] = True

@@ -1,0 +1,56 @@
+{
+  "contract_id": "b26-p2-event-family-law",
+  "contract_version": "v3",
+  "semantic_regime": "xvii-sovereign-v1",
+  "supersedes": {
+    "contract_version": "v2",
+    "disposition": "superseded_retained_for_history",
+    "migration_law": "v2 admitted a provider-transported topic as sufficient family evidence for shopify (with a TLS residual) and as a fallback for woocommerce. v3 requires positive body-native creation evidence jointly with the topic for shopify, and body-signal evidence alone for woocommerce. Rows minted under v2 keep their bound family value and source tag; rows whose source is xix-backfill:pre-xix-mint carry the xxi-evidence-insufficient:pre-xxi-family demotion policy and read non-current at every revision."
+  },
+  "governing_note": "B2.6-P2 Corrective XXI (H-XXI-03): positive event-meaning law. A provider signature establishes precisely the information that signature authenticates -- a transport topic, routing hint, database label, or inference never silently inherits cryptographic authority over information outside that scope. For shopify, the transported X-Shopify-Topic header is necessary (the protocol conveys family outside the HMAC'd body) but never sufficient: the body must positively read as a creation (creation financial status, no terminal lifecycle markers, coincident creation/update instants within 300s). A non-creation body under an orders/create topic yields NO family. For woocommerce the v2 topic fallback is removed (it never matched provider reality: every honest order payload carries its status natively). Stripe and paypal remain body-signal-only. The ONLY authority for family is derive_event_family() over verified bytes, bound with its evidence source in b26_p2_family_source, and re-enforced at the database minting seam over attested lifecycle parameters (b26_p2_enforce_lifecycle_admission). This artifact is versioned: a family-law meaning change requires a new contract_version (never an in-place edit), recorded in the publication-history chain and the b26_p2_publication_history ledger.",
+  "transport_trust_boundary": "No transported header is covered by any provider HMAC in this scope (shopify and woocommerce sign the body only). Transported metadata is therefore a routing assertion, never an authenticated fact. It may corroborate body-native evidence; it may never substitute for it. TLS protects transport in flight but cannot bind a header to a body across redelivery, replay, or a compromised sender edge -- the positive body law exists because of this boundary, not despite it.",
+  "families": {
+    "stripe": {
+      "canonical_family": "payment_intent.succeeded",
+      "accepted_aliases": ["payment_intent.succeeded", "payment_intent_succeeded"],
+      "native_signal_keys": ["type", "event_type", "status"],
+      "required_evidence": "body-signal:type or body-signal:event_type aliasing the canonical family, or body-signal:status with value succeeded. A present-but-unsupported signal is REFUSED (e.g. charge.refunded, payment_intent.payment_failed). A shape carrying none of these signals is familyless and REFUSED even when the body parses and the money is well-formed. Terminal lifecycle has no stripe body surface in this scope; charge-level reversals arrive as distinct unsupported families and are REFUSED.",
+      "topic_binding": null,
+      "lifecycle_rule": "no additional lifecycle surface: family is fully determined by the native signal."
+    },
+    "shopify": {
+      "canonical_family": "orders.create",
+      "accepted_aliases": ["orders.create", "order_create", "orders/create"],
+      "native_signal_keys": [],
+      "required_evidence": "BOTH of: (1) transport-topic:x-shopify-topic aliasing the canonical family, AND (2) a body that positively reads as a creation: financial_status in {pending, authorized, paid, partially_paid}; cancelled_at null; cancel_reason null; refunds empty or absent; created_at and updated_at both present with |updated_at - created_at| <= 300s. Failure of any conjunct yields NO family (familyless-equivalent refusal), including: missing topic, unsupported topic (e.g. orders/updated, refunds/create), terminal markers (cancelled/voided/refunded/partially_refunded/non-empty refunds), unknown or missing financial_status, missing updated_at, or an update instant beyond skew of creation (a restated obligation, not a new creation fact). fulfilled/closed states with creation status and coincident instants are valid sales and conduct.",
+      "topic_binding": {
+        "header": "X-Shopify-Topic",
+        "role": "necessary but insufficient corroboration: the topic selects the candidate family; the body lifecycle proves or refuses it. The topic travels the in-memory relay envelope only and is never persisted; the derived family plus transport-topic:x-shopify-topic source persist on the consequence row."
+      },
+      "lifecycle_rule": "creation-shaped body required as defined above; enforced in derivation, at the family choke, and at the database seam over attested lifecycle parameters."
+    },
+    "paypal": {
+      "canonical_family": "payment.sale.completed",
+      "accepted_aliases": ["payment.sale.completed", "sale_completed", "payment.sale_completed"],
+      "native_signal_keys": ["event_type"],
+      "required_evidence": "body-signal:event_type aliasing the canonical family. A present-but-unsupported event_type is REFUSED (e.g. PAYMENT.SALE.DENIED). A shape carrying no event_type is familyless and REFUSED.",
+      "topic_binding": null,
+      "lifecycle_rule": "no additional lifecycle surface: family is fully determined by the native signal."
+    },
+    "woocommerce": {
+      "canonical_family": "order.completed",
+      "accepted_aliases": ["order.completed", "order_completed"],
+      "native_signal_keys": ["status"],
+      "required_evidence": "body-signal:status with value completed ONLY. The v2 transported-topic fallback is removed: a status-less body is ambiguous and REFUSED even with a topic header (every honest woocommerce order payload carries its status natively). Any other present status is REFUSED (e.g. refunded, processing, cancelled).",
+      "topic_binding": {
+        "header": "X-Wc-Webhook-Topic",
+        "role": "routing information only. Never family evidence since v3 (and since XX in code)."
+      },
+      "lifecycle_rule": "status completed IS the positive creation/completion fact; no additional instants required."
+    }
+  },
+  "family_source_vocabulary": ["body-signal:type", "body-signal:event_type", "body-signal:status", "transport-topic:x-shopify-topic", "transport-topic:x-wc-webhook-topic", "xix-backfill:pre-xix-mint"],
+  "lifecycle_attestation_vocabulary": ["financial_status", "cancelled_at", "refunds_present", "created_at", "updated_at"],
+  "creation_skew_seconds": 300,
+  "conservation": "CURRENT TRUST = AUTHENTICATED BYTES + POSITIVELY JUSTIFIED FAMILY FACT + CURRENT REGIME. Break any term and no financial authority exists. Absence of known-terminal markers is not a creation fact."
+}

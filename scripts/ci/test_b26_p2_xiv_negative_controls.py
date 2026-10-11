@@ -125,8 +125,8 @@ def _control_auth_legacy(admin_dsn, violations, checks):
                             " 'body-signal:type', false)"
                         )
                         icur.execute(
-                            "SELECT public.b26_p2_attest_provenance_evidence(%s,"
-                            "'signed_provider_reingestion','xiv-nc-1')",
+                            "SELECT public.b26_p2_attest_provenance_evidence_v2(%s,"
+                            "'signed_provider_reingestion','xiv-nc-1', NULL, NULL, FALSE, NULL, NULL)",
                             (ing,),
                         )
                         violations.append("xiv_nc_auth_legacy_promotes")
@@ -148,8 +148,8 @@ def _control_auth_legacy(admin_dsn, violations, checks):
                         " 'body-signal:type', false)"
                     )
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe','e1',%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2(%s,'stripe','e1',%s,%s,"
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (ing, "a" * 64, "b" * 64),
                     )
                     if str(icur.fetchone()[0]) != "authenticated_known":

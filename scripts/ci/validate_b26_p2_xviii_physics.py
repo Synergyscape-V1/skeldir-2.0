@@ -241,8 +241,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                             (family_source,),
                         )
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
-                        "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+                        "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (ing, eref, sha, "b" * 64),
                     )
                     return str(icur.fetchone()[0])
@@ -343,9 +343,9 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 )
                 try:
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s,'stripe','xviii-e2',%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (row2, "c" * 64, "b" * 64),
                     )
                     violations.append("xviii_phys_stale_reentry_permitted")
@@ -372,8 +372,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 )
                 try:
                     icur.execute(
-                        "SELECT public.b26_p2_attest_provenance_evidence("
-                        "%s, 'signed_provider_reingestion', %s)",
+                        "SELECT public.b26_p2_attest_provenance_evidence_v2("
+                        "%s, 'signed_provider_reingestion', %s, NULL, NULL, FALSE, NULL, NULL)",
                         (row2, "lawful-idem"),
                     )
                     violations.append("xviii_phys_attester_promotes_demoted")

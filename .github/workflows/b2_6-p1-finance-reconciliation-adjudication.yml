@@ -496,6 +496,23 @@ jobs:
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-out artifacts/b26_p2/static/xx-composition.json
 
+      # B2.6-P2 Corrective XXI: sovereign release continuity. The
+      # composition gate proves the release-bound minting ABI (v1
+      # absent, v2 lifecycle-attested), the positive Shopify creation
+      # law at derivation + family choke + DB seam, monotonic
+      # disqualification across supported downgrade/re-upgrade with
+      # byte-identical history preservation, the seq-anchored
+      # observable history with beat authorship and Trust degradation,
+      # and real-reader behavior (real Trust adapter + real P3 logic,
+      # no reimplementation oracles).
+      - name: Prove B2.6-P2 Corrective-XXI sovereign release continuity
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xxi_composition.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xxi-composition.json
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence

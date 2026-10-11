@@ -595,9 +595,9 @@ async def _seed_p12_ca1_representative_source_rows(
                 )
                 apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     " %s, 'stripe', %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                     (
                         ingress_id,
                         f"evt_{suffix}_{index:04d}",

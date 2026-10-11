@@ -147,9 +147,9 @@ def main() -> int:
                         " 'body-signal:type', true)"
                     )
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s,'stripe',%s,%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (ing, eref, sha, "b" * 64),
                     )
                     out = str(icur.fetchone()[0])
@@ -346,12 +346,18 @@ def main() -> int:
                 except CommerceDerivationError:
                     pass
             # Supported explicit signals still conduct (no over-refusal).
+            # XXI: a Shopify creation signal needs positive body
+            # evidence, never the topic alone.
             assert derive_event_family(
                 "stripe",
                 b'{"id":"pi_1","type":"payment_intent.succeeded"}',
             ) == "payment_intent.succeeded"
             assert derive_event_family(
-                "shopify", b'{"id":1}', topic="orders/create"
+                "shopify",
+                b'{"id":1,"financial_status":"paid",'
+                b'"created_at":"2026-09-01T00:00:00Z",'
+                b'"updated_at":"2026-09-01T00:00:00Z"}',
+                topic="orders/create",
             ) == "orders.create"
         finally:
             sys.path.pop(0)
@@ -370,9 +376,9 @@ def main() -> int:
                 )
                 try:
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s,'stripe','xix-nc06',%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (fam_row, "c" * 64, "b" * 64),
                     )
                     violations.append("xix_nc06_atomic_minted_familyless")
@@ -512,16 +518,16 @@ def main() -> int:
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
                 reds["NC-10"] = "RED:predecessor schema refused at boot gate"
-            # XX: the contract advances with the head; the predecessor
-            # under test is now one step deeper (300002 refused, head
-            # 300003 serves).
+            # XXI: the contract advances with the head; the predecessor
+            # under test is now one step deeper (300003 refused, head
+            # 300004 serves).
             try:
-                assert_production_construction_authority(["202609300002"])
+                assert_production_construction_authority(["202609300003"])
                 violations.append("xix_nc10_old_revision_served")
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
-            assert_production_construction_authority(["202609300003"])
-            if migration_graph_head() != "202609300003":
+            assert_production_construction_authority(["202609300004"])
+            if migration_graph_head() != "202609300004":
                 violations.append("xix_nc10_head_mismatch")
             else:
                 checks["nc10_head_current"] = True
@@ -565,7 +571,10 @@ def main() -> int:
                 violations.append("xix_nc04_restore_not_green")
 
         # NC-05: same-version family-law co-edit -> RED -> restore.
-        family_path = B26_DIR / "event-family-law.v2.json"
+        # XXI: the governed tip is event-family-law v3 (v2 is
+        # retained for history, superseded); the co-edit targets the
+        # tip, whose live digest the publication chain pins.
+        family_path = B26_DIR / "event-family-law.v3.json"
         family_snap = family_path.read_bytes()
         family_hash_before = _sha(family_path)
         try:
@@ -660,7 +669,9 @@ def main() -> int:
                         ccur.execute(
                             "SELECT version_num FROM alembic_version"
                         )
-                        if ccur.fetchone()[0] != "202609300002":
+                        # Downgrade -1 from the XXI head lands on the
+                        # XX revision (one step back from current).
+                        if ccur.fetchone()[0] != "202609300003":
                             violations.append(
                                 "xix_nc09_downgrade_wrong_revision"
                             )
@@ -746,7 +757,7 @@ def main() -> int:
                             ccur.execute(
                                 "SELECT version_num FROM alembic_version"
                             )
-                            if ccur.fetchone()[0] != "202609300003":
+                            if ccur.fetchone()[0] != "202609300004":
                                 violations.append(
                                     "xix_nc09_reupgrade_wrong_revision"
                                 )

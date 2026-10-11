@@ -246,13 +246,12 @@ def _migration_modules(migrations_root: Path | None = None):
 
 #: The single Alembic revision this build's code requires. Asserted equal to the
 #: migration graph's head by a merge-blocking test; never hand-maintained
-#: independently of the chain. B2.6-P2 Corrective XX advances the contract
-#: to the compositional-closure head (single currentness law across all
-#: readers, explicit family-source predicate, P3 predicate conformance,
-#: law-change propagation, tamper-evident supersession chain, history
-#: protection observer): this build requires XX physics and must refuse
-#: earlier schema.
-REQUIRED_SCHEMA_REVISION = "202609300003"
+#: independently of the chain. B2.6-P2 Corrective XXI advances the contract
+#: to the sovereign-release-continuity head (release-bound minting ABI,
+#: positive event meaning, monotonic disqualification, observable
+#: history): this build requires XXI physics and must refuse earlier
+#: schema.
+REQUIRED_SCHEMA_REVISION = "202609300004"
 
 #: Every revision a process running this build may serve traffic against.
 #: Exactly one today. Widening this set is a deliberate, reviewable act that

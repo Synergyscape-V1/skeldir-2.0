@@ -220,9 +220,9 @@ def _live_checks(
                             (source,),
                         )
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s,'stripe',%s,%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (ing, eref, sha, "b" * 64),
                     )
                     out = str(icur.fetchone()[0])
@@ -489,9 +489,9 @@ def _live_checks(
                 iso_row = _mkrow("xix-p7", "xix-c7", 7000)
                 try:
                     icur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s,'stripe','xix-p7',%s,%s,"
-                        "'hmac-sha256-timestamped-hex','v1')",
+                        "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                         (iso_row, "f" * 64, "b" * 64),
                     )
                     violations.append("xix_phys_snapshot_mint_permitted")

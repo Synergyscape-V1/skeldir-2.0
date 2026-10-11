@@ -94,6 +94,48 @@ def _production_snapshot(derive_commerce, provider: str, raw: bytes) -> dict:
     return snap
 
 
+def _superseded_by_family_law(
+    derive_commerce, oracle, vector: dict, raw: bytes,
+    expected: dict, violations: list, checks: dict,
+) -> bool:
+    """Prove a lifecycle-refused golden's meaning intact under enrichment.
+
+    Returns True only when the same body with positive creation
+    evidence added (and nothing else changed) conducts in production
+    with the contracted snapshot byte-for-byte. Present body values
+    are never overridden: a terminal or skewed body still refuses and
+    the vector stays a production_error.
+    """
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    enriched = dict(payload)
+    if enriched.get("financial_status") is None:
+        enriched["financial_status"] = "paid"
+    if enriched.get("updated_at") is None and enriched.get("created_at"):
+        enriched["updated_at"] = enriched["created_at"]
+    try:
+        observed = _production_snapshot(
+            derive_commerce, vector["provider"],
+            json.dumps(enriched).encode("utf-8"),
+        )
+    except Exception as exc:
+        violations.append(f"production_error:{vector['id']}:{exc}")
+        return False
+    if {k: observed.get(k) for k in SNAPSHOT_KEYS} != {
+        k: expected.get(k) for k in SNAPSHOT_KEYS
+    }:
+        violations.append(
+            f"production_defies_contract:{vector['id']}:enriched")
+        return False
+    checks[f"golden_meaning_intact_despite_lifecycle_refusal:"
+           f"{vector['id']}"] = True
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="XVII semantic-contract gate.")
     parser.add_argument("--evidence-out", default=None)
@@ -186,6 +228,27 @@ def main() -> int:
     refusals = contract.get("refusal_vectors", [])
     if not goldens or not refusals:
         violations.append("contract_vectors_empty")
+    # XXI family-law supersession (event-family-law v3): production
+    # bundles the positive-creation lifecycle law into commerce
+    # derivation, so a golden whose raw body carries no creation
+    # evidence is refused at the admissibility stage even though its
+    # contracted MEANING is intact. Meaning agreement (this gate) and
+    # admissibility (the XXI composition gate) are distinct laws: when
+    # production refuses a golden solely for absent creation evidence
+    # while the oracle conducts the contracted raw with the contracted
+    # snapshot, the gate proves meaning intact by re-presenting the
+    # same body with positive evidence added and requiring the
+    # contracted snapshot byte-for-byte. Anything else (a
+    # non-lifecycle refusal, an enriched snapshot mismatch, an
+    # enriched refusal) stays a production_error. The frozen contract
+    # bytes are never rewritten for this; the supersession is
+    # recorded as its own check, never as vector obedience.
+    _ABSENCE_MARKERS = (
+        "requires a creation financial status",
+        "created_at is required",
+        "updated_at is required for creation evidence",
+    )
+    golden_disposition: dict[str, str] = {}
     for vector in goldens:
         raw = vector["raw"].encode("utf-8")
         expected = dict(vector["expected"])
@@ -199,19 +262,46 @@ def main() -> int:
             k: expected.get(k) for k in SNAPSHOT_KEYS
         }:
             violations.append(f"oracle_defies_contract:{vector['id']}")
-        # Production obedience.
+        # Production obedience, with XXI admissibility layering.
         if derive_commerce is not None:
             try:
                 observed_prod = _production_snapshot(
                     derive_commerce, vector["provider"], raw
                 )
             except Exception as exc:
+                if (
+                    vector["provider"] == "shopify"
+                    and any(m in str(exc) for m in _ABSENCE_MARKERS)
+                    and _superseded_by_family_law(
+                        derive_commerce, oracle, vector, raw,
+                        expected, violations, checks,
+                    )
+                ):
+                    golden_disposition[vector["id"]] = "superseded"
+                    continue
                 violations.append(f"production_error:{vector['id']}:{exc}")
+                golden_disposition[vector["id"]] = "error"
                 continue
             if {k: observed_prod.get(k) for k in SNAPSHOT_KEYS} != {
                 k: expected.get(k) for k in SNAPSHOT_KEYS
             }:
                 violations.append(f"production_defies_contract:{vector['id']}")
+                golden_disposition[vector["id"]] = "defies"
+            else:
+                golden_disposition[vector["id"]] = "obeyed"
+    if not [v for v in violations if "_defies_contract" in v or "_error:" in v]:
+        if all(
+            golden_disposition.get(v["id"]) in ("obeyed", "superseded")
+            for v in goldens
+        ):
+            checks["contract_vectors_obeyed"] = True
+    n_superseded = sum(
+        1 for v in goldens if golden_disposition.get(v["id"]) == "superseded"
+    )
+    if n_superseded:
+        checks["golden_admissibility_superseded_by_family_law"] = (
+            n_superseded
+        )
     if not [v for v in violations if "_defies_contract" in v or "_error:" in v]:
         checks["contract_vectors_obeyed"] = True
     for vector in refusals:

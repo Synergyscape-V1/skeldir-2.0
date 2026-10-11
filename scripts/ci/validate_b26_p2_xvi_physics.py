@@ -218,8 +218,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 " 'body-signal:type', false)"
             )
             icur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe','e1',%s,%s,"
-                "'hmac-sha256-timestamped-hex','v1')",
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2(%s,'stripe','e1',%s,%s,"
+                "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                 (ing, sha, sig),
             )
             return str(icur.fetchone()[0])
@@ -236,8 +236,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 " 'body-signal:type', false)"
             )
             icur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe',%s,%s,%s,"
-                "'hmac-sha256-timestamped-hex','v1')",
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2(%s,'stripe',%s,%s,%s,"
+                "'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                 (ing, eref, sha, sig),
             )
             return str(icur.fetchone()[0])
@@ -342,8 +342,9 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 # identical to the sovereign frame cannot mint evidence --
                 # grants deny the write first, the gate second.
                 icur.execute(
-                    "CREATE FUNCTION pg_temp.b26_p2_authenticate_ingress_atomic("
-                    " uuid, text, text, text, text, text, text)"
+                    "CREATE FUNCTION pg_temp.b26_p2_authenticate_ingress_atomic_v2("
+                    " uuid, text, text, text, text, text, text, text,"
+                    " timestamptz, boolean, timestamptz, timestamptz)"
                     " RETURNS text LANGUAGE plpgsql"
                     " AS $func$ BEGIN"
                     " INSERT INTO public.b26_p2_auth_root_evidence (tenant_id,"
@@ -356,8 +357,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 )
                 try:
                     icur.execute(
-                        "SELECT pg_temp.b26_p2_authenticate_ingress_atomic("
-                        "gen_random_uuid(),'stripe','e',%s,%s,'m','v1')",
+                        "SELECT pg_temp.b26_p2_authenticate_ingress_atomic_v2("
+                        "gen_random_uuid(),'stripe','e',%s,%s,'m','v1', NULL, NULL, FALSE, NULL, NULL)",
                         ("c" * 64, "d" * 64),
                     )
                     violations.append("xvi_phys_spoof_evidence_permitted")
@@ -373,8 +374,9 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                         checks["identical_frame_spoof_refused"] = True
                 finally:
                     icur.execute(
-                        "DROP FUNCTION pg_temp.b26_p2_authenticate_ingress_atomic("
-                        "uuid,text,text,text,text,text,text)"
+                        "DROP FUNCTION pg_temp.b26_p2_authenticate_ingress_atomic_v2("
+                        "uuid,text,text,text,text,text,text,text,"
+                        "timestamptz,boolean,timestamptz,timestamptz)"
                     )
                 # R5 behavioral: rebind event_id to a second genuine
                 # ingestion event; every authority projection and the scope

@@ -212,9 +212,9 @@ def _seed_ratio_tenant(matched: int, connected: int, tag: str) -> UUID:
                 # shape). Seeding runs as migration admin (lawful).
                 apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     " %s, 'stripe', %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                     (
                         str(identity_id),
                         f"b26v-ingress-{tag}-{order}",

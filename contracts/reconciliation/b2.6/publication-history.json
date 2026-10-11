@@ -51,6 +51,26 @@
       "activation_revision": "202609300002",
       "prev_entry_hash": "069d1df4d397f10cc73df8b63c06aa7ca2d5add7b6e23fefe5b17a756a08299d",
       "entry_hash": "d1696cde33d46304e2a62794b2edd58b168e0af157050754634a9ef34f3c3097"
+    },
+    {
+      "law_kind": "event-family-law",
+      "law_id": "b26-p2-event-family-law",
+      "law_version": "v3",
+      "law_digest": "c0fd524cd3cc3d5f5509fdc5142ad32e5e30e06ddf5949918ed082572531624b",
+      "law_artifact": "contracts/reconciliation/b2.6/event-family-law.v3.json",
+      "activation_revision": "202609300004",
+      "prev_entry_hash": "d1696cde33d46304e2a62794b2edd58b168e0af157050754634a9ef34f3c3097",
+      "entry_hash": "0b99e1e84d44eb1d68977c611a3d38035fce5c04af33933fb42bb278b1b81162"
+    },
+    {
+      "law_kind": "contract-hierarchy",
+      "law_id": "b26-p2-contract-hierarchy",
+      "law_version": "v3",
+      "law_digest": "07562b472f69ea938bf5dcd4d0dfb43ed3c95e310e11a7f30250e0222b657aa7",
+      "law_artifact": "contracts/reconciliation/b2.6/contract-hierarchy.v3.json",
+      "activation_revision": "202609300004",
+      "prev_entry_hash": "0b99e1e84d44eb1d68977c611a3d38035fce5c04af33933fb42bb278b1b81162",
+      "entry_hash": "0a4fa016ea46cf893c4c79f7cd6de909545aa6948ef064efbae38a639e9907b8"
     }
   ]
 }

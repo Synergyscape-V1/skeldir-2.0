@@ -143,9 +143,9 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 " 'body-signal:type', false)"
             )
             cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                 "%s, 'stripe', %s, %s, %s,"
-                " 'hmac-sha256-timestamped-hex', 'v1')",
+                " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                 (ingress_id, evt_ref, "c" * 64, "d" * 64),
             )
             cur.execute(
@@ -250,8 +250,8 @@ def _seed_conducted_lineage(admin_dsn: str, tag: str, conduct: bool = True):
                 " 'body-signal:type', false)"
             )
             cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic("
-                "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1')",
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+                "%s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1', NULL, NULL, FALSE, NULL, NULL)",
                 (ingress_id, evt_ref, "c" * 64, "d" * 64),
             )
             assert str(cur.fetchone()[0]) == "authenticated_known"
@@ -568,8 +568,9 @@ def _behavioral_probes(admin_dsn, violations, checks) -> None:
                     " 'body-signal:type', false)"
                 )
                 cur.execute(
-                    "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s,'signed_provider_reingestion',%s)",
+                    "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                    "(%s,'signed_provider_reingestion',%s,"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (ingress2, idem2),
                 )
             except Exception as exc:

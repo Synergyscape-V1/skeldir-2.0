@@ -159,9 +159,10 @@ def _seed_ingress(tag: str) -> dict[str, UUID]:
             try:
                 apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ingress_id), "stripe", f"evt-{tag}",
                      "a" * 64, "b" * 64),
                 )
@@ -242,9 +243,10 @@ def _seed_extra_ingress(tenant_id: UUID, tag: str) -> UUID:
             try:
                 apply_xix_family_gucs_psycopg2(cur, "stripe")
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ingress_id), "stripe", f"evt-{tag}",
                      "a" * 64, "b" * 64),
                 )
@@ -692,9 +694,9 @@ def test_vi_r6_11_task_kind_locked_by_check() -> None:
                 try:
                     apply_xix_family_gucs_psycopg2(cur, _auth_row[0])
                     cur.execute(
-                        "SELECT public.b26_p2_authenticate_ingress_atomic("
+                        "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                         "%s, %s, %s, %s, %s,"
-                        " 'hmac-sha256-timestamped-hex', 'v1')",
+                        " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                         (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
                          "a" * 64, "b" * 64),
                     )
@@ -1100,9 +1102,10 @@ def test_vi_anchor_preset_stripped_and_stamped() -> None:
             try:
                 apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
                      "a" * 64, "b" * 64),
                 )
@@ -1196,9 +1199,10 @@ def test_vi_anchor_takes_precedence_over_dispatched_fallback() -> None:
             try:
                 apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
                      "a" * 64, "b" * 64),
                 )
@@ -1323,9 +1327,9 @@ def test_vi_outbox_issuance_and_retry_bound() -> None:
                     try:
                         apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                         _acur.execute(
-                            "SELECT public.b26_p2_authenticate_ingress_atomic("
+                            "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                             "%s, %s, %s, %s, %s,"
-                            " 'hmac-sha256-timestamped-hex', 'v1')",
+                            " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                             (str(extra_ingress), _auth_row[0], _auth_row[1],
                              "a" * 64, "b" * 64),
                         )
@@ -1476,9 +1480,10 @@ def test_vi_dispatch_preexisting_failure_refuses() -> None:
             try:
                 apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ids["ingress_id"]), _auth_row[0], _auth_row[1],
                      "a" * 64, "b" * 64),
                 )
@@ -1621,9 +1626,10 @@ def test_vi_worker_ingress_cannot_become_execution() -> None:
             try:
                 apply_xix_family_gucs_psycopg2(_acur, _auth_row[0])
                 _acur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, %s, %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1',"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(worker_ingress), _auth_row[0], _auth_row[1],
                      "a" * 64, "b" * 64),
                 )

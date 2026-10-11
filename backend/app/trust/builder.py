@@ -9,6 +9,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
 from app.confidence_projection.policy import (
     EVIDENCE_FRESHNESS_CEILING_SECONDS,
@@ -1036,6 +1037,85 @@ def _money_decision_for_match_verdict(
     )
 
 
+#: Maximum age of a beat-authored history observation the builder
+#: trusts (XXI H-XXI-07/Gate N). Older, missing, violated, or
+#: live-divergent observations refuse issuance: an envelope must not
+#: assert deterministic truth over unverifiable correction history.
+HISTORY_INTEGRITY_HORIZON_SECONDS = 1200
+
+#: Roles whose beat observations the builder accepts. Authorship is
+#: stamped by session_user at INSERT and cannot be forged in-session;
+#: any other author (including maintenance roles) is rejected.
+HISTORY_OBSERVER_AUTHORS = frozenset({"app_worker"})
+
+
+async def read_history_integrity_status(
+    db_session: AsyncSession,
+) -> tuple[bool, str]:
+    """Check beat-observed ledger continuity for Trust issuance.
+
+    Returns (True, "") only when a fresh beat-authored clean
+    observation agrees with live ledger count and tip. Anything else
+    -- never observed, untrusted author, stale, violations present, or
+    live divergence -- returns (False, reason). Real SQL against live
+    state; no in-memory substitutes.
+    """
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    row = (
+        (
+            await db_session.execute(
+                text(
+                    "SELECT ledger_count, ledger_tip,"
+                    " observer_violations, observed_at, author"
+                    " FROM public.b26_p2_history_integrity_observations"
+                    " ORDER BY id DESC LIMIT 1"
+                )
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        return False, "history_integrity_never_observed"
+    if str(row["author"] or "") not in HISTORY_OBSERVER_AUTHORS:
+        return False, "history_integrity_untrusted_observer"
+    observed_at = row["observed_at"]
+    now = datetime.now(timezone.utc)
+    if observed_at is not None:
+        moment = observed_at
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        if (now - moment).total_seconds() > HISTORY_INTEGRITY_HORIZON_SECONDS:
+            return False, "history_integrity_observation_stale"
+    if str(row["observer_violations"] or "").strip():
+        return False, "history_integrity_violations_present"
+    # Live continuity is read through the owner-context DEFINER
+    # function: runtime roles hold no direct rights on the ledger
+    # (XXI least privilege), and a direct SELECT would fail closed
+    # with permission denied. The function exposes exactly the global
+    # (count, tip) the beat observation records, so tenant scoping can
+    # never skew the comparison.
+    live = (
+        (
+            await db_session.execute(
+                text("SELECT n, tip FROM"
+                     " public.b26_p2_read_history_continuity()")
+            )
+        )
+        .mappings()
+        .one()
+    )
+    if int(live["n"] or 0) != int(row["ledger_count"] or 0):
+        return False, "history_integrity_live_count_diverged"
+    if (live["tip"] or None) != (row["ledger_tip"] or None):
+        # Both NULL (empty ledger, empty observation) agrees; any
+        # other mismatch refuses.
+        if not (live["tip"] is None and row["ledger_tip"] is None):
+            return False, "history_integrity_live_tip_diverged"
+    return True, ""
+
+
 def _read_only_observation(*, llm_modules: tuple[str, ...]) -> ReadOnlyObservation:
     return ReadOnlyObservation(
         source_reads=1,
@@ -1188,6 +1268,33 @@ async def build_unsigned_trust_envelope(
                 payload=payload,
                 decisions=decisions,
             ),
+        )
+
+    # XXI (H-XXI-07/Gate N): live history-integrity gate for new
+    # issuance. A Trust envelope asserts deterministic truth; when the
+    # correction-history continuity proof is missing, stale, violated,
+    # or divergent from live state, no envelope is issued. The claim
+    # is refused, not qualified: an amount over unverifiable history
+    # is not knowable truth.
+    history_ok, history_reason = await read_history_integrity_status(
+        db_session
+    )
+    if not history_ok:
+        refusal = build_error_envelope(
+            tenant_id=request.tenant_id,
+            reason_code="history_integrity_unverifiable",
+            created_at=created_at,
+            audience_id=audience_id,
+        )
+        return TrustEnvelopeBuildResult(
+            status="refused",
+            unsigned_payload=None,
+            refusal_payload=refusal,
+            reason_code="history_integrity_unverifiable",
+            field_source_decisions=decisions,
+            money_authority_decision=None,
+            read_only_observation=_read_only_observation(llm_modules=()),
+            authority_witness=None,
         )
 
     money_decision = _money_decision_for_match_verdict(source)

@@ -144,8 +144,9 @@ def _auth(icur, ing, eref, sha, sig="b" * 64):
         " 'body-signal:type', false)"
     )
     icur.execute(
-        "SELECT public.b26_p2_authenticate_ingress_atomic(%s,'stripe',%s,%s,%s,"
-        "'hmac-sha256-timestamped-hex','v1')",
+        "SELECT public.b26_p2_authenticate_ingress_atomic_v2(%s,'stripe',%s,%s,%s,"
+        "'hmac-sha256-timestamped-hex','v1',"
+        " NULL, NULL, FALSE, NULL, NULL)",
         (ing, eref, sha, sig),
     )
     return str(icur.fetchone()[0])

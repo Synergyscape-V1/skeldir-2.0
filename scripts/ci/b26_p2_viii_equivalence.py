@@ -184,9 +184,9 @@ def _completion_outcome(admin_dsn: str, state: dict) -> tuple:
                         (_viii_family[1],),
                     )
                 cur.execute(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     "%s, %s, 'e', %s, %s,"
-                    " 'hmac-sha256-timestamped-hex', 'v1')",
+                    " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)",
                     (ingress, state["provider"], "a" * 64, "b" * 64),
                 )
             except Exception as exc:

@@ -753,12 +753,12 @@ def test_c8_financial_change_reaches_a_jwks_verified_trust_claim(
             )
             conn.execute(
                 text(
-                    "SELECT public.b26_p2_authenticate_ingress_atomic("
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                     " wi.id, wi.provider,"
                     " wi.provider_native_event_reference,"
                     " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
                     " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
-                    " 'hmac-sha256-timestamped-hex', 'v1')"
+                    " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)"
                     " FROM public.webhook_ingress_identities AS wi"
                     " WHERE wi.tenant_id = :t"
                     " AND wi.idempotency_key LIKE 'c8n-ingress-%'"

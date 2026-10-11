@@ -40,6 +40,10 @@ class _FakeMappings:
     def first(self) -> dict[str, object] | None:
         return self._row
 
+    def one(self) -> dict[str, object]:
+        assert self._row is not None
+        return self._row
+
 
 class _FakeResult:
     def __init__(self, row: dict[str, object] | None) -> None:
@@ -50,27 +54,62 @@ class _FakeResult:
 
 
 class FakeReadOnlySession:
-    def __init__(self, row: dict[str, object] | None) -> None:
+    def __init__(
+        self,
+        row: dict[str, object] | None,
+        *,
+        history_row: dict[str, object] | None = None,
+        ledger_row: dict[str, object] | None = None,
+    ) -> None:
         self.row = row
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        now = datetime.now(timezone.utc)
+        self.history_row = (
+            history_row
+            if history_row is not None
+            else {
+                "ledger_count": 0,
+                "ledger_tip": None,
+                "observer_violations": "",
+                "observed_at": now,
+                "author": "app_worker",
+            }
+        )
+        self.ledger_row = (
+            ledger_row
+            if ledger_row is not None
+            else {"n": 0, "tip": None}
+        )
         self.statements: list[str] = []
         self.params: list[dict[str, object]] = []
         self.write_attempts = 0
 
     async def execute(
-        self, statement: object, params: dict[str, object]
+        self, statement: object, params: dict[str, object] | None = None
     ) -> _FakeResult:
         text = str(statement)
         self.statements.append(text)
-        self.params.append(dict(params))
+        self.params.append(dict(params or {}))
         if any(
             token in text.lower()
             for token in ("insert ", "update ", "delete ", "merge ")
         ):
-            self.write_attempts += 1
-            raise AssertionError(f"write statement executed: {text}")
-        if str(params["tenant_id"]) != str(
-            self.row.get("tenant_id") if self.row else ""
+            # History-observation SELECTs contain "observations" but
+            # perform no writes; only real DML is forbidden here.
+            if "history_integrity_observations" not in text.lower():
+                self.write_attempts += 1
+                raise AssertionError(f"write statement executed: {text}")
+        if "history_integrity_observations" in text:
+            return _FakeResult(self.history_row)
+        if (
+            "verdict_supersession_ledger" in text
+            or "b26_p2_read_history_continuity" in text
         ):
+            return _FakeResult(self.ledger_row)
+        if (params or {}).get("tenant_id") is not None and str(
+            (params or {})["tenant_id"]
+        ) != str(self.row.get("tenant_id") if self.row else ""):
             return _FakeResult(None)
         if "trust_tenant_policy_events" in text:
             return _FakeResult(None)
@@ -605,3 +644,96 @@ def test_default_factories_return_fresh_nested_structures() -> None:
     assert benchmark_c["benchmark_status"] == "unavailable"
     assert "mutated-scope" not in str(policy_c)
     assert "contamination-negative-control" not in str(benchmark_c)
+
+async def test_history_integrity_stale_observation_refuses_issuance() -> None:
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    tenant_id = uuid4()
+    verdict_id = uuid4()
+    stale = datetime.now(timezone.utc) - timedelta(seconds=3600)
+    session = FakeReadOnlySession(
+        _row(tenant_id=tenant_id, verdict_id=verdict_id),
+        history_row={
+            "ledger_count": 0,
+            "ledger_tip": None,
+            "observer_violations": "",
+            "observed_at": stale,
+            "author": "app_worker",
+        },
+    )
+    result = await build_unsigned_trust_envelope(
+        session, _request(tenant_id, verdict_id)
+    )
+    assert result.status == "refused"
+    assert result.reason_code == "history_integrity_unverifiable"
+    assert result.unsigned_payload is None
+
+
+@pytest.mark.asyncio
+async def test_history_integrity_violations_refuse_issuance() -> None:
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    tenant_id = uuid4()
+    verdict_id = uuid4()
+    session = FakeReadOnlySession(
+        _row(tenant_id=tenant_id, verdict_id=verdict_id),
+        history_row={
+            "ledger_count": 0,
+            "ledger_tip": None,
+            "observer_violations": "supersession_sequence_gap",
+            "observed_at": datetime.now(timezone.utc),
+            "author": "app_worker",
+        },
+    )
+    result = await build_unsigned_trust_envelope(
+        session, _request(tenant_id, verdict_id)
+    )
+    assert result.status == "refused"
+    assert result.reason_code == "history_integrity_unverifiable"
+
+
+@pytest.mark.asyncio
+async def test_history_integrity_untrusted_author_refuses_issuance() -> None:
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    tenant_id = uuid4()
+    verdict_id = uuid4()
+    session = FakeReadOnlySession(
+        _row(tenant_id=tenant_id, verdict_id=verdict_id),
+        history_row={
+            "ledger_count": 0,
+            "ledger_tip": None,
+            "observer_violations": "",
+            "observed_at": datetime.now(timezone.utc),
+            "author": "migration_owner",
+        },
+    )
+    result = await build_unsigned_trust_envelope(
+        session, _request(tenant_id, verdict_id)
+    )
+    assert result.status == "refused"
+    assert result.reason_code == "history_integrity_unverifiable"
+
+
+@pytest.mark.asyncio
+async def test_history_integrity_live_divergence_refuses_issuance() -> None:
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    tenant_id = uuid4()
+    verdict_id = uuid4()
+    session = FakeReadOnlySession(
+        _row(tenant_id=tenant_id, verdict_id=verdict_id),
+        history_row={
+            "ledger_count": 5,
+            "ledger_tip": "a" * 64,
+            "observer_violations": "",
+            "observed_at": datetime.now(timezone.utc),
+            "author": "app_worker",
+        },
+        ledger_row={"n": 0, "tip": None},
+    )
+    result = await build_unsigned_trust_envelope(
+        session, _request(tenant_id, verdict_id)
+    )
+    assert result.status == "refused"
+    assert result.reason_code == "history_integrity_unverifiable"

@@ -58,7 +58,8 @@
         "mutable_workflow_subject_rejected",
         "money_source_not_authoritative",
         "money_amount_exceeds_json_safe_integer",
-        "validation_failed"
+        "validation_failed",
+        "history_integrity_unverifiable"
       ]
     },
     "reason_code": {
@@ -95,7 +96,8 @@
         "mutable_workflow_subject_rejected",
         "money_source_not_authoritative",
         "money_amount_exceeds_json_safe_integer",
-        "validation_failed"
+        "validation_failed",
+        "history_integrity_unverifiable"
       ]
     },
     "tenant_id_hash": {

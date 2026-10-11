@@ -1,0 +1,33 @@
+{
+  "anchor_id": "b26-p2-supersession-anchor",
+  "governing_note": "B2.6-P2 Corrective XXI (H-XXI-05/06): continuity anchor for the verdict-supersession ledger. Pinned rows are a genuine committed correction sequence observed on an isolated lane at anchor time; entry hashes bind content per the ledger preimage law. Live ledgers must EXTEND this prefix (row-identical for pinned rows, count monotonically non-decreasing). Shrinkage, prefix rewrite, or tip divergence against beat observations indicates erasure or coherent forgery. This file lives in git, outside any database principal's modification authority.",
+  "anchored_at": "2026-10-11T19:56:02.912627+00:00",
+  "migration_head": "202609300004",
+  "genesis_hash": "6bc6e032e0013eca2bbe08ae1f27d54743aa9a5a02c3318d07f564a1c6aae724",
+  "tip_hash": "6102ab1e448ff23d0fc77b8e236473cc6f3130ef68c88cc53c2a89125bcd92e9",
+  "count": 2,
+  "rows": [
+    {
+      "verdict_id": "ec366058-2ef7-4414-94d0-78b4b9b89f1b",
+      "prior_attributed_amount_minor": 1000,
+      "new_attributed_amount_minor": 1100,
+      "prior_verified_amount_minor": 1000,
+      "new_verified_amount_minor": 1100,
+      "prior_authority_state": "current",
+      "new_authority_state": "current",
+      "prev_entry_hash": null,
+      "entry_hash": "6bc6e032e0013eca2bbe08ae1f27d54743aa9a5a02c3318d07f564a1c6aae724"
+    },
+    {
+      "verdict_id": "393dfcf8-1011-45e7-a26b-39fc81b5541b",
+      "prior_attributed_amount_minor": 2000,
+      "new_attributed_amount_minor": 2200,
+      "prior_verified_amount_minor": 2000,
+      "new_verified_amount_minor": 2200,
+      "prior_authority_state": "current",
+      "new_authority_state": "current",
+      "prev_entry_hash": "6bc6e032e0013eca2bbe08ae1f27d54743aa9a5a02c3318d07f564a1c6aae724",
+      "entry_hash": "6102ab1e448ff23d0fc77b8e236473cc6f3130ef68c88cc53c2a89125bcd92e9"
+    }
+  ]
+}

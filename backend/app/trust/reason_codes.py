@@ -48,6 +48,7 @@ class ReasonCode(StrEnum):
     MUTABLE_WORKFLOW_SUBJECT_REJECTED = "mutable_workflow_subject_rejected"
     MONEY_AMOUNT_EXCEEDS_JSON_SAFE_INTEGER = "money_amount_exceeds_json_safe_integer"
     VALIDATION_FAILED = "validation_failed"
+    HISTORY_INTEGRITY_UNVERIFIABLE = "history_integrity_unverifiable"
 
 
 REQUIRED_P6_REASON_CODES: frozenset[str] = frozenset(
@@ -451,6 +452,12 @@ REASON_CODE_REGISTRY: dict[ReasonCode, ReasonCodeDefinition] = {
         source_predicate="contract_or_matrix_validation_failed_closed",
         envelope_status="refused",
         policy="force_blocked_no_action_scopes",
+    ),
+    ReasonCode.HISTORY_INTEGRITY_UNVERIFIABLE: _definition(
+        ReasonCode.HISTORY_INTEGRITY_UNVERIFIABLE,
+        source_predicate="correction_history_continuity_unproven_or_divergent",
+        envelope_status="refused",
+        forbidden_fields=MONEY_FIELDS,
     ),
 }
 

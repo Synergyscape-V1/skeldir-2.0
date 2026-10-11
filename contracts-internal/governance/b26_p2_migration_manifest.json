@@ -53,6 +53,10 @@
     "202609300003": {
       "file": "202609300003_b26_p2_corrective_xx_compositional_closure.py",
       "sha256": "8c2264789a32c484526cfa3b8f17f5f48fccdaddaf4d3a1ee7e4f0dbe96b2298"
+    },
+    "202609300004": {
+      "file": "202609300004_b26_p2_corrective_xxi_sovereign_release_continuity.py",
+      "sha256": "8b0ae4dccac43890397a37ba633142447c835879dbbac692d391f9320546393e"
     }
   }
 }
